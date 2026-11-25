@@ -53,7 +53,16 @@ Abre `http://localhost:3000`:
 
 ---
 
+## Plan, Roadmap y Handoff
+
+Todo el plan, las revisiones de arquitectura y el roadmap viven en [`docs/plan/`](docs/plan/README.md). Empieza por [`docs/plan/README.md`](docs/plan/README.md) para retomar el trabajo.
+
+---
+
 ## Pasar a Producción (`.env.local`)
+
+> [!WARNING]
+> El adaptador de Supabase y las integraciones reales de Google Calendar y pagos **aún no están implementados** (ver [`docs/plan/architecture_review.md`](docs/plan/architecture_review.md) C1 y la Fase 1 del roadmap). Los pasos siguientes describen el destino; hoy la app corre en modo demo.
 
 1. Copia `.env.example` a `.env.local`.
 2. **Supabase:** crea un proyecto gratis en [supabase.com](https://supabase.com), ejecuta en el SQL Editor:
