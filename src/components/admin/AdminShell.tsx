@@ -10,7 +10,6 @@ import {
   SideNavSection,
 } from '@astryxdesign/core/SideNav';
 import { MobileNav } from '@astryxdesign/core/MobileNav';
-import { Card } from '@astryxdesign/core/Card';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -33,6 +32,7 @@ import {
   Package,
   Palette,
   Plug,
+  Plus,
   Scissors,
   Sparkles,
   Sun,
@@ -372,27 +372,46 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           aria-label="Navegación rápida de administración"
           style={{
             position: 'sticky',
-            bottom: 0,
+            bottom: 'max(0.75rem, env(safe-area-inset-bottom, 0rem))',
             zIndex: 20,
             marginTop: 'auto',
-            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0rem))',
+            width: '100%',
+            maxWidth: '42rem',
+            marginInline: 'auto',
+            paddingBottom: 'env(safe-area-inset-bottom, 0rem)',
           }}
         >
-          <Card elevation="med" padding={1.5}>
-            <HStack justify="around" align="center" gap={1} wrap="wrap">
+          <HStack gap={2} align="center" justify="center" width="100%">
+            <HStack
+              justify="around"
+              align="center"
+              gap={0.5}
+              wrap="wrap"
+              padding={1}
+              style={{
+                flex: '1 1 auto',
+                backgroundColor: 'var(--color-background-card)',
+                borderRadius: 'var(--radius-full)',
+                borderWidth: 'thin',
+                borderStyle: 'solid',
+                borderColor: 'var(--color-border-emphasized)',
+                boxShadow: 'var(--shadow-high)',
+                backdropFilter: 'blur(0.75rem)',
+              }}
+            >
               <Button
                 label="Inicio"
                 href="/admin"
                 size="sm"
                 variant={pathname === '/admin' ? 'primary' : 'ghost'}
-                icon={<Home size={15} />}
+                icon={<Home size={15} aria-hidden="true" />}
               />
               <Button
                 label="Agenda"
                 href="/admin/citas"
                 size="sm"
                 variant={pathname === '/admin/citas' ? 'primary' : 'ghost'}
-                icon={<CalendarDays size={15} />}
+                icon={<CalendarDays size={15} aria-hidden="true" />}
                 endContent={
                   data.kpis.pendingConfirmationsCount > 0 ? (
                     <Badge
@@ -408,7 +427,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   href="/admin/clientas"
                   size="sm"
                   variant={pathname === '/admin/clientas' ? 'primary' : 'ghost'}
-                  icon={<Users size={15} />}
+                  icon={<Users size={15} aria-hidden="true" />}
                 />
               ) : (
                 <Button
@@ -416,7 +435,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   href="/admin/disponibilidad"
                   size="sm"
                   variant={pathname === '/admin/disponibilidad' ? 'primary' : 'ghost'}
-                  icon={<Clock size={15} />}
+                  icon={<Clock size={15} aria-hidden="true" />}
                 />
               )}
               <Button
@@ -424,18 +443,28 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 href="/admin/caja"
                 size="sm"
                 variant={pathname === '/admin/caja' ? 'primary' : 'ghost'}
-                icon={<Wallet size={15} />}
+                icon={<Wallet size={15} aria-hidden="true" />}
               />
               <Button
                 type="button"
                 label="Menú"
                 size="sm"
                 variant={mobileMenuOpen ? 'primary' : 'ghost'}
-                icon={<Menu size={15} />}
+                icon={<Menu size={15} aria-hidden="true" />}
                 onClick={() => setMobileMenuOpen(true)}
               />
             </HStack>
-          </Card>
+
+            <Button
+              label="Nueva cita"
+              href="/admin/citas?new=1"
+              size="md"
+              variant="primary"
+              elevation="high"
+              icon={<Plus size={16} aria-hidden="true" />}
+              tooltip="Agendar nueva cita"
+            />
+          </HStack>
         </nav>
       </VStack>
     </AppShell>

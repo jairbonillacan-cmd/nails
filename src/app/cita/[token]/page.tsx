@@ -17,10 +17,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function ManageBookingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ action?: string }>;
 }) {
   const { token } = await params;
+  const query = await searchParams;
   const booking = getBookingByToken(token);
   if (!booking) {
     notFound();
@@ -28,6 +31,12 @@ export default async function ManageBookingPage({
   const db = getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
+  const initialAction: 'reschedule' | 'cancel' | undefined =
+    query.action === 'reschedule'
+      ? 'reschedule'
+      : query.action === 'cancel'
+        ? 'cancel'
+        : undefined;
 
   const activeLoyaltyProgram =
     (db.loyaltyPrograms ?? []).find((program) => program.isActive) ?? null;
@@ -61,6 +70,7 @@ export default async function ManageBookingPage({
       calendarLinks={buildCalendarAddLinks(booking, db.settings, manageUrl)}
       whatsappUrl={buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl)}
       initialLoyaltySummary={initialLoyaltySummary}
+      initialAction={initialAction}
     />
   );
 }

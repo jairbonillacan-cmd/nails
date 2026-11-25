@@ -65,6 +65,7 @@ export interface Database {
           lock_past_bookings?: boolean;
           max_active_bookings_per_client?: number;
           privacy_policy_version?: string;
+          optimize_continuous_slots?: boolean;
           landing_content: Json;
           whatsapp_booking_enabled: boolean;
           sms_reminders_enabled: boolean;
@@ -154,6 +155,7 @@ export interface Database {
           allow_inspo_photo: boolean;
           is_active: boolean;
           is_featured: boolean;
+          is_private?: boolean;
           display_order: number;
           image_url: string | null;
           created_at: string;
@@ -241,6 +243,8 @@ export interface Database {
           start_time: string | null;
           end_time: string | null;
           reason: string;
+          public_note?: string | null;
+          redirect_staff_id?: string | null;
           created_at: string;
         };
         Insert: Pick<
@@ -823,6 +827,8 @@ export interface Database {
           is_unavailable: boolean;
           start_time: string | null;
           end_time: string | null;
+          public_note?: string | null;
+          redirect_staff_id?: string | null;
         };
         Relationships: TableRelationship[];
       };

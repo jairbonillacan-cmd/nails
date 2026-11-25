@@ -84,6 +84,7 @@ const SalonSettingsSchema = z.object({
   lockPastBookings: z.boolean().optional(),
   maxActiveBookingsPerClient: z.number().int().positive().max(50).optional(),
   privacyPolicyVersion: z.string().optional(),
+  optimizeContinuousSlots: z.boolean().optional(),
   landingContent: LandingContentSchema,
   whatsappBookingEnabled: z.boolean(),
   smsRemindersEnabled: z.boolean(),
@@ -141,6 +142,7 @@ const ServiceSchema = z.object({
   allowInspoPhoto: z.boolean(),
   isActive: z.boolean(),
   isFeatured: z.boolean(),
+  isPrivate: z.boolean().optional(),
   displayOrder: z.number(),
   imageUrl: z.string().nullable(),
 });
@@ -194,6 +196,8 @@ const DateOverrideSchema = z.object({
   startTime: z.string().nullable(),
   endTime: z.string().nullable(),
   reason: z.string(),
+  publicNote: z.string().optional(),
+  redirectStaffId: z.string().nullable().optional(),
 });
 
 const CalendarConnectionSchema = z.object({

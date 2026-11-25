@@ -45,6 +45,7 @@ import {
   POST as postAdminOnboarding,
 } from '@/app/api/admin/onboarding/route';
 import { GET as getPublicAvailability } from '@/app/api/availability/route';
+import { GET as getPublicBootstrap } from '@/app/api/public/bootstrap/route';
 import { POST as postWhatsAppSimulate } from '@/app/api/admin/integrations/whatsapp-simulate/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
 import { POST as postSlotHold } from '@/app/api/slot-holds/route';
@@ -2808,6 +2809,372 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         }),
       );
       expect(reuseCouponRes.status).toBe(201);
+    });
+  });
+
+  describe('Phase 3A+ Wave 1: Smart Reschedule Recovery (C6), Multi-Date Overrides & MX Holidays (C7), VIP Services (C9) & Continuous Optimization (C1)', () => {
+    it('C6: returns client-scoped activeBookings on 409 MAX_ACTIVE_BOOKINGS and enforces RBAC on request_reschedule', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3aplus-c6');
+
+      await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({ maxActiveBookingsPerClient: 1 }),
+        }),
+      );
+
+      const today = getDateKeyInTimezone(new Date(), getSnapshot().settings.timezone);
+      const openSlots = queryAvailability({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: 'staff-tere',
+        startDate: today,
+        days: 14,
+      }).days.flatMap((d) => d.slots);
+      const slot1 = openSlots[0];
+      const slot2 = openSlots[1];
+      const slot3 = openSlots[2];
+      if (!slot1 || !slot2 || !slot3) throw new Error('Expected three open slots');
+
+      const clientARes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slot1.staffId,
+            startAt: slot1.startAt,
+            clientName: 'Clienta Alfa',
+            clientPhone: '+522229440001',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(clientARes.status).toBe(201);
+      const clientAJson = (await clientARes.json()) as {
+        booking: { id: string; bookingCode: string; manageToken: string };
+      };
+
+      const clientBRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slot2.staffId,
+            startAt: slot2.startAt,
+            clientName: 'Clienta Beta',
+            clientPhone: '+522229440002',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(clientBRes.status).toBe(201);
+      const clientBJson = (await clientBRes.json()) as {
+        booking: { bookingCode: string };
+      };
+
+      const conflictRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slot3.staffId,
+            startAt: slot3.startAt,
+            clientName: 'Clienta Alfa',
+            clientPhone: '+522229440001',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(conflictRes.status).toBe(409);
+      const conflictJson = (await conflictRes.json()) as {
+        code: string;
+        activeBookings: Array<{ bookingCode: string; manageUrl: string; serviceName: string }>;
+      };
+      expect(conflictJson.code).toBe('MAX_ACTIVE_BOOKINGS');
+      expect(conflictJson.activeBookings).toHaveLength(1);
+      expect(conflictJson.activeBookings[0]?.bookingCode).toBe(
+        clientAJson.booking.bookingCode,
+      );
+      expect(conflictJson.activeBookings[0]?.manageUrl).toBe(
+        `/cita/${clientAJson.booking.manageToken}`,
+      );
+      expect(JSON.stringify(conflictJson.activeBookings)).not.toContain(
+        clientBJson.booking.bookingCode,
+      );
+
+      const unauthResched = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'request_reschedule',
+            bookingId: 'bk-1001',
+          }),
+        }),
+      );
+      expect(unauthResched.status).toBe(401);
+
+      const foreignSpecResched = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'request_reschedule',
+            bookingId: 'bk-1001',
+          }),
+        }),
+      );
+      expect(foreignSpecResched.status).toBe(403);
+
+      const ownSpecResched = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'request_reschedule',
+            bookingId: clientAJson.booking.id,
+            note: '¿Podemos moverla 1 hora?',
+          }),
+        }),
+      );
+      expect(ownSpecResched.status).toBe(200);
+      const ownReschedJson = (await ownSpecResched.json()) as {
+        ok: boolean;
+        rescheduleUrl: string;
+        waMeUrl: string;
+        messagePreview: string;
+      };
+      expect(ownReschedJson.ok).toBe(true);
+      expect(ownReschedJson.rescheduleUrl).toContain(
+        `/cita/${clientAJson.booking.manageToken}?action=reschedule`,
+      );
+      expect(ownReschedJson.waMeUrl).toContain('https://wa.me/');
+      expect(ownReschedJson.messagePreview).toContain('¿Podemos moverla 1 hora?');
+    });
+
+    it('C7: enforces RBAC and validation on multi-date override_range and idempotent preload_mx_holidays', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3aplus-c7');
+
+      const foreignRangeRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'override_range',
+            staffId: 'staff-karla',
+            startDate: '2027-08-01',
+            endDate: '2027-08-03',
+            isClosed: true,
+          }),
+        }),
+      );
+      expect(foreignRangeRes.status).toBe(403);
+
+      const selfRedirectRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'override_range',
+            staffId: 'staff-karla',
+            startDate: '2027-08-01',
+            endDate: '2027-08-02',
+            isClosed: true,
+            redirectStaffId: 'staff-karla',
+          }),
+        }),
+      );
+      expect(selfRedirectRes.status).toBe(400);
+      expect(((await selfRedirectRes.json()) as { code: string }).code).toBe(
+        'INVALID_REDIRECT_STAFF',
+      );
+
+      const validRangeRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'override_range',
+            staffId: 'staff-karla',
+            startDate: '2027-08-10',
+            endDate: '2027-08-12',
+            isClosed: true,
+            reason: 'Congreso Nail Art',
+            publicNote: 'Karla en congreso — atiende Paty',
+            redirectStaffId: 'staff-paty',
+          }),
+        }),
+      );
+      expect(validRangeRes.status).toBe(201);
+      const validRangeJson = (await validRangeRes.json()) as {
+        overrides: Array<{ overrideDate: string; publicNote?: string; redirectStaffId?: string | null }>;
+      };
+      expect(validRangeJson.overrides).toHaveLength(3);
+      expect(validRangeJson.overrides[0]?.redirectStaffId).toBe('staff-paty');
+
+      const foreignHolidayRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'preload_mx_holidays',
+            year: 2027,
+            staffId: 'staff-karla',
+          }),
+        }),
+      );
+      expect(foreignHolidayRes.status).toBe(403);
+
+      const futureYear =
+        Number(getDateKeyInTimezone(new Date(), getSnapshot().settings.timezone).slice(0, 4)) +
+        1;
+      const firstHolidaysRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'preload_mx_holidays',
+            year: futureYear,
+            staffId: 'staff-karla',
+          }),
+        }),
+      );
+      expect(firstHolidaysRes.status).toBe(201);
+      const firstHolidaysJson = (await firstHolidaysRes.json()) as {
+        created: unknown[];
+        skippedDates: string[];
+      };
+      expect(firstHolidaysJson.created).toHaveLength(7);
+      expect(firstHolidaysJson.skippedDates).toHaveLength(0);
+
+      const secondHolidaysRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'preload_mx_holidays',
+            year: futureYear,
+            staffId: 'staff-karla',
+          }),
+        }),
+      );
+      expect(secondHolidaysRes.status).toBe(201);
+      const secondHolidaysJson = (await secondHolidaysRes.json()) as {
+        created: unknown[];
+        skippedDates: string[];
+      };
+      expect(secondHolidaysJson.created).toHaveLength(0);
+      expect(secondHolidaysJson.skippedDates).toHaveLength(7);
+    });
+
+    it('C9 & C1: hides isPrivate VIP service from /api/public/bootstrap while keeping it bookable, and persists optimizeContinuousSlots', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3aplus-c9c1');
+
+      const vipRes = await postAdminServices(
+        makeRequest('http://localhost:3000/api/admin/services', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'service',
+            data: {
+              name: 'VIP Editorial Secreto',
+              durationMinutes: 90,
+              priceCents: 80000,
+              isPrivate: true,
+            },
+          }),
+        }),
+      );
+      expect(vipRes.status).toBe(200);
+      const vipJson = (await vipRes.json()) as {
+        service: { id: string; isPrivate?: boolean };
+      };
+      expect(vipJson.service.isPrivate).toBe(true);
+
+      const brandOptRes = await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({ optimizeContinuousSlots: true }),
+        }),
+      );
+      expect(brandOptRes.status).toBe(200);
+
+      const bootRes = await getPublicBootstrap();
+      expect(bootRes.status).toBe(200);
+      const bootJson = (await bootRes.json()) as {
+        settings: { optimizeContinuousSlots?: boolean };
+        services: Array<{ id: string }>;
+      };
+      expect(bootJson.settings.optimizeContinuousSlots).toBe(true);
+      expect(bootJson.services.some((s) => s.id === vipJson.service.id)).toBe(false);
+
+      const today = getDateKeyInTimezone(new Date(), getSnapshot().settings.timezone);
+      const vipSlot = queryAvailability({
+        serviceId: vipJson.service.id,
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: today,
+        days: 14,
+      }).days.flatMap((d) => d.slots)[0];
+      if (!vipSlot) throw new Error('Expected open slot for VIP private service');
+
+      const vipBookRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: vipJson.service.id,
+            addonIds: [],
+            staffId: vipSlot.staffId,
+            startAt: vipSlot.startAt,
+            clientName: 'Clienta VIP Directa',
+            clientPhone: '+522229550001',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(vipBookRes.status).toBe(201);
     });
   });
 });

@@ -78,7 +78,7 @@ export default function LinksPage() {
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
     .map(toPublicStaffDTO);
   const featuredServices = db.services
-    .filter((service) => service.isActive && service.isFeatured)
+    .filter((service) => service.isActive && !service.isPrivate && service.isFeatured)
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
     .slice(0, 4)
     .map(toPublicServiceDTO);

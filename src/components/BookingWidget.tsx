@@ -14,6 +14,7 @@ import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { ArrowLeft } from 'lucide-react';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import { formatDateShortInTimezone } from '@/lib/format';
+import { useBookingUrlSync } from '@/lib/hooks/useBookingUrlSync';
 import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
@@ -54,8 +55,30 @@ interface BookingWidgetProps {
   staff: PublicStaffDTO[];
   initialTodayKey: string;
   initialServiceSlug?: string;
+  initialExtraServiceSlugs?: string[];
+  initialAddonIds?: string[];
   initialStaffSlug?: string;
+  initialDate?: string;
+  initialLayout?: BookingLayoutView;
+  initialSlot?: string;
   initialInspoNote?: string;
+}
+
+function shiftPlainDateKey(dateKey: string, deltaDays: number): string {
+  const parts = dateKey.split('-').map(Number);
+  const year = parts[0] ?? 2026;
+  const month = parts[1] ?? 1;
+  const day = parts[2] ?? 1;
+  const dt = new Date(Date.UTC(year, month - 1, day + deltaDays, 12, 0, 0));
+  return dt.toISOString().slice(0, 10);
+}
+
+function getNextMonthStartKey(dateKey: string): string {
+  const parts = dateKey.split('-').map(Number);
+  const year = parts[0] ?? 2026;
+  const month = parts[1] ?? 1;
+  const dt = new Date(Date.UTC(year, month, 1, 12, 0, 0));
+  return dt.toISOString().slice(0, 10);
 }
 
 export function BookingWidget({
@@ -65,7 +88,12 @@ export function BookingWidget({
   staff,
   initialTodayKey,
   initialServiceSlug,
+  initialExtraServiceSlugs,
+  initialAddonIds,
   initialStaffSlug,
+  initialDate,
+  initialLayout,
+  initialSlot,
   initialInspoNote,
 }: BookingWidgetProps) {
   const router = useRouter();
@@ -78,20 +106,59 @@ export function BookingWidget({
   const initialService =
     services.find((s) => s.slug === initialServiceSlug) ?? services[0] ?? null;
   const initialStaff =
-    staff.find((st) => st.bookingSlug === initialStaffSlug)?.id ?? 'any';
+    staff.find(
+      (st) => st.bookingSlug === initialStaffSlug || st.id === initialStaffSlug,
+    )?.id ?? 'any';
+
+  const resolvedInitialExtraIds = useMemo(() => {
+    if (!initialExtraServiceSlugs || initialExtraServiceSlugs.length === 0) {
+      return [];
+    }
+    const primaryId = initialService?.id ?? '';
+    return Array.from(
+      new Set(
+        initialExtraServiceSlugs
+          .map(
+            (token) =>
+              services.find((srv) => srv.slug === token || srv.id === token)?.id,
+          )
+          .filter((id): id is string => Boolean(id) && id !== primaryId),
+      ),
+    ).slice(0, 8);
+  }, [initialExtraServiceSlugs, initialService, services]);
+
+  const resolvedInitialAddonIds = useMemo(() => {
+    if (!initialAddonIds || initialAddonIds.length === 0) return [];
+    const activeIds = new Set(addons.map((addon) => addon.id));
+    return Array.from(new Set(initialAddonIds.filter((id) => activeIds.has(id))));
+  }, [addons, initialAddonIds]);
+
+  const resolvedInitialDate =
+    initialDate && initialDate >= initialTodayKey ? initialDate : initialTodayKey;
+  const resolvedInitialLayout: BookingLayoutView =
+    initialLayout &&
+    (settings.enabledBookingLayouts.length === 0 ||
+      settings.enabledBookingLayouts.includes(initialLayout))
+      ? initialLayout
+      : settings.defaultBookingLayout || 'month';
 
   const [selectedServiceId, setSelectedServiceId] = useState(initialService?.id ?? '');
-  const [selectedExtraServiceIds, setSelectedExtraServiceIds] = useState<string[]>([]);
-  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [selectedExtraServiceIds, setSelectedExtraServiceIds] = useState<string[]>(
+    resolvedInitialExtraIds,
+  );
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(
+    resolvedInitialAddonIds,
+  );
   const [selectedStaffId, setSelectedStaffId] = useState(
     staff.length === 1 && staff[0] ? staff[0].id : initialStaff,
   );
 
   const [layoutView, setLayoutView] = useState<BookingLayoutView>(
-    settings.defaultBookingLayout || 'month',
+    resolvedInitialLayout,
   );
   const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h');
-  const [selectedDate, setSelectedDate] = useState(initialTodayKey);
+  const [windowStartDate, setWindowStartDate] = useState(resolvedInitialDate);
+  const [selectedDate, setSelectedDate] = useState(resolvedInitialDate);
   const [availabilityDays, setAvailabilityDays] = useState<DayAvailabilitySummary[]>([]);
   const [loadingAvail, setLoadingAvail] = useState(true);
   const realtimePing = useEphemeralMessage(3500);
@@ -189,6 +256,41 @@ export function BookingWidget({
   const extraServiceKey = selectedExtraServices.map((srv) => srv.id).join(',');
   const addonKey = activeSelectedAddons.map((a) => a.id).join(',');
 
+  const selectedStaffUrlParam = useMemo(() => {
+    if (selectedStaffId === 'any') return '';
+    return staff.find((st) => st.id === selectedStaffId)?.bookingSlug ?? selectedStaffId;
+  }, [selectedStaffId, staff]);
+
+  useBookingUrlSync({
+    servicio: selectedService?.slug,
+    extras: selectedExtraServices.map((srv) => srv.slug),
+    addons: activeSelectedAddons.map((a) => a.id),
+    staff: selectedStaffUrlParam,
+    date: selectedDate,
+    layout: layoutView,
+    defaultLayout: settings.defaultBookingLayout || 'month',
+    slot: flow.selectedSlot?.startAt ?? initialSlot ?? '',
+  });
+
+  const maxAllowedDateKey = useMemo(
+    () =>
+      shiftPlainDateKey(
+        initialTodayKey,
+        Math.max(35, settings.maxBookingDaysAhead || 45),
+      ),
+    [initialTodayKey, settings.maxBookingDaysAhead],
+  );
+
+  const nextMonthStartKey = useMemo(() => {
+    const base = selectedDate >= windowStartDate ? selectedDate : windowStartDate;
+    const candidate = getNextMonthStartKey(base);
+    return candidate > windowStartDate
+      ? candidate
+      : shiftPlainDateKey(windowStartDate, 30);
+  }, [selectedDate, windowStartDate]);
+
+  const canAdvanceMonth = nextMonthStartKey <= maxAllowedDateKey;
+
   const fetchAvailability = useCallback(
     async (signal?: AbortSignal) => {
       if (!selectedService) return;
@@ -198,7 +300,7 @@ export function BookingWidget({
           extraServiceKey,
           addonKey,
           staffId: selectedStaffId,
-          startDate: initialTodayKey,
+          startDate: windowStartDate,
           signal,
         });
         if (days) {
@@ -206,7 +308,7 @@ export function BookingWidget({
           setSelectedDate((currentDate) => {
             const currentDay = days.find((d) => d.date === currentDate);
             if (currentDay && currentDay.hasSlots) return currentDate;
-            return days.find((d) => d.hasSlots)?.date ?? currentDate;
+            return days.find((d) => d.hasSlots)?.date ?? days[0]?.date ?? currentDate;
           });
         }
       } catch {
@@ -215,11 +317,11 @@ export function BookingWidget({
         if (!signal?.aborted) setLoadingAvail(false);
       }
     },
-    [selectedService, extraServiceKey, addonKey, selectedStaffId, initialTodayKey],
+    [selectedService, extraServiceKey, addonKey, selectedStaffId, windowStartDate],
   );
 
   useExternalSync(
-    `${selectedService?.id ?? ''}:${extraServiceKey}:${addonKey}:${selectedStaffId}`,
+    `${selectedService?.id ?? ''}:${extraServiceKey}:${addonKey}:${selectedStaffId}:${windowStartDate}`,
     fetchAvailability,
   );
 
@@ -263,6 +365,71 @@ export function BookingWidget({
     () => availabilityDays.find((d) => d.date === selectedDate) ?? null,
     [availabilityDays, selectedDate],
   );
+
+  const liveAnnouncement = useMemo(() => {
+    if (flow.conflict?.message) {
+      return `Horario recién ocupado. ${flow.conflict.message}`;
+    }
+    if (flow.formErrorCode === 'MAX_ACTIVE_BOOKINGS' && flow.formError) {
+      return `Límite de citas activas alcanzado. ${flow.formError}`;
+    }
+    if (holdRemainingSec === 180) {
+      return 'Horario apartado por 3 minutos mientras completas tus datos.';
+    }
+    if (holdRemainingSec === 60) {
+      return 'Te queda 1 minuto para completar tu reserva.';
+    }
+    if (holdRemainingSec === 30) {
+      return 'Te quedan 30 segundos para completar tu reserva.';
+    }
+    if (holdRemainingSec === 10) {
+      return 'Te quedan 10 segundos de apartado temporal.';
+    }
+    if (realtimePing.message) {
+      return realtimePing.message;
+    }
+    if (!loadingAvail && selectedDaySummary) {
+      const dateLabel = formatDateShortInTimezone(
+        `${selectedDaySummary.date}T18:00:00Z`,
+        settings.timezone || 'America/Mexico_City',
+      );
+      return selectedDaySummary.slotCount > 0
+        ? `${selectedDaySummary.slotCount} horarios disponibles para ${dateLabel}.`
+        : `Sin horarios disponibles para ${dateLabel}.`;
+    }
+    return '';
+  }, [
+    flow.conflict,
+    flow.formError,
+    flow.formErrorCode,
+    holdRemainingSec,
+    loadingAvail,
+    realtimePing.message,
+    selectedDaySummary,
+    settings.timezone,
+  ]);
+
+  const handleAdvanceMonth = () => {
+    if (!canAdvanceMonth) return;
+    setLoadingAvail(true);
+    setWindowStartDate(nextMonthStartKey);
+    setSelectedDate(nextMonthStartKey);
+  };
+
+  const handleReturnToToday = () => {
+    setLoadingAvail(true);
+    setWindowStartDate(initialTodayKey);
+    setSelectedDate(initialTodayKey);
+  };
+
+  const handleSelectDate = (nextDate: string) => {
+    setSelectedDate(nextDate);
+    const loadedEnd = availabilityDays[availabilityDays.length - 1]?.date;
+    if (loadedEnd && nextDate > loadedEnd && nextDate <= maxAllowedDateKey) {
+      setLoadingAvail(true);
+      setWindowStartDate(nextDate);
+    }
+  };
 
   const handleSelectSlot = async (slot: AvailableSlot) => {
     if (!selectedService) return;
@@ -401,6 +568,7 @@ export function BookingWidget({
           type: 'SUBMIT_FAILED',
           error: result.error,
           code: result.code ?? null,
+          activeBookings: result.activeBookings,
         });
         return;
       }
@@ -416,10 +584,27 @@ export function BookingWidget({
     <PublicShell>
       <Section variant="transparent" paddingBlock={6} paddingInline={4}>
         <VStack gap={5} maxWidth={1220} width="100%" style={{ marginInline: 'auto' }}>
+          <p
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            style={{
+              position: 'absolute',
+              width: '0.0625rem',
+              height: '0.0625rem',
+              overflow: 'hidden',
+              clipPath: 'inset(50%)',
+              whiteSpace: 'nowrap',
+              margin: 0,
+            }}
+          >
+            {liveAnnouncement}
+          </p>
+
           <HStack justify="between" align="center" wrap="wrap" gap={3}>
             <VStack gap={0.5}>
               <HStack gap={2} align="center">
-                <StatusDot variant="success" label="Sincronizado en tiempo real" isPulsing />
+                <StatusDot variant="success" label="Sincronizado en tiempo real" isPulsing aria-hidden="true" />
                 <Text type="label" color="secondary">
                   {realtimePing.message || 'Disponibilidad sincronizada al segundo'}
                 </Text>
@@ -431,7 +616,7 @@ export function BookingWidget({
               <Button
                 label="Cambiar fecha u horario"
                 variant="secondary"
-                icon={<ArrowLeft size={16} />}
+                icon={<ArrowLeft size={16} aria-hidden="true" />}
                 onClick={handleBackToSchedule}
               />
             ) : null}
@@ -456,6 +641,7 @@ export function BookingWidget({
                         key={`${alt.staffId}-${alt.startAt}`}
                         variant="primary"
                         size="sm"
+                        style={{ fontVariantNumeric: 'tabular-nums' }}
                         label={`${formatDateShortInTimezone(alt.startAt, settings.timezone)} · ${
                           timeFormat === '24h' ? alt.localTime24 : alt.localTime12
                         }`}
@@ -500,7 +686,10 @@ export function BookingWidget({
                   );
                   dispatch({ type: 'SELECTION_CHANGED' });
                 }}
-                onSelectStaff={setSelectedStaffId}
+                onSelectStaff={(nextStaffId) => {
+                  setSelectedStaffId(nextStaffId);
+                  dispatch({ type: 'SELECTION_CHANGED' });
+                }}
               />
 
               <ScheduleStep
@@ -520,11 +709,21 @@ export function BookingWidget({
                 availableDateSet={availableDateSet}
                 selectedDaySummary={selectedDaySummary}
                 selectedSlot={flow.selectedSlot}
+                highlightedSlotHint={initialSlot}
                 loadingAvail={loadingAvail}
+                canAdvanceMonth={canAdvanceMonth}
+                isViewingFutureWindow={windowStartDate > initialTodayKey}
                 onChangeLayoutView={setLayoutView}
                 onChangeTimeFormat={setTimeFormat}
-                onSelectDate={setSelectedDate}
+                onSelectDate={handleSelectDate}
                 onSelectSlot={handleSelectSlot}
+                onRedirectStaff={(staffId) => {
+                  setLoadingAvail(true);
+                  setSelectedStaffId(staffId);
+                  dispatch({ type: 'SELECTION_CHANGED' });
+                }}
+                onAdvanceMonth={handleAdvanceMonth}
+                onReturnToToday={handleReturnToToday}
                 onOpenWaitlist={() => setWaitlistOpen(true)}
               />
             </VStack>
@@ -561,6 +760,7 @@ export function BookingWidget({
               submitting={flow.phase === 'submitting'}
               formError={flow.formError}
               formErrorCode={flow.formErrorCode}
+              activeBookings={flow.activeBookings}
               onChangeCouponInput={setCouponInput}
               onApplyCoupon={handleApplyCoupon}
               onChangeClientName={setClientName}

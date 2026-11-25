@@ -12,15 +12,20 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Link } from '@astryxdesign/core/Link';
+import { List, ListItem } from '@astryxdesign/core/List';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { FileInput } from '@astryxdesign/core/FileInput';
 import { AspectRatio } from '@astryxdesign/core/AspectRatio';
-import { Check, ShieldAlert } from 'lucide-react';
+import { Check, RefreshCw, ShieldAlert } from 'lucide-react';
 import type { AvailableSlot } from '@/lib/availability/engine';
+import {
+  formatDateShortInTimezone,
+  formatTimeInTimezone,
+} from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import type { ServiceAddon } from '@/lib/types';
-import type { AppliedCouponState } from './bookingApi';
+import type { ActiveBookingSummary, AppliedCouponState } from './bookingApi';
 import { BookingSummaryCard } from './BookingSummaryCard';
 import { DepositCard } from './DepositCard';
 import {
@@ -61,6 +66,7 @@ interface ClientConfirmStepProps {
   submitting: boolean;
   formError: string | null;
   formErrorCode: string | null;
+  activeBookings: ActiveBookingSummary[];
   onChangeCouponInput: (value: string) => void;
   onApplyCoupon: () => void;
   onChangeClientName: (value: string) => void;
@@ -119,6 +125,7 @@ export function ClientConfirmStep({
   submitting,
   formError,
   formErrorCode,
+  activeBookings,
   onChangeCouponInput,
   onApplyCoupon,
   onChangeClientName,
@@ -140,6 +147,7 @@ export function ClientConfirmStep({
     Boolean(selectedService?.allowInspoPhoto) ||
     selectedExtraServices.some((srv) => srv.allowInspoPhoto);
   const policyVersion = settings.privacyPolicyVersion || '2026-11';
+  const timezone = settings.timezone || 'America/Mexico_City';
 
   const handleFormSubmit = (e: React.FormEvent) => {
     if (
@@ -193,6 +201,47 @@ export function ClientConfirmStep({
                 description={formError}
                 icon={<ShieldAlert size={18} aria-hidden="true" />}
               />
+            ) : null}
+
+            {activeBookings.length > 0 ? (
+              <Card padding={4} variant="muted" width="100%">
+                <VStack gap={3} width="100%">
+                  <VStack gap={0.5}>
+                    <Heading level={3}>Tus citas activas registradas</Heading>
+                    <Text type="supporting" color="secondary">
+                      Reprograma cualquiera de tus citas en 1 clic sin perder tu anticipo:
+                    </Text>
+                  </VStack>
+                  <List hasDividers density="balanced">
+                    {activeBookings.map((item) => (
+                      <ListItem
+                        key={item.bookingCode}
+                        label={`${item.serviceName} · ${item.bookingCode}`}
+                        description={
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {formatDateShortInTimezone(item.startAt, timezone)} ·{' '}
+                            {formatTimeInTimezone(
+                              item.startAt,
+                              timezone,
+                              timeFormat === '24h',
+                            )}{' '}
+                            · {item.staffName}
+                          </Text>
+                        }
+                        endContent={
+                          <Button
+                            label="Reprogramar esta cita"
+                            variant="primary"
+                            size="sm"
+                            icon={<RefreshCw size={14} aria-hidden="true" />}
+                            href={`${item.manageUrl}?action=reschedule`}
+                          />
+                        }
+                      />
+                    ))}
+                  </List>
+                </VStack>
+              </Card>
             ) : null}
 
             <TextInput

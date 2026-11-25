@@ -28,6 +28,7 @@ export const PublicServiceDTOSchema = z.object({
   depositAmountCents: z.number(),
   allowInspoPhoto: z.boolean(),
   isFeatured: z.boolean(),
+  isPrivate: z.boolean().optional(),
   displayOrder: z.number(),
   imageUrl: z.string().nullable(),
 });
@@ -86,6 +87,7 @@ export const PublicSettingsDTOSchema = z.object({
   currency: z.enum(['MXN', 'USD']),
   serviceMode: z.enum(['studio', 'home', 'online']).optional(),
   privacyPolicyVersion: z.string().optional(),
+  optimizeContinuousSlots: z.boolean().optional(),
   landingContent: PublicLandingContentSchema,
   whatsappBookingEnabled: z.boolean(),
   metaPixelId: z.string().nullable(),
@@ -149,6 +151,7 @@ export function toPublicServiceDTO(service: Service): PublicServiceDTO {
     depositAmountCents: service.depositAmountCents,
     allowInspoPhoto: service.allowInspoPhoto,
     isFeatured: service.isFeatured,
+    isPrivate: service.isPrivate,
     displayOrder: service.displayOrder,
     imageUrl: service.imageUrl,
   });
@@ -197,6 +200,7 @@ export function toPublicSettingsDTO(settings: SalonSettings): PublicSettingsDTO 
     currency: settings.currency,
     serviceMode: settings.serviceMode,
     privacyPolicyVersion: settings.privacyPolicyVersion,
+    optimizeContinuousSlots: settings.optimizeContinuousSlots,
     landingContent: { ...settings.landingContent },
     whatsappBookingEnabled: settings.whatsappBookingEnabled,
     metaPixelId: settings.metaPixelId,

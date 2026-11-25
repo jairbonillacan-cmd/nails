@@ -30,6 +30,9 @@ export interface DayAvailabilitySummary {
   hasSlots: boolean;
   slotCount: number;
   slots: AvailableSlot[];
+  publicNote?: string;
+  redirectStaffId?: string | null;
+  redirectStaffName?: string | null;
 }
 
 export interface SlotDiagnosis {
@@ -357,32 +360,72 @@ function getWindowCandidateCursors(
   win: ResolvedWindow,
   totalDurationMinutes: number,
   step: number,
+  optimizedAnchors?: ReadonlySet<number>,
 ): number[] {
   if (win.fixedStartMinutes !== null) {
     return win.fixedStartMinutes.filter(
       (cursor) => cursor + totalDurationMinutes <= win.endMin,
     );
   }
-  const cursors: number[] = [];
+  const cursorSet = new Set<number>();
   for (
     let cursor = win.startMin;
     cursor + totalDurationMinutes <= win.endMin;
     cursor += step
   ) {
-    cursors.push(cursor);
+    cursorSet.add(cursor);
   }
-  return cursors;
+  if (optimizedAnchors && optimizedAnchors.size > 0) {
+    for (const anchor of optimizedAnchors) {
+      if (anchor >= win.startMin && anchor + totalDurationMinutes <= win.endMin) {
+        cursorSet.add(anchor);
+      }
+    }
+  }
+  return Array.from(cursorSet).toSorted((a, b) => a - b);
 }
 
 function isCursorAlignedToWindow(
   win: ResolvedWindow,
   cursor: number,
   step: number,
+  optimizedAnchors?: ReadonlySet<number>,
 ): boolean {
   if (win.fixedStartMinutes !== null) {
     return win.fixedStartMinutes.includes(cursor);
   }
-  return (cursor - win.startMin) % step === 0;
+  if ((cursor - win.startMin) % step === 0) {
+    return true;
+  }
+  return optimizedAnchors?.has(cursor) ?? false;
+}
+
+function getOptimizedContinuousAnchors(
+  staffId: string,
+  dateStr: string,
+  tz: string,
+  bookings: readonly Booking[],
+  ignoreBookingId: string | null | undefined,
+  dayResolver: DayTimeResolver,
+): Set<number> {
+  const anchors = new Set<number>();
+  for (const b of bookings) {
+    if (b.staffId !== staffId) continue;
+    if (ignoreBookingId && b.id === ignoreBookingId) continue;
+    if (!ACTIVE_BOOKING_STATUSES.has(b.status)) continue;
+    const occEndMs = new Date(b.occupiedEndAt).getTime();
+    if (Number.isNaN(occEndMs) || occEndMs % 60_000 !== 0) continue;
+    const occEndDate = new Date(occEndMs);
+    if (getDateKeyFormatter(tz).format(occEndDate) !== dateStr) continue;
+    const parts = getZonedParts(occEndDate, tz);
+    if (parts.second !== 0) continue;
+    const anchorMin = parts.hour * 60 + parts.minute;
+    const resolved = dayResolver.resolve(anchorMin);
+    if (resolved.existsInZone && resolved.ms === occEndMs) {
+      anchors.add(anchorMin);
+    }
+  }
+  return anchors;
 }
 
 function getStaffWorkingWindows(
@@ -637,8 +680,24 @@ export function getAvailableSlotsForDate(
       ctx.recurringBlocks,
     );
 
+    const optimizedAnchors = ctx.settings.optimizeContinuousSlots
+      ? getOptimizedContinuousAnchors(
+          staff.id,
+          dateStr,
+          tz,
+          ctx.bookings,
+          ctx.ignoreBookingId,
+          dayResolver,
+        )
+      : undefined;
+
     for (const win of windows) {
-      const cursors = getWindowCandidateCursors(win, totalDurationMinutes, step);
+      const cursors = getWindowCandidateCursors(
+        win,
+        totalDurationMinutes,
+        step,
+        optimizedAnchors,
+      );
       for (const cursor of cursors) {
         const resolved = dayResolver.resolve(cursor);
         if (!resolved.existsInZone) continue;
@@ -681,21 +740,90 @@ export function getAvailableSlotsForDate(
   );
 }
 
+function resolveDayOverrideMetadata(
+  ctx: AvailabilityContext,
+  date: string,
+  eligibleStaffIds: ReadonlySet<string>,
+  preferredStaffId: string | null | undefined,
+  hasSlots: boolean,
+): Pick<DayAvailabilitySummary, 'publicNote' | 'redirectStaffId' | 'redirectStaffName'> {
+  if (preferredStaffId) {
+    const override = ctx.dateOverrides.find(
+      (o) => o.staffId === preferredStaffId && o.overrideDate === date,
+    );
+    if (!override) return {};
+    const publicNote = override.publicNote?.trim() || undefined;
+    const redirectStaff = override.redirectStaffId
+      ? ctx.staffMembers.find(
+          (s) => s.id === override.redirectStaffId && s.isActive && s.id !== override.staffId,
+        )
+      : undefined;
+    return {
+      ...(publicNote ? { publicNote } : {}),
+      ...(redirectStaff
+        ? { redirectStaffId: redirectStaff.id, redirectStaffName: redirectStaff.name }
+        : {}),
+    };
+  }
+
+  const matchingOverrides = ctx.dateOverrides.filter(
+    (o) => o.overrideDate === date && eligibleStaffIds.has(o.staffId),
+  );
+  if (matchingOverrides.length === 0) return {};
+  if (hasSlots && matchingOverrides.length < eligibleStaffIds.size) return {};
+
+  const noteOverride = matchingOverrides.find((o) => Boolean(o.publicNote?.trim()));
+  const publicNote = noteOverride?.publicNote?.trim() || undefined;
+  const redirectOverride = !hasSlots
+    ? matchingOverrides.find((o) => Boolean(o.redirectStaffId))
+    : undefined;
+  const redirectStaff = redirectOverride?.redirectStaffId
+    ? ctx.staffMembers.find(
+        (s) =>
+          s.id === redirectOverride.redirectStaffId &&
+          s.isActive &&
+          s.id !== redirectOverride.staffId,
+      )
+    : undefined;
+
+  return {
+    ...(publicNote ? { publicNote } : {}),
+    ...(redirectStaff
+      ? { redirectStaffId: redirectStaff.id, redirectStaffName: redirectStaff.name }
+      : {}),
+  };
+}
+
 export function getAvailabilityForRange(
   ctx: AvailabilityContext,
   startDateStr: string,
   daysCount: number,
   preferredStaffId?: string | null,
 ): DayAvailabilitySummary[] {
+  const requiredServiceIds = getRequiredServiceIds(ctx);
+  const eligibleStaffIds = new Set(
+    ctx.staffMembers
+      .filter((s) => isStaffEligibleForServices(s, requiredServiceIds))
+      .map((s) => s.id),
+  );
   const results: DayAvailabilitySummary[] = [];
   for (let i = 0; i < daysCount; i++) {
     const date = addDaysToDateStr(startDateStr, i);
     const slots = getAvailableSlotsForDate(ctx, date, preferredStaffId);
+    const hasSlots = slots.length > 0;
+    const meta = resolveDayOverrideMetadata(
+      ctx,
+      date,
+      eligibleStaffIds,
+      preferredStaffId,
+      hasSlots,
+    );
     results.push({
       date,
-      hasSlots: slots.length > 0,
+      hasSlots,
       slotCount: slots.length,
       slots,
+      ...meta,
     });
   }
   return results;
@@ -888,6 +1016,17 @@ export function assertSlotBookable(
     };
   }
 
+  const optimizedAnchors = effectiveCtx.settings.optimizeContinuousSlots
+    ? getOptimizedContinuousAnchors(
+        params.staffId,
+        dateStr,
+        tz,
+        effectiveCtx.bookings,
+        effectiveCtx.ignoreBookingId,
+        dayResolver,
+      )
+    : undefined;
+
   const subSecondMs = ((startMs % 1000) + 1000) % 1000;
   const canonicalTime = dayResolver.resolve(localMin);
   const isAlignedToWindow =
@@ -895,7 +1034,7 @@ export function assertSlotBookable(
     subSecondMs === 0 &&
     canonicalTime.existsInZone &&
     canonicalTime.ms === startMs &&
-    fittingWindows.some((w) => isCursorAlignedToWindow(w, localMin, step));
+    fittingWindows.some((w) => isCursorAlignedToWindow(w, localMin, step, optimizedAnchors));
 
   if (!isAlignedToWindow) {
     const usesFixedTimes = fittingWindows.some((w) => w.fixedStartMinutes !== null);
@@ -963,6 +1102,17 @@ export function diagnoseDateSlots(
     getAvailableSlotsForDate(ctx, dateStr, staffId).map((s) => s.localTime24),
   );
 
+  const optimizedAnchors = ctx.settings.optimizeContinuousSlots
+    ? getOptimizedContinuousAnchors(
+        staffId,
+        dateStr,
+        tz,
+        ctx.bookings,
+        ctx.ignoreBookingId,
+        dayResolver,
+      )
+    : undefined;
+
   const candidateMinutes = new Set<number>();
   for (let cursor = 9 * 60; cursor <= 20 * 60; cursor += step) {
     candidateMinutes.add(cursor);
@@ -978,6 +1128,13 @@ export function diagnoseDateSlots(
       for (let cursor = w.startMin; cursor <= w.endMin; cursor += step) {
         if (cursor >= 0 && cursor < 24 * 60) {
           candidateMinutes.add(cursor);
+        }
+      }
+      if (optimizedAnchors) {
+        for (const anchor of optimizedAnchors) {
+          if (anchor >= w.startMin && anchor <= w.endMin) {
+            candidateMinutes.add(anchor);
+          }
         }
       }
     }
@@ -1054,7 +1211,7 @@ export function diagnoseDateSlots(
     }
 
     const isAligned = fittingWindows.some((w) =>
-      isCursorAlignedToWindow(w, cursor, step),
+      isCursorAlignedToWindow(w, cursor, step, optimizedAnchors),
     );
     if (!isAligned) {
       const usesFixedTimes = fittingWindows.some((w) => w.fixedStartMinutes !== null);

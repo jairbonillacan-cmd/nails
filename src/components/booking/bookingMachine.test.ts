@@ -184,15 +184,29 @@ describe('bookingMachine reducer', () => {
         type: 'SUBMIT_FAILED',
         error: 'Ya alcanzaste el límite de citas activas.',
         code: 'MAX_ACTIVE_BOOKINGS',
+        activeBookings: [
+          {
+            bookingCode: 'NL-1042',
+            serviceName: 'Rubber',
+            staffName: 'Karla',
+            startAt: '2026-12-01T16:00:00.000Z',
+            manageUrl: '/cita/demo-token-sofia-1042',
+          },
+        ],
       },
     );
     expect(maxActiveFailed.phase).toBe('holding');
     expect(maxActiveFailed.formErrorCode).toBe('MAX_ACTIVE_BOOKINGS');
+    expect(maxActiveFailed.activeBookings).toHaveLength(1);
+    expect(maxActiveFailed.activeBookings[0]?.manageUrl).toBe(
+      '/cita/demo-token-sofia-1042',
+    );
 
     const back = bookingReducer(maxActiveFailed, { type: 'RESET_TO_SCHEDULE' });
     expect(back.privacyConsentAccepted).toBe(true);
     expect(back.marketingOptIn).toBe(true);
     expect(back.formErrorCode).toBeNull();
+    expect(back.activeBookings).toEqual([]);
   });
 });
 

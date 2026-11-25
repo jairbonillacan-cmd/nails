@@ -881,4 +881,140 @@ describe('Availability Engine (Nails & LAIKONA NAILS)', () => {
     expect(fromSunday[0]?.localTime24).toBe('14:00');
     expect(fromSunday[0]?.startAt.startsWith('2026-12-07')).toBe(true);
   });
+
+  it('C1: optimizeContinuousSlots unlocks occupiedEndAt anchors in continuous mode while keeping fixedStartTimes 100% invariant', () => {
+    const tz = 'America/Mexico_City';
+    const contCtx = buildContinuousContext();
+    contCtx.settings = {
+      ...contCtx.settings,
+      slotIntervalMinutes: 30,
+      optimizeContinuousSlots: true,
+    };
+    contCtx.service = {
+      ...contCtx.service,
+      durationMinutes: 60,
+      bufferBeforeMinutes: 0,
+      bufferAfterMinutes: 0,
+    };
+
+    const startIso = zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString();
+    const endIso = zonedDateTimeToUtc('2026-12-01', '11:15', tz).toISOString();
+    contCtx.bookings = [
+      {
+        id: 'bk-75m',
+        bookingCode: 'NL-7501',
+        manageToken: 'tok-7501',
+        idempotencyKey: null,
+        serviceId: contCtx.service.id,
+        staffId: 'staff-karla',
+        clientId: 'client-1',
+        startAt: startIso,
+        endAt: endIso,
+        occupiedStartAt: startIso,
+        occupiedEndAt: endIso,
+        totalDurationMinutes: 75,
+        subtotalCents: 38000,
+        discountCents: 0,
+        totalPriceCents: 38000,
+        depositAmountCents: 20000,
+        couponCode: null,
+        status: 'confirmed',
+        source: 'web',
+        clientNotes: '',
+        internalNotes: '',
+        inspoPhotoUrl: null,
+        paymentProofUrl: null,
+        googleEventId: null,
+        cancellationReason: null,
+        rescheduledFromId: null,
+        addons: [],
+        createdAt: startIso,
+        updatedAt: startIso,
+      },
+    ];
+
+    const optSlots = getAvailableSlotsForDate(contCtx, '2026-12-01', 'staff-karla');
+    expect(optSlots.map((s) => s.localTime24)).toContain('11:15');
+    const assertOpt = assertSlotBookable(contCtx, {
+      startAt: endIso,
+      staffId: 'staff-karla',
+    });
+    expect(assertOpt.ok).toBe(true);
+    const diagOpt = diagnoseDateSlots(contCtx, '2026-12-01', 'staff-karla');
+    expect(diagOpt.find((d) => d.time24 === '11:15')?.isAvailable).toBe(true);
+
+    const disabledCtx: AvailabilityContext = {
+      ...contCtx,
+      settings: { ...contCtx.settings, optimizeContinuousSlots: false },
+    };
+    expect(
+      getAvailableSlotsForDate(disabledCtx, '2026-12-01', 'staff-karla').map(
+        (s) => s.localTime24,
+      ),
+    ).not.toContain('11:15');
+
+    const fixedCtx = buildLaikonaContext();
+    fixedCtx.settings = { ...fixedCtx.settings, optimizeContinuousSlots: true };
+    const karla75Start = zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString();
+    const karla75End = zonedDateTimeToUtc('2026-12-01', '11:15', tz).toISOString();
+    fixedCtx.bookings = [
+      {
+        ...contCtx.bookings[0]!,
+        id: 'bk-fixed-75',
+        staffId: 'staff-karla',
+        startAt: karla75Start,
+        endAt: karla75End,
+        occupiedStartAt: karla75Start,
+        occupiedEndAt: karla75End,
+      },
+    ];
+    const fixedSlots = getAvailableSlotsForDate(fixedCtx, '2026-12-01', 'staff-karla');
+    expect(fixedSlots.map((s) => s.localTime24)).toEqual(['13:30', '16:30']);
+    const fixedReject = assertSlotBookable(fixedCtx, {
+      startAt: karla75End,
+      staffId: 'staff-karla',
+    });
+    expect(fixedReject.ok).toBe(false);
+    if (!fixedReject.ok) {
+      expect(fixedReject.code).toBe('INVALID_ALIGNMENT');
+    }
+  });
+
+  it('C7: DayAvailabilitySummary surfaces explicit publicNote and redirectStaffId without ever leaking internal reason', () => {
+    const ctx = buildLaikonaContext();
+    ctx.dateOverrides = [
+      {
+        id: 'ovr-pub',
+        staffId: 'staff-karla',
+        overrideDate: '2026-12-01',
+        isUnavailable: true,
+        startTime: null,
+        endTime: null,
+        reason: 'Cita médica privada interna',
+        publicNote: 'Karla está en curso técnico; te atiende Paty',
+        redirectStaffId: 'staff-paty',
+      },
+      {
+        id: 'ovr-priv-only',
+        staffId: 'staff-karla',
+        overrideDate: '2026-12-02',
+        isUnavailable: true,
+        startTime: null,
+        endTime: null,
+        reason: 'Asunto personal confidencial',
+      },
+    ];
+
+    const range = getAvailabilityForRange(ctx, '2026-12-01', 2, 'staff-karla');
+    expect(range[0]?.hasSlots).toBe(false);
+    expect(range[0]?.publicNote).toBe('Karla está en curso técnico; te atiende Paty');
+    expect(range[0]?.redirectStaffId).toBe('staff-paty');
+    expect(range[0]?.redirectStaffName).toBe('Paty');
+    expect(JSON.stringify(range[0])).not.toContain('médica');
+
+    expect(range[1]?.hasSlots).toBe(false);
+    expect(range[1]?.publicNote).toBeUndefined();
+    expect(range[1]?.redirectStaffId).toBeUndefined();
+    expect(JSON.stringify(range[1])).not.toContain('confidencial');
+  });
 });

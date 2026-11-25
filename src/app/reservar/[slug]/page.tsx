@@ -9,10 +9,37 @@ import {
   type PublicReviewDTO,
 } from '@/lib/public-dto';
 import { getSnapshot } from '@/lib/repositories/db';
+import type { BookingLayoutView } from '@/lib/types';
 import { BookingWidget } from '@/components/BookingWidget';
 import { ServiceReviewsSection } from '@/components/ServiceReviewsSection';
 
 export const dynamic = 'force-dynamic';
+
+const PLAIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseCsvParam(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    ),
+  );
+}
+
+function parseLayoutParam(raw: string | undefined): BookingLayoutView | undefined {
+  if (raw === 'month' || raw === 'week' || raw === 'column') {
+    return raw;
+  }
+  return undefined;
+}
+
+function parsePlainDateParam(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim() ?? '';
+  return PLAIN_DATE_RE.test(trimmed) ? trimmed : undefined;
+}
 
 function computeAverageRating(reviews: PublicReviewDTO[]): number | null {
   if (reviews.length === 0) return null;
@@ -43,6 +70,9 @@ export async function generateMetadata({
     title: `Reservar ${service.name}`,
     description: `${service.description} Agenda ${service.name} en tiempo real en ${settings.name}.`,
     alternates: { canonical: `/reservar/${encodeURIComponent(service.slug)}` },
+    ...(service.isPrivate
+      ? { robots: { index: false, follow: false } }
+      : {}),
   };
 }
 
@@ -51,7 +81,16 @@ export default async function ReservarServicioPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ staff?: string; inspo?: string }>;
+  searchParams: Promise<{
+    servicio?: string;
+    extras?: string;
+    addons?: string;
+    staff?: string;
+    date?: string;
+    layout?: string;
+    slot?: string;
+    inspo?: string;
+  }>;
 }) {
   const { slug } = await params;
   const query = await searchParams;
@@ -61,12 +100,19 @@ export default async function ReservarServicioPage({
   const initialTodayKey = getDateKeyInTimezone(new Date(), timezone);
 
   const activeServices = db.services
-    .filter((s) => s.isActive)
+    .filter((s) => s.isActive && (!s.isPrivate || s.slug === slug))
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
     .map(toPublicServiceDTO);
 
+  const requestedOverride = query.servicio?.trim();
+  const resolvedSlug =
+    requestedOverride &&
+    activeServices.some((service) => service.slug === requestedOverride)
+      ? requestedOverride
+      : slug;
+
   const selectedService =
-    activeServices.find((service) => service.slug === slug) ??
+    activeServices.find((service) => service.slug === resolvedSlug) ??
     activeServices[0] ??
     null;
 
@@ -128,9 +174,14 @@ export default async function ReservarServicioPage({
           .toSorted((a, b) => a.displayOrder - b.displayOrder)
           .map(toPublicStaffDTO)}
         initialTodayKey={initialTodayKey}
-        initialServiceSlug={slug}
-        initialStaffSlug={query.staff}
-        initialInspoNote={query.inspo}
+        initialServiceSlug={resolvedSlug}
+        initialExtraServiceSlugs={parseCsvParam(query.extras)}
+        initialAddonIds={parseCsvParam(query.addons)}
+        initialStaffSlug={query.staff?.trim() || undefined}
+        initialDate={parsePlainDateParam(query.date)}
+        initialLayout={parseLayoutParam(query.layout)}
+        initialSlot={query.slot?.trim() || undefined}
+        initialInspoNote={query.inspo?.trim() || undefined}
       />
       {selectedService ? (
         <ServiceReviewsSection

@@ -24,6 +24,7 @@ const PURE_DOMAIN_FILES = new Set([
   'src/lib/sanitize.ts',
   'src/lib/clock.ts',
   'src/lib/qr.ts',
+  'src/lib/contrast.ts',
 ]);
 
 const PUBLIC_UI_DTO_BOUNDARY_FILES = new Set([

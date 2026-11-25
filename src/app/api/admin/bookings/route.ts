@@ -7,6 +7,7 @@ import {
   getSnapshot,
   PolicyError,
   recordBookingCheckoutAtomic,
+  requestBookingReschedule,
   sendManualBookingReminder,
   SlotConflictError,
   updateBookingStatus,
@@ -127,6 +128,12 @@ const sendReminderSchema = z.object({
   channel: z.enum(['whatsapp', 'email', 'both']).default('whatsapp'),
 });
 
+const requestRescheduleSchema = z.object({
+  action: z.literal('request_reschedule'),
+  bookingId: z.string().min(1),
+  note: z.string().trim().max(400).optional(),
+});
+
 const checkoutSplitSchema = z.object({
   action: z.literal('checkout_split'),
   bookingId: z.string().min(1),
@@ -217,6 +224,35 @@ export async function PATCH(request: NextRequest) {
         waMeUrl: reminder.waMeUrl,
         messagePreview: reminder.messagePreview,
       });
+    }
+
+    if (rawAction === 'request_reschedule') {
+      const rescheduleReq = requestRescheduleSchema.parse(raw);
+
+      if (session.user.role === 'specialist') {
+        const db = getSnapshot();
+        const target = db.bookings.find((b) => b.id === rescheduleReq.bookingId);
+        if (
+          !session.user.staffMemberId ||
+          !target ||
+          target.staffId !== session.user.staffMemberId
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                'No tienes permiso para solicitar reprogramación en citas de otra especialista.',
+            },
+            { status: 403 },
+          );
+        }
+      }
+
+      const result = await requestBookingReschedule({
+        bookingId: rescheduleReq.bookingId,
+        note: rescheduleReq.note,
+        actor,
+      });
+      return NextResponse.json(result);
     }
 
     if (rawAction === 'checkout_split') {

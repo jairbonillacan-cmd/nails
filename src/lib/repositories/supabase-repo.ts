@@ -213,6 +213,9 @@ function mapSettingsRow(row: Tables['salon_settings']['Row']): SalonSettings {
     ...(row.privacy_policy_version
       ? { privacyPolicyVersion: row.privacy_policy_version }
       : {}),
+    ...(typeof row.optimize_continuous_slots === 'boolean'
+      ? { optimizeContinuousSlots: row.optimize_continuous_slots }
+      : {}),
     landingContent: mapLandingContent(row.landing_content),
     whatsappBookingEnabled: row.whatsapp_booking_enabled,
     smsRemindersEnabled: row.sms_reminders_enabled,
@@ -285,6 +288,7 @@ function mapServiceRow(row: Tables['services']['Row']): Service {
     allowInspoPhoto: row.allow_inspo_photo,
     isActive: row.is_active,
     isFeatured: row.is_featured,
+    ...(typeof row.is_private === 'boolean' ? { isPrivate: row.is_private } : {}),
     displayOrder: row.display_order,
     imageUrl: row.image_url,
   };
@@ -337,6 +341,10 @@ function mapDateOverrideRow(row: Tables['date_overrides']['Row']): DateOverride 
     startTime: row.start_time,
     endTime: row.end_time,
     reason: row.reason,
+    ...(row.public_note ? { publicNote: row.public_note } : {}),
+    ...(row.redirect_staff_id !== undefined
+      ? { redirectStaffId: row.redirect_staff_id }
+      : {}),
   };
 }
 
@@ -349,6 +357,10 @@ function mapPublicOverrideRow(row: Views['public_busy_overrides']['Row']): DateO
     startTime: row.start_time,
     endTime: row.end_time,
     reason: '',
+    ...(row.public_note ? { publicNote: row.public_note } : {}),
+    ...(row.redirect_staff_id !== undefined
+      ? { redirectStaffId: row.redirect_staff_id }
+      : {}),
   };
 }
 
@@ -1418,6 +1430,7 @@ export function createSupabaseRepository(
           .toSorted((a, b) => a.displayOrder - b.displayOrder),
         services: (servicesRes.data ?? [])
           .map(mapServiceRow)
+          .filter((s) => s.isPrivate !== true)
           .toSorted((a, b) => a.displayOrder - b.displayOrder)
           .map(toPublicServiceDTO),
         addons: (addonsRes.data ?? [])
@@ -2391,6 +2404,9 @@ export function createSupabaseRepository(
       if (patch.privacyPolicyVersion !== undefined) {
         dbPatch.privacy_policy_version = patch.privacyPolicyVersion;
       }
+      if (patch.optimizeContinuousSlots !== undefined) {
+        dbPatch.optimize_continuous_slots = patch.optimizeContinuousSlots;
+      }
       if (patch.landingContent !== undefined) {
         dbPatch.landing_content = {
           heroEyebrow: patch.landingContent.heroEyebrow,
@@ -2467,6 +2483,7 @@ export function createSupabaseRepository(
             allow_inspo_photo: input.allowInspoPhoto,
             is_active: input.isActive,
             is_featured: input.isFeatured,
+            ...(input.isPrivate !== undefined ? { is_private: input.isPrivate } : {}),
             display_order: input.displayOrder,
             image_url: input.imageUrl,
             updated_at: nowIso,
@@ -2503,6 +2520,7 @@ export function createSupabaseRepository(
           allow_inspo_photo: input.allowInspoPhoto ?? true,
           is_active: input.isActive ?? true,
           is_featured: input.isFeatured ?? true,
+          is_private: input.isPrivate ?? false,
           display_order: input.displayOrder ?? 0,
           image_url: input.imageUrl ?? null,
         })
@@ -2623,6 +2641,8 @@ export function createSupabaseRepository(
           start_time: override.startTime,
           end_time: override.endTime,
           reason: override.reason,
+          public_note: override.publicNote?.trim() || null,
+          redirect_staff_id: override.redirectStaffId ?? null,
         })
         .select('*')
         .single();

@@ -1,4 +1,5 @@
 import type { AvailableSlot } from '@/lib/availability/engine';
+import type { ActiveBookingSummary } from './bookingApi';
 
 type BookingPhase =
   | 'browsing'
@@ -21,6 +22,7 @@ interface BookingFlowState {
   conflict: BookingConflictState | null;
   formError: string | null;
   formErrorCode: string | null;
+  activeBookings: ActiveBookingSummary[];
   privacyConsentAccepted: boolean;
   marketingOptIn: boolean;
   privacyConsentError: string | null;
@@ -63,6 +65,7 @@ export type BookingFlowAction =
       type: 'SUBMIT_FAILED';
       error: string;
       code?: string | null;
+      activeBookings?: ActiveBookingSummary[];
     }
   | {
       type: 'SUBMIT_CONFIRMED';
@@ -88,6 +91,7 @@ export function createInitialBookingFlowState(): BookingFlowState {
     conflict: null,
     formError: null,
     formErrorCode: null,
+    activeBookings: [],
     privacyConsentAccepted: false,
     marketingOptIn: false,
     privacyConsentError: null,
@@ -111,6 +115,7 @@ export function bookingReducer(
         conflict: null,
         formError: null,
         formErrorCode: null,
+        activeBookings: [],
         privacyConsentError: null,
       };
 
@@ -128,6 +133,7 @@ export function bookingReducer(
         },
         formError: null,
         formErrorCode: null,
+        activeBookings: [],
       };
 
     case 'HOLD_EXPIRED':
@@ -171,6 +177,7 @@ export function bookingReducer(
         privacyConsentError: action.message,
         formError: action.message,
         formErrorCode: 'PRIVACY_CONSENT_REQUIRED',
+        activeBookings: [],
       };
 
     case 'START_SUBMIT':
@@ -180,6 +187,7 @@ export function bookingReducer(
         conflict: null,
         formError: null,
         formErrorCode: null,
+        activeBookings: [],
         privacyConsentError: null,
       };
 
@@ -190,6 +198,7 @@ export function bookingReducer(
         phase: state.holdId ? 'holding' : 'browsing',
         formError: action.error,
         formErrorCode: code,
+        activeBookings: action.activeBookings ?? [],
         privacyConsentError:
           code === 'PRIVACY_CONSENT_REQUIRED' ? action.error : null,
       };
@@ -202,6 +211,7 @@ export function bookingReducer(
         conflict: null,
         formError: null,
         formErrorCode: null,
+        activeBookings: [],
         privacyConsentError: null,
         confirmedManageUrl: action.manageUrl,
       };
@@ -216,6 +226,7 @@ export function bookingReducer(
         holdExpiresAt: null,
         formError: null,
         formErrorCode: null,
+        activeBookings: [],
         privacyConsentError: null,
       };
 
@@ -229,6 +240,7 @@ export function bookingReducer(
         conflict: null,
         formError: null,
         formErrorCode: null,
+        activeBookings: [],
         privacyConsentError: null,
       };
 

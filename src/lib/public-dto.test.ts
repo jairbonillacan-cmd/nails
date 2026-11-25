@@ -85,6 +85,7 @@ describe('Public DTO schemas and mappers (S3)', () => {
     }
     expect(toPublicServiceDTO(rubber).isStartingPrice).toBe(true);
     expect(toPublicServiceDTO(pediGel).isStartingPrice).toBe(false);
+    expect(toPublicServiceDTO({ ...rubber, isPrivate: true }).isPrivate).toBe(true);
   });
 
   it('toPublicSettingsDTO exposes LAIKONA public deposit/social fields while omitting internal admin fields', () => {
@@ -109,6 +110,7 @@ describe('Public DTO schemas and mappers (S3)', () => {
 
     expect(dto.name).toBe('LAIKONA NAILS');
     expect(dto.privacyPolicyVersion).toBe('2026-11');
+    expect(dto.optimizeContinuousSlots).toBe(false);
     expect(dto.city).toBe('Puebla, México');
     expect(dto.instagramHandle).toBe('@laikona.nailsss');
     expect(dto.instagramUrl).toBe('https://www.instagram.com/laikona.nailsss/');

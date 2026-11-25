@@ -20,10 +20,23 @@ import { Badge } from '@astryxdesign/core/Badge';
 import { Divider } from '@astryxdesign/core/Divider';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { List, ListItem } from '@astryxdesign/core/List';
-import { Clock, Copy, Pause, Play, Plus, Save, Search, Trash2 } from 'lucide-react';
+import {
+  Archive,
+  CalendarPlus,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Copy,
+  Pause,
+  Play,
+  Plus,
+  Save,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
-import type { AvailabilityRule, RecurringBlock } from '@/lib/types';
-import type { SlotDiagnosis } from '@/lib/availability/engine';
+import { VisualTroubleshooter } from '@/components/admin/disponibilidad/VisualTroubleshooter';
+import type { AvailabilityRule, DateOverride, RecurringBlock } from '@/lib/types';
 
 const DAYS: Array<{ dow: 0 | 1 | 2 | 3 | 4 | 5 | 6; label: string; short: string }> = [
   { dow: 1, label: 'Lunes', short: 'Lun' },
@@ -54,6 +67,26 @@ function formatRecurringSummary(block: RecurringBlock): string {
   return `${freqLabel} · ${block.startTime} – ${block.endTime}${untilSuffix}`;
 }
 
+function serializeRulesCanonical(rulesList: readonly AvailabilityRule[]): string {
+  const normalized = rulesList
+    .map((r) => ({
+      dayOfWeek: r.dayOfWeek,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      fixedStartTimes:
+        r.fixedStartTimes && r.fixedStartTimes.length > 0
+          ? Array.from(new Set(r.fixedStartTimes)).toSorted()
+          : [],
+    }))
+    .toSorted(
+      (a, b) =>
+        a.dayOfWeek - b.dayOfWeek ||
+        a.startTime.localeCompare(b.startTime) ||
+        a.endTime.localeCompare(b.endTime),
+    );
+  return JSON.stringify(normalized);
+}
+
 const TIME_OPTIONS = Array.from({ length: 29 }, (_, i) => {
   const totalMin = 8 * 60 + i * 30;
   const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
@@ -70,19 +103,35 @@ const FIXED_TIME_OPTIONS = Array.from({ length: 57 }, (_, i) => {
 
 const DEFAULT_FIXED_BLOCKS = ['10:00', '13:30', '16:30'];
 
+const HOLIDAY_YEAR_OPTIONS = [
+  { value: '2026', label: '2026' },
+  { value: '2027', label: '2027' },
+  { value: '2028', label: '2028' },
+];
+
 export default function AdminAvailabilityPage() {
   const { data, refresh } = useAdminData();
   const [tab, setTab] = useState('weekly');
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [rulesDraft, setRulesDraft] = useState<AvailabilityRule[] | null>(null);
   const [newFixedByRule, setNewFixedByRule] = useState<Record<string, string>>({});
+  const [savingWeekly, setSavingWeekly] = useState(false);
+  const [savingOptimize, setSavingOptimize] = useState(false);
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
 
+  const [ovrMode, setOvrMode] = useState<'single' | 'range'>('single');
   const [ovrDateInput, setOvrDateInput] = useState<string | null>(null);
+  const [ovrEndDateInput, setOvrEndDateInput] = useState<string | null>(null);
   const [ovrClosed, setOvrClosed] = useState(true);
   const [ovrStart, setOvrStart] = useState('10:00');
   const [ovrEnd, setOvrEnd] = useState('16:00');
   const [ovrReason, setOvrReason] = useState('');
+  const [ovrPublicNote, setOvrPublicNote] = useState('');
+  const [ovrRedirectStaffId, setOvrRedirectStaffId] = useState('');
+  const [savingOverride, setSavingOverride] = useState(false);
+  const [holidayYear, setHolidayYear] = useState('2026');
+  const [preloadingHolidays, setPreloadingHolidays] = useState(false);
+  const [showArchivedOverrides, setShowArchivedOverrides] = useState(false);
 
   const [recFrequency, setRecFrequency] = useState<'weekly' | 'monthly'>('weekly');
   const [recWeekdays, setRecWeekdays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
@@ -93,12 +142,9 @@ export default function AdminAvailabilityPage() {
   const [recUntilDate, setRecUntilDate] = useState('');
   const [savingRecurring, setSavingRecurring] = useState(false);
 
-  const [diagDateInput, setDiagDateInput] = useState<string | null>(null);
-  const [diagServiceInput, setDiagServiceInput] = useState<string | null>(null);
-  const [diagnostics, setDiagnostics] = useState<SlotDiagnosis[]>([]);
-
   if (!data) return null;
 
+  const isOwner = data.session.user.role === 'owner';
   const isSpecialistOnly =
     data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
 
@@ -109,9 +155,20 @@ export default function AdminAvailabilityPage() {
   const currentScheduleRules =
     data.schedules.find((s) => s.staffId === staffId)?.rules ?? [];
   const rules = rulesDraft ?? currentScheduleRules;
+  const isScheduleDirty =
+    rulesDraft !== null &&
+    serializeRulesCanonical(rules) !== serializeRulesCanonical(currentScheduleRules);
+
   const ovrDate = ovrDateInput ?? data.serverTodayKey;
-  const diagDate = diagDateInput ?? data.serverTodayKey;
-  const diagServiceId = diagServiceInput ?? data.services[0]?.id ?? '';
+  const ovrEndDate = ovrEndDateInput ?? ovrDate;
+  const optimizeContinuousSlots = data.settings.optimizeContinuousSlots ?? false;
+
+  const redirectStaffOptions = [
+    { value: '', label: 'Sin redirección' },
+    ...data.staff
+      .filter((s) => s.isActive && s.id !== staffId)
+      .map((s) => ({ value: s.id, label: `Sugerir a ${s.name}` })),
+  ];
 
   const updateRules = (updater: (prev: AvailabilityRule[]) => AvailabilityRule[]) => {
     setRulesDraft((prev) => updater(prev ?? currentScheduleRules));
@@ -121,6 +178,9 @@ export default function AdminAvailabilityPage() {
     setSelectedStaffId(nextId);
     setRulesDraft(null);
     setNewFixedByRule({});
+    if (ovrRedirectStaffId === nextId) {
+      setOvrRedirectStaffId('');
+    }
   };
 
   const toggleDay = (dow: 0 | 1 | 2 | 3 | 4 | 5 | 6, enabled: boolean) => {
@@ -159,20 +219,17 @@ export default function AdminAvailabilityPage() {
         return [...otherRules, ...cleaned];
       }
 
-      const earliestStart = dayRules
-        .map((r) => r.startTime)
-        .toSorted()[0] ?? '10:00';
-      const latestEnd = dayRules
-        .map((r) => r.endTime)
-        .toSorted()
-        .at(-1) ?? '19:30';
+      const earliestStart = dayRules.map((r) => r.startTime).toSorted()[0] ?? '10:00';
+      const latestEnd = dayRules.map((r) => r.endTime).toSorted().at(-1) ?? '19:30';
       const existingFixed = dayRules.flatMap((r) => r.fixedStartTimes ?? []);
       const seededFixed =
         existingFixed.length > 0
           ? existingFixed.filter((t) => t >= earliestStart && t < latestEnd)
           : DEFAULT_FIXED_BLOCKS.filter((t) => t >= earliestStart && t < latestEnd);
       const finalFixed =
-        seededFixed.length > 0 ? Array.from(new Set(seededFixed)).toSorted() : [earliestStart];
+        seededFixed.length > 0
+          ? Array.from(new Set(seededFixed)).toSorted()
+          : [earliestStart];
 
       return [
         ...otherRules,
@@ -228,9 +285,7 @@ export default function AdminAvailabilityPage() {
         if (!r.fixedStartTimes || r.fixedStartTimes.length === 0) {
           return { ...r, startTime: nextStart, endTime: nextEnd };
         }
-        const inWindow = r.fixedStartTimes.filter(
-          (t) => t >= nextStart && t < nextEnd,
-        );
+        const inWindow = r.fixedStartTimes.filter((t) => t >= nextStart && t < nextEnd);
         return {
           ...r,
           startTime: nextStart,
@@ -275,70 +330,163 @@ export default function AdminAvailabilityPage() {
   };
 
   const saveWeekly = async () => {
-    const res = await fetch('/api/admin/availability', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staffId, rules }),
-    });
-    if (res.ok) {
-      setRulesDraft(null);
-      setMsg({
-        status: 'success',
-        text: 'Horarios semanales guardados y sincronizados con la agenda pública.',
+    if (!isScheduleDirty) return;
+    setSavingWeekly(true);
+    try {
+      const res = await fetch('/api/admin/availability', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId, rules }),
       });
-      await refresh();
-    } else {
-      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-      setMsg({
-        status: 'error',
-        text: errJson?.error || 'Revisa que los horarios fijos estén dentro de la ventana laboral.',
+      if (res.ok) {
+        setRulesDraft(null);
+        setMsg({
+          status: 'success',
+          text: 'Horarios semanales guardados y sincronizados con la agenda pública.',
+        });
+        await refresh();
+      } else {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({
+          status: 'error',
+          text:
+            errJson?.error ||
+            'Revisa que los horarios fijos estén dentro de la ventana laboral.',
+        });
+      }
+    } finally {
+      setSavingWeekly(false);
+    }
+  };
+
+  const handleToggleOptimizeContinuous = async (nextVal: boolean) => {
+    if (!isOwner) return;
+    setSavingOptimize(true);
+    try {
+      const res = await fetch('/api/admin/brand', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ optimizeContinuousSlots: nextVal }),
       });
+      if (res.ok) {
+        setMsg({
+          status: 'success',
+          text: nextVal
+            ? 'Franjas optimizadas activadas para días en modo Rango continuo (los turnos fijos no cambian).'
+            : 'Franjas optimizadas desactivadas.',
+        });
+        await refresh();
+      } else {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({
+          status: 'error',
+          text: errJson?.error || 'No se pudo actualizar la preferencia de franjas.',
+        });
+      }
+    } finally {
+      setSavingOptimize(false);
     }
   };
 
   const addOverride = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ovrDate) return;
-    const res = await fetch('/api/admin/availability', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        staffId,
-        overrideDate: ovrDate,
-        isUnavailable: ovrClosed,
-        startTime: ovrClosed ? null : ovrStart,
-        endTime: ovrClosed ? null : ovrEnd,
-        reason: ovrReason || (ovrClosed ? 'Día cerrado' : 'Horario especial'),
-      }),
-    });
-    if (res.ok) {
-      setOvrReason('');
-      setMsg({ status: 'success', text: `Excepción guardada para ${ovrDate}.` });
-      await refresh();
-    } else {
-      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-      setMsg({
-        status: 'error',
-        text: errJson?.error || 'No se pudo guardar la excepción.',
+    setSavingOverride(true);
+    try {
+      const cleanPublicNote = ovrPublicNote.trim();
+      const cleanRedirect = ovrRedirectStaffId.trim() || null;
+
+      const payload =
+        ovrMode === 'range'
+          ? {
+              kind: 'override_range' as const,
+              staffId,
+              startDate: ovrDate,
+              endDate: ovrEndDate || ovrDate,
+              isClosed: ovrClosed,
+              startTime: ovrClosed ? null : ovrStart,
+              endTime: ovrClosed ? null : ovrEnd,
+              reason: ovrReason || (ovrClosed ? 'Vacaciones / Días cerrados' : 'Horario especial'),
+              ...(cleanPublicNote ? { publicNote: cleanPublicNote } : {}),
+              redirectStaffId: cleanRedirect,
+            }
+          : {
+              staffId,
+              overrideDate: ovrDate,
+              isUnavailable: ovrClosed,
+              startTime: ovrClosed ? null : ovrStart,
+              endTime: ovrClosed ? null : ovrEnd,
+              reason: ovrReason || (ovrClosed ? 'Día cerrado' : 'Horario especial'),
+              ...(cleanPublicNote ? { publicNote: cleanPublicNote } : {}),
+              redirectStaffId: cleanRedirect,
+            };
+
+      const res = await fetch('/api/admin/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+      if (res.ok) {
+        const json = (await res.json()) as { overrides?: DateOverride[] };
+        setOvrReason('');
+        setOvrPublicNote('');
+        setOvrRedirectStaffId('');
+        setMsg({
+          status: 'success',
+          text:
+            ovrMode === 'range'
+              ? `Rango guardado (${json.overrides?.length ?? 1} día(s) del ${ovrDate} al ${ovrEndDate}).`
+              : `Excepción guardada para ${ovrDate}.`,
+        });
+        await refresh();
+      } else {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({
+          status: 'error',
+          text: errJson?.error || 'No se pudo guardar la excepción.',
+        });
+      }
+    } finally {
+      setSavingOverride(false);
     }
   };
 
-  const runDiagnose = async () => {
-    if (!diagDate || !diagServiceId || !staffId) return;
-    const qs = new URLSearchParams({
-      mode: 'diagnose',
-      date: diagDate,
-      serviceId: diagServiceId,
-      staffId,
-    });
-    const res = await fetch(`/api/admin/availability?${qs.toString()}`);
-    if (!res.ok) {
-      setDiagnostics([]);
-      return;
+  const handlePreloadMxHolidays = async () => {
+    setPreloadingHolidays(true);
+    try {
+      const res = await fetch('/api/admin/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'preload_mx_holidays',
+          year: Number(holidayYear) || 2026,
+          staffId,
+          publicNote: 'Cerrado por día festivo oficial en México',
+        }),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          created?: DateOverride[];
+          skippedDates?: string[];
+          year?: number;
+        };
+        const createdCount = json.created?.length ?? 0;
+        const skippedCount = json.skippedDates?.length ?? 0;
+        setMsg({
+          status: 'success',
+          text: `Festivos oficiales MX ${json.year ?? holidayYear}: ${createdCount} agregado(s), ${skippedCount} ya existente(s) omitido(s).`,
+        });
+        await refresh();
+      } else {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({
+          status: 'error',
+          text: errJson?.error || 'No se pudieron precargar los festivos oficiales.',
+        });
+      }
+    } finally {
+      setPreloadingHolidays(false);
     }
-    const json = await res.json();
-    setDiagnostics(json.diagnosis ?? json.diagnostics ?? []);
   };
 
   const toggleRecWeekday = (dow: number, checked: boolean) => {
@@ -378,7 +526,10 @@ export default function AdminAvailabilityPage() {
           reason: recReason.trim() || 'Bloqueo recurrente',
           frequency: recFrequency,
           weekdays: recFrequency === 'weekly' ? recWeekdays : [],
-          dayOfMonth: recFrequency === 'monthly' ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1))) : null,
+          dayOfMonth:
+            recFrequency === 'monthly'
+              ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1)))
+              : null,
           startTime: recStartTime,
           endTime: recEndTime,
           untilDate: recUntilDate.trim() || null,
@@ -452,9 +603,62 @@ export default function AdminAvailabilityPage() {
     }
   };
 
-  const staffOverrides = data.dateOverrides.filter((o) => o.staffId === staffId);
+  const staffOverrides = data.dateOverrides
+    .filter((o) => o.staffId === staffId)
+    .toSorted((a, b) => a.overrideDate.localeCompare(b.overrideDate));
+  const activeOverrides = staffOverrides.filter((o) => o.overrideDate >= data.serverTodayKey);
+  const archivedOverrides = staffOverrides
+    .filter((o) => o.overrideDate < data.serverTodayKey)
+    .toSorted((a, b) => b.overrideDate.localeCompare(a.overrideDate));
+
   const staffRecurringBlocks = data.recurringBlocks.filter((b) => b.staffId === staffId);
   const activeRecurringCount = staffRecurringBlocks.filter((b) => b.isActive).length;
+
+  const renderOverrideItem = (o: DateOverride) => {
+    const redirectStaff = o.redirectStaffId
+      ? data.staff.find((s) => s.id === o.redirectStaffId)
+      : null;
+    return (
+      <ListItem
+        key={o.id}
+        label={o.overrideDate}
+        description={
+          <VStack gap={1}>
+            <Text type="supporting" color="secondary">
+              {o.isUnavailable
+                ? `Cerrado todo el día · ${o.reason}`
+                : `${o.startTime} – ${o.endTime} · ${o.reason}`}
+            </Text>
+            {o.publicNote || redirectStaff ? (
+              <HStack gap={1.5} wrap="wrap">
+                {o.publicNote ? (
+                  <Token size="sm" label={`Nota pública: ${o.publicNote}`} />
+                ) : null}
+                {redirectStaff ? (
+                  <Token size="sm" color="green" label={`Redirige a ${redirectStaff.name}`} />
+                ) : null}
+              </HStack>
+            ) : null}
+          </VStack>
+        }
+        endContent={
+          <Button
+            type="button"
+            label="Eliminar"
+            variant="ghost"
+            size="sm"
+            icon={<Trash2 size={14} />}
+            onClick={async () => {
+              await fetch(`/api/admin/availability?id=${o.id}`, {
+                method: 'DELETE',
+              });
+              await refresh();
+            }}
+          />
+        }
+      />
+    );
+  };
 
   return (
     <VStack gap={5}>
@@ -462,7 +666,7 @@ export default function AdminAvailabilityPage() {
         <VStack gap={0.5}>
           <Heading level={1}>Disponibilidad y Horarios</Heading>
           <Text color="secondary">
-            Configura turnos fijos (como 10:00 · 13:30 · 16:30), bloqueos recurrentes, vacaciones y diagnóstico.
+            Configura turnos fijos (como 10:00 · 13:30 · 16:30), bloqueos recurrentes, vacaciones, festivos MX y diagnóstico visual.
           </Text>
         </VStack>
 
@@ -501,36 +705,44 @@ export default function AdminAvailabilityPage() {
           value="overrides"
           label="Excepciones y vacaciones"
           endContent={
-            staffOverrides.length > 0 ? (
-              <Badge variant="neutral" label={String(staffOverrides.length)} />
+            activeOverrides.length > 0 ? (
+              <Badge variant="neutral" label={String(activeOverrides.length)} />
             ) : undefined
           }
         />
-        <Tab value="troubleshoot" label="Diagnóstico (Troubleshooter)" />
+        <Tab value="troubleshoot" label="Diagnóstico visual" />
       </TabList>
 
       {tab === 'weekly' ? (
         <Card padding={5}>
           <VStack gap={4}>
             <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <VStack gap={0}>
+              <VStack gap={0.5}>
                 <Heading level={3}>Horario laboral ({data.settings.timezone})</Heading>
                 <Text type="supporting" color="secondary">
-                  Elige por día entre Turnos fijos (ej. Karla/Paty 10:00 · 13:30 · 16:30; Tere 14:00 · 16:00 · 18:00) o Rango continuo con descansos.
+                  Elige por día entre Turnos fijos (Karla/Paty 10:00 · 13:30 · 16:30; Tere 14:00 · 16:00 · 18:00) o Rango continuo.
                 </Text>
               </VStack>
-              <Button
-                label="Guardar horario"
-                variant="primary"
-                icon={<Save size={15} />}
-                onClick={saveWeekly}
-              />
+              <HStack gap={2} align="center" wrap="wrap">
+                {isScheduleDirty ? (
+                  <Token size="sm" color="orange" label="Cambios sin guardar" />
+                ) : null}
+                <Button
+                  type="button"
+                  label="Guardar horario"
+                  variant="primary"
+                  icon={<Save size={15} />}
+                  isLoading={savingWeekly}
+                  isDisabled={!isScheduleDirty || savingWeekly}
+                  onClick={() => void saveWeekly()}
+                />
+              </HStack>
             </HStack>
 
             <Divider />
 
-            <VStack gap={3}>
-              {DAYS.map(({ dow, label }) => {
+            <VStack gap={0}>
+              {DAYS.map(({ dow, label }, dayIndex) => {
                 const dayRules = rules.filter((r) => r.dayOfWeek === dow);
                 const enabled = dayRules.length > 0;
                 const isFixedMode = dayRules.some(
@@ -538,8 +750,9 @@ export default function AdminAvailabilityPage() {
                 );
 
                 return (
-                  <Card key={dow} variant="muted" padding={3}>
-                    <VStack gap={3}>
+                  <React.Fragment key={dow}>
+                    {dayIndex > 0 ? <Divider /> : null}
+                    <VStack gap={3} paddingBlock={3}>
                       <HStack justify="between" align="center" wrap="wrap" gap={3}>
                         <Switch
                           label={label}
@@ -564,6 +777,7 @@ export default function AdminAvailabilityPage() {
                               />
                             </SegmentedControl>
                             <Button
+                              type="button"
                               label="Copiar a L–V"
                               size="sm"
                               variant="ghost"
@@ -624,6 +838,7 @@ export default function AdminAvailabilityPage() {
                                   />
                                   {!isFixedMode ? (
                                     <Button
+                                      type="button"
                                       label="Quitar tramo"
                                       isIconOnly
                                       size="sm"
@@ -671,6 +886,7 @@ export default function AdminAvailabilityPage() {
                                           options={windowOptions}
                                         />
                                         <Button
+                                          type="button"
                                           label="Agregar turno fijo"
                                           size="sm"
                                           variant="secondary"
@@ -690,6 +906,7 @@ export default function AdminAvailabilityPage() {
                           {!isFixedMode ? (
                             <HStack gap={1.5}>
                               <Button
+                                type="button"
                                 label="Agregar turno"
                                 size="sm"
                                 variant="secondary"
@@ -701,10 +918,42 @@ export default function AdminAvailabilityPage() {
                         </VStack>
                       ) : null}
                     </VStack>
-                  </Card>
+                  </React.Fragment>
                 );
               })}
             </VStack>
+
+            <Divider />
+
+            <Card variant="muted" padding={4}>
+              <HStack justify="between" align="center" wrap="wrap" gap={3}>
+                <VStack gap={0.5}>
+                  <HStack gap={1.5} align="center">
+                    <Sparkles size={15} aria-hidden="true" />
+                    <Text weight="semibold">
+                      Franjas optimizadas (solo en modo Rango continuo)
+                    </Text>
+                  </HStack>
+                  <Text type="supporting" color="secondary">
+                    Ancla horarios al fin real de citas existentes para eliminar huecos muertos; nunca modifica turnos fijos como los de Karla, Paty y Tere.
+                  </Text>
+                </VStack>
+                {isOwner ? (
+                  <Switch
+                    label="Activar franjas optimizadas"
+                    isLabelHidden
+                    value={optimizeContinuousSlots}
+                    isLoading={savingOptimize}
+                    onChange={(checked) => void handleToggleOptimizeContinuous(checked)}
+                  />
+                ) : (
+                  <Badge
+                    variant={optimizeContinuousSlots ? 'success' : 'neutral'}
+                    label={optimizeContinuousSlots ? 'Activado' : 'Desactivado'}
+                  />
+                )}
+              </HStack>
+            </Card>
           </VStack>
         </Card>
       ) : tab === 'recurring' ? (
@@ -863,143 +1112,194 @@ export default function AdminAvailabilityPage() {
           </Card>
         </Grid>
       ) : tab === 'overrides' ? (
-        <Grid columns={{ minWidth: 300, max: 2 }} gap={5} align="start">
-          <Card padding={5}>
-            <form onSubmit={addOverride}>
-              <VStack gap={3}>
-                <Heading level={3}>Agregar excepción por fecha</Heading>
-                <TextInput
-                  label="Fecha (YYYY-MM-DD)"
-                  value={ovrDate}
-                  onChange={setOvrDateInput}
-                  isRequired
-                />
-                <Switch
-                  label="Día cerrado / sin disponibilidad todo el día"
-                  value={ovrClosed}
-                  onChange={setOvrClosed}
-                />
-                {!ovrClosed ? (
-                  <Grid columns={2} gap={2}>
-                    <Selector
-                      label="Hora inicio"
-                      value={ovrStart}
-                      onChange={(v) => v && setOvrStart(v)}
-                      options={TIME_OPTIONS}
-                    />
-                    <Selector
-                      label="Hora fin"
-                      value={ovrEnd}
-                      onChange={(v) => v && setOvrEnd(v)}
-                      options={TIME_OPTIONS}
-                    />
-                  </Grid>
-                ) : null}
-                <TextInput
-                  label="Motivo (interno)"
-                  placeholder="Ej. Vacaciones, curso técnico, día festivo"
-                  value={ovrReason}
-                  onChange={setOvrReason}
-                />
-                <Button type="submit" label="Guardar excepción" variant="primary" width="100%" />
-              </VStack>
-            </form>
-          </Card>
-
-          <Card padding={5}>
-            <VStack gap={3}>
-              <Heading level={3}>Excepciones programadas</Heading>
-              {staffOverrides.length === 0 ? (
+        <VStack gap={5}>
+          <Card variant="muted" padding={4}>
+            <HStack justify="between" align="center" wrap="wrap" gap={3}>
+              <VStack gap={0.5}>
+                <HStack gap={1.5} align="center">
+                  <CalendarPlus size={16} aria-hidden="true" />
+                  <Text weight="semibold">Festivos oficiales de México (LFT)</Text>
+                </HStack>
                 <Text type="supporting" color="secondary">
-                  Sin excepciones registradas para esta especialista.
+                  Bloquea en 1 clic Año Nuevo, Constitución, Benito Juárez, 1 de Mayo, 16 de Septiembre, Revolución y Navidad sin sobrescribir tus excepciones previas.
                 </Text>
-              ) : (
-                <List hasDividers>
-                  {staffOverrides.map((o) => (
-                    <ListItem
-                      key={o.id}
-                      label={o.overrideDate}
-                      description={
-                        <Text type="supporting" color="secondary">
-                          {o.isUnavailable
-                            ? `Cerrado todo el día · ${o.reason}`
-                            : `${o.startTime} – ${o.endTime} · ${o.reason}`}
-                        </Text>
-                      }
-                      endContent={
-                        <Button
-                          label="Eliminar"
-                          variant="ghost"
-                          size="sm"
-                          icon={<Trash2 size={14} />}
-                          onClick={async () => {
-                            await fetch(`/api/admin/availability?id=${o.id}`, {
-                              method: 'DELETE',
-                            });
-                            await refresh();
-                          }}
-                        />
-                      }
-                    />
-                  ))}
-                </List>
-              )}
-            </VStack>
-          </Card>
-        </Grid>
-      ) : (
-        <Card padding={5}>
-          <VStack gap={4}>
-            <VStack gap={0.5}>
-              <Heading level={3}>¿Por qué no aparece un horario disponible?</Heading>
-              <Text type="supporting" color="secondary">
-                Inspecciona hora por hora si un espacio está libre o bloqueado por turno fijo, descanso, cita activa, apartado de 3 min o Google Calendar.
-              </Text>
-            </VStack>
-
-            <HStack gap={3} align="end" wrap="wrap">
-              <TextInput
-                label="Fecha (YYYY-MM-DD)"
-                value={diagDate}
-                onChange={setDiagDateInput}
-              />
-              <Selector
-                label="Servicio"
-                value={diagServiceId}
-                onChange={(v) => v && setDiagServiceInput(v)}
-                options={data.services.map((s) => ({ value: s.id, label: s.name }))}
-              />
-              <Button
-                label="Diagnosticar fecha"
-                variant="primary"
-                icon={<Search size={15} />}
-                onClick={runDiagnose}
-              />
+              </VStack>
+              <HStack gap={2} align="center" wrap="wrap">
+                <Selector
+                  label="Año de festivos"
+                  isLabelHidden
+                  size="sm"
+                  value={holidayYear}
+                  onChange={(v) => v && setHolidayYear(v)}
+                  options={HOLIDAY_YEAR_OPTIONS}
+                />
+                <Button
+                  type="button"
+                  label="Precargar festivos oficiales MX"
+                  variant="secondary"
+                  size="sm"
+                  icon={<CalendarPlus size={14} />}
+                  isLoading={preloadingHolidays}
+                  onClick={() => void handlePreloadMxHolidays()}
+                />
+              </HStack>
             </HStack>
+          </Card>
 
-            {diagnostics.length > 0 ? (
-              <List hasDividers>
-                {diagnostics.map((d) => (
-                  <ListItem
-                    key={d.time24}
-                    label={`${d.time24} hrs`}
-                    description={
-                      <Text type="supporting" color="secondary">
-                        {d.reason}
-                      </Text>
-                    }
-                    endContent={
-                      <Badge
-                        variant={d.isAvailable ? 'success' : 'neutral'}
-                        label={d.isAvailable ? 'Disponible' : 'Bloqueado'}
+          <Grid columns={{ minWidth: 300, max: 2 }} gap={5} align="start">
+            <Card padding={5}>
+              <form onSubmit={addOverride}>
+                <VStack gap={3}>
+                  <Heading level={3}>Agregar excepción o vacaciones</Heading>
+                  <SegmentedControl
+                    label="Tipo de rango de fecha"
+                    size="sm"
+                    layout="fill"
+                    value={ovrMode}
+                    onChange={(val) => setOvrMode(val === 'range' ? 'range' : 'single')}
+                  >
+                    <SegmentedControlItem value="single" label="Fecha única" />
+                    <SegmentedControlItem value="range" label="Rango de fechas" />
+                  </SegmentedControl>
+
+                  {ovrMode === 'single' ? (
+                    <TextInput
+                      label="Fecha (YYYY-MM-DD)"
+                      value={ovrDate}
+                      onChange={setOvrDateInput}
+                      isRequired
+                    />
+                  ) : (
+                    <Grid columns={2} gap={2}>
+                      <TextInput
+                        label="Fecha inicial (YYYY-MM-DD)"
+                        value={ovrDate}
+                        onChange={setOvrDateInput}
+                        isRequired
                       />
-                    }
+                      <TextInput
+                        label="Fecha final (YYYY-MM-DD)"
+                        value={ovrEndDate}
+                        onChange={setOvrEndDateInput}
+                        isRequired
+                      />
+                    </Grid>
+                  )}
+
+                  <Switch
+                    label="Día cerrado / sin disponibilidad todo el día"
+                    value={ovrClosed}
+                    onChange={setOvrClosed}
                   />
-                ))}
-              </List>
-            ) : null}
-          </VStack>
-        </Card>
+                  {!ovrClosed ? (
+                    <Grid columns={2} gap={2}>
+                      <Selector
+                        label="Hora inicio"
+                        value={ovrStart}
+                        onChange={(v) => v && setOvrStart(v)}
+                        options={TIME_OPTIONS}
+                      />
+                      <Selector
+                        label="Hora fin"
+                        value={ovrEnd}
+                        onChange={(v) => v && setOvrEnd(v)}
+                        options={TIME_OPTIONS}
+                      />
+                    </Grid>
+                  ) : null}
+
+                  <TextInput
+                    label="Motivo interno (privado)"
+                    placeholder="Ej. Vacaciones, curso técnico, asunto personal"
+                    value={ovrReason}
+                    onChange={setOvrReason}
+                  />
+                  <TextInput
+                    label="Nota pública visible en /reservar (opcional)"
+                    description="Si se deja vacía, las clientas nunca verán el motivo interno."
+                    placeholder="Ej. En capacitación técnica — te atiende Paty"
+                    value={ovrPublicNote}
+                    onChange={setOvrPublicNote}
+                    isOptional
+                  />
+                  <Selector
+                    label="Redirigir a compañera disponible (opcional)"
+                    value={ovrRedirectStaffId}
+                    onChange={(v) => setOvrRedirectStaffId(v ?? '')}
+                    options={redirectStaffOptions}
+                  />
+                  <Button
+                    type="submit"
+                    label={ovrMode === 'range' ? 'Guardar rango de fechas' : 'Guardar excepción'}
+                    variant="primary"
+                    width="100%"
+                    isLoading={savingOverride}
+                  />
+                </VStack>
+              </form>
+            </Card>
+
+            <VStack gap={4}>
+              <Card padding={5}>
+                <VStack gap={3}>
+                  <HStack justify="between" align="center">
+                    <Heading level={3}>Excepciones activas y próximas</Heading>
+                    <Badge variant="neutral" label={String(activeOverrides.length)} />
+                  </HStack>
+                  {activeOverrides.length === 0 ? (
+                    <Text type="supporting" color="secondary">
+                      Sin excepciones activas o futuras para esta especialista.
+                    </Text>
+                  ) : (
+                    <List hasDividers>{activeOverrides.map(renderOverrideItem)}</List>
+                  )}
+                </VStack>
+              </Card>
+
+              <Card variant="muted" padding={4}>
+                <VStack gap={3}>
+                  <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                    <HStack gap={2} align="center">
+                      <Archive size={16} aria-hidden="true" />
+                      <Text weight="semibold">
+                        Archivadas (fechas pasadas)
+                      </Text>
+                      <Badge variant="neutral" label={String(archivedOverrides.length)} />
+                    </HStack>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      label={showArchivedOverrides ? 'Ocultar' : 'Mostrar'}
+                      icon={
+                        showArchivedOverrides ? (
+                          <ChevronUp size={14} />
+                        ) : (
+                          <ChevronDown size={14} />
+                        )
+                      }
+                      isDisabled={archivedOverrides.length === 0}
+                      onClick={() => setShowArchivedOverrides((prev) => !prev)}
+                    />
+                  </HStack>
+                  {showArchivedOverrides && archivedOverrides.length > 0 ? (
+                    <List hasDividers>{archivedOverrides.map(renderOverrideItem)}</List>
+                  ) : null}
+                </VStack>
+              </Card>
+            </VStack>
+          </Grid>
+        </VStack>
+      ) : (
+        <VisualTroubleshooter
+          staffId={staffId}
+          staffMembers={data.staff}
+          services={data.services}
+          isSpecialistOnly={isSpecialistOnly}
+          todayKey={data.serverTodayKey}
+          timezone={data.settings.timezone}
+          onSelectStaff={handleSelectStaff}
+        />
       )}
     </VStack>
   );

@@ -86,6 +86,7 @@ export interface SalonSettings {
   lockPastBookings?: boolean;
   maxActiveBookingsPerClient?: number;
   privacyPolicyVersion?: string;
+  optimizeContinuousSlots?: boolean;
 
   landingContent: LandingContent;
 
@@ -146,6 +147,7 @@ export interface Service {
   allowInspoPhoto: boolean;
   isActive: boolean;
   isFeatured: boolean;
+  isPrivate?: boolean;
   displayOrder: number;
   imageUrl: string | null;
 }
@@ -187,6 +189,8 @@ export interface DateOverride {
   startTime: string | null;
   endTime: string | null;
   reason: string;
+  publicNote?: string;
+  redirectStaffId?: string | null;
 }
 
 export interface CalendarConnection {

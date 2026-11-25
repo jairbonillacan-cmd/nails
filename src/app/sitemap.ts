@@ -42,7 +42,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ];
 
   const serviceEntries: MetadataRoute.Sitemap = db.services
-    .filter((service) => service.isActive)
+    .filter((service) => service.isActive && !service.isPrivate)
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
     .map((service) => ({
       url: `${baseUrl}/reservar/${encodeURIComponent(service.slug)}`,

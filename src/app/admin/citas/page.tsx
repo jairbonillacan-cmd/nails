@@ -20,6 +20,7 @@ import {
   Calendar,
   CalendarClock,
   CalendarX,
+  Copy,
   List as ListIcon,
   MessageCircle,
   Plus,
@@ -39,6 +40,7 @@ import {
 } from '@/components/admin/citas/NewBookingDialog';
 import { QuickSlotFinderDialog } from '@/components/admin/citas/QuickSlotFinderDialog';
 import { VisualScheduleGrid } from '@/components/admin/citas/VisualScheduleGrid';
+import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import type { BookingStatus, BookingWithRelations } from '@/lib/types';
 import {
@@ -59,6 +61,7 @@ interface FeedbackState {
   title: string;
   description?: string;
   waMeUrl?: string;
+  rescheduleUrl?: string;
 }
 
 export default function AdminBookingsPage() {
@@ -76,6 +79,8 @@ export default function AdminBookingsPage() {
   const [manualPrefill, setManualPrefill] = useState<NewBookingPrefill | null>(null);
   const [manualSessionKey, setManualSessionKey] = useState(0);
   const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [requestingRescheduleId, setRequestingRescheduleId] = useState<string | null>(null);
+  const copiedLink = useEphemeralMessage(2500);
 
   const [popoverBookingId, setPopoverBookingId] = useState<string | null>(null);
   const [checkoutBookingId, setCheckoutBookingId] = useState<string | null>(null);
@@ -284,6 +289,57 @@ export default function AdminBookingsPage() {
     }
   };
 
+  const requestReschedule = async (bookingId: string) => {
+    setRequestingRescheduleId(bookingId);
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'request_reschedule',
+          bookingId,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        code?: string;
+        waMeUrl?: string;
+        rescheduleUrl?: string;
+        messagePreview?: string;
+      } | null;
+      if (res.ok) {
+        setFeedback({
+          status: 'success',
+          title: 'Enlace de reprogramación listo para enviar a la clienta.',
+          description: json?.messagePreview,
+          waMeUrl: json?.waMeUrl,
+          rescheduleUrl: json?.rescheduleUrl,
+        });
+        await refresh();
+      } else {
+        setFeedback({
+          status: 'error',
+          title:
+            res.status === 403 && json?.code === 'PAST_BOOKING_LOCKED'
+              ? json.error ||
+                'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.'
+              : json?.error || 'No se pudo generar la solicitud de reprogramación.',
+        });
+      }
+    } finally {
+      setRequestingRescheduleId(null);
+    }
+  };
+
+  const handleCopyRescheduleUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      copiedLink.show('Enlace copiado');
+    } catch {
+      copiedLink.show('Copia el enlace manualmente');
+    }
+  };
+
   const submitQuickBlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!blockStaffId || !blockDate) return;
@@ -356,16 +412,32 @@ export default function AdminBookingsPage() {
           title={feedback.title}
           description={feedback.description}
           endContent={
-            feedback.waMeUrl ? (
-              <Button
-                label="Abrir WhatsApp"
-                variant="primary"
-                size="sm"
-                icon={<MessageCircle size={14} />}
-                href={feedback.waMeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
+            feedback.waMeUrl || feedback.rescheduleUrl ? (
+              <HStack gap={1.5} wrap="wrap">
+                {feedback.waMeUrl ? (
+                  <Button
+                    label="Abrir WhatsApp"
+                    variant="primary"
+                    size="sm"
+                    icon={<MessageCircle size={14} />}
+                    href={feedback.waMeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                ) : null}
+                {feedback.rescheduleUrl ? (
+                  <Button
+                    label={copiedLink.message ?? 'Copiar enlace'}
+                    variant="secondary"
+                    size="sm"
+                    icon={<Copy size={14} />}
+                    onClick={() =>
+                      feedback.rescheduleUrl &&
+                      void handleCopyRescheduleUrl(feedback.rescheduleUrl)
+                    }
+                  />
+                ) : null}
+              </HStack>
             ) : undefined
           }
           isDismissable
@@ -550,10 +622,12 @@ export default function AdminBookingsPage() {
               currency={data.settings.currency}
               timezone={tz}
               isReminding={remindingId === b.id}
+              isRequestingReschedule={requestingRescheduleId === b.id}
               onSelectBooking={(bk) => setPopoverBookingId(bk.id)}
               onUpdateStatus={(id, status) => void updateStatus(id, status)}
               onOpenCheckout={openCheckoutDrawer}
               onSendReminder={(id) => void sendReminder(id)}
+              onRequestReschedule={(id) => void requestReschedule(id)}
             />
           ))}
         </VStack>
@@ -572,7 +646,7 @@ export default function AdminBookingsPage() {
                   <Card key={b.id} padding={3}>
                     <VStack gap={1.5}>
                       <HStack justify="between" align="center">
-                        <Text weight="semibold">
+                        <Text weight="semibold" hasTabularNumbers>
                           {formatTimeInTimezone(b.startAt, tz)}
                         </Text>
                         <Badge
@@ -671,10 +745,14 @@ export default function AdminBookingsPage() {
         currency={data.settings.currency}
         timezone={tz}
         isReminding={Boolean(popoverBooking && remindingId === popoverBooking.id)}
+        isRequestingReschedule={Boolean(
+          popoverBooking && requestingRescheduleId === popoverBooking.id,
+        )}
         onClose={() => setPopoverBookingId(null)}
         onUpdateStatus={(id, status) => void updateStatus(id, status)}
         onOpenCheckout={openCheckoutDrawer}
         onSendReminder={(id) => void sendReminder(id)}
+        onRequestReschedule={(id) => void requestReschedule(id)}
       />
 
       <NewBookingDialog

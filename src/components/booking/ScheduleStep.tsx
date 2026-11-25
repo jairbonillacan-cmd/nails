@@ -16,6 +16,7 @@ import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import {
+  ArrowRight,
   Calendar as CalendarIcon,
   Clock,
   Columns3,
@@ -27,6 +28,7 @@ import {
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import {
   formatCurrency,
+  formatDateLongInTimezone,
   formatDateShortInTimezone,
   formatDuration,
 } from '@/lib/format';
@@ -51,12 +53,56 @@ interface ScheduleStepProps {
   availableDateSet: Set<string>;
   selectedDaySummary: DayAvailabilitySummary | null;
   selectedSlot: AvailableSlot | null;
+  highlightedSlotHint?: string;
   loadingAvail: boolean;
+  canAdvanceMonth: boolean;
+  isViewingFutureWindow: boolean;
   onChangeLayoutView: (view: BookingLayoutView) => void;
   onChangeTimeFormat: (format: '12h' | '24h') => void;
   onSelectDate: (date: string) => void;
   onSelectSlot: (slot: AvailableSlot) => void;
+  onRedirectStaff: (staffId: string) => void;
+  onAdvanceMonth: () => void;
+  onReturnToToday: () => void;
   onOpenWaitlist: () => void;
+}
+
+const MONTH_ABBR_ES = [
+  'ENE',
+  'FEB',
+  'MAR',
+  'ABR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AGO',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DIC',
+] as const;
+
+function getMonthBoundaryLabel(
+  dayDate: string,
+  prevDayDate: string | undefined,
+): string | null {
+  const parts = dayDate.split('-').map(Number);
+  const month = parts[1];
+  const day = parts[2];
+  if (!month || !day) return null;
+  const monthLabel = MONTH_ABBR_ES[month - 1];
+  if (!monthLabel) return null;
+
+  if (day === 1) {
+    return `${monthLabel} 1`;
+  }
+  if (prevDayDate) {
+    const prevParts = prevDayDate.split('-').map(Number);
+    if (prevParts[1] && prevParts[1] !== month) {
+      return `${monthLabel} ${day}`;
+    }
+  }
+  return null;
 }
 
 export function ScheduleStep({
@@ -76,42 +122,97 @@ export function ScheduleStep({
   availableDateSet,
   selectedDaySummary,
   selectedSlot,
+  highlightedSlotHint,
   loadingAvail,
+  canAdvanceMonth,
+  isViewingFutureWindow,
   onChangeLayoutView,
   onChangeTimeFormat,
   onSelectDate,
   onSelectSlot,
+  onRedirectStaff,
+  onAdvanceMonth,
+  onReturnToToday,
   onOpenWaitlist,
 }: ScheduleStepProps) {
+  const timezone = settings.timezone || 'America/Mexico_City';
   const slots = selectedDaySummary?.slots ?? [];
   const morningSlots = slots.filter((s) => s.period === 'morning');
   const afternoonSlots = slots.filter((s) => s.period === 'afternoon');
   const eveningSlots = slots.filter((s) => s.period === 'evening');
 
   const selectedDayIdx = availabilityDays.findIndex((d) => d.date === selectedDate);
-  const weekWindowDays = availabilityDays.slice(
-    selectedDayIdx >= 0 ? selectedDayIdx : 0,
-    (selectedDayIdx >= 0 ? selectedDayIdx : 0) + 6,
-  );
+  const windowStartIdx = selectedDayIdx >= 0 ? selectedDayIdx : 0;
+  const weekWindowDays = availabilityDays.slice(windowStartIdx, windowStartIdx + 6);
   const maxDateKey = availabilityDays[availabilityDays.length - 1]?.date;
+  const totalRangeSlots = availabilityDays.reduce(
+    (sum, day) => sum + day.slotCount,
+    0,
+  );
+  const isRangeEmpty = !loadingAvail && availabilityDays.length > 0 && totalRangeSlots === 0;
   const showDepositInfo = hasConfiguredDeposit(settings, depositAmountCents);
 
+  const redirectStaffId = selectedDaySummary?.redirectStaffId ?? null;
+  const redirectStaffName = selectedDaySummary?.redirectStaffName ?? null;
+  const publicNote = selectedDaySummary?.publicNote?.trim() || null;
+
   const renderSlotButton = (slot: AvailableSlot, compact = false) => {
-    const label = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
+    const visibleLabel = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
     const isSelected =
-      selectedSlot?.startAt === slot.startAt && selectedSlot?.staffId === slot.staffId;
+      (selectedSlot?.startAt === slot.startAt &&
+        selectedSlot?.staffId === slot.staffId) ||
+      (!selectedSlot &&
+        Boolean(highlightedSlotHint) &&
+        (slot.startAt === highlightedSlotHint ||
+          slot.localTime24 === highlightedSlotHint));
+    const fullDateLabel = formatDateLongInTimezone(slot.startAt, timezone);
+    const accessibleLabel = `${visibleLabel}, ${fullDateLabel} (${timezone}) con ${slot.staffName}`;
+
     return (
       <Button
         key={`${slot.staffId}-${slot.startAt}`}
-        label={label}
+        label={accessibleLabel}
+        aria-label={accessibleLabel}
         variant={isSelected ? 'primary' : 'secondary'}
         size={compact ? 'sm' : 'md'}
         width="100%"
-        icon={<StatusDot variant="success" label="Disponible" />}
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+        icon={<StatusDot variant="success" label="Disponible" aria-hidden="true" />}
         onClick={() => onSelectSlot(slot)}
-      />
+      >
+        {visibleLabel}
+      </Button>
     );
   };
+
+  const oooBanner =
+    publicNote || redirectStaffId ? (
+      <Banner
+        status="info"
+        title={
+          publicNote
+            ? 'Aviso del salón para esta fecha'
+            : 'Especialista con horario alternativo en esta fecha'
+        }
+        description={
+          publicNote ||
+          (redirectStaffName
+            ? `Te recomendamos revisar los horarios disponibles con ${redirectStaffName}.`
+            : 'Consulta otra especialista o prueba otra fecha disponible.')
+        }
+        endContent={
+          redirectStaffId && redirectStaffName ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              label={`Ver horarios de ${redirectStaffName}`}
+              onClick={() => onRedirectStaff(redirectStaffId)}
+            />
+          ) : undefined
+        }
+      />
+    ) : null;
 
   return (
     <Card padding={5} elevation="low">
@@ -122,6 +223,12 @@ export function ScheduleStep({
               2. ELIGE DÍA Y HORA DISPONIBLE
             </Text>
             <Heading level={2}>Agenda en vivo</Heading>
+            <HStack gap={1.5} align="center">
+              <Globe size={14} aria-hidden="true" />
+              <Text type="supporting" color="secondary">
+                Hora local del salón · Puebla ({timezone})
+              </Text>
+            </HStack>
           </VStack>
 
           <HStack gap={2} wrap="wrap" align="center">
@@ -144,17 +251,17 @@ export function ScheduleStep({
               <SegmentedControlItem
                 value="month"
                 label="Mes"
-                icon={<CalendarIcon size={14} />}
+                icon={<CalendarIcon size={14} aria-hidden="true" />}
               />
               <SegmentedControlItem
                 value="week"
                 label="Semana"
-                icon={<Grid2x2 size={14} />}
+                icon={<Grid2x2 size={14} aria-hidden="true" />}
               />
               <SegmentedControlItem
                 value="column"
                 label="Columnas"
-                icon={<Columns3 size={14} />}
+                icon={<Columns3 size={14} aria-hidden="true" />}
               />
             </SegmentedControl>
           </HStack>
@@ -162,7 +269,43 @@ export function ScheduleStep({
 
         <Divider />
 
-        {layoutView === 'month' ? (
+        {oooBanner}
+
+        {isRangeEmpty ? (
+          <Card variant="muted" padding={6} width="100%">
+            <EmptyState
+              title="Sin disponibilidad en estas fechas"
+              description="No quedan espacios libres en el bloque actual de fechas. Revisa el próximo mes o anótate en lista de espera para avisarte si se libera un horario."
+              actions={
+                <HStack gap={2} wrap="wrap" justify="center">
+                  {canAdvanceMonth ? (
+                    <Button
+                      label="Ver próximo mes →"
+                      variant="primary"
+                      size="md"
+                      icon={<ArrowRight size={16} aria-hidden="true" />}
+                      onClick={onAdvanceMonth}
+                    />
+                  ) : null}
+                  <Button
+                    label="Anotarme en lista de espera"
+                    variant="secondary"
+                    size="md"
+                    onClick={onOpenWaitlist}
+                  />
+                  {isViewingFutureWindow ? (
+                    <Button
+                      label="Volver a fechas actuales"
+                      variant="ghost"
+                      size="md"
+                      onClick={onReturnToToday}
+                    />
+                  ) : null}
+                </HStack>
+              }
+            />
+          </Card>
+        ) : layoutView === 'month' ? (
           <Grid columns={{ minWidth: 235, max: 3 }} gap={4} align="start">
             <Card variant="muted" padding={4}>
               <VStack gap={3}>
@@ -173,10 +316,10 @@ export function ScheduleStep({
                   <Heading level={3}>{selectedService?.name}</Heading>
                 </VStack>
 
-                <VStack gap={1.5}>
+                <VStack gap={1.5} style={{ fontVariantNumeric: 'tabular-nums' }}>
                   <HStack gap={2} align="center">
                     <Clock size={15} aria-hidden="true" />
-                    <Text weight="medium">
+                    <Text weight="medium" hasTabularNumbers>
                       Aprox. {formatDuration(totalDurationMinutes)}
                     </Text>
                   </HStack>
@@ -195,7 +338,7 @@ export function ScheduleStep({
                   <HStack gap={2} align="center">
                     <Globe size={15} aria-hidden="true" />
                     <Text type="supporting" color="secondary">
-                      {settings.timezone}
+                      Hora local del salón · Puebla ({timezone})
                     </Text>
                   </HStack>
                 </VStack>
@@ -203,7 +346,7 @@ export function ScheduleStep({
                 {selectedExtraServices.length > 0 ? (
                   <>
                     <Divider />
-                    <VStack gap={1}>
+                    <VStack gap={1} style={{ fontVariantNumeric: 'tabular-nums' }}>
                       <Text type="label" weight="semibold">
                         Servicios adicionales
                       </Text>
@@ -222,7 +365,7 @@ export function ScheduleStep({
                 {activeSelectedAddons.length > 0 ? (
                   <>
                     <Divider />
-                    <VStack gap={1}>
+                    <VStack gap={1} style={{ fontVariantNumeric: 'tabular-nums' }}>
                       <Text type="label" weight="semibold">
                         Extras incluidos
                       </Text>
@@ -267,6 +410,24 @@ export function ScheduleStep({
                   if (typeof val === 'string') onSelectDate(val);
                 }}
               />
+              <HStack gap={2} justify="center" wrap="wrap">
+                {isViewingFutureWindow ? (
+                  <Button
+                    label="Mes actual"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onReturnToToday}
+                  />
+                ) : null}
+                {canAdvanceMonth ? (
+                  <Button
+                    label="Ver próximo mes →"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onAdvanceMonth}
+                  />
+                ) : null}
+              </HStack>
               <Text type="supporting" color="secondary">
                 Los días habilitados muestran horarios libres reales.
               </Text>
@@ -275,7 +436,7 @@ export function ScheduleStep({
             <VStack gap={3}>
               <HStack justify="between" align="center">
                 <Heading level={3}>
-                  {formatDateShortInTimezone(`${selectedDate}T18:00:00Z`, settings.timezone)}
+                  {formatDateShortInTimezone(`${selectedDate}T18:00:00Z`, timezone)}
                 </Heading>
                 {selectedDaySummary ? (
                   <Token size="sm" label={`${selectedDaySummary.slotCount} horarios`} />
@@ -325,12 +486,22 @@ export function ScheduleStep({
                   title="Sin lugares este día"
                   description="Prueba otra fecha o apúntate en lista de espera para avisarte si se libera un espacio."
                   actions={
-                    <Button
-                      label="Unirme a lista de espera"
-                      variant="secondary"
-                      size="sm"
-                      onClick={onOpenWaitlist}
-                    />
+                    <HStack gap={2} wrap="wrap" justify="center">
+                      {canAdvanceMonth ? (
+                        <Button
+                          label="Ver próximo mes →"
+                          variant="primary"
+                          size="sm"
+                          onClick={onAdvanceMonth}
+                        />
+                      ) : null}
+                      <Button
+                        label="Anotarme en lista de espera"
+                        variant="secondary"
+                        size="sm"
+                        onClick={onOpenWaitlist}
+                      />
+                    </HStack>
                   }
                 />
               )}
@@ -357,26 +528,45 @@ export function ScheduleStep({
                   ? 'Vista en columnas: compara horarios disponibles de varios días al instante.'
                   : 'Vista semanal: elige cualquier bloque libre de la semana.'}
               </Text>
-              <HStack gap={2}>
+              <HStack gap={2} wrap="wrap">
+                {isViewingFutureWindow ? (
+                  <Button
+                    label="Mes actual"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onReturnToToday}
+                  />
+                ) : null}
                 <Button
                   label="Días anteriores"
                   variant="secondary"
                   size="sm"
+                  isDisabled={windowStartIdx <= 0 && !isViewingFutureWindow}
                   onClick={() => {
-                    if (selectedDayIdx > 0) {
-                      const prevDay = availabilityDays[Math.max(0, selectedDayIdx - 5)];
+                    if (windowStartIdx > 0) {
+                      const prevDay = availabilityDays[Math.max(0, windowStartIdx - 5)];
                       if (prevDay) onSelectDate(prevDay.date);
+                    } else if (isViewingFutureWindow) {
+                      onReturnToToday();
                     }
                   }}
                 />
                 <Button
-                  label="Siguientes días"
+                  label={
+                    windowStartIdx + 6 >= availabilityDays.length && canAdvanceMonth
+                      ? 'Ver próximo mes →'
+                      : 'Siguientes días'
+                  }
                   variant="secondary"
                   size="sm"
                   onClick={() => {
+                    if (windowStartIdx + 6 >= availabilityDays.length) {
+                      if (canAdvanceMonth) onAdvanceMonth();
+                      return;
+                    }
                     const nextIdx = Math.min(
                       availabilityDays.length - 1,
-                      Math.max(0, selectedDayIdx) + 5,
+                      windowStartIdx + 5,
                     );
                     if (availabilityDays[nextIdx]) {
                       onSelectDate(availabilityDays[nextIdx].date);
@@ -387,30 +577,54 @@ export function ScheduleStep({
             </HStack>
 
             <Grid columns={{ minWidth: 160, max: 6 }} gap={3}>
-              {weekWindowDays.map((day) => (
-                <Card key={day.date} variant="muted" padding={3}>
-                  <VStack gap={2}>
-                    <VStack gap={0}>
-                      <Text weight="semibold">
-                        {formatDateShortInTimezone(`${day.date}T18:00:00Z`, settings.timezone)}
-                      </Text>
-                      <Text type="supporting" color="secondary">
-                        {day.slotCount} libres
-                      </Text>
-                    </VStack>
-                    <Divider />
-                    {day.slots.length > 0 ? (
-                      <VStack gap={1.5} height={340} isScrollable>
-                        {day.slots.map((slot) => renderSlotButton(slot, true))}
+              {weekWindowDays.map((day, index) => {
+                const prevDay = index > 0 ? weekWindowDays[index - 1] : undefined;
+                const monthBoundary = getMonthBoundaryLabel(day.date, prevDay?.date);
+                const dayRedirectId = day.redirectStaffId ?? null;
+                const dayRedirectName = day.redirectStaffName ?? null;
+                return (
+                  <Card key={day.date} variant="muted" padding={3}>
+                    <VStack gap={2}>
+                      <VStack gap={1}>
+                        {monthBoundary ? (
+                          <Token size="sm" color="pink" label={monthBoundary} />
+                        ) : null}
+                        <Text weight="semibold" hasTabularNumbers>
+                          {formatDateShortInTimezone(`${day.date}T18:00:00Z`, timezone)}
+                        </Text>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {day.slotCount} libres
+                        </Text>
                       </VStack>
-                    ) : (
-                      <Text type="supporting" color="secondary">
-                        Sin disponibilidad
-                      </Text>
-                    )}
-                  </VStack>
-                </Card>
-              ))}
+                      <Divider />
+                      {day.publicNote ? (
+                        <Text type="supporting" color="accent">
+                          {day.publicNote}
+                        </Text>
+                      ) : null}
+                      {dayRedirectId && dayRedirectName ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          width="100%"
+                          label={`Ver horarios de ${dayRedirectName}`}
+                          onClick={() => onRedirectStaff(dayRedirectId)}
+                        />
+                      ) : null}
+                      {day.slots.length > 0 ? (
+                        <VStack gap={1.5} height={340} isScrollable>
+                          {day.slots.map((slot) => renderSlotButton(slot, true))}
+                        </VStack>
+                      ) : (
+                        <Text type="supporting" color="secondary">
+                          Sin disponibilidad
+                        </Text>
+                      )}
+                    </VStack>
+                  </Card>
+                );
+              })}
             </Grid>
           </VStack>
         )}

@@ -13,6 +13,10 @@ import {
   type AvailableSlot,
 } from '../availability/engine';
 import {
+  expandPlainDateRange,
+  getMexicoOfficialHolidays,
+} from '../availability/holidays-mx';
+import {
   canAwardStamp,
   computeClientLoyaltySummary,
 } from '../loyalty/stamps';
@@ -74,6 +78,24 @@ import {
 } from './port';
 
 export { PolicyError, SlotConflictError };
+
+interface ActiveBookingRecoveryItem {
+  bookingCode: string;
+  serviceName: string;
+  staffName: string;
+  startAt: string;
+  manageUrl: string;
+}
+
+export class MaxActiveBookingsError extends PolicyError {
+  readonly activeBookings: ActiveBookingRecoveryItem[];
+
+  constructor(message: string, activeBookings: ActiveBookingRecoveryItem[]) {
+    super('MAX_ACTIVE_BOOKINGS', message);
+    this.name = 'MaxActiveBookingsError';
+    this.activeBookings = activeBookings;
+  }
+}
 import type {
   AdminRole,
   AdminUser,
@@ -1205,16 +1227,29 @@ export async function createBookingAtomic(
 
     if (params.enforceMaxActiveBookings && existingClient) {
       const maxActive = db.settings.maxActiveBookingsPerClient ?? 3;
-      const activeFutureCount = db.bookings.filter(
-        (b) =>
-          b.clientId === existingClient.id &&
-          isActiveBookingStatus(b.status) &&
-          new Date(b.endAt).getTime() > now.getTime(),
-      ).length;
-      if (activeFutureCount >= maxActive) {
-        throw new PolicyError(
-          'MAX_ACTIVE_BOOKINGS',
-          `Ya cuentas con ${activeFutureCount} citas activas (límite máximo: ${maxActive}). Cancela o reagenda una cita existente antes de agendar otra.`,
+      const activeFutureBookings = db.bookings
+        .filter(
+          (b) =>
+            b.clientId === existingClient.id &&
+            isActiveBookingStatus(b.status) &&
+            new Date(b.endAt).getTime() > now.getTime(),
+        )
+        .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+      if (activeFutureBookings.length >= maxActive) {
+        const activeBookings: ActiveBookingRecoveryItem[] = activeFutureBookings.map((b) => {
+          const svc = db.services.find((s) => s.id === b.serviceId);
+          const st = db.staff.find((s) => s.id === b.staffId);
+          return {
+            bookingCode: b.bookingCode,
+            serviceName: svc?.name ?? 'Servicio',
+            staffName: st?.name ?? 'Especialista',
+            startAt: b.startAt,
+            manageUrl: `/cita/${b.manageToken}`,
+          };
+        });
+        throw new MaxActiveBookingsError(
+          `Ya cuentas con ${activeFutureBookings.length} citas activas (límite máximo: ${maxActive}). Cancela o reagenda una cita existente antes de agendar otra.`,
+          activeBookings,
         );
       }
     }
@@ -2188,6 +2223,82 @@ export async function sendManualBookingReminder(params: {
   };
 }
 
+export async function requestBookingReschedule(params: {
+  bookingId: string;
+  note?: string;
+  actor: AuditActor;
+}): Promise<{
+  ok: true;
+  bookingId: string;
+  rescheduleUrl: string;
+  waMeUrl: string;
+  messagePreview: string;
+}> {
+  const db = getSnapshot();
+  const booking = db.bookings.find((b) => b.id === params.bookingId);
+  if (!booking) {
+    throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+  }
+  const isPast = new Date(booking.endAt).getTime() < Date.now();
+  if (db.settings.lockPastBookings !== false && isPast && params.actor.role !== 'owner') {
+    throw new PolicyError(
+      'PAST_BOOKING_LOCKED',
+      'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
+    );
+  }
+  if (isTerminalBookingStatus(booking.status)) {
+    throw new PolicyError(
+      'INVALID_STATE',
+      'Solo puedes solicitar reprogramación en citas activas.',
+    );
+  }
+
+  const hydrated = hydrateBooking(db, booking);
+  const settings = { ...db.settings };
+  const env = getRuntimeIntegrationStatus();
+  const tz = settings.timezone || 'America/Mexico_City';
+  const dateLabel = formatDateLongInTimezone(hydrated.startAt, tz);
+  const timeLabel = formatTimeInTimezone(hydrated.startAt, tz, false);
+  const rescheduleUrl = `${env.appUrl}/cita/${hydrated.manageToken}?action=reschedule`;
+  const cleanNote = params.note?.trim();
+  const noteSuffix = cleanNote ? ` ${cleanNote}` : '';
+  const messagePreview = `Hola ${hydrated.client.fullName}, te escribimos de ${settings.name} sobre tu cita (${hydrated.bookingCode}) de ${hydrated.service.name} el ${dateLabel} a las ${timeLabel}.${noteSuffix} Puedes elegir un nuevo horario directamente aquí: ${rescheduleUrl}`;
+  const waMeUrl = buildWhatsAppLink(hydrated.client.phoneE164, messagePreview);
+
+  const nowIso = new Date().toISOString();
+  const waRes = await dispatchWhatsAppNotification({
+    toPhoneE164: hydrated.client.phoneE164,
+    bodyText: messagePreview,
+  });
+  const log: ScheduledNotification = {
+    id: generateId('ntf'),
+    bookingId: hydrated.id,
+    workflowId: null,
+    channel: 'whatsapp',
+    recipient: hydrated.client.phoneE164,
+    scheduledFor: nowIso,
+    status: waRes.status,
+    subject: `Solicitud de reprogramación (${hydrated.bookingCode})`,
+    previewText: messagePreview.slice(0, 160),
+    providerMessageId: waRes.providerMessageId,
+    errorMessage: waRes.errorMessage,
+    sentAt: waRes.status === 'sent' ? nowIso : null,
+    createdAt: nowIso,
+  };
+
+  await withWriteLock((liveDb) => {
+    liveDb.notifications.unshift(log);
+  });
+
+  return {
+    ok: true,
+    bookingId: hydrated.id,
+    rescheduleUrl,
+    waMeUrl,
+    messagePreview,
+  };
+}
+
 export async function updateSalonSettings(
   patch: Partial<Omit<SalonSettings, 'landingContent'>> & {
     landingContent?: Partial<SalonSettings['landingContent']>;
@@ -2319,6 +2430,7 @@ export async function upsertService(
       allowInspoPhoto: input.allowInspoPhoto ?? true,
       isActive: input.isActive ?? true,
       isFeatured: input.isFeatured ?? true,
+      isPrivate: input.isPrivate ?? false,
       displayOrder: db.services.length,
       imageUrl: input.imageUrl ?? null,
     };
@@ -2378,20 +2490,173 @@ export async function saveStaffSchedule(
   });
 }
 
+function validateOverrideStaffAndRedirect(
+  db: DemoDatabase,
+  staffId: string,
+  redirectStaffId?: string | null,
+): string | null {
+  if (!db.staff.some((s) => s.id === staffId)) {
+    throw new PolicyError('STAFF_NOT_FOUND', 'Especialista no encontrada.');
+  }
+  const cleanRedirect = redirectStaffId?.trim() || null;
+  if (!cleanRedirect) return null;
+  if (cleanRedirect === staffId) {
+    throw new PolicyError(
+      'INVALID_REDIRECT_STAFF',
+      'La especialista de redirección debe ser distinta a la especialista bloqueada.',
+    );
+  }
+  if (!db.staff.some((s) => s.id === cleanRedirect && s.isActive)) {
+    throw new PolicyError(
+      'REDIRECT_STAFF_NOT_FOUND',
+      'La especialista de redirección no existe o está inactiva.',
+    );
+  }
+  return cleanRedirect;
+}
+
 export async function addDateOverride(
   override: Omit<DateOverride, 'id'>,
 ): Promise<DateOverride> {
   return withWriteLock((db) => {
+    const validatedRedirect = validateOverrideStaffAndRedirect(
+      db,
+      override.staffId,
+      override.redirectStaffId,
+    );
+    const cleanPublicNote = override.publicNote?.trim();
     db.dateOverrides = db.dateOverrides.filter(
       (o) => !(o.staffId === override.staffId && o.overrideDate === override.overrideDate),
     );
     const created: DateOverride = {
-      ...override,
+      staffId: override.staffId,
+      overrideDate: override.overrideDate,
+      isUnavailable: override.isUnavailable,
+      startTime: override.startTime,
+      endTime: override.endTime,
+      reason: override.reason,
+      ...(cleanPublicNote ? { publicNote: cleanPublicNote } : {}),
+      redirectStaffId: validatedRedirect,
       id: `ovr-${crypto.randomUUID().slice(0, 8)}`,
     };
     db.dateOverrides.push(created);
     publishRealtimeEvent('availability_updated', { staffId: override.staffId });
     return created;
+  });
+}
+
+export async function addDateOverrideRange(params: {
+  staffId: string;
+  startDate: string;
+  endDate: string;
+  isUnavailable: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  reason: string;
+  publicNote?: string;
+  redirectStaffId?: string | null;
+}): Promise<DateOverride[]> {
+  let dates: string[];
+  try {
+    dates = expandPlainDateRange(params.startDate, params.endDate, 31);
+  } catch (err) {
+    throw new PolicyError(
+      'INVALID_DATE_RANGE',
+      err instanceof Error ? err.message : 'Rango de fechas inválido.',
+    );
+  }
+
+  return withWriteLock((db) => {
+    const validatedRedirect = validateOverrideStaffAndRedirect(
+      db,
+      params.staffId,
+      params.redirectStaffId,
+    );
+    const cleanPublicNote = params.publicNote?.trim();
+    const dateSet = new Set(dates);
+    db.dateOverrides = db.dateOverrides.filter(
+      (o) => !(o.staffId === params.staffId && dateSet.has(o.overrideDate)),
+    );
+
+    const created: DateOverride[] = dates.map((overrideDate) => ({
+      id: `ovr-${crypto.randomUUID().slice(0, 8)}`,
+      staffId: params.staffId,
+      overrideDate,
+      isUnavailable: params.isUnavailable,
+      startTime: params.isUnavailable ? null : params.startTime,
+      endTime: params.isUnavailable ? null : params.endTime,
+      reason: params.reason,
+      ...(cleanPublicNote ? { publicNote: cleanPublicNote } : {}),
+      redirectStaffId: validatedRedirect,
+    }));
+
+    db.dateOverrides.push(...created);
+    publishRealtimeEvent('availability_updated', { staffId: params.staffId });
+    return created;
+  });
+}
+
+export async function preloadMexicoHolidays(params: {
+  year: number;
+  staffId: string;
+  publicNote?: string;
+  redirectStaffId?: string | null;
+}): Promise<{ created: DateOverride[]; skippedDates: string[]; year: number }> {
+  let holidays: ReturnType<typeof getMexicoOfficialHolidays>;
+  try {
+    holidays = getMexicoOfficialHolidays(params.year);
+  } catch (err) {
+    throw new PolicyError(
+      'INVALID_YEAR',
+      err instanceof Error ? err.message : 'Año inválido.',
+    );
+  }
+
+  return withWriteLock((db) => {
+    const validatedRedirect = validateOverrideStaffAndRedirect(
+      db,
+      params.staffId,
+      params.redirectStaffId,
+    );
+    const tz = db.settings.timezone || 'America/Mexico_City';
+    const todayKey = getDateKeyInTimezone(new Date(), tz);
+    const created: DateOverride[] = [];
+    const skippedDates: string[] = [];
+
+    for (const holiday of holidays) {
+      if (holiday.date < todayKey) continue;
+      const alreadyExists = db.dateOverrides.some(
+        (o) => o.staffId === params.staffId && o.overrideDate === holiday.date,
+      );
+      if (alreadyExists) {
+        skippedDates.push(holiday.date);
+        continue;
+      }
+      const cleanNote = params.publicNote?.trim() || `Cerrado por ${holiday.name}`;
+      const record: DateOverride = {
+        id: `ovr-${crypto.randomUUID().slice(0, 8)}`,
+        staffId: params.staffId,
+        overrideDate: holiday.date,
+        isUnavailable: true,
+        startTime: null,
+        endTime: null,
+        reason: `Festivo MX: ${holiday.name}`,
+        publicNote: cleanNote,
+        redirectStaffId: validatedRedirect,
+      };
+      db.dateOverrides.push(record);
+      created.push(record);
+    }
+
+    if (created.length > 0) {
+      publishRealtimeEvent('availability_updated', { staffId: params.staffId });
+    }
+
+    return {
+      created,
+      skippedDates,
+      year: params.year,
+    };
   });
 }
 
@@ -3145,7 +3410,7 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
         settings: toPublicSettingsDTO(db.settings),
         categories: db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder),
         services: db.services
-          .filter((s) => s.isActive)
+          .filter((s) => s.isActive && !s.isPrivate)
           .toSorted((a, b) => a.displayOrder - b.displayOrder)
           .map(toPublicServiceDTO),
         addons: db.addons

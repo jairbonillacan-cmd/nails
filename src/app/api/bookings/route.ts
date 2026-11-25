@@ -4,6 +4,7 @@ import { readClientSessionToken } from '@/lib/auth/client-session';
 import {
   createBookingWithExtras,
   getRepository,
+  MaxActiveBookingsError,
   persistBookingMediaField,
   PolicyError,
   SlotConflictError,
@@ -109,6 +110,16 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof MediaValidationError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+    }
+    if (err instanceof MaxActiveBookingsError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          code: err.code,
+          activeBookings: err.activeBookings,
+        },
+        { status: 409 },
+      );
     }
     if (err instanceof PolicyError) {
       const status = err.code === 'MAX_ACTIVE_BOOKINGS' ? 409 : 400;

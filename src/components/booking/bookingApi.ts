@@ -7,6 +7,14 @@ export interface AppliedCouponState {
   discountCents: number;
 }
 
+export interface ActiveBookingSummary {
+  bookingCode: string;
+  serviceName: string;
+  staffName: string;
+  startAt: string;
+  manageUrl: string;
+}
+
 export async function fetchAvailabilityDays(input: {
   serviceId: string;
   extraServiceKey: string;
@@ -111,6 +119,31 @@ export async function validateCouponCode(
   };
 }
 
+function parseActiveBookings(raw: unknown): ActiveBookingSummary[] {
+  if (!Array.isArray(raw)) return [];
+  const items: ActiveBookingSummary[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    if (
+      typeof record.bookingCode === 'string' &&
+      typeof record.serviceName === 'string' &&
+      typeof record.staffName === 'string' &&
+      typeof record.startAt === 'string' &&
+      typeof record.manageUrl === 'string'
+    ) {
+      items.push({
+        bookingCode: record.bookingCode,
+        serviceName: record.serviceName,
+        staffName: record.staffName,
+        startAt: record.startAt,
+        manageUrl: record.manageUrl,
+      });
+    }
+  }
+  return items;
+}
+
 export async function submitBookingRequest(
   idempotencyKey: string,
   payload: {
@@ -137,7 +170,12 @@ export async function submitBookingRequest(
 ): Promise<
   | { kind: 'ok'; manageUrl: string }
   | { kind: 'conflict'; error: string; suggestedSlots: AvailableSlot[] }
-  | { kind: 'error'; error: string; code?: string }
+  | {
+      kind: 'error';
+      error: string;
+      code?: string;
+      activeBookings?: ActiveBookingSummary[];
+    }
 > {
   const res = await fetch('/api/bookings', {
     method: 'POST',
@@ -151,6 +189,7 @@ export async function submitBookingRequest(
     code?: string;
     error?: string;
     suggestedSlots?: AvailableSlot[];
+    activeBookings?: unknown;
     manageUrl?: string;
     booking?: { manageToken?: string };
   };
@@ -169,7 +208,8 @@ export async function submitBookingRequest(
       code: 'MAX_ACTIVE_BOOKINGS',
       error:
         data.error ||
-        'Ya alcanzaste el límite de citas activas simultáneas. Reagenda o cancela una cita desde tu link personal o escríbenos por WhatsApp.',
+        'Ya alcanzaste el límite de citas activas simultáneas. Reprograma una de tus citas existentes abajo o escríbenos por WhatsApp.',
+      activeBookings: parseActiveBookings(data.activeBookings),
     };
   }
   if (res.status === 400 && data.code === 'PRIVACY_CONSENT_REQUIRED') {

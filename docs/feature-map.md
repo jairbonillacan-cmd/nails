@@ -32,9 +32,9 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
   - Hero: `h1` con `settings.landingContent.heroTitle` (`De tu idea a tus uñas.`), badge de marca LAIKONA NAILS, CTA `Agendar mi cita ahora` (`/reservar`) y enlace a `@laikona.nailsss`.
   - Catálogo `#servicios`: `TabList` (`Todos los servicios`, `Uñas & Esculturales`, `Gel & Retiro`, `Pies & PediSpa`), 9 tarjetas de servicio (indicador `Desde $...` cuando `isStartingPrice`) con botón `Reservar` (`/reservar/[slug]`).
   - Galería `#galeria`: `TabList` por categoría + 4 diseños + botones `Quiero este diseño` (`/reservar/[slug]?inspo=...`).
-  - **SEO Local:** `<script type="application/ld+json">` de tipo `NailSalon` / `LocalBusiness` con `OfferCatalog` y `aggregateRating` (sin `commissionPercent`), `GET /sitemap.xml` (200 con `/`, `/reservar`, `/links`, `/aviso-de-privacidad`, y todos los `/reservar/[slug]`) y `GET /robots.txt` (200 bloqueando `/admin/`, `/api/`, `/cita/`).
+  - **SEO Local:** `<script type="application/ld+json">` de tipo `NailSalon` / `LocalBusiness` con `OfferCatalog` y `aggregateRating` (sin `commissionPercent` y excluyendo servicios privados `isPrivate: true`), `GET /sitemap.xml` (200 con `/`, `/reservar`, `/links`, `/aviso-de-privacidad`, y únicamente `/reservar/[slug]` públicos) y `GET /robots.txt` (200 bloqueando `/admin/`, `/api/`, `/cita/`).
 - **Flujo de verificación:**
-  1. Cambiar pestaña de categoría en Servicios -> actualiza la cantidad de tarjetas visibles.
+  1. Cambiar pestaña de categoría en Servicios -> actualiza la cantidad de tarjetas visibles (servicios VIP `isPrivate: true` nunca aparecen aquí ni en `/links` ni en `/api/public/bootstrap`).
   2. Alternar modo claro/oscuro -> el tema Astryx actualiza superficies sin FOUC.
   3. Clic en `Reservar` de `Rubber` -> navega a `/reservar/rubber`.
 
@@ -42,7 +42,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 
 ## 2. Bio-Link de Instagram (`/links`) y Aviso de Privacidad (`/aviso-de-privacidad`)
 - **Bio-Link (`/links`):**
-  - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, ubicación `Puebla · @lumiere.beautymx`, chips de turnos fijos y anticipo `$200 MXN`, botones apilados a `/reservar`, `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios (sin `commissionPercent`).
+  - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, ubicación `Puebla · @lumiere.beautymx`, chips de turnos fijos y anticipo `$200 MXN`, botones apilados a `/reservar`, `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios públicos (excluyendo `isPrivate: true`, sin `commissionPercent`).
 - **Aviso de Privacidad LFPDPPP (`/aviso-de-privacidad`):**
   - Detalla Responsable (`LAIKONA NAILS / Karla Patricia Carrillo Rodríguez`), datos recabados, finalidades primarias vs. secundarias opcionales, tarjeta destacada de **Derechos ARCO** (acceso/descarga JSON, rectificación, cancelación, oposición, plazo 20 días hábiles) y versión vigente (`privacyPolicyVersion`, ej. `2026-11`).
 
@@ -50,14 +50,16 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 
 ## 3. Flujo de Reserva en Tiempo Real (`/reservar` y `/reservar/[slug]`)
 - **Precondiciones:** Al menos 1 servicio activo y 1 especialista con horario configurado.
-- **Query params soportados:** `?servicio=<slug>`, `?staff=<bookingSlug>`, `?inspo=<texto>`.
+- **Estado bidireccional en URL (`C2` — `useBookingUrlSync`):** `?servicio=<slug>`, `?extras=<s1,s2>`, `?addons=<a1,a2>`, `?staff=<bookingSlug>`, `?date=YYYY-MM-DD`, `?layout=month|week|column`, `?slot=<iso>`, `?inspo=<texto>`. Recargar la página o abrir un deep-link de Instagram/WhatsApp restaura exactamente el paso y selección.
+- **Servicios VIP Privados (`C9`):** Un servicio con `isPrivate: true` se oculta de `/`, `/reservar`, `/links`, `/sitemap.xml` y `/api/public/bootstrap`, pero sigue siendo accesible y reservable vía enlace directo `/reservar/[slug]` (con `robots: noindex, nofollow`).
 - **Selectores y controles clave:**
   - Paso 1 (Servicios y Extras): `SelectableCard` por servicio principal + combinación **multi-servicio** (`extraServiceIds`), `CheckboxInput` por extra (ej. `Retiro de gel o acrílico previo (+20 min · +$120)`), selector de especialista (**Karla**, **Paty**, **Tere** o *Sin preferencia*).
   - **Reseñas verificadas en `/reservar/[slug]`:** `ServiceReviewsSection` muestra reseñas verificadas (`PublicReviewDTO`: solo primer nombre, calificación y comentario, cero PII completo) filtradas por servicio (o promedio del estudio si el servicio aún no tiene reseñas).
-  - Paso 2 (Agenda en vivo):
-    - `SegmentedControl` `Formato de hora` (`12h` | `24h`) y `Vista de calendario` (`Mes` | `Semana` | `Columnas`).
-    - En **Karla/Paty** muestra bloques fijos (`10:00 · 13:30 · 16:30`) y en **Tere** (`14:00 · 16:00 · 18:00`), respetando `recurringBlocks`.
-    - Botón `Lista de espera` -> abre `Dialog` (`Lista de espera`) -> `POST /api/waitlist`.
+  - Paso 2 (Agenda en vivo — `C1`/`C2`/`C5`/`C7`):
+    - Zona horaria bloqueada del estudio visible (`Horario del estudio: Puebla · America/Mexico_City`, sin dropdown engañoso cuando `lockTimezone: true`).
+    - `SegmentedControl` `Formato de hora` (`12h` | `24h`) y `Vista de calendario` (`Mes` | `Semana` | `Columnas`), marcadores de cruce de mes (`DIC 1` / `ENE 1`), `aria-label` completo por horario, región `aria-live="polite"` para anuncios accesibles y alineación numérica `tabular-nums`.
+    - En **Karla/Paty** muestra bloques fijos (`10:00 · 13:30 · 16:30`) y en **Tere** (`14:00 · 16:00 · 18:00`), respetando `recurringBlocks` e invariantes incluso si `optimizeContinuousSlots` está activo (`C1` solo aplica en modo continuo).
+    - **Ausencias OOO y recuperación de día lleno (`C2`/`C7`):** Muestra `publicNote` (nunca `reason` interno) y botón 1 clic hacia `redirectStaffId` si la especialista está ausente; si un día no tiene huecos, ofrece salto al siguiente día con lugar o `Lista de espera` (`POST /api/waitlist`).
   - Paso 3 (Confirmación, Anticipo SPEI y Consentimiento LFPDPPP):
     - Barra de progreso `Tiempo restante de apartado` + contador mm:ss (`POST /api/slot-holds`).
     - Datos de anticipo SPEI (`$200 MXN`, Mercado Pago, CLABE `7229 6901 3959 779869`) con selector de comprobante (`Subir comprobante aquí` o `Lo enviaré por DM a @laikona.nailsss`).
@@ -66,7 +68,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
     - Botón submit (`POST /api/bookings` con `Idempotency-Key`).
 - **Flujos críticos a verificar:**
   1. Enviar `POST /api/bookings` sin `privacyConsentAccepted: true` -> rechazado `400 PRIVACY_CONSENT_REQUIRED`.
-  2. Exceder `maxActiveBookingsPerClient` con el mismo teléfono -> rechazado `409 MAX_ACTIVE_BOOKINGS` con mensaje claro.
+  2. Exceder `maxActiveBookingsPerClient` con el mismo teléfono -> rechazado `409 MAX_ACTIVE_BOOKINGS` con `activeBookings[]` **exclusivamente de ese teléfono** (`bookingCode`, `serviceName`, `staffName`, `startAt`, `manageUrl`) para recuperación directa de reprogramación (`C6`).
   3. Combinar servicio + extra -> suma duración/precio y recalcula horarios disponibles en vivo.
   4. Seleccionar horario -> activa hold de **3 minutos** (`Horario apartado para ti`).
   5. Aplicar cupón `BIENVENIDA10` -> aplica descuento 10% (y bloquea doble uso por la misma clienta).
@@ -79,6 +81,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - **Precondiciones:** Token válido en `bookings.manageToken` (ej. `/cita/demo-token-sofia-1042`).
 - **Controles clave:**
   - Badge de estado (`Confirmada`, `Pendiente de confirmación`, `Completada`, `Cancelada`, `No asistió`) y código `NL-xxxx`.
+  - **Auto-apertura de reprogramación (`C6`):** Abrir `/cita/[token]?action=reschedule` en una cita activa abre automáticamente el diálogo de reprogramación con disponibilidad real cargada (usado por el botón 1 clic `Solicitar reprogramación` del panel admin).
   - **Tarjeta Digital de Sellos Web/PWA (`LoyaltyStampCard`):** Visible sin descargar app; muestra nombre del programa (`Tarjeta de Sellos LAIKONA`), progreso (`6 de 8 sellos` en `/cita/demo-token-sofia-1042`), casillas numeradas, beneficio y estado (`¡Te faltan solo 2 visitas para tu premio!` o `¡Premio listo para canjear en tu próxima cita!`). Cero `commissionPercent` en el HTML.
   - Botones de calendario: `Google Calendar`, `Apple / iPhone (.ics)` (`/api/bookings/manage/[token]/ics`), `Outlook`, `Enviar por WhatsApp`.
   - Acciones activas: `Reagendar` (valida elegibilidad de especialista para todos los servicios + `recurringBlocks`, notifica al salón) y `Cancelar cita` (libera cupón/saldo Gift Card y notifica al salón).
@@ -89,12 +92,12 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 ---
 
 ## 5. Acceso Admin (`/admin/login`), Onboarding (`/admin/onboarding`) y RBAC Multi-Rol
-- **Precondiciones:** En modo demo inicia autenticado como `owner` salvo que se cierre sesión; el banner superior permite alternar entre `owner`, `admin` y `specialist`.
+- **Precondiciones:** En modo demo inicia autenticado como `owner` salvo que se cierre sesión; el banner superior permite alternar entre `owner`, `admin` y `specialist`. En móvil (`AdminShell`), dock flotante estilo isla (`10b`) con `Inicio`, `Agenda`, `Clientas`/`Horarios`, `Caja`, `Menú` y botón rápido `+ Nueva cita`.
 - **Onboarding (`/admin/onboarding`):** Asistente inicial de 4 pasos (perfil del estudio + Instagram, banco/CLABE de anticipo, equipo/horarios fijos y confirmación final) vinculado al checklist del dashboard.
 - **Verificación RBAC:**
   - `owner`: acceso total incluyendo `Marca, QR y Políticas`, `Integraciones y WhatsApp`, creación de usuarios en `/admin/equipo`, anulación auditada de `lockPastBookings` y lectura de `recentAuditLogs`.
   - `admin`: gestiona Citas, Cobros, Servicios, Disponibilidad, Clientas (incluyendo descarga ARCO y filtro inverso), Caja, Inventario y Manicuristas; no puede modificar citas pasadas si `lockPastBookings` está activo (`403 PAST_BOOKING_LOCKED`) ni ver `recentAuditLogs`.
-  - `specialist`: solo ve Inicio, sus propias Citas, su propia Disponibilidad/Bloqueos recurrentes y sus propias Comisiones/Caja; bloqueado en rutas ajenas (`403`).
+  - `specialist`: solo ve Inicio, sus propias Citas (incluyendo `Solicitar reprogramación` únicamente en sus citas), su propia Disponibilidad/Bloqueos/Festivos y sus propias Comisiones/Caja; bloqueado en rutas ajenas (`403`).
 
 ---
 
@@ -104,15 +107,15 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 | :--- | :--- | :--- |
 | `/admin` | Resumen operativo y alertas | KPIs (`Citas hoy`, `Caja neta`, `Satisfacción`, `Alertas`), alerta roja de **Citas sin cobrar (Fuga de ingresos)** (`uncollectedBookings` -> `/admin/caja?tab=sin-cobrar`), alerta de **Clientas cerca de su premio** (`nearRewardClients` -> `/admin/clientas`), anticipos SPEI pendientes y checklist hacia `/admin/onboarding`. |
 | `/admin/onboarding` | Asistente inicial del salón | Configura nombre, ubicación, `@instagram`, banco/CLABE `$200 MXN` y marca `onboardingCompleted: true`. |
-| `/admin/citas` | Agenda visual, búsqueda rápida y cobro | Vista visual por especialista (muestra `recurringBlocks`), clic en bloque abre **Popover rápido** (`BookingQuickPopover`: `@instagram`, transiciones válidas, WhatsApp, recordatorio, `$ Cobrar`, `Ver ficha` -> `/admin/clientas?q=<tel>`). Botón **`Búsqueda rápida de hora`** (`GET /api/availability?mode=quick_search`) abre nueva cita prellenada. **Drawer de Cobro Dividido** (`CheckoutDrawerDialog`, también vía `?collect=<bookingId>`): resta anticipo previo, permite múltiples métodos de pago + propina universal por especialista + extra rápido + canje de premio de sellos, otorga sello del día y ofrece botón 1 clic **`Agendar siguiente retoque (+21 días)`**. Maneja `403 PAST_BOOKING_LOCKED`. |
-| `/admin/servicios` | Catálogo + Preview en vivo | Pestañas `Servicios` y `Extras / Add-ons`; soporte de `isStartingPrice` (`Desde $...`); editar actualiza `VISTA PREVIA EN VIVO`; `Copiar link` copia `/reservar/[slug]`. |
-| `/admin/disponibilidad` | Turnos fijos, bloqueos recurrentes y diagnóstico | Edición de **horarios fijos** (`10:00 · 13:30 · 16:30` / `14:00 · 16:00 · 18:00`), pestaña **`Bloqueos recurrentes`** (crear bloqueos semanales/mensuales con `untilDate`, pausar/reanudar y eliminar vía `/api/admin/availability`), pestaña `Excepciones y vacaciones` y `Diagnóstico (Troubleshooter)` (`GET /api/admin/availability?mode=diagnose`). |
+| `/admin/citas` | Agenda visual, búsqueda rápida, reprogramación y cobro | Vista visual por especialista (muestra `recurringBlocks`), clic en bloque abre **Popover rápido** (`BookingQuickPopover`: `@instagram`, transiciones válidas, WhatsApp, recordatorio, **`Solicitar reprogramación`** 1 clic (`C6` -> `PATCH /api/admin/bookings` con `Abrir WhatsApp` + `Copiar enlace` hacia `?action=reschedule`), `$ Cobrar`, `Ver ficha` -> `/admin/clientas?q=<tel>`). Botón **`Búsqueda rápida de hora`** (`GET /api/availability?mode=quick_search`) abre nueva cita prellenada. **Drawer de Cobro Dividido** (`CheckoutDrawerDialog`, también vía `?collect=<bookingId>`): resta anticipo previo, permite múltiples métodos de pago + propina universal por especialista + extra rápido + canje de premio de sellos, otorga sello del día y ofrece botón 1 clic **`Agendar siguiente retoque (+21 días)`**. Maneja `403 PAST_BOOKING_LOCKED` y usa alineación `tabular-nums`. |
+| `/admin/servicios` | Catálogo VIP + Preview en vivo | Pestañas `Servicios` y `Extras / Add-ons` con `CardFrame` limpio (`C4`); soporte de `isStartingPrice` (`Desde $...`) y switch **`Servicio privado / VIP (solo link directo)`** (`C9` -> `isPrivate: true`); editar actualiza `VISTA PREVIA EN VIVO`; `Copiar link` copia `/reservar/[slug]`. |
+| `/admin/disponibilidad` | Turnos fijos, bloqueos, festivos MX y Troubleshooter Visual | Edición de **horarios fijos** (`10:00 · 13:30 · 16:30` / `14:00 · 16:00 · 18:00`) + switch opt-in `optimizeContinuousSlots` (`C1`, solo en modo continuo), pestaña **`Bloqueos recurrentes`** (semanales/mensuales con `untilDate`, pausar/reanudar, eliminar), pestaña **`Excepciones y vacaciones`** con rangos multi-día (`kind: 'override_range'`), nota pública (`publicNote`), redirección OOO (`redirectStaffId`) y botón idempotente **`Cargar días festivos oficiales MX`** (`C7` -> `kind: 'preload_mx_holidays'`), y **Troubleshooter Visual** (`C3` con chips de filtro + estado por hora vía `GET /api/admin/availability?mode=diagnose`). |
 | `/admin/equipo` | Manicuristas + Admins RBAC | Agregar manicurista con % de comisión y servicios asignados; invitar/administrar usuarios del panel (`owner` únicamente). |
 | `/admin/clientas` | CRM, Filtro inverso, Sellos y ARCO | Directorio A–Z con búsqueda (`?q=<phone>` prefiltra automáticamente desde `/admin/citas`) y `@instagram`. Pestaña **Retención** con **Filtro inverso *"Sin reserva en los últimos N días"*** (`21 días · Retoque`, `30 días`, `45 días · Reactivación`, `60 días` vía `GET /api/admin/clients?inactiveDays=N`) + botón 1 clic **`Enviar mensaje de regreso (WhatsApp)`**. Panel **`Clientas cerca de su premio`** (`6 / 8 sellos` + WhatsApp). Diálogo **Ficha**: muestra sellos de fidelidad (`currentStamps / stampsRequired`) y botón **`Descargar datos (ARCO)`** (`owner`/`admin` -> `arco-<id>.json`). |
 | `/admin/caja` | Fuga de ingresos, Pagos divididos, Arqueo y Cupones | Alerta prominente **`Citas sin cobrar` (Fuga de ingresos)** (`uncollectedBookings`, soporta `?tab=sin-cobrar`) con total vs. pagado vs. saldo restante y botón 1 clic **`Ir a cobrar`** (`/admin/citas?collect=<bookingId>`). Desglose de **pagos divididos** (`paymentSplits`) y **propinas universales por especialista** en Ventas y Comisiones. Validación 1 clic de anticipos SPEI (`?tab=anticipos`), arqueo de efectivo, registro de egresos, `Exportar reporte CSV` (registra `csv_exported` en auditoría) y Cupones/Gift Cards. |
 | `/admin/inventario` | Stock y alertas | Alertas de stock bajo, botones `+1 Entrada`, `-1 Consumo` y `Vender (Caja)` (descuenta inventario y suma a Caja automáticamente). |
-| `/admin/marca` | Marca, QR SVG, Fidelidad, Políticas y Auditoría | Presets de tema Astryx en vivo, **Generador de QR SVG descargable** (`QrShareCard` usando `src/lib/qr.ts` para `/reservar` y `/links`), configuración de **Tarjeta de Sellos LAIKONA**, políticas operativas (`lockPastBookings`, `maxActiveBookingsPerClient`, `privacyPolicyVersion`) y tabla de **Registro de Auditoría** (`recentAuditLogs`, visible únicamente para `owner`). |
-| `/admin/integraciones` | Calendar, WhatsApp, SMS, Analytics y Pagos | Toggle Google Calendar (destino + conflictos), simulador WhatsApp (`POST /api/webhooks/whatsapp`), switches de workflows (`Correo`, `WhatsApp`, `SMS Twilio`), `Meta Pixel ID` / `GA4` / `Google Review URL` y selector `paymentMode`. |
+| `/admin/marca` | Marca, WCAG AA, Wireframe Layouts, QR SVG, Fidelidad y Auditoría | Presets de tema Astryx + **Validador de contraste WCAG 2.1 AA en vivo** (`C5` vía `checkThemeAccentContrast`), **Tarjetas wireframe** de vista de calendario (`Mes` / `Semana` / `Columnas`), guardado inteligente con detección de cambios (`isBrandDirty`, `C4`), **Generador de QR SVG/PNG descargable** (`QrShareCard` para `/reservar` y `/links`), configuración de **Tarjeta de Sellos LAIKONA**, políticas operativas (`lockPastBookings`, `maxActiveBookingsPerClient`, `privacyPolicyVersion`, `optimizeContinuousSlots`) y tabla de **Registro de Auditoría** (`recentAuditLogs`, visible únicamente para `owner`). |
+| `/admin/integraciones` | Calendar, WhatsApp, SMS, Analytics y Pagos | Toggle Google Calendar (destino + conflictos), simulador WhatsApp (`POST /api/admin/integrations/whatsapp-simulate`), switches de workflows (`Correo`, `WhatsApp`, `SMS Twilio`), `Meta Pixel ID` / `GA4` / `Google Review URL` y selector `paymentMode`. |
 
 ---
 

@@ -6,6 +6,7 @@ import fc from 'fast-check';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   addDateOverride,
+  addDateOverrideRange,
   createBookingAtomic,
   createClientProfile,
   createOrRefreshSlotHold,
@@ -15,21 +16,27 @@ import {
   getClientLoyaltySummary,
   getInactiveClients,
   getNearRewardClients,
+  getRepository,
   getSnapshot,
   manageClientBookingAction,
+  MaxActiveBookingsError,
   PolicyError,
+  preloadMexicoHolidays,
   queryAvailability,
   quickSearchAvailability,
   recordBookingCheckoutAtomic,
   releaseSlotHold,
+  requestBookingReschedule,
   saveOnboardingSetup,
   sendManualBookingReminder,
   SlotConflictError,
   toggleRecurringBlock,
   updateBookingStatus,
   updateClientNotes,
+  updateSalonSettings,
   upsertLoyaltyProgram,
   upsertRecurringBlock,
+  upsertService,
   validateCouponCode,
 } from './db';
 import { zonedDateTimeToUtc } from '../availability/engine';
@@ -1033,5 +1040,155 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const inactive = getInactiveClients(30);
     expect(inactive.some((c) => c.clientId === 'client-paula')).toBe(true);
     expect(inactive.some((c) => c.clientId === 'client-sofia')).toBe(false);
+  });
+
+  it('Phase 3A+ (C1/C6/C7/C9): MAX_ACTIVE_BOOKINGS recovery scoped to phone, request_reschedule, override ranges + MX holidays idempotency, and private VIP services', async () => {
+    const db = getSnapshot();
+    const tz = db.settings.timezone;
+    const today = getDateKeyInTimezone(new Date(), tz);
+    await updateSalonSettings({ maxActiveBookingsPerClient: 1, optimizeContinuousSlots: true });
+    expect(getSnapshot().settings.optimizeContinuousSlots).toBe(true);
+
+    const slots = queryAvailability({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: 'staff-tere',
+      startDate: today,
+      days: 14,
+    }).days.flatMap((d) => d.slots);
+    const slot1 = slots[0];
+    const slot2 = slots[1];
+    const slot3 = slots[2];
+    if (!slot1 || !slot2 || !slot3) throw new Error('Expected three open slots');
+
+    const ownActive = await createBookingAtomic({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slot1.staffId,
+      startAt: slot1.startAt,
+      clientName: 'Clienta C6',
+      clientPhone: '+522229330001',
+      privacyConsentAccepted: true,
+      enforceMaxActiveBookings: true,
+    });
+
+    await createBookingAtomic({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slot2.staffId,
+      startAt: slot2.startAt,
+      clientName: 'Otra Clienta C6',
+      clientPhone: '+522229330002',
+      privacyConsentAccepted: true,
+      enforceMaxActiveBookings: true,
+    });
+
+    let caughtMax: unknown = null;
+    try {
+      await createBookingAtomic({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: slot3.staffId,
+        startAt: slot3.startAt,
+        clientName: 'Clienta C6',
+        clientPhone: '+522229330001',
+        privacyConsentAccepted: true,
+        enforceMaxActiveBookings: true,
+      });
+    } catch (err) {
+      caughtMax = err;
+    }
+    expect(caughtMax).toBeInstanceOf(MaxActiveBookingsError);
+    expect(caughtMax).toBeInstanceOf(PolicyError);
+    const recoveryErr = caughtMax as MaxActiveBookingsError;
+    expect(recoveryErr.code).toBe('MAX_ACTIVE_BOOKINGS');
+    expect(recoveryErr.activeBookings).toHaveLength(1);
+    expect(recoveryErr.activeBookings[0]?.bookingCode).toBe(ownActive.bookingCode);
+    expect(recoveryErr.activeBookings[0]?.manageUrl).toBe(`/cita/${ownActive.manageToken}`);
+
+    const ownerActor = {
+      id: 'adm-owner',
+      email: 'duena@nails.studio',
+      role: 'owner' as const,
+      fullName: 'Karla Rodríguez (Dueña)',
+    };
+    const adminActor = {
+      id: 'adm-frontdesk',
+      email: 'recepcion@nails.studio',
+      role: 'admin' as const,
+      fullName: 'Recepción',
+    };
+    const reqResched = await requestBookingReschedule({
+      bookingId: ownActive.id,
+      note: 'Tuvimos un ajuste de horario.',
+      actor: ownerActor,
+    });
+    expect(reqResched.ok).toBe(true);
+    expect(reqResched.rescheduleUrl).toContain(`/cita/${ownActive.manageToken}?action=reschedule`);
+    expect(reqResched.waMeUrl).toContain('https://wa.me/522229330001');
+    expect(reqResched.messagePreview).toContain('Tuvimos un ajuste de horario.');
+
+    await expect(
+      requestBookingReschedule({
+        bookingId: 'bk-1005',
+        actor: adminActor,
+      }),
+    ).rejects.toMatchObject({ code: 'PAST_BOOKING_LOCKED' });
+
+    await expect(
+      addDateOverride({
+        staffId: 'staff-karla',
+        overrideDate: '2027-06-10',
+        isUnavailable: true,
+        startTime: null,
+        endTime: null,
+        reason: 'Auto redirect test',
+        redirectStaffId: 'staff-karla',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REDIRECT_STAFF' });
+
+    const rangeCreated = await addDateOverrideRange({
+      staffId: 'staff-karla',
+      startDate: '2027-07-01',
+      endDate: '2027-07-03',
+      isUnavailable: true,
+      startTime: null,
+      endTime: null,
+      reason: 'Vacaciones verano',
+      publicNote: 'Karla de vacaciones — agenda con Paty',
+      redirectStaffId: 'staff-paty',
+    });
+    expect(rangeCreated).toHaveLength(3);
+    expect(rangeCreated.every((o) => o.redirectStaffId === 'staff-paty')).toBe(true);
+    expect(rangeCreated[0]?.publicNote).toBe('Karla de vacaciones — agenda con Paty');
+
+    const futureYear = Number(today.slice(0, 4)) + 1;
+    const holidaysFirst = await preloadMexicoHolidays({
+      year: futureYear,
+      staffId: 'staff-karla',
+      redirectStaffId: 'staff-tere',
+    });
+    expect(holidaysFirst.created).toHaveLength(7);
+    expect(holidaysFirst.skippedDates).toHaveLength(0);
+
+    const holidaysSecond = await preloadMexicoHolidays({
+      year: futureYear,
+      staffId: 'staff-karla',
+      redirectStaffId: 'staff-tere',
+    });
+    expect(holidaysSecond.created).toHaveLength(0);
+    expect(holidaysSecond.skippedDates).toHaveLength(7);
+
+    const vipService = await upsertService({
+      name: 'Set Novia VIP Privado',
+      durationMinutes: 120,
+      priceCents: 95000,
+      isPrivate: true,
+    });
+    expect(vipService.isPrivate).toBe(true);
+
+    const bootstrap = await getRepository().getPublicBootstrap();
+    expect(bootstrap.services.some((s) => s.id === vipService.id)).toBe(false);
+    expect(bootstrap.settings.optimizeContinuousSlots).toBe(true);
   });
 });

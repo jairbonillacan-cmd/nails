@@ -107,7 +107,7 @@ export default function HomePage() {
   const baseUrl = getRuntimeIntegrationStatus().appUrl.replace(/\/+$/, '');
   const publicSettings = toPublicSettingsDTO(db.settings);
   const publicServices = db.services
-    .filter((s) => s.isActive)
+    .filter((s) => s.isActive && !s.isPrivate)
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
     .map(toPublicServiceDTO);
   const reviewsCount = db.reviews.length;

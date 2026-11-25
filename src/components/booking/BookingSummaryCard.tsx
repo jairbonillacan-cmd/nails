@@ -11,7 +11,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Divider } from '@astryxdesign/core/Divider';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
-import { Timer } from 'lucide-react';
+import { Globe, Timer } from 'lucide-react';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import {
   formatCurrency,
@@ -60,6 +60,8 @@ export function BookingSummaryCard({
   onChangeCouponInput,
   onApplyCoupon,
 }: BookingSummaryCardProps) {
+  const timezone = settings.timezone || 'America/Mexico_City';
+
   return (
     <Card variant="muted" padding={5}>
       <VStack gap={4}>
@@ -70,12 +72,14 @@ export function BookingSummaryCard({
                 <Timer size={16} aria-hidden="true" />
                 <Text weight="semibold">Horario apartado para ti</Text>
               </HStack>
-              <Badge
-                variant="info"
-                label={`${Math.floor(holdRemainingSec / 60)}:${String(
-                  holdRemainingSec % 60,
-                ).padStart(2, '0')}`}
-              />
+              <HStack style={{ fontVariantNumeric: 'tabular-nums' }}>
+                <Badge
+                  variant="info"
+                  label={`${Math.floor(holdRemainingSec / 60)}:${String(
+                    holdRemainingSec % 60,
+                  ).padStart(2, '0')}`}
+                />
+              </HStack>
             </HStack>
             <ProgressBar
               label="Tiempo restante de apartado"
@@ -96,9 +100,9 @@ export function BookingSummaryCard({
           {selectedSlot ? (
             <VStack gap={1}>
               <Text weight="medium">
-                {formatDateLongInTimezone(selectedSlot.startAt, settings.timezone)}
+                {formatDateLongInTimezone(selectedSlot.startAt, timezone)}
               </Text>
-              <Text color="accent" weight="semibold">
+              <Text color="accent" weight="semibold" hasTabularNumbers>
                 {timeFormat === '24h'
                   ? selectedSlot.localTime24
                   : selectedSlot.localTime12}{' '}
@@ -107,6 +111,12 @@ export function BookingSummaryCard({
               <Text type="supporting" color="secondary">
                 Especialista: {selectedSlot.staffName}
               </Text>
+              <HStack gap={1.5} align="center">
+                <Globe size={14} aria-hidden="true" />
+                <Text type="supporting" color="secondary">
+                  Hora local del salón · Puebla ({timezone})
+                </Text>
+              </HStack>
             </VStack>
           ) : null}
         </VStack>
@@ -117,7 +127,11 @@ export function BookingSummaryCard({
               Servicios adicionales
             </Text>
             {selectedExtraServices.map((srv) => (
-              <HStack key={srv.id} justify="between">
+              <HStack
+                key={srv.id}
+                justify="between"
+                style={{ fontVariantNumeric: 'tabular-nums' }}
+              >
                 <Text type="supporting">{srv.name}</Text>
                 <Text type="supporting" hasTabularNumbers>
                   {formatServicePrice(srv.priceCents, srv.isStartingPrice, settings.currency)}
@@ -133,7 +147,11 @@ export function BookingSummaryCard({
               Extras
             </Text>
             {activeSelectedAddons.map((a) => (
-              <HStack key={a.id} justify="between">
+              <HStack
+                key={a.id}
+                justify="between"
+                style={{ fontVariantNumeric: 'tabular-nums' }}
+              >
                 <Text type="supporting">{a.name}</Text>
                 <Text type="supporting" hasTabularNumbers>
                   +{formatCurrency(a.extraPriceCents, settings.currency)}
@@ -180,7 +198,7 @@ export function BookingSummaryCard({
 
         <Divider />
 
-        <VStack gap={1}>
+        <VStack gap={1} style={{ fontVariantNumeric: 'tabular-nums' }}>
           <HStack justify="between">
             <Text color="secondary">Subtotal aproximado</Text>
             <Text hasTabularNumbers>

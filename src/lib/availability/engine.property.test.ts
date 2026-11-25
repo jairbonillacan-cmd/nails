@@ -1003,4 +1003,59 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
       { numRuns: 100 },
     );
   });
+
+  it('Property 12 (C1): optimizeContinuousSlots preserves fixedStartTimes invariance and D1/D7 alignment in continuous mode', () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.constantFrom(45, 60, 75, 90),
+        fc.integer({ min: 10 * 60, max: 14 * 60 }),
+        fc.constantFrom(45, 75, 105),
+        (useFixedTimes, duration, bookStartMin, bookDurMin) => {
+          const staffId = PRIMARY_STAFF_ID;
+          const fixedTimes = ['10:00', '13:30', '16:30'];
+          const fixedSet = new Set(fixedTimes);
+          const rules: AvailabilityRule[] = [
+            {
+              id: 'r-c1',
+              dayOfWeek: TEST_DOW,
+              startTime: '10:00',
+              endTime: '19:30',
+              ...(useFixedTimes ? { fixedStartTimes: fixedTimes } : {}),
+            },
+          ];
+          const booking = makeActiveBooking('c1-bk', staffId, bookStartMin, bookDurMin, 0, 0);
+          const baseCtx = makeBaseContext(duration, 0, 0, 30, rules, [], [booking]);
+          const ctx: AvailabilityContext = {
+            ...baseCtx,
+            settings: {
+              ...baseCtx.settings,
+              optimizeContinuousSlots: true,
+            },
+          };
+
+          const slots = getAvailableSlotsForDate(ctx, TEST_DATE, staffId);
+          const availableTimes = new Set(slots.map((s) => s.localTime24));
+
+          if (useFixedTimes) {
+            for (const slot of slots) {
+              expect(fixedSet.has(slot.localTime24)).toBe(true);
+            }
+          }
+
+          for (const slot of slots) {
+            expect(
+              assertSlotBookable(ctx, { startAt: slot.startAt, staffId }).ok,
+            ).toBe(true);
+          }
+
+          const diag = diagnoseDateSlots(ctx, TEST_DATE, staffId);
+          for (const d of diag) {
+            expect(d.isAvailable).toBe(availableTimes.has(d.time24));
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
 });

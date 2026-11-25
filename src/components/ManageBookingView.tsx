@@ -65,6 +65,7 @@ interface ManageBookingViewProps {
   };
   whatsappUrl: string;
   initialLoyaltySummary?: PublicLoyaltySummaryDTO | null;
+  initialAction?: 'reschedule' | 'cancel';
 }
 
 const STATUS_META: Record<
@@ -85,12 +86,42 @@ export function ManageBookingView({
   calendarLinks,
   whatsappUrl,
   initialLoyaltySummary = null,
+  initialAction,
 }: ManageBookingViewProps) {
   const [booking, setBooking] = useState<PublicManageBooking>(initialBooking);
   const [loyaltySummary, setLoyaltySummary] =
     useState<PublicLoyaltySummaryDTO | null>(initialLoyaltySummary);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const initialCanModify = !['canceled', 'completed', 'no_show'].includes(
+    initialBooking.status,
+  );
+  const [cancelOpen, setCancelOpen] = useState(
+    initialAction === 'cancel' && initialCanModify,
+  );
+  const [cancelReason, setCancelReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const [rescheduleOpen, setRescheduleOpen] = useState(
+    initialAction === 'reschedule' && initialCanModify,
+  );
+  const [rescheduleDays, setRescheduleDays] = useState<DayAvailabilitySummary[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(
+    initialAction === 'reschedule' && initialCanModify,
+  );
+
+  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(
+    initialBooking.review?.rating ?? 5,
+  );
+  const [reviewComment, setReviewComment] = useState(
+    initialBooking.review?.comment ?? '',
+  );
+  const [reviewSaved, setReviewSaved] = useState(Boolean(initialBooking.review));
+
+  const statusInfo = STATUS_META[booking.status];
+  const tz = settings.timezone || 'America/Mexico_City';
+  const canModify = !['canceled', 'completed', 'no_show'].includes(booking.status);
 
   const syncManageState = useCallback(
     async (signal: AbortSignal) => {
@@ -120,48 +151,72 @@ export function ManageBookingView({
 
   useExternalSync(initialBooking.manageToken, syncManageState);
 
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
-  const [busy, setBusy] = useState(false);
+  const extraServiceIdsKey = (booking.extraServiceIds ?? []).join(',');
+  const addonIdsKey = booking.addons.map((a) => a.addonId).join(',');
 
-  const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [rescheduleDays, setRescheduleDays] = useState<DayAvailabilitySummary[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-
-  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(
-    initialBooking.review?.rating ?? 5,
+  const loadRescheduleSlots = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoadingSlots(true);
+      try {
+        const startDate = getDateKeyInTimezone(new Date(), tz);
+        const qs = new URLSearchParams({
+          serviceId: booking.serviceId,
+          addonIds: addonIdsKey,
+          staffId: booking.staffId,
+          startDate,
+          days: '14',
+          manageToken: booking.manageToken,
+        });
+        if (extraServiceIdsKey) {
+          qs.set('extraServiceIds', extraServiceIdsKey);
+        }
+        const res = await fetch(`/api/availability?${qs.toString()}`, {
+          cache: 'no-store',
+          signal,
+        });
+        if (signal?.aborted) return;
+        const data = (await res.json()) as { days?: DayAvailabilitySummary[] };
+        if (signal?.aborted) return;
+        setRescheduleDays(
+          (data.days ?? []).filter((d) => d.hasSlots).slice(0, 6),
+        );
+      } catch {
+        return;
+      } finally {
+        if (!signal?.aborted) {
+          setLoadingSlots(false);
+        }
+      }
+    },
+    [
+      addonIdsKey,
+      booking.manageToken,
+      booking.serviceId,
+      booking.staffId,
+      extraServiceIdsKey,
+      tz,
+    ],
   );
-  const [reviewComment, setReviewComment] = useState(
-    initialBooking.review?.comment ?? '',
+
+  const syncRescheduleSlots = useCallback(
+    async (signal: AbortSignal) => {
+      if (!rescheduleOpen || !canModify) return;
+      await loadRescheduleSlots(signal);
+    },
+    [canModify, loadRescheduleSlots, rescheduleOpen],
   );
-  const [reviewSaved, setReviewSaved] = useState(Boolean(initialBooking.review));
 
-  const statusInfo = STATUS_META[booking.status];
-  const tz = settings.timezone || 'America/Mexico_City';
-  const canModify = !['canceled', 'completed', 'no_show'].includes(booking.status);
+  useExternalSync(
+    rescheduleOpen && canModify
+      ? `reschedule:${booking.id}:${booking.serviceId}:${extraServiceIdsKey}:${addonIdsKey}:${booking.staffId}`
+      : 'reschedule:closed',
+    syncRescheduleSlots,
+  );
 
-  const openReschedule = async () => {
+  const openReschedule = () => {
     setActionError(null);
-    setRescheduleOpen(true);
     setLoadingSlots(true);
-    try {
-      const startDate = getDateKeyInTimezone(new Date(), tz);
-      const qs = new URLSearchParams({
-        serviceId: booking.serviceId,
-        addonIds: booking.addons.map((a) => a.addonId).join(','),
-        staffId: booking.staffId,
-        startDate,
-        days: '14',
-        manageToken: booking.manageToken,
-      });
-      const res = await fetch(`/api/availability?${qs.toString()}`, { cache: 'no-store' });
-      const data = await res.json();
-      setRescheduleDays(
-        (data.days || []).filter((d: DayAvailabilitySummary) => d.hasSlots).slice(0, 6),
-      );
-    } finally {
-      setLoadingSlots(false);
-    }
+    setRescheduleOpen(true);
   };
 
   const handleConfirmReschedule = async (slot: AvailableSlot) => {

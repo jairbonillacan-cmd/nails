@@ -60,6 +60,8 @@ function buildMockSupabase(options: {
   couponRedemptionsRows?: Array<Database['public']['Tables']['coupon_redemptions']['Row']>;
   consentsRows?: Array<Database['public']['Tables']['consents']['Row']>;
   auditLogsRows?: Array<Database['public']['Tables']['audit_logs']['Row']>;
+  dateOverridesRows?: Array<Database['public']['Tables']['date_overrides']['Row']>;
+  publicBusyOverridesRows?: Array<Database['public']['Views']['public_busy_overrides']['Row']>;
 } = {}) {
   const requests: RecordedRequest[] = [];
   const bookingsRows = options.bookingsRows ?? [];
@@ -72,6 +74,8 @@ function buildMockSupabase(options: {
   const couponRedemptionsRows = options.couponRedemptionsRows ?? [];
   const consentsRows = options.consentsRows ?? [];
   const auditLogsRows = options.auditLogsRows ?? [];
+  const dateOverridesRows = options.dateOverridesRows ?? [];
+  const publicBusyOverridesRows = options.publicBusyOverridesRows ?? [];
 
   const settingsRow: Database['public']['Tables']['salon_settings']['Row'] = {
     id: 'default',
@@ -298,6 +302,28 @@ function buildMockSupabase(options: {
         return jsonResponse(Array.isArray(rawBody) ? rawBody : [], 201);
       }
       return jsonResponse(rulesRows);
+    }
+    if (table === 'date_overrides') {
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const created = {
+          id: 'ovr-0006',
+          staff_id: STAFF_ID,
+          override_date: '2026-12-01',
+          is_unavailable: true,
+          start_time: null,
+          end_time: null,
+          reason: '',
+          public_note: null,
+          redirect_staff_id: null,
+          created_at: '2026-12-01T10:00:00.000Z',
+          ...(rawBody as Record<string, unknown>),
+        };
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      return jsonResponse(dateOverridesRows);
+    }
+    if (table === 'public_busy_overrides') {
+      return jsonResponse(publicBusyOverridesRows);
     }
     if (table === 'clients') {
       if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
@@ -1415,5 +1441,137 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     if (stampErr instanceof PolicyError) {
       expect(stampErr.code).toBe('STAMP_ALREADY_AWARDED');
     }
+  });
+
+  it('maps and persists 0006 Phase 3A+ columns (optimize_continuous_slots, is_private, public_note, redirect_staff_id) and filters private services from getPublicBootstrap', async () => {
+    const altStaffId = '11111111-1111-4111-8111-111111111112';
+    const privateVipRow: Database['public']['Tables']['services']['Row'] = {
+      id: EXTRA_SERVICE_ID,
+      category_id: null,
+      name: 'Set Novia VIP',
+      slug: 'set-novia-vip',
+      description: 'Solo por enlace directo',
+      duration_minutes: 150,
+      price_cents: 85000,
+      is_starting_price: false,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      requires_confirmation: true,
+      deposit_required: true,
+      deposit_amount_cents: 20000,
+      allow_inspo_photo: true,
+      is_active: true,
+      is_featured: false,
+      is_private: true,
+      display_order: 2,
+      image_url: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+
+    const { client, requests } = buildMockSupabase({
+      settingsOverrides: {
+        optimize_continuous_slots: true,
+      },
+      serviceOverrides: {
+        is_private: false,
+      },
+      extraServicesRows: [privateVipRow],
+      dateOverridesRows: [
+        {
+          id: 'ovr-holiday',
+          staff_id: STAFF_ID,
+          override_date: '2026-12-01',
+          is_unavailable: true,
+          start_time: null,
+          end_time: null,
+          reason: 'Cita médica privada',
+          public_note: 'Karla fuera del estudio hoy — reserva con Paty',
+          redirect_staff_id: altStaffId,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      publicBusyOverridesRows: [
+        {
+          id: 'ovr-holiday',
+          staff_id: STAFF_ID,
+          override_date: '2026-12-01',
+          is_unavailable: true,
+          start_time: null,
+          end_time: null,
+          public_note: 'Karla fuera del estudio hoy — reserva con Paty',
+          redirect_staff_id: altStaffId,
+        },
+      ],
+    });
+
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'phase3a-plus-0006');
+    const repo = createSupabaseRepository(clock, client);
+
+    const snap = await repo.getSnapshot();
+    expect(snap.settings.optimizeContinuousSlots).toBe(true);
+    expect(snap.services.find((s) => s.id === SERVICE_ID)?.isPrivate).toBe(false);
+    expect(snap.services.find((s) => s.id === EXTRA_SERVICE_ID)?.isPrivate).toBe(true);
+    expect(snap.dateOverrides[0]).toMatchObject({
+      reason: 'Cita médica privada',
+      publicNote: 'Karla fuera del estudio hoy — reserva con Paty',
+      redirectStaffId: altStaffId,
+    });
+
+    const bootstrap = await repo.getPublicBootstrap();
+    expect(bootstrap.settings.optimizeContinuousSlots).toBe(true);
+    expect(bootstrap.services.map((s) => s.id)).toEqual([SERVICE_ID]);
+    expect(bootstrap.services.some((s) => s.id === EXTRA_SERVICE_ID)).toBe(false);
+
+    const availability = await repo.queryAvailability({
+      serviceId: SERVICE_ID,
+      addonIds: [],
+      staffId: STAFF_ID,
+      startDate: '2026-12-01',
+      days: 1,
+    });
+    expect(availability.days[0]?.hasSlots).toBe(false);
+
+    const updatedSettings = await repo.updateSalonSettings({
+      optimizeContinuousSlots: true,
+    });
+    expect(updatedSettings.optimizeContinuousSlots).toBe(true);
+    const settingsPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/salon_settings',
+    );
+    expect(settingsPatch?.body).toMatchObject({ optimize_continuous_slots: true });
+
+    const savedService = await repo.upsertService({
+      id: SERVICE_ID,
+      name: 'Set VIP',
+      durationMinutes: 120,
+      priceCents: 65000,
+      isPrivate: true,
+    });
+    expect(savedService.isPrivate).toBe(true);
+    const servicePatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/services',
+    );
+    expect(servicePatch?.body).toMatchObject({ is_private: true });
+
+    const createdOverride = await repo.addDateOverride({
+      staffId: STAFF_ID,
+      overrideDate: '2026-12-25',
+      isUnavailable: true,
+      startTime: null,
+      endTime: null,
+      reason: 'Feriado interno',
+      publicNote: 'Cerrado por Navidad',
+      redirectStaffId: altStaffId,
+    });
+    expect(createdOverride.publicNote).toBe('Cerrado por Navidad');
+    expect(createdOverride.redirectStaffId).toBe(altStaffId);
+    const overridePost = requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/date_overrides',
+    );
+    expect(overridePost?.body).toMatchObject({
+      public_note: 'Cerrado por Navidad',
+      redirect_staff_id: altStaffId,
+    });
   });
 });

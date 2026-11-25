@@ -5,10 +5,12 @@ import { diagnoseDateSlots } from '@/lib/availability/engine';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {
   addDateOverride,
+  addDateOverrideRange,
   deleteDateOverride,
   deleteRecurringBlock,
   getSnapshot,
   PolicyError,
+  preloadMexicoHolidays,
   saveStaffSchedule,
   toggleRecurringBlock,
   upsertRecurringBlock,
@@ -60,6 +62,39 @@ const postOverrideSchema = z.object({
   startTime: z.string().regex(hhmmRegex).nullable().default(null),
   endTime: z.string().regex(hhmmRegex).nullable().default(null),
   reason: z.string().max(240).default(''),
+  publicNote: z.string().trim().max(240).optional(),
+  redirectStaffId: z.string().min(1).nullable().optional(),
+});
+
+const postOverrideRangeSchema = z
+  .object({
+    kind: z.literal('override_range'),
+    staffId: z.string().min(1),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida (YYYY-MM-DD)'),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida (YYYY-MM-DD)'),
+    isClosed: z.boolean().optional(),
+    isUnavailable: z.boolean().optional(),
+    startTime: z.string().regex(hhmmRegex).nullable().default(null),
+    endTime: z.string().regex(hhmmRegex).nullable().default(null),
+    reason: z.string().max(240).default(''),
+    publicNote: z.string().trim().max(240).optional(),
+    redirectStaffId: z.string().min(1).nullable().optional(),
+  })
+  .refine(
+    (body) => {
+      const closed = body.isClosed ?? body.isUnavailable ?? true;
+      if (closed) return true;
+      return Boolean(body.startTime && body.endTime && body.startTime < body.endTime);
+    },
+    { message: 'Define hora de inicio y fin válidas cuando el día no está cerrado.' },
+  );
+
+const preloadHolidaysSchema = z.object({
+  kind: z.literal('preload_mx_holidays'),
+  year: z.number().int().min(2024).max(2100),
+  staffId: z.string().min(1),
+  publicNote: z.string().trim().max(240).optional(),
+  redirectStaffId: z.string().min(1).nullable().optional(),
 });
 
 const postRecurringBlockSchema = z
@@ -301,6 +336,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ block });
     }
 
+    if (rawKind === 'override_range') {
+      const parsed = postOverrideRangeSchema.parse(raw);
+      if (
+        session.user.role === 'specialist' &&
+        (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
+      ) {
+        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+      }
+      const isClosed = parsed.isClosed ?? parsed.isUnavailable ?? true;
+      const overrides = await addDateOverrideRange({
+        staffId: parsed.staffId,
+        startDate: parsed.startDate,
+        endDate: parsed.endDate,
+        isUnavailable: isClosed,
+        startTime: isClosed ? null : parsed.startTime,
+        endTime: isClosed ? null : parsed.endTime,
+        reason: parsed.reason,
+        publicNote: parsed.publicNote,
+        redirectStaffId: parsed.redirectStaffId ?? null,
+      });
+      return NextResponse.json({ overrides }, { status: 201 });
+    }
+
+    if (rawKind === 'preload_mx_holidays') {
+      const parsed = preloadHolidaysSchema.parse(raw);
+      if (
+        session.user.role === 'specialist' &&
+        (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
+      ) {
+        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+      }
+      const result = await preloadMexicoHolidays({
+        year: parsed.year,
+        staffId: parsed.staffId,
+        publicNote: parsed.publicNote,
+        redirectStaffId: parsed.redirectStaffId ?? null,
+      });
+      return NextResponse.json(result, { status: 201 });
+    }
+
     const body = postOverrideSchema.parse(raw);
     if (
       session.user.role === 'specialist' &&
@@ -308,7 +383,18 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
     }
-    const override = await addDateOverride(body);
+    const override = await addDateOverride({
+      staffId: body.staffId,
+      overrideDate: body.overrideDate,
+      isUnavailable: body.isUnavailable,
+      startTime: body.startTime,
+      endTime: body.endTime,
+      reason: body.reason,
+      ...(body.publicNote !== undefined ? { publicNote: body.publicNote } : {}),
+      ...(body.redirectStaffId !== undefined
+        ? { redirectStaffId: body.redirectStaffId }
+        : {}),
+    });
     return NextResponse.json({ override });
   } catch (err) {
     if (err instanceof PolicyError) {

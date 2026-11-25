@@ -134,6 +134,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
       lockPastBookings: true,
       maxActiveBookingsPerClient: 3,
       privacyPolicyVersion: '2026-11',
+      optimizeContinuousSlots: false,
 
       landingContent: {
         heroEyebrow: 'Laikona Nails by Karla · Puebla',

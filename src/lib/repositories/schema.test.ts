@@ -239,6 +239,7 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(parsed.settings.lockPastBookings).toBe(true);
     expect(parsed.settings.maxActiveBookingsPerClient).toBe(3);
     expect(parsed.settings.privacyPolicyVersion).toBe('2026-11');
+    expect(parsed.settings.optimizeContinuousSlots).toBe(false);
     expect(parsed.staff.map((s) => s.name)).toEqual(['Karla', 'Paty', 'Tere']);
     expect(parsed.services).toHaveLength(9);
     expect(parsed.reviews.length).toBeGreaterThanOrEqual(4);

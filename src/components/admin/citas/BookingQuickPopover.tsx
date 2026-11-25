@@ -14,6 +14,7 @@ import {
   AtSign,
   Ban,
   Bell,
+  CalendarClock,
   Check,
   DollarSign,
   MessageCircle,
@@ -49,10 +50,12 @@ interface BookingQuickPopoverProps {
   currency: 'MXN' | 'USD';
   timezone: string;
   isReminding: boolean;
+  isRequestingReschedule: boolean;
   onClose: () => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
+  onRequestReschedule: (bookingId: string) => void;
 }
 
 export function BookingQuickPopover({
@@ -63,10 +66,12 @@ export function BookingQuickPopover({
   currency,
   timezone,
   isReminding,
+  isRequestingReschedule,
   onClose,
   onUpdateStatus,
   onOpenCheckout,
   onSendReminder,
+  onRequestReschedule,
 }: BookingQuickPopoverProps) {
   if (!booking) {
     return (
@@ -154,13 +159,19 @@ export function BookingQuickPopover({
               {booking.service.name}
               {extraServiceNames.length > 0 ? ` + ${extraServiceNames.join(' + ')}` : ''}
             </Text>
+            <Text type="supporting" color="secondary" hasTabularNumbers>
+              {formatDateShortInTimezone(booking.startAt, timezone)} ·{' '}
+              {formatTimeInTimezone(booking.startAt, timezone)} –{' '}
+              {formatTimeInTimezone(booking.endAt, timezone)} (
+              {formatDuration(booking.totalDurationMinutes)})
+            </Text>
             {booking.addons.length > 0 ? (
               <Text type="supporting" color="secondary">
                 Extras: {booking.addons.map((a) => a.name).join(', ')}
               </Text>
             ) : null}
             <HStack gap={2} align="center" wrap="wrap">
-              <Text type="supporting" color="secondary">
+              <Text type="supporting" color="secondary" hasTabularNumbers>
                 WhatsApp: {booking.client.phoneE164}
               </Text>
               {proofMeta ? (
@@ -277,6 +288,19 @@ export function BookingQuickPopover({
               icon={<Bell size={14} />}
               isLoading={isReminding}
               onClick={() => onSendReminder(booking.id)}
+            />
+          ) : null}
+          {canRemind ? (
+            <Button
+              label="Solicitar reprogramación"
+              variant="secondary"
+              size="sm"
+              icon={<CalendarClock size={14} />}
+              isLoading={isRequestingReschedule}
+              onClick={() => {
+                onRequestReschedule(booking.id);
+                onClose();
+              }}
             />
           ) : null}
           <Button

@@ -20,6 +20,7 @@ const serviceInputSchema = z.object({
   allowInspoPhoto: z.boolean().optional(),
   isActive: z.boolean().optional(),
   isFeatured: z.boolean().optional(),
+  isPrivate: z.boolean().optional(),
   displayOrder: z.number().int().min(0).optional(),
   imageUrl: z.string().max(2_500_000).nullable().optional(),
 });

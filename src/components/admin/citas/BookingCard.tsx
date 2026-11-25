@@ -13,6 +13,7 @@ import {
   AtSign,
   Ban,
   Bell,
+  CalendarClock,
   Check,
   DollarSign,
   MessageCircle,
@@ -78,10 +79,12 @@ interface BookingCardProps {
   currency: 'MXN' | 'USD';
   timezone: string;
   isReminding: boolean;
+  isRequestingReschedule?: boolean;
   onSelectBooking?: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
+  onRequestReschedule?: (bookingId: string) => void;
 }
 
 export function BookingCard({
@@ -92,10 +95,12 @@ export function BookingCard({
   currency,
   timezone,
   isReminding,
+  isRequestingReschedule = false,
   onSelectBooking,
   onUpdateStatus,
   onOpenCheckout,
   onSendReminder,
+  onRequestReschedule,
 }: BookingCardProps) {
   const meta = BOOKING_STATUS_BADGE[b.status];
   const extraServiceNames = (b.extraServiceIds ?? [])
@@ -166,7 +171,7 @@ export function BookingCard({
                 : ''}
             </Text>
 
-            <Text type="supporting" color="secondary">
+            <Text type="supporting" color="secondary" hasTabularNumbers>
               {formatDateShortInTimezone(b.startAt, timezone)} ·{' '}
               {formatTimeInTimezone(b.startAt, timezone)} –{' '}
               {formatTimeInTimezone(b.endAt, timezone)} (
@@ -210,7 +215,7 @@ export function BookingCard({
             <Text weight="bold" size="lg" hasTabularNumbers>
               {formatCurrency(b.totalPriceCents, currency)}
             </Text>
-            <Text type="supporting" color="secondary">
+            <Text type="supporting" color="secondary" hasTabularNumbers>
               {b.client.phoneE164}
             </Text>
           </VStack>
@@ -254,6 +259,16 @@ export function BookingCard({
                 icon={<Bell size={14} />}
                 isLoading={isReminding}
                 onClick={() => onSendReminder(b.id)}
+              />
+            ) : null}
+            {canRemind && onRequestReschedule ? (
+              <Button
+                label="Solicitar reprogramación"
+                variant="secondary"
+                size="sm"
+                icon={<CalendarClock size={14} />}
+                isLoading={isRequestingReschedule}
+                onClick={() => onRequestReschedule(b.id)}
               />
             ) : null}
             {b.status === 'confirmed' ? (

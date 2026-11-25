@@ -61,6 +61,7 @@ const brandPatchSchema = z
     enabledBookingLayouts: z.array(z.enum(['month', 'week', 'column'])).min(1),
     lockTimezone: z.boolean(),
     slotIntervalMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+    optimizeContinuousSlots: z.boolean(),
     enableSlotHold: z.boolean(),
     slotHoldMinutes: z.number().int().min(1).max(15),
 

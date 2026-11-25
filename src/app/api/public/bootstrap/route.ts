@@ -17,7 +17,7 @@ export async function GET() {
     settings: toPublicSettingsDTO(db.settings),
     categories: db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder),
     services: db.services
-      .filter((s) => s.isActive)
+      .filter((s) => s.isActive && !s.isPrivate)
       .toSorted((a, b) => a.displayOrder - b.displayOrder)
       .map(toPublicServiceDTO),
     addons: db.addons
