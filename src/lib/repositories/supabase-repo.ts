@@ -1592,7 +1592,7 @@ export function createSupabaseRepository(
         .delete()
         .eq('session_token', params.sessionToken);
 
-      const holdMinutes = settings.slotHoldMinutes || 3;
+      const holdMinutes = settings.slotHoldMinutes || 5;
       const expiresAt = new Date(clock.nowMs() + holdMinutes * 60_000).toISOString();
       const heldRange = `[${slot.occupiedStartAt},${slot.occupiedEndAt})`;
 

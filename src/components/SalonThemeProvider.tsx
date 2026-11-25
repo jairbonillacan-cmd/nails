@@ -10,6 +10,7 @@ import {
   type DefinedTheme,
 } from '@astryxdesign/core/theme';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
+import esES from '@astryxdesign/core/locales/es-ES.generated.js';
 import { LinkProvider } from '@astryxdesign/core/Link';
 import { themes, defaultThemeSlug } from '../astryx-themes';
 import {
@@ -19,6 +20,8 @@ import {
 } from '@/lib/theme-presets';
 import type { SalonSettings, ThemeModePreference } from '@/lib/types';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
+
+const ASTRYX_MESSAGES = { 'es-MX': esES };
 
 type AppearanceSettings = PublicSettingsDTO | SalonSettings;
 
@@ -161,7 +164,7 @@ export function SalonThemeProvider({
 
   return (
     <AppearanceContext.Provider value={contextValue}>
-      <InternationalizationProvider locale="es-MX">
+      <InternationalizationProvider locale="es-MX" messages={ASTRYX_MESSAGES}>
         <LinkProvider component={NextLinkAdapter}>
           {resolvedTheme.ssrStyleId && resolvedTheme.ssrCss ? (
             <style href={resolvedTheme.ssrStyleId} precedence="astryx-theme">

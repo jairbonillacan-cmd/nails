@@ -3,14 +3,12 @@
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Divider } from '@astryxdesign/core/Divider';
 import { FileInput } from '@astryxdesign/core/FileInput';
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
-import { Check, Copy, ExternalLink, Landmark, Upload } from 'lucide-react';
+import { Check, Copy, ExternalLink, Upload } from 'lucide-react';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatCurrency } from '@/lib/format';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
@@ -109,72 +107,46 @@ export function DepositCard({
   };
 
   return (
-    <Card variant="muted" padding={4}>
-      <VStack gap={3}>
-        <HStack gap={2} align="center">
-          <Landmark size={18} aria-hidden="true" />
-          <Heading level={4}>
-            Anticipo por transferencia SPEI ({displayAmount})
-          </Heading>
-        </HStack>
-
-        <Text type="supporting">
-          Para apartar tu cita envía un anticipo de{' '}
-          <Text weight="bold">{displayAmount}</Text> a:
+    <VStack gap={3} padding={4} className="rb-deposit">
+      <HStack justify="between" align="end" wrap="wrap" gap={1}>
+        <Heading level={3} className="lk-serif rb-deposit-title">
+          Anticipo de {displayAmount}
+        </Heading>
+        <Text type="supporting" color="secondary">
+          Se descuenta de tu total
         </Text>
+      </HStack>
+      <Text type="supporting">
+        SPEI a {settings.depositBankName} · {beneficiary}
+      </Text>
 
-        <Card padding={3}>
-          <VStack gap={2}>
-            <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <VStack gap={0.5}>
-                <Text type="supporting" color="secondary">
-                  Cuenta CLABE
-                </Text>
-                <Text type="code" weight="semibold" hasTabularNumbers>
-                  {settings.depositClabe}
-                </Text>
-              </VStack>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                icon={
-                  clabeFeedback.message && clabeCopyOk ? (
-                    <Check size={14} />
-                  ) : (
-                    <Copy size={14} />
-                  )
-                }
-                label={
-                  clabeFeedback.message && clabeCopyOk ? 'CLABE copiada' : 'Copiar CLABE'
-                }
-                onClick={() => void handleCopyClabe()}
-              />
-            </HStack>
-
-            <Text
-              type="supporting"
-              color={clabeCopyOk ? 'accent' : 'secondary'}
-              role="status"
-            >
-              {clabeFeedback.message ?? ''}
-            </Text>
-
-            <Divider />
-
-            <VStack gap={0.5}>
-              <Text type="supporting">
-                Titular: <Text weight="semibold">{beneficiary}</Text>
-              </Text>
-              <Text type="supporting" color="secondary">
-                Banco: {settings.depositBankName}
-              </Text>
-            </VStack>
-          </VStack>
-        </Card>
+      <button
+        type="button"
+        className="rb-clabe"
+        aria-label={`Copiar CLABE ${settings.depositClabe}`}
+        onClick={() => void handleCopyClabe()}
+      >
+        <VStack gap={0} align="start">
+          <Text type="supporting" color="secondary">
+            CLABE
+          </Text>
+          <Text type="code" weight="bold" hasTabularNumbers>
+            {settings.depositClabe}
+          </Text>
+        </VStack>
+        <Text color="inherit" weight="semibold" className="rb-clabe-action">
+          {clabeFeedback.message && clabeCopyOk ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+          {clabeFeedback.message && clabeCopyOk ? 'Copiada' : 'Copiar'}
+        </Text>
+      </button>
+      {clabeFeedback.message && !clabeCopyOk ? (
+        <Text type="supporting" color="secondary" role="status">
+          {clabeFeedback.message}
+        </Text>
+      ) : null}
 
         <RadioList
-          label="¿Cómo prefieres enviar tu comprobante?"
+          label="¿Cómo nos mandas tu comprobante?"
           value={activeMethod}
           onChange={(val) =>
             onChangeProofMethod(val === 'instagram_dm' ? 'instagram_dm' : 'web_upload')
@@ -182,20 +154,21 @@ export function DepositCard({
         >
           <RadioListItem
             value="web_upload"
-            label="Subir comprobante aquí mismo"
-            description="Adjunta la captura de tu transferencia (PNG, JPG o WEBP) para validar tu lugar más rápido."
+            label="Lo subo ahora"
+            description="Captura PNG, JPG o WEBP."
           />
           <RadioListItem
             value="instagram_dm"
-            label={`Mandarlo por Instagram DM (${instagramHandle})`}
-            description="Aparta tu cita ahora y envía tu captura directo por mensaje privado."
+            label={`Lo mando por DM a ${instagramHandle}`}
+            description="Apartas ya y lo envías después."
           />
         </RadioList>
 
         {activeMethod === 'web_upload' ? (
           <FileInput
-            label="Adjuntar comprobante de transferencia"
-            description="Imagen (PNG, JPG o WEBP) hasta 2.5 MB."
+            label="Comprobante de transferencia"
+            description="Hasta 2.5 MB."
+            mode="dropzone"
             accept="image/png,image/jpeg,image/webp"
             maxSize={2_500_000}
             isOptional
@@ -211,7 +184,7 @@ export function DepositCard({
             }}
           />
         ) : (
-          <Card padding={3}>
+          <VStack gap={2} padding={3} className="rb-card">
             <VStack gap={2}>
               <HStack gap={1.5} align="center">
                 <Upload size={15} aria-hidden="true" />
@@ -255,9 +228,8 @@ export function DepositCard({
                 {dmFeedback.message ?? ''}
               </Text>
             </VStack>
-          </Card>
+          </VStack>
         )}
-      </VStack>
-    </Card>
+    </VStack>
   );
 }

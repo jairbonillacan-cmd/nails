@@ -23,6 +23,7 @@ const SAMPLE_SLOT: AvailableSlot = {
   localTime24: '10:00',
   localTime12: '10:00 a.m.',
   period: 'morning',
+  availableStaffIds: ['staff-karla', 'staff-paty'],
 };
 
 const ALT_SLOT: AvailableSlot = {
@@ -35,19 +36,21 @@ const ALT_SLOT: AvailableSlot = {
   localTime24: '13:30',
   localTime12: '1:30 p.m.',
   period: 'afternoon',
+  availableStaffIds: ['staff-paty'],
 };
 
 describe('bookingMachine reducer', () => {
   it('transitions browsing -> holding -> submitting -> confirmed', () => {
     const initial = createInitialBookingFlowState();
     expect(initial.phase).toBe('browsing');
-    expect(initial.step).toBe('schedule');
+    expect(initial.step).toBe('service');
 
     const held = bookingReducer(initial, {
       type: 'SELECT_SLOT_HOLD_ACQUIRED',
       slot: SAMPLE_SLOT,
       holdId: 'hold-123',
       holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'details',
     });
     expect(held.phase).toBe('holding');
     expect(held.step).toBe('details');
@@ -72,6 +75,7 @@ describe('bookingMachine reducer', () => {
       slot: SAMPLE_SLOT,
       holdId: 'hold-123',
       holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'details',
     });
     const submitting = bookingReducer(held, { type: 'START_SUBMIT' });
     const conflicted = bookingReducer(submitting, {
@@ -90,6 +94,7 @@ describe('bookingMachine reducer', () => {
       slot: ALT_SLOT,
       holdId: 'hold-456',
       holdExpiresAt: 1_900_000_180_000,
+      nextStep: 'details',
     });
     expect(recovered.phase).toBe('holding');
     expect(recovered.conflict).toBeNull();
@@ -102,6 +107,7 @@ describe('bookingMachine reducer', () => {
       slot: SAMPLE_SLOT,
       holdId: 'hold-123',
       holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'details',
     });
     const expired = bookingReducer(held, {
       type: 'HOLD_EXPIRED',
@@ -124,6 +130,7 @@ describe('bookingMachine reducer', () => {
       slot: SAMPLE_SLOT,
       holdId: 'hold-123',
       holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'details',
     });
     const failed = bookingReducer(
       bookingReducer(held, { type: 'START_SUBMIT' }),
@@ -151,6 +158,7 @@ describe('bookingMachine reducer', () => {
       slot: SAMPLE_SLOT,
       holdId: 'hold-789',
       holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'details',
     });
 
     const missingConsent = bookingReducer(held, {
@@ -207,6 +215,34 @@ describe('bookingMachine reducer', () => {
     expect(back.marketingOptIn).toBe(true);
     expect(back.formErrorCode).toBeNull();
     expect(back.activeBookings).toEqual([]);
+  });
+});
+
+describe('time-first staff assignment', () => {
+  it('holds the slot, opens the staff step, then reassigns to the chosen artist', () => {
+    const held = bookingReducer(createInitialBookingFlowState(), {
+      type: 'SELECT_SLOT_HOLD_ACQUIRED',
+      slot: SAMPLE_SLOT,
+      holdId: 'hold-any',
+      holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'staff',
+    });
+    expect(held.step).toBe('staff');
+    expect(held.phase).toBe('holding');
+
+    const assigned = bookingReducer(held, {
+      type: 'STAFF_ASSIGNED',
+      slot: { ...SAMPLE_SLOT, staffId: 'staff-paty', staffName: 'Paty' },
+      holdId: 'hold-paty',
+      holdExpiresAt: 1_900_000_300_000,
+    });
+    expect(assigned.step).toBe('details');
+    expect(assigned.selectedSlot?.staffId).toBe('staff-paty');
+    expect(assigned.holdId).toBe('hold-paty');
+
+    const back = bookingReducer(assigned, { type: 'GO_TO_STEP', step: 'staff' });
+    expect(back.step).toBe('staff');
+    expect(back.holdId).toBe('hold-paty');
   });
 });
 

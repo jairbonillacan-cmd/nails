@@ -5,31 +5,32 @@ import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Section } from '@astryxdesign/core/Section';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { ArrowLeft } from 'lucide-react';
+import { BottomSheet } from '@astryxdesign/core/BottomSheet';
+import { ChevronUp } from 'lucide-react';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
-import { formatDateShortInTimezone } from '@/lib/format';
+import {
+  buildWhatsAppLink,
+  formatDateLongInTimezone,
+  formatDateShortInTimezone,
+  formatDuration,
+} from '@/lib/format';
 import { useBookingUrlSync } from '@/lib/hooks/useBookingUrlSync';
 import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
 import { getOrCreateBrowserSessionToken } from '@/lib/hooks/useSessionToken';
-import type {
-  PublicServiceDTO,
-  PublicSettingsDTO,
-  PublicStaffDTO,
-} from '@/lib/public-dto';
-import type { BookingLayoutView, ServiceAddon } from '@/lib/types';
-import { PublicShell } from './PublicShell';
-import { ClientConfirmStep } from './booking/ClientConfirmStep';
-import { ScheduleStep } from './booking/ScheduleStep';
-import { ServiceStaffStep } from './booking/ServiceStaffStep';
+import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
+import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
+import { BookingHeader, BookingHero, STEP_LABELS } from './booking/BookingChrome';
+import { BookingSummaryCard, type SummaryRow } from './booking/BookingSummaryCard';
+import { ClientConfirmStep, type ClientFieldErrors } from './booking/ClientConfirmStep';
+import { ScheduleStep, type ScheduleLayout } from './booking/ScheduleStep';
+import { ServiceStep } from './booking/ServiceStep';
+import { StaffStep } from './booking/StaffStep';
 import { WaitlistDialog } from './booking/WaitlistDialog';
 import {
   fetchAvailabilityDays,
@@ -39,6 +40,7 @@ import {
   type AppliedCouponState,
 } from './booking/bookingApi';
 import {
+  formatServicePrice,
   hasConfiguredDeposit,
   resolveDepositAmountCents,
   type ProofDeliveryMethod,
@@ -46,10 +48,12 @@ import {
 import {
   bookingReducer,
   createInitialBookingFlowState,
+  type BookingStep,
 } from './booking/bookingMachine';
 
 interface BookingWidgetProps {
   settings: PublicSettingsDTO;
+  categories: ServiceCategory[];
   services: PublicServiceDTO[];
   addons: ServiceAddon[];
   staff: PublicStaffDTO[];
@@ -64,25 +68,36 @@ interface BookingWidgetProps {
   initialInspoNote?: string;
 }
 
+const FORM_ID = 'rb-details-form';
+const EMPTY_FIELD_ERRORS: ClientFieldErrors = { name: null, phone: null };
+
 function shiftPlainDateKey(dateKey: string, deltaDays: number): string {
   const parts = dateKey.split('-').map(Number);
-  const year = parts[0] ?? 2026;
-  const month = parts[1] ?? 1;
-  const day = parts[2] ?? 1;
-  const dt = new Date(Date.UTC(year, month - 1, day + deltaDays, 12, 0, 0));
+  const dt = new Date(Date.UTC(parts[0] ?? 2026, (parts[1] ?? 1) - 1, (parts[2] ?? 1) + deltaDays, 12, 0, 0));
   return dt.toISOString().slice(0, 10);
 }
 
 function getNextMonthStartKey(dateKey: string): string {
   const parts = dateKey.split('-').map(Number);
-  const year = parts[0] ?? 2026;
-  const month = parts[1] ?? 1;
-  const dt = new Date(Date.UTC(year, month, 1, 12, 0, 0));
+  const dt = new Date(Date.UTC(parts[0] ?? 2026, parts[1] ?? 1, 1, 12, 0, 0));
   return dt.toISOString().slice(0, 10);
+}
+
+function toScheduleLayout(view: BookingLayoutView | undefined): ScheduleLayout {
+  return view === 'week' || view === 'column' ? 'week' : 'month';
+}
+
+function validateClientFields(name: string, phone: string): ClientFieldErrors {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return {
+    name: words.length >= 2 ? null : 'Escribe tu nombre y apellido.',
+    phone: phone.replace(/\D/g, '').length === 10 ? null : 'Tu WhatsApp debe tener 10 dígitos.',
+  };
 }
 
 export function BookingWidget({
   settings,
+  categories,
   services,
   addons,
   staff,
@@ -97,31 +112,22 @@ export function BookingWidget({
   initialInspoNote,
 }: BookingWidgetProps) {
   const router = useRouter();
-  const [flow, dispatch] = useReducer(
-    bookingReducer,
-    undefined,
-    createInitialBookingFlowState,
-  );
+  const [flow, dispatch] = useReducer(bookingReducer, undefined, createInitialBookingFlowState);
+  const panelRef = useRef<HTMLElement>(null);
+  const timezone = settings.timezone || 'America/Mexico_City';
+  const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
-  const initialService =
-    services.find((s) => s.slug === initialServiceSlug) ?? services[0] ?? null;
-  const initialStaff =
-    staff.find(
-      (st) => st.bookingSlug === initialStaffSlug || st.id === initialStaffSlug,
-    )?.id ?? 'any';
+  const initialService = services.find((s) => s.slug === initialServiceSlug) ?? services[0] ?? null;
+  const initialPinnedStaff =
+    staff.find((member) => member.bookingSlug === initialStaffSlug || member.id === initialStaffSlug)?.id ?? 'any';
 
   const resolvedInitialExtraIds = useMemo(() => {
-    if (!initialExtraServiceSlugs || initialExtraServiceSlugs.length === 0) {
-      return [];
-    }
+    if (!initialExtraServiceSlugs || initialExtraServiceSlugs.length === 0) return [];
     const primaryId = initialService?.id ?? '';
     return Array.from(
       new Set(
         initialExtraServiceSlugs
-          .map(
-            (token) =>
-              services.find((srv) => srv.slug === token || srv.id === token)?.id,
-          )
+          .map((token) => services.find((srv) => srv.slug === token || srv.id === token)?.id)
           .filter((id): id is string => Boolean(id) && id !== primaryId),
       ),
     ).slice(0, 8);
@@ -133,29 +139,26 @@ export function BookingWidget({
     return Array.from(new Set(initialAddonIds.filter((id) => activeIds.has(id))));
   }, [addons, initialAddonIds]);
 
-  const resolvedInitialDate =
-    initialDate && initialDate >= initialTodayKey ? initialDate : initialTodayKey;
-  const resolvedInitialLayout: BookingLayoutView =
+  const resolvedInitialDate = initialDate && initialDate >= initialTodayKey ? initialDate : initialTodayKey;
+  const resolvedInitialLayout = toScheduleLayout(
     initialLayout &&
-    (settings.enabledBookingLayouts.length === 0 ||
-      settings.enabledBookingLayouts.includes(initialLayout))
+      (settings.enabledBookingLayouts.length === 0 || settings.enabledBookingLayouts.includes(initialLayout))
       ? initialLayout
-      : settings.defaultBookingLayout || 'month';
+      : settings.defaultBookingLayout,
+  );
 
   const [selectedServiceId, setSelectedServiceId] = useState(initialService?.id ?? '');
-  const [selectedExtraServiceIds, setSelectedExtraServiceIds] = useState<string[]>(
-    resolvedInitialExtraIds,
+  const [selectedExtraServiceIds, setSelectedExtraServiceIds] = useState<string[]>(resolvedInitialExtraIds);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(resolvedInitialAddonIds);
+  const [pinnedStaffId, setPinnedStaffId] = useState(
+    staff.length === 1 && staff[0] ? staff[0].id : initialPinnedStaff,
   );
-  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(
-    resolvedInitialAddonIds,
-  );
-  const [selectedStaffId, setSelectedStaffId] = useState(
-    staff.length === 1 && staff[0] ? staff[0].id : initialStaff,
-  );
+  const [chosenStaffId, setChosenStaffId] = useState('any');
+  const [takenStaffIds, setTakenStaffIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [staffError, setStaffError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
 
-  const [layoutView, setLayoutView] = useState<BookingLayoutView>(
-    resolvedInitialLayout,
-  );
+  const [layoutView, setLayoutView] = useState<ScheduleLayout>(resolvedInitialLayout);
   const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h');
   const [windowStartDate, setWindowStartDate] = useState(resolvedInitialDate);
   const [selectedDate, setSelectedDate] = useState(resolvedInitialDate);
@@ -168,20 +171,19 @@ export function BookingWidget({
   const [clientInstagram, setClientInstagram] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [clientBirthday, setClientBirthday] = useState('');
-  const [clientNotes, setClientNotes] = useState(
-    initialInspoNote ? `Referencia de galería: ${initialInspoNote}` : '',
-  );
+  const [clientNotes, setClientNotes] = useState(initialInspoNote ? `Referencia de galería: ${initialInspoNote}` : '');
   const [inspoFile, setInspoFile] = useState<File | null>(null);
   const [inspoDataUrl, setInspoDataUrl] = useState<string | null>(null);
-  const [proofDeliveryMethod, setProofDeliveryMethod] =
-    useState<ProofDeliveryMethod>('web_upload');
+  const [proofDeliveryMethod, setProofDeliveryMethod] = useState<ProofDeliveryMethod>('web_upload');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
+  const [hasTriedSubmit, setHasTriedSubmit] = useState(false);
 
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCouponState | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   const idempotencyKeyRef = useRef('');
 
@@ -190,11 +192,7 @@ export function BookingWidget({
     [services, selectedServiceId],
   );
   const selectedExtraServices = useMemo(
-    () =>
-      services.filter(
-        (srv) =>
-          srv.id !== selectedService?.id && selectedExtraServiceIds.includes(srv.id),
-      ),
+    () => services.filter((srv) => srv.id !== selectedService?.id && selectedExtraServiceIds.includes(srv.id)),
     [services, selectedService, selectedExtraServiceIds],
   );
   const selectedServiceIdSet = useMemo(() => {
@@ -205,9 +203,7 @@ export function BookingWidget({
 
   const compatibleAddons = useMemo(() => {
     if (!selectedService) return [];
-    return addons.filter(
-      (a) => a.appliesToAll || a.serviceIds.some((id) => selectedServiceIdSet.has(id)),
-    );
+    return addons.filter((a) => a.appliesToAll || a.serviceIds.some((id) => selectedServiceIdSet.has(id)));
   }, [addons, selectedService, selectedServiceIdSet]);
 
   const activeSelectedAddons = useMemo(
@@ -219,11 +215,13 @@ export function BookingWidget({
     if (!selectedService) return staff;
     const requiredIds = Array.from(selectedServiceIdSet);
     return staff.filter(
-      (st) =>
-        st.serviceIds.length === 0 ||
-        requiredIds.every((id) => st.serviceIds.includes(id)),
+      (member) => member.serviceIds.length === 0 || requiredIds.every((id) => member.serviceIds.includes(id)),
     );
   }, [staff, selectedService, selectedServiceIdSet]);
+
+  const isPinned = pinnedStaffId !== 'any';
+  const pinnedStaff = isPinned ? (staff.find((member) => member.id === pinnedStaffId) ?? null) : null;
+  const skipsStaffStep = isPinned || eligibleStaff.length <= 1;
 
   const totalDurationMinutes = useMemo(() => {
     if (!selectedService) return 0;
@@ -244,49 +242,39 @@ export function BookingWidget({
   }, [selectedService, selectedExtraServices, activeSelectedAddons]);
 
   const hasStartingPrice = Boolean(
-    selectedService?.isStartingPrice ||
-      selectedExtraServices.some((srv) => srv.isStartingPrice),
+    selectedService?.isStartingPrice || selectedExtraServices.some((srv) => srv.isStartingPrice),
   );
   const depositAmountCents = useMemo(
     () => resolveDepositAmountCents(settings, selectedService, selectedExtraServices),
     [settings, selectedService, selectedExtraServices],
   );
-  const totalPriceCents = Math.max(0, subtotalCents - (appliedCoupon?.discountCents ?? 0));
+  const showsDeposit = hasConfiguredDeposit(settings, depositAmountCents);
+  const discountCents = appliedCoupon?.discountCents ?? 0;
+  const totalPriceCents = Math.max(0, subtotalCents - discountCents);
 
   const extraServiceKey = selectedExtraServices.map((srv) => srv.id).join(',');
   const addonKey = activeSelectedAddons.map((a) => a.id).join(',');
-
-  const selectedStaffUrlParam = useMemo(() => {
-    if (selectedStaffId === 'any') return '';
-    return staff.find((st) => st.id === selectedStaffId)?.bookingSlug ?? selectedStaffId;
-  }, [selectedStaffId, staff]);
 
   useBookingUrlSync({
     servicio: selectedService?.slug,
     extras: selectedExtraServices.map((srv) => srv.slug),
     addons: activeSelectedAddons.map((a) => a.id),
-    staff: selectedStaffUrlParam,
+    staff: pinnedStaff?.bookingSlug ?? '',
     date: selectedDate,
     layout: layoutView,
-    defaultLayout: settings.defaultBookingLayout || 'month',
+    defaultLayout: toScheduleLayout(settings.defaultBookingLayout),
     slot: flow.selectedSlot?.startAt ?? initialSlot ?? '',
   });
 
   const maxAllowedDateKey = useMemo(
-    () =>
-      shiftPlainDateKey(
-        initialTodayKey,
-        Math.max(35, settings.maxBookingDaysAhead || 45),
-      ),
+    () => shiftPlainDateKey(initialTodayKey, Math.max(35, settings.maxBookingDaysAhead || 45)),
     [initialTodayKey, settings.maxBookingDaysAhead],
   );
 
   const nextMonthStartKey = useMemo(() => {
     const base = selectedDate >= windowStartDate ? selectedDate : windowStartDate;
     const candidate = getNextMonthStartKey(base);
-    return candidate > windowStartDate
-      ? candidate
-      : shiftPlainDateKey(windowStartDate, 30);
+    return candidate > windowStartDate ? candidate : shiftPlainDateKey(windowStartDate, 30);
   }, [selectedDate, windowStartDate]);
 
   const canAdvanceMonth = nextMonthStartKey <= maxAllowedDateKey;
@@ -299,7 +287,7 @@ export function BookingWidget({
           serviceId: selectedService.id,
           extraServiceKey,
           addonKey,
-          staffId: selectedStaffId,
+          staffId: pinnedStaffId,
           startDate: windowStartDate,
           signal,
         });
@@ -317,11 +305,11 @@ export function BookingWidget({
         if (!signal?.aborted) setLoadingAvail(false);
       }
     },
-    [selectedService, extraServiceKey, addonKey, selectedStaffId, windowStartDate],
+    [selectedService, extraServiceKey, addonKey, pinnedStaffId, windowStartDate, setLoadingAvail],
   );
 
   useExternalSync(
-    `${selectedService?.id ?? ''}:${extraServiceKey}:${addonKey}:${selectedStaffId}:${windowStartDate}`,
+    `${selectedService?.id ?? ''}:${extraServiceKey}:${addonKey}:${pinnedStaffId}:${windowStartDate}`,
     fetchAvailability,
   );
 
@@ -350,11 +338,10 @@ export function BookingWidget({
     useCallback(() => {
       dispatch({
         type: 'HOLD_EXPIRED',
-        message:
-          'Tu apartado temporal de 3 minutos expiró. Elige de nuevo un horario disponible.',
+        message: `Pasaron los ${settings.slotHoldMinutes || 5} minutos de apartado y el horario se liberó. Elige uno de nuevo.`,
       });
       void fetchAvailability();
-    }, [fetchAvailability]),
+    }, [fetchAvailability, settings.slotHoldMinutes]),
   );
 
   const availableDateSet = useMemo(
@@ -367,32 +354,19 @@ export function BookingWidget({
   );
 
   const liveAnnouncement = useMemo(() => {
-    if (flow.conflict?.message) {
-      return `Horario recién ocupado. ${flow.conflict.message}`;
-    }
+    if (flow.conflict?.message) return `Horario recién ocupado. ${flow.conflict.message}`;
     if (flow.formErrorCode === 'MAX_ACTIVE_BOOKINGS' && flow.formError) {
       return `Límite de citas activas alcanzado. ${flow.formError}`;
     }
-    if (holdRemainingSec === 180) {
-      return 'Horario apartado por 3 minutos mientras completas tus datos.';
+    if (holdRemainingSec === holdTotalSec) {
+      return `Horario apartado por ${settings.slotHoldMinutes || 5} minutos mientras terminas.`;
     }
-    if (holdRemainingSec === 60) {
-      return 'Te queda 1 minuto para completar tu reserva.';
-    }
-    if (holdRemainingSec === 30) {
-      return 'Te quedan 30 segundos para completar tu reserva.';
-    }
-    if (holdRemainingSec === 10) {
-      return 'Te quedan 10 segundos de apartado temporal.';
-    }
-    if (realtimePing.message) {
-      return realtimePing.message;
-    }
-    if (!loadingAvail && selectedDaySummary) {
-      const dateLabel = formatDateShortInTimezone(
-        `${selectedDaySummary.date}T18:00:00Z`,
-        settings.timezone || 'America/Mexico_City',
-      );
+    if (holdRemainingSec === 60) return 'Te queda 1 minuto para terminar tu reserva.';
+    if (holdRemainingSec === 30) return 'Te quedan 30 segundos para terminar tu reserva.';
+    if (holdRemainingSec === 10) return 'Te quedan 10 segundos de apartado.';
+    if (realtimePing.message) return realtimePing.message;
+    if (flow.step === 'schedule' && !loadingAvail && selectedDaySummary) {
+      const dateLabel = formatDateShortInTimezone(`${selectedDaySummary.date}T18:00:00Z`, timezone);
       return selectedDaySummary.slotCount > 0
         ? `${selectedDaySummary.slotCount} horarios disponibles para ${dateLabel}.`
         : `Sin horarios disponibles para ${dateLabel}.`;
@@ -402,12 +376,36 @@ export function BookingWidget({
     flow.conflict,
     flow.formError,
     flow.formErrorCode,
+    flow.step,
     holdRemainingSec,
+    holdTotalSec,
     loadingAvail,
     realtimePing.message,
     selectedDaySummary,
-    settings.timezone,
+    settings.slotHoldMinutes,
+    timezone,
   ]);
+
+  const revealPanel = () => {
+    const panel = panelRef.current;
+    if (panel && panel.getBoundingClientRect().top < 0) {
+      panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  };
+
+  const goToStep = (step: BookingStep) => {
+    dispatch({ type: 'GO_TO_STEP', step });
+    revealPanel();
+  };
+
+  const releaseHold = () => {
+    if (flow.holdId) void fetch('/api/slot-holds', { method: 'DELETE' });
+  };
+
+  const resetSelection = () => {
+    releaseHold();
+    dispatch({ type: 'SELECTION_CHANGED' });
+  };
 
   const handleAdvanceMonth = () => {
     if (!canAdvanceMonth) return;
@@ -431,54 +429,78 @@ export function BookingWidget({
     }
   };
 
-  const handleSelectSlot = async (slot: AvailableSlot) => {
-    if (!selectedService) return;
-    let nextHoldId: string | null = null;
-    let nextHoldExpiresAt: number | null = null;
-
-    if (settings.enableSlotHold) {
-      try {
-        const result = await requestSlotHold({
-          serviceId: selectedService.id,
-          extraServiceIds: selectedExtraServices.map((srv) => srv.id),
-          addonIds: activeSelectedAddons.map((a) => a.id),
-          staffId: slot.staffId,
-          startAt: slot.startAt,
-          sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
-        });
-        if (!result.ok) {
-          dispatch({
-            type: 'SLOT_CONFLICT',
-            message: result.error,
-            suggestions: result.suggestedSlots,
-          });
-          void fetchAvailability();
-          return;
-        }
-        nextHoldId = result.holdId;
-        nextHoldExpiresAt = result.holdExpiresAt;
-      } catch {
-        nextHoldExpiresAt = null;
-      }
+  const holdSlot = async (slot: AvailableSlot, staffId: string) => {
+    if (!selectedService || !settings.enableSlotHold) {
+      return { ok: true as const, holdId: null, holdExpiresAt: null };
     }
+    try {
+      return await requestSlotHold({
+        serviceId: selectedService.id,
+        extraServiceIds: selectedExtraServices.map((srv) => srv.id),
+        addonIds: activeSelectedAddons.map((a) => a.id),
+        staffId,
+        startAt: slot.startAt,
+        sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
+      });
+    } catch {
+      return { ok: true as const, holdId: null, holdExpiresAt: null };
+    }
+  };
 
+  const handleSelectSlot = async (slot: AvailableSlot) => {
+    if (!selectedService || isBusy) return;
+    setIsBusy(true);
+    const result = await holdSlot(slot, slot.staffId);
+    setIsBusy(false);
+    if (!result.ok) {
+      dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
+      void fetchAvailability();
+      return;
+    }
     const keySuffix =
-      typeof globalThis.crypto?.randomUUID === 'function'
-        ? globalThis.crypto.randomUUID()
-        : `${Date.now()}-${slot.staffId}`;
+      typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `${Date.now()}-${slot.staffId}`;
     idempotencyKeyRef.current = `idem-${keySuffix}`;
+    const hasStaffChoice = !skipsStaffStep && slot.availableStaffIds.length > 1;
+    setChosenStaffId(isPinned ? pinnedStaffId : hasStaffChoice ? 'any' : slot.staffId);
+    setTakenStaffIds(new Set());
+    setStaffError(null);
     dispatch({
       type: 'SELECT_SLOT_HOLD_ACQUIRED',
       slot,
-      holdId: nextHoldId,
-      holdExpiresAt: nextHoldExpiresAt,
+      holdId: result.holdId,
+      holdExpiresAt: result.holdExpiresAt,
+      nextStep: hasStaffChoice ? 'staff' : 'details',
     });
+    revealPanel();
   };
 
-  const handleBackToSchedule = async () => {
-    dispatch({ type: 'RESET_TO_SCHEDULE' });
-    await fetch('/api/slot-holds', { method: 'DELETE' });
-    void fetchAvailability();
+  const handlePickStaff = async (staffId: string) => {
+    const slot = flow.selectedSlot;
+    if (!slot || isBusy) return;
+    setStaffError(null);
+    const member = staff.find((item) => item.id === staffId);
+    if (staffId === 'any' || !member || staffId === slot.staffId) {
+      setChosenStaffId(staffId);
+      dispatch({ type: 'STAFF_ASSIGNED', slot, holdId: null, holdExpiresAt: null });
+      revealPanel();
+      return;
+    }
+    setIsBusy(true);
+    const result = await holdSlot(slot, staffId);
+    setIsBusy(false);
+    if (!result.ok) {
+      setTakenStaffIds((prev) => new Set([...prev, staffId]));
+      setStaffError(`${member.name} acaba de ocupar esa hora. Tu horario sigue apartado: elige otra opción.`);
+      return;
+    }
+    setChosenStaffId(staffId);
+    dispatch({
+      type: 'STAFF_ASSIGNED',
+      slot: { ...slot, staffId, staffName: member.name },
+      holdId: result.holdId,
+      holdExpiresAt: result.holdExpiresAt,
+    });
+    revealPanel();
   };
 
   const handleApplyCoupon = async () => {
@@ -493,37 +515,24 @@ export function BookingWidget({
     setAppliedCoupon(result.coupon);
   };
 
+  const fieldErrors = hasTriedSubmit ? validateClientFields(clientName, clientPhone) : EMPTY_FIELD_ERRORS;
+
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedService || !flow.selectedSlot) return;
-
-    if (clientName.trim().length < 2) {
-      dispatch({
-        type: 'SUBMIT_FAILED',
-        error: 'Escribe tu nombre completo para registrar tu cita.',
-      });
+    setHasTriedSubmit(true);
+    const errors = validateClientFields(clientName, clientPhone);
+    if (errors.name || errors.phone) {
+      dispatch({ type: 'SUBMIT_FAILED', error: errors.name ?? errors.phone ?? '' });
       return;
     }
-
-    if (clientPhone.replace(/\D/g, '').length < 8) {
-      dispatch({
-        type: 'SUBMIT_FAILED',
-        error: 'Escribe un número de WhatsApp válido (10 dígitos).',
-      });
-      return;
-    }
-
     if (!flow.privacyConsentAccepted) {
-      dispatch({
-        type: 'CONSENT_REQUIRED_ERROR',
-        message: 'Debes leer y aceptar el Aviso de Privacidad para completar tu reserva.',
-      });
+      dispatch({ type: 'CONSENT_REQUIRED_ERROR', message: 'Necesitamos tu aceptación para apartar la cita.' });
       return;
     }
 
     dispatch({ type: 'START_SUBMIT' });
-    const showDeposit = hasConfiguredDeposit(settings, depositAmountCents);
-    const effectiveProofMethod: ProofDeliveryMethod = !showDeposit
+    const effectiveProofMethod: ProofDeliveryMethod = !showsDeposit
       ? 'none'
       : proofDeliveryMethod === 'instagram_dm'
         ? 'instagram_dm'
@@ -555,11 +564,7 @@ export function BookingWidget({
       });
 
       if (result.kind === 'conflict') {
-        dispatch({
-          type: 'SLOT_CONFLICT',
-          message: result.error,
-          suggestions: result.suggestedSlots,
-        });
+        dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
         void fetchAvailability();
         return;
       }
@@ -572,7 +577,6 @@ export function BookingWidget({
         });
         return;
       }
-
       dispatch({ type: 'SUBMIT_CONFIRMED', manageUrl: result.manageUrl });
       router.push(result.manageUrl);
     } catch {
@@ -580,127 +584,203 @@ export function BookingWidget({
     }
   };
 
+  const step = flow.step;
+  const hasSlot = Boolean(flow.selectedSlot);
+  const skipsStaffForSlot = skipsStaffStep || (flow.selectedSlot?.availableStaffIds.length ?? 0) <= 1;
+  const completedSteps = new Set<BookingStep>(['service']);
+  if (hasSlot) completedSteps.add('schedule');
+  if (hasSlot && (skipsStaffForSlot || step === 'details')) completedSteps.add('staff');
+
+  const previousStep = (current: BookingStep): BookingStep | null => {
+    if (current === 'details') return skipsStaffForSlot ? 'schedule' : 'staff';
+    if (current === 'staff') return 'schedule';
+    if (current === 'schedule') return 'service';
+    return null;
+  };
+  const backTarget = previousStep(step);
+  const handleBack = backTarget ? () => goToStep(backTarget) : null;
+
+  const handleNext = () => {
+    if (step === 'service') goToStep('schedule');
+    else if (step === 'schedule' && hasSlot) goToStep(skipsStaffForSlot ? 'details' : 'staff');
+    else if (step === 'staff') void handlePickStaff(chosenStaffId);
+  };
+
+  const canContinue =
+    step === 'service' ? Boolean(selectedService) : step === 'schedule' ? hasSlot : step === 'staff' ? hasSlot : true;
+  const nextLabel =
+    step === 'details' ? (showsDeposit || selectedService?.requiresConfirmation ? 'Apartar mi cita' : 'Confirmar cita') : 'Continuar';
+  const nextHint =
+    step === 'service'
+      ? `${formatDuration(totalDurationMinutes)} en total`
+      : step === 'schedule'
+        ? hasSlot
+          ? 'Horario apartado'
+          : 'Elige un horario'
+        : step === 'staff'
+          ? chosenStaffId === 'any'
+            ? 'Te asignamos a quien esté libre'
+            : ''
+          : showsDeposit
+            ? 'Después subes tu anticipo'
+            : '';
+
+  const slot = flow.selectedSlot;
+  const slotTime = slot ? (timeFormat === '24h' ? slot.localTime24 : slot.localTime12) : '';
+  const staffDecided = Boolean(slot) && (skipsStaffForSlot || step === 'details');
+  const summaryRows: SummaryRow[] = [
+    {
+      key: 'service',
+      label: 'Servicio',
+      value: [selectedService?.name, ...selectedExtraServices.map((srv) => srv.name)].filter(Boolean).join(' + '),
+      sub: activeSelectedAddons.map((a) => a.name).join(' · ') || 'Sin extras',
+      mark: '1',
+      isDone: true,
+    },
+    {
+      key: 'when',
+      label: 'Cuándo',
+      value: slot ? `${formatDateLongInTimezone(slot.startAt, timezone)} · ${slotTime}` : 'Por elegir',
+      sub: slot ? settings.address : null,
+      mark: '2',
+      isDone: Boolean(slot),
+    },
+    {
+      key: 'staff',
+      label: 'Artista',
+      value: !staffDecided
+        ? 'Por elegir'
+        : chosenStaffId === 'any' && !isPinned
+          ? 'Me da igual'
+          : (slot?.staffName ?? 'Por elegir'),
+      sub: staffDecided && chosenStaffId === 'any' && !isPinned && slot ? `Te atiende ${slot.staffName}` : null,
+      mark: '3',
+      isDone: staffDecided,
+    },
+    {
+      key: 'duration',
+      label: 'Duración',
+      value: formatDuration(totalDurationMinutes),
+      sub: null,
+      mark: 'clock',
+      isDone: true,
+    },
+  ];
+
+  const summaryProps = {
+    currency: settings.currency,
+    rows: summaryRows,
+    totalPriceCents,
+    hasStartingPrice,
+    discountCents,
+    depositAmountCents: showsDeposit ? depositAmountCents || 20000 : 0,
+    holdRemainingSec,
+    holdTotalSec,
+  };
+
+  const whatsappUrl = buildWhatsAppLink(settings.whatsappNumber, `Hola ${settings.name}, tengo una duda para agendar mi cita.`);
+
+  const nextButton = (fullWidth: boolean) =>
+    step === 'details' ? (
+      <Button
+        type="submit"
+        form={FORM_ID}
+        variant="primary"
+        size="lg"
+        label={nextLabel}
+        width={fullWidth ? '100%' : undefined}
+        isLoading={flow.phase === 'submitting'}
+        className="rb-cta"
+      />
+    ) : (
+      <Button
+        variant="primary"
+        size="lg"
+        label={nextLabel}
+        width={fullWidth ? '100%' : undefined}
+        isDisabled={!canContinue || isBusy}
+        isLoading={isBusy && step === 'staff'}
+        onClick={handleNext}
+        className="rb-cta"
+      />
+    );
+
   return (
-    <PublicShell>
-      <Section variant="transparent" paddingBlock={6} paddingInline={4}>
-        <VStack gap={5} maxWidth={1220} width="100%" style={{ marginInline: 'auto' }}>
-          <p
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            style={{
-              position: 'absolute',
-              width: '0.0625rem',
-              height: '0.0625rem',
-              overflow: 'hidden',
-              clipPath: 'inset(50%)',
-              whiteSpace: 'nowrap',
-              margin: 0,
-            }}
-          >
-            {liveAnnouncement}
-          </p>
+    <VStack className="lk-root rb-root">
+      <p role="status" aria-live="polite" aria-atomic="true" className="rb-sr-only">
+        {liveAnnouncement}
+      </p>
 
-          <HStack justify="between" align="center" wrap="wrap" gap={3}>
-            <VStack gap={0.5}>
-              <HStack gap={2} align="center">
-                <StatusDot variant="success" label="Sincronizado en tiempo real" isPulsing aria-hidden="true" />
-                <Text type="label" color="secondary">
-                  {realtimePing.message || 'Disponibilidad sincronizada al segundo'}
-                </Text>
-              </HStack>
-              <Heading level={1}>Reserva tu cita en {settings.name}</Heading>
-            </VStack>
+      <BookingHeader
+        salonName={settings.name}
+        step={step}
+        holdRemainingSec={holdRemainingSec}
+        whatsappUrl={whatsappUrl}
+        onBack={handleBack}
+      />
+      <BookingHero step={step} completedSteps={completedSteps} onGoToStep={goToStep} />
 
-            {flow.step === 'details' ? (
-              <Button
-                label="Cambiar fecha u horario"
-                variant="secondary"
-                icon={<ArrowLeft size={16} aria-hidden="true" />}
-                onClick={handleBackToSchedule}
-              />
-            ) : null}
-          </HStack>
-
-          {flow.conflict ? (
-            <Banner
-              status="warning"
-              title="Horario recién ocupado"
-              description={flow.conflict.message}
-              isDismissable
-              onDismiss={() => dispatch({ type: 'DISMISS_CONFLICT' })}
-            >
-              {flow.conflict.suggestions.length > 0 ? (
-                <VStack gap={2} paddingBlockStart={2}>
-                  <Text type="label" weight="semibold">
-                    Horarios disponibles más cercanos (clic para apartar al instante):
-                  </Text>
-                  <HStack gap={2} wrap="wrap">
-                    {flow.conflict.suggestions.map((alt) => (
+      <VStack as="main" className="rb-wrap rb-main">
+        <VStack className="rb-layout">
+          <VStack as="section" ref={panelRef} className="rb-panel" aria-label={STEP_LABELS[step]}>
+            {flow.conflict ? (
+              <Banner
+                status="warning"
+                title="Ese horario se acaba de ocupar"
+                description={flow.conflict.message}
+                isDismissable
+                onDismiss={() => dispatch({ type: 'DISMISS_CONFLICT' })}
+              >
+                {flow.conflict.suggestions.length > 0 ? (
+                  <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
+                    {flow.conflict.suggestions.slice(0, 3).map((alt) => (
                       <Button
                         key={`${alt.staffId}-${alt.startAt}`}
-                        variant="primary"
+                        variant="secondary"
                         size="sm"
-                        style={{ fontVariantNumeric: 'tabular-nums' }}
-                        label={`${formatDateShortInTimezone(alt.startAt, settings.timezone)} · ${
+                        label={`${formatDateShortInTimezone(alt.startAt, timezone)} · ${
                           timeFormat === '24h' ? alt.localTime24 : alt.localTime12
                         }`}
-                        onClick={() => handleSelectSlot(alt)}
+                        onClick={() => void handleSelectSlot(alt)}
                       />
                     ))}
                   </HStack>
-                </VStack>
-              ) : null}
-            </Banner>
-          ) : null}
+                ) : null}
+              </Banner>
+            ) : null}
 
-          {flow.step === 'schedule' ? (
-            <VStack gap={5}>
-              <ServiceStaffStep
-                settings={settings}
+            {step === 'service' ? (
+              <ServiceStep
+                currency={settings.currency}
+                categories={categories}
                 services={services}
                 selectedService={selectedService}
                 selectedExtraServiceIds={selectedExtraServiceIds}
                 compatibleAddons={compatibleAddons}
                 selectedAddonIds={selectedAddonIds}
-                eligibleStaff={eligibleStaff}
-                selectedStaffId={selectedStaffId}
                 onSelectService={(serviceId) => {
                   setSelectedServiceId(serviceId);
                   setSelectedExtraServiceIds((prev) => prev.filter((id) => id !== serviceId));
-                  dispatch({ type: 'SELECTION_CHANGED' });
+                  resetSelection();
                 }}
                 onToggleExtraService={(serviceId, checked) => {
                   setSelectedExtraServiceIds((prev) =>
-                    checked
-                      ? Array.from(new Set([...prev, serviceId])).slice(0, 8)
-                      : prev.filter((id) => id !== serviceId),
+                    checked ? Array.from(new Set([...prev, serviceId])).slice(0, 8) : prev.filter((id) => id !== serviceId),
                   );
-                  dispatch({ type: 'SELECTION_CHANGED' });
+                  resetSelection();
                 }}
                 onToggleAddon={(addonId, checked) => {
                   setSelectedAddonIds((prev) =>
-                    checked
-                      ? Array.from(new Set([...prev, addonId]))
-                      : prev.filter((id) => id !== addonId),
+                    checked ? Array.from(new Set([...prev, addonId])) : prev.filter((id) => id !== addonId),
                   );
-                  dispatch({ type: 'SELECTION_CHANGED' });
-                }}
-                onSelectStaff={(nextStaffId) => {
-                  setSelectedStaffId(nextStaffId);
-                  dispatch({ type: 'SELECTION_CHANGED' });
+                  resetSelection();
                 }}
               />
+            ) : null}
 
+            {step === 'schedule' ? (
               <ScheduleStep
                 settings={settings}
-                selectedService={selectedService}
-                selectedExtraServices={selectedExtraServices}
-                activeSelectedAddons={activeSelectedAddons}
-                totalDurationMinutes={totalDurationMinutes}
-                subtotalCents={subtotalCents}
-                hasStartingPrice={hasStartingPrice}
-                depositAmountCents={depositAmountCents}
                 layoutView={layoutView}
                 timeFormat={timeFormat}
                 todayKey={initialTodayKey}
@@ -709,94 +789,157 @@ export function BookingWidget({
                 availableDateSet={availableDateSet}
                 selectedDaySummary={selectedDaySummary}
                 selectedSlot={flow.selectedSlot}
-                highlightedSlotHint={initialSlot}
+                pinnedStaffName={pinnedStaff?.name ?? null}
+                isBusy={isBusy}
                 loadingAvail={loadingAvail}
                 canAdvanceMonth={canAdvanceMonth}
                 isViewingFutureWindow={windowStartDate > initialTodayKey}
                 onChangeLayoutView={setLayoutView}
                 onChangeTimeFormat={setTimeFormat}
                 onSelectDate={handleSelectDate}
-                onSelectSlot={handleSelectSlot}
+                onSelectSlot={(next) => void handleSelectSlot(next)}
+                onShowAllStaff={() => {
+                  setLoadingAvail(true);
+                  setPinnedStaffId('any');
+                  resetSelection();
+                }}
                 onRedirectStaff={(staffId) => {
                   setLoadingAvail(true);
-                  setSelectedStaffId(staffId);
-                  dispatch({ type: 'SELECTION_CHANGED' });
+                  setPinnedStaffId(staffId);
+                  resetSelection();
                 }}
                 onAdvanceMonth={handleAdvanceMonth}
                 onReturnToToday={handleReturnToToday}
                 onOpenWaitlist={() => setWaitlistOpen(true)}
               />
-            </VStack>
-          ) : (
-            <ClientConfirmStep
-              settings={settings}
-              selectedService={selectedService}
-              selectedExtraServices={selectedExtraServices}
-              activeSelectedAddons={activeSelectedAddons}
-              selectedSlot={flow.selectedSlot}
-              timeFormat={timeFormat}
-              totalDurationMinutes={totalDurationMinutes}
-              subtotalCents={subtotalCents}
-              totalPriceCents={totalPriceCents}
-              hasStartingPrice={hasStartingPrice}
-              depositAmountCents={depositAmountCents}
-              holdRemainingSec={holdRemainingSec}
-              couponInput={couponInput}
-              appliedCoupon={appliedCoupon}
-              couponError={couponError}
-              clientName={clientName}
-              clientPhone={clientPhone}
-              clientInstagram={clientInstagram}
-              clientEmail={clientEmail}
-              clientBirthday={clientBirthday}
-              clientNotes={clientNotes}
-              inspoFile={inspoFile}
-              inspoDataUrl={inspoDataUrl}
-              proofDeliveryMethod={proofDeliveryMethod}
-              proofFile={proofFile}
-              privacyConsentAccepted={flow.privacyConsentAccepted}
-              marketingOptIn={flow.marketingOptIn}
-              privacyConsentError={flow.privacyConsentError}
-              submitting={flow.phase === 'submitting'}
-              formError={flow.formError}
-              formErrorCode={flow.formErrorCode}
-              activeBookings={flow.activeBookings}
-              onChangeCouponInput={setCouponInput}
-              onApplyCoupon={handleApplyCoupon}
-              onChangeClientName={setClientName}
-              onChangeClientPhone={setClientPhone}
-              onChangeClientInstagram={setClientInstagram}
-              onChangeClientEmail={setClientEmail}
-              onChangeClientBirthday={setClientBirthday}
-              onChangeClientNotes={setClientNotes}
-              onChangeInspoFile={(file, dataUrl) => {
-                setInspoFile(file);
-                setInspoDataUrl(dataUrl);
-              }}
-              onChangeProofMethod={setProofDeliveryMethod}
-              onChangeProofFile={(file, dataUrl) => {
-                setProofFile(file);
-                setProofDataUrl(dataUrl);
-              }}
-              onChangePrivacyConsent={(accepted) =>
-                dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })
-              }
-              onChangeMarketingOptIn={(optedIn) =>
-                dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })
-              }
-              onSubmit={handleConfirmBooking}
-            />
-          )}
+            ) : null}
+
+            {step === 'staff' && slot ? (
+              <StaffStep
+                timezone={timezone}
+                timeFormat={timeFormat}
+                slot={slot}
+                eligibleStaff={eligibleStaff}
+                allStaff={staff}
+                chosenStaffId={chosenStaffId}
+                takenStaffIds={takenStaffIds}
+                isBusy={isBusy}
+                errorMessage={staffError}
+                onPickStaff={(staffId) => void handlePickStaff(staffId)}
+              />
+            ) : null}
+
+            {step === 'details' ? (
+              <ClientConfirmStep
+                formId={FORM_ID}
+                settings={settings}
+                selectedService={selectedService}
+                selectedExtraServices={selectedExtraServices}
+                activeSelectedAddons={activeSelectedAddons}
+                selectedSlot={flow.selectedSlot}
+                timeFormat={timeFormat}
+                totalDurationMinutes={totalDurationMinutes}
+                depositAmountCents={depositAmountCents}
+                couponInput={couponInput}
+                appliedCoupon={appliedCoupon}
+                couponError={couponError}
+                clientName={clientName}
+                clientPhone={clientPhone}
+                clientInstagram={clientInstagram}
+                clientEmail={clientEmail}
+                clientBirthday={clientBirthday}
+                clientNotes={clientNotes}
+                inspoFile={inspoFile}
+                proofDeliveryMethod={proofDeliveryMethod}
+                proofFile={proofFile}
+                privacyConsentAccepted={flow.privacyConsentAccepted}
+                marketingOptIn={flow.marketingOptIn}
+                privacyConsentError={flow.privacyConsentError}
+                fieldErrors={fieldErrors}
+                formError={flow.formError}
+                formErrorCode={flow.formErrorCode}
+                activeBookings={flow.activeBookings}
+                onChangeCouponInput={setCouponInput}
+                onApplyCoupon={() => void handleApplyCoupon()}
+                onChangeClientName={setClientName}
+                onChangeClientPhone={setClientPhone}
+                onChangeClientInstagram={setClientInstagram}
+                onChangeClientEmail={setClientEmail}
+                onChangeClientBirthday={setClientBirthday}
+                onChangeClientNotes={setClientNotes}
+                onChangeInspoFile={(file, dataUrl) => {
+                  setInspoFile(file);
+                  setInspoDataUrl(dataUrl);
+                }}
+                onChangeProofMethod={setProofDeliveryMethod}
+                onChangeProofFile={(file, dataUrl) => {
+                  setProofFile(file);
+                  setProofDataUrl(dataUrl);
+                }}
+                onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}
+                onChangeMarketingOptIn={(optedIn) => dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })}
+                onSubmit={(e) => void handleConfirmBooking(e)}
+              />
+            ) : null}
+
+            <HStack justify="between" align="center" gap={3} className="rb-actions rb-d">
+              <Button
+                label="Atrás"
+                variant="secondary"
+                size="lg"
+                isDisabled={!backTarget}
+                onClick={() => {
+                  if (backTarget) goToStep(backTarget);
+                }}
+              />
+              <HStack gap={3} align="center">
+                {nextHint ? (
+                  <Text type="supporting" color="secondary">
+                    {nextHint}
+                  </Text>
+                ) : null}
+                {nextButton(false)}
+              </HStack>
+            </HStack>
+          </VStack>
+
+          <VStack as="aside" className="rb-aside rb-d" aria-labelledby="rb-summary-aside">
+            <BookingSummaryCard {...summaryProps} headingId="rb-summary-aside" />
+          </VStack>
         </VStack>
-      </Section>
+      </VStack>
+
+      <HStack justify="between" align="center" gap={3} className="rb-bottom rb-m">
+        <button
+          type="button"
+          className="rb-bottom-summary"
+          aria-haspopup="dialog"
+          onClick={() => setSummaryOpen(true)}
+        >
+          <Text className="lk-serif rb-bottom-total" hasTabularNumbers>
+            {formatServicePrice(totalPriceCents, hasStartingPrice, settings.currency)}
+          </Text>
+          <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint">
+            {formatDuration(totalDurationMinutes)} · Ver resumen
+            <ChevronUp size={14} aria-hidden="true" />
+          </Text>
+        </button>
+        {nextButton(false)}
+      </HStack>
+
+      <BottomSheet isOpen={summaryOpen} onOpenChange={setSummaryOpen} label="Resumen de tu cita" padding={0} height="hug">
+        <VStack className="lk-portal rb-sheet">
+          <BookingSummaryCard {...summaryProps} headingId="rb-summary-sheet" />
+        </VStack>
+      </BottomSheet>
 
       <WaitlistDialog
         isOpen={waitlistOpen}
         serviceId={selectedService?.id}
-        selectedStaffId={selectedStaffId}
+        selectedStaffId={pinnedStaffId}
         selectedDate={selectedDate}
         onOpenChange={setWaitlistOpen}
       />
-    </PublicShell>
+    </VStack>
   );
 }

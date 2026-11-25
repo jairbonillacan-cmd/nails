@@ -74,6 +74,7 @@ export default async function ReservarPage({
   return (
     <BookingWidget
       settings={toPublicSettingsDTO(db.settings)}
+      categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
       services={publicServices}
       addons={db.addons
         .filter((a) => a.isActive)

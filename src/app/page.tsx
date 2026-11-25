@@ -1,9 +1,11 @@
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getSnapshot } from '@/lib/repositories/db';
 import {
+  toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type PublicReviewDTO,
   type PublicServiceDTO,
   type PublicSettingsDTO,
 } from '@/lib/public-dto';
@@ -120,6 +122,25 @@ export default function HomePage() {
         )
       : 5.0;
 
+  const bookingById = new Map(db.bookings.map((booking) => [booking.id, booking]));
+  const clientById = new Map(db.clients.map((client) => [client.id, client]));
+  const publicReviews: PublicReviewDTO[] = db.reviews
+    .flatMap((review) => {
+      const booking = bookingById.get(review.bookingId);
+      if (!booking || booking.status !== 'completed' || !review.comment.trim()) {
+        return [];
+      }
+      const client = clientById.get(review.clientId ?? booking.clientId);
+      return [
+        toPublicReviewDTO(review, {
+          serviceId: booking.serviceId,
+          clientFullName: client?.fullName ?? null,
+        }),
+      ];
+    })
+    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 8);
+
   const serializedJsonLd = serializeJsonLd(
     buildNailSalonJsonLd({
       baseUrl,
@@ -147,7 +168,7 @@ export default function HomePage() {
           .filter((s) => s.isActive)
           .toSorted((a, b) => a.displayOrder - b.displayOrder)
           .map(toPublicStaffDTO)}
-        gallery={db.gallery.toSorted((a, b) => a.displayOrder - b.displayOrder)}
+        reviews={publicReviews}
         reviewsSummary={{ count: reviewsCount, average }}
       />
     </>

@@ -165,6 +165,7 @@ export default async function ReservarServicioPage({
     <VStack gap={0} width="100%">
       <BookingWidget
         settings={settings}
+        categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
         services={activeServices}
         addons={db.addons
           .filter((a) => a.isActive)

@@ -28,15 +28,23 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 ## 1. Landing Brandeada (`/`) y SEO Local
 - **Precondiciones:** Ninguna (acceso público).
 - **Elementos clave y selectores:**
-  - TopNav: `role="navigation"` (`Navegación principal del salón`), botones `Panel` (`/admin`), `Agendar cita` (`/reservar`), toggle modo claro/oscuro (`aria-label*="modo"`).
-  - Hero: `h1` con `settings.landingContent.heroTitle` (`De tu idea a tus uñas.`), badge de marca LAIKONA NAILS, CTA `Agendar mi cita ahora` (`/reservar`) y enlace a `@laikona.nailsss`.
-  - Catálogo `#servicios`: `TabList` (`Todos los servicios`, `Uñas & Esculturales`, `Gel & Retiro`, `Pies & PediSpa`), 9 tarjetas de servicio (indicador `Desde $...` cuando `isStartingPrice`) con botón `Reservar` (`/reservar/[slug]`).
-  - Galería `#galeria`: `TabList` por categoría + 4 diseños + botones `Quiero este diseño` (`/reservar/[slug]?inspo=...`).
+  - Landing propia sin `PublicShell` (`LandingView` + `src/components/landing/*`, estilos `lk-*` en `src/app/globals.css`, recursos en `public/landing/`). Siempre en modo claro (`color-scheme: light` en `.lk-root`).
+  - Franja de avisos animada (anticipo, reagendar 12 h, solo con cita) con `aria-label` completo.
+  - Nav `role="navigation"` (`Principal`) integrada en el hero: `data-floating="false"` arriba; al pasar 80 px de scroll cambia a `data-floating="true"` (cápsula esmerilada con logo negro). Enlaces `#servicios`, `#galeria`, `#equipo`, `#visitanos` y botón `Agendar` (`/reservar`). En móvil (< 760 px) los enlaces se ocultan y `Abrir menú` abre un `Dialog` a pantalla completa en cereza.
+  - Hero `#inicio`: `h1` `El arte está en tus uñas`, CTAs `Agendar cita` (`/reservar`) y `Ver creaciones` (`#galeria`), calificación de Google si hay reseñas.
+  - Menú `#servicios`: `TabList` (`Uñas & Esculturales`, `Gel & Retiro`, `Pies & PediSpa`, `Arte y acabados`). Cada servicio es un enlace a `/reservar/[slug]` con foto, precio (`Desde $...` cuando `isStartingPrice`) y duración. `Arte y acabados` lista los extras activos con icono y las formas de uña.
+  - Creaciones `#galeria` (fondo cereza): mosaico de 11 fotos; `Ver más creaciones` (`aria-expanded`) muestra 22.
+  - Reseñas: resumen `EXCELENTE · promedio · N reseñas` + `Carousel` de reseñas verificadas (`PublicReviewDTO`, solo primer nombre, citas `completed` con comentario).
+  - Equipo `#equipo` (fondo cereza): un botón por especialista (`aria-haspopup="dialog"`) abre un `Dialog` con pestañas `Perfil`, `Servicios` (botón `Reservar` → `/reservar/[slug]?staff=<slug>`) y `Portafolio`, más `Reservar con <nombre>` (`/reservar?staff=<slug>`).
+  - Conectemos: tarjeta central a `@laikona.nailsss` y cuatro fotos inclinadas.
+  - Visítanos `#visitanos`: dirección, horario y contacto + `iframe` de Google Maps (`sandbox`, permitido por `frame-src https://www.google.com https://maps.google.com` en la CSP).
+  - Footer cereza: logo, `Agendar cita`, WhatsApp, columnas Explora/Dirección/Horario/Síguenos y enlaces a `/aviso-de-privacidad` y `/links`.
   - **SEO Local:** `<script type="application/ld+json">` de tipo `NailSalon` / `LocalBusiness` con `OfferCatalog` y `aggregateRating` (sin `commissionPercent` y excluyendo servicios privados `isPrivate: true`), `GET /sitemap.xml` (200 con `/`, `/reservar`, `/links`, `/aviso-de-privacidad`, y únicamente `/reservar/[slug]` públicos) y `GET /robots.txt` (200 bloqueando `/admin/`, `/api/`, `/cita/`).
 - **Flujo de verificación:**
   1. Cambiar pestaña de categoría en Servicios -> actualiza la cantidad de tarjetas visibles (servicios VIP `isPrivate: true` nunca aparecen aquí ni en `/links` ni en `/api/public/bootstrap`).
-  2. Alternar modo claro/oscuro -> el tema Astryx actualiza superficies sin FOUC.
-  3. Clic en `Reservar` de `Rubber` -> navega a `/reservar/rubber`.
+  2. Bajar más de 80 px -> la nav pasa a `data-floating="true"`; en 375 px de ancho, `Abrir menú` abre el panel y `Cerrar menú` lo cierra.
+  3. Clic en la tarjeta `Rubber` -> navega a `/reservar/rubber`.
+  4. Clic en `Karla` -> abre el diálogo; la pestaña `Servicios` lista sus servicios con `Reservar`.
 
 ---
 
@@ -52,25 +60,28 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - **Precondiciones:** Al menos 1 servicio activo y 1 especialista con horario configurado.
 - **Estado bidireccional en URL (`C2` — `useBookingUrlSync`):** `?servicio=<slug>`, `?extras=<s1,s2>`, `?addons=<a1,a2>`, `?staff=<bookingSlug>`, `?date=YYYY-MM-DD`, `?layout=month|week|column`, `?slot=<iso>`, `?inspo=<texto>`. Recargar la página o abrir un deep-link de Instagram/WhatsApp restaura exactamente el paso y selección.
 - **Servicios VIP Privados (`C9`):** Un servicio con `isPrivate: true` se oculta de `/`, `/reservar`, `/links`, `/sitemap.xml` y `/api/public/bootstrap`, pero sigue siendo accesible y reservable vía enlace directo `/reservar/[slug]` (con `robots: noindex, nofollow`).
+- **Contenedor por pasos (`BookingWidget` + `bookingMachine`):** `Servicio → Día y hora → Artista → Tus datos`. Sin menú flotante del landing: encabezado fijo propio (`Atrás`/`Inicio`, logo, contador de apartado `role="timer"` y `Ayuda` por WhatsApp) + `progress` `Progreso de la reserva`. Banda cereza `Reserva tu cita` con stepper (`aria-current="step"`, solo se puede regresar a pasos anteriores) en escritorio y `Paso X de 4` en móvil (< 760 px). Escritorio: panel blanco + resumen cereza fijo (`aside` `Tu cita`). Móvil: barra inferior fija con total, `Ver resumen` (`BottomSheet`) y botón principal.
 - **Selectores y controles clave:**
-  - Paso 1 (Servicios y Extras): `SelectableCard` por servicio principal + combinación **multi-servicio** (`extraServiceIds`), `CheckboxInput` por extra (ej. `Retiro de gel o acrílico previo (+20 min · +$120)`), selector de especialista (**Karla**, **Paty**, **Tere** o *Sin preferencia*).
+  - Paso 1 `¿Qué te hacemos?`: pestañas por categoría (`role="tab"`), servicios como botones `aria-pressed` con foto, duración y precio; extras como filas `aria-pressed`; `¿Algo más en la misma visita?` (`Collapsible`) para multi-servicio (`extraServiceIds`).
   - **Reseñas verificadas en `/reservar/[slug]`:** `ServiceReviewsSection` muestra reseñas verificadas (`PublicReviewDTO`: solo primer nombre, calificación y comentario, cero PII completo) filtradas por servicio (o promedio del estudio si el servicio aún no tiene reseñas).
-  - Paso 2 (Agenda en vivo — `C1`/`C2`/`C5`/`C7`):
-    - Zona horaria bloqueada del estudio visible (`Horario del estudio: Puebla · America/Mexico_City`, sin dropdown engañoso cuando `lockTimezone: true`).
-    - `SegmentedControl` `Formato de hora` (`12h` | `24h`) y `Vista de calendario` (`Mes` | `Semana` | `Columnas`), marcadores de cruce de mes (`DIC 1` / `ENE 1`), `aria-label` completo por horario, región `aria-live="polite"` para anuncios accesibles y alineación numérica `tabular-nums`.
-    - En **Karla/Paty** muestra bloques fijos (`10:00 · 13:30 · 16:30`) y en **Tere** (`14:00 · 16:00 · 18:00`), respetando `recurringBlocks` e invariantes incluso si `optimizeContinuousSlots` está activo (`C1` solo aplica en modo continuo).
-    - **Ausencias OOO y recuperación de día lleno (`C2`/`C7`):** Muestra `publicNote` (nunca `reason` interno) y botón 1 clic hacia `redirectStaffId` si la especialista está ausente; si un día no tiene huecos, ofrece salto al siguiente día con lugar o `Lista de espera` (`POST /api/waitlist`).
-  - Paso 3 (Confirmación, Anticipo SPEI y Consentimiento LFPDPPP):
-    - Barra de progreso `Tiempo restante de apartado` + contador mm:ss (`POST /api/slot-holds`).
-    - Datos de anticipo SPEI (`$200 MXN`, Mercado Pago, CLABE `7229 6901 3959 779869`) con selector de comprobante (`Subir comprobante aquí` o `Lo enviaré por DM a @laikona.nailsss`).
-    - Inputs: `Nombre completo` (requerido), `WhatsApp (México +52)` (requerido), `Instagram (@usuario)`, `Correo electrónico`, `Fecha de cumpleaños`, `Notas sobre tu diseño o alergias`, `FileInput` (`Foto de inspiración`), `Cupón o Gift Card` + `Aplicar`.
-    - **Consentimiento LFPDPPP obligatorio:** `CheckboxInput` `He leído y acepto el Aviso de Privacidad` (con enlace a `/aviso-de-privacidad`) + `CheckboxInput` opcional `marketingOptIn` (`Quiero recibir recordatorios y promociones exclusivas de LAIKONA NAILS`).
-    - Botón submit (`POST /api/bookings` con `Idempotency-Key`).
+  - Paso 2 `¿Cuándo?` (horario antes que artista):
+    - Consulta disponibilidad de **todo el equipo** (`staffId` vacío) salvo que llegue `?staff=<slug>` (enlace `Reservar con <nombre>`): entonces muestra `Estás viendo solo los horarios de <nombre>` + `Ver todo el equipo` y se salta el paso Artista.
+    - Cada horario muestra cuántas artistas están libres (`AvailableSlot.availableStaffIds`, p. ej. `2 artistas`).
+    - Escritorio: `SegmentedControl` `Vista de calendario` (`Mes` | `Semana`; `column` en URL se trata como `Semana`) y `Formato de hora` (`12h` | `24h`). Móvil: tira deslizable de días (`role="listbox"`) + `Ver mes` y horarios en 3 columnas.
+    - **Ausencias OOO y día lleno (`C2`/`C7`):** muestra `publicNote` y botón hacia `redirectStaffId`; si un día no tiene huecos, `Ir al <día>` con el siguiente día con lugar o `Lista de espera` (`POST /api/waitlist`).
+    - Elegir horario aparta el lugar (`POST /api/slot-holds`) con la artista asignada por defecto y avanza solo.
+  - Paso 3 `¿Con quién?`: `Me da igual` (preseleccionado) + especialistas elegibles; las ocupadas a esa hora salen deshabilitadas (`Ocupada a esa hora`). Elegir otra artista vuelve a pedir el apartado sobre el mismo `startAt` con su `staffId`; si ya no está libre muestra `Esa artista ya no está libre` y conserva el apartado. Si solo hay una artista libre en ese horario, el paso se salta.
+  - Paso 4 `Casi lista`:
+    - Solo `Nombre y apellido` (2 palabras) y `WhatsApp` (`+52`, 10 dígitos) son obligatorios; los errores aparecen en cada campo al intentar enviar.
+    - Anticipo SPEI (`Anticipo de $200`, CLABE como botón `Copiar CLABE ...`) con `¿Cómo nos mandas tu comprobante?` (`Lo subo ahora` / `Lo mando por DM a @laikona.nailsss`).
+    - `Detalles para tu artista` (Instagram, correo, cumpleaños, notas, foto de inspiración) y `¿Tienes cupón o Gift Card?` plegados (`Collapsible`).
+    - **Consentimiento LFPDPPP obligatorio:** `Acepto el Aviso de Privacidad` (+ enlace) y `marketingOptIn` opcional.
+    - `Apartar mi cita` (`type="submit"`, `form` asociado; `POST /api/bookings` con `Idempotency-Key`).
 - **Flujos críticos a verificar:**
   1. Enviar `POST /api/bookings` sin `privacyConsentAccepted: true` -> rechazado `400 PRIVACY_CONSENT_REQUIRED`.
   2. Exceder `maxActiveBookingsPerClient` con el mismo teléfono -> rechazado `409 MAX_ACTIVE_BOOKINGS` con `activeBookings[]` **exclusivamente de ese teléfono** (`bookingCode`, `serviceName`, `staffName`, `startAt`, `manageUrl`) para recuperación directa de reprogramación (`C6`).
   3. Combinar servicio + extra -> suma duración/precio y recalcula horarios disponibles en vivo.
-  4. Seleccionar horario -> activa hold de **3 minutos** (`Horario apartado para ti`).
+  4. Seleccionar horario -> activa hold de **5 minutos** (`slotHoldMinutes`, contador en encabezado y `Te guardamos el horario` en el resumen) y lleva a `¿Con quién?`; elegir otra artista renueva el hold con su `staffId`.
   5. Aplicar cupón `BIENVENIDA10` -> aplica descuento 10% (y bloquea doble uso por la misma clienta).
   6. Confirmar reserva -> redirige a `/cita/[manageToken]` y desaparece el horario en otras sesiones vía `/api/realtime`.
   7. Colisión concurrente (`409 SLOT_TAKEN`): muestra `Banner` amarillo con 3 horarios sugeridos clicables sin perder los datos del formulario.

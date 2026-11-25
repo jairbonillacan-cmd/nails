@@ -1233,7 +1233,7 @@ export async function createOrRefreshSlotHold(
 
     db.slotHolds = db.slotHolds.filter((h) => h.sessionToken !== params.sessionToken);
 
-    const holdMinutes = db.settings.slotHoldMinutes || 3;
+    const holdMinutes = db.settings.slotHoldMinutes || 5;
     const hold: SlotHold = {
       id: generateId('hold'),
       staffId: slot.staffId,

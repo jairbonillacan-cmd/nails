@@ -199,9 +199,19 @@ describe('H6: fc.scheduler() concurrent createBookingAtomic property tests', () 
             throw new Error('Expected open any-staff slot');
           }
 
-          const eligibleAtSlotCount = availability.days
-            .flatMap((day) => day.slots)
-            .filter((slot) => slot.startAt === openSlot.startAt).length;
+          const eligibleAtSlotCount = initialDb.staff
+            .filter((member) => member.isActive)
+            .filter((member) =>
+              queryAvailability({
+                serviceId: service.id,
+                addonIds: [],
+                staffId: member.id,
+                startDate: todayKey,
+                days: 14,
+              })
+                .days.flatMap((day) => day.slots)
+                .some((slot) => slot.startAt === openSlot.startAt),
+            ).length;
 
           const scheduledCreate = scheduler.scheduleFunction(createBookingAtomic);
           const triggers = Array.from({ length: contenderCount }, (_, index) =>

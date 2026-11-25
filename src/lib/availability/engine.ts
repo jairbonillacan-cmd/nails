@@ -11,7 +11,7 @@ import type {
   StaffMember,
 } from '../types';
 
-type DayPeriod = 'morning' | 'afternoon' | 'evening';
+export type DayPeriod = 'morning' | 'afternoon' | 'evening';
 
 export interface AvailableSlot {
   startAt: string;
@@ -23,6 +23,7 @@ export interface AvailableSlot {
   localTime24: string;
   localTime12: string;
   period: DayPeriod;
+  availableStaffIds: string[];
 }
 
 export interface DayAvailabilitySummary {
@@ -717,7 +718,10 @@ export function getAvailableSlotsForDate(
         if (hasConflict) continue;
 
         const slotKey = preferredStaffId ? `${staff.id}:${startMs}` : `${startMs}`;
-        if (!slotsByTime.has(slotKey)) {
+        const existing = slotsByTime.get(slotKey);
+        if (existing) {
+          existing.availableStaffIds.push(staff.id);
+        } else {
           const time24 = minutesToTimeStr(cursor);
           slotsByTime.set(slotKey, {
             startAt: new Date(startMs).toISOString(),
@@ -729,6 +733,7 @@ export function getAvailableSlotsForDate(
             localTime24: time24,
             localTime12: formatTime12h(time24),
             period: getDayPeriod(time24),
+            availableStaffIds: [staff.id],
           });
         }
       }

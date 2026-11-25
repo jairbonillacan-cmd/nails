@@ -8,6 +8,10 @@ type BookingPhase =
   | 'confirmed'
   | 'conflict';
 
+export type BookingStep = 'service' | 'schedule' | 'staff' | 'details';
+
+export const BOOKING_STEPS: readonly BookingStep[] = ['service', 'schedule', 'staff', 'details'];
+
 interface BookingConflictState {
   message: string;
   suggestions: AvailableSlot[];
@@ -15,7 +19,7 @@ interface BookingConflictState {
 
 interface BookingFlowState {
   phase: BookingPhase;
-  step: 'schedule' | 'details';
+  step: BookingStep;
   selectedSlot: AvailableSlot | null;
   holdId: string | null;
   holdExpiresAt: number | null;
@@ -35,6 +39,17 @@ export type BookingFlowAction =
       slot: AvailableSlot;
       holdId: string | null;
       holdExpiresAt: number | null;
+      nextStep: 'staff' | 'details';
+    }
+  | {
+      type: 'STAFF_ASSIGNED';
+      slot: AvailableSlot;
+      holdId: string | null;
+      holdExpiresAt: number | null;
+    }
+  | {
+      type: 'GO_TO_STEP';
+      step: BookingStep;
     }
   | {
       type: 'SLOT_CONFLICT';
@@ -84,7 +99,7 @@ export type BookingFlowAction =
 export function createInitialBookingFlowState(): BookingFlowState {
   return {
     phase: 'browsing',
-    step: 'schedule',
+    step: 'service',
     selectedSlot: null,
     holdId: null,
     holdExpiresAt: null,
@@ -108,7 +123,7 @@ export function bookingReducer(
       return {
         ...state,
         phase: 'holding',
-        step: 'details',
+        step: action.nextStep,
         selectedSlot: action.slot,
         holdId: action.holdId,
         holdExpiresAt: action.holdExpiresAt,
@@ -117,6 +132,23 @@ export function bookingReducer(
         formErrorCode: null,
         activeBookings: [],
         privacyConsentError: null,
+      };
+
+    case 'STAFF_ASSIGNED':
+      return {
+        ...state,
+        phase: 'holding',
+        step: 'details',
+        selectedSlot: action.slot,
+        holdId: action.holdId ?? state.holdId,
+        holdExpiresAt: action.holdExpiresAt ?? state.holdExpiresAt,
+        conflict: null,
+      };
+
+    case 'GO_TO_STEP':
+      return {
+        ...state,
+        step: action.step,
       };
 
     case 'SLOT_CONFLICT':

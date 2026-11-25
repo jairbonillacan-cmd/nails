@@ -2,238 +2,123 @@
 
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
-import { Banner } from '@astryxdesign/core/Banner';
-import { TextInput } from '@astryxdesign/core/TextInput';
-import { Divider } from '@astryxdesign/core/Divider';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
-import { Globe, Timer } from 'lucide-react';
-import type { AvailableSlot } from '@/lib/availability/engine';
-import {
-  formatCurrency,
-  formatDateLongInTimezone,
-  formatDuration,
-} from '@/lib/format';
-import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
-import type { ServiceAddon } from '@/lib/types';
-import type { AppliedCouponState } from './bookingApi';
+import { Clock } from 'lucide-react';
+import { formatCurrency } from '@/lib/format';
+import type { PublicSettingsDTO } from '@/lib/public-dto';
+import { LANDING_ASSETS } from '../landing/landingContent';
+import { formatHoldClock } from './BookingChrome';
 import { formatServicePrice } from './bookingHelpers';
 
+export interface SummaryRow {
+  key: string;
+  label: string;
+  value: string;
+  sub: string | null;
+  mark: string;
+  isDone: boolean;
+}
+
 interface BookingSummaryCardProps {
-  settings: PublicSettingsDTO;
-  selectedService: PublicServiceDTO | undefined;
-  selectedExtraServices: PublicServiceDTO[];
-  activeSelectedAddons: ServiceAddon[];
-  selectedSlot: AvailableSlot | null;
-  timeFormat: '12h' | '24h';
-  totalDurationMinutes: number;
-  subtotalCents: number;
+  currency: PublicSettingsDTO['currency'];
+  rows: SummaryRow[];
   totalPriceCents: number;
   hasStartingPrice: boolean;
+  discountCents: number;
+  depositAmountCents: number;
   holdRemainingSec: number;
-  couponInput: string;
-  appliedCoupon: AppliedCouponState | null;
-  couponError: string | null;
-  onChangeCouponInput: (value: string) => void;
-  onApplyCoupon: () => void;
+  holdTotalSec: number;
+  headingId: string;
 }
 
 export function BookingSummaryCard({
-  settings,
-  selectedService,
-  selectedExtraServices,
-  activeSelectedAddons,
-  selectedSlot,
-  timeFormat,
-  totalDurationMinutes,
-  subtotalCents,
+  currency,
+  rows,
   totalPriceCents,
   hasStartingPrice,
+  discountCents,
+  depositAmountCents,
   holdRemainingSec,
-  couponInput,
-  appliedCoupon,
-  couponError,
-  onChangeCouponInput,
-  onApplyCoupon,
+  holdTotalSec,
+  headingId,
 }: BookingSummaryCardProps) {
-  const timezone = settings.timezone || 'America/Mexico_City';
+  const holdPercent = holdTotalSec > 0 ? Math.min(100, (holdRemainingSec / holdTotalSec) * 100) : 0;
 
   return (
-    <Card variant="muted" padding={5}>
-      <VStack gap={4}>
-        {holdRemainingSec > 0 ? (
-          <VStack gap={1.5}>
-            <HStack justify="between" align="center">
-              <HStack gap={1.5} align="center">
-                <Timer size={16} aria-hidden="true" />
-                <Text weight="semibold">Horario apartado para ti</Text>
-              </HStack>
-              <HStack style={{ fontVariantNumeric: 'tabular-nums' }}>
-                <Badge
-                  variant="info"
-                  label={`${Math.floor(holdRemainingSec / 60)}:${String(
-                    holdRemainingSec % 60,
-                  ).padStart(2, '0')}`}
-                />
-              </HStack>
-            </HStack>
-            <ProgressBar
-              label="Tiempo restante de apartado"
-              value={holdRemainingSec}
-              max={(settings.slotHoldMinutes || 3) * 60}
-              variant="accent"
-            />
-            <Text type="supporting" color="secondary">
-              Nadie más puede tomar este espacio mientras completas tus datos.
+    <VStack gap={4} className="rb-summary">
+      <img className="rb-summary-cherries" src={LANDING_ASSETS.cherriesWhite} alt="" width={280} height={280} />
+      <Heading level={2} id={headingId} color="inherit" className="lk-serif rb-summary-title">
+        Tu cita
+      </Heading>
+
+      <VStack as="ul" gap={3} className="rb-summary-rows">
+        {rows.map((row) => (
+          <HStack as="li" key={row.key} gap={3} align="start">
+            <Text color="inherit" weight="bold" className="rb-summary-mark" data-on={row.isDone ? 'true' : 'false'} aria-hidden="true">
+              {row.mark === 'clock' ? <Clock size={16} /> : row.mark}
             </Text>
-          </VStack>
-        ) : null}
-
-        <Divider />
-
-        <VStack gap={2}>
-          <Heading level={3}>{selectedService?.name}</Heading>
-          {selectedSlot ? (
-            <VStack gap={1}>
-              <Text weight="medium">
-                {formatDateLongInTimezone(selectedSlot.startAt, timezone)}
+            <VStack gap={0} className="rb-grow">
+              <Text color="inherit" type="supporting" className="rb-summary-label">
+                {row.label}
               </Text>
-              <Text color="accent" weight="semibold" hasTabularNumbers>
-                {timeFormat === '24h'
-                  ? selectedSlot.localTime24
-                  : selectedSlot.localTime12}{' '}
-                · Aprox. {formatDuration(totalDurationMinutes)}
+              <Text color="inherit" weight="semibold" className="rb-first-upper">
+                {row.value}
               </Text>
-              <Text type="supporting" color="secondary">
-                Especialista: {selectedSlot.staffName}
-              </Text>
-              <HStack gap={1.5} align="center">
-                <Globe size={14} aria-hidden="true" />
-                <Text type="supporting" color="secondary">
-                  Hora local del salón · Puebla ({timezone})
+              {row.sub ? (
+                <Text color="inherit" type="supporting" className="rb-summary-sub">
+                  {row.sub}
                 </Text>
-              </HStack>
+              ) : null}
             </VStack>
-          ) : null}
-        </VStack>
-
-        {selectedExtraServices.length > 0 ? (
-          <VStack gap={1}>
-            <Text type="label" weight="semibold">
-              Servicios adicionales
-            </Text>
-            {selectedExtraServices.map((srv) => (
-              <HStack
-                key={srv.id}
-                justify="between"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                <Text type="supporting">{srv.name}</Text>
-                <Text type="supporting" hasTabularNumbers>
-                  {formatServicePrice(srv.priceCents, srv.isStartingPrice, settings.currency)}
-                </Text>
-              </HStack>
-            ))}
-          </VStack>
-        ) : null}
-
-        {activeSelectedAddons.length > 0 ? (
-          <VStack gap={1}>
-            <Text type="label" weight="semibold">
-              Extras
-            </Text>
-            {activeSelectedAddons.map((a) => (
-              <HStack
-                key={a.id}
-                justify="between"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                <Text type="supporting">{a.name}</Text>
-                <Text type="supporting" hasTabularNumbers>
-                  +{formatCurrency(a.extraPriceCents, settings.currency)}
-                </Text>
-              </HStack>
-            ))}
-          </VStack>
-        ) : null}
-
-        <Divider />
-
-        <VStack gap={2}>
-          <HStack gap={2} align="end">
-            <TextInput
-              label="Cupón o Gift Card"
-              placeholder="Ej. BIENVENIDA10 o GIFT500"
-              value={couponInput}
-              onChange={onChangeCouponInput}
-              isOptional
-            />
-            <Button
-              type="button"
-              label="Aplicar"
-              variant="secondary"
-              onClick={onApplyCoupon}
-            />
           </HStack>
-          {couponError ? (
-            <Text type="supporting" color="secondary">
-              {couponError}
-            </Text>
-          ) : null}
-          {appliedCoupon ? (
-            <Banner
-              status="success"
-              title={`Código ${appliedCoupon.code} aplicado`}
-              description={`Descuento de ${formatCurrency(
-                appliedCoupon.discountCents,
-                settings.currency,
-              )}`}
-            />
-          ) : null}
-        </VStack>
-
-        <Divider />
-
-        <VStack gap={1} style={{ fontVariantNumeric: 'tabular-nums' }}>
-          <HStack justify="between">
-            <Text color="secondary">Subtotal aproximado</Text>
-            <Text hasTabularNumbers>
-              {formatServicePrice(subtotalCents, hasStartingPrice, settings.currency)}
-            </Text>
-          </HStack>
-          {appliedCoupon ? (
-            <HStack justify="between">
-              <Text color="accent">Descuento ({appliedCoupon.code})</Text>
-              <Text color="accent" hasTabularNumbers>
-                -{formatCurrency(appliedCoupon.discountCents, settings.currency)}
-              </Text>
-            </HStack>
-          ) : null}
-          <HStack justify="between">
-            <Text weight="bold" size="lg">
-              Total estimado
-            </Text>
-            <Text weight="bold" size="lg" hasTabularNumbers>
-              {formatServicePrice(totalPriceCents, hasStartingPrice, settings.currency)}
-            </Text>
-          </HStack>
-          {hasStartingPrice ? (
-            <Text type="supporting" color="secondary">
-              Los servicios marcados con &quot;Desde&quot; ajustan su precio final según largo y diseño.
-            </Text>
-          ) : null}
-        </VStack>
-
-        <Banner
-          status="info"
-          title="Política de cancelación y anticipo"
-          description={settings.cancellationPolicyText}
-        />
+        ))}
       </VStack>
-    </Card>
+
+      <VStack gap={1} className="rb-summary-total">
+        {discountCents > 0 ? (
+          <HStack justify="between">
+            <Text color="inherit" type="supporting" className="rb-summary-sub">
+              Descuento
+            </Text>
+            <Text color="inherit" type="supporting" className="rb-summary-sub" hasTabularNumbers>
+              −{formatCurrency(discountCents, currency)}
+            </Text>
+          </HStack>
+        ) : null}
+        <HStack justify="between" align="end" gap={2}>
+          <Text color="inherit" weight="semibold">
+            Total aprox.
+          </Text>
+          <Text color="inherit" className="lk-serif rb-summary-amount" hasTabularNumbers>
+            {formatServicePrice(totalPriceCents, hasStartingPrice, currency)}
+          </Text>
+        </HStack>
+        {depositAmountCents > 0 ? (
+          <HStack justify="between">
+            <Text color="inherit" type="supporting" className="rb-summary-sub">
+              Anticipo para apartar
+            </Text>
+            <Text color="inherit" type="supporting" className="rb-summary-sub" hasTabularNumbers>
+              {formatCurrency(depositAmountCents, currency)}
+            </Text>
+          </HStack>
+        ) : null}
+      </VStack>
+
+      {holdRemainingSec > 0 ? (
+        <VStack gap={1.5} className="rb-summary-hold">
+          <HStack justify="between">
+            <Text color="inherit" type="supporting">
+              Te guardamos el horario
+            </Text>
+            <Text color="inherit" weight="bold" hasTabularNumbers>
+              {formatHoldClock(holdRemainingSec)}
+            </Text>
+          </HStack>
+          <progress className="rb-hold-bar" aria-label="Tiempo restante de apartado" max={100} value={holdPercent} />
+        </VStack>
+      ) : null}
+    </VStack>
   );
 }
