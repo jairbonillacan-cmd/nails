@@ -44,11 +44,13 @@ import {
 } from 'lucide-react';
 import type {
   BookingLayoutView,
-  SalonSettings,
-  Service,
   ServiceAddon,
-  StaffMember,
 } from '@/lib/types';
+import type {
+  PublicServiceDTO,
+  PublicSettingsDTO,
+  PublicStaffDTO,
+} from '@/lib/public-dto';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import {
   formatCurrency,
@@ -64,10 +66,10 @@ import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { getOrCreateBrowserSessionToken } from '@/lib/hooks/useSessionToken';
 
 interface BookingWidgetProps {
-  settings: SalonSettings;
-  services: Service[];
+  settings: PublicSettingsDTO;
+  services: PublicServiceDTO[];
   addons: ServiceAddon[];
-  staff: StaffMember[];
+  staff: PublicStaffDTO[];
   initialTodayKey: string;
   initialServiceSlug?: string;
   initialStaffSlug?: string;
@@ -417,7 +419,6 @@ export function BookingWidget({
           paymentProofUrl: proofDataUrl,
           couponCode: appliedCoupon?.code || null,
           sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
-          source: 'web',
         }),
       });
 

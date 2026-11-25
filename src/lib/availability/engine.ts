@@ -55,11 +55,109 @@ export interface AvailabilityContext {
   ignoreBookingId?: string | null;
 }
 
+export type SlotRejectionCode =
+  | 'OUTSIDE_HOURS'
+  | 'PAST_OR_NOTICE'
+  | 'BEYOND_MAX_DAYS'
+  | 'STAFF_INELIGIBLE'
+  | 'SLOT_TAKEN'
+  | 'INVALID_ALIGNMENT';
+
+export interface AssertSlotBookableParams {
+  startAt: string;
+  staffId: string;
+  now?: Date;
+  ignoreBookingId?: string;
+  ignoreHoldSessionToken?: string;
+}
+
+export type AssertSlotBookableResult =
+  | { ok: true; slot: AvailableSlot }
+  | {
+      ok: false;
+      code: SlotRejectionCode;
+      message: string;
+      suggestedSlots: AvailableSlot[];
+    };
+
 const ACTIVE_BOOKING_STATUSES = new Set([
   'pending_payment',
   'pending_confirmation',
   'confirmed',
 ]);
+
+const zonedPartsFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const dateKeyFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function getZonedPartsFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = zonedPartsFormatterCache.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+    zonedPartsFormatterCache.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
+function getDateKeyFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = dateKeyFormatterCache.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    dateKeyFormatterCache.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
+function getZonedParts(
+  date: Date,
+  timeZone: string,
+): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+} {
+  const parts = getZonedPartsFormatter(timeZone).formatToParts(date);
+  let year = 0;
+  let month = 0;
+  let day = 0;
+  let hour = 0;
+  let minute = 0;
+  let second = 0;
+
+  for (const part of parts) {
+    if (part.type === 'year') year = Number(part.value);
+    else if (part.type === 'month') month = Number(part.value);
+    else if (part.type === 'day') day = Number(part.value);
+    else if (part.type === 'hour') hour = Number(part.value);
+    else if (part.type === 'minute') minute = Number(part.value);
+    else if (part.type === 'second') second = Number(part.value);
+  }
+
+  return {
+    year,
+    month,
+    day,
+    hour: hour === 24 ? 0 : hour,
+    minute,
+    second,
+  };
+}
 
 function parseYmd(dateStr: string): { y: number; m: number; d: number } {
   const [y = 2026, m = 1, d = 1] = dateStr.split('-').map(Number);
@@ -71,11 +169,17 @@ function parseHm(timeStr: string): { hh: number; mm: number } {
   return { hh, mm };
 }
 
-export function zonedDateTimeToUtc(
+function getTimezoneOffsetMs(date: Date, timeZone: string): number {
+  const { year, month, day, hour, minute, second } = getZonedParts(date, timeZone);
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  return asUtc - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+function resolveZonedDateTime(
   dateStr: string,
   timeStr: string,
   timeZone: string,
-): Date {
+): { date: Date; existsInZone: boolean } {
   const { y, m, d } = parseYmd(dateStr);
   const { hh, mm } = parseHm(timeStr);
 
@@ -84,31 +188,25 @@ export function zonedDateTimeToUtc(
   const adjusted1 = utcGuess - offset1;
 
   const offset2 = getTimezoneOffsetMs(new Date(adjusted1), timeZone);
-  return new Date(utcGuess - offset2);
+  if (offset2 === offset1) {
+    return { date: new Date(adjusted1), existsInZone: true };
+  }
+
+  const adjusted2 = utcGuess - offset2;
+  const offset3 = getTimezoneOffsetMs(new Date(adjusted2), timeZone);
+  if (offset3 === offset2) {
+    return { date: new Date(adjusted2), existsInZone: true };
+  }
+
+  return { date: new Date(Math.max(adjusted1, adjusted2)), existsInZone: false };
 }
 
-function getTimezoneOffsetMs(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  const asUtc = Date.UTC(
-    get('year'),
-    get('month') - 1,
-    get('day'),
-    get('hour') === 24 ? 0 : get('hour'),
-    get('minute'),
-    get('second'),
-  );
-  return asUtc - Math.floor(date.getTime() / 1000) * 1000;
+export function zonedDateTimeToUtc(
+  dateStr: string,
+  timeStr: string,
+  timeZone: string,
+): Date {
+  return resolveZonedDateTime(dateStr, timeStr, timeZone).date;
 }
 
 function getDayOfWeekForDateStr(dateStr: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
@@ -154,6 +252,13 @@ function getDayPeriod(time24: string): DayPeriod {
   return 'evening';
 }
 
+function isStaffEligibleForService(staff: StaffMember, serviceId: string): boolean {
+  return (
+    staff.isActive &&
+    (staff.serviceIds.length === 0 || staff.serviceIds.includes(serviceId))
+  );
+}
+
 export function rangesOverlap(
   aStart: number,
   aEnd: number,
@@ -178,6 +283,13 @@ interface BusyInterval {
   startMs: number;
   endMs: number;
   reason: string;
+}
+
+interface ResolvedWindow {
+  startMin: number;
+  endMin: number;
+  startMs: number;
+  endMs: number;
 }
 
 function getStaffWorkingWindows(
@@ -214,6 +326,83 @@ function getStaffWorkingWindows(
       endMin: parseTimeToMinutes(r.endTime),
     }))
     .sort((a, b) => a.startMin - b.startMin);
+}
+
+interface DayTimeResolver {
+  resolve(minutesFromMidnight: number): { ms: number; existsInZone: boolean };
+}
+
+const MAX_DAY_RESOLVER_CACHE = 512;
+const dayResolverCache = new Map<string, DayTimeResolver>();
+
+function createDayTimeResolver(dateStr: string, timeZone: string): DayTimeResolver {
+  const cacheKey = `${timeZone}|${dateStr}`;
+  const cached = dayResolverCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const dayStart = resolveZonedDateTime(dateStr, '00:00', timeZone);
+  const dayEnd = resolveZonedDateTime(dateStr, '24:00', timeZone);
+  const dayStartMs = dayStart.date.getTime();
+  const dayEndMs = dayEnd.date.getTime();
+
+  let resolver: DayTimeResolver;
+  if (
+    dayStart.existsInZone &&
+    dayEnd.existsInZone &&
+    dayEndMs - dayStartMs === 86_400_000 &&
+    getTimezoneOffsetMs(dayStart.date, timeZone) ===
+      getTimezoneOffsetMs(dayEnd.date, timeZone)
+  ) {
+    resolver = {
+      resolve(minutesFromMidnight: number) {
+        return {
+          ms: dayStartMs + minutesFromMidnight * 60_000,
+          existsInZone: true,
+        };
+      },
+    };
+  } else {
+    const perMinuteCache = new Map<number, { ms: number; existsInZone: boolean }>();
+    resolver = {
+      resolve(minutesFromMidnight: number) {
+        const hit = perMinuteCache.get(minutesFromMidnight);
+        if (hit) {
+          return hit;
+        }
+        const resolved = resolveZonedDateTime(
+          dateStr,
+          minutesToTimeStr(minutesFromMidnight),
+          timeZone,
+        );
+        const entry = {
+          ms: resolved.date.getTime(),
+          existsInZone: resolved.existsInZone,
+        };
+        perMinuteCache.set(minutesFromMidnight, entry);
+        return entry;
+      },
+    };
+  }
+
+  if (dayResolverCache.size >= MAX_DAY_RESOLVER_CACHE) {
+    dayResolverCache.clear();
+  }
+  dayResolverCache.set(cacheKey, resolver);
+  return resolver;
+}
+
+function resolveWindowsForDate(
+  windows: Array<{ startMin: number; endMin: number }>,
+  dayResolver: DayTimeResolver,
+): ResolvedWindow[] {
+  return windows.map((w) => ({
+    startMin: w.startMin,
+    endMin: w.endMin,
+    startMs: dayResolver.resolve(w.startMin).ms,
+    endMs: dayResolver.resolve(w.endMin).ms,
+  }));
 }
 
 function getStaffBusyIntervals(
@@ -278,21 +467,26 @@ export function getAvailableSlotsForDate(
     computeServiceTotals(ctx.service, ctx.addons);
   const step = ctx.settings.slotIntervalMinutes || 30;
 
+  const eligibleStaff = ctx.staffMembers.filter((s) =>
+    isStaffEligibleForService(s, ctx.service.id),
+  );
   const candidateStaff = preferredStaffId
-    ? ctx.staffMembers.filter((s) => s.id === preferredStaffId)
-    : ctx.staffMembers;
+    ? eligibleStaff.filter((s) => s.id === preferredStaffId)
+    : eligibleStaff;
 
   const slotsByTime = new Map<string, AvailableSlot>();
+  const dayResolver = createDayTimeResolver(dateStr, tz);
 
   for (const staff of candidateStaff) {
-    const windows = getStaffWorkingWindows(
+    const rawWindows = getStaffWorkingWindows(
       staff.id,
       dateStr,
       ctx.schedules,
       ctx.dateOverrides,
     );
-    if (windows.length === 0) continue;
+    if (rawWindows.length === 0) continue;
 
+    const windows = resolveWindowsForDate(rawWindows, dayResolver);
     const busy = getStaffBusyIntervals(
       staff.id,
       ctx.bookings,
@@ -309,10 +503,13 @@ export function getAvailableSlotsForDate(
         cursor + totalDurationMinutes <= win.endMin;
         cursor += step
       ) {
-        const time24 = minutesToTimeStr(cursor);
-        const startDate = zonedDateTimeToUtc(dateStr, time24, tz);
-        const startMs = startDate.getTime();
+        const resolved = dayResolver.resolve(cursor);
+        if (!resolved.existsInZone) continue;
+
+        const startMs = resolved.ms;
         const endMs = startMs + totalDurationMinutes * 60_000;
+        if (startMs < win.startMs || endMs > win.endMs) continue;
+
         const occStartMs = startMs - bufferBeforeMinutes * 60_000;
         const occEndMs = endMs + bufferAfterMinutes * 60_000;
 
@@ -325,6 +522,7 @@ export function getAvailableSlotsForDate(
 
         const slotKey = preferredStaffId ? `${staff.id}:${startMs}` : `${startMs}`;
         if (!slotsByTime.has(slotKey)) {
+          const time24 = minutesToTimeStr(cursor);
           slotsByTime.set(slotKey, {
             startAt: new Date(startMs).toISOString(),
             endAt: new Date(endMs).toISOString(),
@@ -373,13 +571,9 @@ export function findNearestAvailableSlots(
   limit = 3,
 ): AvailableSlot[] {
   const targetMs = new Date(targetStartIso).getTime();
+  if (Number.isNaN(targetMs)) return [];
   const tz = ctx.settings.timezone || 'America/Mexico_City';
-  const targetDateStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(targetMs));
+  const targetDateStr = getDateKeyFormatter(tz).format(new Date(targetMs));
 
   const candidates: AvailableSlot[] = [];
   for (let offset = 0; offset <= 7; offset++) {
@@ -397,6 +591,167 @@ export function findNearestAvailableSlots(
     .slice(0, limit);
 }
 
+export function assertSlotBookable(
+  ctx: AvailabilityContext,
+  params: AssertSlotBookableParams,
+): AssertSlotBookableResult {
+  const effectiveNow = params.now ?? ctx.now ?? new Date();
+  const effectiveCtx: AvailabilityContext = {
+    ...ctx,
+    now: effectiveNow,
+    ignoreBookingId:
+      params.ignoreBookingId !== undefined ? params.ignoreBookingId : ctx.ignoreBookingId,
+    callerSessionToken:
+      params.ignoreHoldSessionToken !== undefined
+        ? params.ignoreHoldSessionToken
+        : ctx.callerSessionToken,
+  };
+
+  const nowMs = effectiveNow.getTime();
+  const minNoticeMs = nowMs + effectiveCtx.settings.minBookingNoticeMinutes * 60_000;
+  const maxFutureMs = nowMs + effectiveCtx.settings.maxBookingDaysAhead * 86_400_000;
+  const tz = effectiveCtx.settings.timezone || 'America/Mexico_City';
+  const startMs = new Date(params.startAt).getTime();
+
+  const staff = effectiveCtx.staffMembers.find((s) => s.id === params.staffId);
+  if (!staff || !isStaffEligibleForService(staff, effectiveCtx.service.id)) {
+    const fallbackIso =
+      Number.isNaN(startMs) || startMs < nowMs
+        ? effectiveNow.toISOString()
+        : new Date(startMs).toISOString();
+    return {
+      ok: false,
+      code: 'STAFF_INELIGIBLE',
+      message: 'La especialista seleccionada no está disponible para este servicio.',
+      suggestedSlots: findNearestAvailableSlots(effectiveCtx, fallbackIso, null, 3),
+    };
+  }
+
+  if (Number.isNaN(startMs)) {
+    return {
+      ok: false,
+      code: 'INVALID_ALIGNMENT',
+      message: 'La fecha u hora seleccionada no es válida.',
+      suggestedSlots: findNearestAvailableSlots(
+        effectiveCtx,
+        effectiveNow.toISOString(),
+        params.staffId,
+        3,
+      ),
+    };
+  }
+
+  const dateStr = getDateKeyFormatter(tz).format(new Date(startMs));
+  const availableSlots = getAvailableSlotsForDate(effectiveCtx, dateStr, params.staffId);
+  const matched = availableSlots.find(
+    (s) => new Date(s.startAt).getTime() === startMs && s.staffId === params.staffId,
+  );
+  if (matched) {
+    return { ok: true, slot: matched };
+  }
+
+  const suggestionAnchorIso =
+    startMs < nowMs || startMs > maxFutureMs
+      ? effectiveNow.toISOString()
+      : new Date(startMs).toISOString();
+  const suggestedSlots = findNearestAvailableSlots(
+    effectiveCtx,
+    suggestionAnchorIso,
+    params.staffId,
+    3,
+  );
+
+  if (startMs < minNoticeMs) {
+    return {
+      ok: false,
+      code: 'PAST_OR_NOTICE',
+      message:
+        startMs <= nowMs
+          ? 'No es posible reservar en una fecha u hora pasada.'
+          : `El horario seleccionado no cumple con el aviso mínimo (${effectiveCtx.settings.minBookingNoticeMinutes} min).`,
+      suggestedSlots,
+    };
+  }
+
+  if (startMs > maxFutureMs) {
+    return {
+      ok: false,
+      code: 'BEYOND_MAX_DAYS',
+      message: `La fecha excede el límite máximo de ${effectiveCtx.settings.maxBookingDaysAhead} días de anticipación.`,
+      suggestedSlots,
+    };
+  }
+
+  const rawWindows = getStaffWorkingWindows(
+    params.staffId,
+    dateStr,
+    effectiveCtx.schedules,
+    effectiveCtx.dateOverrides,
+  );
+  if (rawWindows.length === 0) {
+    return {
+      ok: false,
+      code: 'OUTSIDE_HOURS',
+      message: 'No hay horario laboral disponible para esta fecha.',
+      suggestedSlots,
+    };
+  }
+
+  const { totalDurationMinutes } = computeServiceTotals(
+    effectiveCtx.service,
+    effectiveCtx.addons,
+  );
+  const step = effectiveCtx.settings.slotIntervalMinutes || 30;
+  const localParts = getZonedParts(new Date(startMs), tz);
+  const localMin = localParts.hour * 60 + localParts.minute;
+  const endMs = startMs + totalDurationMinutes * 60_000;
+  const dayResolver = createDayTimeResolver(dateStr, tz);
+  const windows = resolveWindowsForDate(rawWindows, dayResolver);
+
+  const fittingWindows = windows.filter(
+    (w) =>
+      localMin >= w.startMin &&
+      localMin + totalDurationMinutes <= w.endMin &&
+      startMs >= w.startMs &&
+      endMs <= w.endMs,
+  );
+
+  if (fittingWindows.length === 0) {
+    return {
+      ok: false,
+      code: 'OUTSIDE_HOURS',
+      message:
+        'El horario seleccionado está fuera del horario laboral o no alcanza la duración del servicio.',
+      suggestedSlots,
+    };
+  }
+
+  const subSecondMs = ((startMs % 1000) + 1000) % 1000;
+  const canonicalTime = dayResolver.resolve(localMin);
+  const isAlignedToWindow =
+    localParts.second === 0 &&
+    subSecondMs === 0 &&
+    canonicalTime.existsInZone &&
+    canonicalTime.ms === startMs &&
+    fittingWindows.some((w) => (localMin - w.startMin) % step === 0);
+
+  if (!isAlignedToWindow) {
+    return {
+      ok: false,
+      code: 'INVALID_ALIGNMENT',
+      message: `El horario debe estar alineado al intervalo de agenda (${step} min).`,
+      suggestedSlots,
+    };
+  }
+
+  return {
+    ok: false,
+    code: 'SLOT_TAKEN',
+    message: 'Ese horario ya está ocupado o apartado temporalmente.',
+    suggestedSlots,
+  };
+}
+
 export function diagnoseDateSlots(
   ctx: AvailabilityContext,
   dateStr: string,
@@ -408,17 +763,22 @@ export function diagnoseDateSlots(
   const now = ctx.now ?? new Date();
   const nowMs = now.getTime();
   const minNoticeMs = nowMs + ctx.settings.minBookingNoticeMinutes * 60_000;
+  const maxFutureMs = nowMs + ctx.settings.maxBookingDaysAhead * 86_400_000;
   const tz = ctx.settings.timezone || 'America/Mexico_City';
+  const step = ctx.settings.slotIntervalMinutes || 30;
+  const isEligible = isStaffEligibleForService(staff, ctx.service.id);
 
   const override = ctx.dateOverrides.find(
     (o) => o.staffId === staffId && o.overrideDate === dateStr,
   );
-  const windows = getStaffWorkingWindows(
+  const rawWindows = getStaffWorkingWindows(
     staffId,
     dateStr,
     ctx.schedules,
     ctx.dateOverrides,
   );
+  const dayResolver = createDayTimeResolver(dateStr, tz);
+  const windows = resolveWindowsForDate(rawWindows, dayResolver);
   const busy = getStaffBusyIntervals(
     staffId,
     ctx.bookings,
@@ -431,14 +791,39 @@ export function diagnoseDateSlots(
   const { totalDurationMinutes, bufferBeforeMinutes, bufferAfterMinutes } =
     computeServiceTotals(ctx.service, ctx.addons);
 
+  const availableTimeSet = new Set(
+    getAvailableSlotsForDate(ctx, dateStr, staffId).map((s) => s.localTime24),
+  );
+
+  const candidateMinutes = new Set<number>();
+  for (let cursor = 9 * 60; cursor <= 20 * 60; cursor += step) {
+    candidateMinutes.add(cursor);
+  }
+  for (const w of rawWindows) {
+    for (let cursor = w.startMin; cursor <= w.endMin; cursor += step) {
+      if (cursor >= 0 && cursor < 24 * 60) {
+        candidateMinutes.add(cursor);
+      }
+    }
+  }
+
+  const sortedMinutes = Array.from(candidateMinutes).sort((a, b) => a - b);
   const diagnostics: SlotDiagnosis[] = [];
 
-  for (let cursor = 9 * 60; cursor <= 20 * 60; cursor += 60) {
+  for (const cursor of sortedMinutes) {
     const time24 = minutesToTimeStr(cursor);
-    const startMs = zonedDateTimeToUtc(dateStr, time24, tz).getTime();
-    const endMs = startMs + totalDurationMinutes * 60_000;
-    const occStartMs = startMs - bufferBeforeMinutes * 60_000;
-    const occEndMs = endMs + bufferAfterMinutes * 60_000;
+
+    if (!isEligible) {
+      diagnostics.push({
+        date: dateStr,
+        time24,
+        staffId,
+        staffName: staff.name,
+        isAvailable: false,
+        reason: 'Especialista inactiva o no realiza este servicio',
+      });
+      continue;
+    }
 
     if (override?.isUnavailable) {
       diagnostics.push({
@@ -452,10 +837,32 @@ export function diagnoseDateSlots(
       continue;
     }
 
-    const fitsWindow = windows.some(
-      (w) => cursor >= w.startMin && cursor + totalDurationMinutes <= w.endMin,
+    const resolved = dayResolver.resolve(cursor);
+    if (!resolved.existsInZone) {
+      diagnostics.push({
+        date: dateStr,
+        time24,
+        staffId,
+        staffName: staff.name,
+        isAvailable: false,
+        reason: 'Hora inexistente por cambio de horario (DST)',
+      });
+      continue;
+    }
+
+    const startMs = resolved.ms;
+    const endMs = startMs + totalDurationMinutes * 60_000;
+    const occStartMs = startMs - bufferBeforeMinutes * 60_000;
+    const occEndMs = endMs + bufferAfterMinutes * 60_000;
+
+    const fittingWindows = windows.filter(
+      (w) =>
+        cursor >= w.startMin &&
+        cursor + totalDurationMinutes <= w.endMin &&
+        startMs >= w.startMs &&
+        endMs <= w.endMs,
     );
-    if (!fitsWindow) {
+    if (fittingWindows.length === 0) {
       diagnostics.push({
         date: dateStr,
         time24,
@@ -470,6 +877,19 @@ export function diagnoseDateSlots(
       continue;
     }
 
+    const isAligned = fittingWindows.some((w) => (cursor - w.startMin) % step === 0);
+    if (!isAligned) {
+      diagnostics.push({
+        date: dateStr,
+        time24,
+        staffId,
+        staffName: staff.name,
+        isAvailable: false,
+        reason: `Fuera de la cuadrícula de intervalos (${step} min)`,
+      });
+      continue;
+    }
+
     if (startMs < minNoticeMs) {
       diagnostics.push({
         date: dateStr,
@@ -478,6 +898,18 @@ export function diagnoseDateSlots(
         staffName: staff.name,
         isAvailable: false,
         reason: `Menor al aviso mínimo (${ctx.settings.minBookingNoticeMinutes} min)`,
+      });
+      continue;
+    }
+
+    if (startMs > maxFutureMs) {
+      diagnostics.push({
+        date: dateStr,
+        time24,
+        staffId,
+        staffName: staff.name,
+        isAvailable: false,
+        reason: `Excede el límite máximo de anticipación (${ctx.settings.maxBookingDaysAhead} días)`,
       });
       continue;
     }
@@ -497,13 +929,14 @@ export function diagnoseDateSlots(
       continue;
     }
 
+    const isAvailable = availableTimeSet.has(time24);
     diagnostics.push({
       date: dateStr,
       time24,
       staffId,
       staffName: staff.name,
-      isAvailable: true,
-      reason: 'Disponible',
+      isAvailable,
+      reason: isAvailable ? 'Disponible' : 'No disponible',
     });
   }
 

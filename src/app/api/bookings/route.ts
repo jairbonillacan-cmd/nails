@@ -23,8 +23,6 @@ const createBookingSchema = z.object({
   paymentProofUrl: z.string().max(2_500_000).optional().nullable(),
   couponCode: z.string().max(40).optional().nullable(),
   sessionToken: z.string().optional().nullable(),
-  source: z.enum(['web', 'whatsapp', 'manual', 'walk_in']).optional(),
-  forceConfirmed: z.boolean().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -36,6 +34,8 @@ export async function POST(request: NextRequest) {
       ...parsed,
       clientEmail: parsed.clientEmail || null,
       idempotencyKey,
+      source: 'web',
+      forceConfirmed: false,
     });
 
     const manageUrl = `/cita/${booking.manageToken}`;

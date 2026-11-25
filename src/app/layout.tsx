@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { getSnapshot } from '@/lib/repositories/db';
+import { toPublicSettingsDTO } from '@/lib/public-dto';
 import { SalonThemeProvider } from '@/components/SalonThemeProvider';
 
 export const dynamic = 'force-dynamic';
@@ -47,7 +48,9 @@ export default function RootLayout({
   return (
     <html lang="es-MX" suppressHydrationWarning>
       <body>
-        <SalonThemeProvider initialSettings={settings}>{children}</SalonThemeProvider>
+        <SalonThemeProvider initialSettings={toPublicSettingsDTO(settings)}>
+          {children}
+        </SalonThemeProvider>
       </body>
     </html>
   );

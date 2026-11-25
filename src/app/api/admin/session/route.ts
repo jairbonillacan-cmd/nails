@@ -1,22 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { DEMO_ADMIN_COOKIE, getAdminSession } from '@/lib/auth/admin-session';
+import { z } from 'zod';
+import {
+  ADMIN_SESSION_COOKIE,
+  createAdminSessionToken,
+  getAdminCookieOptions,
+  getAdminSession,
+  isLocalDemoAuthEnabled,
+} from '@/lib/auth/admin-session';
 import { getSnapshot } from '@/lib/repositories/db';
 
-export async function GET() {
-  const session = await getAdminSession();
-  const db = getSnapshot();
+const demoLoginSchema = z.object({
+  email: z.string().trim().email(),
+});
+
+export async function GET(request: NextRequest) {
+  const session = await getAdminSession(request);
+  const demoEnabled = isLocalDemoAuthEnabled();
+  const availableDemoUsers = demoEnabled
+    ? getSnapshot().adminUsers.filter((u) => u.isActive)
+    : [];
+
   return NextResponse.json({
     session,
-    availableDemoUsers: !process.env.NEXT_PUBLIC_SUPABASE_URL
-      ? db.adminUsers.filter((u) => u.isActive)
-      : [],
+    availableDemoUsers,
   });
 }
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as { email?: string };
-  const email = body.email?.trim().toLowerCase();
+  if (!isLocalDemoAuthEnabled()) {
+    return NextResponse.json(
+      { error: 'El inicio de sesión demo sin contraseña está deshabilitado en este entorno.' },
+      { status: 503 },
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json({ error: 'Solicitud inválida.' }, { status: 400 });
+  }
+
+  const parsed = demoLoginSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Correo electrónico inválido.' },
+      { status: 400 },
+    );
+  }
+
+  const email = parsed.data.email.toLowerCase();
   const db = getSnapshot();
   const user = db.adminUsers.find(
     (u) => u.email.toLowerCase() === email && u.isActive,
@@ -28,25 +61,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const cookieStore = await cookies();
-  cookieStore.set(DEMO_ADMIN_COOKIE, user.email, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7,
-  });
-  cookieStore.delete('nails_demo_logged_out');
+  const token = createAdminSessionToken(user);
+  if (!token) {
+    return NextResponse.json(
+      { error: 'Secreto de sesión no configurado.' },
+      { status: 503 },
+    );
+  }
 
-  return NextResponse.json({ session: { user, isDemo: true } });
+  const response = NextResponse.json({ session: { user, isDemo: true } });
+  response.cookies.set(ADMIN_SESSION_COOKIE, token, getAdminCookieOptions());
+  return response;
 }
 
 export async function DELETE() {
-  const cookieStore = await cookies();
-  cookieStore.delete(DEMO_ADMIN_COOKIE);
-  cookieStore.set('nails_demo_logged_out', '1', {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(ADMIN_SESSION_COOKIE, '', {
+    ...getAdminCookieOptions(),
+    maxAge: 0,
   });
-  return NextResponse.json({ ok: true });
+  return response;
 }

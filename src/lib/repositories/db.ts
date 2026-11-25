@@ -3,15 +3,22 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createInitialDemoDatabase } from '../demo-seed';
 import {
+  assertSlotBookable,
   computeServiceTotals,
   findNearestAvailableSlots,
   getAvailabilityForRange,
   getAvailableSlotsForDate,
-  rangesOverlap,
+  type AvailabilityContext,
   type AvailableSlot,
 } from '../availability/engine';
+import {
+  isActiveBookingStatus,
+  isTerminalBookingStatus,
+  transitionBookingStatus,
+  type BookingTransitionEffect,
+} from '../booking/state-machine';
 import { checkManagePolicyWindow } from '../availability/policy';
-import { normalizePhoneE164, slugify } from '../format';
+import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
 import { publishRealtimeEvent } from '../realtime';
 import { syncBookingToGoogleCalendar } from '../integrations/google-calendar';
 import { buildAndSendImmediateNotifications } from '../integrations/notifications';
@@ -35,6 +42,7 @@ import type {
   NotificationWorkflow,
   PaymentMethod,
   SalonSettings,
+  ScheduledNotification,
   Service,
   ServiceAddon,
   SlotHold,
@@ -42,10 +50,36 @@ import type {
   WaitlistEntry,
 } from '../types';
 
-const DEMO_DB_PATH = path.join(process.cwd(), '.nails-demo-db.json');
+const DEFAULT_DEMO_DB_PATH = path.join(process.cwd(), '.nails-demo-db.json');
+
+function getActiveTestDbPath(): string | null {
+  if (process.env.NODE_ENV === 'test') {
+    const configured = process.env.NAILS_DEMO_DB_PATH?.trim();
+    if (configured) return configured;
+  }
+  return null;
+}
+
+function readRawDemoDb(testDbPath: string | null): string | null {
+  if (process.env.NODE_ENV === 'test' && testDbPath) {
+    return fs.existsSync(testDbPath) ? fs.readFileSync(testDbPath, 'utf-8') : null;
+  }
+  return fs.existsSync(DEFAULT_DEMO_DB_PATH)
+    ? fs.readFileSync(DEFAULT_DEMO_DB_PATH, 'utf-8')
+    : null;
+}
+
+function writeRawDemoDb(testDbPath: string | null, serialized: string): void {
+  if (process.env.NODE_ENV === 'test' && testDbPath) {
+    fs.writeFileSync(testDbPath, serialized, 'utf-8');
+    return;
+  }
+  fs.writeFileSync(DEFAULT_DEMO_DB_PATH, serialized, 'utf-8');
+}
 
 declare global {
   var nailsDbCache: DemoDatabase | undefined;
+  var nailsDbCachePath: string | undefined;
   var nailsWriteMutex: Promise<void> | undefined;
 }
 
@@ -62,40 +96,50 @@ export class SlotConflictError extends Error {
 
 export class PolicyError extends Error {
   readonly code: string;
+  readonly suggestedSlots?: AvailableSlot[];
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, suggestedSlots?: AvailableSlot[]) {
     super(message);
     this.name = 'PolicyError';
     this.code = code;
+    this.suggestedSlots = suggestedSlots;
   }
 }
 
 function readDbFromDisk(): DemoDatabase {
-  if (globalThis.nailsDbCache) {
+  const testDbPath = getActiveTestDbPath();
+  const cacheKey = testDbPath ?? DEFAULT_DEMO_DB_PATH;
+  if (globalThis.nailsDbCache && globalThis.nailsDbCachePath === cacheKey) {
     return globalThis.nailsDbCache;
   }
   try {
-    if (fs.existsSync(DEMO_DB_PATH)) {
-      const raw = fs.readFileSync(DEMO_DB_PATH, 'utf-8');
+    const raw = readRawDemoDb(testDbPath);
+    if (raw !== null) {
       const parsed = JSON.parse(raw) as DemoDatabase;
       if (parsed && parsed.settings && Array.isArray(parsed.services)) {
         globalThis.nailsDbCache = parsed;
+        globalThis.nailsDbCachePath = cacheKey;
         return parsed;
       }
     }
   } catch {
     globalThis.nailsDbCache = undefined;
+    globalThis.nailsDbCachePath = undefined;
   }
   const seeded = createInitialDemoDatabase();
   globalThis.nailsDbCache = seeded;
+  globalThis.nailsDbCachePath = cacheKey;
   writeDbToDisk(seeded);
   return seeded;
 }
 
 function writeDbToDisk(db: DemoDatabase): void {
+  const testDbPath = getActiveTestDbPath();
+  const cacheKey = testDbPath ?? DEFAULT_DEMO_DB_PATH;
   globalThis.nailsDbCache = db;
+  globalThis.nailsDbCachePath = cacheKey;
   try {
-    fs.writeFileSync(DEMO_DB_PATH, JSON.stringify(db, null, 2), 'utf-8');
+    writeRawDemoDb(testDbPath, JSON.stringify(db, null, 2));
   } catch {
     return;
   }
@@ -132,7 +176,7 @@ export function getSnapshot(): DemoDatabase {
   return db;
 }
 
-export function hydrateBooking(db: DemoDatabase, booking: Booking): BookingWithRelations {
+function hydrateBooking(db: DemoDatabase, booking: Booking): BookingWithRelations {
   const service: Service = db.services.find((s) => s.id === booking.serviceId) ??
     db.services[0] ?? {
       id: booking.serviceId,
@@ -283,6 +327,237 @@ export function validateCouponCode(code: string, subtotalCents: number) {
   return { valid: true as const, coupon, discountCents };
 }
 
+function buildAvailabilityContext(
+  db: DemoDatabase,
+  service: Service,
+  addons: ServiceAddon[],
+  options?: {
+    now?: Date;
+    callerSessionToken?: string | null;
+    ignoreBookingId?: string | null;
+  },
+): AvailabilityContext {
+  return {
+    settings: db.settings,
+    service,
+    addons,
+    staffMembers: db.staff,
+    schedules: db.schedules,
+    dateOverrides: db.dateOverrides,
+    bookings: db.bookings,
+    slotHolds: db.slotHolds,
+    calendarConnections: db.calendarConnections,
+    now: options?.now,
+    callerSessionToken: options?.callerSessionToken,
+    ignoreBookingId: options?.ignoreBookingId,
+  };
+}
+
+function countActiveBookingsForStaffOnDate(
+  db: DemoDatabase,
+  staffId: string,
+  dateKey: string,
+): number {
+  const tz = db.settings.timezone || 'America/Mexico_City';
+  let count = 0;
+  for (const b of db.bookings) {
+    if (b.staffId !== staffId) continue;
+    if (!isActiveBookingStatus(b.status)) continue;
+    if (getDateKeyInTimezone(new Date(b.startAt), tz) === dateKey) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function resolveBookableSlotOrThrow(params: {
+  db: DemoDatabase;
+  service: Service;
+  addons: ServiceAddon[];
+  startAt: string;
+  staffId?: string | null;
+  now: Date;
+  ignoreBookingId?: string;
+  ignoreHoldSessionToken?: string;
+  conflictMessage: string;
+}): { slot: AvailableSlot; staff: StaffMember } {
+  const ctx = buildAvailabilityContext(params.db, params.service, params.addons, {
+    now: params.now,
+    callerSessionToken: params.ignoreHoldSessionToken ?? null,
+    ignoreBookingId: params.ignoreBookingId ?? null,
+  });
+
+  if (params.staffId) {
+    const check = assertSlotBookable(ctx, {
+      startAt: params.startAt,
+      staffId: params.staffId,
+      now: params.now,
+      ignoreBookingId: params.ignoreBookingId,
+      ignoreHoldSessionToken: params.ignoreHoldSessionToken,
+    });
+    if (!check.ok) {
+      if (check.code === 'SLOT_TAKEN') {
+        throw new SlotConflictError(params.conflictMessage, check.suggestedSlots);
+      }
+      throw new PolicyError(check.code, check.message, check.suggestedSlots);
+    }
+    const staff = params.db.staff.find((s) => s.id === check.slot.staffId);
+    if (!staff) {
+      throw new PolicyError(
+        'STAFF_INELIGIBLE',
+        'Especialista no disponible para este servicio.',
+      );
+    }
+    return { slot: check.slot, staff };
+  }
+
+  const eligibleStaff = params.db.staff.filter(
+    (st) =>
+      st.isActive &&
+      (st.serviceIds.length === 0 || st.serviceIds.includes(params.service.id)),
+  );
+  if (eligibleStaff.length === 0) {
+    throw new PolicyError(
+      'STAFF_INELIGIBLE',
+      'No hay especialistas disponibles para este servicio.',
+      [],
+    );
+  }
+
+  const parsedStartMs = new Date(params.startAt).getTime();
+  const tz = params.db.settings.timezone || 'America/Mexico_City';
+  const targetDateKey = Number.isNaN(parsedStartMs)
+    ? getDateKeyInTimezone(params.now, tz)
+    : getDateKeyInTimezone(new Date(parsedStartMs), tz);
+
+  const rankedStaff = eligibleStaff.toSorted((a, b) => {
+    const diff =
+      countActiveBookingsForStaffOnDate(params.db, a.id, targetDateKey) -
+      countActiveBookingsForStaffOnDate(params.db, b.id, targetDateKey);
+    return diff !== 0 ? diff : a.displayOrder - b.displayOrder;
+  });
+
+  let sawSlotTaken = false;
+  let firstFailure: Extract<ReturnType<typeof assertSlotBookable>, { ok: false }> | null =
+    null;
+
+  for (const candidate of rankedStaff) {
+    const check = assertSlotBookable(ctx, {
+      startAt: params.startAt,
+      staffId: candidate.id,
+      now: params.now,
+      ignoreBookingId: params.ignoreBookingId,
+      ignoreHoldSessionToken: params.ignoreHoldSessionToken,
+    });
+    if (check.ok) {
+      return { slot: check.slot, staff: candidate };
+    }
+    if (check.code === 'SLOT_TAKEN') {
+      sawSlotTaken = true;
+    }
+    if (!firstFailure) {
+      firstFailure = check;
+    }
+  }
+
+  const anchorIso =
+    Number.isNaN(parsedStartMs) || parsedStartMs < params.now.getTime()
+      ? params.now.toISOString()
+      : new Date(parsedStartMs).toISOString();
+  const suggestions = findNearestAvailableSlots(ctx, anchorIso, null, 3);
+
+  if (sawSlotTaken) {
+    throw new SlotConflictError(params.conflictMessage, suggestions);
+  }
+  if (firstFailure) {
+    throw new PolicyError(firstFailure.code, firstFailure.message, suggestions);
+  }
+  throw new PolicyError(
+    'OUTSIDE_HOURS',
+    'No hay horarios disponibles para esta fecha.',
+    suggestions,
+  );
+}
+
+async function executeBookingTransitionEffects(
+  db: DemoDatabase,
+  booking: Booking,
+  hydrated: BookingWithRelations,
+  effects: readonly BookingTransitionEffect[],
+  options: {
+    paymentMethod?: PaymentMethod;
+    tipCents?: number;
+    recordedBy?: string;
+  },
+): Promise<void> {
+  for (const effect of effects) {
+    if (effect.type === 'SyncCalendar') {
+      const conn = db.calendarConnections.find((c) => c.staffId === effect.staffId);
+      const gcalRes = await syncBookingToGoogleCalendar({
+        booking: hydrated,
+        connection: conn,
+        settings: db.settings,
+        action: effect.action,
+      });
+      booking.googleEventId = gcalRes.googleEventId;
+      hydrated.googleEventId = gcalRes.googleEventId;
+    } else if (effect.type === 'Notify') {
+      if (effect.cancelPending) {
+        for (const n of db.notifications) {
+          if (n.bookingId === effect.bookingId && n.status === 'pending') {
+            n.status = 'canceled';
+          }
+        }
+      }
+      const logs = await buildAndSendImmediateNotifications({
+        booking: hydrated,
+        workflows: db.workflows,
+        settings: db.settings,
+        trigger: effect.trigger,
+      });
+      db.notifications.unshift(...logs);
+    } else if (effect.type === 'RecordCash') {
+      const alreadyRecorded = db.cashEntries.some((e) => e.bookingId === effect.bookingId);
+      if (!alreadyRecorded) {
+        const staff = db.staff.find((s) => s.id === effect.staffId);
+        const pct = staff?.commissionPercent ?? db.settings.defaultCommissionPercent;
+        const commissionCents = Math.round((effect.amountCents * pct) / 100);
+        db.cashEntries.unshift({
+          id: `cash-${crypto.randomUUID().slice(0, 8)}`,
+          bookingId: effect.bookingId,
+          staffId: effect.staffId,
+          entryType: 'service_income',
+          description: `${hydrated.service.name} — ${hydrated.client.fullName}`,
+          amountCents: effect.amountCents,
+          tipCents: options.tipCents ?? 0,
+          commissionCents,
+          paymentMethod: options.paymentMethod ?? 'card',
+          occurredAt: new Date().toISOString(),
+          recordedBy: options.recordedBy ?? 'Admin',
+        });
+      }
+    } else if (effect.type === 'ReleaseCoupon') {
+      const normalizedCode = effect.couponCode.trim().toUpperCase();
+      const coupon = db.coupons.find((c) => c.code.toUpperCase() === normalizedCode);
+      if (coupon) {
+        coupon.usedCount = Math.max(0, coupon.usedCount - 1);
+        if (coupon.kind === 'gift_card') {
+          const currentBalance = coupon.remainingBalanceCents ?? 0;
+          coupon.remainingBalanceCents = Math.min(
+            coupon.discountValue,
+            currentBalance + effect.discountCents,
+          );
+        }
+      }
+    } else if (effect.type === 'IncrementNoShow') {
+      const client = db.clients.find((c) => c.id === effect.clientId);
+      if (client) {
+        client.noShowCount += 1;
+      }
+    }
+  }
+}
+
 export async function createOrRefreshSlotHold(params: {
   serviceId: string;
   addonIds: string[];
@@ -292,85 +567,40 @@ export async function createOrRefreshSlotHold(params: {
 }): Promise<SlotHold> {
   return withWriteLock((db) => {
     const service = db.services.find((s) => s.id === params.serviceId);
-    if (!service) throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
+    if (!service || !service.isActive) {
+      throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
+    }
 
     const addons = db.addons.filter((a) => params.addonIds.includes(a.id) && a.isActive);
-    const { totalDurationMinutes, bufferBeforeMinutes, bufferAfterMinutes } =
-      computeServiceTotals(service, addons);
-
-    const startMs = new Date(params.startAt).getTime();
-    const endMs = startMs + totalDurationMinutes * 60_000;
-    const occStartMs = startMs - bufferBeforeMinutes * 60_000;
-    const occEndMs = endMs + bufferAfterMinutes * 60_000;
+    const now = new Date();
+    const { slot } = resolveBookableSlotOrThrow({
+      db,
+      service,
+      addons,
+      startAt: params.startAt,
+      staffId: params.staffId,
+      now,
+      ignoreHoldSessionToken: params.sessionToken,
+      conflictMessage: 'Ese horario acaba de ser apartado hace unos segundos.',
+    });
 
     db.slotHolds = db.slotHolds.filter((h) => h.sessionToken !== params.sessionToken);
-
-    const conflictBooking = db.bookings.find(
-      (b) =>
-        b.staffId === params.staffId &&
-        ['pending_payment', 'pending_confirmation', 'confirmed'].includes(b.status) &&
-        rangesOverlap(
-          occStartMs,
-          occEndMs,
-          new Date(b.occupiedStartAt).getTime(),
-          new Date(b.occupiedEndAt).getTime(),
-        ),
-    );
-
-    const conflictHold = db.slotHolds.find(
-      (h) =>
-        h.staffId === params.staffId &&
-        h.sessionToken !== params.sessionToken &&
-        rangesOverlap(
-          occStartMs,
-          occEndMs,
-          new Date(h.startAt).getTime(),
-          new Date(h.endAt).getTime(),
-        ),
-    );
-
-    if (conflictBooking || conflictHold) {
-      const eligibleStaff = db.staff.filter(
-        (st) => st.isActive && (st.serviceIds.length === 0 || st.serviceIds.includes(service.id)),
-      );
-      const suggestions = findNearestAvailableSlots(
-        {
-          settings: db.settings,
-          service,
-          addons,
-          staffMembers: eligibleStaff,
-          schedules: db.schedules,
-          dateOverrides: db.dateOverrides,
-          bookings: db.bookings,
-          slotHolds: db.slotHolds,
-          calendarConnections: db.calendarConnections,
-          callerSessionToken: params.sessionToken,
-        },
-        params.startAt,
-        params.staffId,
-        3,
-      );
-      throw new SlotConflictError(
-        'Ese horario acaba de ser apartado hace unos segundos.',
-        suggestions,
-      );
-    }
 
     const holdMinutes = db.settings.slotHoldMinutes || 3;
     const hold: SlotHold = {
       id: `hold-${crypto.randomUUID().slice(0, 8)}`,
-      staffId: params.staffId,
+      staffId: slot.staffId,
       serviceId: params.serviceId,
       sessionToken: params.sessionToken,
-      startAt: new Date(occStartMs).toISOString(),
-      endAt: new Date(occEndMs).toISOString(),
-      expiresAt: new Date(Date.now() + holdMinutes * 60_000).toISOString(),
-      createdAt: new Date().toISOString(),
+      startAt: slot.occupiedStartAt,
+      endAt: slot.occupiedEndAt,
+      expiresAt: new Date(now.getTime() + holdMinutes * 60_000).toISOString(),
+      createdAt: now.toISOString(),
     };
     db.slotHolds.push(hold);
     publishRealtimeEvent('slot_hold_updated', {
-      staffId: params.staffId,
-      startAt: params.startAt,
+      staffId: slot.staffId,
+      startAt: slot.startAt,
     });
     return hold;
   });
@@ -405,7 +635,6 @@ export async function createBookingAtomic(params: {
   forceConfirmed?: boolean;
 }): Promise<BookingWithRelations> {
   return withWriteLock(async (db) => {
-
     if (params.idempotencyKey) {
       const existing = db.bookings.find(
         (b) => b.idempotencyKey === params.idempotencyKey,
@@ -421,87 +650,23 @@ export async function createBookingAtomic(params: {
     }
 
     const addons = db.addons.filter((a) => params.addonIds.includes(a.id) && a.isActive);
-    const { totalDurationMinutes, subtotalCents, bufferBeforeMinutes, bufferAfterMinutes } =
-      computeServiceTotals(service, addons);
-
-    const eligibleStaff = db.staff.filter(
-      (st) => st.isActive && (st.serviceIds.length === 0 || st.serviceIds.includes(service.id)),
-    );
-    const chosenStaff = params.staffId
-      ? eligibleStaff.find((s) => s.id === params.staffId)
-      : eligibleStaff[0];
-
-    if (!chosenStaff) {
-      throw new PolicyError('STAFF_NOT_FOUND', 'Especialista no disponible para este servicio.');
-    }
-
-    const startMs = new Date(params.startAt).getTime();
-    if (Number.isNaN(startMs)) {
-      throw new PolicyError('INVALID_DATE', 'Fecha u hora inválida.');
-    }
-    const endMs = startMs + totalDurationMinutes * 60_000;
-    const occStartMs = startMs - bufferBeforeMinutes * 60_000;
-    const occEndMs = endMs + bufferAfterMinutes * 60_000;
-
-    const activeConflict = db.bookings.find(
-      (b) =>
-        b.staffId === chosenStaff.id &&
-        ['pending_payment', 'pending_confirmation', 'confirmed'].includes(b.status) &&
-        rangesOverlap(
-          occStartMs,
-          occEndMs,
-          new Date(b.occupiedStartAt).getTime(),
-          new Date(b.occupiedEndAt).getTime(),
-        ),
-    );
-
-    const holdConflict = db.slotHolds.find(
-      (h) =>
-        h.staffId === chosenStaff.id &&
-        (!params.sessionToken || h.sessionToken !== params.sessionToken) &&
-        rangesOverlap(
-          occStartMs,
-          occEndMs,
-          new Date(h.startAt).getTime(),
-          new Date(h.endAt).getTime(),
-        ),
-    );
+    const { totalDurationMinutes, subtotalCents } = computeServiceTotals(service, addons);
+    const now = new Date();
+    const { slot, staff: chosenStaff } = resolveBookableSlotOrThrow({
+      db,
+      service,
+      addons,
+      startAt: params.startAt,
+      staffId: params.staffId,
+      now,
+      ignoreHoldSessionToken: params.sessionToken ?? undefined,
+      conflictMessage:
+        'Ese horario acaba de ser reservado hace unos segundos. Elige uno de los horarios más cercanos sin perder tus datos.',
+    });
 
     const conn = db.calendarConnections.find(
       (c) => c.staffId === chosenStaff.id && c.isConnected,
     );
-    const gcalConflict = conn?.externalBusyBlocks?.find((blk) =>
-      rangesOverlap(
-        occStartMs,
-        occEndMs,
-        new Date(blk.startAt).getTime(),
-        new Date(blk.endAt).getTime(),
-      ),
-    );
-
-    if (activeConflict || holdConflict || gcalConflict) {
-      const suggestions = findNearestAvailableSlots(
-        {
-          settings: db.settings,
-          service,
-          addons,
-          staffMembers: eligibleStaff,
-          schedules: db.schedules,
-          dateOverrides: db.dateOverrides,
-          bookings: db.bookings,
-          slotHolds: db.slotHolds,
-          calendarConnections: db.calendarConnections,
-          callerSessionToken: params.sessionToken,
-        },
-        params.startAt,
-        chosenStaff.id,
-        3,
-      );
-      throw new SlotConflictError(
-        'Ese horario acaba de ser reservado hace unos segundos. Elige uno de los horarios más cercanos sin perder tus datos.',
-        suggestions,
-      );
-    }
 
     let discountCents = 0;
     let appliedCouponCode: string | null = null;
@@ -519,7 +684,7 @@ export async function createBookingAtomic(params: {
     }
 
     const phoneE164 = normalizePhoneE164(params.clientPhone);
-    const nowIso = new Date().toISOString();
+    const nowIso = now.toISOString();
     let client = db.clients.find((c) => c.phoneE164 === phoneE164);
     if (!client) {
       client = {
@@ -558,10 +723,10 @@ export async function createBookingAtomic(params: {
       serviceId: service.id,
       staffId: chosenStaff.id,
       clientId: client.id,
-      startAt: new Date(startMs).toISOString(),
-      endAt: new Date(endMs).toISOString(),
-      occupiedStartAt: new Date(occStartMs).toISOString(),
-      occupiedEndAt: new Date(occEndMs).toISOString(),
+      startAt: slot.startAt,
+      endAt: slot.endAt,
+      occupiedStartAt: slot.occupiedStartAt,
+      occupiedEndAt: slot.occupiedEndAt,
       totalDurationMinutes,
       subtotalCents,
       discountCents,
@@ -636,8 +801,12 @@ export async function updateBookingStatus(params: {
     const booking = db.bookings.find((b) => b.id === params.bookingId);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
 
-    const prevStatus = booking.status;
-    booking.status = params.status;
+    const transition = transitionBookingStatus(booking, params.status);
+    if (!transition.ok) {
+      throw new PolicyError(transition.code, transition.message);
+    }
+
+    booking.status = transition.nextStatus;
     if (params.cancellationReason !== undefined) {
       booking.cancellationReason = params.cancellationReason;
     }
@@ -647,72 +816,11 @@ export async function updateBookingStatus(params: {
     booking.updatedAt = new Date().toISOString();
 
     const hydrated = hydrateBooking(db, booking);
-    const conn = db.calendarConnections.find((c) => c.staffId === booking.staffId);
-
-    if (params.status === 'canceled') {
-
-      for (const n of db.notifications) {
-        if (n.bookingId === booking.id && n.status === 'pending') {
-          n.status = 'canceled';
-        }
-      }
-      await syncBookingToGoogleCalendar({
-        booking: hydrated,
-        connection: conn,
-        settings: db.settings,
-        action: 'delete',
-      });
-      const logs = await buildAndSendImmediateNotifications({
-        booking: hydrated,
-        workflows: db.workflows,
-        settings: db.settings,
-        trigger: 'booking_canceled',
-      });
-      db.notifications.unshift(...logs);
-    }
-
-    if (params.status === 'no_show' && prevStatus !== 'no_show') {
-      const client = db.clients.find((c) => c.id === booking.clientId);
-      if (client) client.noShowCount += 1;
-    }
-
-    if (params.status === 'confirmed' && prevStatus === 'pending_confirmation') {
-      await syncBookingToGoogleCalendar({
-        booking: hydrated,
-        connection: conn,
-        settings: db.settings,
-        action: 'create',
-      });
-      const logs = await buildAndSendImmediateNotifications({
-        booking: hydrated,
-        workflows: db.workflows,
-        settings: db.settings,
-        trigger: 'booking_confirmed',
-      });
-      db.notifications.unshift(...logs);
-    }
-
-    if (params.status === 'completed' && prevStatus !== 'completed') {
-      const alreadyRecorded = db.cashEntries.some((e) => e.bookingId === booking.id);
-      if (!alreadyRecorded) {
-        const staff = db.staff.find((s) => s.id === booking.staffId);
-        const pct = staff?.commissionPercent ?? db.settings.defaultCommissionPercent;
-        const commissionCents = Math.round((booking.totalPriceCents * pct) / 100);
-        db.cashEntries.unshift({
-          id: `cash-${crypto.randomUUID().slice(0, 8)}`,
-          bookingId: booking.id,
-          staffId: booking.staffId,
-          entryType: 'service_income',
-          description: `${hydrated.service.name} — ${hydrated.client.fullName}`,
-          amountCents: booking.totalPriceCents,
-          tipCents: params.tipCents ?? 0,
-          commissionCents,
-          paymentMethod: params.paymentMethod ?? 'card',
-          occurredAt: new Date().toISOString(),
-          recordedBy: params.recordedBy ?? 'Admin',
-        });
-      }
-    }
+    await executeBookingTransitionEffects(db, booking, hydrated, transition.effects, {
+      paymentMethod: params.paymentMethod,
+      tipCents: params.tipCents,
+      recordedBy: params.recordedBy,
+    });
 
     publishRealtimeEvent('booking_updated', {
       bookingId: booking.id,
@@ -732,7 +840,7 @@ export async function manageClientBookingAction(params: {
   return withWriteLock(async (db) => {
     const booking = db.bookings.find((b) => b.manageToken === params.token);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
-    if (['canceled', 'completed'].includes(booking.status)) {
+    if (isTerminalBookingStatus(booking.status)) {
       throw new PolicyError('INVALID_STATE', 'Esta cita ya no puede modificarse.');
     }
 
@@ -751,14 +859,20 @@ export async function manageClientBookingAction(params: {
     }
 
     if (params.action === 'cancel') {
-      booking.status = 'canceled';
-      booking.cancellationReason = params.reason || 'Cancelada por la clienta desde link personal';
-      booking.updatedAt = new Date().toISOString();
-      for (const n of db.notifications) {
-        if (n.bookingId === booking.id && n.status === 'pending') n.status = 'canceled';
+      const transition = transitionBookingStatus(booking, 'canceled');
+      if (!transition.ok) {
+        throw new PolicyError(transition.code, transition.message);
       }
+      booking.status = transition.nextStatus;
+      booking.cancellationReason =
+        params.reason || 'Cancelada por la clienta desde link personal';
+      booking.updatedAt = new Date().toISOString();
+      const hydrated = hydrateBooking(db, booking);
+      await executeBookingTransitionEffects(db, booking, hydrated, transition.effects, {
+        recordedBy: 'Clienta',
+      });
       publishRealtimeEvent('booking_updated', { bookingId: booking.id, status: 'canceled' });
-      return hydrateBooking(db, booking);
+      return hydrated;
     }
 
     if (!params.newStartAt) {
@@ -766,66 +880,48 @@ export async function manageClientBookingAction(params: {
     }
 
     const service = db.services.find((s) => s.id === booking.serviceId);
-    if (!service) {
+    if (!service || !service.isActive) {
       throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
     }
-    const staffId = params.newStaffId || booking.staffId;
-    const newStartMs = new Date(params.newStartAt).getTime();
-    const newEndMs = newStartMs + booking.totalDurationMinutes * 60_000;
-    const newOccStartMs = newStartMs - service.bufferBeforeMinutes * 60_000;
-    const newOccEndMs = newEndMs + service.bufferAfterMinutes * 60_000;
-
-    const conflict = db.bookings.find(
-      (b) =>
-        b.id !== booking.id &&
-        b.staffId === staffId &&
-        ['pending_payment', 'pending_confirmation', 'confirmed'].includes(b.status) &&
-        rangesOverlap(
-          newOccStartMs,
-          newOccEndMs,
-          new Date(b.occupiedStartAt).getTime(),
-          new Date(b.occupiedEndAt).getTime(),
-        ),
+    const addons = db.addons.filter((a) =>
+      booking.addons.some((ba) => ba.addonId === a.id),
     );
-    if (conflict) {
-      const addons = db.addons.filter((a) =>
-        booking.addons.some((ba) => ba.addonId === a.id),
-      );
-      const suggestions = findNearestAvailableSlots(
-        {
-          settings: db.settings,
-          service,
-          addons,
-          staffMembers: db.staff.filter((s) => s.isActive),
-          schedules: db.schedules,
-          dateOverrides: db.dateOverrides,
-          bookings: db.bookings,
-          slotHolds: db.slotHolds,
-          calendarConnections: db.calendarConnections,
-          ignoreBookingId: booking.id,
-        },
-        params.newStartAt,
-        staffId,
-        3,
-      );
-      throw new SlotConflictError(
+    const targetStaffId = params.newStaffId || booking.staffId;
+    const now = new Date();
+    const { slot } = resolveBookableSlotOrThrow({
+      db,
+      service,
+      addons,
+      startAt: params.newStartAt,
+      staffId: targetStaffId,
+      now,
+      ignoreBookingId: booking.id,
+      conflictMessage:
         'Ese nuevo horario ya fue ocupado. Prueba con uno de los horarios cercanos.',
-        suggestions,
-      );
-    }
+    });
 
-    booking.staffId = staffId;
-    booking.startAt = new Date(newStartMs).toISOString();
-    booking.endAt = new Date(newEndMs).toISOString();
-    booking.occupiedStartAt = new Date(newOccStartMs).toISOString();
-    booking.occupiedEndAt = new Date(newOccEndMs).toISOString();
-    booking.updatedAt = new Date().toISOString();
+    booking.staffId = slot.staffId;
+    booking.startAt = slot.startAt;
+    booking.endAt = slot.endAt;
+    booking.occupiedStartAt = slot.occupiedStartAt;
+    booking.occupiedEndAt = slot.occupiedEndAt;
+    booking.updatedAt = now.toISOString();
 
     for (const n of db.notifications) {
       if (n.bookingId === booking.id && n.status === 'pending') n.status = 'canceled';
     }
 
     const hydrated = hydrateBooking(db, booking);
+    const conn = db.calendarConnections.find((c) => c.staffId === booking.staffId);
+    const gcalRes = await syncBookingToGoogleCalendar({
+      booking: hydrated,
+      connection: conn,
+      settings: db.settings,
+      action: booking.googleEventId ? 'update' : 'create',
+    });
+    booking.googleEventId = gcalRes.googleEventId;
+    hydrated.googleEventId = gcalRes.googleEventId;
+
     const logs = await buildAndSendImmediateNotifications({
       booking: hydrated,
       workflows: db.workflows,
@@ -1270,6 +1366,68 @@ export async function upsertGalleryItem(
 export async function deleteGalleryItem(id: string): Promise<void> {
   await withWriteLock((db) => {
     db.gallery = db.gallery.filter((g) => g.id !== id);
+  });
+}
+
+export async function processDueScheduledNotifications(
+  dispatcher: (params: {
+    notification: ScheduledNotification;
+    booking: BookingWithRelations;
+    settings: SalonSettings;
+  }) => Promise<{
+    status: 'sent' | 'failed';
+    providerMessageId: string | null;
+    errorMessage: string | null;
+  }>,
+  nowMs = Date.now(),
+): Promise<{
+  processed: number;
+  sentCount: number;
+  failedCount: number;
+  canceledCount: number;
+}> {
+  return withWriteLock(async (db) => {
+    const due = db.notifications.filter(
+      (n) => n.status === 'pending' && new Date(n.scheduledFor).getTime() <= nowMs,
+    );
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let canceledCount = 0;
+
+    for (const item of due) {
+      const rawBooking = db.bookings.find((b) => b.id === item.bookingId);
+      if (!rawBooking || rawBooking.status === 'canceled' || rawBooking.status === 'no_show') {
+        item.status = 'canceled';
+        canceledCount += 1;
+        continue;
+      }
+
+      const hydrated = hydrateBooking(db, rawBooking);
+      const res = await dispatcher({
+        notification: { ...item },
+        booking: hydrated,
+        settings: db.settings,
+      });
+
+      item.status = res.status;
+      item.providerMessageId = res.providerMessageId;
+      item.errorMessage = res.errorMessage;
+      if (res.status === 'sent') {
+        item.sentAt = new Date().toISOString();
+        sentCount += 1;
+      } else {
+        item.sentAt = null;
+        failedCount += 1;
+      }
+    }
+
+    return {
+      processed: due.length,
+      sentCount,
+      failedCount,
+      canceledCount,
+    };
   });
 }
 

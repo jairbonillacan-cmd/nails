@@ -8,11 +8,11 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "guardrails": "node scripts/check-guardrails.mjs && oxlint --deny-warnings src",
+    "guardrails": "node scripts/check-guardrails.test.mjs && node scripts/check-guardrails.mjs && oxlint --deny-warnings src",
     "deadcode": "knip",
     "test": "vitest run",
     "doctor": "astryx doctor --built .next",
-    "verify": "npm run typecheck && npm run guardrails && npm run deadcode && npm run test && npm run doctor && npm run build",
+    "verify": "npm run typecheck && npm run guardrails && npm run deadcode && npm run test && npm run build && npm run doctor",
     "astryx": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs"
   },
   "keywords": [],

@@ -28,22 +28,24 @@ import {
 } from 'lucide-react';
 import type {
   GalleryItem,
-  SalonSettings,
-  Service,
   ServiceAddon,
   ServiceCategory,
-  StaffMember,
 } from '@/lib/types';
+import type {
+  PublicServiceDTO,
+  PublicSettingsDTO,
+  PublicStaffDTO,
+} from '@/lib/public-dto';
 import { buildWhatsAppLink, formatCurrency, formatDuration } from '@/lib/format';
 import { PublicShell } from './PublicShell';
 import { useSalonAppearance } from './SalonThemeProvider';
 
 interface LandingViewProps {
-  initialSettings: SalonSettings;
+  initialSettings: PublicSettingsDTO;
   categories: ServiceCategory[];
-  services: Service[];
+  services: PublicServiceDTO[];
   addons: ServiceAddon[];
-  staff: StaffMember[];
+  staff: PublicStaffDTO[];
   gallery: GalleryItem[];
   reviewsSummary: { count: number; average: number };
 }

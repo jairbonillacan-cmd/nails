@@ -164,9 +164,13 @@ export default function AdminAvailabilityPage() {
       serviceId: diagServiceId,
       staffId,
     });
-    const res = await fetch(`/api/availability?${qs.toString()}`);
+    const res = await fetch(`/api/admin/availability?${qs.toString()}`);
+    if (!res.ok) {
+      setDiagnostics([]);
+      return;
+    }
     const json = await res.json();
-    setDiagnostics(json.diagnostics || []);
+    setDiagnostics(json.diagnosis ?? json.diagnostics ?? []);
   };
 
   const staffOverrides = data.dateOverrides.filter((o) => o.staffId === staffId);

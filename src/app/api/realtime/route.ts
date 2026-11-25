@@ -14,7 +14,7 @@ export async function GET() {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         } catch {
-          // Stream closed
+          return;
         }
       };
 

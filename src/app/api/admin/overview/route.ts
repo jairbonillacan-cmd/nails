@@ -1,23 +1,23 @@
-import { NextResponse } from 'next/server';
-import { getAdminSession } from '@/lib/auth/admin-session';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth/admin-session';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getBookingsWithRelations, getSnapshot } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const session = await getAdminSession();
+export async function GET(request: NextRequest) {
+  const session = await requireAdmin(undefined, request);
   if (!session) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
   }
 
   const db = getSnapshot();
   const integration = getRuntimeIntegrationStatus();
-  const bookings = getBookingsWithRelations(
-    session.user.role,
-    session.user.staffMemberId,
-  );
+  const bookings =
+    session.user.role === 'specialist' && !session.user.staffMemberId
+      ? []
+      : getBookingsWithRelations(session.user.role, session.user.staffMemberId);
 
   const now = new Date();
   const tz = db.settings.timezone || 'America/Mexico_City';
@@ -35,8 +35,10 @@ export async function GET() {
   const noShowCount = bookings.filter((b) => b.status === 'no_show').length;
 
   const cashEntries =
-    session.user.role === 'specialist' && session.user.staffMemberId
-      ? db.cashEntries.filter((c) => c.staffId === session.user.staffMemberId)
+    session.user.role === 'specialist'
+      ? session.user.staffMemberId
+        ? db.cashEntries.filter((c) => c.staffId === session.user.staffMemberId)
+        : []
       : db.cashEntries;
 
   const totalRevenueCents = cashEntries

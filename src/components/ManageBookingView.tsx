@@ -30,6 +30,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { BookingWithRelations, SalonSettings } from '@/lib/types';
+import type { PublicSettingsDTO } from '@/lib/public-dto';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import {
   formatCurrency,
@@ -43,7 +44,7 @@ import { PublicShell } from './PublicShell';
 
 interface ManageBookingViewProps {
   initialBooking: BookingWithRelations;
-  settings: SalonSettings;
+  settings: PublicSettingsDTO | SalonSettings;
   calendarLinks: {
     google: string;
     outlook: string;
@@ -107,7 +108,7 @@ export function ManageBookingView({
         staffId: booking.staffId,
         startDate,
         days: '14',
-        ignoreBookingId: booking.id,
+        manageToken: booking.manageToken,
       });
       const res = await fetch(`/api/availability?${qs.toString()}`, { cache: 'no-store' });
       const data = await res.json();

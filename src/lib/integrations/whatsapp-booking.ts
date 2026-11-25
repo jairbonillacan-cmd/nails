@@ -12,21 +12,18 @@ export function verifyMetaWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
 ): boolean {
-  const secret = process.env.WHATSAPP_APP_SECRET;
-  if (!secret) return true;
+  const secret = process.env.WHATSAPP_APP_SECRET?.trim();
+  if (!secret) return false;
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
-  const expected = `sha256=${crypto
+  const providedHex = signatureHeader.slice('sha256='.length);
+  if (!/^[0-9a-fA-F]{64}$/.test(providedHex)) return false;
+  const expectedBuf = crypto
     .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex')}`;
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signatureHeader),
-      Buffer.from(expected),
-    );
-  } catch {
-    return false;
-  }
+    .update(rawBody, 'utf8')
+    .digest();
+  const providedBuf = Buffer.from(providedHex.toLowerCase(), 'hex');
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
 }
 
 export interface WhatsAppBookingActionInput {

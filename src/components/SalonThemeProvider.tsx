@@ -13,12 +13,15 @@ import {
   DEFAULT_BRAND_ACCENT_LIGHT,
 } from '@/lib/theme-presets';
 import type { SalonSettings, ThemeModePreference } from '@/lib/types';
+import type { PublicSettingsDTO } from '@/lib/public-dto';
+
+type AppearanceSettings = PublicSettingsDTO | SalonSettings;
 
 interface AppearanceContextValue {
   mode: ThemeModePreference;
   setMode: (mode: ThemeModePreference) => void;
-  settings: SalonSettings;
-  setSettingsOverride: (next: SalonSettings) => void;
+  settings: AppearanceSettings;
+  setSettingsOverride: (next: AppearanceSettings) => void;
 }
 
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
@@ -48,7 +51,7 @@ const NextLinkAdapter = React.forwardRef<
   return <NextLink ref={ref} href={href} {...rest} />;
 });
 
-function buildDynamicSalonTheme(settings: SalonSettings) {
+function buildDynamicSalonTheme(settings: AppearanceSettings) {
   const baseTheme = themes[defaultThemeSlug];
   const radii = CORNER_RADIUS_MAP[settings.cornerStyle] ?? CORNER_RADIUS_MAP.soft;
   const accentLight = settings.brandAccentLight || DEFAULT_BRAND_ACCENT_LIGHT;
@@ -71,10 +74,10 @@ export function SalonThemeProvider({
   initialSettings,
   children,
 }: {
-  initialSettings: SalonSettings;
+  initialSettings: AppearanceSettings;
   children: React.ReactNode;
 }) {
-  const [settings, setSettingsOverride] = useState<SalonSettings>(initialSettings);
+  const [settings, setSettingsOverride] = useState<AppearanceSettings>(initialSettings);
   const [mode, setMode] = useState<ThemeModePreference>(
     initialSettings.defaultPublicMode || 'light',
   );

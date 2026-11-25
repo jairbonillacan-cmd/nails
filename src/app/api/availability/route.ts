@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDateKeyInTimezone } from '@/lib/format';
-import { diagnoseDateSlots } from '@/lib/availability/engine';
 import {
+  getBookingByToken,
   getNextQuickSlots,
   getSnapshot,
   PolicyError,
@@ -18,39 +18,23 @@ export async function GET(request: NextRequest) {
     const staffId = searchParams.get('staffId') || null;
     const mode = searchParams.get('mode') || 'range';
 
+    if (mode === 'diagnose') {
+      return NextResponse.json(
+        { error: 'El modo diagnóstico requiere acceso de administrador.' },
+        { status: 403 },
+      );
+    }
+
+    if (mode !== 'range' && mode !== 'quick') {
+      return NextResponse.json({ error: 'Modo de consulta inválido' }, { status: 400 });
+    }
+
     if (!serviceId) {
       return NextResponse.json({ error: 'serviceId es requerido' }, { status: 400 });
     }
 
     if (mode === 'quick') {
       return NextResponse.json({ slots: getNextQuickSlots(serviceId, staffId) });
-    }
-
-    if (mode === 'diagnose') {
-      const date =
-        searchParams.get('date') ||
-        getDateKeyInTimezone(new Date(), db.settings.timezone);
-      const targetStaffId = staffId || db.staff[0]?.id;
-      const service = db.services.find((s) => s.id === serviceId) ?? db.services[0];
-      if (!targetStaffId || !service) {
-        return NextResponse.json({ diagnostics: [] });
-      }
-      const diagnostics = diagnoseDateSlots(
-        {
-          settings: db.settings,
-          service,
-          addons: [],
-          staffMembers: db.staff,
-          schedules: db.schedules,
-          dateOverrides: db.dateOverrides,
-          bookings: db.bookings,
-          slotHolds: db.slotHolds,
-          calendarConnections: db.calendarConnections,
-        },
-        date,
-        targetStaffId,
-      );
-      return NextResponse.json({ diagnostics });
     }
 
     const addonIdsParam = searchParams.get('addonIds') || '';
@@ -60,7 +44,8 @@ export async function GET(request: NextRequest) {
       getDateKeyInTimezone(new Date(), db.settings.timezone);
     const days = Number(searchParams.get('days') || '35');
     const sessionToken = searchParams.get('sessionToken');
-    const ignoreBookingId = searchParams.get('ignoreBookingId');
+    const manageToken = searchParams.get('manageToken')?.trim();
+    const resolvedBooking = manageToken ? getBookingByToken(manageToken) : null;
 
     const data = queryAvailability({
       serviceId,
@@ -69,7 +54,7 @@ export async function GET(request: NextRequest) {
       startDate,
       days,
       sessionToken,
-      ignoreBookingId,
+      ignoreBookingId: resolvedBooking?.id ?? null,
     });
 
     return NextResponse.json(data);

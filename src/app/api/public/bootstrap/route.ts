@@ -1,25 +1,33 @@
 import { NextResponse } from 'next/server';
 import { getSnapshot } from '@/lib/repositories/db';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import {
+  toPublicServiceDTO,
+  toPublicSettingsDTO,
+  toPublicStaffDTO,
+} from '@/lib/public-dto';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const db = getSnapshot();
   const integration = getRuntimeIntegrationStatus();
-  const activeStaff = db.staff.filter((s) => s.isActive);
 
   return NextResponse.json({
-    settings: db.settings,
-    categories: db.categories,
+    settings: toPublicSettingsDTO(db.settings),
+    categories: db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder),
     services: db.services
       .filter((s) => s.isActive)
-      .sort((a, b) => a.displayOrder - b.displayOrder),
+      .toSorted((a, b) => a.displayOrder - b.displayOrder)
+      .map(toPublicServiceDTO),
     addons: db.addons
       .filter((a) => a.isActive)
-      .sort((a, b) => a.displayOrder - b.displayOrder),
-    staff: activeStaff.sort((a, b) => a.displayOrder - b.displayOrder),
-    gallery: db.gallery.sort((a, b) => a.displayOrder - b.displayOrder),
+      .toSorted((a, b) => a.displayOrder - b.displayOrder),
+    staff: db.staff
+      .filter((s) => s.isActive)
+      .toSorted((a, b) => a.displayOrder - b.displayOrder)
+      .map(toPublicStaffDTO),
+    gallery: db.gallery.toSorted((a, b) => a.displayOrder - b.displayOrder),
     reviewsSummary: {
       count: db.reviews.length,
       average:

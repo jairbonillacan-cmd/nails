@@ -50,14 +50,12 @@ export default function AdminIntegrationsPage() {
   const simulateWhatsAppBooking = async () => {
     setSimLoading(true);
     try {
-      const res = await fetch('/api/webhooks/whatsapp', {
+      const res = await fetch('/api/admin/integrations/whatsapp-simulate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-nails-demo-simulate': '1',
         },
         body: JSON.stringify({
-          simulate: true,
           clientName: simName,
           phone: simPhone,
           serviceId: simServiceId || data.services[0]?.id,
@@ -65,9 +63,9 @@ export default function AdminIntegrationsPage() {
       });
       const json = await res.json();
       setMsg(
-        json.ok
+        res.ok && json.ok
           ? `¡Reserva por WhatsApp creada (${json.booking.bookingCode})! El horario ya desapareció en tiempo real de /reservar y aparece en Citas.`
-          : json.replyText || 'No hubo horarios disponibles para simular.',
+          : json.replyText || json.error || 'No hubo horarios disponibles para simular.',
       );
       await refresh();
     } finally {

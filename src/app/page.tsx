@@ -1,4 +1,9 @@
 import { getSnapshot } from '@/lib/repositories/db';
+import {
+  toPublicServiceDTO,
+  toPublicSettingsDTO,
+  toPublicStaffDTO,
+} from '@/lib/public-dto';
 import { LandingView } from '@/components/LandingView';
 
 export const dynamic = 'force-dynamic';
@@ -17,18 +22,20 @@ export default function HomePage() {
 
   return (
     <LandingView
-      initialSettings={db.settings}
-      categories={db.categories.sort((a, b) => a.displayOrder - b.displayOrder)}
+      initialSettings={toPublicSettingsDTO(db.settings)}
+      categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
       services={db.services
         .filter((s) => s.isActive)
-        .sort((a, b) => a.displayOrder - b.displayOrder)}
+        .toSorted((a, b) => a.displayOrder - b.displayOrder)
+        .map(toPublicServiceDTO)}
       addons={db.addons
         .filter((a) => a.isActive)
-        .sort((a, b) => a.displayOrder - b.displayOrder)}
+        .toSorted((a, b) => a.displayOrder - b.displayOrder)}
       staff={db.staff
         .filter((s) => s.isActive)
-        .sort((a, b) => a.displayOrder - b.displayOrder)}
-      gallery={db.gallery.sort((a, b) => a.displayOrder - b.displayOrder)}
+        .toSorted((a, b) => a.displayOrder - b.displayOrder)
+        .map(toPublicStaffDTO)}
+      gallery={db.gallery.toSorted((a, b) => a.displayOrder - b.displayOrder)}
       reviewsSummary={{ count: reviewsCount, average }}
     />
   );

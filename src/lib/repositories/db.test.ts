@@ -1,6 +1,11 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  addDateOverride,
   createBookingAtomic,
   createOrRefreshSlotHold,
   getBookingByToken,
@@ -10,10 +15,50 @@ import {
   queryAvailability,
   releaseSlotHold,
   SlotConflictError,
+  updateBookingStatus,
 } from './db';
+import { zonedDateTimeToUtc } from '../availability/engine';
 import { getDateKeyInTimezone } from '../format';
 
-describe('Atomic Booking Concurrency & 3-Minute Slot Hold', () => {
+const TEMP_DB_PATH = path.join(
+  os.tmpdir(),
+  `nails-db-test-${process.pid}-${crypto.randomUUID()}.json`,
+);
+
+let originalDbPathEnv: string | undefined;
+
+function resetIsolatedDb(): void {
+  globalThis.nailsDbCache = undefined;
+  globalThis.nailsDbCachePath = undefined;
+  if (fs.existsSync(TEMP_DB_PATH)) {
+    fs.unlinkSync(TEMP_DB_PATH);
+  }
+}
+
+beforeAll(() => {
+  originalDbPathEnv = process.env.NAILS_DEMO_DB_PATH;
+  process.env.NAILS_DEMO_DB_PATH = TEMP_DB_PATH;
+  resetIsolatedDb();
+});
+
+beforeEach(() => {
+  resetIsolatedDb();
+});
+
+afterEach(() => {
+  resetIsolatedDb();
+});
+
+afterAll(() => {
+  resetIsolatedDb();
+  if (originalDbPathEnv === undefined) {
+    delete process.env.NAILS_DEMO_DB_PATH;
+  } else {
+    process.env.NAILS_DEMO_DB_PATH = originalDbPathEnv;
+  }
+});
+
+describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', () => {
   it('prevents double-booking when two clients race for the exact same slot and returns 3 alternatives', async () => {
     const db = getSnapshot();
     const service = db.services.find((s) => s.id === 'srv-gelish-manicure');
@@ -132,6 +177,325 @@ describe('Atomic Booking Concurrency & 3-Minute Slot Hold', () => {
     });
     expect(second.id).toBe(first.id);
     await releaseSlotHold('sess-hold-owner');
+  });
+
+  it('D1: rejects 3am, past, beyond-max-days, override-closed, and unaligned slots on booking, hold, and reschedule', async () => {
+    const db = getSnapshot();
+    const tz = db.settings.timezone;
+    const today = getDateKeyInTimezone(new Date(), tz);
+    const avail = queryAvailability({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-valeria',
+      startDate: today,
+      days: 14,
+    });
+    const validDay = avail.days.find((d) => d.date > today && d.slots.length > 0);
+    if (!validDay || !validDay.slots[0]) throw new Error('Expected future open day');
+    const validSlot = validDay.slots[0];
+
+    const threeAmIso = zonedDateTimeToUtc(validDay.date, '03:00', tz).toISOString();
+    let caughtThreeAm: unknown = null;
+    try {
+      await createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: threeAmIso,
+        clientName: 'Nocturna',
+        clientPhone: '+525511223344',
+      });
+    } catch (err) {
+      caughtThreeAm = err;
+    }
+    expect(caughtThreeAm).toBeInstanceOf(PolicyError);
+    expect((caughtThreeAm as PolicyError).code).toBe('OUTSIDE_HOURS');
+    expect((caughtThreeAm as PolicyError).suggestedSlots?.length).toBeGreaterThan(0);
+
+    await expect(
+      createOrRefreshSlotHold({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: threeAmIso,
+        sessionToken: 'sess-3am',
+      }),
+    ).rejects.toMatchObject({ code: 'OUTSIDE_HOURS' });
+
+    const pastIso = new Date(Date.now() - 3_600_000).toISOString();
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: pastIso,
+        clientName: 'Pasado',
+        clientPhone: '+525511223345',
+      }),
+    ).rejects.toMatchObject({ code: 'PAST_OR_NOTICE' });
+
+    const beyondMaxIso = new Date(
+      Date.now() + (db.settings.maxBookingDaysAhead + 10) * 86_400_000,
+    ).toISOString();
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: beyondMaxIso,
+        clientName: 'Futuro Lejano',
+        clientPhone: '+525511223346',
+      }),
+    ).rejects.toMatchObject({ code: 'BEYOND_MAX_DAYS' });
+
+    const unalignedIso = new Date(
+      new Date(validSlot.startAt).getTime() + 7 * 60_000,
+    ).toISOString();
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: unalignedIso,
+        clientName: 'Desalineada',
+        clientPhone: '+525511223347',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_ALIGNMENT' });
+
+    await addDateOverride({
+      staffId: 'staff-valeria',
+      overrideDate: validDay.date,
+      isUnavailable: true,
+      startTime: null,
+      endTime: null,
+      reason: 'Vacaciones test D1',
+    });
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: validSlot.startAt,
+        clientName: 'Dia Cerrado',
+        clientPhone: '+525511223348',
+      }),
+    ).rejects.toMatchObject({ code: 'OUTSIDE_HOURS' });
+
+    const farAvail = queryAvailability({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-camila',
+      startDate: today,
+      days: 14,
+    });
+    const farDay = farAvail.days.find(
+      (d) =>
+        d.slots.length > 0 &&
+        new Date(d.slots[0]?.startAt ?? 0).getTime() - Date.now() > 48 * 3_600_000,
+    );
+    if (!farDay || !farDay.slots[0]) throw new Error('Expected future slot >48h');
+    const created = await createBookingAtomic({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-camila',
+      startAt: farDay.slots[0].startAt,
+      clientName: 'Reagendar D1',
+      clientPhone: '+525511223349',
+    });
+
+    await expect(
+      manageClientBookingAction({
+        token: created.manageToken,
+        action: 'reschedule',
+        newStartAt: threeAmIso,
+        newStaffId: 'staff-camila',
+      }),
+    ).rejects.toMatchObject({ code: 'OUTSIDE_HOURS' });
+
+    const unchanged = getBookingByToken(created.manageToken);
+    expect(unchanged?.startAt).toBe(created.startAt);
+  });
+
+  it('D2: enforces state machine transitions and restores coupon/gift card on cancel', async () => {
+    const db = getSnapshot();
+    const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+    const avail = queryAvailability({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-camila',
+      startDate: today,
+      days: 14,
+    });
+    const futureSlots = avail.days
+      .flatMap((d) => d.slots)
+      .filter((s) => new Date(s.startAt).getTime() - Date.now() > 48 * 3_600_000);
+    const slot1 = futureSlots[0];
+    const slot2 = futureSlots[futureSlots.length - 1];
+    if (!slot1 || !slot2 || slot1.startAt === slot2.startAt) {
+      throw new Error('Expected two distinct future slots');
+    }
+
+    const initialCouponUses =
+      getSnapshot().coupons.find((c) => c.code === 'BIENVENIDA10')?.usedCount ?? 0;
+    const withCoupon = await createBookingAtomic({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: slot1.staffId,
+      startAt: slot1.startAt,
+      clientName: 'Clienta Cupon',
+      clientPhone: '+525533445501',
+      couponCode: 'BIENVENIDA10',
+    });
+    expect(
+      getSnapshot().coupons.find((c) => c.code === 'BIENVENIDA10')?.usedCount,
+    ).toBe(initialCouponUses + 1);
+
+    await updateBookingStatus({
+      bookingId: withCoupon.id,
+      status: 'canceled',
+      cancellationReason: 'Cancelada en test D2',
+    });
+    expect(
+      getSnapshot().coupons.find((c) => c.code === 'BIENVENIDA10')?.usedCount,
+    ).toBe(initialCouponUses);
+
+    await expect(
+      updateBookingStatus({
+        bookingId: withCoupon.id,
+        status: 'confirmed',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+
+    const cashCountBefore = getSnapshot().cashEntries.length;
+    await expect(
+      updateBookingStatus({
+        bookingId: 'bk-1000',
+        status: 'canceled',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+    expect(getSnapshot().bookings.find((b) => b.id === 'bk-1000')?.status).toBe('completed');
+    expect(getSnapshot().cashEntries.length).toBe(cashCountBefore);
+
+    const initialGiftBal =
+      getSnapshot().coupons.find((c) => c.code === 'GIFT500')?.remainingBalanceCents ?? 0;
+    const withGift = await createBookingAtomic({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: slot2.staffId,
+      startAt: slot2.startAt,
+      clientName: 'Clienta Gift',
+      clientPhone: '+525533445502',
+      couponCode: 'GIFT500',
+    });
+    expect(
+      getSnapshot().coupons.find((c) => c.code === 'GIFT500')?.remainingBalanceCents,
+    ).toBeLessThan(initialGiftBal);
+
+    await manageClientBookingAction({
+      token: withGift.manageToken,
+      action: 'cancel',
+      reason: 'Cancelada por clienta',
+    });
+    expect(
+      getSnapshot().coupons.find((c) => c.code === 'GIFT500')?.remainingBalanceCents,
+    ).toBe(initialGiftBal);
+    expect(getSnapshot().coupons.find((c) => c.code === 'GIFT500')?.usedCount).toBe(0);
+  });
+
+  it('D3: selects an actually free eligible specialist (and prefers least busy) when staffId is null', async () => {
+    const db = getSnapshot();
+    const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+
+    const valeriaAvail = queryAvailability({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-valeria',
+      startDate: today,
+      days: 14,
+    });
+    const camilaAvail = queryAvailability({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-camila',
+      startDate: today,
+      days: 14,
+    });
+
+    const camilaByTime = new Set(
+      camilaAvail.days.flatMap((d) => d.slots).map((s) => s.startAt),
+    );
+    const sharedSlots = valeriaAvail.days
+      .flatMap((d) => d.slots)
+      .filter((s) => camilaByTime.has(s.startAt));
+
+    const firstShared = sharedSlots[0];
+    const laterSharedSameDay = sharedSlots.find(
+      (s) =>
+        s.startAt !== firstShared?.startAt &&
+        getDateKeyInTimezone(new Date(s.startAt), db.settings.timezone) ===
+          getDateKeyInTimezone(new Date(firstShared?.startAt ?? 0), db.settings.timezone) &&
+        Math.abs(
+          new Date(s.startAt).getTime() - new Date(firstShared?.startAt ?? 0).getTime(),
+        ) >= 120 * 60_000,
+    );
+    if (!firstShared || !laterSharedSameDay) {
+      throw new Error('Expected two shared slots on the same day');
+    }
+
+    await createBookingAtomic({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-valeria',
+      startAt: firstShared.startAt,
+      clientName: 'Ocupa Valeria',
+      clientPhone: '+525544556601',
+    });
+
+    const autoFree = await createBookingAtomic({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: null,
+      startAt: firstShared.startAt,
+      clientName: 'Cualquiera Libre',
+      clientPhone: '+525544556602',
+    });
+    expect(autoFree.staffId).toBe('staff-camila');
+
+    const extraValeriaSlot = valeriaAvail.days
+      .flatMap((d) => d.slots)
+      .find(
+        (s) =>
+          s.startAt !== firstShared.startAt &&
+          s.startAt !== laterSharedSameDay.startAt &&
+          getDateKeyInTimezone(new Date(s.startAt), db.settings.timezone) ===
+            getDateKeyInTimezone(new Date(laterSharedSameDay.startAt), db.settings.timezone) &&
+          Math.abs(
+            new Date(s.startAt).getTime() - new Date(firstShared.startAt).getTime(),
+          ) >= 90 * 60_000 &&
+          Math.abs(
+            new Date(s.startAt).getTime() - new Date(laterSharedSameDay.startAt).getTime(),
+          ) >= 90 * 60_000,
+      );
+    if (extraValeriaSlot) {
+      await createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-valeria',
+        startAt: extraValeriaSlot.startAt,
+        clientName: 'Extra Valeria',
+        clientPhone: '+525544556603',
+      });
+
+      const leastBusyPick = await createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: null,
+        startAt: laterSharedSameDay.startAt,
+        clientName: 'Menor Carga',
+        clientPhone: '+525544556604',
+      });
+      expect(leastBusyPick.staffId).toBe('staff-camila');
+    }
   });
 
   it('Property: /cita/[token] cancel/reschedule inside minimum notice window throws PolicyError without mutating booking', async () => {

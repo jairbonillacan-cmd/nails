@@ -1,6 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  assertSlotBookable,
+  diagnoseDateSlots,
   getAvailableSlotsForDate,
   rangesOverlap,
   zonedDateTimeToUtc,
@@ -20,6 +22,7 @@ const TEST_DATE = '2026-12-15';
 const TEST_DOW = 2 as const;
 const TZ = 'America/Mexico_City';
 const NOW = new Date('2026-12-10T12:00:00.000Z');
+const SEED_DB = createInitialDemoDatabase();
 
 function toTimeStr(minutes: number): string {
   const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
@@ -38,16 +41,15 @@ function makeBaseContext(
   slotHolds: SlotHold[] = [],
   dateOverrides: DateOverride[] = [],
 ): AvailabilityContext {
-  const db = createInitialDemoDatabase();
-  const baseService = db.services[0];
-  const baseStaff = db.staff[0];
+  const baseService = SEED_DB.services[0];
+  const baseStaff = SEED_DB.staff[0];
   if (!baseService || !baseStaff) {
     throw new Error('Seed requires service and staff');
   }
 
   return {
     settings: {
-      ...db.settings,
+      ...SEED_DB.settings,
       timezone: TZ,
       slotIntervalMinutes,
       minBookingNoticeMinutes: 0,
@@ -447,6 +449,282 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
         },
       ),
       { numRuns: 200 },
+    );
+  });
+
+  it('Property 6 (D1): assertSlotBookable accepts a slot iff it appears in getAvailableSlotsForDate', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(30, 45, 60, 90),
+        fc.constantFrom(0, 10, 15),
+        fc.constantFrom(0, 10, 15),
+        fc.constantFrom<15 | 30 | 60>(15, 30, 60),
+        fc.integer({ min: 0, max: 180 }),
+        fc.integer({ min: 1, max: 60 }),
+        fc.array(
+          fc.record({
+            startMin: fc.integer({ min: 9 * 60, max: 18 * 60 }),
+            dur: fc.constantFrom(30, 60),
+          }),
+          { minLength: 0, maxLength: 4 },
+        ),
+        fc.integer({ min: 0, max: 23 * 60 + 55 }),
+        fc.constantFrom(-10, 0, 5, 120),
+        (
+          duration,
+          bufBefore,
+          bufAfter,
+          interval,
+          minNotice,
+          maxDays,
+          rawBookings,
+          probeMinutes,
+          dayOffsetFromNow,
+        ) => {
+          const staffId = 'staff-valeria';
+          const probeDateDt = new Date(NOW.getTime() + dayOffsetFromNow * 86_400_000);
+          const probeDateStr = probeDateDt.toISOString().slice(0, 10);
+          const probeDow = probeDateDt.getUTCDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+          const rules: AvailabilityRule[] = [
+            { id: 'r-am', dayOfWeek: probeDow, startTime: '09:00', endTime: '14:00' },
+            { id: 'r-pm', dayOfWeek: probeDow, startTime: '15:00', endTime: '19:30' },
+          ];
+
+          const bookings = rawBookings.map((b, i) => {
+            const sMs = zonedDateTimeToUtc(probeDateStr, toTimeStr(b.startMin), TZ).getTime();
+            const eMs = sMs + b.dur * 60_000;
+            return {
+              ...makeActiveBooking(`d1-${i}`, staffId, b.startMin, b.dur, bufBefore, bufAfter),
+              startAt: new Date(sMs).toISOString(),
+              endAt: new Date(eMs).toISOString(),
+              occupiedStartAt: new Date(sMs - bufBefore * 60_000).toISOString(),
+              occupiedEndAt: new Date(eMs + bufAfter * 60_000).toISOString(),
+            };
+          });
+
+          const baseCtx = makeBaseContext(
+            duration,
+            bufBefore,
+            bufAfter,
+            interval,
+            rules,
+            [],
+            bookings,
+          );
+          const ctx: AvailabilityContext = {
+            ...baseCtx,
+            settings: {
+              ...baseCtx.settings,
+              minBookingNoticeMinutes: minNotice,
+              maxBookingDaysAhead: maxDays,
+            },
+          };
+
+          const available = getAvailableSlotsForDate(ctx, probeDateStr, staffId);
+          const availableStartSet = new Set(available.map((s) => s.startAt));
+
+          const probeIso = zonedDateTimeToUtc(
+            probeDateStr,
+            toTimeStr(probeMinutes),
+            TZ,
+          ).toISOString();
+          const probeResult = assertSlotBookable(ctx, {
+            startAt: probeIso,
+            staffId,
+          });
+          expect(probeResult.ok).toBe(availableStartSet.has(probeIso));
+          if (probeResult.ok) {
+            expect(availableStartSet.has(probeResult.slot.startAt)).toBe(true);
+          }
+
+          for (const slot of available) {
+            const res = assertSlotBookable(ctx, {
+              startAt: slot.startAt,
+              staffId: slot.staffId,
+            });
+            expect(res.ok).toBe(true);
+            if (res.ok) {
+              expect(res.slot.startAt).toBe(slot.startAt);
+            }
+          }
+        },
+      ),
+      { numRuns: 150 },
+    );
+  });
+
+  it('Property 7 (D7): diagnoseDateSlots(t).isAvailable iff t is in getAvailableSlotsForDate', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(30, 45, 60, 90),
+        fc.constantFrom(0, 15),
+        fc.constantFrom(0, 15),
+        fc.constantFrom<15 | 30 | 60>(15, 30, 60),
+        fc.integer({ min: 0, max: 300 }),
+        fc.constantFrom(2, 10, 90),
+        fc.constantFrom<'none' | 'closed' | 'custom'>('none', 'closed', 'custom'),
+        fc.array(
+          fc.record({
+            startMin: fc.integer({ min: 9 * 60, max: 18 * 60 }),
+            dur: fc.constantFrom(30, 60),
+          }),
+          { minLength: 0, maxLength: 4 },
+        ),
+        (duration, bufB, bufA, interval, minNotice, maxDays, overrideKind, rawBookings) => {
+          const staffId = 'staff-valeria';
+          const rules: AvailabilityRule[] = [
+            { id: 'r1', dayOfWeek: TEST_DOW, startTime: '08:30', endTime: '13:30' },
+            { id: 'r2', dayOfWeek: TEST_DOW, startTime: '15:00', endTime: '20:30' },
+          ];
+          const overrides: DateOverride[] =
+            overrideKind === 'none'
+              ? []
+              : overrideKind === 'closed'
+                ? [
+                    {
+                      id: 'ovr',
+                      staffId,
+                      overrideDate: TEST_DATE,
+                      isUnavailable: true,
+                      startTime: null,
+                      endTime: null,
+                      reason: 'Cerrado',
+                    },
+                  ]
+                : [
+                    {
+                      id: 'ovr',
+                      staffId,
+                      overrideDate: TEST_DATE,
+                      isUnavailable: false,
+                      startTime: '09:15',
+                      endTime: '15:15',
+                      reason: 'Especial',
+                    },
+                  ];
+
+          const bookings = rawBookings.map((b, i) =>
+            makeActiveBooking(`d7-${i}`, staffId, b.startMin, b.dur, bufB, bufA),
+          );
+
+          const baseCtx = makeBaseContext(
+            duration,
+            bufB,
+            bufA,
+            interval,
+            rules,
+            [],
+            bookings,
+            [],
+            overrides,
+          );
+          const ctx: AvailabilityContext = {
+            ...baseCtx,
+            settings: {
+              ...baseCtx.settings,
+              minBookingNoticeMinutes: minNotice,
+              maxBookingDaysAhead: maxDays,
+            },
+          };
+
+          const availableSlots = getAvailableSlotsForDate(ctx, TEST_DATE, staffId);
+          const availableTimes = new Set(availableSlots.map((s) => s.localTime24));
+          const diagnostics = diagnoseDateSlots(ctx, TEST_DATE, staffId);
+          const diagByTime = new Map(diagnostics.map((d) => [d.time24, d]));
+
+          for (const d of diagnostics) {
+            expect(d.isAvailable).toBe(availableTimes.has(d.time24));
+          }
+          for (const slot of availableSlots) {
+            const diagEntry = diagByTime.get(slot.localTime24);
+            expect(diagEntry?.isAvailable).toBe(true);
+          }
+        },
+      ),
+      { numRuns: 150 },
+    );
+  });
+
+  it('Property 8 (DST): transition dates preserve exact duration, monotonicity, and D1/D7 equivalence', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(
+          { tz: 'America/New_York', date: '2026-03-08', nowIso: '2026-03-01T12:00:00.000Z' },
+          { tz: 'America/New_York', date: '2026-11-01', nowIso: '2026-10-25T12:00:00.000Z' },
+          { tz: 'Europe/Madrid', date: '2026-03-29', nowIso: '2026-03-20T12:00:00.000Z' },
+          { tz: 'Europe/Madrid', date: '2026-10-25', nowIso: '2026-10-18T12:00:00.000Z' },
+          { tz: 'America/Los_Angeles', date: '2026-03-08', nowIso: '2026-03-01T12:00:00.000Z' },
+          { tz: 'America/Los_Angeles', date: '2026-11-01', nowIso: '2026-10-25T12:00:00.000Z' },
+        ),
+        fc.constantFrom(30, 45, 60, 90),
+        fc.constantFrom<15 | 30 | 60>(15, 30, 60),
+        fc.integer({ min: 0, max: 3 }),
+        fc.integer({ min: 5, max: 14 }),
+        fc.integer({ min: 0, max: 100 }),
+        (dstCase, duration, interval, startH, endH, pickIdx) => {
+          const staffId = 'staff-valeria';
+          const baseCtx = makeBaseContext(duration, 0, 15, interval, [
+            {
+              id: 'r-dst',
+              dayOfWeek: 0,
+              startTime: toTimeStr(startH * 60),
+              endTime: toTimeStr(endH * 60),
+            },
+          ]);
+          const ctx: AvailabilityContext = {
+            ...baseCtx,
+            now: new Date(dstCase.nowIso),
+            settings: {
+              ...baseCtx.settings,
+              timezone: dstCase.tz,
+              slotIntervalMinutes: interval,
+              minBookingNoticeMinutes: 0,
+              maxBookingDaysAhead: 60,
+            },
+          };
+
+          const slots = getAvailableSlotsForDate(ctx, dstCase.date, staffId);
+          const diag = diagnoseDateSlots(ctx, dstCase.date, staffId);
+          const availableSet = new Set(slots.map((s) => s.localTime24));
+
+          let prevStartMs = -Infinity;
+          for (const slot of slots) {
+            const startMs = new Date(slot.startAt).getTime();
+            const endMs = new Date(slot.endAt).getTime();
+            expect(endMs - startMs).toBe(duration * 60_000);
+            expect(startMs).toBeGreaterThan(prevStartMs);
+            prevStartMs = startMs;
+          }
+
+          if (slots.length > 0) {
+            const sampled = new Map<string, (typeof slots)[number]>();
+            const first = slots[0];
+            const last = slots[slots.length - 1];
+            const picked = slots[pickIdx % slots.length];
+            if (first) sampled.set(first.startAt, first);
+            if (last) sampled.set(last.startAt, last);
+            if (picked) sampled.set(picked.startAt, picked);
+            for (const slot of slots) {
+              if (slot.localTime24 >= '01:00' && slot.localTime24 <= '03:30') {
+                sampled.set(slot.startAt, slot);
+              }
+            }
+            for (const slot of sampled.values()) {
+              const check = assertSlotBookable(ctx, {
+                startAt: slot.startAt,
+                staffId,
+              });
+              expect(check.ok).toBe(true);
+            }
+          }
+
+          for (const d of diag) {
+            expect(d.isAvailable).toBe(availableSet.has(d.time24));
+          }
+        },
+      ),
+      { numRuns: 100 },
     );
   });
 });

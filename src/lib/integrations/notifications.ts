@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { getRuntimeIntegrationStatus } from '../env';
 import { buildWhatsAppLink, formatDateLongInTimezone, formatTimeInTimezone } from '../format';
 import { generateBookingIcs } from '../ics';
+import { escapeHtml } from '../sanitize';
 import type {
   BookingWithRelations,
   NotificationChannel,
@@ -63,6 +64,44 @@ export function buildBookingWhatsAppFallbackUrl(
   return buildWhatsAppLink(settings.whatsappNumber, msg);
 }
 
+function sanitizeEmailHref(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString();
+    }
+  } catch {
+    return '#';
+  }
+  return '#';
+}
+
+export function renderBookingEmailHtml(params: {
+  salonName: string;
+  bodyText: string;
+  manageUrl: string;
+  address: string;
+}): string {
+  const safeHref = sanitizeEmailHref(params.manageUrl);
+  const escapedBodyHtml = params.bodyText
+    .split(/\r?\n/)
+    .map((line) => escapeHtml(line))
+    .join('<br/>');
+
+  return [
+    '<div style="font-family: \'DM Sans\', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #24211f;">',
+    `  <h2 style="font-family: Georgia, serif; margin-bottom: 8px;">${escapeHtml(params.salonName)}</h2>`,
+    '  <p style="line-height: 1.6;">' + escapedBodyHtml + '</p>',
+    '  <p style="margin-top: 20px;">',
+    `    <a href="${escapeHtml(safeHref)}" style="display:inline-block;padding:12px 20px;background:#9E5C64;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">`,
+    '      Ver, agregar al calendario o reagendar',
+    '    </a>',
+    '  </p>',
+    `  <p style="color:#6c6560;font-size:13px;margin-top:24px;">${escapeHtml(params.address)}</p>`,
+    '</div>',
+  ].join('\n');
+}
+
 export async function dispatchEmailNotification(params: {
   to: string;
   subject: string;
@@ -85,25 +124,20 @@ export async function dispatchEmailNotification(params: {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const icsContent = generateBookingIcs(params.booking, params.settings, manageUrl);
+    const safeFromName = params.settings.name.replace(/[\r\n<>"]/g, '').trim() || 'Nails';
     const fromEmail =
-      process.env.RESEND_FROM_EMAIL || `${params.settings.name} <onboarding@resend.dev>`;
+      process.env.RESEND_FROM_EMAIL || safeFromName + ' <onboarding@resend.dev>';
 
     const result = await resend.emails.send({
       from: fromEmail,
       to: params.to,
       subject: params.subject,
-      html: `
-        <div style="font-family: 'DM Sans', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #24211f;">
-          <h2 style="font-family: Georgia, serif; margin-bottom: 8px;">${params.settings.name}</h2>
-          <p style="line-height: 1.6;">${params.bodyText.replace(/\n/g, '<br/>')}</p>
-          <p style="margin-top: 20px;">
-            <a href="${manageUrl}" style="display:inline-block;padding:12px 20px;background:#9E5C64;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
-              Ver, agregar al calendario o reagendar
-            </a>
-          </p>
-          <p style="color:#6c6560;font-size:13px;margin-top:24px;">${params.settings.address}</p>
-        </div>
-      `,
+      html: renderBookingEmailHtml({
+        salonName: params.settings.name,
+        bodyText: params.bodyText,
+        manageUrl,
+        address: params.settings.address,
+      }),
       attachments: [
         {
           filename: `cita-${params.booking.bookingCode}.ics`,

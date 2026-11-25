@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth/admin-session';
+import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
 import {
   addCashEntry,
   adjustInventoryItem,
@@ -9,15 +9,22 @@ import {
   updateWorkflow,
   upsertCoupon,
 } from '@/lib/repositories/db';
+import { serializeCsv } from '@/lib/sanitize';
 
 export async function GET(request: NextRequest) {
-  const session = await requireAdmin(['owner', 'admin']);
-  if (!session) return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+  const session = await requireAdmin(['owner', 'admin'], request);
+  if (!session) {
+    const authenticated = await getAdminSession(request);
+    return NextResponse.json(
+      { error: authenticated ? 'Permisos insuficientes' : 'No autorizado' },
+      { status: authenticated ? 403 : 401 },
+    );
+  }
 
   const { searchParams } = new URL(request.url);
   if (searchParams.get('export') === 'csv') {
     const db = getSnapshot();
-    const header = [
+    const headers = [
       'Fecha',
       'Tipo',
       'Descripción',
@@ -30,14 +37,14 @@ export async function GET(request: NextRequest) {
     const rows = db.cashEntries.map((e) => [
       e.occurredAt,
       e.entryType,
-      `"${e.description.replace(/"/g, '""')}"`,
+      e.description,
       e.paymentMethod,
       (e.amountCents / 100).toFixed(2),
       (e.tipCents / 100).toFixed(2),
       (e.commissionCents / 100).toFixed(2),
-      `"${e.recordedBy.replace(/"/g, '""')}"`,
+      e.recordedBy,
     ]);
-    const csv = [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csv = serializeCsv(headers, rows);
     return new NextResponse(csv, {
       status: 200,
       headers: {
@@ -51,7 +58,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await requireAdmin();
+  const session = await requireAdmin(undefined, request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   const body = await request.json();
@@ -59,8 +66,7 @@ export async function POST(request: NextRequest) {
   if (body.kind === 'calendar') {
     if (
       session.user.role === 'specialist' &&
-      session.user.staffMemberId &&
-      body.staffId !== session.user.staffMemberId
+      (!session.user.staffMemberId || body.staffId !== session.user.staffMemberId)
     ) {
       return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
     }

@@ -139,6 +139,9 @@ export default function AdminBookingsPage() {
       setFeedback(`Estado actualizado a: ${STATUS_BADGE[status].label}`);
       setCheckoutBooking(null);
       await refresh();
+    } else {
+      const json = await res.json().catch(() => null);
+      setFeedback(json?.error || 'No se pudo actualizar el estado de la cita.');
     }
   };
 
@@ -164,7 +167,7 @@ export default function AdminBookingsPage() {
     if (!mServiceId || !mSelectedSlot) return;
     setMSaving(true);
     try {
-      const res = await fetch('/api/bookings', {
+      const res = await fetch('/api/admin/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -184,6 +187,9 @@ export default function AdminBookingsPage() {
         setMPhone('');
         setFeedback('Cita manual registrada y bloqueada en tiempo real.');
         await refresh();
+      } else {
+        const json = await res.json().catch(() => null);
+        setFeedback(json?.error || 'No se pudo registrar la cita manual.');
       }
     } finally {
       setMSaving(false);
@@ -302,7 +308,7 @@ export default function AdminBookingsPage() {
                   }}
                 />
               ) : null}
-              {b.status !== 'no_show' && b.status !== 'canceled' && b.status !== 'completed' ? (
+              {b.status === 'confirmed' ? (
                 <Button
                   label="No asistió"
                   variant="secondary"
@@ -311,7 +317,9 @@ export default function AdminBookingsPage() {
                   onClick={() => void updateStatus(b.id, 'no_show')}
                 />
               ) : null}
-              {b.status !== 'canceled' && b.status !== 'completed' ? (
+              {b.status !== 'canceled' &&
+              b.status !== 'completed' &&
+              b.status !== 'no_show' ? (
                 <Button
                   label="Cancelar"
                   variant="ghost"
