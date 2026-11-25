@@ -3,7 +3,8 @@
   "ignore": [
     "src/astryx-themes.ts",
     "src/themes/**",
-    "themes/**"
+    "themes/**",
+    "docs/audits/**"
   ],
   "ignoreDependencies": [
     "@fontsource/dm-sans",

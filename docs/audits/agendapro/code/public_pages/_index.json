@@ -1,0 +1,186 @@
+[
+  {
+    "slug": "planes",
+    "requested": "https://agendapro.com/mx/planes",
+    "finalUrl": "https://agendapro.com/mx/planes",
+    "title": "Planes | AgendaPro",
+    "textLen": 8019,
+    "h1": ""
+  },
+  {
+    "slug": "salon-de-unas",
+    "requested": "https://agendapro.com/mx/salon-de-unas/software-para-salon-de-unas",
+    "finalUrl": "https://agendapro.com/mx/salon-de-unas/software-para-salon-de-unas",
+    "title": "Software de gestión empresarial líder en el mercado - AgendaPro®",
+    "textLen": 9717,
+    "h1": "Software de gestión empresarial líder en Latinoamérica"
+  },
+  {
+    "slug": "manicure-pedicure",
+    "requested": "https://agendapro.com/mx/manicure-y-pedicure/software-para-salon-de-manicure-y-pedicure",
+    "finalUrl": "https://agendapro.com/mx/manicure-y-pedicure/software-para-salon-de-manicure-y-pedicure",
+    "title": "Mejor software para salones de uñas | AgendaPro",
+    "textLen": 10506,
+    "h1": "El mejor software para salón de uñas"
+  },
+  {
+    "slug": "alma-ia-belleza",
+    "requested": "https://agendapro.com/mx/empleados-ia/belleza",
+    "finalUrl": "https://agendapro.com/mx/empleados-ia/belleza",
+    "title": "AgendaPro - Software N°1 para Belleza, Spa, Salud y Bienestar",
+    "textLen": 183,
+    "h1": "Página no encontrada"
+  },
+  {
+    "slug": "sofia-ia-recordatorios",
+    "requested": "https://agendapro.com/mx/sofia-ia-recordatorios",
+    "finalUrl": "https://agendapro.com/mx/sofia-ia-recordatorios",
+    "title": "Sofía IA Recordatorios - AgendaPro",
+    "textLen": 1660,
+    "h1": "La asistente que mantiene tu agenda sin citas perdidas"
+  },
+  {
+    "slug": "charly-ia",
+    "requested": "https://agendapro.com/mx/charly",
+    "finalUrl": "https://agendapro.com/mx/charly",
+    "title": "Charly: Marketing inteligente",
+    "textLen": 5829,
+    "h1": "Charly: Tu experto en Marketing Inteligente"
+  },
+  {
+    "slug": "agenda-online",
+    "requested": "https://agendapro.com/mx/agenda-online",
+    "finalUrl": "https://agendapro.com/mx/agenda-online",
+    "title": "Software de agenda online y calendario en línea - Prueba Gratis",
+    "textLen": 9330,
+    "h1": "La Agenda Online y Calendario de Citas líder en México"
+  },
+  {
+    "slug": "reservas-online",
+    "requested": "https://agendapro.com/mx/reservas-online",
+    "finalUrl": "https://agendapro.com/mx/reservas-online",
+    "title": "Sistema de Reservas online",
+    "textLen": 8708,
+    "h1": "Ofrece reservas online y mejora la experiencia de tus clientes"
+  },
+  {
+    "slug": "recordatorios-automaticos",
+    "requested": "https://agendapro.com/mx/recordatorios-automaticos",
+    "finalUrl": "https://agendapro.com/mx/recordatorios-automaticos",
+    "title": "Software de recordatorios automáticos para citas",
+    "textLen": 6056,
+    "h1": "Recordatorios automáticos para que tus clientes no olviden su cita"
+  },
+  {
+    "slug": "fidelizacion",
+    "requested": "https://agendapro.com/mx/fidelizacion-de-clientes",
+    "finalUrl": "https://agendapro.com/mx/fidelizacion-de-clientes",
+    "title": "Software de fidelización de clientes - AgendaPro",
+    "textLen": 5836,
+    "h1": "Fideliza a tus clientes y haz que siempre regresen a tu negocio"
+  },
+  {
+    "slug": "giftcards",
+    "requested": "https://agendapro.com/mx/giftcards",
+    "finalUrl": "https://agendapro.com/mx/giftcards",
+    "title": "Giftcards - AgendaPro",
+    "textLen": 4833,
+    "h1": "Giftcard: Fideliza y atrae clientes"
+  },
+  {
+    "slug": "sistema-de-caja",
+    "requested": "https://agendapro.com/mx/sistema-de-caja",
+    "finalUrl": "https://agendapro.com/mx/sistema-de-caja",
+    "title": "Sistema de caja - AgendaPro",
+    "textLen": 5530,
+    "h1": "Sistema de caja inteligente"
+  },
+  {
+    "slug": "reporte-de-comisiones",
+    "requested": "https://agendapro.com/mx/reporte-de-comisiones",
+    "finalUrl": "https://agendapro.com/mx/reporte-de-comisiones",
+    "title": "Reporte de comisiones - AgendaPro",
+    "textLen": 5118,
+    "h1": "Cálculo de comisiones automático"
+  },
+  {
+    "slug": "control-de-inventarios",
+    "requested": "https://agendapro.com/mx/control-de-inventarios",
+    "finalUrl": "https://agendapro.com/mx/control-de-inventarios",
+    "title": "Control de Inventarios: Stock, registro, historial y más",
+    "textLen": 5748,
+    "h1": "El sistema de inventario inteligente perfecto para tu negocio"
+  },
+  {
+    "slug": "reportes-de-gestion",
+    "requested": "https://agendapro.com/mx/reportes-de-gestion",
+    "finalUrl": "https://agendapro.com/mx/reportes-de-gestion",
+    "title": "Reportes de gestión - AgendaPro",
+    "textLen": 5363,
+    "h1": "Reportes de gestión automáticos"
+  },
+  {
+    "slug": "campanas-marketing",
+    "requested": "https://agendapro.com/mx/campanas-de-marketing",
+    "finalUrl": "https://agendapro.com/mx/campanas-de-marketing",
+    "title": "Marketing Integrado: Email, encuestas, segmentación y más con AgendaPro",
+    "textLen": 4646,
+    "h1": "Marketing Integrado: Email, encuestas, segmentación y más"
+  },
+  {
+    "slug": "encuestas-satisfaccion",
+    "requested": "https://agendapro.com/mx/encuesta-de-satisfaccion",
+    "finalUrl": "https://agendapro.com/mx/encuesta-de-satisfaccion",
+    "title": "Encuestas de satisfacción",
+    "textLen": 5234,
+    "h1": "Encuesta de Satisfacción"
+  },
+  {
+    "slug": "ficha-clinica",
+    "requested": "https://agendapro.com/mx/ficha-clinica",
+    "finalUrl": "https://agendapro.com/mx/ficha-clinica",
+    "title": "Fichas clínicas online personalizables",
+    "textLen": 5521,
+    "h1": "Fichas clínicas digitales"
+  },
+  {
+    "slug": "pago-online",
+    "requested": "https://agendapro.com/mx/pago-online",
+    "finalUrl": "https://agendapro.com/mx/pago-online",
+    "title": "Mejor Software con Pagos en Línea en México | AgendaPro",
+    "textLen": 9630,
+    "h1": "Prueba gratis la mejor plataforma de pago online en México"
+  },
+  {
+    "slug": "terminal-pos",
+    "requested": "https://agendapro.com/mx/terminal-punto-de-venta",
+    "finalUrl": "https://agendapro.com/mx/terminal-punto-de-venta",
+    "title": "Mejor Terminal Punto de Venta en México - Agendapro",
+    "textLen": 5857,
+    "h1": "La Mejor Terminal Punto de Venta para centros de belleza y bienestar"
+  },
+  {
+    "slug": "facturacion-electronica",
+    "requested": "https://agendapro.com/mx/facturacion-electronica",
+    "finalUrl": "https://agendapro.com/mx/facturacion-electronica",
+    "title": "Facturación electrónica - Facilidad en tus transacciones con el mejor sistema",
+    "textLen": 7795,
+    "h1": "Facturación Electrónica: Genera boletas o facturas digitales automáticas"
+  },
+  {
+    "slug": "integraciones-api",
+    "requested": "https://agendapro.com/mx/integraciones-api",
+    "finalUrl": "https://agendapro.com/mx/integraciones-api",
+    "title": "Integraciones / API - AgendaPro",
+    "textLen": 4249,
+    "h1": "API: Integración con tus apps"
+  },
+  {
+    "slug": "marketplace-mx",
+    "requested": "https://agendapro.com/mp/mx",
+    "finalUrl": "https://agendapro.com/mp/mx",
+    "title": "Access denied | agendapro.com used Cloudflare to restrict access | agendapro.com | Cloudflare",
+    "textLen": 392,
+    "h1": "Error 1015"
+  }
+]

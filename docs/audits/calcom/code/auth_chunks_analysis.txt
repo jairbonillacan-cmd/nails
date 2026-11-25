@@ -1,0 +1,68 @@
+# Cal.com v7 Authenticated Chunks Static Code Archive
+Downloaded: 33/33 chunks (1.01 MB)
+
+## Group: links_and_embed
+- 182v4barnt9ck.js (0.8 KB): signals=[] trpc=[]
+- 2qyrplxpfbt4t.js (0.3 KB): signals=[] trpc=[]
+- 1q31nu6gedihr.js (21.0 KB): signals=[] trpc=[]
+- 30ttdx60_9kov.js (44.5 KB): signals=[] trpc=[]
+- 34os5fh4zj0l-.js (70.3 KB): signals=[] trpc=[]
+
+## Group: event_editor
+- 10ffubmzbnjad.js (12.9 KB): signals=[] trpc=[]
+- 2vq5t11arkxo0.js (1.1 KB): signals=[] trpc=[]
+- 3q-mzat1wwgfu.js (31.9 KB): signals=[] trpc=[]
+- 010t-wrq8o5me.js (39.4 KB): signals=[] trpc=[]
+- 3113mgekk10qp.js (43.0 KB): signals=[] trpc=[]
+- 0epjl_98x2lm-.js (1.0 KB): signals=[] trpc=[]
+- 3kk2fn-lydc2r.js (19.5 KB): signals=[] trpc=[]
+- 0buyvmvr82dgc.js (4.0 KB): signals=[] trpc=[]
+- 3dwdac2vi3-jb.js (34.9 KB): signals=[] trpc=[]
+
+## Group: availability_and_ooo
+- 3g-k1jbai59za.js (57.5 KB): signals=[] trpc=[]
+- 1luckzh_w87n0.js (61.5 KB): signals=[] trpc=[]
+- 2t0c8vf36hgms.js (28.9 KB): signals=[] trpc=[]
+- 0-jliyozftid2.js (25.7 KB): signals=[] trpc=[]
+- 3993h8h7z9f-z.js (0.8 KB): signals=[] trpc=[]
+- 2x1z8kz-49vk3.js (69.3 KB): signals=[beforeEventBuffer, afterEventBuffer, dateOverrides, troubleshoot] trpc=[]
+- 0ozwpoehmaq2h.js (16.9 KB): signals=[] trpc=[]
+- 1b596fb-1coym.js (52.7 KB): signals=[outOfOffice] trpc=[]
+- 0oyt8mpo78t-4.js (27.1 KB): signals=[] trpc=[]
+
+## Group: events_and_workflows
+- 2zt358-6icfds.js (31.2 KB): signals=[slotInterval, beforeEventBuffer, afterEventBuffer, brandColor, darkBrandColor, hideBranding, maxActiveBookingsPerBooker, lockTimeZoneToggleOnBookingPage] trpc=[]
+- 3kodi3zox2lce.js (31.2 KB): signals=[] trpc=[]
+- 2pimntnxk7wx9.js (32.8 KB): signals=[troubleshoot, outOfOffice] trpc=[]
+- 2if47igy90ikl.js (41.8 KB): signals=[BOOKING_NO_SHOW_UPDATED, AFTER_EVENT, BEFORE_EVENT, NO_SHOW] trpc=[]
+- 1ao2m01fhe0oz.js (22.7 KB): signals=[] trpc=[]
+
+## Group: appearance_and_webhooks
+- 0hinjnnmyera0.js (81.8 KB): signals=[bookerLayouts, cornerStyle, brandColor, darkBrandColor, hideBranding] trpc=[]
+- 32ajj2j9m04hy.js (9.7 KB): signals=[] trpc=[]
+- 44ea9f2oxi9f_.js (48.7 KB): signals=[] trpc=[]
+- 2hur_mffwxemc.js (40.9 KB): signals=[] trpc=[]
+- 1w11ijm2xt4ad.js (24.0 KB): signals=[] trpc=[]
+
+## Code Mechanism Excerpts
+
+### bookerLayouts (0hinjnnmyera0.js @ 24864)
+,n=e.i(550271),l=e.i(4441426),i=e.i(6471955),o=e.i(3634809),d=e.i(7193147),c=e.i(6830632),u=e.i(7971868),f=e.i(2325164),h=e.i(4522016),m=e.i(5271645),p=e.i(653145);let x="metadata.bookerLayouts",g=({settings:e,onChange:c,showUserSettings:p,isDark:x,user:g})=>{let{t:b}=(0,s.f)(),[v,j]=(0,m.useState)(!1),_=p&&!v,y=_?g?.defaultBookerLayouts:e,w=y?.defaultLayout||a.M.MONTH_VIEW,N=a.w.reduce((e,t)=>(e[t]=y?.enabledLayouts?y.enabledLayouts.indexOf(t)>-1:a.y.enabledLayouts.indexOf(t)>-1,e),{}),k=(0,m.useCallback)(e=>{c({enabledLayouts:Object.keys(N).filter(e=>!
+
+### cornerStyle (0hinjnnmyera0.js @ 30527)
+{shouldDirty:!0})}})]}),c?(0,t.jsxs)(h.J,{variant:"warning",children:[(0,t.jsx)(y.eV,{}),(0,t.jsx)(h.p,{children:i("dark_theme_contrast_error")})]}):null]})}),(0,t.jsx)(z.e,{name:"cornerStyle",control:e.control,render:({field:a})=>(0,t.jsxs)("div",{className:"flex flex-col gap-2",children:[(0,t.jsx)(v.f,{render:(0,t.jsx)("div",{}),children:i("corner_style")}),(0,t.jsx)(n.f,{value:a.value,disabled:s,onChange:t=>e.setValue("cornerStyle",t,{shouldDirty:!0})})]})})]})};e.s(["default",0,({user:e,hasPaidPlan:r})=>{let{t:n}=(0,u.f)(),h=f.f.useUtils(),{setTheme:
+
+### BOOKING_NO_SHOW_UPDATED (2if47igy90ikl.js @ 42535)
+ORM_SUBMITTED_NO_EVENT",BOOKING_REJECTED:"BOOKING_REJECTED",BOOKING_REQUESTED:"BOOKING_REQUESTED",BOOKING_PAYMENT_INITIATED:"BOOKING_PAYMENT_INITIATED",BOOKING_PAID:"BOOKING_PAID",BOOKING_NO_SHOW_UPDATED:"BOOKING_NO_SHOW_UPDATED"},i=[t.FORM_SUBMITTED,t.FORM_SUBMITTED_NO_EVENT];e.s(["R",0,i,"o",0,t],9569562)},3140462,e=>{"use strict";e.s(["f",0,{REMINDER:"REMINDER",CUSTOM:"CUSTOM",CANCELLED:"CANCELLED",RESCHEDULED:"RESCHEDULED",COMPLETED:"COMPLETED",RATING:"RATING"}])}]);
+
+### dateOverrides (2x1z8kz-49vk3.js @ 1263)
+s,onClick:n,children:r("delete")})]})]})})},A=({workingHours:e,userTimeFormat:a,travelSchedules:s,weekStart:r,handleSubmit:i})=>{let o,{append:d,replace:h,fields:m}=(0,k.v)({name:"dateOverrides"}),{getValues:f,reset:g}=(0,k.M)(),p=(o=(0,k.h)({name:"dateOverrides"}),(0,_.useMemo)(()=>o?.map(e=>n.f.toPlainDate(e.ranges[0].start,"UTC")),[o])),{t:x}=(0,l.f)(),v=async()=>{let e=f();try{let t=await i(e);"saved"===t&&g(e)}catch{}};return(0,t.jsxs)(u.CardFrame,{children:[(0,t.jsxs)(u.CardFrameHeader,{children:[(0,t.jsxs)(u.CardFrameTitle,{className:"flex items-c
+
+### BEFORE_EVENT (2if47igy90ikl.js @ 42025)
+:"WHATSAPP_NUMBER",CAL_AI_PHONE_CALL:"CAL_AI_PHONE_CALL",PATHS:"PATHS",FILTER:"FILTER",DELAY:"DELAY",LEAD_ENRICHMENT:"LEAD_ENRICHMENT",SEND_WEBHOOK:"SEND_WEBHOOK"}],129591);let t={BEFORE_EVENT:"BEFORE_EVENT",EVENT_CANCELLED:"EVENT_CANCELLED",NEW_EVENT:"NEW_EVENT",AFTER_EVENT:"AFTER_EVENT",RESCHEDULE_EVENT:"RESCHEDULE_EVENT",AFTER_HOSTS_CAL_VIDEO_NO_SHOW:"AFTER_HOSTS_CAL_VIDEO_NO_SHOW",AFTER_GUESTS_CAL_VIDEO_NO_SHOW:"AFTER_GUESTS_CAL_VIDEO_NO_SHOW",FORM_SUBMITTED:"FORM_SUBMITTED",FORM_SUBMITTED_NO_EVENT:"FORM_SUBMITTED_NO_EVENT",BOOKING_REJECTED:"BOOKING_
+
+### lockTimeZoneToggleOnBookingPage (2zt358-6icfds.js @ 22927)
+!1,id:0,hideCalendarNotes:!1,hideCalendarEventDetails:!1,privateNoteEnabled:!1,privateNoteMode:null,privateNoteTemplate:null,recurringEvent:null,destinationCalendar:null,team:null,lockTimeZoneToggleOnBookingPage:!1,lockedTimeZone:null,weekStart:null,requiresConfirmation:!1,requiresConfirmationForFreeEmail:!1,requiresBookerEmailVerification:!1,skipAttendeeEmailDeliverabilityCheck:!1,bookingLimits:null,bookingProposalCount:null,maxActiveBookingsPerBooker:null,maxActiveBookingPerBookerOfferReschedule:!1,durationLimits:null,hidden:!1,userId:0,parentId:null,p
+
+### maxActiveBookingPerBookerOfferReschedule (2zt358-6icfds.js @ 23209)
+ConfirmationForFreeEmail:!1,requiresBookerEmailVerification:!1,skipAttendeeEmailDeliverabilityCheck:!1,bookingLimits:null,bookingProposalCount:null,maxActiveBookingsPerBooker:null,maxActiveBookingPerBookerOfferReschedule:!1,durationLimits:null,hidden:!1,userId:0,parentId:null,parent:null,owner:null,workflows:[],users:[{metadata:null,theme:null,credentials:[],username:"john.doe",timeZone:"",bufferTime:0,availability:[],id:0,uuid:"00000000-0000-0000-0000-000000000000",allSelectedCalendars:[],userLevelSelectedCalendars:[],schedules:[],defaultScheduleId:null
