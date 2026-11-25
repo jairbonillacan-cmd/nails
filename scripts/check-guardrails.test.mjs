@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { checkSourceText } from './check-guardrails.mjs';
+import { checkSeedParity } from './check-seed-parity.mjs';
 
 function rulesOf(rel, text) {
   return checkSourceText(rel, text).map((v) => v.rule);
@@ -560,4 +562,112 @@ test('§8 no-raw-html-interpolation: flags unescaped interpolations in HTML temp
     rulesOf('src/lib/integrations/notifications.ts', badConditional),
     ['no-raw-html-interpolation'],
   );
+});
+
+test('A4 no-unsafe-db-cast: forbids "as DemoDatabase" anywhere in src/** and allows Zod parseDemoDatabase', () => {
+  const bad = [
+    'import type { DemoDatabase } from "../types";',
+    'export function load(raw: string) {',
+    '  const a = JSON.parse(raw) as DemoDatabase;',
+    '  const b = <DemoDatabase>JSON.parse(raw);',
+    '  return [a, b];',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/lib/repositories/db.ts', bad), [
+    'no-unsafe-db-cast',
+    'no-unsafe-db-cast',
+  ]);
+  assert.deepEqual(rulesOf('src/lib/repositories/db.test.ts', bad), [
+    'no-unsafe-db-cast',
+    'no-unsafe-db-cast',
+  ]);
+
+  const clean = [
+    'import { parseDemoDatabase } from "./schema";',
+    'export function load(raw: string) {',
+    '  return parseDemoDatabase(JSON.parse(raw));',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/lib/repositories/db.ts', clean), []);
+});
+
+test('G2 no-direct-math-random: forbids Math.random() in src/lib/** except clock.ts and *.test.ts', () => {
+  const bad = [
+    'export function makeId() {',
+    '  return `${Math.random()}-${Math["random"]()}`;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/lib/repositories/db.ts', bad), [
+    'no-direct-math-random',
+    'no-direct-math-random',
+  ]);
+  assert.deepEqual(rulesOf('src/lib/integrations/notifications.ts', bad), [
+    'no-direct-math-random',
+    'no-direct-math-random',
+  ]);
+  assert.deepEqual(rulesOf('src/lib/hooks/useSessionToken.ts', bad), [
+    'no-direct-math-random',
+    'no-direct-math-random',
+  ]);
+
+  assert.deepEqual(rulesOf('src/lib/clock.ts', bad), []);
+  assert.deepEqual(rulesOf('src/lib/repositories/db.test.ts', bad), []);
+
+  const clean = [
+    'import { randomUUID } from "node:crypto";',
+    'export function makeId() {',
+    '  return randomUUID();',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/lib/repositories/db.ts', clean), []);
+});
+
+test('G2 dependency-graph: src/lib/clock.ts allows node:crypto and blocks React/Next/Supabase/repositories', () => {
+  const cleanClock = [
+    'import { randomUUID, randomBytes } from "node:crypto";',
+    'export function nextId() {',
+    '  return randomUUID() + randomBytes(2).toString("hex");',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/lib/clock.ts', cleanClock), []);
+
+  const badClock = [
+    'import React from "react";',
+    'import { NextResponse } from "next/server";',
+    'import { createClient } from "@supabase/supabase-js";',
+    'import { getSnapshot } from "@/lib/repositories/db";',
+    'export const refs = [React, NextResponse, createClient, getSnapshot];',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/lib/clock.ts', badClock), [
+    'dependency-graph',
+    'dependency-graph',
+    'dependency-graph',
+    'dependency-graph',
+  ]);
+});
+
+test('M3 checkSeedParity: passes on synced demo-seed.ts + seed.sql and catches slug/price/comment drift', () => {
+  const demoSeed = fs.readFileSync('src/lib/demo-seed.ts', 'utf-8');
+  const seedSql = fs.readFileSync('supabase/seed.sql', 'utf-8');
+
+  const okRes = checkSeedParity(demoSeed, seedSql);
+  assert.equal(okRes.ok, true);
+  assert.deepEqual(okRes.diffs, []);
+  assert.equal(okRes.counts.staff, 2);
+  assert.equal(okRes.counts.services, 6);
+  assert.equal(okRes.counts.coupons, 2);
+
+  const driftedSql = seedSql
+    .replace("'GIFT500'", "'GIFT999'")
+    .replace('38000', '39000');
+  const driftRes = checkSeedParity(demoSeed, driftedSql);
+  assert.equal(driftRes.ok, false);
+  assert.ok(driftRes.diffs.some((d) => d.includes('GIFT500')));
+  assert.ok(driftRes.diffs.some((d) => d.includes('manicura-rusa-gelish')));
 });

@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { readClientSessionToken } from '@/lib/auth/client-session';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {
-  getBookingByToken,
-  getNextQuickSlots,
-  getSnapshot,
+  getRepository,
   PolicyError,
-  queryAvailability,
 } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
@@ -13,9 +11,6 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const db = getSnapshot();
-    const serviceId = searchParams.get('serviceId') || db.services[0]?.id;
-    const staffId = searchParams.get('staffId') || null;
     const mode = searchParams.get('mode') || 'range';
 
     if (mode === 'diagnose') {
@@ -29,25 +24,43 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Modo de consulta inválido' }, { status: 400 });
     }
 
+    const repo = getRepository();
+    const rawServiceId = searchParams.get('serviceId')?.trim();
+    const rawStartDate = searchParams.get('startDate')?.trim();
+    const bootstrap =
+      !rawServiceId || (mode === 'range' && !rawStartDate)
+        ? await repo.getPublicBootstrap()
+        : null;
+    const serviceId = rawServiceId || bootstrap?.services[0]?.id;
+    const staffId = searchParams.get('staffId') || null;
+
     if (!serviceId) {
       return NextResponse.json({ error: 'serviceId es requerido' }, { status: 400 });
     }
 
     if (mode === 'quick') {
-      return NextResponse.json({ slots: getNextQuickSlots(serviceId, staffId) });
+      return NextResponse.json({
+        slots: await repo.getNextQuickSlots(serviceId, staffId),
+      });
     }
 
     const addonIdsParam = searchParams.get('addonIds') || '';
     const addonIds = addonIdsParam ? addonIdsParam.split(',').filter(Boolean) : [];
     const startDate =
-      searchParams.get('startDate') ||
-      getDateKeyInTimezone(new Date(), db.settings.timezone);
+      rawStartDate ||
+      getDateKeyInTimezone(
+        new Date(),
+        bootstrap?.settings.timezone || 'America/Mexico_City',
+      );
     const days = Number(searchParams.get('days') || '35');
-    const sessionToken = searchParams.get('sessionToken');
+    const cookieSessionToken = await readClientSessionToken(request);
+    const sessionToken = cookieSessionToken ?? searchParams.get('sessionToken');
     const manageToken = searchParams.get('manageToken')?.trim();
-    const resolvedBooking = manageToken ? getBookingByToken(manageToken) : null;
+    const resolvedBooking = manageToken
+      ? await repo.getBookingByToken(manageToken)
+      : null;
 
-    const data = queryAvailability({
+    const data = await repo.queryAvailability({
       serviceId,
       addonIds,
       staffId,

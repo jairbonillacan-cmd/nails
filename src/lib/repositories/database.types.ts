@@ -1,0 +1,735 @@
+type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
+type TableRelationship = {
+  foreignKeyName: string;
+  columns: string[];
+  isOneToOne?: boolean;
+  referencedRelation: string;
+  referencedColumns: string[];
+};
+
+export interface Database {
+  public: {
+    Tables: {
+      salon_settings: {
+        Row: {
+          id: string;
+          name: string;
+          tagline: string;
+          description: string;
+          logo_url: string | null;
+          cover_image_url: string | null;
+          address: string;
+          maps_url: string;
+          instagram_handle: string;
+          whatsapp_number: string;
+          contact_email: string;
+          timezone: string;
+          brand_accent_light: string;
+          brand_accent_dark: string;
+          default_public_mode: 'light' | 'dark' | 'system';
+          default_admin_mode: 'light' | 'dark' | 'system';
+          corner_style: 'sharp' | 'soft' | 'rounded' | 'pill';
+          default_booking_layout: 'month' | 'week' | 'column';
+          enabled_booking_layouts: string[];
+          lock_timezone: boolean;
+          slot_interval_minutes: number;
+          enable_slot_hold: boolean;
+          slot_hold_minutes: number;
+          min_booking_notice_minutes: number;
+          max_booking_days_ahead: number;
+          min_cancel_hours: number;
+          min_reschedule_hours: number;
+          cancellation_policy_text: string;
+          booking_instructions_text: string;
+          payment_mode: 'none' | 'manual_transfer' | 'stripe' | 'mercadopago';
+          deposit_bank_name: string | null;
+          deposit_account_holder: string | null;
+          deposit_clabe: string | null;
+          deposit_instructions: string | null;
+          currency: string;
+          landing_content: Json;
+          whatsapp_booking_enabled: boolean;
+          sms_reminders_enabled: boolean;
+          meta_pixel_id: string | null;
+          ga4_measurement_id: string | null;
+          google_review_url: string | null;
+          default_commission_percent: number;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['salon_settings']['Row']>;
+        Update: Partial<Database['public']['Tables']['salon_settings']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      staff_members: {
+        Row: {
+          id: string;
+          name: string;
+          role_title: string;
+          bio: string;
+          avatar_url: string | null;
+          booking_slug: string;
+          commission_percent: number;
+          is_active: boolean;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<
+          Database['public']['Tables']['staff_members']['Row'],
+          'id' | 'role_title' | 'bio' | 'commission_percent' | 'is_active' | 'display_order' | 'created_at' | 'updated_at'
+        > &
+          Partial<Database['public']['Tables']['staff_members']['Row']>;
+        Update: Partial<Database['public']['Tables']['staff_members']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      admin_users: {
+        Row: {
+          id: string;
+          auth_user_id: string | null;
+          email: string;
+          full_name: string;
+          role: 'owner' | 'admin' | 'specialist';
+          staff_member_id: string | null;
+          is_active: boolean;
+          invited_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['admin_users']['Row'],
+          'email' | 'full_name' | 'role'
+        > &
+          Partial<Database['public']['Tables']['admin_users']['Row']>;
+        Update: Partial<Database['public']['Tables']['admin_users']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      service_categories: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          display_order: number;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['service_categories']['Row'],
+          'name' | 'slug'
+        > &
+          Partial<Database['public']['Tables']['service_categories']['Row']>;
+        Update: Partial<Database['public']['Tables']['service_categories']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      services: {
+        Row: {
+          id: string;
+          category_id: string | null;
+          name: string;
+          slug: string;
+          description: string;
+          duration_minutes: number;
+          price_cents: number;
+          buffer_before_minutes: number;
+          buffer_after_minutes: number;
+          requires_confirmation: boolean;
+          deposit_required: boolean;
+          deposit_amount_cents: number;
+          allow_inspo_photo: boolean;
+          is_active: boolean;
+          is_featured: boolean;
+          display_order: number;
+          image_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['services']['Row'],
+          'name' | 'slug' | 'duration_minutes' | 'price_cents'
+        > &
+          Partial<Database['public']['Tables']['services']['Row']>;
+        Update: Partial<Database['public']['Tables']['services']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      service_addons: {
+        Row: {
+          id: string;
+          name: string;
+          description: string;
+          extra_minutes: number;
+          extra_price_cents: number;
+          applies_to_all: boolean;
+          service_ids: string[];
+          is_active: boolean;
+          display_order: number;
+        };
+        Insert: Pick<Database['public']['Tables']['service_addons']['Row'], 'name'> &
+          Partial<Database['public']['Tables']['service_addons']['Row']>;
+        Update: Partial<Database['public']['Tables']['service_addons']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      staff_services: {
+        Row: {
+          staff_id: string;
+          service_id: string;
+          custom_duration_minutes: number | null;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['staff_services']['Row'],
+          'staff_id' | 'service_id'
+        > &
+          Partial<Database['public']['Tables']['staff_services']['Row']>;
+        Update: Partial<Database['public']['Tables']['staff_services']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      availability_schedules: {
+        Row: {
+          id: string;
+          staff_id: string;
+          name: string;
+          timezone: string;
+          is_default: boolean;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['availability_schedules']['Row'],
+          'staff_id'
+        > &
+          Partial<Database['public']['Tables']['availability_schedules']['Row']>;
+        Update: Partial<Database['public']['Tables']['availability_schedules']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      availability_rules: {
+        Row: {
+          id: string;
+          schedule_id: string;
+          day_of_week: number;
+          start_time: string;
+          end_time: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['availability_rules']['Row'],
+          'schedule_id' | 'day_of_week' | 'start_time' | 'end_time'
+        > &
+          Partial<Database['public']['Tables']['availability_rules']['Row']>;
+        Update: Partial<Database['public']['Tables']['availability_rules']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      date_overrides: {
+        Row: {
+          id: string;
+          staff_id: string;
+          override_date: string;
+          is_unavailable: boolean;
+          start_time: string | null;
+          end_time: string | null;
+          reason: string;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['date_overrides']['Row'],
+          'staff_id' | 'override_date'
+        > &
+          Partial<Database['public']['Tables']['date_overrides']['Row']>;
+        Update: Partial<Database['public']['Tables']['date_overrides']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      calendar_connections: {
+        Row: {
+          id: string;
+          staff_id: string;
+          provider: 'google';
+          account_email: string;
+          access_token_encrypted: string | null;
+          refresh_token_encrypted: string | null;
+          token_expires_at: string | null;
+          destination_calendar_id: string;
+          conflict_calendar_ids: string[];
+          available_calendars: Json;
+          external_busy_blocks: Json;
+          watch_channel_id: string | null;
+          watch_resource_id: string | null;
+          watch_expiration: string | null;
+          is_connected: boolean;
+          last_synced_at: string | null;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['calendar_connections']['Row'],
+          'staff_id' | 'account_email'
+        > &
+          Partial<Database['public']['Tables']['calendar_connections']['Row']>;
+        Update: Partial<Database['public']['Tables']['calendar_connections']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      clients: {
+        Row: {
+          id: string;
+          full_name: string;
+          phone_e164: string;
+          email: string | null;
+          birthday: string | null;
+          notes: string;
+          no_show_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['clients']['Row'],
+          'full_name' | 'phone_e164'
+        > &
+          Partial<Database['public']['Tables']['clients']['Row']>;
+        Update: Partial<Database['public']['Tables']['clients']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      slot_holds: {
+        Row: {
+          id: string;
+          staff_id: string;
+          service_id: string;
+          session_token: string;
+          start_at: string;
+          end_at: string;
+          held_range: string;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['slot_holds']['Row'],
+          'staff_id' | 'service_id' | 'session_token' | 'start_at' | 'end_at' | 'held_range' | 'expires_at'
+        > &
+          Partial<Database['public']['Tables']['slot_holds']['Row']>;
+        Update: Partial<Database['public']['Tables']['slot_holds']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      bookings: {
+        Row: {
+          id: string;
+          booking_code: string;
+          manage_token: string;
+          idempotency_key: string | null;
+          service_id: string;
+          staff_id: string;
+          client_id: string;
+          start_at: string;
+          end_at: string;
+          occupied_start_at: string;
+          occupied_end_at: string;
+          occupied_range: string;
+          total_duration_minutes: number;
+          subtotal_cents: number;
+          discount_cents: number;
+          total_price_cents: number;
+          deposit_amount_cents: number;
+          coupon_code: string | null;
+          status:
+            | 'pending_payment'
+            | 'pending_confirmation'
+            | 'confirmed'
+            | 'completed'
+            | 'canceled'
+            | 'no_show';
+          source: 'web' | 'whatsapp' | 'manual' | 'walk_in';
+          client_notes: string;
+          internal_notes: string;
+          inspo_photo_url: string | null;
+          payment_proof_url: string | null;
+          google_event_id: string | null;
+          cancellation_reason: string | null;
+          rescheduled_from_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['bookings']['Row'],
+          | 'booking_code'
+          | 'manage_token'
+          | 'service_id'
+          | 'staff_id'
+          | 'client_id'
+          | 'start_at'
+          | 'end_at'
+          | 'occupied_start_at'
+          | 'occupied_end_at'
+          | 'occupied_range'
+          | 'total_duration_minutes'
+          | 'total_price_cents'
+        > &
+          Partial<Database['public']['Tables']['bookings']['Row']>;
+        Update: Partial<Database['public']['Tables']['bookings']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      booking_addons: {
+        Row: {
+          id: string;
+          booking_id: string;
+          addon_id: string | null;
+          name_snapshot: string;
+          extra_minutes: number;
+          extra_price_cents: number;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['booking_addons']['Row'],
+          'booking_id' | 'name_snapshot'
+        > &
+          Partial<Database['public']['Tables']['booking_addons']['Row']>;
+        Update: Partial<Database['public']['Tables']['booking_addons']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      booking_payments: {
+        Row: {
+          id: string;
+          booking_id: string;
+          provider: 'manual_transfer' | 'stripe' | 'mercadopago';
+          provider_payment_id: string | null;
+          amount_cents: number;
+          currency: string;
+          status: 'pending' | 'paid' | 'refunded' | 'failed';
+          proof_url: string | null;
+          paid_at: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['booking_payments']['Row'],
+          'booking_id' | 'provider' | 'amount_cents'
+        > &
+          Partial<Database['public']['Tables']['booking_payments']['Row']>;
+        Update: Partial<Database['public']['Tables']['booking_payments']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      notification_workflows: {
+        Row: {
+          id: string;
+          name: string;
+          trigger_event:
+            | 'booking_created'
+            | 'booking_confirmed'
+            | 'booking_canceled'
+            | 'booking_rescheduled'
+            | 'before_booking'
+            | 'after_booking';
+          offset_minutes: number;
+          channels: string[];
+          is_enabled: boolean;
+          subject_template: string;
+          message_template: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['notification_workflows']['Row'],
+          'name' | 'trigger_event'
+        > &
+          Partial<Database['public']['Tables']['notification_workflows']['Row']>;
+        Update: Partial<Database['public']['Tables']['notification_workflows']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      scheduled_notifications: {
+        Row: {
+          id: string;
+          booking_id: string;
+          workflow_id: string | null;
+          channel: 'email' | 'whatsapp' | 'sms';
+          recipient: string;
+          scheduled_for: string;
+          status: 'pending' | 'sent' | 'failed' | 'canceled';
+          subject: string;
+          preview_text: string;
+          payload: Json;
+          provider_message_id: string | null;
+          error_message: string | null;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['scheduled_notifications']['Row'],
+          'booking_id' | 'channel' | 'recipient' | 'scheduled_for'
+        > &
+          Partial<Database['public']['Tables']['scheduled_notifications']['Row']>;
+        Update: Partial<Database['public']['Tables']['scheduled_notifications']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      whatsapp_sessions: {
+        Row: {
+          phone_e164: string;
+          step: string;
+          payload: Json;
+          updated_at: string;
+          expires_at: string;
+        };
+        Insert: Pick<Database['public']['Tables']['whatsapp_sessions']['Row'], 'phone_e164'> &
+          Partial<Database['public']['Tables']['whatsapp_sessions']['Row']>;
+        Update: Partial<Database['public']['Tables']['whatsapp_sessions']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      gallery_items: {
+        Row: {
+          id: string;
+          title: string;
+          caption: string;
+          category: string;
+          image_url: string;
+          service_id: string | null;
+          is_featured: boolean;
+          display_order: number;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['gallery_items']['Row'],
+          'title' | 'image_url'
+        > &
+          Partial<Database['public']['Tables']['gallery_items']['Row']>;
+        Update: Partial<Database['public']['Tables']['gallery_items']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      coupons: {
+        Row: {
+          id: string;
+          code: string;
+          kind: 'coupon' | 'gift_card';
+          discount_type: 'percent' | 'fixed_cents';
+          discount_value: number;
+          remaining_balance_cents: number | null;
+          max_uses: number | null;
+          used_count: number;
+          min_subtotal_cents: number;
+          expires_at: string | null;
+          recipient_name: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['coupons']['Row'],
+          'code' | 'discount_type' | 'discount_value'
+        > &
+          Partial<Database['public']['Tables']['coupons']['Row']>;
+        Update: Partial<Database['public']['Tables']['coupons']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      coupon_redemptions: {
+        Row: {
+          id: string;
+          coupon_id: string;
+          booking_id: string;
+          client_id: string;
+          amount_cents: number;
+          status: 'active' | 'released';
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['coupon_redemptions']['Row'],
+          'coupon_id' | 'booking_id' | 'client_id' | 'amount_cents'
+        > &
+          Partial<Database['public']['Tables']['coupon_redemptions']['Row']>;
+        Update: Partial<Database['public']['Tables']['coupon_redemptions']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      waitlist_entries: {
+        Row: {
+          id: string;
+          service_id: string;
+          preferred_staff_id: string | null;
+          desired_date: string;
+          preferred_window: 'morning' | 'afternoon' | 'any';
+          client_name: string;
+          client_phone_e164: string;
+          client_email: string | null;
+          notes: string;
+          status: 'waiting' | 'notified' | 'booked' | 'expired';
+          notified_at: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['waitlist_entries']['Row'],
+          'service_id' | 'desired_date' | 'client_name' | 'client_phone_e164'
+        > &
+          Partial<Database['public']['Tables']['waitlist_entries']['Row']>;
+        Update: Partial<Database['public']['Tables']['waitlist_entries']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      booking_reviews: {
+        Row: {
+          id: string;
+          booking_id: string;
+          client_id: string | null;
+          staff_id: string | null;
+          rating: number;
+          comment: string;
+          clicked_google_review: boolean;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['booking_reviews']['Row'],
+          'booking_id' | 'rating'
+        > &
+          Partial<Database['public']['Tables']['booking_reviews']['Row']>;
+        Update: Partial<Database['public']['Tables']['booking_reviews']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      inventory_items: {
+        Row: {
+          id: string;
+          sku: string | null;
+          name: string;
+          category: 'Insumo' | 'Gel / Esmalte' | 'Acrílico' | 'Decoración' | 'Reventa';
+          unit: string;
+          stock_quantity: number;
+          min_stock_alert: number;
+          cost_cents: number;
+          retail_price_cents: number;
+          is_for_retail: boolean;
+          is_active: boolean;
+          updated_at: string;
+        };
+        Insert: Pick<Database['public']['Tables']['inventory_items']['Row'], 'name'> &
+          Partial<Database['public']['Tables']['inventory_items']['Row']>;
+        Update: Partial<Database['public']['Tables']['inventory_items']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      inventory_movements: {
+        Row: {
+          id: string;
+          item_id: string;
+          delta: number;
+          reason: 'restock' | 'service_usage' | 'retail_sale' | 'adjustment';
+          notes: string;
+          booking_id: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['inventory_movements']['Row'],
+          'item_id' | 'delta' | 'reason'
+        > &
+          Partial<Database['public']['Tables']['inventory_movements']['Row']>;
+        Update: Partial<Database['public']['Tables']['inventory_movements']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      cash_register_entries: {
+        Row: {
+          id: string;
+          booking_id: string | null;
+          staff_id: string | null;
+          entry_type:
+            | 'service_income'
+            | 'product_sale'
+            | 'deposit'
+            | 'expense'
+            | 'gift_card_sale';
+          description: string;
+          amount_cents: number;
+          tip_cents: number;
+          commission_cents: number;
+          payment_method: 'cash' | 'transfer' | 'card' | 'gift_card';
+          occurred_at: string;
+          recorded_by: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['cash_register_entries']['Row'],
+          'entry_type' | 'description' | 'amount_cents' | 'payment_method'
+        > &
+          Partial<Database['public']['Tables']['cash_register_entries']['Row']>;
+        Update: Partial<Database['public']['Tables']['cash_register_entries']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      public_busy_intervals: {
+        Row: {
+          id: string;
+          source_kind: 'booking' | 'slot_hold';
+          source_id: string;
+          staff_id: string;
+          occupied_range: string;
+          slot_date: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['public_busy_intervals']['Row'],
+          'source_kind' | 'source_id' | 'staff_id' | 'occupied_range' | 'slot_date'
+        > &
+          Partial<Database['public']['Tables']['public_busy_intervals']['Row']>;
+        Update: Partial<Database['public']['Tables']['public_busy_intervals']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      outbox_events: {
+        Row: {
+          id: string;
+          event_type: string;
+          payload: Json;
+          status: 'pending' | 'processing' | 'processed' | 'failed';
+          attempts: number;
+          available_at: string;
+          processed_at: string | null;
+          last_error: string | null;
+          created_at: string;
+        };
+        Insert: Pick<Database['public']['Tables']['outbox_events']['Row'], 'event_type'> &
+          Partial<Database['public']['Tables']['outbox_events']['Row']>;
+        Update: Partial<Database['public']['Tables']['outbox_events']['Row']>;
+        Relationships: TableRelationship[];
+      };
+    };
+    Views: {
+      public_busy_overrides: {
+        Row: {
+          id: string;
+          staff_id: string;
+          override_date: string;
+          is_unavailable: boolean;
+          start_time: string | null;
+          end_time: string | null;
+        };
+        Relationships: TableRelationship[];
+      };
+    };
+    Functions: {
+      create_booking_atomic: {
+        Args: {
+          p_booking_code: string;
+          p_manage_token: string;
+          p_idempotency_key: string | null;
+          p_service_id: string;
+          p_staff_id: string;
+          p_client_id: string;
+          p_start_at: string;
+          p_end_at: string;
+          p_occupied_start_at: string;
+          p_occupied_end_at: string;
+          p_total_duration_minutes: number;
+          p_subtotal_cents: number;
+          p_discount_cents: number;
+          p_total_price_cents: number;
+          p_deposit_amount_cents: number;
+          p_coupon_code: string | null;
+          p_coupon_id: string | null;
+          p_status: string;
+          p_source: string;
+          p_client_notes: string;
+          p_inspo_photo_url: string | null;
+          p_payment_proof_url: string | null;
+          p_hold_id: string | null;
+          p_session_token: string | null;
+          p_addons?: Json;
+        };
+        Returns: string;
+      };
+      current_admin_role: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      current_admin_staff_id: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      purge_expired_slot_holds: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+    };
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
+}

@@ -2,6 +2,11 @@ import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { getSnapshot } from '../repositories/db';
+import {
+  createSupabaseAdminClient,
+  createSupabaseServerClient,
+  isSupabaseEnabled,
+} from '../repositories/supabase-client';
 import type { AdminRole, AdminUser } from '../types';
 
 export const ADMIN_SESSION_COOKIE = 'nails_admin_session';
@@ -30,6 +35,16 @@ const googleOAuthStatePayloadSchema = z.object({
   adminId: z.string().min(1),
   nonce: z.string().min(16),
   exp: z.number().int().positive(),
+});
+
+const supabaseAdminUserRowSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().email(),
+  full_name: z.string(),
+  role: z.enum(['owner', 'admin', 'specialist']),
+  staff_member_id: z.string().nullable(),
+  is_active: z.boolean(),
+  created_at: z.string(),
 });
 
 export interface AdminSession {
@@ -269,9 +284,63 @@ export function consumeGoogleOAuthNonce(
   return true;
 }
 
+export async function findActiveSupabaseAdminByAuthUserId(
+  authUserId: string,
+): Promise<AdminUser | null> {
+  try {
+    const adminClient = createSupabaseAdminClient();
+    const { data, error } = await adminClient
+      .from('admin_users')
+      .select('id, email, full_name, role, staff_member_id, is_active, created_at')
+      .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const parsed = supabaseAdminUserRowSchema.safeParse(data);
+    if (!parsed.success || !parsed.data.is_active) {
+      return null;
+    }
+
+    return {
+      id: parsed.data.id,
+      email: parsed.data.email,
+      fullName: parsed.data.full_name,
+      role: parsed.data.role,
+      staffMemberId: parsed.data.staff_member_id,
+      isActive: parsed.data.is_active,
+      createdAt: parsed.data.created_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getAdminSession(
   request?: Request,
 ): Promise<AdminSession | null> {
+  if (isSupabaseEnabled()) {
+    try {
+      const supabase = await createSupabaseServerClient(
+        request ? { request } : undefined,
+      );
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        return null;
+      }
+      const adminUser = await findActiveSupabaseAdminByAuthUserId(data.user.id);
+      if (!adminUser) {
+        return null;
+      }
+      return { user: adminUser, isDemo: false };
+    } catch {
+      return null;
+    }
+  }
+
   const token = await readCookieValue(ADMIN_SESSION_COOKIE, request);
   if (!token) {
     return null;

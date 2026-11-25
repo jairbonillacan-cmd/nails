@@ -18,17 +18,43 @@ import {
   type BookingTransitionEffect,
 } from '../booking/state-machine';
 import { checkManagePolicyWindow } from '../availability/policy';
+import {
+  generateBookingCode,
+  generateId,
+  systemClock,
+  type Clock,
+} from '../clock';
+import { assertProductionEnvValid } from '../env';
 import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
+import {
+  toPublicServiceDTO,
+  toPublicSettingsDTO,
+  toPublicStaffDTO,
+} from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
-import { syncBookingToGoogleCalendar } from '../integrations/google-calendar';
-import { buildAndSendImmediateNotifications } from '../integrations/notifications';
+import { MediaValidationError, storeMediaUpload } from '../storage/media';
+import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
+import { parseDemoDatabase } from './schema';
+import { isSupabaseEnabled } from './supabase-client';
+import { createSupabaseRepository } from './supabase-repo';
+import {
+  PolicyError,
+  SlotConflictError,
+  type CreateBookingAtomicInput,
+  type CreateSlotHoldInput,
+  type OutboxEventRecord,
+  type PublicBootstrapData,
+  type SalonRepository,
+  type SlotHoldResult,
+} from './port';
+
+export { PolicyError, SlotConflictError };
 import type {
   AdminRole,
   AdminUser,
   AvailabilityRule,
   Booking,
   BookingReview,
-  BookingSource,
   BookingStatus,
   BookingWithRelations,
   CalendarConnection,
@@ -81,29 +107,7 @@ declare global {
   var nailsDbCache: DemoDatabase | undefined;
   var nailsDbCachePath: string | undefined;
   var nailsWriteMutex: Promise<void> | undefined;
-}
-
-export class SlotConflictError extends Error {
-  readonly code = 'SLOT_TAKEN';
-  readonly suggestedSlots: AvailableSlot[];
-
-  constructor(message: string, suggestedSlots: AvailableSlot[]) {
-    super(message);
-    this.name = 'SlotConflictError';
-    this.suggestedSlots = suggestedSlots;
-  }
-}
-
-export class PolicyError extends Error {
-  readonly code: string;
-  readonly suggestedSlots?: AvailableSlot[];
-
-  constructor(code: string, message: string, suggestedSlots?: AvailableSlot[]) {
-    super(message);
-    this.name = 'PolicyError';
-    this.code = code;
-    this.suggestedSlots = suggestedSlots;
-  }
+  var nailsDemoOutbox: OutboxEventRecord[] | undefined;
 }
 
 function readDbFromDisk(): DemoDatabase {
@@ -115,12 +119,10 @@ function readDbFromDisk(): DemoDatabase {
   try {
     const raw = readRawDemoDb(testDbPath);
     if (raw !== null) {
-      const parsed = JSON.parse(raw) as DemoDatabase;
-      if (parsed && parsed.settings && Array.isArray(parsed.services)) {
-        globalThis.nailsDbCache = parsed;
-        globalThis.nailsDbCachePath = cacheKey;
-        return parsed;
-      }
+      const parsed = parseDemoDatabase(JSON.parse(raw) as unknown);
+      globalThis.nailsDbCache = parsed;
+      globalThis.nailsDbCachePath = cacheKey;
+      return parsed;
     }
   } catch {
     globalThis.nailsDbCache = undefined;
@@ -479,7 +481,7 @@ function resolveBookableSlotOrThrow(params: {
   );
 }
 
-async function executeBookingTransitionEffects(
+function applyInLockTransitionEffects(
   db: DemoDatabase,
   booking: Booking,
   hydrated: BookingWithRelations,
@@ -489,18 +491,30 @@ async function executeBookingTransitionEffects(
     tipCents?: number;
     recordedBy?: string;
   },
-): Promise<void> {
+): OutboxEventInput[] {
+  const outboxEvents: OutboxEventInput[] = [];
+  const bookingId = booking.id;
+
   for (const effect of effects) {
     if (effect.type === 'SyncCalendar') {
       const conn = db.calendarConnections.find((c) => c.staffId === effect.staffId);
-      const gcalRes = await syncBookingToGoogleCalendar({
+      const settingsSnapshot = { ...db.settings };
+      outboxEvents.push({
+        type: 'SyncCalendar',
         booking: hydrated,
-        connection: conn,
-        settings: db.settings,
+        connection: conn ? { ...conn } : undefined,
+        settings: settingsSnapshot,
         action: effect.action,
+        onSynced: async (googleEventId) => {
+          hydrated.googleEventId = googleEventId;
+          await withWriteLock((liveDb) => {
+            const target = liveDb.bookings.find((b) => b.id === bookingId);
+            if (target) {
+              target.googleEventId = googleEventId;
+            }
+          });
+        },
       });
-      booking.googleEventId = gcalRes.googleEventId;
-      hydrated.googleEventId = gcalRes.googleEventId;
     } else if (effect.type === 'Notify') {
       if (effect.cancelPending) {
         for (const n of db.notifications) {
@@ -509,13 +523,20 @@ async function executeBookingTransitionEffects(
           }
         }
       }
-      const logs = await buildAndSendImmediateNotifications({
+      const workflowsSnapshot = [...db.workflows];
+      const settingsSnapshot = { ...db.settings };
+      outboxEvents.push({
+        type: 'Notify',
         booking: hydrated,
-        workflows: db.workflows,
-        settings: db.settings,
+        workflows: workflowsSnapshot,
+        settings: settingsSnapshot,
         trigger: effect.trigger,
+        onLogs: async (logs) => {
+          await withWriteLock((liveDb) => {
+            liveDb.notifications.unshift(...logs);
+          });
+        },
       });
-      db.notifications.unshift(...logs);
     } else if (effect.type === 'RecordCash') {
       const alreadyRecorded = db.cashEntries.some((e) => e.bookingId === effect.bookingId);
       if (!alreadyRecorded) {
@@ -523,7 +544,7 @@ async function executeBookingTransitionEffects(
         const pct = staff?.commissionPercent ?? db.settings.defaultCommissionPercent;
         const commissionCents = Math.round((effect.amountCents * pct) / 100);
         db.cashEntries.unshift({
-          id: `cash-${crypto.randomUUID().slice(0, 8)}`,
+          id: generateId('cash'),
           bookingId: effect.bookingId,
           staffId: effect.staffId,
           entryType: 'service_income',
@@ -556,16 +577,56 @@ async function executeBookingTransitionEffects(
       }
     }
   }
+
+  return outboxEvents;
 }
 
-export async function createOrRefreshSlotHold(params: {
-  serviceId: string;
-  addonIds: string[];
-  staffId: string;
-  startAt: string;
-  sessionToken: string;
-}): Promise<SlotHold> {
-  return withWriteLock((db) => {
+async function dispatchPostCommitOutbox(
+  events: readonly OutboxEventInput[],
+): Promise<void> {
+  for (const event of events) {
+    await dispatchOutboxEvent(event);
+  }
+}
+
+export async function persistBookingMediaField(
+  value: string | null | undefined,
+  folder: 'inspo' | 'proofs',
+): Promise<string | null> {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase().startsWith('data:')) {
+    try {
+      const stored = await storeMediaUpload({ dataUrl: trimmed, folder });
+      if (isSupabaseEnabled()) {
+        return stored.signedUrl ?? stored.storagePath;
+      }
+      return `/api/media/${stored.storagePath}`;
+    } catch (err) {
+      if (err instanceof MediaValidationError) {
+        throw new PolicyError(err.code, err.message);
+      }
+      throw err;
+    }
+  }
+  if (
+    trimmed.startsWith('/api/media/') ||
+    trimmed.startsWith('/gallery/') ||
+    trimmed.startsWith('inspo/') ||
+    trimmed.startsWith('proofs/') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('demo-')
+  ) {
+    return trimmed;
+  }
+  throw new PolicyError('INVALID_MEDIA_URL', 'Referencia de imagen inválida.');
+}
+
+export async function createOrRefreshSlotHold(
+  params: CreateSlotHoldInput,
+): Promise<SlotHoldResult> {
+  const created = await withWriteLock((db) => {
     const service = db.services.find((s) => s.id === params.serviceId);
     if (!service || !service.isActive) {
       throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
@@ -588,7 +649,7 @@ export async function createOrRefreshSlotHold(params: {
 
     const holdMinutes = db.settings.slotHoldMinutes || 3;
     const hold: SlotHold = {
-      id: `hold-${crypto.randomUUID().slice(0, 8)}`,
+      id: generateId('hold'),
       staffId: slot.staffId,
       serviceId: params.serviceId,
       sessionToken: params.sessionToken,
@@ -598,49 +659,53 @@ export async function createOrRefreshSlotHold(params: {
       createdAt: now.toISOString(),
     };
     db.slotHolds.push(hold);
-    publishRealtimeEvent('slot_hold_updated', {
-      staffId: slot.staffId,
-      startAt: slot.startAt,
-    });
-    return hold;
+    return { hold: { ...hold, holdId: hold.id }, staffId: slot.staffId, startAt: slot.startAt };
   });
+
+  await dispatchOutboxEvent({
+    type: 'Realtime',
+    eventType: 'hold_changed',
+    payload: { staffId: created.staffId, startAt: created.startAt },
+  });
+  return created.hold;
 }
 
 export async function releaseSlotHold(sessionToken: string): Promise<void> {
-  await withWriteLock((db) => {
+  const released = await withWriteLock((db) => {
     const before = db.slotHolds.length;
     db.slotHolds = db.slotHolds.filter((h) => h.sessionToken !== sessionToken);
-    if (db.slotHolds.length !== before) {
-      publishRealtimeEvent('slot_hold_updated', { released: true });
-    }
+    return db.slotHolds.length !== before;
   });
+  if (released) {
+    await dispatchOutboxEvent({
+      type: 'Realtime',
+      eventType: 'hold_changed',
+    });
+  }
 }
 
-export async function createBookingAtomic(params: {
-  serviceId: string;
-  addonIds: string[];
-  staffId?: string | null;
-  startAt: string;
-  clientName: string;
-  clientPhone: string;
-  clientEmail?: string | null;
-  clientBirthday?: string | null;
-  clientNotes?: string;
-  inspoPhotoUrl?: string | null;
-  paymentProofUrl?: string | null;
-  couponCode?: string | null;
-  source?: BookingSource;
-  sessionToken?: string | null;
-  idempotencyKey?: string | null;
-  forceConfirmed?: boolean;
-}): Promise<BookingWithRelations> {
-  return withWriteLock(async (db) => {
+export async function createBookingAtomic(
+  params: CreateBookingAtomicInput,
+): Promise<BookingWithRelations> {
+  const storedInspoPhotoUrl = await persistBookingMediaField(
+    params.inspoPhotoUrl,
+    'inspo',
+  );
+  const storedPaymentProofUrl = await persistBookingMediaField(
+    params.paymentProofUrl,
+    'proofs',
+  );
+
+  const committed = await withWriteLock((db) => {
     if (params.idempotencyKey) {
       const existing = db.bookings.find(
         (b) => b.idempotencyKey === params.idempotencyKey,
       );
       if (existing) {
-        return hydrateBooking(db, existing);
+        return {
+          hydrated: hydrateBooking(db, existing),
+          outboxEvents: [] as OutboxEventInput[],
+        };
       }
     }
 
@@ -663,6 +728,36 @@ export async function createBookingAtomic(params: {
       conflictMessage:
         'Ese horario acaba de ser reservado hace unos segundos. Elige uno de los horarios más cercanos sin perder tus datos.',
     });
+
+    if (params.holdId) {
+      const matchingHold = db.slotHolds.find((h) => h.id === params.holdId);
+      const slotOccStartMs = new Date(slot.occupiedStartAt).getTime();
+      const slotOccEndMs = new Date(slot.occupiedEndAt).getTime();
+      const holdMatches =
+        Boolean(matchingHold) &&
+        Boolean(params.sessionToken) &&
+        matchingHold?.sessionToken === params.sessionToken &&
+        matchingHold?.staffId === chosenStaff.id &&
+        new Date(matchingHold.startAt).getTime() <= slotOccStartMs &&
+        new Date(matchingHold.endAt).getTime() >= slotOccEndMs;
+
+      if (!holdMatches) {
+        const ctx = buildAvailabilityContext(db, service, addons, {
+          now,
+          callerSessionToken: params.sessionToken ?? null,
+        });
+        const suggestions = findNearestAvailableSlots(
+          ctx,
+          params.startAt,
+          chosenStaff.id,
+          3,
+        );
+        throw new SlotConflictError(
+          'El apartado de este horario expiró o pertenece a otra sesión. Elige uno de los horarios disponibles.',
+          suggestions,
+        );
+      }
+    }
 
     const conn = db.calendarConnections.find(
       (c) => c.staffId === chosenStaff.id && c.isConnected,
@@ -688,7 +783,7 @@ export async function createBookingAtomic(params: {
     let client = db.clients.find((c) => c.phoneE164 === phoneE164);
     if (!client) {
       client = {
-        id: `cli-${crypto.randomUUID().slice(0, 8)}`,
+        id: generateId('cli'),
         fullName: params.clientName.trim(),
         phoneE164,
         email: params.clientEmail?.trim() || null,
@@ -712,11 +807,11 @@ export async function createBookingAtomic(params: {
         (service.depositRequired && db.settings.paymentMode === 'manual_transfer'));
 
     const status: BookingStatus = needsManualConfirm ? 'pending_confirmation' : 'confirmed';
-    const bookingCode = `NL-${Math.floor(1000 + Math.random() * 9000)}`;
+    const bookingCode = generateBookingCode();
     const manageToken = crypto.randomBytes(12).toString('hex');
 
     const booking: Booking = {
-      id: `bk-${crypto.randomUUID().slice(0, 8)}`,
+      id: generateId('bk'),
       bookingCode,
       manageToken,
       idempotencyKey: params.idempotencyKey || null,
@@ -737,8 +832,8 @@ export async function createBookingAtomic(params: {
       source: params.source ?? 'web',
       clientNotes: params.clientNotes?.trim() || '',
       internalNotes: '',
-      inspoPhotoUrl: params.inspoPhotoUrl || null,
-      paymentProofUrl: params.paymentProofUrl || null,
+      inspoPhotoUrl: storedInspoPhotoUrl,
+      paymentProofUrl: storedPaymentProofUrl,
       googleEventId: null,
       cancellationReason: null,
       rescheduledFromId: null,
@@ -754,38 +849,61 @@ export async function createBookingAtomic(params: {
 
     db.bookings.push(booking);
 
-    if (params.sessionToken) {
-      db.slotHolds = db.slotHolds.filter((h) => h.sessionToken !== params.sessionToken);
+    if (params.holdId || params.sessionToken) {
+      db.slotHolds = db.slotHolds.filter(
+        (h) =>
+          (params.holdId ? h.id !== params.holdId : true) &&
+          (params.sessionToken ? h.sessionToken !== params.sessionToken : true),
+      );
     }
 
     const hydrated = hydrateBooking(db, booking);
+    const bookingId = booking.id;
+    const settingsSnapshot = { ...db.settings };
+    const workflowsSnapshot = [...db.workflows];
 
-    const gcalRes = await syncBookingToGoogleCalendar({
-      booking: hydrated,
-      connection: conn,
-      settings: db.settings,
-      action: 'create',
-    });
-    booking.googleEventId = gcalRes.googleEventId;
-    hydrated.googleEventId = gcalRes.googleEventId;
+    const outboxEvents: OutboxEventInput[] = [
+      {
+        type: 'SyncCalendar',
+        booking: hydrated,
+        connection: conn ? { ...conn } : undefined,
+        settings: settingsSnapshot,
+        action: 'create',
+        onSynced: async (googleEventId) => {
+          hydrated.googleEventId = googleEventId;
+          await withWriteLock((liveDb) => {
+            const target = liveDb.bookings.find((b) => b.id === bookingId);
+            if (target) target.googleEventId = googleEventId;
+          });
+        },
+      },
+      {
+        type: 'Notify',
+        booking: hydrated,
+        workflows: workflowsSnapshot,
+        settings: settingsSnapshot,
+        trigger: 'booking_created',
+        onLogs: async (logs) => {
+          await withWriteLock((liveDb) => {
+            liveDb.notifications.unshift(...logs);
+          });
+        },
+      },
+      {
+        type: 'Realtime',
+        eventType: 'slot_changed',
+        payload: {
+          staffId: booking.staffId,
+          startAt: booking.startAt,
+        },
+      },
+    ];
 
-    const sentLogs = await buildAndSendImmediateNotifications({
-      booking: hydrated,
-      workflows: db.workflows,
-      settings: db.settings,
-      trigger: 'booking_created',
-    });
-    db.notifications.unshift(...sentLogs);
-
-    publishRealtimeEvent('booking_created', {
-      bookingId: booking.id,
-      staffId: booking.staffId,
-      startAt: booking.startAt,
-      source: booking.source,
-    });
-
-    return hydrated;
+    return { hydrated, outboxEvents };
   });
+
+  await dispatchPostCommitOutbox(committed.outboxEvents);
+  return committed.hydrated;
 }
 
 export async function updateBookingStatus(params: {
@@ -797,7 +915,7 @@ export async function updateBookingStatus(params: {
   tipCents?: number;
   recordedBy?: string;
 }): Promise<BookingWithRelations> {
-  return withWriteLock(async (db) => {
+  const committed = await withWriteLock((db) => {
     const booking = db.bookings.find((b) => b.id === params.bookingId);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
 
@@ -816,18 +934,28 @@ export async function updateBookingStatus(params: {
     booking.updatedAt = new Date().toISOString();
 
     const hydrated = hydrateBooking(db, booking);
-    await executeBookingTransitionEffects(db, booking, hydrated, transition.effects, {
-      paymentMethod: params.paymentMethod,
-      tipCents: params.tipCents,
-      recordedBy: params.recordedBy,
+    const outboxEvents = applyInLockTransitionEffects(
+      db,
+      booking,
+      hydrated,
+      transition.effects,
+      {
+        paymentMethod: params.paymentMethod,
+        tipCents: params.tipCents,
+        recordedBy: params.recordedBy,
+      },
+    );
+    outboxEvents.push({
+      type: 'Realtime',
+      eventType: 'slot_changed',
+      payload: { staffId: booking.staffId, startAt: booking.startAt },
     });
 
-    publishRealtimeEvent('booking_updated', {
-      bookingId: booking.id,
-      status: booking.status,
-    });
-    return hydrated;
+    return { hydrated, outboxEvents };
   });
+
+  await dispatchPostCommitOutbox(committed.outboxEvents);
+  return committed.hydrated;
 }
 
 export async function manageClientBookingAction(params: {
@@ -837,7 +965,7 @@ export async function manageClientBookingAction(params: {
   newStartAt?: string;
   newStaffId?: string;
 }): Promise<BookingWithRelations> {
-  return withWriteLock(async (db) => {
+  const committed = await withWriteLock((db) => {
     const booking = db.bookings.find((b) => b.manageToken === params.token);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
     if (isTerminalBookingStatus(booking.status)) {
@@ -868,11 +996,19 @@ export async function manageClientBookingAction(params: {
         params.reason || 'Cancelada por la clienta desde link personal';
       booking.updatedAt = new Date().toISOString();
       const hydrated = hydrateBooking(db, booking);
-      await executeBookingTransitionEffects(db, booking, hydrated, transition.effects, {
-        recordedBy: 'Clienta',
+      const outboxEvents = applyInLockTransitionEffects(
+        db,
+        booking,
+        hydrated,
+        transition.effects,
+        { recordedBy: 'Clienta' },
+      );
+      outboxEvents.push({
+        type: 'Realtime',
+        eventType: 'slot_changed',
+        payload: { staffId: booking.staffId, startAt: booking.startAt },
       });
-      publishRealtimeEvent('booking_updated', { bookingId: booking.id, status: 'canceled' });
-      return hydrated;
+      return { hydrated, outboxEvents };
     }
 
     if (!params.newStartAt) {
@@ -912,30 +1048,50 @@ export async function manageClientBookingAction(params: {
     }
 
     const hydrated = hydrateBooking(db, booking);
+    const bookingId = booking.id;
     const conn = db.calendarConnections.find((c) => c.staffId === booking.staffId);
-    const gcalRes = await syncBookingToGoogleCalendar({
-      booking: hydrated,
-      connection: conn,
-      settings: db.settings,
-      action: booking.googleEventId ? 'update' : 'create',
-    });
-    booking.googleEventId = gcalRes.googleEventId;
-    hydrated.googleEventId = gcalRes.googleEventId;
+    const settingsSnapshot = { ...db.settings };
+    const workflowsSnapshot = [...db.workflows];
 
-    const logs = await buildAndSendImmediateNotifications({
-      booking: hydrated,
-      workflows: db.workflows,
-      settings: db.settings,
-      trigger: 'booking_rescheduled',
-    });
-    db.notifications.unshift(...logs);
+    const outboxEvents: OutboxEventInput[] = [
+      {
+        type: 'SyncCalendar',
+        booking: hydrated,
+        connection: conn ? { ...conn } : undefined,
+        settings: settingsSnapshot,
+        action: booking.googleEventId ? 'update' : 'create',
+        onSynced: async (googleEventId) => {
+          hydrated.googleEventId = googleEventId;
+          await withWriteLock((liveDb) => {
+            const target = liveDb.bookings.find((b) => b.id === bookingId);
+            if (target) target.googleEventId = googleEventId;
+          });
+        },
+      },
+      {
+        type: 'Notify',
+        booking: hydrated,
+        workflows: workflowsSnapshot,
+        settings: settingsSnapshot,
+        trigger: 'booking_rescheduled',
+        onLogs: async (logs) => {
+          await withWriteLock((liveDb) => {
+            liveDb.notifications.unshift(...logs);
+          });
+        },
+      },
+      {
+        type: 'Realtime',
+        eventType: 'slot_changed',
+        payload: { staffId: booking.staffId, startAt: booking.startAt },
+      },
+    ];
 
-    publishRealtimeEvent('booking_updated', {
-      bookingId: booking.id,
-      rescheduled: true,
-    });
-    return hydrated;
+    return { hydrated, outboxEvents };
   });
+
+  await dispatchPostCommitOutbox(committed.outboxEvents);
+  return committed.hydrated;
 }
 
 export async function updateSalonSettings(
@@ -966,10 +1122,10 @@ export async function upsertService(
       return existing;
     }
     const created: Service = {
-      id: `srv-${crypto.randomUUID().slice(0, 8)}`,
+      id: generateId('srv'),
       categoryId: input.categoryId ?? db.categories[0]?.id ?? null,
       name: input.name,
-      slug: input.slug || `${slugify(input.name)}-${Math.floor(Math.random() * 90 + 10)}`,
+      slug: input.slug || `${slugify(input.name)}-${generateId().slice(0, 6)}`,
       description: input.description ?? '',
       durationMinutes: input.durationMinutes,
       priceCents: input.priceCents,
@@ -1431,7 +1587,7 @@ export async function processDueScheduledNotifications(
   });
 }
 
-export function getNextQuickSlots(serviceId: string, staffId?: string | null) {
+function getNextQuickSlots(serviceId: string, staffId?: string | null) {
   const db = getSnapshot();
   const service = db.services.find((s) => s.id === serviceId);
   if (!service) return [];
@@ -1476,4 +1632,143 @@ export function getNextQuickSlots(serviceId: string, staffId?: string | null) {
     }
   }
   return found;
+}
+
+function getDemoOutboxStore(): OutboxEventRecord[] {
+  if (!globalThis.nailsDemoOutbox) {
+    globalThis.nailsDemoOutbox = [];
+  }
+  return globalThis.nailsDemoOutbox;
+}
+
+function createDemoRepository(clock: Clock = systemClock): SalonRepository {
+  return {
+    async getSnapshot() {
+      return getSnapshot();
+    },
+    async getPublicBootstrap(): Promise<PublicBootstrapData> {
+      const db = getSnapshot();
+      const reviewsCount = db.reviews.length;
+      const average =
+        reviewsCount > 0
+          ? Number(
+              (
+                db.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewsCount
+              ).toFixed(1),
+            )
+          : 5.0;
+      return {
+        settings: toPublicSettingsDTO(db.settings),
+        categories: db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder),
+        services: db.services
+          .filter((s) => s.isActive)
+          .toSorted((a, b) => a.displayOrder - b.displayOrder)
+          .map(toPublicServiceDTO),
+        addons: db.addons
+          .filter((a) => a.isActive)
+          .toSorted((a, b) => a.displayOrder - b.displayOrder),
+        staff: db.staff
+          .filter((s) => s.isActive)
+          .toSorted((a, b) => a.displayOrder - b.displayOrder)
+          .map(toPublicStaffDTO),
+        gallery: db.gallery.toSorted((a, b) => a.displayOrder - b.displayOrder),
+        reviewsSummary: { count: reviewsCount, average },
+      };
+    },
+    async getBookingsWithRelations(role, staffMemberId) {
+      return getBookingsWithRelations(role, staffMemberId);
+    },
+    async getBookingByToken(token) {
+      return getBookingByToken(token);
+    },
+    async queryAvailability(params) {
+      return queryAvailability(params);
+    },
+    async getNextQuickSlots(serviceId, staffId) {
+      return getNextQuickSlots(serviceId, staffId);
+    },
+    async validateCouponCode(code, subtotalCents) {
+      return validateCouponCode(code, subtotalCents);
+    },
+    createOrRefreshSlotHold,
+    releaseSlotHold,
+    createBookingAtomic,
+    updateBookingStatus,
+    manageClientBookingAction,
+    processDueScheduledNotifications,
+    async enqueueOutboxEvent(eventType, payload, availableAt) {
+      const nowIso = clock.now().toISOString();
+      const record: OutboxEventRecord = {
+        id: generateId('outbox', clock),
+        eventType,
+        payload,
+        status: 'pending',
+        attempts: 0,
+        availableAt: availableAt ?? nowIso,
+        processedAt: null,
+        lastError: null,
+        createdAt: nowIso,
+      };
+      getDemoOutboxStore().push(record);
+      return record;
+    },
+    async dequeueOutboxEvents(limit = 20, nowMs = clock.nowMs()) {
+      const store = getDemoOutboxStore();
+      const claimed: OutboxEventRecord[] = [];
+      for (const item of store) {
+        if (claimed.length >= limit) break;
+        if (
+          item.status === 'pending' &&
+          new Date(item.availableAt).getTime() <= nowMs
+        ) {
+          item.status = 'processing';
+          item.attempts += 1;
+          claimed.push({ ...item });
+        }
+      }
+      return claimed;
+    },
+    async ackOutboxEvent(id) {
+      const found = getDemoOutboxStore().find((e) => e.id === id);
+      if (found) {
+        found.status = 'processed';
+        found.processedAt = clock.now().toISOString();
+      }
+    },
+    async failOutboxEvent(id, errorMessage, retryAfterMs = 60_000) {
+      const found = getDemoOutboxStore().find((e) => e.id === id);
+      if (found) {
+        found.status = found.attempts >= 5 ? 'failed' : 'pending';
+        found.lastError = errorMessage;
+        found.availableAt = new Date(clock.nowMs() + retryAfterMs).toISOString();
+      }
+    },
+    updateSalonSettings,
+    upsertService,
+    upsertAddon,
+    saveStaffSchedule,
+    addDateOverride,
+    deleteDateOverride,
+    upsertStaffMember,
+    upsertAdminUser,
+    updateClientNotes,
+    addWaitlistEntry,
+    updateWaitlistStatus,
+    submitBookingReview,
+    upsertCoupon,
+    adjustInventoryItem,
+    addCashEntry,
+    updateWorkflow,
+    updateCalendarConnection,
+    upsertGalleryItem,
+    deleteGalleryItem,
+  };
+}
+
+export function getRepository(clock: Clock = systemClock): SalonRepository {
+  assertProductionEnvValid();
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository(clock);
+  }
+  return createDemoRepository(clock);
 }

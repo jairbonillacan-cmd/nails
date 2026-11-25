@@ -22,6 +22,7 @@ const PURE_DOMAIN_FILES = new Set([
   'src/lib/ics.ts',
   'src/lib/public-dto.ts',
   'src/lib/sanitize.ts',
+  'src/lib/clock.ts',
 ]);
 
 const PUBLIC_UI_DTO_BOUNDARY_FILES = new Set([
@@ -265,6 +266,12 @@ function getPropertyNameText(nameNode) {
   if (ts.isStringLiteral(nameNode) || ts.isNoSubstitutionTemplateLiteral(nameNode)) {
     return nameNode.text;
   }
+  return null;
+}
+
+function getEntityNameRightmostText(typeName) {
+  if (ts.isIdentifier(typeName)) return typeName.text;
+  if (ts.isQualifiedName(typeName)) return typeName.right.text;
   return null;
 }
 
@@ -1092,6 +1099,8 @@ export function checkSourceText(rawRel, text) {
   const checkAstryx = productUi && !ASTRYX_BOUNDARY_EXEMPT.has(rel);
   const pureDomain = isPureDomainFile(rel);
   const inComponents = rel.startsWith('src/components/');
+  const inLib = rel.startsWith('src/lib/');
+  const isClockFile = rel === 'src/lib/clock.ts';
   const isPublicUiDtoBoundary = isPublicUiDtoBoundaryFile(rel);
   const isPublicBookingsRoute = rel === 'src/app/api/bookings/route.ts';
   const isNotificationsFile = rel === 'src/lib/integrations/notifications.ts';
@@ -1128,6 +1137,41 @@ export function checkSourceText(rawRel, text) {
         'no-type-escapes',
         'Doble cast prohibido ("as unknown as"). Usa tipos explícitos o type guards.',
       );
+    }
+
+    if (
+      (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) &&
+      ts.isTypeReferenceNode(node.type) &&
+      getEntityNameRightmostText(node.type.typeName) === 'DemoDatabase'
+    ) {
+      const { line, col } = getLineCol(sf, node.getStart(sf));
+      addViolation(
+        rel,
+        line,
+        col,
+        'no-unsafe-db-cast',
+        'Prohibido castear sin validar con "as DemoDatabase". Usa parseDemoDatabase(...) con Zod.',
+      );
+    }
+
+    if (inLib && !isClockFile && !testFile && ts.isCallExpression(node)) {
+      const method = getCalleeMethodName(node.expression);
+      if (
+        method === 'random' &&
+        (ts.isPropertyAccessExpression(node.expression) ||
+          ts.isElementAccessExpression(node.expression)) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === 'Math'
+      ) {
+        const { line, col } = getLineCol(sf, node.getStart(sf));
+        addViolation(
+          rel,
+          line,
+          col,
+          'no-direct-math-random',
+          'Prohibido usar Math.random() en src/lib/**. Usa crypto.randomUUID() o un Clock inyectado.',
+        );
+      }
     }
 
     if (!testFile) {

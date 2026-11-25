@@ -179,6 +179,72 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     await releaseSlotHold('sess-hold-owner');
   });
 
+  it('A7: enforces holdId + sessionToken ownership and range match on booking confirmation', async () => {
+    const db = getSnapshot();
+    const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+    const avail = queryAvailability({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: 'staff-camila',
+      startDate: today,
+      days: 14,
+    });
+    const slots = avail.days.flatMap((d) => d.slots);
+    const slotA = slots[0];
+    const slotB = slots[slots.length - 1];
+    if (!slotA || !slotB || slotA.startAt === slotB.startAt) {
+      throw new Error('Expected two distinct open slots');
+    }
+
+    const hold = await createOrRefreshSlotHold({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: slotA.staffId,
+      startAt: slotA.startAt,
+      sessionToken: 'sess-a7-owner',
+    });
+    expect(hold.holdId).toBe(hold.id);
+
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: slotA.staffId,
+        startAt: slotA.startAt,
+        clientName: 'Otra Sesion',
+        clientPhone: '+525511007701',
+        sessionToken: 'sess-a7-intruder',
+        holdId: hold.holdId,
+      }),
+    ).rejects.toBeInstanceOf(SlotConflictError);
+
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: slotB.staffId,
+        startAt: slotB.startAt,
+        clientName: 'Otro Horario',
+        clientPhone: '+525511007702',
+        sessionToken: 'sess-a7-owner',
+        holdId: hold.holdId,
+      }),
+    ).rejects.toBeInstanceOf(SlotConflictError);
+
+    const confirmed = await createBookingAtomic({
+      serviceId: 'srv-gelish-manicure',
+      addonIds: [],
+      staffId: slotA.staffId,
+      startAt: slotA.startAt,
+      clientName: 'Duena Hold',
+      clientPhone: '+525511007703',
+      sessionToken: 'sess-a7-owner',
+      holdId: hold.holdId,
+    });
+    expect(confirmed.bookingCode).toMatch(/^NL-[A-Z2-9]{6}$/);
+    expect(getSnapshot().slotHolds.some((h) => h.id === hold.holdId)).toBe(false);
+  });
+
   it('D1: rejects 3am, past, beyond-max-days, override-closed, and unaligned slots on booking, hold, and reschedule', async () => {
     const db = getSnapshot();
     const tz = db.settings.timezone;

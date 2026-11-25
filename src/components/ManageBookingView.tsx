@@ -30,7 +30,11 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { BookingWithRelations, SalonSettings } from '@/lib/types';
-import type { PublicSettingsDTO } from '@/lib/public-dto';
+import type {
+  PublicServiceDTO,
+  PublicSettingsDTO,
+  PublicStaffDTO,
+} from '@/lib/public-dto';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import {
   formatCurrency,
@@ -42,8 +46,13 @@ import {
 } from '@/lib/format';
 import { PublicShell } from './PublicShell';
 
+type PublicManageBooking = Omit<BookingWithRelations, 'staff' | 'service'> & {
+  staff: PublicStaffDTO;
+  service: PublicServiceDTO;
+};
+
 interface ManageBookingViewProps {
-  initialBooking: BookingWithRelations;
+  initialBooking: PublicManageBooking;
   settings: PublicSettingsDTO | SalonSettings;
   calendarLinks: {
     google: string;
@@ -72,7 +81,7 @@ export function ManageBookingView({
   calendarLinks,
   whatsappUrl,
 }: ManageBookingViewProps) {
-  const [booking, setBooking] = useState<BookingWithRelations>(initialBooking);
+  const [booking, setBooking] = useState<PublicManageBooking>(initialBooking);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 

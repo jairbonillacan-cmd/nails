@@ -31,6 +31,9 @@ import { GET as getAdminAvailability } from '@/app/api/admin/availability/route'
 import { GET as getPublicAvailability } from '@/app/api/availability/route';
 import { POST as postWhatsAppSimulate } from '@/app/api/admin/integrations/whatsapp-simulate/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
+import { POST as postSlotHold } from '@/app/api/slot-holds/route';
+import { GET as getMediaFile } from '@/app/api/media/[...path]/route';
+import { CLIENT_SESSION_COOKIE } from '@/lib/auth/client-session';
 import {
   GET as getWhatsAppWebhook,
   POST as postWhatsAppWebhook,
@@ -38,6 +41,14 @@ import {
 import { GET as getGoogleOAuth } from '@/app/api/integrations/google/route';
 import { GET as getGoogleOAuthCallback } from '@/app/api/integrations/google/callback/route';
 import { POST as postCronReminders } from '@/app/api/cron/reminders/route';
+import { GET as getManageBooking } from '@/app/api/bookings/manage/[token]/route';
+import { GET as getRealtimeStream } from '@/app/api/realtime/route';
+import {
+  publishRealtimeEvent,
+  subscribeRealtime,
+  type PublicRealtimeEvent,
+} from '@/lib/realtime';
+import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 
 const TEMP_DB_PATH = path.join(
   os.tmpdir(),
@@ -106,6 +117,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   resetIsolatedDb();
 });
@@ -1056,6 +1068,450 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(threeAmRes.status).toBe(400);
       const threeAmJson = (await threeAmRes.json()) as { code: string };
       expect(threeAmJson.code).toBe('OUTSIDE_HOURS');
+    });
+  });
+
+  describe('Phase 1 Wave 1: Non-PII realtime (S6), /cita/[token] DTO, and Supabase Auth (C1)', () => {
+    it('S6: strips all PII from realtime broadcasts and SSE events', async () => {
+      const received: PublicRealtimeEvent[] = [];
+      const unsubscribe = subscribeRealtime((evt) => {
+        received.push(evt);
+      });
+
+      const sseRes = await getRealtimeStream();
+      const reader = sseRes.body?.getReader();
+      if (!reader) throw new Error('Expected SSE reader');
+      const decoder = new TextDecoder();
+
+      try {
+        const firstChunk = await reader.read();
+        const firstText = decoder.decode(firstChunk.value);
+        expect(firstText).toContain('"type":"connected"');
+
+        const emitted = publishRealtimeEvent('booking_created', {
+          bookingId: 'bk-secret-999',
+          bookingCode: 'NL-9999',
+          clientName: 'Clienta Privada',
+          clientPhone: '+525500001234',
+          clientEmail: 'privada@ejemplo.mx',
+          staffId: 'staff-valeria',
+          startAt: '2026-12-01T16:00:00.000Z',
+        });
+
+        expect(emitted.type).toBe('slot_changed');
+        expect(emitted.staffId).toBe('staff-valeria');
+        expect(emitted.date).toBe('2026-12-01');
+        expect(Object.keys(emitted).sort()).toEqual(['date', 'staffId', 'timestamp', 'type']);
+
+        expect(received).toHaveLength(1);
+        const serialized = JSON.stringify(received[0]);
+        expect(serialized).not.toContain('bk-secret-999');
+        expect(serialized).not.toContain('NL-9999');
+        expect(serialized).not.toContain('Clienta Privada');
+        expect(serialized).not.toContain('+525500001234');
+        expect(serialized).not.toContain('privada@ejemplo.mx');
+
+        const nextChunk = await reader.read();
+        const nextText = decoder.decode(nextChunk.value);
+        expect(nextText).toContain('"type":"slot_changed"');
+        expect(nextText).not.toContain('Clienta Privada');
+        expect(nextText).not.toContain('NL-9999');
+      } finally {
+        unsubscribe();
+        await reader.cancel();
+      }
+    });
+
+    it('omits commissionPercent, defaultCommissionPercent, and internalNotes from /api/bookings/manage/[token]', async () => {
+      const res = await getManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-sofia-1042'),
+        { params: Promise.resolve({ token: 'demo-token-sofia-1042' }) },
+      );
+      expect(res.status).toBe(200);
+      const rawText = await res.text();
+      expect(rawText).not.toContain('commissionPercent');
+      expect(rawText).not.toContain('defaultCommissionPercent');
+      expect(rawText).not.toContain('Usar base milky #04.');
+      const parsed = JSON.parse(rawText) as {
+        booking: { staff: Record<string, unknown>; internalNotes: string };
+        settings: Record<string, unknown>;
+      };
+      expect('commissionPercent' in parsed.booking.staff).toBe(false);
+      expect('defaultCommissionPercent' in parsed.settings).toBe(false);
+      expect(parsed.booking.internalNotes).toBe('');
+    });
+
+    it('C1: authenticates against Supabase Auth + active admin_users and never trusts demo cookies when Supabase is enabled', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-c1');
+      const demoOwnerCookie = getOwnerCookieHeader();
+
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://mock-nails.supabase.co');
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', '');
+      vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
+      expect(isSupabaseEnabled()).toBe(false);
+
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'mock-anon-key');
+      vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'mock-service-role-key');
+      expect(isSupabaseEnabled()).toBe(true);
+
+      const missingPasswordRes = await postAdminSession(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'duena@nails.studio' }),
+        }),
+      );
+      expect(missingPasswordRes.status).toBe(400);
+
+      let activeAdminRow: Record<string, unknown> | null = {
+        id: 'adm-supa-1',
+        email: 'duena@nails.studio',
+        full_name: 'Valeria Supabase',
+        role: 'owner',
+        staff_member_id: 'staff-valeria',
+        is_active: true,
+        created_at: '2026-01-01T00:00:00.000Z',
+      };
+      let signOutCalled = false;
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (url.includes('/auth/v1/token')) {
+          return new Response(
+            JSON.stringify({
+              access_token: 'mock-access-jwt',
+              token_type: 'bearer',
+              expires_in: 3600,
+              refresh_token: 'mock-refresh-token',
+              user: {
+                id: 'auth-uid-owner-1',
+                aud: 'authenticated',
+                email: 'duena@nails.studio',
+                app_metadata: {},
+                user_metadata: {},
+                created_at: '2026-01-01T00:00:00.000Z',
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+
+        if (url.includes('/auth/v1/user')) {
+          const reqHeaders = new Headers(
+            init?.headers ?? (input instanceof Request ? input.headers : undefined),
+          );
+          const authHeader = reqHeaders.get('authorization');
+          if (authHeader === 'Bearer mock-access-jwt') {
+            return new Response(
+              JSON.stringify({
+                id: 'auth-uid-owner-1',
+                aud: 'authenticated',
+                email: 'duena@nails.studio',
+                app_metadata: {},
+                user_metadata: {},
+                created_at: '2026-01-01T00:00:00.000Z',
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            );
+          }
+          return new Response(
+            JSON.stringify({ error: 'invalid_token', msg: 'Missing session' }),
+            { status: 401, headers: { 'content-type': 'application/json' } },
+          );
+        }
+
+        if (url.includes('/auth/v1/logout')) {
+          signOutCalled = true;
+          return new Response(null, { status: 204 });
+        }
+
+        if (url.includes('/rest/v1/admin_users')) {
+          return new Response(JSON.stringify(activeAdminRow), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      });
+
+      const demoCookieRejectedRes = await getAdminSessionRoute(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          headers: { cookie: demoOwnerCookie },
+        }),
+      );
+      expect(demoCookieRejectedRes.status).toBe(200);
+      const demoRejectedJson = (await demoCookieRejectedRes.json()) as {
+        session: unknown;
+        availableDemoUsers: unknown[];
+      };
+      expect(demoRejectedJson.session).toBeNull();
+      expect(demoRejectedJson.availableDemoUsers).toEqual([]);
+
+      const supaLoginRes = await postAdminSession(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            email: 'duena@nails.studio',
+            password: 'correct-horse-battery',
+          }),
+        }),
+      );
+      expect(supaLoginRes.status).toBe(200);
+      const supaLoginJson = (await supaLoginRes.json()) as {
+        session: { user: { id: string; role: string }; isDemo: boolean };
+      };
+      expect(supaLoginJson.session.isDemo).toBe(false);
+      expect(supaLoginJson.session.user.id).toBe('adm-supa-1');
+      expect(supaLoginJson.session.user.role).toBe('owner');
+
+      const issuedSupabaseCookieHeader = supaLoginRes.headers
+        .getSetCookie()
+        .map((c) => c.split(';')[0] ?? '')
+        .filter((pair) => pair.startsWith('sb-'))
+        .join('; ');
+      expect(issuedSupabaseCookieHeader).toContain('sb-');
+
+      const authedSessionRes = await getAdminSessionRoute(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          headers: { cookie: issuedSupabaseCookieHeader },
+        }),
+      );
+      expect(authedSessionRes.status).toBe(200);
+      const authedSessionJson = (await authedSessionRes.json()) as {
+        session: { user: { id: string; role: string }; isDemo: boolean } | null;
+      };
+      expect(authedSessionJson.session?.isDemo).toBe(false);
+      expect(authedSessionJson.session?.user.id).toBe('adm-supa-1');
+
+      activeAdminRow = null;
+      const nonAdminLoginRes = await postAdminSession(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            email: 'cliente@nails.studio',
+            password: 'valid-supabase-password',
+          }),
+        }),
+      );
+      expect(nonAdminLoginRes.status).toBe(401);
+      expect(nonAdminLoginRes.headers.get('set-cookie') ?? '').not.toContain('sb-');
+
+      signOutCalled = false;
+      const logoutRes = await deleteAdminSession(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          method: 'DELETE',
+          headers: { cookie: issuedSupabaseCookieHeader },
+        }),
+      );
+      expect(logoutRes.status).toBe(200);
+      expect(signOutCalled).toBe(true);
+    });
+
+    it('S7 & A7: /api/slot-holds sets HttpOnly nails_client_session cookie and /api/bookings enforces hold ownership via cookie', async () => {
+      vi.stubEnv('CLIENT_SESSION_SECRET', 'test-client-secret-s7');
+      const db = getSnapshot();
+      const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+      const avail = queryAvailability({
+        serviceId: 'srv-gelish-manicure',
+        addonIds: [],
+        staffId: 'staff-camila',
+        startDate: today,
+        days: 14,
+      });
+      const openSlot = avail.days.flatMap((d) => d.slots)[0];
+      if (!openSlot) throw new Error('Expected open slot');
+
+      const holdRes = await postSlotHold(
+        makeRequest('http://localhost:3000/api/slot-holds', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-gelish-manicure',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+          }),
+        }),
+      );
+      expect(holdRes.status).toBe(200);
+      const setCookieHeader = holdRes.headers.get('set-cookie') ?? '';
+      expect(setCookieHeader).toContain(`${CLIENT_SESSION_COOKIE}=`);
+      expect(setCookieHeader).toContain('HttpOnly');
+      expect(setCookieHeader).toContain('SameSite=Lax');
+
+      const holdRawText = await holdRes.text();
+      expect(holdRawText).not.toContain('sessionToken');
+      const holdJson = JSON.parse(holdRawText) as {
+        hold: Record<string, unknown> & { id: string; holdId: string };
+        holdId: string;
+      };
+      expect('sessionToken' in holdJson.hold).toBe(false);
+      expect(holdJson.holdId).toBe(holdJson.hold.id);
+
+      const secondSessionBookingRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-gelish-manicure',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Otra Clienta',
+            clientPhone: '+525588990011',
+            holdId: holdJson.holdId,
+            sessionToken: 'forged-other-session',
+          }),
+        }),
+      );
+      expect(secondSessionBookingRes.status).toBe(409);
+
+      const clientCookiePair = setCookieHeader.split(';')[0] ?? '';
+      const ownerBookingRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: clientCookiePair,
+          },
+          body: JSON.stringify({
+            serviceId: 'srv-gelish-manicure',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Clienta Con Cookie',
+            clientPhone: '+525588990022',
+            holdId: holdJson.holdId,
+          }),
+        }),
+      );
+      expect(ownerBookingRes.status).toBe(201);
+    });
+
+    it('A5: stores base64 inspo photo to disk as /api/media/... URL and blocks path traversal on /api/media', async () => {
+      const tempUploadsDir = path.join(
+        os.tmpdir(),
+        `nails-sec-media-${process.pid}-${crypto.randomUUID()}`,
+      );
+      vi.stubEnv('NAILS_DEMO_UPLOADS_DIR', tempUploadsDir);
+
+      try {
+        const pngBytes = Buffer.from([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+        ]);
+        const validPngDataUrl = `data:image/png;base64,${pngBytes.toString('base64')}`;
+        const spoofedSvgDataUrl = `data:image/png;base64,${Buffer.from('<svg onload=alert(1)/>', 'utf8').toString('base64')}`;
+
+        const db = getSnapshot();
+        const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+        const openSlot = queryAvailability({
+          serviceId: 'srv-gelish-manicure',
+          addonIds: [],
+          staffId: 'staff-valeria',
+          startDate: today,
+          days: 14,
+        }).days.flatMap((d) => d.slots)[0];
+        if (!openSlot) throw new Error('Expected open slot');
+
+        const spoofedRes = await postPublicBooking(
+          makeRequest('http://localhost:3000/api/bookings', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              serviceId: 'srv-gelish-manicure',
+              addonIds: [],
+              staffId: openSlot.staffId,
+              startAt: openSlot.startAt,
+              clientName: 'Spoofed Upload',
+              clientPhone: '+525599001122',
+              inspoPhotoUrl: spoofedSvgDataUrl,
+            }),
+          }),
+        );
+        expect(spoofedRes.status).toBe(400);
+
+        const badSchemeRes = await postPublicBooking(
+          makeRequest('http://localhost:3000/api/bookings', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              serviceId: 'srv-gelish-manicure',
+              addonIds: [],
+              staffId: openSlot.staffId,
+              startAt: openSlot.startAt,
+              clientName: 'Bad Scheme',
+              clientPhone: '+525599001123',
+              inspoPhotoUrl: 'javascript:alert(1)',
+            }),
+          }),
+        );
+        expect(badSchemeRes.status).toBe(400);
+
+        const validRes = await postPublicBooking(
+          makeRequest('http://localhost:3000/api/bookings', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              serviceId: 'srv-gelish-manicure',
+              addonIds: [],
+              staffId: openSlot.staffId,
+              startAt: openSlot.startAt,
+              clientName: 'Foto Real',
+              clientPhone: '+525599001133',
+              inspoPhotoUrl: validPngDataUrl,
+            }),
+          }),
+        );
+        expect(validRes.status).toBe(201);
+        const validJson = (await validRes.json()) as {
+          booking: { id: string; inspoPhotoUrl: string | null };
+        };
+        expect(validJson.booking.inspoPhotoUrl).toMatch(
+          /^\/api\/media\/inspo\/[0-9a-f-]+\.png$/i,
+        );
+        expect(validJson.booking.inspoPhotoUrl).not.toContain('data:');
+
+        const persistedRaw = fs.readFileSync(TEMP_DB_PATH, 'utf-8');
+        expect(persistedRaw).not.toContain(validPngDataUrl);
+
+        const mediaSegments = (validJson.booking.inspoPhotoUrl ?? '')
+          .replace(/^\/api\/media\//, '')
+          .split('/');
+        const streamRes = await getMediaFile(
+          makeRequest(`http://localhost:3000${validJson.booking.inspoPhotoUrl ?? ''}`),
+          { params: Promise.resolve({ path: mediaSegments }) },
+        );
+        expect(streamRes.status).toBe(200);
+        expect(streamRes.headers.get('content-type')).toBe('image/png');
+        expect(streamRes.headers.get('x-content-type-options')).toBe('nosniff');
+        const streamedBuf = Buffer.from(await streamRes.arrayBuffer());
+        expect(streamedBuf.equals(pngBytes)).toBe(true);
+
+        const traversalRes = await getMediaFile(
+          makeRequest('http://localhost:3000/api/media/..%2F.env'),
+          { params: Promise.resolve({ path: ['..', '.env'] }) },
+        );
+        expect([400, 403, 404]).toContain(traversalRes.status);
+
+        const nestedTraversalRes = await getMediaFile(
+          makeRequest('http://localhost:3000/api/media/inspo/..%2F..%2Fpackage.json'),
+          { params: Promise.resolve({ path: ['inspo', '../../package.json'] }) },
+        );
+        expect([400, 403, 404]).toContain(nestedTraversalRes.status);
+      } finally {
+        if (fs.existsSync(tempUploadsDir)) {
+          fs.rmSync(tempUploadsDir, { recursive: true, force: true });
+        }
+      }
     });
   });
 });

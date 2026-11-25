@@ -11,8 +11,23 @@ import {
 import { buildCalendarAddLinks } from '@/lib/ics';
 import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import {
+  toPublicServiceDTO,
+  toPublicSettingsDTO,
+  toPublicStaffDTO,
+} from '@/lib/public-dto';
+import type { BookingWithRelations } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+function toPublicManageBooking(booking: BookingWithRelations) {
+  return {
+    ...booking,
+    internalNotes: '',
+    staff: toPublicStaffDTO(booking.staff),
+    service: toPublicServiceDTO(booking.service),
+  };
+}
 
 export async function GET(
   _request: NextRequest,
@@ -28,8 +43,8 @@ export async function GET(
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
 
   return NextResponse.json({
-    booking,
-    settings: db.settings,
+    booking: toPublicManageBooking(booking),
+    settings: toPublicSettingsDTO(db.settings),
     calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
     whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
   });
@@ -50,7 +65,7 @@ export async function PATCH(
     const { token } = await context.params;
     const body = patchSchema.parse(await request.json());
     const booking = await manageClientBookingAction({ token, ...body });
-    return NextResponse.json({ booking });
+    return NextResponse.json({ booking: toPublicManageBooking(booking) });
   } catch (err) {
     if (err instanceof SlotConflictError) {
       return NextResponse.json(

@@ -122,6 +122,7 @@ export function BookingWidget({
   const realtimePing = useEphemeralMessage(3500);
 
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
+  const [holdId, setHoldId] = useState<string | null>(null);
   const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
   const [step, setStep] = useState<'schedule' | 'details'>('schedule');
 
@@ -211,13 +212,11 @@ export function BookingWidget({
     async (signal?: AbortSignal) => {
       if (!selectedService) return;
       try {
-        const sessionToken = getOrCreateBrowserSessionToken('nails_session_tok');
         const qs = new URLSearchParams({
           serviceId: selectedService.id,
           addonIds: addonKey,
           startDate: todayKey,
           days: '35',
-          sessionToken,
         });
         if (selectedStaffId && selectedStaffId !== 'any') {
           qs.set('staffId', selectedStaffId);
@@ -256,6 +255,9 @@ export function BookingWidget({
     useCallback(
       (evt) => {
         if (
+          evt.type === 'slot_changed' ||
+          evt.type === 'hold_changed' ||
+          evt.type === 'schedule_changed' ||
           evt.type === 'booking_created' ||
           evt.type === 'booking_updated' ||
           evt.type === 'slot_hold_updated' ||
@@ -272,6 +274,7 @@ export function BookingWidget({
   const holdRemainingSec = useCountdownTimer(
     holdExpiresAt,
     useCallback(() => {
+      setHoldId(null);
       setHoldExpiresAt(null);
       setConflictBanner({
         message:
@@ -312,6 +315,8 @@ export function BookingWidget({
       checked ? Array.from(new Set([...prev, addonId])) : prev.filter((id) => id !== addonId),
     );
     setSelectedSlot(null);
+    setHoldId(null);
+    setHoldExpiresAt(null);
   };
 
   const handleSelectSlot = async (slot: AvailableSlot) => {
@@ -319,6 +324,7 @@ export function BookingWidget({
     setConflictBanner(null);
     setFormError(null);
 
+    let nextHoldId: string | null = null;
     if (settings.enableSlotHold) {
       try {
         const sessionToken = getOrCreateBrowserSessionToken('nails_session_tok');
@@ -335,6 +341,8 @@ export function BookingWidget({
         });
         const data = await res.json();
         if (res.status === 409) {
+          setHoldId(null);
+          setHoldExpiresAt(null);
           setConflictBanner({
             message:
               data.error ||
@@ -344,28 +352,46 @@ export function BookingWidget({
           void fetchAvailability();
           return;
         }
+        const resolvedHoldId =
+          typeof data.hold?.id === 'string'
+            ? data.hold.id
+            : typeof data.holdId === 'string'
+              ? data.holdId
+              : typeof data.hold?.holdId === 'string'
+                ? data.hold.holdId
+                : null;
+        if (resolvedHoldId) {
+          nextHoldId = resolvedHoldId;
+        }
         if (data.hold?.expiresAt) {
           setHoldExpiresAt(new Date(data.hold.expiresAt).getTime());
+        } else {
+          setHoldExpiresAt(null);
         }
       } catch {
         setHoldExpiresAt(null);
       }
+    } else {
+      setHoldExpiresAt(null);
     }
 
+    setHoldId(nextHoldId);
     setSelectedSlot(slot);
-    idempotencyKeyRef.current = `idem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const keySuffix =
+      typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now()}-${slot.staffId}`;
+    idempotencyKeyRef.current = `idem-${keySuffix}`;
     setStep('details');
   };
 
   const handleBackToSchedule = async () => {
     setStep('schedule');
+    setHoldId(null);
     setHoldExpiresAt(null);
-    const sessionToken = getOrCreateBrowserSessionToken('nails_session_tok');
-    if (sessionToken) {
-      await fetch(`/api/slot-holds?sessionToken=${encodeURIComponent(sessionToken)}`, {
-        method: 'DELETE',
-      });
-    }
+    await fetch('/api/slot-holds', {
+      method: 'DELETE',
+    });
     void fetchAvailability();
   };
 
@@ -418,6 +444,7 @@ export function BookingWidget({
           inspoPhotoUrl: inspoDataUrl,
           paymentProofUrl: proofDataUrl,
           couponCode: appliedCoupon?.code || null,
+          holdId: holdId ?? undefined,
           sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
         }),
       });
@@ -431,6 +458,7 @@ export function BookingWidget({
             '¡Ups! Otra clienta confirmó ese exacto horario segundos antes. Tus datos y foto siguen guardados — elige otro horario en 1 clic:',
           suggestions: data.suggestedSlots || [],
         });
+        setHoldId(null);
         setHoldExpiresAt(null);
         void fetchAvailability();
         return;
@@ -568,6 +596,8 @@ export function BookingWidget({
                         onChange={() => {
                           setSelectedServiceId(srv.id);
                           setSelectedSlot(null);
+                          setHoldId(null);
+                          setHoldExpiresAt(null);
                         }}
                       >
                         <VStack gap={1}>

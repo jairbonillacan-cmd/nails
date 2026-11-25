@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
-  createOrRefreshSlotHold,
+  getOrCreateClientSession,
+  readClientSessionToken,
+} from '@/lib/auth/client-session';
+import {
+  getRepository,
   PolicyError,
-  releaseSlotHold,
   SlotConflictError,
 } from '@/lib/repositories/db';
 
@@ -12,14 +15,36 @@ const holdSchema = z.object({
   addonIds: z.array(z.string()).default([]),
   staffId: z.string().min(1),
   startAt: z.string().min(1),
-  sessionToken: z.string().min(4),
+  sessionToken: z.string().min(4).optional(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = holdSchema.parse(await request.json());
-    const hold = await createOrRefreshSlotHold(body);
-    return NextResponse.json({ hold });
+    const clientSession = await getOrCreateClientSession(request);
+    const repo = getRepository();
+    const hold = await repo.createOrRefreshSlotHold({
+      serviceId: body.serviceId,
+      addonIds: body.addonIds,
+      staffId: body.staffId,
+      startAt: body.startAt,
+      sessionToken: clientSession.token,
+    });
+    const publicHold = {
+      id: hold.id,
+      holdId: hold.holdId,
+      staffId: hold.staffId,
+      serviceId: hold.serviceId,
+      startAt: hold.startAt,
+      endAt: hold.endAt,
+      expiresAt: hold.expiresAt,
+      createdAt: hold.createdAt,
+    };
+    const response = NextResponse.json({ hold: publicHold, holdId: hold.holdId });
+    if (clientSession.setCookieHeader) {
+      response.headers.append('Set-Cookie', clientSession.setCookieHeader);
+    }
+    return response;
   } catch (err) {
     if (err instanceof SlotConflictError) {
       return NextResponse.json(
@@ -46,9 +71,10 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const sessionToken = searchParams.get('sessionToken');
+  const cookieToken = await readClientSessionToken(request);
+  const sessionToken = cookieToken ?? searchParams.get('sessionToken');
   if (sessionToken) {
-    await releaseSlotHold(sessionToken);
+    await getRepository().releaseSlotHold(sessionToken);
   }
   return NextResponse.json({ ok: true });
 }

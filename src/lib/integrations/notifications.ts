@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { generateId } from '../clock';
 import { getRuntimeIntegrationStatus } from '../env';
 import { buildWhatsAppLink, formatDateLongInTimezone, formatTimeInTimezone } from '../format';
 import { generateBookingIcs } from '../ics';
@@ -348,7 +349,7 @@ export async function buildAndSendImmediateNotifications(params: {
       }
 
       created.push({
-        id: `ntf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: generateId('ntf'),
         bookingId: params.booking.id,
         workflowId: wf.id,
         channel,
@@ -401,7 +402,7 @@ export async function buildAndSendImmediateNotifications(params: {
         if (channel === 'email' && !params.booking.client.email) continue;
 
         created.push({
-          id: `ntf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: generateId('ntf'),
           bookingId: params.booking.id,
           workflowId: wf.id,
           channel: channel as NotificationChannel,

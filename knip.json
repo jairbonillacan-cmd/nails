@@ -7,8 +7,6 @@
   ],
   "ignoreDependencies": [
     "@fontsource/dm-sans",
-    "@fontsource/source-serif-4",
-    "@supabase/ssr",
-    "@supabase/supabase-js"
+    "@fontsource/source-serif-4"
   ]
 }

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "guardrails": "node scripts/check-guardrails.test.mjs && node scripts/check-guardrails.mjs && oxlint --deny-warnings src",
+    "guardrails": "node scripts/check-guardrails.test.mjs && node scripts/check-guardrails.mjs && node scripts/check-seed-parity.mjs && oxlint --deny-warnings src",
     "deadcode": "knip",
     "test": "vitest run",
     "doctor": "astryx doctor --built .next",

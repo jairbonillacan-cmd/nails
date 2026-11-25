@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readClientSessionToken } from '@/lib/auth/client-session';
 import {
-  createBookingAtomic,
-  getSnapshot,
+  getRepository,
+  persistBookingMediaField,
   PolicyError,
   SlotConflictError,
 } from '@/lib/repositories/db';
 import { createDepositCheckout } from '@/lib/integrations/payments';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { MediaValidationError } from '@/lib/storage/media';
 
 const createBookingSchema = z.object({
   serviceId: z.string().min(1),
@@ -19,34 +21,48 @@ const createBookingSchema = z.object({
   clientEmail: z.string().email('Correo inválido').optional().or(z.literal('')).nullable(),
   clientBirthday: z.string().optional().nullable(),
   clientNotes: z.string().max(1000).optional(),
-  inspoPhotoUrl: z.string().max(2_500_000).optional().nullable(),
-  paymentProofUrl: z.string().max(2_500_000).optional().nullable(),
+  inspoPhotoUrl: z.string().max(4_000_000).optional().nullable(),
+  paymentProofUrl: z.string().max(4_000_000).optional().nullable(),
   couponCode: z.string().max(40).optional().nullable(),
   sessionToken: z.string().optional().nullable(),
+  holdId: z.string().min(1).optional().nullable(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const parsed = createBookingSchema.parse(await request.json());
     const idempotencyKey = request.headers.get('Idempotency-Key');
+    const cookieSessionToken = await readClientSessionToken(request);
+    const effectiveSessionToken = cookieSessionToken ?? parsed.sessionToken ?? null;
 
-    const booking = await createBookingAtomic({
+    const inspoPhotoUrl = await persistBookingMediaField(parsed.inspoPhotoUrl, 'inspo');
+    const paymentProofUrl = await persistBookingMediaField(
+      parsed.paymentProofUrl,
+      'proofs',
+    );
+
+    const repo = getRepository();
+    const booking = await repo.createBookingAtomic({
       ...parsed,
+      inspoPhotoUrl,
+      paymentProofUrl,
       clientEmail: parsed.clientEmail || null,
+      sessionToken: effectiveSessionToken,
+      holdId: parsed.holdId ?? null,
       idempotencyKey,
       source: 'web',
       forceConfirmed: false,
     });
 
     const manageUrl = `/cita/${booking.manageToken}`;
-    const db = getSnapshot();
+    const bootstrap = await repo.getPublicBootstrap();
     const env = getRuntimeIntegrationStatus();
     const checkout = await createDepositCheckout({
       bookingCode: booking.bookingCode,
       amountCents: booking.depositAmountCents,
-      currency: db.settings.currency,
+      currency: bootstrap.settings.currency,
       clientEmail: booking.client.email,
-      mode: db.settings.paymentMode,
+      mode: bootstrap.settings.paymentMode,
       manageUrl: `${env.appUrl}${manageUrl}`,
     });
 
@@ -68,6 +84,9 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 },
       );
+    }
+    if (err instanceof MediaValidationError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
     }
     if (err instanceof PolicyError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });

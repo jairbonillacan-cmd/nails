@@ -1,4 +1,8 @@
-import { subscribeRealtime } from '@/lib/realtime';
+import {
+  subscribeRealtime,
+  toPublicRealtimeEvent,
+  type PublicRealtimeEvent,
+} from '@/lib/realtime';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -10,16 +14,27 @@ export async function GET() {
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = (data: unknown) => {
+      const send = (event: PublicRealtimeEvent) => {
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
           return;
         }
       };
 
-      send({ type: 'connected', timestamp: new Date().toISOString() });
-      unsubscribe = subscribeRealtime((event) => send(event));
+      send(toPublicRealtimeEvent('connected'));
+      unsubscribe = subscribeRealtime((event) => {
+        send(
+          toPublicRealtimeEvent(
+            event.type,
+            {
+              staffId: event.staffId,
+              date: event.date,
+            },
+            event.timestamp,
+          ),
+        );
+      });
       heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: ping\n\n`));
