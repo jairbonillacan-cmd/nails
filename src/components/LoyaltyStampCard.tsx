@@ -34,17 +34,19 @@ export function LoyaltyStampCard({
       : `¡Te faltan solo ${loyaltySummary.remainingForReward} visitas para tu premio!`;
 
   return (
-    <Card padding={5} elevation="low" width="100%">
+    <VStack as="section" gap={4} className="ck-panel" width="100%" aria-labelledby="ck-loyalty-title">
       <VStack gap={4} width="100%">
         <HStack justify="between" align="start" wrap="wrap" gap={2} width="100%">
           <VStack gap={0.5}>
             <HStack gap={1.5} align="center">
-              <Sparkles size={15} aria-hidden="true" />
+              <Sparkles size={15} aria-hidden="true" className="lk-cereza-text" />
               <Text type="label" color="accent" weight="semibold">
                 Tarjeta digital · {studioName}
               </Text>
             </HStack>
-            <Heading level={2}>{loyaltySummary.programName}</Heading>
+            <Heading level={2} id="ck-loyalty-title" className="lk-serif rb-h2">
+              {loyaltySummary.programName}
+            </Heading>
           </VStack>
 
           <Badge
@@ -127,6 +129,6 @@ export function LoyaltyStampCard({
           Sin descargar ninguna app — tus sellos se guardan automáticamente con tu número.
         </Text>
       </VStack>
-    </Card>
+    </VStack>
   );
 }

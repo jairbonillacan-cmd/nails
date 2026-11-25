@@ -16,7 +16,6 @@ import { useSalonAppearance } from './SalonThemeProvider';
 import { buildWhatsAppLink } from '@/lib/format';
 
 const DEFAULT_INSTAGRAM_HANDLE = '@laikona.nailsss';
-const DEFAULT_SISTER_STUDIO_HANDLE = '@lumiere.beautymx';
 
 function normalizeInstagramHandle(value: string | null | undefined, fallback: string): string {
   const cleaned = value?.trim() ?? '';
@@ -48,13 +47,6 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
     DEFAULT_INSTAGRAM_HANDLE,
   );
   const instagramUrl = buildInstagramUrl(instagramHandle);
-  const sisterStudioHandle = normalizeInstagramHandle(
-    'sisterStudioHandle' in settings && typeof settings.sisterStudioHandle === 'string'
-      ? settings.sisterStudioHandle
-      : null,
-    DEFAULT_SISTER_STUDIO_HANDLE,
-  );
-  const sisterStudioUrl = buildInstagramUrl(sisterStudioHandle);
 
   return (
     <AppShell
@@ -174,14 +166,9 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
             <Divider />
 
             <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <HStack gap={2} align="center" wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  © {settings.updatedAt.slice(0, 4)} {settings.name} · Puebla ·
-                </Text>
-                <Link href={sisterStudioUrl} isExternalLink type="supporting" color="secondary">
-                  {sisterStudioHandle}
-                </Link>
-              </HStack>
+              <Text type="supporting" color="secondary">
+                © {settings.updatedAt.slice(0, 4)} {settings.name} · {settings.city || 'Puebla, México'}
+              </Text>
               <Link href="/admin" type="supporting" color="secondary">
                 Acceso para equipo y administración
               </Link>

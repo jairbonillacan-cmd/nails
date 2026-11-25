@@ -21,6 +21,7 @@ import {
   toPublicStaffDTO,
 } from '../public-dto';
 import { dispatchOutboxEvent } from '../use-cases/outbox';
+import { MediaValidationError, storeMediaUpload } from '../storage/media';
 import type {
   AdminRole,
   AdminUser,
@@ -2083,15 +2084,64 @@ export function createSupabaseRepository(
         );
       }
 
+      if (params.action === 'upload_proof') {
+        const rawProof = params.paymentProofUrl?.trim() ?? '';
+        if (!rawProof) {
+          throw new PolicyError(
+            'MISSING_PROOF',
+            'Selecciona una imagen de comprobante antes de enviar.',
+          );
+        }
+        let persistedProofUrl = rawProof;
+        if (rawProof.toLowerCase().startsWith('data:')) {
+          try {
+            const stored = await storeMediaUpload({ dataUrl: rawProof, folder: 'proofs' });
+            persistedProofUrl = stored.signedUrl ?? stored.storagePath;
+          } catch (err) {
+            if (err instanceof MediaValidationError) {
+              throw new PolicyError(err.code, err.message);
+            }
+            throw err;
+          }
+        } else if (
+          !rawProof.startsWith('/api/media/') &&
+          !rawProof.startsWith('proofs/') &&
+          !rawProof.startsWith('https://') &&
+          !rawProof.startsWith('http://')
+        ) {
+          throw new PolicyError('INVALID_MEDIA_URL', 'Referencia de imagen inválida.');
+        }
+        const nowIso = clock.now().toISOString();
+        const { error: proofError } = await supabase
+          .from('bookings')
+          .update({
+            payment_proof_url: persistedProofUrl,
+            proof_delivery_method: 'web_upload',
+            updated_at: nowIso,
+          })
+          .eq('id', booking.id);
+        if (proofError) {
+          throw new Error(`No se pudo guardar el comprobante: ${proofError.message}`);
+        }
+        const hydrated = await getBookingByIdHydrated(booking.id);
+        await dispatchOutboxEvent({
+          type: 'Realtime',
+          eventType: 'booking_updated',
+          payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
+        });
+        return hydrated;
+      }
+
+      const manageAction = params.action;
       const minHours =
-        params.action === 'cancel'
+        manageAction === 'cancel'
           ? snapshot.settings.minCancelHours
           : snapshot.settings.minRescheduleHours;
       const policyCheck = checkManagePolicyWindow({
         startAtIso: booking.startAt,
         nowMs: clock.nowMs(),
         minHours,
-        action: params.action,
+        action: manageAction,
       });
       if (!policyCheck.allowed) {
         throw new PolicyError(policyCheck.code, policyCheck.message);

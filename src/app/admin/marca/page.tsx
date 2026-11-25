@@ -299,22 +299,13 @@ export default function AdminBrandPage() {
                     isOptional
                   />
                 </Grid>
-                <Grid columns={{ minWidth: 180, max: 2 }} gap={3}>
-                  <TextInput
-                    label="Estudio hermano / sede"
-                    placeholder="@lumiere.beautymx"
-                    value={draft.sisterStudioHandle ?? ''}
-                    onChange={(v) => updateDraft({ sisterStudioHandle: v })}
-                    isOptional
-                  />
-                  <TextInput
-                    label="Ciudad"
-                    placeholder="Puebla, México"
-                    value={draft.city ?? ''}
-                    onChange={(v) => updateDraft({ city: v })}
-                    isOptional
-                  />
-                </Grid>
+                <TextInput
+                  label="Ciudad"
+                  placeholder="Puebla, México"
+                  value={draft.city ?? ''}
+                  onChange={(v) => updateDraft({ city: v })}
+                  isOptional
+                />
                 <TextInput
                   label="Dirección física"
                   value={draft.address}
@@ -754,7 +745,6 @@ export default function AdminBrandPage() {
                       <Text weight="bold">{draft.name}</Text>
                       <Text type="supporting" color="secondary">
                         {draft.city || 'Puebla, México'}
-                        {draft.sisterStudioHandle ? ` · ${draft.sisterStudioHandle}` : ''}
                       </Text>
                     </VStack>
                     <Button label="Agendar cita" variant="primary" size="sm" href="/reservar" />

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import type {
   AdminUser,
   AuditLogEntry,
@@ -163,6 +163,8 @@ export function useAdminData() {
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isLoginRoute = pathname === '/admin/login';
   const { setSettingsOverride } = useSalonAppearance();
   const [data, setData] = useState<AdminOverviewPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -197,7 +199,20 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     [router, setSettingsOverride],
   );
 
-  useExternalSync('admin-overview', refresh);
+  useExternalSync(
+    isLoginRoute ? 'admin-login' : 'admin-overview',
+    useCallback(
+      async (signal) => {
+        if (isLoginRoute) {
+          setLoading(false);
+          return;
+        }
+        setLoading(true);
+        await refresh(signal);
+      },
+      [isLoginRoute, refresh],
+    ),
+  );
 
   useRealtimeSubscription(
     useCallback(

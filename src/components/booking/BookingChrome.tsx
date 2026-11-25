@@ -22,15 +22,21 @@ export function formatHoldClock(totalSeconds: number): string {
 
 interface BookingHeaderProps {
   salonName: string;
-  step: BookingStep;
-  holdRemainingSec: number;
+  step?: BookingStep;
+  holdRemainingSec?: number;
   whatsappUrl: string;
-  onBack: (() => void) | null;
+  onBack?: (() => void) | null;
 }
 
-export function BookingHeader({ salonName, step, holdRemainingSec, whatsappUrl, onBack }: BookingHeaderProps) {
-  const stepIndex = BOOKING_STEPS.indexOf(step);
-  const progress = ((stepIndex + 0.5) / BOOKING_STEPS.length) * 100;
+export function BookingHeader({
+  salonName,
+  step,
+  holdRemainingSec = 0,
+  whatsappUrl,
+  onBack = null,
+}: BookingHeaderProps) {
+  const stepIndex = step ? BOOKING_STEPS.indexOf(step) : -1;
+  const progress = stepIndex >= 0 ? ((stepIndex + 0.5) / BOOKING_STEPS.length) * 100 : null;
 
   return (
     <header className="rb-header">
@@ -70,12 +76,14 @@ export function BookingHeader({ salonName, step, holdRemainingSec, whatsappUrl, 
           </a>
         </HStack>
       </nav>
-      <progress
-        className="rb-progress"
-        aria-label="Progreso de la reserva"
-        max={100}
-        value={progress}
-      />
+      {progress !== null ? (
+        <progress
+          className="rb-progress"
+          aria-label="Progreso de la reserva"
+          max={100}
+          value={progress}
+        />
+      ) : null}
     </header>
   );
 }

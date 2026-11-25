@@ -56,11 +56,18 @@ export default async function ManageBookingPage({
         )
       : null;
 
+  const extraServices = (booking.extraServiceIds ?? [])
+    .filter((id) => id !== booking.serviceId)
+    .map((id) => db.services.find((srv) => srv.id === id))
+    .filter((srv): srv is (typeof db.services)[number] => Boolean(srv))
+    .map(toPublicServiceDTO);
+
   const initialBooking = {
     ...booking,
     internalNotes: '',
     staff: toPublicStaffDTO(booking.staff),
     service: toPublicServiceDTO(booking.service),
+    extraServices,
   };
 
   return (
@@ -69,6 +76,7 @@ export default async function ManageBookingPage({
       settings={toPublicSettingsDTO(db.settings)}
       calendarLinks={buildCalendarAddLinks(booking, db.settings, manageUrl)}
       whatsappUrl={buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl)}
+      manageUrl={manageUrl}
       initialLoyaltySummary={initialLoyaltySummary}
       initialAction={initialAction}
     />

@@ -90,7 +90,6 @@ export function createInitialDemoDatabase(): DemoDatabase {
       mapsUrl: 'https://maps.google.com/?q=Calle+25+Sur+1904+Volcanes+Puebla',
       instagramHandle: '@laikona.nailsss',
       instagramUrl: 'https://www.instagram.com/laikona.nailsss/',
-      sisterStudioHandle: '@lumiere.beautymx',
       whatsappNumber: '+522221234567',
       contactEmail: 'hola@laikonanails.mx',
       timezone: 'America/Mexico_City',

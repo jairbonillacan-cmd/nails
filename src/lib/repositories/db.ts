@@ -2233,11 +2233,46 @@ export async function recordBookingCheckoutAtomic(params: {
 
 export async function manageClientBookingAction(params: {
   token: string;
-  action: 'cancel' | 'reschedule';
+  action: 'cancel' | 'reschedule' | 'upload_proof';
   reason?: string;
   newStartAt?: string;
   newStaffId?: string;
+  paymentProofUrl?: string;
 }): Promise<BookingWithRelations> {
+  if (params.action === 'upload_proof') {
+    const rawProof = params.paymentProofUrl?.trim() ?? '';
+    if (!rawProof) {
+      throw new PolicyError('MISSING_PROOF', 'Selecciona una imagen de comprobante antes de enviar.');
+    }
+    const storedProofUrl = await persistBookingMediaField(rawProof, 'proofs');
+    if (!storedProofUrl) {
+      throw new PolicyError('MISSING_PROOF', 'No se pudo procesar el comprobante.');
+    }
+    const committedProof = await withWriteLock((db) => {
+      const booking = db.bookings.find((b) => b.manageToken === params.token);
+      if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
+      if (isTerminalBookingStatus(booking.status)) {
+        throw new PolicyError('INVALID_STATE', 'Esta cita ya no admite cambios.');
+      }
+      booking.paymentProofUrl = storedProofUrl;
+      booking.proofDeliveryMethod = 'web_upload';
+      booking.updatedAt = new Date().toISOString();
+      const hydrated = hydrateBooking(db, booking);
+      const outboxEvents: OutboxEventInput[] = [
+        {
+          type: 'Realtime',
+          eventType: 'booking_updated',
+          payload: { staffId: booking.staffId, startAt: booking.startAt },
+        },
+      ];
+      return { hydrated, outboxEvents };
+    });
+    await dispatchPostCommitOutbox(committedProof.outboxEvents);
+    return committedProof.hydrated;
+  }
+
+  const manageAction = params.action;
+
   const committed = await withWriteLock((db) => {
     const booking = db.bookings.find((b) => b.manageToken === params.token);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
@@ -2246,14 +2281,14 @@ export async function manageClientBookingAction(params: {
     }
 
     const minHours =
-      params.action === 'cancel'
+      manageAction === 'cancel'
         ? db.settings.minCancelHours
         : db.settings.minRescheduleHours;
     const policyCheck = checkManagePolicyWindow({
       startAtIso: booking.startAt,
       nowMs: Date.now(),
       minHours,
-      action: params.action,
+      action: manageAction,
     });
     if (!policyCheck.allowed) {
       throw new PolicyError(policyCheck.code, policyCheck.message);

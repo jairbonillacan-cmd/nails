@@ -29,7 +29,6 @@ import {
 import { getSnapshot } from '@/lib/repositories/db';
 import { PublicShell } from '@/components/PublicShell';
 import {
-  DEFAULT_SISTER_STUDIO_HANDLE,
   formatServicePrice,
   normalizeInstagramHandle,
   resolveInstagramUrl,
@@ -85,10 +84,6 @@ export default function LinksPage() {
 
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const instagramUrl = resolveInstagramUrl(settings);
-  const sisterStudioHandle = normalizeInstagramHandle(
-    settings.sisterStudioHandle,
-    DEFAULT_SISTER_STUDIO_HANDLE,
-  );
   const mapsUrl = resolveSafeExternalUrl(
     settings.mapsUrl,
     'https://maps.google.com/?q=Puebla+Mexico',
@@ -134,7 +129,7 @@ export default function LinksPage() {
                 <HStack gap={1.5} align="center" justify="center" wrap="wrap">
                   <MapPin size={14} aria-hidden="true" />
                   <Text type="supporting" color="secondary" justify="center">
-                    Puebla · {sisterStudioHandle}
+                    {settings.address}
                   </Text>
                 </HStack>
                 <Text type="supporting" color="secondary" justify="center" textWrap="pretty">

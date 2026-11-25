@@ -60,7 +60,7 @@ VALUES (
   'Calle 25 Sur 1904, Col. Volcanes, 72410 Puebla, Pue.',
   'https://maps.google.com/?q=Calle+25+Sur+1904+Volcanes+Puebla',
   '@laikona.nailsss',
-  '@lumiere.beautymx',
+  '',
   '+522221234567',
   'hola@laikonanails.mx',
   'America/Mexico_City',

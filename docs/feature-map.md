@@ -8,7 +8,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - Servidor corriendo: `npm run dev` (puerto `1717` en desarrollo local) o `npm run build && npm run start` en `http://localhost:3000`.
 - **Modo Demo Local** (sin variables de Supabase en `.env.local`):
   - Base persistente en `.nails-demo-db.json` (borrar el archivo regenera datos limpios de fábrica de **LAIKONA NAILS**).
-  - **Identidad sembrada:** `LAIKONA NAILS` (`by Karla · Manicure y nail art en Puebla`), `@laikona.nailsss`, estudio aliado `@lumiere.beautymx`.
+  - **Identidad sembrada:** `LAIKONA NAILS` (`by Karla · Manicure y nail art en Puebla`), `@laikona.nailsss`, dirección `Calle 25 Sur 1904, Col. Volcanes, 72410 Puebla, Pue.`.
   - **Especialistas y turnos fijos:**
     - **Karla** (`karla`): `10:00 · 13:30 · 16:30` (L–S) + bloqueo recurrente semanal `12:30–13:15` (`Comida y esterilización de instrumental`).
     - **Paty** (`paty`): `10:00 · 13:30 · 16:30` (L–S).
@@ -50,7 +50,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 
 ## 2. Bio-Link de Instagram (`/links`) y Aviso de Privacidad (`/aviso-de-privacidad`)
 - **Bio-Link (`/links`):**
-  - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, ubicación `Puebla · @lumiere.beautymx`, chips de turnos fijos y anticipo `$200 MXN`, botones apilados a `/reservar`, `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios públicos (excluyendo `isPrivate: true`, sin `commissionPercent`).
+  - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, dirección desde `settings.address`, chips de turnos fijos y anticipo `$200 MXN`, botones apilados a `/reservar`, `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios públicos (excluyendo `isPrivate: true`, sin `commissionPercent`).
 - **Aviso de Privacidad LFPDPPP (`/aviso-de-privacidad`):**
   - Detalla Responsable (`LAIKONA NAILS / Karla Patricia Carrillo Rodríguez`), datos recabados, finalidades primarias vs. secundarias opcionales, tarjeta destacada de **Derechos ARCO** (acceso/descarga JSON, rectificación, cancelación, oposición, plazo 20 días hábiles) y versión vigente (`privacyPolicyVersion`, ej. `2026-11`).
 
@@ -89,26 +89,39 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 ---
 
 ## 4. Página Mágica de Clienta (`/cita/[token]`)
-- **Precondiciones:** Token válido en `bookings.manageToken` (ej. `/cita/demo-token-sofia-1042`).
+- **Precondiciones:** Token válido en `bookings.manageToken` (ej. `/cita/demo-token-sofia-1042`, `/cita/demo-token-andrea-1044`, `/cita/demo-token-paula-1039` o una cita recién creada en `/reservar`).
+- **Diseño y estructura (`ManageBookingView` + `src/components/cita/*` + estilos `ck-*` y `rb-*` en `src/app/globals.css`, sin `PublicShell`):**
+  - Mismo encabezado (`BookingHeader`: `Inicio`, logo negro, `Ayuda` por WhatsApp; sin barra de progreso ni temporizador) y banda cereza (`CitaHero`: trazo porcelana, cerezas, ola SVG; sin stepper).
+  - Título dinámico según estado (`Cita confirmada` cuando `confirmed`, `¡Tu cita está apartada!` cuando `pending_confirmation` / `pending_payment`, `¡Gracias por visitarnos!` cuando `completed`, `Cita cancelada` cuando `canceled`) + píldora de estado y código copiable (`NL-xxxx`).
+  - **Diseño responsivo (`47.5rem`):** En escritorio (`1280px`), dos columnas (`.ck-layout`): detalle y acciones a la izquierda y tarjeta cereza fija (`BookingSummaryCard` `Tu cita`, `sticky`) a la derecha con servicio y extras, fecha y hora, artista, duración, total, descuento y anticipo. En móvil (`375px`), una sola columna sin scroll horizontal con la tarjeta `Tu cita` visible arriba.
 - **Controles clave:**
-  - Badge de estado (`Confirmada`, `Pendiente de confirmación`, `Completada`, `Cancelada`, `No asistió`) y código `NL-xxxx`.
-  - **Auto-apertura de reprogramación (`C6`):** Abrir `/cita/[token]?action=reschedule` en una cita activa abre automáticamente el diálogo de reprogramación con disponibilidad real cargada (usado por el botón 1 clic `Solicitar reprogramación` del panel admin).
-  - **Tarjeta Digital de Sellos Web/PWA (`LoyaltyStampCard`):** Visible sin descargar app; muestra nombre del programa (`Tarjeta de Sellos LAIKONA`), progreso (`6 de 8 sellos` en `/cita/demo-token-sofia-1042`), casillas numeradas, beneficio y estado (`¡Te faltan solo 2 visitas para tu premio!` o `¡Premio listo para canjear en tu próxima cita!`). Cero `commissionPercent` en el HTML.
-  - Botones de calendario: `Google Calendar`, `Apple / iPhone (.ics)` (`/api/bookings/manage/[token]/ics`), `Outlook`, `Enviar por WhatsApp`.
-  - Acciones activas: `Reagendar` (valida elegibilidad de especialista para todos los servicios + `recurringBlocks`, notifica al salón) y `Cancelar cita` (libera cupón/saldo Gift Card y notifica al salón).
-  - Encuesta post-cita (`status === 'completed'`, ej. `/cita/demo-token-paula-1039`): botones `1 ★`..`5 ★` + comentario -> si calificación >= 4 muestra `Dejar reseña en Google`.
-- **Verificación de política:**
-  - Cancelar o reagendar dentro de las `minCancelHours` (12h) devuelve `400 POLICY_WINDOW` sin modificar la cita.
+  - **Anticipo y comprobante (`CitaDepositSection`):** Cuando la cita está en `pending_confirmation` o `pending_payment` y falta el comprobante, muestra anticipo (`$200`), SPEI con **CLABE copiable con un toque** (`.rb-clabe`), selector `Lo subo aquí` (`FileInput` PNG/JPG/WEBP ≤ 2.5 MB -> `PATCH /api/bookings/manage/[token]` con `action: 'upload_proof'`) o `Lo mando por DM a @laikona.nailsss` (abrir Instagram + copiar resumen con código), además de botón `Pagar anticipo con Mercado Pago` cuando exista `checkoutUrl`. Si el comprobante ya fue recibido, muestra `Comprobante recibido · En revisión` y opción desplegable para reemplazarlo.
+  - **Calendario y WhatsApp (`CitaActionsPanel`):** `Google Calendar`, `Apple / iPhone (.ics)` (`/api/bookings/manage/[token]/ics`), `Outlook`, `Enviar por WhatsApp`.
+  - **Ubicación y detalles:** Dirección tomada de `settings.address` (`Calle 25 Sur 1904, Col. Volcanes, 72410 Puebla, Pue.`), indicaciones de llegada, botón `Abrir en Google Maps`, `WhatsApp del salón`, datos de clienta, notas y foto de inspiración si existe. Sin menciones a estudio hermano ni `@lumiere.beautymx`.
+  - **Código QR de la cita:** QR SVG escaneable del enlace personal `/cita/[token]` con `Copiar enlace` y `Descargar QR`.
+  - **Cambios y auto-apertura (`C6`):** `Reagendar` (valida elegibilidad de especialista para todos los servicios + `recurringBlocks`, actualiza links de calendario/WhatsApp y notifica al salón) y `Cancelar cita` (libera cupón/saldo Gift Card y notifica al salón). Abrir `/cita/[token]?action=reschedule` en una cita activa abre automáticamente el diálogo de reprogramación.
+  - **Tarjeta Digital de Sellos Web/PWA (`LoyaltyStampCard`):** Visible sin descargar app; muestra nombre del programa (`Tarjeta de Sellos LAIKONA`), progreso (`6 de 8 sellos` en `/cita/demo-token-sofia-1042`), casillas numeradas, beneficio y estado. Cero `commissionPercent` en el HTML.
+  - **Encuesta post-cita (`CitaReviewCard`, cuando `status === 'completed'`, ej. `/cita/demo-token-paula-1039`):** botones `1 ★`..`5 ★` + comentario -> si calificación >= 4 muestra `Dejar reseña en Google`.
+- **Verificación de política y responsive:**
+  - Cancelar o reagendar dentro de las `minCancelHours` (12 h) devuelve `400 POLICY_WINDOW` sin modificar la cita.
+  - Verificar en navegador a `375px` (sin scroll horizontal) y `1280px` (resumen cereza `sticky` a la derecha) tras crear una reserva real en `/reservar`.
 
 ---
 
-## 5. Acceso Admin (`/admin/login`), Onboarding (`/admin/onboarding`) y RBAC Multi-Rol
-- **Precondiciones:** En modo demo inicia autenticado como `owner` salvo que se cierre sesión; el banner superior permite alternar entre `owner`, `admin` y `specialist`. En móvil (`AdminShell`), dock flotante estilo isla (`10b`) con `Inicio`, `Agenda`, `Clientas`/`Horarios`, `Caja`, `Menú` y botón rápido `+ Nueva cita`.
-- **Onboarding (`/admin/onboarding`):** Asistente inicial de 4 pasos (perfil del estudio + Instagram, banco/CLABE de anticipo, equipo/horarios fijos y confirmación final) vinculado al checklist del dashboard.
+## 5. Acceso Admin (`/admin/login`), Shell Minimalista Retraíble y RBAC Multi-Rol
+- **Precondiciones:** En modo demo inicia autenticado como `owner` (o vía botones rápidos de `/admin/login`). El antiguo banner grande azul de Modo Demo se reemplazó por una etiqueta discreta **`Modo demo`** junto a la fecha del dashboard con `Tooltip` explicativo, y el selector de rol demo vive en el pie de la barra lateral (y del cajón móvil).
+- **Shell del panel (`AdminShell`, estilos `ad-*` en `src/app/globals.css`, compatible con modo claro y oscuro):**
+  - **Contenedor principal flotante (estilo minimalista tipo Cal.com con identidad LAIKONA):** la barra lateral se apoya directo sobre el lienzo exterior (`.ad-shell`) y el contenido de cada pantalla vive dentro de un contenedor blanco/superficie redondeado con borde fino (`.ad-sheet`).
+  - **Barra lateral retraíble en escritorio (`>= 47.5rem`):** botón `Retraer barra lateral` / `Expandir barra lateral` y atajo **`Ctrl+B`** (estado persistido en `localStorage` vía `useSidebarCollapsed`). En modo retraído (`4.25rem`) muestra iconos centrados con `Tooltip` y punto indicador cuando hay badges.
+  - **Navegación agrupada y RBAC:** `Hoy` (`Inicio`, `Citas y agenda` con badge de pendientes, `Clientas`, `Caja`), `Catálogo` (`Servicios y extras`, `Inventario` con badge de stock bajo), `Equipo` (`Equipo y turnos`, `Disponibilidad`, `Comisiones y cupones`), `Estudio` (`Página y marca`, `Integraciones`, `Configuración inicial` con progreso `N/6`). Item activo en fondo rosa suave y texto cereza (`data-on="true"`).
+  - **Arriba:** logo LAIKONA (negro en modo claro, blanco en modo oscuro), botón de búsqueda rápida (`Ctrl K` -> `AdminQuickSearchDialog`), toggle para retraer barra y caja **`Tu link de citas`** con botón `Copiar`.
+  - **Pie único (sin duplicados):** avatar con iniciales y punto en línea, nombre, rol, selector de rol demo, controles de `Sonido` (+ prueba de timbre), `Oscuro`/`Claro`, `Cerrar sesión` y enlace `Sitio`.
+  - **Móvil (`< 47.5rem`):** la barra lateral se oculta; aparece cabecera compacta con botón `Menú` (abre cajón `MobileNav` con todos los grupos y controles), logo y búsqueda; y barra inferior fija (`.ad-bottom`, oculta en escritorio) con `Inicio`, `Agenda` (con punto de pendientes), botón central cereza `+` (`/admin/citas?new=1`), `Clientas` (o `Horarios` para `specialist`) y `Caja`.
+- **Onboarding (`/admin/onboarding`):** Asistente inicial de 4 pasos (perfil del estudio + Instagram, banco/CLABE de anticipo, equipo/horarios fijos y confirmación final) vinculado a la tarjeta `"Configura tu estudio"` del dashboard.
 - **Verificación RBAC:**
-  - `owner`: acceso total incluyendo `Marca, QR y Políticas`, `Integraciones y WhatsApp`, creación de usuarios en `/admin/equipo`, anulación auditada de `lockPastBookings` y lectura de `recentAuditLogs`.
-  - `admin`: gestiona Citas, Cobros, Servicios, Disponibilidad, Clientas (incluyendo descarga ARCO y filtro inverso), Caja, Inventario y Manicuristas; no puede modificar citas pasadas si `lockPastBookings` está activo (`403 PAST_BOOKING_LOCKED`) ni ver `recentAuditLogs`.
-  - `specialist`: solo ve Inicio, sus propias Citas (incluyendo `Solicitar reprogramación` únicamente en sus citas), su propia Disponibilidad/Bloqueos/Festivos y sus propias Comisiones/Caja; bloqueado en rutas ajenas (`403`).
+  - `owner`: acceso total incluyendo `Página y marca`, `Integraciones`, `Configuración inicial`, creación de usuarios en `/admin/equipo`, anulación auditada de `lockPastBookings` y lectura de `recentAuditLogs`.
+  - `admin`: gestiona Citas, Cobros, Servicios, Disponibilidad, Clientas (incluyendo descarga ARCO y filtro inverso), Caja, Inventario y Manicuristas; no ve el grupo `Estudio`, ni modifica citas pasadas si `lockPastBookings` está activo (`403 PAST_BOOKING_LOCKED`).
+  - `specialist`: solo ve `Inicio`, sus propias `Citas y agenda`, su propia `Disponibilidad` y su propia `Caja` / `Comisiones y cupones`; bloqueado en rutas ajenas (`403`).
 
 ---
 
@@ -116,7 +129,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 
 | Ruta | Propósito | Acciones verificables clave |
 | :--- | :--- | :--- |
-| `/admin` | Resumen operativo y alertas | KPIs (`Citas hoy`, `Caja neta`, `Satisfacción`, `Alertas`), alerta roja de **Citas sin cobrar (Fuga de ingresos)** (`uncollectedBookings` -> `/admin/caja?tab=sin-cobrar`), alerta de **Clientas cerca de su premio** (`nearRewardClients` -> `/admin/clientas`), anticipos SPEI pendientes y checklist hacia `/admin/onboarding`. |
+| `/admin` | Dashboard operativo minimalista | Encabezado con fecha + etiqueta `Modo demo` con tooltip, saludo serif `Hola, <nombre>`, resumen dinámico, botón `Buscar clienta o cita` (`Ctrl K`) y `+ Nueva cita`. Tarjeta **`Necesita tu atención`** (anticipos SPEI con `Ver comprobante` en `Dialog` y `Confirmar cita` inline vía `PATCH /api/admin/bookings`, citas terminadas sin cobrar con `Cobrar $X` -> `/admin/citas?collect=...`, lista de espera con `Avisar` por WhatsApp, y alertas de inventario; muestra `Todo al día` cuando llega a 0). Fila de **6 KPIs** (`Citas hoy`, `Caja neta hoy`, `Por cobrar` en ámbar/verde, `Propinas`, `Calificación`, `Inasistencias`) en 6 cols escritorio / 3 tablet / 2 móvil. Layout 2 columnas: **`Agenda`** (tabs `Hoy`/`Mañana` con navegación por teclado, filtro por artista, línea cereza `Ahora`, filas con barra por artista, chips de estado y acciones `Cobrar`/`Validar`/`WhatsApp`) y columna derecha con tarjeta cereza **`Tu página de reservas`** (`EN VIVO`, cerezas blancas, link copiable, `Ver página`, `Bio-link /links`, `Código QR`, `Compartir`), **`Configura tu estudio`** (`N de 6` con `ProgressBar` y pasos desplegables, oculta al completarse), **`Corte de hoy`** (4 filas punteadas -> `/admin/caja`) y **`Cerca de su premio`** (barras segmentadas de sellos -> `/admin/clientas`). |
 | `/admin/onboarding` | Asistente inicial del salón | Configura nombre, ubicación, `@instagram`, banco/CLABE `$200 MXN` y marca `onboardingCompleted: true`. |
 | `/admin/citas` | Agenda visual, búsqueda rápida, reprogramación y cobro | Vista visual por especialista (muestra `recurringBlocks`), clic en bloque abre **Popover rápido** (`BookingQuickPopover`: `@instagram`, transiciones válidas, WhatsApp, recordatorio, **`Solicitar reprogramación`** 1 clic (`C6` -> `PATCH /api/admin/bookings` con `Abrir WhatsApp` + `Copiar enlace` hacia `?action=reschedule`), `$ Cobrar`, `Ver ficha` -> `/admin/clientas?q=<tel>`). Botón **`Búsqueda rápida de hora`** (`GET /api/availability?mode=quick_search`) abre nueva cita prellenada. **Drawer de Cobro Dividido** (`CheckoutDrawerDialog`, también vía `?collect=<bookingId>`): resta anticipo previo, permite múltiples métodos de pago + propina universal por especialista + extra rápido + canje de premio de sellos, otorga sello del día y ofrece botón 1 clic **`Agendar siguiente retoque (+21 días)`**. Maneja `403 PAST_BOOKING_LOCKED` y usa alineación `tabular-nums`. |
 | `/admin/servicios` | Catálogo VIP + Preview en vivo | Pestañas `Servicios` y `Extras / Add-ons` con `CardFrame` limpio (`C4`); soporte de `isStartingPrice` (`Desde $...`) y switch **`Servicio privado / VIP (solo link directo)`** (`C9` -> `isPrivate: true`); editar actualiza `VISTA PREVIA EN VIVO`; `Copiar link` copia `/reservar/[slug]`. |

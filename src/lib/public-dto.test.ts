@@ -114,7 +114,11 @@ describe('Public DTO schemas and mappers (S3)', () => {
     expect(dto.city).toBe('Puebla, México');
     expect(dto.instagramHandle).toBe('@laikona.nailsss');
     expect(dto.instagramUrl).toBe('https://www.instagram.com/laikona.nailsss/');
-    expect(dto.sisterStudioHandle).toBe('@lumiere.beautymx');
+    expect(dto.sisterStudioHandle).toBeUndefined();
+    expect(
+      toPublicSettingsDTO({ ...db.settings, sisterStudioHandle: '@estudio.aliado' })
+        .sisterStudioHandle,
+    ).toBe('@estudio.aliado');
     expect(dto.depositBankName).toBe('Mercado Pago');
     expect(dto.depositBeneficiary).toBe('Karla Patricia Carrillo Rodríguez');
     expect(dto.depositClabe).toBe('7229 6901 3959 779869');

@@ -172,10 +172,11 @@ export interface UpdateBookingStatusInput {
 
 export interface ManageClientBookingInput {
   token: string;
-  action: 'cancel' | 'reschedule';
+  action: 'cancel' | 'reschedule' | 'upload_proof';
   reason?: string;
   newStartAt?: string;
   newStaffId?: string;
+  paymentProofUrl?: string;
 }
 
 export type NotificationDispatcher = (params: {

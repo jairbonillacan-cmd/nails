@@ -1,27 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
+import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AppShell } from '@astryxdesign/core/AppShell';
-import {
-  SideNav,
-  SideNavHeading,
-  SideNavItem,
-  SideNavSection,
-} from '@astryxdesign/core/SideNav';
 import { MobileNav } from '@astryxdesign/core/MobileNav';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
-import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
-import { Banner } from '@astryxdesign/core/Banner';
-import { Divider } from '@astryxdesign/core/Divider';
 import { Selector } from '@astryxdesign/core/Selector';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
+import { Tooltip } from '@astryxdesign/core/Tooltip';
 import {
   BellRing,
   CalendarDays,
+  CheckCircle2,
   Clock,
   Copy,
   ExternalLink,
@@ -31,67 +23,160 @@ import {
   Moon,
   Package,
   Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plug,
   Plus,
   Scissors,
-  Sparkles,
+  Search,
   Sun,
+  Tag,
+  UserCheck,
   Users,
   Volume2,
   VolumeX,
   Wallet,
-  Wand2,
 } from 'lucide-react';
-import { useAdminData } from './AdminProvider';
-import { useSalonAppearance } from '../SalonThemeProvider';
 import { roleCanAccess } from '@/lib/rbac';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useBookingAlertSound } from '@/lib/hooks/useBookingAlertSound';
+import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
+import { useSidebarCollapsed } from '@/lib/hooks/useSidebarCollapsed';
+import { LANDING_ASSETS } from '../landing/landingContent';
+import { useSalonAppearance } from '../SalonThemeProvider';
+import { useAdminData } from './AdminProvider';
+import { AdminQuickSearchDialog } from './AdminQuickSearchDialog';
 
 const ROLE_LABELS = {
-  owner: 'Dueña (Owner)',
+  owner: 'Dueña',
   admin: 'Admin / Recepción',
   specialist: 'Manicurista',
 } as const;
+
+interface AdminShellControls {
+  openMobileMenu: () => void;
+  openQuickSearch: () => void;
+  isMobileMenuOpen: boolean;
+}
+
+const AdminShellContext = createContext<AdminShellControls>({
+  openMobileMenu: () => undefined,
+  openQuickSearch: () => undefined,
+  isMobileMenuOpen: false,
+});
+
+export function useAdminShellControls(): AdminShellControls {
+  return useContext(AdminShellContext);
+}
+
+interface NavItemConfig {
+  id: string;
+  label: string;
+  href: string;
+  matchPath: string;
+  icon: React.ReactNode;
+  badge?: string | null;
+  visible: boolean;
+}
+
+interface NavGroupConfig {
+  title: string;
+  items: NavItemConfig[];
+}
+
+function getInitials(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'LN';
+  if (parts.length === 1) return (parts[0] ?? 'LN').slice(0, 2).toUpperCase();
+  return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
+}
+
+function getDisplayBookingHost(appUrl: string): string {
+  const cleaned = appUrl.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!cleaned || cleaned.startsWith('localhost') || cleaned.startsWith('127.0.0.1')) {
+    return '/reservar';
+  }
+  return `${cleaned}/reservar`;
+}
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data, loading, bookingEventSeq, switchDemoUser, logout } = useAdminData();
   const { mode, setMode } = useSalonAppearance();
-  const copyFeedback = useEphemeralMessage(2000);
-  const soundFeedback = useEphemeralMessage(2000);
+  const copyFeedback = useEphemeralMessage(2200);
+  const soundFeedback = useEphemeralMessage(2200);
+  const lastCopyRef = useRef('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [sidebarCollapsed, toggleSidebarCollapsed] = useSidebarCollapsed();
 
+  const isLoginRoute = pathname === '/admin/login';
   const soundConfigured = data?.settings.soundAlertsEnabled ?? true;
   const { playBookingChime, isMuted, toggleMute } = useBookingAlertSound({
-    enabled: Boolean(data) && pathname !== '/admin/login' && soundConfigured,
+    enabled: Boolean(data) && !isLoginRoute && soundConfigured,
     eventSeq: bookingEventSeq,
     salonName: data?.settings.name,
   });
 
-  if (pathname === '/admin/login') {
+  useKeyboardShortcut(
+    'k',
+    () => setQuickSearchOpen((prev) => !prev),
+    { enabled: Boolean(data) && !isLoginRoute, requireModifier: true },
+  );
+
+  useKeyboardShortcut(
+    'b',
+    toggleSidebarCollapsed,
+    { enabled: Boolean(data) && !isLoginRoute, requireModifier: true },
+  );
+
+  const controls = useMemo<AdminShellControls>(
+    () => ({
+      openMobileMenu: () => setMobileMenuOpen(true),
+      openQuickSearch: () => setQuickSearchOpen(true),
+      isMobileMenuOpen: mobileMenuOpen,
+    }),
+    [mobileMenuOpen],
+  );
+
+  if (isLoginRoute) {
     return <>{children}</>;
   }
 
   if (loading || !data) {
     return (
-      <VStack padding={8} gap={3} maxWidth={480} style={{ marginInline: 'auto' }}>
-        <Text weight="semibold">Cargando panel de administración...</Text>
-        <ProgressBar label="Cargando" isIndeterminate />
+      <VStack className="ad-shell" padding={8} gap={3}>
+        <VStack gap={3} maxWidth={480} width="100%" style={{ marginInline: 'auto' }}>
+          <Text weight="semibold">Cargando panel de administración...</Text>
+          <ProgressBar label="Cargando" isIndeterminate />
+        </VStack>
       </VStack>
     );
   }
 
   const role = data.session.user.role;
   const soundActive = soundConfigured && !isMuted;
+  const isDark = mode === 'dark';
+  const brandLogo = isDark ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
+  const bookingDisplayLink = getDisplayBookingHost(data.integration.appUrl);
+  const initials = getInitials(data.session.user.fullName);
 
   const copyBookingLink = async () => {
-    const url = `${window.location.origin}/reservar`;
+    const url =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/reservar`
+        : `${data.integration.appUrl.replace(/\/+$/, '')}/reservar`;
     try {
       await navigator.clipboard.writeText(url);
-      copyFeedback.show('¡Link copiado!');
+      let msg = '¡Copiado!';
+      if (msg === lastCopyRef.current) msg += '\u00A0';
+      lastCopyRef.current = msg;
+      copyFeedback.show(msg);
     } catch {
-      return;
+      let msg = 'Copia /reservar';
+      if (msg === lastCopyRef.current) msg += '\u00A0';
+      lastCopyRef.current = msg;
+      copyFeedback.show(msg);
     }
   };
 
@@ -100,373 +185,706 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     soundFeedback.show(played ? 'Timbre OK' : 'Sin audio');
   };
 
-  const navSections = (
-    <>
-      <SideNavSection title="Operación">
-        <SideNavItem
-          label="Inicio"
-          href="/admin"
-          icon={<Home size={16} />}
-          isSelected={pathname === '/admin'}
-        />
-        <SideNavItem
-          label="Citas y Agenda"
-          href="/admin/citas"
-          icon={<CalendarDays size={16} />}
-          isSelected={pathname === '/admin/citas'}
-          endContent={
-            data.kpis.pendingConfirmationsCount > 0 ? (
-              <Badge
-                variant="warning"
-                label={String(data.kpis.pendingConfirmationsCount)}
-              />
-            ) : undefined
-          }
-        />
-        {roleCanAccess(role, 'services') ? (
-          <SideNavItem
-            label="Servicios y Extras"
-            href="/admin/servicios"
-            icon={<Scissors size={16} />}
-            isSelected={pathname === '/admin/servicios'}
-          />
-        ) : null}
-        <SideNavItem
-          label="Disponibilidad"
-          href="/admin/disponibilidad"
-          icon={<Clock size={16} />}
-          isSelected={pathname === '/admin/disponibilidad'}
-        />
-      </SideNavSection>
+  const navGroups: NavGroupConfig[] = [
+    {
+      title: 'Hoy',
+      items: [
+        {
+          id: 'overview',
+          label: 'Inicio',
+          href: '/admin',
+          matchPath: '/admin',
+          icon: <Home size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: true,
+        },
+        {
+          id: 'bookings',
+          label: 'Citas y agenda',
+          href: '/admin/citas',
+          matchPath: '/admin/citas',
+          icon: <CalendarDays size={17} strokeWidth={1.85} aria-hidden="true" />,
+          badge:
+            data.kpis.pendingConfirmationsCount > 0
+              ? String(data.kpis.pendingConfirmationsCount)
+              : null,
+          visible: true,
+        },
+        {
+          id: 'clients',
+          label: 'Clientas',
+          href: '/admin/clientas',
+          matchPath: '/admin/clientas',
+          icon: <Users size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'clients'),
+        },
+        {
+          id: 'cash',
+          label: 'Caja',
+          href: '/admin/caja',
+          matchPath: '/admin/caja',
+          icon: <Wallet size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'cash'),
+        },
+      ],
+    },
+    {
+      title: 'Catálogo',
+      items: [
+        {
+          id: 'services',
+          label: 'Servicios y extras',
+          href: '/admin/servicios',
+          matchPath: '/admin/servicios',
+          icon: <Scissors size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'services'),
+        },
+        {
+          id: 'inventory',
+          label: 'Inventario',
+          href: '/admin/inventario',
+          matchPath: '/admin/inventario',
+          icon: <Package size={17} strokeWidth={1.85} aria-hidden="true" />,
+          badge: data.kpis.lowStockCount > 0 ? String(data.kpis.lowStockCount) : null,
+          visible: roleCanAccess(role, 'inventory'),
+        },
+      ],
+    },
+    {
+      title: 'Equipo',
+      items: [
+        {
+          id: 'team',
+          label: 'Equipo y turnos',
+          href: '/admin/equipo',
+          matchPath: '/admin/equipo',
+          icon: <UserCheck size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'team'),
+        },
+        {
+          id: 'availability',
+          label: 'Disponibilidad',
+          href: '/admin/disponibilidad',
+          matchPath: '/admin/disponibilidad',
+          icon: <Clock size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'availability'),
+        },
+        {
+          id: 'commissions',
+          label: 'Comisiones y cupones',
+          href: '/admin/caja?tab=comisiones',
+          matchPath: '/admin/caja?tab=comisiones',
+          icon: <Tag size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'cash'),
+        },
+      ],
+    },
+    {
+      title: 'Estudio',
+      items: [
+        {
+          id: 'brand',
+          label: 'Página y marca',
+          href: '/admin/marca',
+          matchPath: '/admin/marca',
+          icon: <Palette size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'brand'),
+        },
+        {
+          id: 'integrations',
+          label: 'Integraciones',
+          href: '/admin/integraciones',
+          matchPath: '/admin/integraciones',
+          icon: <Plug size={17} strokeWidth={1.85} aria-hidden="true" />,
+          visible: roleCanAccess(role, 'integrations'),
+        },
+        {
+          id: 'onboarding',
+          label: 'Configuración inicial',
+          href: '/admin/onboarding',
+          matchPath: '/admin/onboarding',
+          icon: <CheckCircle2 size={17} strokeWidth={1.85} aria-hidden="true" />,
+          badge: !data.settings.onboardingCompleted
+            ? `${data.onboardingChecklist.completedCount}/${data.onboardingChecklist.totalCount}`
+            : null,
+          visible: role === 'owner',
+        },
+      ],
+    },
+  ]
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.visible),
+    }))
+    .filter((group) => group.items.length > 0);
 
-      <SideNavSection title="Negocio y Crecimiento">
-        {roleCanAccess(role, 'clients') ? (
-          <SideNavItem
-            label="Clientas"
-            href="/admin/clientas"
-            icon={<Users size={16} />}
-            isSelected={pathname === '/admin/clientas'}
-          />
-        ) : null}
-        <SideNavItem
-          label="Caja, Comisiones y Cupones"
-          href="/admin/caja"
-          icon={<Wallet size={16} />}
-          isSelected={pathname === '/admin/caja'}
-        />
-        {roleCanAccess(role, 'inventory') ? (
-          <SideNavItem
-            label="Inventario"
-            href="/admin/inventario"
-            icon={<Package size={16} />}
-            isSelected={pathname === '/admin/inventario'}
-            endContent={
-              data.kpis.lowStockCount > 0 ? (
-                <Badge
-                  variant="error"
-                  label={String(data.kpis.lowStockCount)}
-                />
-              ) : undefined
-            }
-          />
-        ) : null}
-      </SideNavSection>
+  const renderLinkCopyCard = (isCompactRail: boolean) =>
+    isCompactRail ? (
+      <Tooltip
+        content={copyFeedback.message ? '¡Link de citas copiado!' : 'Copiar tu link de citas'}
+        placement="end"
+        hasHoverIndication={false}
+      >
+        <button
+          type="button"
+          className="ad-rail-btn"
+          aria-label="Copiar enlace de página de citas"
+          onClick={() => void copyBookingLink()}
+        >
+          <Copy size={16} strokeWidth={1.85} aria-hidden="true" />
+        </button>
+      </Tooltip>
+    ) : (
+      <VStack gap={1}>
+        <button
+          type="button"
+          className="ad-link-box"
+          aria-label="Copiar enlace de página de citas"
+          onClick={() => void copyBookingLink()}
+        >
+          <VStack gap={0} align="start" className="rb-grow">
+            <Text type="supporting" color="secondary" size="sm">
+              Tu link de citas
+            </Text>
+            <Text weight="semibold" size="sm" className="ad-link-url">
+              {bookingDisplayLink}
+            </Text>
+          </VStack>
+          <Text color="accent" weight="bold" size="sm">
+            {copyFeedback.message ? '¡Copiado!' : 'Copiar'}
+          </Text>
+        </button>
+      </VStack>
+    );
 
-      {role === 'owner' ||
-      roleCanAccess(role, 'team') ||
-      roleCanAccess(role, 'brand') ||
-      roleCanAccess(role, 'integrations') ? (
-        <SideNavSection title="Configuración">
-          {role === 'owner' ? (
-            <SideNavItem
-              label="Onboarding"
-              href="/admin/onboarding"
-              icon={<Wand2 size={16} />}
-              isSelected={pathname === '/admin/onboarding'}
-              endContent={
-                !data.settings.onboardingCompleted ? (
-                  <Badge
-                    variant="info"
-                    label={`${data.onboardingChecklist.completedCount}/${data.onboardingChecklist.totalCount}`}
-                  />
-                ) : undefined
-              }
-            />
+  const renderNavGroups = (isCompactRail: boolean, onItemClick?: () => void) => (
+    <VStack as="nav" aria-label="Panel" gap={isCompactRail ? 1.5 : 2} className="ad-nav-wrap">
+      {navGroups.map((group, groupIdx) => (
+        <VStack
+          key={group.title}
+          gap={0.5}
+          className={isCompactRail && groupIdx > 0 ? 'ad-nav-group-rail' : undefined}
+        >
+          {!isCompactRail ? (
+            <Text type="supporting" weight="semibold" className="ad-nav-group-title">
+              {group.title}
+            </Text>
           ) : null}
-          {roleCanAccess(role, 'team') ? (
-            <SideNavItem
-              label="Equipo y Admins"
-              href="/admin/equipo"
-              icon={<Users size={16} />}
-              isSelected={pathname === '/admin/equipo'}
-            />
-          ) : null}
-          {roleCanAccess(role, 'brand') ? (
-            <SideNavItem
-              label="Marca, Tema y Landing"
-              href="/admin/marca"
-              icon={<Palette size={16} />}
-              isSelected={pathname === '/admin/marca'}
-            />
-          ) : null}
-          {roleCanAccess(role, 'integrations') ? (
-            <SideNavItem
-              label="Integraciones y WhatsApp"
-              href="/admin/integraciones"
-              icon={<Plug size={16} />}
-              isSelected={pathname === '/admin/integraciones'}
-            />
-          ) : null}
-        </SideNavSection>
-      ) : null}
-    </>
-  );
+          <VStack as="ul" gap={0.5} className="ad-nav-list">
+            {group.items.map((item) => {
+              const isSelected = pathname === item.matchPath;
+              const tooltipText = item.badge ? `${item.label} (${item.badge})` : item.label;
+              const linkNode = (
+                <NextLink
+                  href={item.href}
+                  className={isCompactRail ? 'ad-nav ad-nav-compact' : 'ad-nav'}
+                  data-on={isSelected ? 'true' : 'false'}
+                  aria-current={isSelected ? 'page' : undefined}
+                  aria-label={isCompactRail ? tooltipText : undefined}
+                  onClick={onItemClick}
+                >
+                  {item.icon}
+                  {!isCompactRail ? (
+                    <Text color="inherit" className="ad-nav-label">
+                      {item.label}
+                    </Text>
+                  ) : null}
+                  {item.badge ? (
+                    isCompactRail ? (
+                      <Text className="ad-rail-dot" aria-hidden="true">
+                        {'\u200B'}
+                      </Text>
+                    ) : (
+                      <Text
+                        color="inherit"
+                        weight="bold"
+                        className="ad-nav-badge"
+                        hasTabularNumbers
+                      >
+                        {item.badge}
+                      </Text>
+                    )
+                  ) : null}
+                </NextLink>
+              );
 
-  const navFooter = (
-    <VStack gap={1} paddingInline={2} paddingBlock={2}>
-      <Divider />
-      <SideNavItem
-        label={
-          soundFeedback.message
-            ? soundFeedback.message
-            : soundActive
-              ? 'Sonido de citas activo'
-              : 'Sonido silenciado'
-        }
-        icon={soundActive ? <Volume2 size={16} /> : <VolumeX size={16} />}
-        onClick={toggleMute}
-      />
-      <SideNavItem
-        label="Probar sonido de cita"
-        icon={<BellRing size={16} />}
-        onClick={() => void handleTestSound()}
-      />
-      <SideNavItem
-        label="Ver sitio público"
-        href="/"
-        icon={<ExternalLink size={16} />}
-      />
-      <SideNavItem
-        label={mode === 'dark' ? 'Modo claro' : 'Modo oscuro'}
-        icon={mode === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
-      />
-      <SideNavItem
-        label="Cerrar sesión"
-        icon={<LogOut size={16} />}
-        onClick={() => void logout()}
-      />
+              return (
+                <li key={item.id}>
+                  {isCompactRail ? (
+                    <Tooltip content={tooltipText} placement="end" hasHoverIndication={false}>
+                      {linkNode}
+                    </Tooltip>
+                  ) : (
+                    linkNode
+                  )}
+                </li>
+              );
+            })}
+          </VStack>
+        </VStack>
+      ))}
     </VStack>
   );
 
-  return (
-    <AppShell
-      height="fill"
-      variant="wash"
-      contentPadding={6}
-      banner={
-        data.integration.mode === 'demo' ? (
-          <Banner
-            container="section"
-            status="info"
-            title={`Modo Demo activo (${ROLE_LABELS[role]})`}
-            description="Todo funciona y persiste localmente. Cuando agregues tus llaves en .env se activarán Supabase, Google Calendar, Resend, Meta WhatsApp y Twilio."
-            endContent={
-              <HStack gap={2} align="center">
-                <Selector
-                  label="Cambiar rol demo"
-                  isLabelHidden
-                  size="sm"
-                  value={data.session.user.email}
-                  onChange={(val) => {
-                    if (val) void switchDemoUser(val);
-                  }}
-                  options={data.adminUsers
-                    .filter((u) => u.isActive)
-                    .map((u) => ({
-                      value: u.email,
-                      label: `${u.fullName} · ${ROLE_LABELS[u.role]}`,
-                    }))}
-                />
-              </HStack>
-            }
+  const renderSidebarFooter = (isCompactRail: boolean, closeDrawer?: () => void) =>
+    isCompactRail ? (
+      <VStack gap={1.5} align="center" className="ad-side-foot ad-side-foot-compact">
+        <Tooltip
+          content={`${data.session.user.fullName} · ${ROLE_LABELS[role]}`}
+          placement="end"
+          hasHoverIndication={false}
+        >
+          <button
+            type="button"
+            className="ad-avatar-btn"
+            aria-label={`${data.session.user.fullName} (${ROLE_LABELS[role]}). Expandir barra para cambiar rol`}
+            onClick={toggleSidebarCollapsed}
+          >
+            <Text color="inherit" weight="bold" className="ad-avatar" aria-hidden="true">
+              {initials}
+            </Text>
+            <Text className="ad-online-dot" aria-hidden="true">
+              {'\u200B'}
+            </Text>
+          </button>
+        </Tooltip>
+
+        <Tooltip
+          content={soundActive ? 'Silenciar alertas' : 'Activar sonido'}
+          placement="end"
+          hasHoverIndication={false}
+        >
+          <button
+            type="button"
+            className="ad-rail-btn"
+            aria-label={soundActive ? 'Silenciar alertas' : 'Activar sonido'}
+            aria-pressed={soundActive}
+            onClick={toggleMute}
+          >
+            {soundActive ? (
+              <Volume2 size={16} strokeWidth={1.85} aria-hidden="true" />
+            ) : (
+              <VolumeX size={16} strokeWidth={1.85} aria-hidden="true" />
+            )}
+          </button>
+        </Tooltip>
+
+        <Tooltip
+          content={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          placement="end"
+          hasHoverIndication={false}
+        >
+          <button
+            type="button"
+            className="ad-rail-btn"
+            aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            aria-pressed={isDark}
+            onClick={() => setMode(isDark ? 'light' : 'dark')}
+          >
+            {isDark ? (
+              <Sun size={16} strokeWidth={1.85} aria-hidden="true" />
+            ) : (
+              <Moon size={16} strokeWidth={1.85} aria-hidden="true" />
+            )}
+          </button>
+        </Tooltip>
+
+        <Tooltip content="Ver página pública" placement="end" hasHoverIndication={false}>
+          <NextLink href="/" className="ad-rail-btn" aria-label="Ver página pública">
+            <ExternalLink size={16} strokeWidth={1.85} aria-hidden="true" />
+          </NextLink>
+        </Tooltip>
+
+        <Tooltip content="Cerrar sesión" placement="end" hasHoverIndication={false}>
+          <button
+            type="button"
+            className="ad-rail-btn"
+            aria-label="Cerrar sesión"
+            onClick={() => void logout()}
+          >
+            <LogOut size={16} strokeWidth={1.85} aria-hidden="true" />
+          </button>
+        </Tooltip>
+      </VStack>
+    ) : (
+      <VStack gap={2} className="ad-side-foot">
+        <HStack gap={2} align="center">
+          <HStack className="ad-avatar-wrap" aria-hidden="true">
+            <Text color="inherit" weight="bold" className="ad-avatar">
+              {initials}
+            </Text>
+            <Text className="ad-online-dot">{'\u200B'}</Text>
+          </HStack>
+          <VStack gap={0} className="rb-grow">
+            <Text weight="semibold" size="sm" maxLines={1}>
+              {data.session.user.fullName}
+            </Text>
+            <Text type="supporting" color="secondary" size="sm">
+              {ROLE_LABELS[role]}
+            </Text>
+          </VStack>
+        </HStack>
+
+        {data.integration.mode === 'demo' ? (
+          <Selector
+            label="Cambiar rol demo"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            value={data.session.user.email}
+            onChange={(val) => {
+              if (val) {
+                void switchDemoUser(val);
+                if (closeDrawer) closeDrawer();
+              }
+            }}
+            options={data.adminUsers
+              .filter((u) => u.isActive)
+              .map((u) => ({
+                value: u.email,
+                label: `${u.fullName.split(' ')[0]} · ${ROLE_LABELS[u.role]}`,
+              }))}
           />
-        ) : undefined
-      }
-      mobileNav={
+        ) : null}
+
+        <HStack gap={1.5} align="center">
+          <button
+            type="button"
+            className="ad-pill ad-foot-pill"
+            aria-pressed={soundActive}
+            onClick={toggleMute}
+          >
+            {soundActive ? (
+              <Volume2 size={14} aria-hidden="true" />
+            ) : (
+              <VolumeX size={14} aria-hidden="true" />
+            )}
+            <Text color="inherit" size="sm" weight="semibold">
+              {soundFeedback.message ? soundFeedback.message : soundActive ? 'Sonido' : 'Silencio'}
+            </Text>
+          </button>
+          <button
+            type="button"
+            className="ad-pill ad-icon-pill"
+            aria-label="Probar sonido de alerta"
+            title="Probar sonido de alerta"
+            onClick={() => void handleTestSound()}
+          >
+            <BellRing size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="ad-pill ad-foot-pill"
+            aria-pressed={isDark}
+            onClick={() => setMode(isDark ? 'light' : 'dark')}
+          >
+            {isDark ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
+            <Text color="inherit" size="sm" weight="semibold">
+              {isDark ? 'Claro' : 'Oscuro'}
+            </Text>
+          </button>
+        </HStack>
+
+        <HStack justify="between" align="center" gap={2}>
+          <button
+            type="button"
+            className="ad-foot-link"
+            onClick={() => {
+              if (closeDrawer) closeDrawer();
+              void logout();
+            }}
+          >
+            <LogOut size={14} aria-hidden="true" />
+            <Text color="inherit" size="sm">
+              Cerrar sesión
+            </Text>
+          </button>
+          <NextLink
+            href="/"
+            className="ad-foot-link"
+            onClick={closeDrawer}
+            aria-label="Ver sitio público"
+          >
+            <ExternalLink size={14} aria-hidden="true" />
+            <Text color="inherit" size="sm">
+              Sitio
+            </Text>
+          </NextLink>
+        </HStack>
+      </VStack>
+    );
+
+  const canClients = roleCanAccess(role, 'clients');
+
+  return (
+    <AdminShellContext.Provider value={controls}>
+      <VStack className="ad-shell" gap={0}>
+        <Text
+          type="supporting"
+          color="secondary"
+          role="status"
+          aria-live="polite"
+          className="rb-sr-only"
+        >
+          {copyFeedback.message ?? ''}
+        </Text>
+
+        <HStack as="header" className="ad-mobile-top" justify="between" align="center" gap={2}>
+          <button
+            type="button"
+            className="ad-pill ad-menu-trigger"
+            aria-label="Abrir menú"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu size={16} aria-hidden="true" />
+            <Text color="inherit" size="sm" weight="semibold">
+              Menú
+            </Text>
+          </button>
+          <NextLink
+            href="/admin"
+            aria-label={`${data.settings.name}, inicio del panel`}
+            className="ad-logo-link"
+          >
+            <img
+              src={brandLogo}
+              alt={data.settings.name}
+              width={110}
+              height={32}
+              className="ad-logo-sm"
+            />
+          </NextLink>
+          <button
+            type="button"
+            className="ad-pill ad-icon-pill"
+            aria-label="Buscar clienta o cita"
+            onClick={() => setQuickSearchOpen(true)}
+          >
+            <Search size={16} aria-hidden="true" />
+          </button>
+        </HStack>
+
+        <HStack
+          className="ad-frame"
+          data-collapsed={sidebarCollapsed ? 'true' : 'false'}
+          gap={0}
+          align="stretch"
+        >
+          <VStack
+            as="aside"
+            className="ad-side"
+            data-collapsed={sidebarCollapsed ? 'true' : 'false'}
+            gap={3}
+            aria-label="Menú lateral"
+          >
+            {sidebarCollapsed ? (
+              <VStack gap={1.5} align="center" className="ad-side-top-compact">
+                <Tooltip
+                  content="Expandir barra (Ctrl B)"
+                  placement="end"
+                  hasHoverIndication={false}
+                >
+                  <button
+                    type="button"
+                    className="ad-rail-btn"
+                    aria-label="Expandir barra lateral"
+                    aria-expanded={false}
+                    onClick={toggleSidebarCollapsed}
+                  >
+                    <PanelLeftOpen size={17} strokeWidth={1.85} aria-hidden="true" />
+                  </button>
+                </Tooltip>
+                <Tooltip content="Buscar (Ctrl K)" placement="end" hasHoverIndication={false}>
+                  <button
+                    type="button"
+                    className="ad-rail-btn"
+                    aria-label="Buscar clienta o cita"
+                    onClick={() => setQuickSearchOpen(true)}
+                  >
+                    <Search size={16} strokeWidth={1.85} aria-hidden="true" />
+                  </button>
+                </Tooltip>
+                {renderLinkCopyCard(true)}
+              </VStack>
+            ) : (
+              <VStack gap={3} className="ad-side-top">
+                <HStack justify="between" align="center" gap={1.5}>
+                  <NextLink
+                    href="/admin"
+                    aria-label={`${data.settings.name}, inicio del panel`}
+                    className="ad-logo-link"
+                  >
+                    <img
+                      src={brandLogo}
+                      alt={data.settings.name}
+                      width={118}
+                      height={34}
+                      className="ad-logo"
+                    />
+                  </NextLink>
+                  <HStack gap={1} align="center">
+                    <Tooltip content="Buscar (Ctrl K)" placement="below" hasHoverIndication={false}>
+                      <button
+                        type="button"
+                        className="ad-rail-btn ad-rail-btn-sm"
+                        aria-label="Buscar clienta o cita"
+                        onClick={() => setQuickSearchOpen(true)}
+                      >
+                        <Search size={15} strokeWidth={1.85} aria-hidden="true" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip
+                      content="Retraer barra (Ctrl B)"
+                      placement="below"
+                      hasHoverIndication={false}
+                    >
+                      <button
+                        type="button"
+                        className="ad-rail-btn ad-rail-btn-sm"
+                        aria-label="Retraer barra lateral"
+                        aria-expanded={true}
+                        onClick={toggleSidebarCollapsed}
+                      >
+                        <PanelLeftClose size={16} strokeWidth={1.85} aria-hidden="true" />
+                      </button>
+                    </Tooltip>
+                  </HStack>
+                </HStack>
+                {renderLinkCopyCard(false)}
+              </VStack>
+            )}
+
+            {renderNavGroups(sidebarCollapsed)}
+
+            {renderSidebarFooter(sidebarCollapsed)}
+          </VStack>
+
+          <VStack className="ad-main-wrap" gap={0}>
+            <VStack as="main" className="ad-sheet" gap={5}>
+              <VStack gap={5} width="100%" className="ad-content-inner">
+                {children}
+              </VStack>
+            </VStack>
+          </VStack>
+        </HStack>
+
+        <nav className="ad-bottom" aria-label="Accesos rápidos">
+          <NextLink
+            href="/admin"
+            className="ad-bottom-item"
+            data-on={pathname === '/admin' ? 'true' : 'false'}
+            aria-current={pathname === '/admin' ? 'page' : undefined}
+          >
+            <Home size={20} aria-hidden="true" />
+            <Text color="inherit" size="sm" weight="semibold" className="ad-bottom-label">
+              Inicio
+            </Text>
+          </NextLink>
+
+          <NextLink
+            href="/admin/citas"
+            className="ad-bottom-item"
+            data-on={pathname === '/admin/citas' ? 'true' : 'false'}
+            aria-current={pathname === '/admin/citas' ? 'page' : undefined}
+            aria-label={
+              data.kpis.pendingConfirmationsCount > 0
+                ? `Agenda (${data.kpis.pendingConfirmationsCount} pendientes)`
+                : undefined
+            }
+          >
+            <CalendarDays size={20} aria-hidden="true" />
+            <Text color="inherit" size="sm" weight="semibold" className="ad-bottom-label">
+              Agenda
+            </Text>
+            {data.kpis.pendingConfirmationsCount > 0 ? (
+              <Text className="ad-bottom-dot" aria-hidden="true">
+                {'\u200B'}
+              </Text>
+            ) : null}
+          </NextLink>
+
+          <NextLink
+            href="/admin/citas?new=1"
+            className="ad-bottom-plus"
+            aria-label="Nueva cita"
+          >
+            <Plus size={24} aria-hidden="true" />
+          </NextLink>
+
+          {canClients ? (
+            <NextLink
+              href="/admin/clientas"
+              className="ad-bottom-item"
+              data-on={pathname === '/admin/clientas' ? 'true' : 'false'}
+              aria-current={pathname === '/admin/clientas' ? 'page' : undefined}
+            >
+              <Users size={20} aria-hidden="true" />
+              <Text color="inherit" size="sm" weight="semibold" className="ad-bottom-label">
+                Clientas
+              </Text>
+            </NextLink>
+          ) : (
+            <NextLink
+              href="/admin/disponibilidad"
+              className="ad-bottom-item"
+              data-on={pathname === '/admin/disponibilidad' ? 'true' : 'false'}
+              aria-current={pathname === '/admin/disponibilidad' ? 'page' : undefined}
+            >
+              <Clock size={20} aria-hidden="true" />
+              <Text color="inherit" size="sm" weight="semibold" className="ad-bottom-label">
+                Horarios
+              </Text>
+            </NextLink>
+          )}
+
+          <NextLink
+            href="/admin/caja"
+            className="ad-bottom-item"
+            data-on={pathname === '/admin/caja' ? 'true' : 'false'}
+            aria-current={pathname === '/admin/caja' ? 'page' : undefined}
+          >
+            <Wallet size={20} aria-hidden="true" />
+            <Text color="inherit" size="sm" weight="semibold" className="ad-bottom-label">
+              Caja
+            </Text>
+          </NextLink>
+        </nav>
+
         <MobileNav
           isOpen={mobileMenuOpen}
           onOpenChange={setMobileMenuOpen}
           label="Menú de administración"
+          width={300}
           header={
-            <SideNavHeading
-              heading={data.settings.name}
-              subheading={ROLE_LABELS[role]}
-              headingHref="/admin"
-              icon={<Sparkles size={18} aria-hidden="true" />}
-            />
-          }
-        >
-          {navSections}
-          {navFooter}
-        </MobileNav>
-      }
-      sideNav={
-        <SideNav
-          collapsible={{ hasButton: true, buttonLabel: 'Contraer menú' }}
-          header={
-            <SideNavHeading
-              heading={data.settings.name}
-              subheading={ROLE_LABELS[role]}
-              headingHref="/admin"
-              icon={<Sparkles size={18} aria-hidden="true" />}
-            />
-          }
-          topContent={
-            <VStack gap={1.5} paddingInline={2} paddingBlockEnd={2}>
-              <Button
-                label={copyFeedback.message ?? 'Copiar link de citas'}
-                variant="secondary"
-                size="sm"
-                width="100%"
-                icon={<Copy size={14} />}
-                onClick={copyBookingLink}
-              />
-              <HStack gap={1.5} align="center">
-                <Button
-                  type="button"
-                  label={soundActive ? 'Sonido ON' : 'Silenciado'}
-                  variant="ghost"
-                  size="sm"
-                  width="100%"
-                  icon={soundActive ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                  onClick={toggleMute}
-                />
-                <Button
-                  type="button"
-                  label="Probar sonido de alerta"
-                  isIconOnly
-                  variant="ghost"
-                  size="sm"
-                  icon={<BellRing size={14} />}
-                  onClick={() => void handleTestSound()}
-                />
-              </HStack>
-            </VStack>
-          }
-          footer={navFooter}
-        >
-          {navSections}
-        </SideNav>
-      }
-    >
-      <VStack
-        gap={5}
-        maxWidth={1280}
-        width="100%"
-        style={{ marginInline: 'auto', minHeight: '100%' }}
-      >
-        {children}
-
-        <nav
-          aria-label="Navegación rápida de administración"
-          style={{
-            position: 'sticky',
-            bottom: 'max(0.75rem, env(safe-area-inset-bottom, 0rem))',
-            zIndex: 20,
-            marginTop: 'auto',
-            width: '100%',
-            maxWidth: '42rem',
-            marginInline: 'auto',
-            paddingBottom: 'env(safe-area-inset-bottom, 0rem)',
-          }}
-        >
-          <HStack gap={2} align="center" justify="center" width="100%">
-            <HStack
-              justify="around"
-              align="center"
-              gap={0.5}
-              wrap="wrap"
-              padding={1}
-              style={{
-                flex: '1 1 auto',
-                backgroundColor: 'var(--color-background-card)',
-                borderRadius: 'var(--radius-full)',
-                borderWidth: 'thin',
-                borderStyle: 'solid',
-                borderColor: 'var(--color-border-emphasized)',
-                boxShadow: 'var(--shadow-high)',
-                backdropFilter: 'blur(0.75rem)',
-              }}
+            <NextLink
+              href="/admin"
+              aria-label={`${data.settings.name}, inicio del panel`}
+              className="ad-logo-link"
+              onClick={() => setMobileMenuOpen(false)}
             >
-              <Button
-                label="Inicio"
-                href="/admin"
-                size="sm"
-                variant={pathname === '/admin' ? 'primary' : 'ghost'}
-                icon={<Home size={15} aria-hidden="true" />}
+              <img
+                src={brandLogo}
+                alt={data.settings.name}
+                width={116}
+                height={34}
+                className="ad-logo-sm"
               />
-              <Button
-                label="Agenda"
-                href="/admin/citas"
-                size="sm"
-                variant={pathname === '/admin/citas' ? 'primary' : 'ghost'}
-                icon={<CalendarDays size={15} aria-hidden="true" />}
-                endContent={
-                  data.kpis.pendingConfirmationsCount > 0 ? (
-                    <Badge
-                      variant="warning"
-                      label={String(data.kpis.pendingConfirmationsCount)}
-                    />
-                  ) : undefined
-                }
-              />
-              {roleCanAccess(role, 'clients') ? (
-                <Button
-                  label="Clientas"
-                  href="/admin/clientas"
-                  size="sm"
-                  variant={pathname === '/admin/clientas' ? 'primary' : 'ghost'}
-                  icon={<Users size={15} aria-hidden="true" />}
-                />
-              ) : (
-                <Button
-                  label="Horarios"
-                  href="/admin/disponibilidad"
-                  size="sm"
-                  variant={pathname === '/admin/disponibilidad' ? 'primary' : 'ghost'}
-                  icon={<Clock size={15} aria-hidden="true" />}
-                />
-              )}
-              <Button
-                label="Caja"
-                href="/admin/caja"
-                size="sm"
-                variant={pathname === '/admin/caja' ? 'primary' : 'ghost'}
-                icon={<Wallet size={15} aria-hidden="true" />}
-              />
-              <Button
-                type="button"
-                label="Menú"
-                size="sm"
-                variant={mobileMenuOpen ? 'primary' : 'ghost'}
-                icon={<Menu size={15} aria-hidden="true" />}
-                onClick={() => setMobileMenuOpen(true)}
-              />
-            </HStack>
+            </NextLink>
+          }
+        >
+          <VStack gap={4} paddingInline={2} paddingBlock={2} className="ad-drawer-body">
+            {renderLinkCopyCard(false)}
+            {renderNavGroups(false, () => setMobileMenuOpen(false))}
+            {renderSidebarFooter(false, () => setMobileMenuOpen(false))}
+          </VStack>
+        </MobileNav>
 
-            <Button
-              label="Nueva cita"
-              href="/admin/citas?new=1"
-              size="md"
-              variant="primary"
-              elevation="high"
-              icon={<Plus size={16} aria-hidden="true" />}
-              tooltip="Agendar nueva cita"
-            />
-          </HStack>
-        </nav>
+        <AdminQuickSearchDialog
+          isOpen={quickSearchOpen}
+          onOpenChange={setQuickSearchOpen}
+          data={data}
+        />
       </VStack>
-    </AppShell>
+    </AdminShellContext.Provider>
   );
 }

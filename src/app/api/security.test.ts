@@ -3520,5 +3520,48 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(persisted?.status).toBe('canceled');
       expect(persisted?.errorMessage).toBe('skipped_cascade');
     });
+
+    it('PATCH /api/bookings/manage/[token] upload_proof validates image magic bytes and persists proof', async () => {
+      const validPngBase64 = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      ]).toString('base64');
+      const spoofedBase64 = Buffer.from('<html>not-a-png</html>').toString('base64');
+
+      const badRes = await patchManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-andrea-1044', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload_proof',
+            paymentProofUrl: `data:image/png;base64,${spoofedBase64}`,
+          }),
+        }),
+        { params: Promise.resolve({ token: 'demo-token-andrea-1044' }) },
+      );
+      expect(badRes.status).toBe(400);
+
+      const okRes = await patchManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-andrea-1044', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload_proof',
+            paymentProofUrl: `data:image/png;base64,${validPngBase64}`,
+          }),
+        }),
+        { params: Promise.resolve({ token: 'demo-token-andrea-1044' }) },
+      );
+      expect(okRes.status).toBe(200);
+      const okJson = (await okRes.json()) as {
+        booking: { paymentProofUrl: string | null; proofDeliveryMethod: string };
+        calendarLinks: { icsDownload: string };
+        whatsappUrl: string;
+      };
+      expect(okJson.booking.paymentProofUrl).toMatch(/^\/api\/media\/proofs\/.+\.png$/);
+      expect(okJson.booking.proofDeliveryMethod).toBe('web_upload');
+      expect(okJson.calendarLinks.icsDownload).toContain('demo-token-andrea-1044');
+      expect(okJson.whatsappUrl).toContain('https://wa.me/');
+    });
   });
 });

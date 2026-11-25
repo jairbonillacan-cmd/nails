@@ -27,6 +27,8 @@ interface BookingSummaryCardProps {
   hasStartingPrice: boolean;
   discountCents: number;
   depositAmountCents: number;
+  depositLabel?: string;
+  codeBadge?: string | null;
   holdRemainingSec: number;
   holdTotalSec: number;
   headingId: string;
@@ -39,6 +41,8 @@ export function BookingSummaryCard({
   hasStartingPrice,
   discountCents,
   depositAmountCents,
+  depositLabel = 'Anticipo para apartar',
+  codeBadge = null,
   holdRemainingSec,
   holdTotalSec,
   headingId,
@@ -48,9 +52,16 @@ export function BookingSummaryCard({
   return (
     <VStack gap={4} className="rb-summary">
       <img className="rb-summary-cherries" src={LANDING_ASSETS.cherriesWhite} alt="" width={280} height={280} />
-      <Heading level={2} id={headingId} color="inherit" className="lk-serif rb-summary-title">
-        Tu cita
-      </Heading>
+      <HStack justify="between" align="center" gap={2} wrap="wrap">
+        <Heading level={2} id={headingId} color="inherit" className="lk-serif rb-summary-title">
+          Tu cita
+        </Heading>
+        {codeBadge ? (
+          <Text color="inherit" weight="bold" className="ck-summary-code" hasTabularNumbers>
+            {codeBadge}
+          </Text>
+        ) : null}
+      </HStack>
 
       <VStack as="ul" gap={3} className="rb-summary-rows">
         {rows.map((row) => (
@@ -97,7 +108,7 @@ export function BookingSummaryCard({
         {depositAmountCents > 0 ? (
           <HStack justify="between">
             <Text color="inherit" type="supporting" className="rb-summary-sub">
-              Anticipo para apartar
+              {depositLabel}
             </Text>
             <Text color="inherit" type="supporting" className="rb-summary-sub" hasTabularNumbers>
               {formatCurrency(depositAmountCents, currency)}

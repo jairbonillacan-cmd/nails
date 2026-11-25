@@ -16,17 +16,35 @@ import {
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type PublicServiceDTO,
 } from '@/lib/public-dto';
-import type { BookingWithRelations } from '@/lib/types';
+import type { BookingWithRelations, Service } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-function toPublicManageBooking(booking: BookingWithRelations) {
+function resolveExtraPublicServices(
+  booking: BookingWithRelations,
+  allServices: readonly Service[],
+): PublicServiceDTO[] {
+  const extraIds = booking.extraServiceIds ?? [];
+  if (extraIds.length === 0) return [];
+  return extraIds
+    .filter((id) => id !== booking.serviceId)
+    .map((id) => allServices.find((srv) => srv.id === id))
+    .filter((srv): srv is Service => Boolean(srv))
+    .map(toPublicServiceDTO);
+}
+
+function toPublicManageBooking(
+  booking: BookingWithRelations,
+  allServices: readonly Service[],
+) {
   return {
     ...booking,
     internalNotes: '',
     staff: toPublicStaffDTO(booking.staff),
     service: toPublicServiceDTO(booking.service),
+    extraServices: resolveExtraPublicServices(booking, allServices),
   };
 }
 
@@ -45,19 +63,21 @@ export async function GET(
   const loyaltySummary = getClientLoyaltySummary(booking.clientId);
 
   return NextResponse.json({
-    booking: toPublicManageBooking(booking),
+    booking: toPublicManageBooking(booking, db.services),
     settings: toPublicSettingsDTO(db.settings),
     calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
     whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
+    manageUrl,
     loyaltySummary,
   });
 }
 
 const patchSchema = z.object({
-  action: z.enum(['cancel', 'reschedule']),
+  action: z.enum(['cancel', 'reschedule', 'upload_proof']),
   reason: z.string().max(400).optional(),
   newStartAt: z.string().optional(),
   newStaffId: z.string().optional(),
+  paymentProofUrl: z.string().max(4_000_000).optional(),
 });
 
 export async function PATCH(
@@ -68,7 +88,15 @@ export async function PATCH(
     const { token } = await context.params;
     const body = patchSchema.parse(await request.json());
     const booking = await manageClientBookingAction({ token, ...body });
-    return NextResponse.json({ booking: toPublicManageBooking(booking) });
+    const db = getSnapshot();
+    const env = getRuntimeIntegrationStatus();
+    const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
+    return NextResponse.json({
+      booking: toPublicManageBooking(booking, db.services),
+      calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
+      whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
+      manageUrl,
+    });
   } catch (err) {
     if (err instanceof SlotConflictError) {
       return NextResponse.json(

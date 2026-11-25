@@ -595,7 +595,7 @@ export default function AdminOnboardingPage() {
                     value={address}
                     onChange={setAddress}
                     autoComplete="street-address"
-                    placeholder="Puebla, México · Con @lumiere.beautymx"
+                    placeholder="Calle 25 Sur 1904, Col. Volcanes, Puebla"
                     startIcon={<MapPin size={16} aria-hidden="true" />}
                   />
                 </VStack>

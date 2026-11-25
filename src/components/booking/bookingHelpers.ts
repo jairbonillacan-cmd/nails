@@ -15,7 +15,6 @@ export type ProofDeliveryMethod = 'web_upload' | 'instagram_dm' | 'none';
 
 const DEFAULT_INSTAGRAM_HANDLE = '@laikona.nailsss';
 const DEFAULT_INSTAGRAM_URL = 'https://www.instagram.com/laikona.nailsss/';
-export const DEFAULT_SISTER_STUDIO_HANDLE = '@lumiere.beautymx';
 
 export function formatServicePrice(
   priceCents: number,
