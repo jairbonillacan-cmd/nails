@@ -32,7 +32,7 @@ function buildInstagramUrl(handle: string): string {
 export function PublicShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { mode, setMode, settings } = useSalonAppearance();
-  const logo = settings.logoUrl?.trim() || '/brand/laikona-wordmark.svg';
+  const logo = settings.logoUrl?.trim() || '/brand/laikona-logo-instagram.svg';
   const logoColorScheme = mode === 'system' ? 'light dark' : mode;
 
   const toggleMode = () => {

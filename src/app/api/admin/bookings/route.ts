@@ -6,6 +6,7 @@ import {
   getBookingsWithRelations,
   getSnapshot,
   PolicyError,
+  recordBookingCheckoutAtomic,
   sendManualBookingReminder,
   SlotConflictError,
   updateBookingStatus,
@@ -80,6 +81,12 @@ export async function POST(request: NextRequest) {
       idempotencyKey: request.headers.get('Idempotency-Key'),
       source: parsed.source,
       forceConfirmed: parsed.forceConfirmed,
+      actor: {
+        id: session.user.id,
+        email: session.user.email,
+        role: session.user.role,
+        fullName: session.user.fullName,
+      },
     });
 
     return NextResponse.json({ booking }, { status: 201 });
@@ -120,6 +127,32 @@ const sendReminderSchema = z.object({
   channel: z.enum(['whatsapp', 'email', 'both']).default('whatsapp'),
 });
 
+const checkoutSplitSchema = z.object({
+  action: z.literal('checkout_split'),
+  bookingId: z.string().min(1),
+  splits: z
+    .array(
+      z.object({
+        method: z.enum(['cash', 'card', 'transfer', 'giftcard', 'online']),
+        amountCents: z.number().int().nonnegative().max(10_000_000),
+        tipCents: z.number().int().nonnegative().max(10_000_000).default(0),
+        tipStaffId: z.string().min(1).nullable().optional(),
+        reference: z.string().max(160).optional(),
+      }),
+    )
+    .min(1)
+    .max(10),
+  extraItem: z
+    .object({
+      inventoryItemId: z.string().min(1),
+      quantity: z.number().int().min(1).max(50),
+    })
+    .nullable()
+    .optional(),
+  markCompleted: z.boolean().default(true),
+  redeemLoyaltyReward: z.boolean().optional(),
+});
+
 const patchStatusSchema = z.object({
   action: z.literal('update_status').optional(),
   bookingId: z.string().min(1),
@@ -141,15 +174,21 @@ export async function PATCH(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
+  const actor = {
+    id: session.user.id,
+    email: session.user.email,
+    role: session.user.role,
+    fullName: session.user.fullName,
+  };
+
   try {
     const raw = (await request.json()) as unknown;
-    const isReminderAction =
-      typeof raw === 'object' &&
-      raw !== null &&
-      'action' in raw &&
-      (raw as { action?: unknown }).action === 'send_reminder';
+    const rawAction =
+      typeof raw === 'object' && raw !== null && 'action' in raw
+        ? (raw as { action?: unknown }).action
+        : undefined;
 
-    if (isReminderAction) {
+    if (rawAction === 'send_reminder') {
       const reminderReq = sendReminderSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
@@ -180,6 +219,35 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
+    if (rawAction === 'checkout_split') {
+      const checkoutReq = checkoutSplitSchema.parse(raw);
+
+      if (session.user.role === 'specialist') {
+        const db = getSnapshot();
+        const target = db.bookings.find((b) => b.id === checkoutReq.bookingId);
+        if (
+          !session.user.staffMemberId ||
+          !target ||
+          target.staffId !== session.user.staffMemberId
+        ) {
+          return NextResponse.json(
+            { error: 'No tienes permiso para cobrar citas de otra especialista.' },
+            { status: 403 },
+          );
+        }
+      }
+
+      const result = await recordBookingCheckoutAtomic({
+        bookingId: checkoutReq.bookingId,
+        splits: checkoutReq.splits,
+        extraItem: checkoutReq.extraItem ?? null,
+        markCompleted: checkoutReq.markCompleted,
+        redeemLoyaltyReward: checkoutReq.redeemLoyaltyReward,
+        actor,
+      });
+      return NextResponse.json(result);
+    }
+
     const body = patchStatusSchema.parse(raw);
 
     if (session.user.role === 'specialist') {
@@ -205,16 +273,19 @@ export async function PATCH(request: NextRequest) {
       paymentMethod: body.paymentMethod,
       tipCents: body.tipCents,
       recordedBy: session.user.fullName,
+      actor,
     });
     return NextResponse.json({ booking });
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
-        err.code === 'INVALID_TRANSITION'
-          ? 409
-          : err.code === 'BOOKING_NOT_FOUND'
-            ? 404
-            : 400;
+        err.code === 'PAST_BOOKING_LOCKED'
+          ? 403
+          : err.code === 'INVALID_TRANSITION'
+            ? 409
+            : err.code === 'BOOKING_NOT_FOUND'
+              ? 404
+              : 400;
       return NextResponse.json({ error: err.message, code: err.code }, { status });
     }
     if (err instanceof z.ZodError) {

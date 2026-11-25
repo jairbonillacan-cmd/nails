@@ -13,7 +13,6 @@ import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Banner } from '@astryxdesign/core/Banner';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
@@ -25,23 +24,35 @@ import {
   MessageCircle,
   Plus,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
   BOOKING_STATUS_BADGE,
   BookingCard,
 } from '@/components/admin/citas/BookingCard';
+import { BookingQuickPopover } from '@/components/admin/citas/BookingQuickPopover';
+import { CheckoutDrawerDialog } from '@/components/admin/citas/CheckoutDrawerDialog';
+import {
+  NewBookingDialog,
+  type NewBookingPrefill,
+} from '@/components/admin/citas/NewBookingDialog';
+import { QuickSlotFinderDialog } from '@/components/admin/citas/QuickSlotFinderDialog';
 import { VisualScheduleGrid } from '@/components/admin/citas/VisualScheduleGrid';
-import { NewBookingDialog } from '@/components/admin/citas/NewBookingDialog';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import type { BookingStatus, BookingWithRelations, PaymentMethod } from '@/lib/types';
+import type { BookingStatus, BookingWithRelations } from '@/lib/types';
 import {
   buildWhatsAppLink,
-  formatCurrency,
   formatDateShortInTimezone,
   formatTimeInTimezone,
   getDateKeyInTimezone,
 } from '@/lib/format';
+
+function shiftDateKey(dateKey: string, deltaDays: number): string {
+  const [y = 2026, m = 1, d = 1] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays, 12, 0, 0));
+  return dt.toISOString().slice(0, 10);
+}
 
 interface FeedbackState {
   status: 'success' | 'error';
@@ -59,31 +70,45 @@ export default function AdminBookingsPage() {
   const [selectedVisualDate, setSelectedVisualDate] = useState<string | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickFinderOpen, setQuickFinderOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualInitStaffId, setManualInitStaffId] = useState('any');
+  const [manualPrefill, setManualPrefill] = useState<NewBookingPrefill | null>(null);
   const [manualSessionKey, setManualSessionKey] = useState(0);
   const [remindingId, setRemindingId] = useState<string | null>(null);
 
-  const [checkoutBooking, setCheckoutBooking] = useState<BookingWithRelations | null>(null);
-  const [payMethod, setPayMethod] = useState<PaymentMethod>('card');
-  const [tipMxn, setTipMxn] = useState<number>(0);
+  const [popoverBookingId, setPopoverBookingId] = useState<string | null>(null);
+  const [checkoutBookingId, setCheckoutBookingId] = useState<string | null>(null);
+  const [checkoutSessionKey, setCheckoutSessionKey] = useState(0);
 
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockStaffId, setBlockStaffId] = useState('');
   const [blockDate, setBlockDate] = useState('');
   const [blockReason, setBlockReason] = useState('Bloqueo rápido');
 
-  const autoOpenedNewRef = useRef(false);
+  const handledUrlParamsRef = useRef(false);
 
   const tz = data?.settings.timezone || 'America/Mexico_City';
 
   useExternalSync(data ? 'citas-ready' : 'citas-loading', async (signal, key) => {
-    if (signal.aborted || key !== 'citas-ready' || typeof window === 'undefined') return;
-    if (autoOpenedNewRef.current) return;
+    if (signal.aborted || key !== 'citas-ready' || !data || typeof window === 'undefined') return;
+    if (handledUrlParamsRef.current) return;
     const params = new URLSearchParams(window.location.search);
+    const collectId = params.get('collect')?.trim();
+    if (collectId) {
+      const target = data.bookings.find((b) => b.id === collectId);
+      if (target) {
+        handledUrlParamsRef.current = true;
+        setCheckoutBookingId(target.id);
+        setCheckoutSessionKey((prev) => prev + 1);
+        return;
+      }
+    }
     if (params.get('new') === '1') {
-      autoOpenedNewRef.current = true;
+      handledUrlParamsRef.current = true;
       setManualInitStaffId('any');
+      setManualPrefill(null);
+      setManualSessionKey((prev) => prev + 1);
       setManualOpen(true);
     }
   });
@@ -148,11 +173,37 @@ export default function AdminBookingsPage() {
       ? getDateKeyInTimezone(new Date(filteredBookings[0].startAt), tz)
       : data.serverTodayKey);
 
-  const openManualModal = (preferredStaffId = 'any') => {
+  const openManualModal = (
+    preferredStaffId = 'any',
+    prefill: NewBookingPrefill | null = null,
+  ) => {
     setManualInitStaffId(lockedStaffId ?? preferredStaffId);
+    setManualPrefill(prefill);
     setManualSessionKey((prev) => prev + 1);
     setQuickAddOpen(false);
     setManualOpen(true);
+  };
+
+  const openCheckoutDrawer = (booking: BookingWithRelations) => {
+    setPopoverBookingId(null);
+    setCheckoutBookingId(booking.id);
+    setCheckoutSessionKey((prev) => prev + 1);
+  };
+
+  const handleScheduleRetouch = (booking: BookingWithRelations) => {
+    const baseDateKey = getDateKeyInTimezone(new Date(booking.startAt), tz);
+    const retouchDateKey = shiftDateKey(baseDateKey, 21);
+    setCheckoutBookingId(null);
+    openManualModal(booking.staffId, {
+      serviceId: booking.serviceId,
+      extraServiceIds: booking.extraServiceIds ?? [],
+      staffId: booking.staffId,
+      startDate: retouchDateKey,
+      clientName: booking.client.fullName,
+      clientPhone: booking.client.phoneE164,
+      clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? '',
+      internalNotes: `Retoque +21 días (${booking.bookingCode})`,
+    });
   };
 
   const openBlockModal = () => {
@@ -162,28 +213,37 @@ export default function AdminBookingsPage() {
     setBlockOpen(true);
   };
 
-  const updateStatus = async (
-    bookingId: string,
-    status: BookingStatus,
-    extra?: { paymentMethod?: PaymentMethod; tipCents?: number },
-  ) => {
+  const popoverBooking = popoverBookingId
+    ? data.bookings.find((b) => b.id === popoverBookingId) ?? null
+    : null;
+  const checkoutBooking = checkoutBookingId
+    ? data.bookings.find((b) => b.id === checkoutBookingId) ?? null
+    : null;
+
+  const updateStatus = async (bookingId: string, status: BookingStatus) => {
     const res = await fetch('/api/admin/bookings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookingId, status, ...extra }),
+      body: JSON.stringify({ bookingId, status }),
     });
     if (res.ok) {
       setFeedback({
         status: 'success',
         title: `Estado actualizado a: ${BOOKING_STATUS_BADGE[status].label}`,
       });
-      setCheckoutBooking(null);
       await refresh();
     } else {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        code?: string;
+      } | null;
       setFeedback({
         status: 'error',
-        title: json?.error || 'No se pudo actualizar el estado de la cita.',
+        title:
+          res.status === 403 && json?.code === 'PAST_BOOKING_LOCKED'
+            ? json.error ||
+              'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.'
+            : json?.error || 'No se pudo actualizar el estado de la cita.',
       });
     }
   };
@@ -261,11 +321,18 @@ export default function AdminBookingsPage() {
         <VStack gap={0.5}>
           <Heading level={1}>Citas y Agenda</Heading>
           <Text color="secondary">
-            Agenda visual por especialista, recordatorios en 1 clic, walk-ins y cobro a caja.
+            Agenda visual por especialista, búsqueda rápida de hora, pago dividido y retoque en 1 clic.
           </Text>
         </VStack>
 
         <HStack gap={2} wrap="wrap">
+          <Button
+            label="Búsqueda rápida de hora"
+            variant="secondary"
+            size="sm"
+            icon={<Sparkles size={14} />}
+            onClick={() => setQuickFinderOpen(true)}
+          />
           <Button
             label="Bloquear día"
             variant="secondary"
@@ -285,7 +352,7 @@ export default function AdminBookingsPage() {
       {feedback ? (
         <Banner
           status={feedback.status}
-          role={feedback.status === 'error' ? 'alert' : undefined}
+          role={feedback.status === 'error' ? 'alert' : 'status'}
           title={feedback.title}
           description={feedback.description}
           endContent={
@@ -447,17 +514,16 @@ export default function AdminBookingsPage() {
           timezone={tz}
           staff={visibleStaff}
           schedules={data.schedules}
+          recurringBlocks={data.recurringBlocks}
+          paymentSplits={data.paymentSplits}
           bookings={filteredBookings}
           allServices={data.services}
           remindingBookingId={remindingId}
           onChangeDate={setSelectedVisualDate}
           onOpenNewForStaff={(staffId) => openManualModal(staffId)}
+          onSelectBooking={(b) => setPopoverBookingId(b.id)}
           onUpdateStatus={(id, status) => void updateStatus(id, status)}
-          onOpenCheckout={(b) => {
-            setCheckoutBooking(b);
-            setPayMethod('card');
-            setTipMxn(0);
-          }}
+          onOpenCheckout={openCheckoutDrawer}
           onSendReminder={(id) => void sendReminder(id)}
         />
       ) : filteredBookings.length === 0 ? (
@@ -479,16 +545,14 @@ export default function AdminBookingsPage() {
               key={b.id}
               booking={b}
               allServices={data.services}
+              paymentSplits={data.paymentSplits}
               salonName={data.settings.name}
               currency={data.settings.currency}
               timezone={tz}
               isReminding={remindingId === b.id}
+              onSelectBooking={(bk) => setPopoverBookingId(bk.id)}
               onUpdateStatus={(id, status) => void updateStatus(id, status)}
-              onOpenCheckout={(bk) => {
-                setCheckoutBooking(bk);
-                setPayMethod('card');
-                setTipMxn(0);
-              }}
+              onOpenCheckout={openCheckoutDrawer}
               onSendReminder={(id) => void sendReminder(id)}
             />
           ))}
@@ -506,7 +570,7 @@ export default function AdminBookingsPage() {
                 </HStack>
                 {items.map((b) => (
                   <Card key={b.id} padding={3}>
-                    <VStack gap={1}>
+                    <VStack gap={1.5}>
                       <HStack justify="between" align="center">
                         <Text weight="semibold">
                           {formatTimeInTimezone(b.startAt, tz)}
@@ -520,6 +584,22 @@ export default function AdminBookingsPage() {
                       <Text type="supporting" color="secondary">
                         {b.service.name} · {b.staff.name}
                       </Text>
+                      <HStack gap={1.5}>
+                        <Button
+                          label="Gestionar"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setPopoverBookingId(b.id)}
+                        />
+                        {b.status === 'confirmed' ? (
+                          <Button
+                            label="$ Cobrar"
+                            size="sm"
+                            variant="primary"
+                            onClick={() => openCheckoutDrawer(b)}
+                          />
+                        ) : null}
+                      </HStack>
                     </VStack>
                   </Card>
                 ))}
@@ -544,6 +624,16 @@ export default function AdminBookingsPage() {
             onClick={() => openManualModal()}
           />
           <Button
+            label="Búsqueda rápida de hora"
+            variant="secondary"
+            width="100%"
+            icon={<Sparkles size={15} />}
+            onClick={() => {
+              setQuickAddOpen(false);
+              setQuickFinderOpen(true);
+            }}
+          />
+          <Button
             label="Bloquear horario / cerrar día"
             variant="secondary"
             width="100%"
@@ -552,6 +642,40 @@ export default function AdminBookingsPage() {
           />
         </VStack>
       </Dialog>
+
+      <QuickSlotFinderDialog
+        isOpen={quickFinderOpen}
+        onOpenChange={setQuickFinderOpen}
+        services={data.services}
+        staff={data.staff}
+        currency={data.settings.currency}
+        timezone={tz}
+        todayKey={data.serverTodayKey}
+        lockedStaffId={lockedStaffId}
+        onPickSlot={(selection) => {
+          openManualModal(selection.staffId, {
+            serviceId: selection.serviceId,
+            extraServiceIds: selection.extraServiceIds,
+            staffId: selection.staffId,
+            startDate: selection.dateKey,
+            preferredStartAt: selection.startAt,
+          });
+        }}
+      />
+
+      <BookingQuickPopover
+        booking={popoverBooking}
+        allServices={data.services}
+        paymentSplits={data.paymentSplits}
+        salonName={data.settings.name}
+        currency={data.settings.currency}
+        timezone={tz}
+        isReminding={Boolean(popoverBooking && remindingId === popoverBooking.id)}
+        onClose={() => setPopoverBookingId(null)}
+        onUpdateStatus={(id, status) => void updateStatus(id, status)}
+        onOpenCheckout={openCheckoutDrawer}
+        onSendReminder={(id) => void sendReminder(id)}
+      />
 
       <NewBookingDialog
         key={`${manualInitStaffId}-${manualSessionKey}`}
@@ -563,70 +687,40 @@ export default function AdminBookingsPage() {
         timezone={tz}
         initialStaffId={manualInitStaffId}
         lockedStaffId={lockedStaffId}
+        prefill={manualPrefill}
         onCreated={async (message) => {
           setFeedback({ status: 'success', title: message });
           await refresh();
         }}
       />
 
-      <Dialog
-        isOpen={Boolean(checkoutBooking)}
-        onOpenChange={(open) => {
-          if (!open) setCheckoutBooking(null);
+      <CheckoutDrawerDialog
+        key={`${checkoutBookingId ?? 'closed'}-${checkoutSessionKey}`}
+        booking={checkoutBooking}
+        existingSplits={
+          checkoutBooking
+            ? data.paymentSplits.filter((s) => s.bookingId === checkoutBooking.id)
+            : []
+        }
+        inventory={data.inventory}
+        staff={data.staff}
+        loyaltyProgram={data.loyaltyProgram}
+        loyaltyStamps={data.loyaltyStamps}
+        currency={data.settings.currency}
+        onClose={() => setCheckoutBookingId(null)}
+        onCompleted={async () => {
+          await refresh();
         }}
-        width={460}
+        onScheduleRetouch={handleScheduleRetouch}
+      />
+
+      <Dialog
+        isOpen={blockOpen}
+        onOpenChange={setBlockOpen}
+        purpose="form"
+        width={440}
         padding={5}
       >
-        <DialogHeader
-          title="Completar cita y registrar en Caja"
-          subtitle={
-            checkoutBooking
-              ? `${checkoutBooking.client.fullName} · ${checkoutBooking.service.name} (${formatCurrency(
-                  checkoutBooking.totalPriceCents,
-                  data.settings.currency,
-                )})`
-              : undefined
-          }
-          onOpenChange={() => setCheckoutBooking(null)}
-        />
-        {checkoutBooking ? (
-          <VStack gap={3} paddingBlockStart={4}>
-            <Selector
-              label="Método de pago"
-              value={payMethod}
-              onChange={(v) => v && setPayMethod(v as PaymentMethod)}
-              options={[
-                { value: 'card', label: 'Tarjeta (Terminal / Clip / Mercado Pago)' },
-                { value: 'cash', label: 'Efectivo' },
-                { value: 'transfer', label: 'Transferencia SPEI' },
-                { value: 'gift_card', label: 'Gift Card' },
-              ]}
-            />
-            <NumberInput
-              label="Propina opcional (MXN)"
-              value={tipMxn}
-              min={0}
-              onChange={setTipMxn}
-            />
-            <Text type="supporting" color="secondary">
-              La comisión de {checkoutBooking.staff.name} ({checkoutBooking.staff.commissionPercent}%) se calculará automáticamente en el corte de caja.
-            </Text>
-            <Button
-              label="Confirmar cobro y completar"
-              variant="primary"
-              width="100%"
-              onClick={() =>
-                void updateStatus(checkoutBooking.id, 'completed', {
-                  paymentMethod: payMethod,
-                  tipCents: Math.round((tipMxn || 0) * 100),
-                })
-              }
-            />
-          </VStack>
-        ) : null}
-      </Dialog>
-
-      <Dialog isOpen={blockOpen} onOpenChange={setBlockOpen} width={440} padding={5}>
         <DialogHeader
           title="Bloqueo rápido de día"
           subtitle="Cierra un día completo para una especialista sin salir de Citas."
@@ -644,6 +738,9 @@ export default function AdminBookingsPage() {
             <TextInput
               label="Fecha (YYYY-MM-DD)"
               value={blockDate}
+              autoCapitalize="none"
+              hasAutoCorrect={false}
+              hasSpellCheck={false}
               onChange={setBlockDate}
               isRequired
             />

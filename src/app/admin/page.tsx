@@ -14,7 +14,9 @@ import { Token } from '@astryxdesign/core/Token';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import {
+  AlertTriangle,
   ArrowRight,
+  Award,
   CalendarDays,
   CheckCircle2,
   Circle,
@@ -22,6 +24,7 @@ import {
   CreditCard,
   ExternalLink,
   HeartHandshake,
+  Link2,
   MessageCircle,
   Share2,
   Star,
@@ -52,6 +55,8 @@ export default function AdminOverviewPage() {
     onboardingChecklist,
     pendingDeposits,
     retention,
+    uncollectedBookings,
+    nearRewardClients,
     staff,
   } = data;
   const tz = settings.timezone || 'America/Mexico_City';
@@ -69,22 +74,26 @@ export default function AdminOverviewPage() {
     (sum, dep) => sum + (dep.depositAmountCents || depositUnitCents),
     0,
   );
+  const uncollectedTotalCents = uncollectedBookings.reduce(
+    (sum, item) => sum + item.remainingCents,
+    0,
+  );
   const activeStaff = staff.filter((member) => member.isActive);
 
-  const getPublicBookingUrl = () =>
-    typeof window !== 'undefined' ? `${window.location.origin}/reservar` : '/reservar';
+  const getPublicUrl = (pathSuffix: '/reservar' | '/links') =>
+    typeof window !== 'undefined' ? `${window.location.origin}${pathSuffix}` : pathSuffix;
 
-  const handleCopyBookingLink = async () => {
+  const handleCopyPath = async (pathSuffix: '/reservar' | '/links', successLabel: string) => {
     try {
-      await navigator.clipboard.writeText(getPublicBookingUrl());
-      shareFeedback.show('¡Link de reservas copiado!');
+      await navigator.clipboard.writeText(getPublicUrl(pathSuffix));
+      shareFeedback.show(successLabel);
     } catch {
-      shareFeedback.show('Copia manualmente /reservar');
+      shareFeedback.show(`Copia manualmente ${pathSuffix}`);
     }
   };
 
   const handleShareBookingLink = async () => {
-    const url = getPublicBookingUrl();
+    const url = getPublicUrl('/reservar');
     const shareText = `Reserva tu cita en ${settings.name} en segundos:`;
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
@@ -140,6 +149,30 @@ export default function AdminOverviewPage() {
           title={`Tienes ${kpis.pendingConfirmationsCount} cita(s) esperando confirmación o validación de anticipo`}
           endContent={
             <Button label="Revisar ahora" variant="secondary" size="sm" href="/admin/citas" />
+          }
+        />
+      ) : null}
+
+      {uncollectedBookings.length > 0 ? (
+        <Banner
+          status="warning"
+          title={`Fuga de ingresos detectada: ${uncollectedBookings.length} cita(s) terminada(s) sin cobro completo (${formatCurrency(uncollectedTotalCents, settings.currency)} por cobrar)`}
+          description="Cobra las citas pendientes desde la agenda o revisa el detalle en Caja para evitar fugas al cierre del día."
+          endContent={
+            <HStack gap={2} wrap="wrap">
+              <Button
+                label="Ir a cobrar"
+                variant="primary"
+                size="sm"
+                href={`/admin/citas?collect=${uncollectedBookings[0]?.bookingId ?? ''}`}
+              />
+              <Button
+                label="Ver en Caja"
+                variant="secondary"
+                size="sm"
+                href="/admin/caja?tab=sin-cobrar"
+              />
+            </HStack>
           }
         />
       ) : null}
@@ -234,7 +267,7 @@ export default function AdminOverviewPage() {
           <Card padding={5}>
             <VStack gap={3}>
               <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                <Heading level={3}>Tu página de reservas</Heading>
+                <Heading level={3}>Tu página de reservas y Bio-Link</Heading>
                 <HStack gap={1.5} align="center">
                   <StatusDot variant="success" label="Página de reservas en vivo" isPulsing />
                   <Text type="label" weight="semibold">
@@ -248,7 +281,7 @@ export default function AdminOverviewPage() {
               </Text>
               <Card variant="muted" padding={3}>
                 <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <Text weight="semibold">/reservar</Text>
+                  <Text weight="semibold">/reservar · /links</Text>
                   <Token
                     size="sm"
                     label={
@@ -262,14 +295,14 @@ export default function AdminOverviewPage() {
               <HStack gap={2} wrap="wrap">
                 <Button
                   type="button"
-                  label={shareFeedback.message ?? 'Copiar link'}
+                  label={shareFeedback.message ?? 'Copiar /reservar'}
                   variant="primary"
                   size="sm"
                   icon={<Copy size={14} />}
-                  onClick={() => void handleCopyBookingLink()}
+                  onClick={() => void handleCopyPath('/reservar', '¡Link /reservar copiado!')}
                 />
                 <Button
-                  label="Abrir página"
+                  label="Abrir agenda"
                   variant="secondary"
                   size="sm"
                   icon={<ExternalLink size={14} />}
@@ -279,8 +312,25 @@ export default function AdminOverviewPage() {
                 />
                 <Button
                   type="button"
-                  label="Compartir"
+                  label="Copiar /links (Bio IG)"
                   variant="secondary"
+                  size="sm"
+                  icon={<Link2 size={14} />}
+                  onClick={() => void handleCopyPath('/links', '¡Bio-Link /links copiado!')}
+                />
+                <Button
+                  label="Abrir /links"
+                  variant="ghost"
+                  size="sm"
+                  icon={<ExternalLink size={14} />}
+                  href="/links"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+                <Button
+                  type="button"
+                  label="Compartir"
+                  variant="ghost"
                   size="sm"
                   icon={<Share2 size={14} />}
                   onClick={() => void handleShareBookingLink()}
@@ -356,6 +406,109 @@ export default function AdminOverviewPage() {
             </Card>
           </Grid>
         </VStack>
+      </Grid>
+
+      <Grid columns={{ minWidth: 320, max: 2 }} gap={4} align="start">
+        <Card padding={5}>
+          <VStack gap={3}>
+            <HStack justify="between" align="center" wrap="wrap" gap={2}>
+              <HStack gap={2} align="center">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <Heading level={3}>Citas sin cobrar</Heading>
+              </HStack>
+              <HStack gap={2} align="center">
+                <Badge
+                  variant={uncollectedBookings.length > 0 ? 'warning' : 'success'}
+                  label={
+                    uncollectedBookings.length > 0
+                      ? `${uncollectedBookings.length} · ${formatCurrency(uncollectedTotalCents, settings.currency)}`
+                      : 'Al corriente'
+                  }
+                />
+                <Button
+                  label="Ver Caja"
+                  variant="ghost"
+                  size="sm"
+                  href="/admin/caja?tab=sin-cobrar"
+                />
+              </HStack>
+            </HStack>
+            {uncollectedBookings.length === 0 ? (
+              <Text type="supporting" color="secondary">
+                Todas las citas completadas o pasadas tienen su cobro registrado en caja.
+              </Text>
+            ) : (
+              <List hasDividers>
+                {uncollectedBookings.slice(0, 4).map((item) => (
+                  <ListItem
+                    key={item.bookingId}
+                    label={`${item.clientName} — ${item.serviceName}`}
+                    description={
+                      <Text type="supporting" color="secondary">
+                        {formatDateShortInTimezone(item.startAt, tz)} · {item.staffName} · Pendiente{' '}
+                        {formatCurrency(item.remainingCents, settings.currency)}
+                      </Text>
+                    }
+                    endContent={
+                      <Button
+                        label="Ir a cobrar"
+                        variant="primary"
+                        size="sm"
+                        href={`/admin/citas?collect=${item.bookingId}`}
+                      />
+                    }
+                  />
+                ))}
+              </List>
+            )}
+          </VStack>
+        </Card>
+
+        <Card padding={5}>
+          <VStack gap={3}>
+            <HStack justify="between" align="center" wrap="wrap" gap={2}>
+              <HStack gap={2} align="center">
+                <Award size={18} aria-hidden="true" />
+                <Heading level={3}>Clientas cerca de su premio</Heading>
+              </HStack>
+              <HStack gap={2} align="center">
+                <Badge variant="info" label={String(nearRewardClients.length)} />
+                <Button label="Ver clientas" variant="ghost" size="sm" href="/admin/clientas" />
+              </HStack>
+            </HStack>
+            {nearRewardClients.length === 0 ? (
+              <Text type="supporting" color="secondary">
+                Cuando tus clientas acumulen sellos cerca del objetivo aparecerán aquí para recordarles su premio.
+              </Text>
+            ) : (
+              <List hasDividers>
+                {nearRewardClients.slice(0, 4).map((item) => (
+                  <ListItem
+                    key={item.clientId}
+                    label={item.fullName}
+                    description={
+                      <Text type="supporting" color="secondary">
+                        {item.summary.programName} · {item.summary.currentStamps}/
+                        {item.summary.stampsRequired} sellos · {item.summary.rewardLabel}
+                      </Text>
+                    }
+                    endContent={
+                      <Badge
+                        variant={item.summary.isRewardReady ? 'success' : 'info'}
+                        label={
+                          item.summary.isRewardReady
+                            ? 'Premio listo'
+                            : `Faltan ${item.summary.remainingForReward}`
+                        }
+                      />
+                    }
+                    href={`/admin/clientas?q=${encodeURIComponent(item.phoneE164)}`}
+                  />
+                ))}
+              </List>
+            )}
+          </VStack>
+        </Card>
       </Grid>
 
       <Grid columns={{ minWidth: 200, max: 4 }} gap={4}>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { SalonSettings, Service, StaffMember } from './types';
+import type { BookingReview, SalonSettings, Service, StaffMember } from './types';
 
 export const PublicStaffDTOSchema = z.object({
   id: z.string(),
@@ -85,6 +85,7 @@ export const PublicSettingsDTOSchema = z.object({
   depositInstructions: z.string(),
   currency: z.enum(['MXN', 'USD']),
   serviceMode: z.enum(['studio', 'home', 'online']).optional(),
+  privacyPolicyVersion: z.string().optional(),
   landingContent: PublicLandingContentSchema,
   whatsappBookingEnabled: z.boolean(),
   metaPixelId: z.string().nullable(),
@@ -94,6 +95,31 @@ export const PublicSettingsDTOSchema = z.object({
 });
 
 export type PublicSettingsDTO = z.infer<typeof PublicSettingsDTOSchema>;
+
+export const PublicReviewDTOSchema = z.object({
+  id: z.string(),
+  serviceId: z.string(),
+  clientFirstName: z.string(),
+  rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+  comment: z.string(),
+  createdAt: z.string(),
+});
+
+export type PublicReviewDTO = z.infer<typeof PublicReviewDTOSchema>;
+
+export const PublicLoyaltySummarySchema = z.object({
+  currentStamps: z.number().int().nonnegative(),
+  stampsRequired: z.number().int().positive(),
+  remainingForReward: z.number().int().nonnegative(),
+  isRewardReady: z.boolean(),
+  isNearReward: z.boolean(),
+  totalStamps: z.number().int().nonnegative(),
+  redemptionsAvailable: z.number().int().nonnegative(),
+  rewardLabel: z.string(),
+  programName: z.string(),
+});
+
+export type PublicLoyaltySummaryDTO = z.infer<typeof PublicLoyaltySummarySchema>;
 
 export function toPublicStaffDTO(staff: StaffMember): PublicStaffDTO {
   return PublicStaffDTOSchema.parse({
@@ -170,11 +196,33 @@ export function toPublicSettingsDTO(settings: SalonSettings): PublicSettingsDTO 
     depositInstructions: settings.depositInstructions,
     currency: settings.currency,
     serviceMode: settings.serviceMode,
+    privacyPolicyVersion: settings.privacyPolicyVersion,
     landingContent: { ...settings.landingContent },
     whatsappBookingEnabled: settings.whatsappBookingEnabled,
     metaPixelId: settings.metaPixelId,
     ga4MeasurementId: settings.ga4MeasurementId,
     googleReviewUrl: settings.googleReviewUrl,
     updatedAt: settings.updatedAt,
+  });
+}
+
+function extractClientFirstName(fullName?: string | null): string {
+  const trimmed = (fullName ?? '').trim();
+  if (!trimmed) return 'Clienta verificada';
+  const [first] = trimmed.split(/\s+/);
+  return first || 'Clienta verificada';
+}
+
+export function toPublicReviewDTO(
+  review: BookingReview,
+  params: { serviceId: string; clientFullName?: string | null },
+): PublicReviewDTO {
+  return PublicReviewDTOSchema.parse({
+    id: review.id,
+    serviceId: params.serviceId,
+    clientFirstName: extractClientFirstName(params.clientFullName),
+    rating: review.rating,
+    comment: review.comment,
+    createdAt: review.createdAt,
   });
 }

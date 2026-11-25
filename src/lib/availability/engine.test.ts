@@ -3,6 +3,7 @@ import {
   assertSlotBookable,
   computeServiceTotals,
   diagnoseDateSlots,
+  findEarliestAvailableSlots,
   findNearestAvailableSlots,
   getAvailabilityForRange,
   getAvailableSlotsForDate,
@@ -794,5 +795,90 @@ describe('Availability Engine (Nails & LAIKONA NAILS)', () => {
 
     expect(range).toHaveLength(35);
     expect(elapsedMs).toBeLessThan(100);
+  });
+
+  it('expands weekly and monthly recurringBlocks consistently across slots, assertSlotBookable, and diagnoseDateSlots', () => {
+    const ctx = buildLaikonaContext();
+    const tz = ctx.settings.timezone;
+
+    const weeklyCtx: AvailabilityContext = {
+      ...ctx,
+      recurringBlocks: [
+        {
+          id: 'rb-tue-am',
+          staffId: 'staff-karla',
+          reason: 'Reunión semanal',
+          frequency: 'weekly',
+          weekdays: [2],
+          dayOfMonth: null,
+          startTime: '10:00',
+          endTime: '12:30',
+          untilDate: '2026-12-10',
+          isActive: true,
+        },
+        {
+          id: 'rb-monthly-15',
+          staffId: 'staff-karla',
+          reason: 'Inventario mensual',
+          frequency: 'monthly',
+          weekdays: [],
+          dayOfMonth: 15,
+          startTime: '13:00',
+          endTime: '15:00',
+          untilDate: null,
+          isActive: true,
+        },
+        {
+          id: 'rb-inactive',
+          staffId: 'staff-karla',
+          reason: 'Inactivo',
+          frequency: 'weekly',
+          weekdays: [2],
+          dayOfMonth: null,
+          startTime: '16:00',
+          endTime: '19:00',
+          untilDate: null,
+          isActive: false,
+        },
+      ],
+    };
+
+    const tue1Slots = getAvailableSlotsForDate(weeklyCtx, '2026-12-01', 'staff-karla');
+    expect(tue1Slots.map((s) => s.localTime24)).toEqual(['13:30', '16:30']);
+
+    const wed2Slots = getAvailableSlotsForDate(weeklyCtx, '2026-12-02', 'staff-karla');
+    expect(wed2Slots.map((s) => s.localTime24)).toEqual(['10:00', '13:30', '16:30']);
+
+    const blockedCheck = assertSlotBookable(weeklyCtx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString(),
+      staffId: 'staff-karla',
+    });
+    expect(blockedCheck.ok).toBe(false);
+    if (!blockedCheck.ok) {
+      expect(blockedCheck.code).toBe('SLOT_TAKEN');
+    }
+
+    const diag1 = diagnoseDateSlots(weeklyCtx, '2026-12-01', 'staff-karla');
+    const atTen = diag1.find((d) => d.time24 === '10:00');
+    expect(atTen?.isAvailable).toBe(false);
+    expect(atTen?.reason).toContain('Bloqueo recurrente: Reunión semanal');
+
+    const tue15Slots = getAvailableSlotsForDate(weeklyCtx, '2026-12-15', 'staff-karla');
+    expect(tue15Slots.map((s) => s.localTime24)).toEqual(['10:00', '16:30']);
+  });
+
+  it('findEarliestAvailableSlots returns earliest chronological slots across days honoring staff filter and limit', () => {
+    const ctx = buildLaikonaContext();
+
+    const earliestKarla = findEarliestAvailableSlots(ctx, '2026-12-01', 7, 4, 'staff-karla');
+    expect(earliestKarla).toHaveLength(4);
+    expect(earliestKarla.every((s) => s.staffId === 'staff-karla')).toBe(true);
+    expect(earliestKarla.map((s) => s.localTime24)).toEqual(['10:00', '13:30', '16:30', '10:00']);
+
+    const fromSunday = findEarliestAvailableSlots(ctx, '2026-12-06', 5, 2, 'staff-tere');
+    expect(fromSunday).toHaveLength(2);
+    expect(fromSunday.every((s) => s.staffId === 'staff-tere')).toBe(true);
+    expect(fromSunday[0]?.localTime24).toBe('14:00');
+    expect(fromSunday[0]?.startAt.startsWith('2026-12-07')).toBe(true);
   });
 });

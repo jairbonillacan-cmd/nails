@@ -5,12 +5,23 @@ import { createInitialDemoDatabase } from '../demo-seed';
 import {
   assertSlotBookable,
   computeServiceTotals,
+  findEarliestAvailableSlots,
   findNearestAvailableSlots,
   getAvailabilityForRange,
   getAvailableSlotsForDate,
   type AvailabilityContext,
   type AvailableSlot,
 } from '../availability/engine';
+import {
+  canAwardStamp,
+  computeClientLoyaltySummary,
+} from '../loyalty/stamps';
+import {
+  computeBookingPaymentSummary,
+  validatePaymentSplits,
+  type BookingPaymentSummary,
+  type PaymentSplitInput,
+} from '../payments/splits';
 import {
   isActiveBookingStatus,
   isTerminalBookingStatus,
@@ -38,9 +49,11 @@ import {
   dispatchWhatsAppNotification,
 } from '../integrations/notifications';
 import {
+  PublicLoyaltySummarySchema,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type PublicLoyaltySummaryDTO,
 } from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
 import { MediaValidationError, storeMediaUpload } from '../storage/media';
@@ -64,6 +77,8 @@ export { PolicyError, SlotConflictError };
 import type {
   AdminRole,
   AdminUser,
+  AuditAction,
+  AuditLogEntry,
   AvailabilityRule,
   Booking,
   BookingReview,
@@ -72,13 +87,20 @@ import type {
   CalendarConnection,
   CashRegisterEntry,
   ClientProfile,
+  ConsentRecord,
   Coupon,
+  CouponRedemption,
   DateOverride,
   DemoDatabase,
   GalleryItem,
   InventoryItem,
+  LoyaltyProgram,
+  LoyaltyStamp,
   NotificationWorkflow,
   PaymentMethod,
+  PaymentSplit,
+  PaymentSplitMethod,
+  RecurringBlock,
   SalonSettings,
   ScheduledNotification,
   Service,
@@ -337,6 +359,204 @@ function isStaffEligibleForAllServices(
   );
 }
 
+interface AuditActor {
+  id: string;
+  email: string;
+  role: AdminRole;
+  fullName?: string;
+}
+
+interface Phase3Collections {
+  paymentSplits: PaymentSplit[];
+  recurringBlocks: RecurringBlock[];
+  loyaltyPrograms: LoyaltyProgram[];
+  loyaltyStamps: LoyaltyStamp[];
+  couponRedemptions: CouponRedemption[];
+  consents: ConsentRecord[];
+  auditLogs: AuditLogEntry[];
+}
+
+function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
+  if (!db.paymentSplits) db.paymentSplits = [];
+  if (!db.recurringBlocks) db.recurringBlocks = [];
+  if (!db.loyaltyPrograms) db.loyaltyPrograms = [];
+  if (!db.loyaltyStamps) db.loyaltyStamps = [];
+  if (!db.couponRedemptions) db.couponRedemptions = [];
+  if (!db.consents) db.consents = [];
+  if (!db.auditLogs) db.auditLogs = [];
+  return {
+    paymentSplits: db.paymentSplits,
+    recurringBlocks: db.recurringBlocks,
+    loyaltyPrograms: db.loyaltyPrograms,
+    loyaltyStamps: db.loyaltyStamps,
+    couponRedemptions: db.couponRedemptions,
+    consents: db.consents,
+    auditLogs: db.auditLogs,
+  };
+}
+
+function appendAuditLog(
+  db: DemoDatabase,
+  params: {
+    actor: AuditActor;
+    action: AuditAction;
+    entityType: string;
+    entityId: string;
+    metadata?: Record<string, string | number | boolean | null>;
+  },
+): AuditLogEntry {
+  const cols = ensurePhase3Collections(db);
+  const entry: AuditLogEntry = {
+    id: generateId('aud'),
+    actorId: params.actor.id,
+    actorEmail: params.actor.email,
+    actorRole: params.actor.role,
+    action: params.action,
+    entityType: params.entityType,
+    entityId: params.entityId,
+    metadata: params.metadata ?? {},
+    createdAt: new Date().toISOString(),
+  };
+  cols.auditLogs.unshift(entry);
+  if (cols.auditLogs.length > 500) {
+    cols.auditLogs.length = 500;
+  }
+  return entry;
+}
+
+export async function recordAuditEvent(params: {
+  actor: AuditActor;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  metadata?: Record<string, string | number | boolean | null>;
+}): Promise<AuditLogEntry> {
+  return withWriteLock((db) => appendAuditLog(db, params));
+}
+
+function mapSplitMethodToCashMethod(method: PaymentSplitMethod): PaymentMethod {
+  if (method === 'giftcard') return 'gift_card';
+  if (method === 'online') return 'card';
+  return method;
+}
+
+function getEffectiveGiftCardBalance(db: DemoDatabase, coupon: Coupon): number {
+  const redemptions = (db.couponRedemptions ?? []).filter(
+    (r) => r.couponId === coupon.id,
+  );
+  if (redemptions.length === 0) {
+    return coupon.remainingBalanceCents ?? coupon.discountValue;
+  }
+  const activeUsed = redemptions
+    .filter((r) => r.status === 'active')
+    .reduce((sum, r) => sum + r.amountCents, 0);
+  return Math.max(0, coupon.discountValue - activeUsed);
+}
+
+function awardLoyaltyStampInLock(db: DemoDatabase, booking: Booking): LoyaltyStamp | null {
+  const cols = ensurePhase3Collections(db);
+  const activeProgram = cols.loyaltyPrograms.find((p) => p.isActive);
+  if (!activeProgram) return null;
+  const tz = db.settings.timezone || 'America/Mexico_City';
+  const stampedDate = getDateKeyInTimezone(new Date(), tz);
+  if (
+    !canAwardStamp(cols.loyaltyStamps, {
+      clientId: booking.clientId,
+      programId: activeProgram.id,
+      stampedDate,
+    })
+  ) {
+    return null;
+  }
+  const stamp: LoyaltyStamp = {
+    id: generateId('lst'),
+    clientId: booking.clientId,
+    bookingId: booking.id,
+    programId: activeProgram.id,
+    stampedDate,
+    createdAt: new Date().toISOString(),
+  };
+  cols.loyaltyStamps.unshift(stamp);
+  return stamp;
+}
+
+async function dispatchSalonBookingAlert(params: {
+  booking: BookingWithRelations;
+  settings: SalonSettings;
+  kind: 'canceled' | 'rescheduled';
+  reason?: string;
+}): Promise<void> {
+  const env = getRuntimeIntegrationStatus();
+  const tz = params.settings.timezone || 'America/Mexico_City';
+  const dateLabel = formatDateLongInTimezone(params.booking.startAt, tz);
+  const timeLabel = formatTimeInTimezone(params.booking.startAt, tz, false);
+  const subject =
+    params.kind === 'canceled'
+      ? `Aviso al estudio: cita cancelada (${params.booking.bookingCode})`
+      : `Aviso al estudio: cita reagendada (${params.booking.bookingCode})`;
+  const bodyText =
+    params.kind === 'canceled'
+      ? `La clienta ${params.booking.client.fullName} canceló su cita ${params.booking.bookingCode} (${params.booking.service.name} con ${params.booking.staff.name}). Motivo: ${params.reason || 'Sin motivo especificado'}.`
+      : `La clienta ${params.booking.client.fullName} reagendó su cita ${params.booking.bookingCode} (${params.booking.service.name} con ${params.booking.staff.name}) para el ${dateLabel} a las ${timeLabel}.`;
+
+  const createdLogs: ScheduledNotification[] = [];
+  const nowIso = new Date().toISOString();
+
+  if (params.settings.whatsappNumber.trim()) {
+    const waRes = await dispatchWhatsAppNotification({
+      toPhoneE164: params.settings.whatsappNumber,
+      bodyText,
+    });
+    createdLogs.push({
+      id: generateId('ntf'),
+      bookingId: params.booking.id,
+      workflowId: null,
+      channel: 'whatsapp',
+      recipient: params.settings.whatsappNumber,
+      scheduledFor: nowIso,
+      status: waRes.status,
+      subject,
+      previewText: bodyText.slice(0, 160),
+      providerMessageId: waRes.providerMessageId,
+      errorMessage: waRes.errorMessage,
+      sentAt: waRes.status === 'sent' ? nowIso : null,
+      createdAt: nowIso,
+    });
+  }
+
+  if (params.settings.contactEmail.trim()) {
+    const emailRes = await dispatchEmailNotification({
+      to: params.settings.contactEmail,
+      subject,
+      bodyText,
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: env.appUrl,
+    });
+    createdLogs.push({
+      id: generateId('ntf'),
+      bookingId: params.booking.id,
+      workflowId: null,
+      channel: 'email',
+      recipient: params.settings.contactEmail,
+      scheduledFor: nowIso,
+      status: emailRes.status,
+      subject,
+      previewText: bodyText.slice(0, 160),
+      providerMessageId: emailRes.providerMessageId,
+      errorMessage: emailRes.errorMessage,
+      sentAt: emailRes.status === 'sent' ? nowIso : null,
+      createdAt: nowIso,
+    });
+  }
+
+  if (createdLogs.length > 0) {
+    await withWriteLock((liveDb) => {
+      liveDb.notifications.unshift(...createdLogs);
+    });
+  }
+}
+
 interface ExtendedQueryAvailabilityInput extends QueryAvailabilityInput {
   extraServiceIds?: string[];
 }
@@ -350,6 +570,10 @@ interface ExtendedCreateBookingAtomicInput extends CreateBookingAtomicInput {
   internalNotes?: string | null;
   notifyEmail?: boolean;
   notifyWhatsapp?: boolean;
+  privacyConsentAccepted?: boolean;
+  marketingOptIn?: boolean;
+  enforceMaxActiveBookings?: boolean;
+  actor?: AuditActor;
 }
 
 export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
@@ -374,6 +598,7 @@ export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
       staffMembers: eligibleStaff,
       schedules: db.schedules,
       dateOverrides: db.dateOverrides,
+      recurringBlocks: db.recurringBlocks ?? [],
       bookings: db.bookings,
       slotHolds: db.slotHolds,
       calendarConnections: db.calendarConnections,
@@ -396,6 +621,59 @@ export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
   };
 }
 
+export function quickSearchAvailability(params: {
+  serviceId: string;
+  extraServiceIds?: string[];
+  addonIds: string[];
+  staffId?: string | null;
+  startDate: string;
+  days: number;
+  limit?: number;
+  sessionToken?: string | null;
+}) {
+  const db = getSnapshot();
+  const service = db.services.find((s) => s.id === params.serviceId && s.isActive);
+  if (!service) {
+    throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
+  }
+  const extraServices = resolveExtraServices(db, service.id, params.extraServiceIds);
+  const addons = db.addons.filter((a) => params.addonIds.includes(a.id) && a.isActive);
+  const requiredServiceIds = [service.id, ...extraServices.map((s) => s.id)];
+  const eligibleStaff = db.staff.filter((st) =>
+    isStaffEligibleForAllServices(st, requiredServiceIds),
+  );
+
+  const slots = findEarliestAvailableSlots(
+    {
+      settings: db.settings,
+      service,
+      extraServices,
+      addons,
+      staffMembers: eligibleStaff,
+      schedules: db.schedules,
+      dateOverrides: db.dateOverrides,
+      recurringBlocks: db.recurringBlocks ?? [],
+      bookings: db.bookings,
+      slotHolds: db.slotHolds,
+      calendarConnections: db.calendarConnections,
+      callerSessionToken: params.sessionToken,
+    },
+    params.startDate,
+    Math.min(Math.max(params.days, 1), 45),
+    Math.min(Math.max(params.limit ?? 12, 1), 30),
+    params.staffId || null,
+  );
+
+  const totals = computeServiceTotals(service, addons, extraServices);
+  return {
+    service,
+    extraServices,
+    addons,
+    totals,
+    slots,
+  };
+}
+
 export async function queryAvailabilityWithExtras(
   params: ExtendedQueryAvailabilityInput,
 ) {
@@ -406,8 +684,12 @@ export async function queryAvailabilityWithExtras(
   return queryAvailability(params);
 }
 
-export function validateCouponCode(code: string, subtotalCents: number) {
-  const db = getSnapshot();
+function validateCouponInDb(
+  db: DemoDatabase,
+  code: string,
+  subtotalCents: number,
+  clientId?: string | null,
+) {
   const normalized = code.trim().toUpperCase();
   const coupon = db.coupons.find((c) => c.code.toUpperCase() === normalized && c.isActive);
   if (!coupon) {
@@ -426,9 +708,24 @@ export function validateCouponCode(code: string, subtotalCents: number) {
     };
   }
 
+  if (coupon.kind === 'coupon' && clientId) {
+    const hasActiveRedemption = (db.couponRedemptions ?? []).some(
+      (r) =>
+        r.couponId === coupon.id &&
+        r.clientId === clientId &&
+        r.status === 'active',
+    );
+    if (hasActiveRedemption) {
+      return {
+        valid: false as const,
+        error: 'Ya usaste este cupón en una cita activa.',
+      };
+    }
+  }
+
   let discountCents = 0;
   if (coupon.kind === 'gift_card') {
-    const balance = coupon.remainingBalanceCents ?? coupon.discountValue;
+    const balance = getEffectiveGiftCardBalance(db, coupon);
     if (balance <= 0) {
       return { valid: false as const, error: 'Esta Gift Card ya no tiene saldo disponible.' };
     }
@@ -440,6 +737,15 @@ export function validateCouponCode(code: string, subtotalCents: number) {
   }
 
   return { valid: true as const, coupon, discountCents };
+}
+
+export function validateCouponCode(
+  code: string,
+  subtotalCents: number,
+  clientId?: string | null,
+) {
+  const db = getSnapshot();
+  return validateCouponInDb(db, code, subtotalCents, clientId);
 }
 
 function buildAvailabilityContext(
@@ -461,6 +767,7 @@ function buildAvailabilityContext(
     staffMembers: db.staff,
     schedules: db.schedules,
     dateOverrides: db.dateOverrides,
+    recurringBlocks: db.recurringBlocks ?? [],
     bookings: db.bookings,
     slotHolds: db.slotHolds,
     calendarConnections: db.calendarConnections,
@@ -682,16 +989,34 @@ function applyInLockTransitionEffects(
         });
       }
     } else if (effect.type === 'ReleaseCoupon') {
+      const cols = ensurePhase3Collections(db);
       const normalizedCode = effect.couponCode.trim().toUpperCase();
       const coupon = db.coupons.find((c) => c.code.toUpperCase() === normalizedCode);
+      const releasedAt = new Date().toISOString();
+      let releasedRedemptionCount = 0;
+      for (const redemption of cols.couponRedemptions) {
+        if (
+          redemption.bookingId === booking.id &&
+          redemption.status === 'active' &&
+          (!coupon || redemption.couponId === coupon.id)
+        ) {
+          redemption.status = 'released';
+          redemption.releasedAt = releasedAt;
+          releasedRedemptionCount += 1;
+        }
+      }
       if (coupon) {
         coupon.usedCount = Math.max(0, coupon.usedCount - 1);
         if (coupon.kind === 'gift_card') {
-          const currentBalance = coupon.remainingBalanceCents ?? 0;
-          coupon.remainingBalanceCents = Math.min(
-            coupon.discountValue,
-            currentBalance + effect.discountCents,
-          );
+          if (releasedRedemptionCount > 0) {
+            coupon.remainingBalanceCents = getEffectiveGiftCardBalance(db, coupon);
+          } else {
+            const currentBalance = coupon.remainingBalanceCents ?? 0;
+            coupon.remainingBalanceCents = Math.min(
+              coupon.discountValue,
+              currentBalance + effect.discountCents,
+            );
+          }
         }
       }
     } else if (effect.type === 'IncrementNoShow') {
@@ -840,6 +1165,8 @@ export async function createBookingAtomic(
   );
 
   const committed = await withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+
     if (params.idempotencyKey) {
       const existing = db.bookings.find(
         (b) => b.idempotencyKey === params.idempotencyKey,
@@ -871,6 +1198,27 @@ export async function createBookingAtomic(
         ? params.customPriceCents
         : computedTotals.subtotalCents;
 
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const phoneE164 = normalizePhoneE164(params.clientPhone);
+    const existingClient = db.clients.find((c) => c.phoneE164 === phoneE164);
+
+    if (params.enforceMaxActiveBookings && existingClient) {
+      const maxActive = db.settings.maxActiveBookingsPerClient ?? 3;
+      const activeFutureCount = db.bookings.filter(
+        (b) =>
+          b.clientId === existingClient.id &&
+          isActiveBookingStatus(b.status) &&
+          new Date(b.endAt).getTime() > now.getTime(),
+      ).length;
+      if (activeFutureCount >= maxActive) {
+        throw new PolicyError(
+          'MAX_ACTIVE_BOOKINGS',
+          `Ya cuentas con ${activeFutureCount} citas activas (límite máximo: ${maxActive}). Cancela o reagenda una cita existente antes de agendar otra.`,
+        );
+      }
+    }
+
     const requiredServiceIds = [service.id, ...extraServices.map((s) => s.id)];
     const serviceForSlot: Service = hasCustomDuration
       ? {
@@ -883,7 +1231,6 @@ export async function createBookingAtomic(
     const extraServicesForSlot = hasCustomDuration ? [] : extraServices;
     const addonsForSlot = hasCustomDuration ? [] : addons;
 
-    const now = new Date();
     const { slot, staff: chosenStaff } = resolveBookableSlotOrThrow({
       db,
       service: serviceForSlot,
@@ -934,23 +1281,22 @@ export async function createBookingAtomic(
     );
 
     let discountCents = 0;
-    let appliedCouponCode: string | null = null;
+    let appliedCoupon: Coupon | null = null;
     if (params.couponCode?.trim()) {
-      const check = validateCouponCode(params.couponCode, subtotalCents);
-      if (check.valid) {
-        discountCents = check.discountCents;
-        appliedCouponCode = check.coupon.code;
-        check.coupon.usedCount += 1;
-        if (check.coupon.kind === 'gift_card') {
-          const currentBal = check.coupon.remainingBalanceCents ?? check.coupon.discountValue;
-          check.coupon.remainingBalanceCents = Math.max(0, currentBal - discountCents);
-        }
+      const check = validateCouponInDb(
+        db,
+        params.couponCode,
+        subtotalCents,
+        existingClient?.id ?? null,
+      );
+      if (!check.valid) {
+        throw new PolicyError('COUPON_INVALID', check.error);
       }
+      discountCents = check.discountCents;
+      appliedCoupon = check.coupon;
     }
 
-    const phoneE164 = normalizePhoneE164(params.clientPhone);
-    const nowIso = now.toISOString();
-    let client = db.clients.find((c) => c.phoneE164 === phoneE164);
+    let client = existingClient;
     if (!client) {
       client = {
         id: generateId('cli'),
@@ -1018,7 +1364,7 @@ export async function createBookingAtomic(
         ? { customPriceCents: params.customPriceCents }
         : {}),
       depositAmountCents,
-      couponCode: appliedCouponCode,
+      couponCode: appliedCoupon ? appliedCoupon.code : null,
       status,
       source: params.source ?? 'web',
       clientNotes: params.clientNotes?.trim() || '',
@@ -1041,6 +1387,51 @@ export async function createBookingAtomic(
     };
 
     db.bookings.push(booking);
+
+    if (appliedCoupon) {
+      cols.couponRedemptions.unshift({
+        id: generateId('cred'),
+        couponId: appliedCoupon.id,
+        bookingId: booking.id,
+        clientId: client.id,
+        amountCents: discountCents,
+        status: 'active',
+        createdAt: nowIso,
+        releasedAt: null,
+      });
+      appliedCoupon.usedCount += 1;
+      if (appliedCoupon.kind === 'gift_card') {
+        appliedCoupon.remainingBalanceCents = getEffectiveGiftCardBalance(
+          db,
+          appliedCoupon,
+        );
+      }
+    }
+
+    if (params.privacyConsentAccepted) {
+      cols.consents.unshift({
+        id: generateId('cns'),
+        clientId: client.id,
+        bookingId: booking.id,
+        policyVersion: db.settings.privacyPolicyVersion || '2026-11',
+        acceptedAt: nowIso,
+        marketingOptIn: Boolean(params.marketingOptIn),
+      });
+    }
+
+    if (typeof params.customPriceCents === 'number' && params.actor) {
+      appendAuditLog(db, {
+        actor: params.actor,
+        action: 'booking_price_override',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          computedSubtotalCents: computedTotals.subtotalCents,
+          customPriceCents: params.customPriceCents,
+        },
+      });
+    }
 
     if (params.holdId || params.sessionToken) {
       db.slotHolds = db.slotHolds.filter(
@@ -1124,16 +1515,29 @@ export async function updateBookingStatus(params: {
   paymentMethod?: PaymentMethod;
   tipCents?: number;
   recordedBy?: string;
+  actor?: AuditActor;
 }): Promise<BookingWithRelations> {
   const committed = await withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
     const booking = db.bookings.find((b) => b.id === params.bookingId);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
 
+    const isPast = new Date(booking.endAt).getTime() < Date.now();
+    const pastLockActive = db.settings.lockPastBookings !== false;
+    if (pastLockActive && isPast && params.actor && params.actor.role !== 'owner') {
+      throw new PolicyError(
+        'PAST_BOOKING_LOCKED',
+        'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
+      );
+    }
+
+    const prevStatus = booking.status;
     const transition = transitionBookingStatus(booking, params.status);
     if (!transition.ok) {
       throw new PolicyError(transition.code, transition.message);
     }
 
+    const nowIso = new Date().toISOString();
     booking.status = transition.nextStatus;
     if (params.cancellationReason !== undefined) {
       booking.cancellationReason = params.cancellationReason;
@@ -1141,7 +1545,71 @@ export async function updateBookingStatus(params: {
     if (params.internalNotes !== undefined) {
       booking.internalNotes = params.internalNotes;
     }
-    booking.updatedAt = new Date().toISOString();
+    booking.updatedAt = nowIso;
+
+    if (pastLockActive && isPast && params.actor && params.actor.role === 'owner') {
+      appendAuditLog(db, {
+        actor: params.actor,
+        action: 'past_booking_override',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          fromStatus: prevStatus,
+          toStatus: transition.nextStatus,
+        },
+      });
+    }
+
+    if (
+      (prevStatus === 'pending_confirmation' || prevStatus === 'pending_payment') &&
+      transition.nextStatus === 'confirmed'
+    ) {
+      if (
+        booking.depositAmountCents > 0 &&
+        !cols.paymentSplits.some((s) => s.bookingId === booking.id)
+      ) {
+        cols.paymentSplits.push({
+          id: generateId('ps'),
+          bookingId: booking.id,
+          method: 'transfer',
+          amountCents: booking.depositAmountCents,
+          tipCents: 0,
+          tipStaffId: null,
+          reference: 'Anticipo SPEI aprobado',
+          createdAt: nowIso,
+        });
+      }
+      if (params.actor) {
+        appendAuditLog(db, {
+          actor: params.actor,
+          action: 'deposit_approved',
+          entityType: 'booking',
+          entityId: booking.id,
+          metadata: {
+            bookingCode: booking.bookingCode,
+            depositAmountCents: booking.depositAmountCents,
+          },
+        });
+      }
+    }
+
+    if (transition.nextStatus === 'canceled' && params.actor) {
+      appendAuditLog(db, {
+        actor: params.actor,
+        action: 'booking_canceled',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          reason: booking.cancellationReason,
+        },
+      });
+    }
+
+    if (transition.nextStatus === 'completed') {
+      awardLoyaltyStampInLock(db, booking);
+    }
 
     const hydrated = hydrateBooking(db, booking);
     const outboxEvents = applyInLockTransitionEffects(
@@ -1166,6 +1634,284 @@ export async function updateBookingStatus(params: {
 
   await dispatchPostCommitOutbox(committed.outboxEvents);
   return committed.hydrated;
+}
+
+export async function recordBookingCheckoutAtomic(params: {
+  bookingId: string;
+  splits: PaymentSplitInput[];
+  extraItem?: { inventoryItemId: string; quantity: number } | null;
+  markCompleted?: boolean;
+  redeemLoyaltyReward?: boolean;
+  actor: AuditActor;
+}): Promise<{
+  booking: BookingWithRelations;
+  splits: PaymentSplit[];
+  summary: BookingPaymentSummary;
+  stampAwarded: LoyaltyStamp | null;
+}> {
+  const committed = await withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const booking = db.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    if (booking.status === 'canceled' || booking.status === 'no_show') {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'No se puede registrar cobro en una cita cancelada o no-show.',
+      );
+    }
+
+    const isPast = new Date(booking.endAt).getTime() < Date.now();
+    const pastLockActive = db.settings.lockPastBookings !== false;
+    if (pastLockActive && isPast && params.actor.role !== 'owner') {
+      throw new PolicyError(
+        'PAST_BOOKING_LOCKED',
+        'Las citas pasadas están bloqueadas; solo la Dueña puede cobrarlas o modificarlas.',
+      );
+    }
+
+    let extraInventoryItem: InventoryItem | null = null;
+    let extraRetailTotalCents = 0;
+    if (params.extraItem) {
+      const found = db.inventory.find(
+        (i) => i.id === params.extraItem?.inventoryItemId && i.isActive,
+      );
+      if (!found) {
+        throw new PolicyError('ITEM_NOT_FOUND', 'Producto de reventa no encontrado.');
+      }
+      extraInventoryItem = found;
+      extraRetailTotalCents = Math.round(
+        found.retailPriceCents * params.extraItem.quantity,
+      );
+    }
+
+    const effectiveTotalCents = booking.totalPriceCents + extraRetailTotalCents;
+    const validation = validatePaymentSplits(params.splits, effectiveTotalCents);
+    if (!validation.ok) {
+      throw new PolicyError(validation.code, validation.message);
+    }
+
+    let loyaltyProgramForRedemption: LoyaltyProgram | null = null;
+    if (params.redeemLoyaltyReward) {
+      const activeProgram = cols.loyaltyPrograms.find((p) => p.isActive);
+      if (!activeProgram) {
+        throw new PolicyError(
+          'LOYALTY_NOT_READY',
+          'No hay un programa de lealtad activo.',
+        );
+      }
+      const rewardServiceName = activeProgram.rewardServiceId
+        ? db.services.find((s) => s.id === activeProgram.rewardServiceId)?.name ?? null
+        : null;
+      const clientLoyalty = computeClientLoyaltySummary(
+        activeProgram,
+        cols.loyaltyStamps,
+        booking.clientId,
+        rewardServiceName,
+      );
+      if (!clientLoyalty.isRewardReady) {
+        throw new PolicyError(
+          'LOYALTY_NOT_READY',
+          'La clienta aún no alcanza los sellos requeridos para canjear recompensa.',
+        );
+      }
+      loyaltyProgramForRedemption = activeProgram;
+    }
+
+    const shouldComplete =
+      params.markCompleted !== false && booking.status !== 'completed';
+    const completionTransition = shouldComplete
+      ? transitionBookingStatus(booking, 'completed')
+      : null;
+    if (completionTransition && !completionTransition.ok) {
+      throw new PolicyError(completionTransition.code, completionTransition.message);
+    }
+
+    const nowIso = new Date().toISOString();
+    const recordedBy = params.actor.fullName || params.actor.email;
+
+    if (pastLockActive && isPast && params.actor.role === 'owner') {
+      appendAuditLog(db, {
+        actor: params.actor,
+        action: 'past_booking_override',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          operation: 'checkout_split',
+        },
+      });
+    }
+
+    if (extraInventoryItem && params.extraItem) {
+      extraInventoryItem.stockQuantity = Math.max(
+        0,
+        Number((extraInventoryItem.stockQuantity - params.extraItem.quantity).toFixed(2)),
+      );
+      extraInventoryItem.updatedAt = nowIso;
+      db.inventoryMovements.unshift({
+        id: generateId('imv'),
+        itemId: extraInventoryItem.id,
+        delta: -params.extraItem.quantity,
+        reason: 'retail_sale',
+        notes: `Checkout cita ${booking.bookingCode}`,
+        bookingId: booking.id,
+        createdBy: recordedBy,
+        createdAt: nowIso,
+      });
+      booking.subtotalCents += extraRetailTotalCents;
+      booking.totalPriceCents = effectiveTotalCents;
+    }
+
+    const hydratedBeforeCash = hydrateBooking(db, booking);
+    const createdSplits: PaymentSplit[] = [];
+    const extraSuffix =
+      extraInventoryItem && params.extraItem
+        ? ` + ${extraInventoryItem.name} (x${params.extraItem.quantity})`
+        : '';
+
+    for (const inputSplit of params.splits) {
+      const tipCents = inputSplit.tipCents ?? 0;
+      const tipStaffId =
+        inputSplit.tipStaffId !== undefined
+          ? inputSplit.tipStaffId
+          : tipCents > 0
+            ? booking.staffId
+            : null;
+      const splitRecord: PaymentSplit = {
+        id: generateId('ps'),
+        bookingId: booking.id,
+        method: inputSplit.method,
+        amountCents: inputSplit.amountCents,
+        tipCents,
+        tipStaffId,
+        ...(inputSplit.reference?.trim()
+          ? { reference: inputSplit.reference.trim() }
+          : {}),
+        createdAt: nowIso,
+      };
+      cols.paymentSplits.push(splitRecord);
+      createdSplits.push(splitRecord);
+
+      const serviceStaffMember = db.staff.find((st) => st.id === booking.staffId);
+      const commissionPct =
+        serviceStaffMember?.commissionPercent ?? db.settings.defaultCommissionPercent;
+      const commissionCents = Math.round((splitRecord.amountCents * commissionPct) / 100);
+      const isCrossStaffTip =
+        splitRecord.tipCents > 0 &&
+        Boolean(splitRecord.tipStaffId) &&
+        splitRecord.tipStaffId !== booking.staffId;
+
+      db.cashEntries.unshift({
+        id: generateId('cash'),
+        bookingId: booking.id,
+        staffId: booking.staffId,
+        entryType: 'service_income',
+        description: `${hydratedBeforeCash.service.name}${extraSuffix} — ${hydratedBeforeCash.client.fullName}`,
+        amountCents: splitRecord.amountCents,
+        tipCents: isCrossStaffTip ? 0 : splitRecord.tipCents,
+        commissionCents,
+        paymentMethod: mapSplitMethodToCashMethod(splitRecord.method),
+        occurredAt: nowIso,
+        recordedBy,
+      });
+
+      if (isCrossStaffTip && splitRecord.tipStaffId) {
+        db.cashEntries.unshift({
+          id: generateId('cash'),
+          bookingId: booking.id,
+          staffId: splitRecord.tipStaffId,
+          entryType: 'service_income',
+          description: `Propina (${hydratedBeforeCash.service.name} — ${hydratedBeforeCash.client.fullName})`,
+          amountCents: 0,
+          tipCents: splitRecord.tipCents,
+          commissionCents: 0,
+          paymentMethod: mapSplitMethodToCashMethod(splitRecord.method),
+          occurredAt: nowIso,
+          recordedBy,
+        });
+      }
+    }
+
+    if (loyaltyProgramForRedemption) {
+      const programId = loyaltyProgramForRedemption.id;
+      const requiredCount = Math.max(1, Math.floor(loyaltyProgramForRedemption.stampsRequired));
+      const eligibleStamps = cols.loyaltyStamps
+        .filter((s) => s.clientId === booking.clientId && s.programId === programId)
+        .toSorted((a, b) => {
+          const dateCmp = a.stampedDate.localeCompare(b.stampedDate);
+          return dateCmp !== 0 ? dateCmp : a.createdAt.localeCompare(b.createdAt);
+        });
+      const consumedIds = new Set(
+        eligibleStamps.slice(0, requiredCount).map((s) => s.id),
+      );
+      cols.loyaltyStamps = cols.loyaltyStamps.filter((s) => !consumedIds.has(s.id));
+      db.loyaltyStamps = cols.loyaltyStamps;
+
+      appendAuditLog(db, {
+        actor: params.actor,
+        action: 'loyalty_redeemed',
+        entityType: 'client',
+        entityId: booking.clientId,
+        metadata: {
+          bookingId: booking.id,
+          bookingCode: booking.bookingCode,
+          programId,
+          stampsConsumed: consumedIds.size,
+        },
+      });
+    }
+
+    let outboxEvents: OutboxEventInput[] = [];
+    if (completionTransition && completionTransition.ok) {
+      booking.status = completionTransition.nextStatus;
+      booking.updatedAt = nowIso;
+      const hydrated = hydrateBooking(db, booking);
+      const nonCashEffects = completionTransition.effects.filter(
+        (effect) => effect.type !== 'RecordCash',
+      );
+      outboxEvents = applyInLockTransitionEffects(
+        db,
+        booking,
+        hydrated,
+        nonCashEffects,
+        { recordedBy },
+      );
+    } else {
+      booking.updatedAt = nowIso;
+    }
+
+    const stampAwarded =
+      booking.status === 'completed' ? awardLoyaltyStampInLock(db, booking) : null;
+    const allBookingSplits = cols.paymentSplits.filter(
+      (s) => s.bookingId === booking.id,
+    );
+    const summary = computeBookingPaymentSummary(
+      booking.totalPriceCents,
+      allBookingSplits,
+    );
+    const hydratedFinal = hydrateBooking(db, booking);
+    outboxEvents.push({
+      type: 'Realtime',
+      eventType: 'slot_changed',
+      payload: { staffId: booking.staffId, startAt: booking.startAt },
+    });
+
+    return {
+      hydrated: hydratedFinal,
+      createdSplits,
+      summary,
+      stampAwarded,
+      outboxEvents,
+    };
+  });
+
+  await dispatchPostCommitOutbox(committed.outboxEvents);
+  return {
+    booking: committed.hydrated,
+    splits: committed.createdSplits,
+    summary: committed.summary,
+    stampAwarded: committed.stampAwarded,
+  };
 }
 
 export async function manageClientBookingAction(params: {
@@ -1218,7 +1964,16 @@ export async function manageClientBookingAction(params: {
         eventType: 'slot_changed',
         payload: { staffId: booking.staffId, startAt: booking.startAt },
       });
-      return { hydrated, outboxEvents };
+      return {
+        hydrated,
+        outboxEvents,
+        salonAlert: {
+          booking: hydrated,
+          settings: { ...db.settings },
+          kind: 'canceled' as const,
+          reason: booking.cancellationReason ?? undefined,
+        },
+      };
     }
 
     if (!params.newStartAt) {
@@ -1229,9 +1984,11 @@ export async function manageClientBookingAction(params: {
     if (!service || !service.isActive) {
       throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
     }
-    const extraServices = booking.extraServiceIds?.length
-      ? db.services.filter((s) => booking.extraServiceIds?.includes(s.id) && s.isActive)
+    const extraServiceIds = booking.extraServiceIds ?? [];
+    const extraServices = extraServiceIds.length
+      ? db.services.filter((s) => extraServiceIds.includes(s.id) && s.isActive)
       : [];
+    const requiredServiceIds = [service.id, ...extraServiceIds];
     const addons = db.addons.filter((a) =>
       booking.addons.some((ba) => ba.addonId === a.id),
     );
@@ -1241,6 +1998,7 @@ export async function manageClientBookingAction(params: {
       db,
       service,
       extraServices,
+      requiredServiceIds,
       addons,
       startAt: params.newStartAt,
       staffId: targetStaffId,
@@ -1301,10 +2059,19 @@ export async function manageClientBookingAction(params: {
       },
     ];
 
-    return { hydrated, outboxEvents };
+    return {
+      hydrated,
+      outboxEvents,
+      salonAlert: {
+        booking: hydrated,
+        settings: settingsSnapshot,
+        kind: 'rescheduled' as const,
+      },
+    };
   });
 
   await dispatchPostCommitOutbox(committed.outboxEvents);
+  await dispatchSalonBookingAlert(committed.salonAlert);
   return committed.hydrated;
 }
 
@@ -1633,6 +2400,263 @@ export async function deleteDateOverride(id: string): Promise<void> {
     db.dateOverrides = db.dateOverrides.filter((o) => o.id !== id);
     publishRealtimeEvent('availability_updated');
   });
+}
+
+export async function upsertRecurringBlock(
+  input: Omit<RecurringBlock, 'id'> & { id?: string },
+): Promise<RecurringBlock> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    if (!db.staff.some((s) => s.id === input.staffId)) {
+      throw new PolicyError('STAFF_NOT_FOUND', 'Especialista no encontrada.');
+    }
+    const existing = input.id
+      ? cols.recurringBlocks.find((b) => b.id === input.id)
+      : null;
+    if (existing) {
+      Object.assign(existing, {
+        ...input,
+        id: existing.id,
+      });
+      publishRealtimeEvent('availability_updated', { staffId: existing.staffId });
+      return existing;
+    }
+    const created: RecurringBlock = {
+      ...input,
+      id: generateId('rblk'),
+    };
+    cols.recurringBlocks.push(created);
+    publishRealtimeEvent('availability_updated', { staffId: created.staffId });
+    return created;
+  });
+}
+
+export async function toggleRecurringBlock(
+  id: string,
+  isActive: boolean,
+): Promise<RecurringBlock> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const block = cols.recurringBlocks.find((b) => b.id === id);
+    if (!block) {
+      throw new PolicyError('BLOCK_NOT_FOUND', 'Bloqueo recurrente no encontrado.');
+    }
+    block.isActive = isActive;
+    publishRealtimeEvent('availability_updated', { staffId: block.staffId });
+    return block;
+  });
+}
+
+export async function deleteRecurringBlock(id: string): Promise<void> {
+  await withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    cols.recurringBlocks = cols.recurringBlocks.filter((b) => b.id !== id);
+    db.recurringBlocks = cols.recurringBlocks;
+    publishRealtimeEvent('availability_updated');
+  });
+}
+
+export async function upsertLoyaltyProgram(
+  patch: Partial<LoyaltyProgram>,
+): Promise<LoyaltyProgram> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const existing = patch.id
+      ? cols.loyaltyPrograms.find((p) => p.id === patch.id)
+      : (cols.loyaltyPrograms.find((p) => p.isActive) ?? cols.loyaltyPrograms[0] ?? null);
+    if (existing) {
+      if (patch.isActive !== undefined) existing.isActive = patch.isActive;
+      if (patch.name !== undefined) existing.name = patch.name;
+      if (patch.stampsRequired !== undefined) existing.stampsRequired = patch.stampsRequired;
+      if (patch.rewardType !== undefined) existing.rewardType = patch.rewardType;
+      if (patch.rewardServiceId !== undefined) existing.rewardServiceId = patch.rewardServiceId;
+      if (patch.discountPercent !== undefined) existing.discountPercent = patch.discountPercent;
+      if (patch.maxDiscountCents !== undefined) existing.maxDiscountCents = patch.maxDiscountCents;
+      if (patch.validDays !== undefined) existing.validDays = patch.validDays;
+      publishRealtimeEvent('settings_updated');
+      return existing;
+    }
+    const created: LoyaltyProgram = {
+      id: generateId('loy'),
+      isActive: patch.isActive ?? true,
+      name: patch.name ?? 'Tarjeta de Sellos',
+      stampsRequired: patch.stampsRequired ?? 8,
+      rewardType: patch.rewardType ?? 'percent_discount',
+      rewardServiceId: patch.rewardServiceId ?? null,
+      discountPercent: patch.discountPercent ?? 50,
+      maxDiscountCents: patch.maxDiscountCents ?? 25000,
+      validDays: patch.validDays ?? 90,
+    };
+    cols.loyaltyPrograms.push(created);
+    publishRealtimeEvent('settings_updated');
+    return created;
+  });
+}
+
+export function getClientLoyaltySummary(clientId: string): PublicLoyaltySummaryDTO | null {
+  const db = getSnapshot();
+  const activeProgram = (db.loyaltyPrograms ?? []).find((p) => p.isActive);
+  if (!activeProgram) return null;
+  const rewardServiceName = activeProgram.rewardServiceId
+    ? db.services.find((s) => s.id === activeProgram.rewardServiceId)?.name ?? null
+    : null;
+  const summary = computeClientLoyaltySummary(
+    activeProgram,
+    db.loyaltyStamps ?? [],
+    clientId,
+    rewardServiceName,
+  );
+  return PublicLoyaltySummarySchema.parse(summary);
+}
+
+export function getNearRewardClients(): Array<{
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  summary: PublicLoyaltySummaryDTO;
+}> {
+  const db = getSnapshot();
+  const activeProgram = (db.loyaltyPrograms ?? []).find((p) => p.isActive);
+  if (!activeProgram) return [];
+  const rewardServiceName = activeProgram.rewardServiceId
+    ? db.services.find((s) => s.id === activeProgram.rewardServiceId)?.name ?? null
+    : null;
+  const stamps = db.loyaltyStamps ?? [];
+
+  const results: Array<{
+    clientId: string;
+    fullName: string;
+    phoneE164: string;
+    instagramHandle: string | null;
+    summary: PublicLoyaltySummaryDTO;
+  }> = [];
+
+  for (const client of db.clients) {
+    const summary = PublicLoyaltySummarySchema.parse(
+      computeClientLoyaltySummary(activeProgram, stamps, client.id, rewardServiceName),
+    );
+    if (summary.isNearReward || summary.isRewardReady) {
+      results.push({
+        clientId: client.id,
+        fullName: client.fullName,
+        phoneE164: client.phoneE164,
+        instagramHandle: client.instagramHandle ?? null,
+        summary,
+      });
+    }
+  }
+
+  return results.toSorted((a, b) => {
+    const diff = a.summary.remainingForReward - b.summary.remainingForReward;
+    return diff !== 0 ? diff : b.summary.currentStamps - a.summary.currentStamps;
+  });
+}
+
+export function getInactiveClients(inactiveDays: number): Array<{
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
+  totalVisits: number;
+}> {
+  const db = getSnapshot();
+  const nowMs = Date.now();
+  const cutoffMs = nowMs - inactiveDays * 86_400_000;
+
+  const inactive: Array<{
+    clientId: string;
+    fullName: string;
+    phoneE164: string;
+    instagramHandle: string | null;
+    lastVisitAt: string | null;
+    daysSinceLastVisit: number | null;
+    totalVisits: number;
+  }> = [];
+
+  for (const client of db.clients) {
+    const clientBookings = db.bookings.filter(
+      (b) => b.clientId === client.id && b.status !== 'canceled' && b.status !== 'no_show',
+    );
+    const hasRecentOrUpcoming = clientBookings.some(
+      (b) => new Date(b.startAt).getTime() >= cutoffMs,
+    );
+    if (hasRecentOrUpcoming) continue;
+
+    let lastVisitMs: number | null = null;
+    let totalVisits = 0;
+    for (const b of clientBookings) {
+      const startMs = new Date(b.startAt).getTime();
+      if (b.status === 'completed' || (b.status === 'confirmed' && startMs <= nowMs)) {
+        totalVisits += 1;
+        if (lastVisitMs === null || startMs > lastVisitMs) {
+          lastVisitMs = startMs;
+        }
+      }
+    }
+
+    inactive.push({
+      clientId: client.id,
+      fullName: client.fullName,
+      phoneE164: client.phoneE164,
+      instagramHandle: client.instagramHandle ?? null,
+      lastVisitAt: lastVisitMs !== null ? new Date(lastVisitMs).toISOString() : null,
+      daysSinceLastVisit:
+        lastVisitMs !== null ? Math.floor((nowMs - lastVisitMs) / 86_400_000) : null,
+      totalVisits,
+    });
+  }
+
+  return inactive.toSorted((a, b) => {
+    if (a.daysSinceLastVisit === null && b.daysSinceLastVisit === null) return 0;
+    if (a.daysSinceLastVisit === null) return 1;
+    if (b.daysSinceLastVisit === null) return -1;
+    return b.daysSinceLastVisit - a.daysSinceLastVisit;
+  });
+}
+
+export function getClientArcoExport(clientId: string) {
+  const db = getSnapshot();
+  const client = db.clients.find((c) => c.id === clientId);
+  if (!client) return null;
+
+  const bookings = db.bookings
+    .filter((b) => b.clientId === client.id)
+    .map((b) => ({
+      id: b.id,
+      bookingCode: b.bookingCode,
+      serviceId: b.serviceId,
+      extraServiceIds: b.extraServiceIds ?? [],
+      staffId: b.staffId,
+      startAt: b.startAt,
+      endAt: b.endAt,
+      status: b.status,
+      source: b.source,
+      subtotalCents: b.subtotalCents,
+      discountCents: b.discountCents,
+      totalPriceCents: b.totalPriceCents,
+      depositAmountCents: b.depositAmountCents,
+      clientNotes: b.clientNotes,
+      createdAt: b.createdAt,
+    }));
+  const bookingIds = new Set(bookings.map((b) => b.id));
+  const consents = (db.consents ?? []).filter((c) => c.clientId === client.id);
+  const loyaltySummary = getClientLoyaltySummary(client.id);
+  const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
+    bookingIds.has(s.bookingId),
+  );
+
+  return {
+    exportedAt: new Date().toISOString(),
+    privacyPolicyVersion: db.settings.privacyPolicyVersion ?? '2026-11',
+    client,
+    bookings,
+    consents,
+    loyaltySummary,
+    paymentSplits,
+  };
 }
 
 export async function upsertStaffMember(
@@ -2078,6 +3102,7 @@ function getNextQuickSlots(serviceId: string, staffId?: string | null) {
         staffMembers: eligibleStaff,
         schedules: db.schedules,
         dateOverrides: db.dateOverrides,
+        recurringBlocks: db.recurringBlocks ?? [],
         bookings: db.bookings,
         slotHolds: db.slotHolds,
         calendarConnections: db.calendarConnections,
@@ -2221,6 +3246,78 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     updateCalendarConnection,
     upsertGalleryItem,
     deleteGalleryItem,
+    async recordPaymentSplits(params) {
+      return withWriteLock((db) => {
+        const cols = ensurePhase3Collections(db);
+        const nowIso = clock.now().toISOString();
+        const created: PaymentSplit[] = params.splits.map((split) => ({
+          id: generateId('ps', clock),
+          bookingId: params.bookingId,
+          method: split.method,
+          amountCents: split.amountCents,
+          tipCents: split.tipCents ?? 0,
+          tipStaffId: split.tipStaffId ?? null,
+          ...(split.reference?.trim() ? { reference: split.reference.trim() } : {}),
+          createdAt: nowIso,
+        }));
+        cols.paymentSplits.push(...created);
+        return created;
+      });
+    },
+    upsertRecurringBlock,
+    deleteRecurringBlock,
+    upsertLoyaltyProgram,
+    async awardLoyaltyStamp(params) {
+      return withWriteLock((db) => {
+        const cols = ensurePhase3Collections(db);
+        if (!canAwardStamp(cols.loyaltyStamps, params)) {
+          throw new PolicyError(
+            'DUPLICATE_STAMP',
+            'Ya se otorgó un sello para esta clienta hoy.',
+          );
+        }
+        const stamp: LoyaltyStamp = {
+          id: generateId('lst', clock),
+          clientId: params.clientId,
+          bookingId: params.bookingId,
+          programId: params.programId,
+          stampedDate: params.stampedDate,
+          createdAt: clock.now().toISOString(),
+        };
+        cols.loyaltyStamps.unshift(stamp);
+        return stamp;
+      });
+    },
+    async recordConsent(params) {
+      return withWriteLock((db) => {
+        const cols = ensurePhase3Collections(db);
+        const consent: ConsentRecord = {
+          id: generateId('cns', clock),
+          clientId: params.clientId,
+          bookingId: params.bookingId ?? null,
+          policyVersion: params.policyVersion,
+          acceptedAt: clock.now().toISOString(),
+          marketingOptIn: Boolean(params.marketingOptIn),
+        };
+        cols.consents.unshift(consent);
+        return consent;
+      });
+    },
+    async writeAuditLog(params) {
+      return withWriteLock((db) =>
+        appendAuditLog(db, {
+          actor: {
+            id: params.actorId,
+            email: params.actorEmail,
+            role: params.actorRole,
+          },
+          action: params.action,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          metadata: params.metadata,
+        }),
+      );
+    },
   };
 }
 

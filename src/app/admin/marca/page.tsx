@@ -18,19 +18,51 @@ import { Badge } from '@astryxdesign/core/Badge';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Token } from '@astryxdesign/core/Token';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { Palette, Save } from 'lucide-react';
+import { List, ListItem } from '@astryxdesign/core/List';
+import { Award, ExternalLink, Palette, Save, ShieldCheck } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { QrShareCard } from '@/components/admin/QrShareCard';
 import { useSalonAppearance } from '@/components/SalonThemeProvider';
 import { ACCENT_PRESETS } from '@/lib/theme-presets';
-import { formatCurrency } from '@/lib/format';
+import {
+  formatCurrency,
+  formatDateShortInTimezone,
+  formatTimeInTimezone,
+} from '@/lib/format';
 import type {
+  AuditAction,
   BookingLayoutView,
   CornerStyle,
+  LoyaltyProgram,
   SalonSettings,
   ThemeModePreference,
 } from '@/lib/types';
 
 type ActiveServiceMode = NonNullable<SalonSettings['serviceMode']>;
+
+const DEFAULT_LOYALTY_PROGRAM: LoyaltyProgram = {
+  id: 'loy-laikona-default',
+  isActive: true,
+  name: 'Tarjeta de Sellos LAIKONA',
+  stampsRequired: 8,
+  rewardType: 'percent_discount',
+  rewardServiceId: null,
+  discountPercent: 50,
+  maxDiscountCents: 25000,
+  validDays: 90,
+};
+
+const AUDIT_ACTION_META: Record<
+  AuditAction,
+  { label: string; variant: 'warning' | 'info' | 'success' | 'error' | 'neutral' }
+> = {
+  booking_canceled: { label: 'Cancelación', variant: 'error' },
+  booking_price_override: { label: 'Ajuste precio', variant: 'warning' },
+  csv_exported: { label: 'Exportación CSV', variant: 'info' },
+  past_booking_override: { label: 'Edición pasada', variant: 'warning' },
+  deposit_approved: { label: 'Anticipo aprobado', variant: 'success' },
+  loyalty_redeemed: { label: 'Premio canjeado', variant: 'success' },
+};
 
 function serviceModeLabel(mode: ActiveServiceMode | undefined): string {
   if (mode === 'home') return 'A domicilio';
@@ -42,6 +74,7 @@ export default function AdminBrandPage() {
   const { data, refresh } = useAdminData();
   const { setSettingsOverride, setMode } = useSalonAppearance();
   const [draftOverride, setDraftOverride] = useState<SalonSettings | null>(null);
+  const [loyaltyOverride, setLoyaltyOverride] = useState<LoyaltyProgram | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -49,15 +82,26 @@ export default function AdminBrandPage() {
   if (!data) return null;
 
   const draft = draftOverride ?? data.settings;
+  const loyaltyDraft = loyaltyOverride ?? data.loyaltyProgram ?? DEFAULT_LOYALTY_PROGRAM;
+  const tz = draft.timezone || 'America/Mexico_City';
+
   const depositAmountCents = draft.depositAmountCents ?? 20000;
   const depositBeneficiary = draft.depositBeneficiary ?? draft.depositAccountHolder;
   const activeServiceMode: ActiveServiceMode = draft.serviceMode ?? 'studio';
   const soundAlertsEnabled = draft.soundAlertsEnabled ?? true;
+  const lockPastBookings = draft.lockPastBookings ?? true;
+  const maxActiveBookingsPerClient = draft.maxActiveBookingsPerClient ?? 3;
+  const privacyPolicyVersion = draft.privacyPolicyVersion ?? '2026-11';
+  const activeServices = data.services.filter((s) => s.isActive);
 
   const updateDraft = (patch: Partial<SalonSettings>) => {
     const next = { ...draft, ...patch };
     setDraftOverride(next);
     setSettingsOverride(next);
+  };
+
+  const updateLoyaltyDraft = (patch: Partial<LoyaltyProgram>) => {
+    setLoyaltyOverride({ ...loyaltyDraft, ...patch });
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -76,6 +120,29 @@ export default function AdminBrandPage() {
           depositAmountCents,
           serviceMode: activeServiceMode,
           soundAlertsEnabled,
+          lockPastBookings,
+          maxActiveBookingsPerClient,
+          privacyPolicyVersion: privacyPolicyVersion.trim() || '2026-11',
+          loyaltyProgram: {
+            id: loyaltyDraft.id,
+            isActive: loyaltyDraft.isActive,
+            name: loyaltyDraft.name.trim() || DEFAULT_LOYALTY_PROGRAM.name,
+            stampsRequired: Math.max(3, Math.min(10, Math.round(loyaltyDraft.stampsRequired))),
+            rewardType: loyaltyDraft.rewardType,
+            rewardServiceId:
+              loyaltyDraft.rewardType === 'free_service'
+                ? loyaltyDraft.rewardServiceId ?? activeServices[0]?.id ?? null
+                : null,
+            discountPercent:
+              loyaltyDraft.rewardType === 'percent_discount'
+                ? Math.max(1, Math.min(100, Math.round(loyaltyDraft.discountPercent ?? 50)))
+                : null,
+            maxDiscountCents:
+              loyaltyDraft.rewardType === 'percent_discount'
+                ? loyaltyDraft.maxDiscountCents
+                : null,
+            validDays: loyaltyDraft.validDays,
+          },
         }),
       });
       const json = (await res.json()) as { error?: string };
@@ -83,7 +150,7 @@ export default function AdminBrandPage() {
         setErrorMsg(json.error || 'No se pudieron guardar los cambios de marca.');
         return;
       }
-      setSavedMsg('Personalización de marca, tema Astryx y anticipo SPEI guardados.');
+      setSavedMsg('Marca, tarjeta de sellos, blindaje operativo y anticipo SPEI guardados.');
       await refresh();
     } catch {
       setErrorMsg('Error de conexión al guardar la configuración.');
@@ -96,12 +163,13 @@ export default function AdminBrandPage() {
     <VStack gap={5}>
       <HStack justify="between" align="center" wrap="wrap" gap={3}>
         <VStack gap={0.5}>
-          <Heading level={1}>Marca, Tema Astryx y Anticipo SPEI</Heading>
+          <Heading level={1}>Marca, Fidelidad, QR y Políticas</Heading>
           <Text color="secondary">
-            Personaliza el 100% de la identidad del salón, Instagram, modalidad de atención y datos de transferencia SPEI.
+            Personaliza tu identidad, tarjeta digital de sellos, código QR, blindaje operativo y datos SPEI.
           </Text>
         </VStack>
         <Button
+          type="button"
           label="Guardar cambios"
           variant="primary"
           icon={<Save size={15} />}
@@ -216,6 +284,137 @@ export default function AdminBrandPage() {
             <Card padding={5}>
               <VStack gap={3}>
                 <HStack gap={2} align="center">
+                  <Award size={18} aria-hidden="true" />
+                  <Heading level={3}>Tarjeta Digital de Sellos</Heading>
+                </HStack>
+                <Text type="supporting" color="secondary">
+                  Suma 1 sello automático por día al completar y cobrar cada cita. Visible para tus clientas en su enlace personal /cita/[token].
+                </Text>
+                <Switch
+                  label="Activar programa de sellos de fidelidad"
+                  value={loyaltyDraft.isActive}
+                  onChange={(v) => updateLoyaltyDraft({ isActive: v })}
+                />
+                <TextInput
+                  label="Nombre de la tarjeta"
+                  value={loyaltyDraft.name}
+                  onChange={(v) => updateLoyaltyDraft({ name: v })}
+                  placeholder="Tarjeta de Sellos LAIKONA"
+                />
+                <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+                  <NumberInput
+                    label="Sellos requeridos (3–10)"
+                    value={loyaltyDraft.stampsRequired}
+                    min={3}
+                    max={10}
+                    isIntegerOnly
+                    onChange={(v) => updateLoyaltyDraft({ stampsRequired: v })}
+                  />
+                  <Selector
+                    label="Tipo de recompensa"
+                    value={loyaltyDraft.rewardType}
+                    onChange={(v) => {
+                      if (v === 'free_service' || v === 'percent_discount') {
+                        updateLoyaltyDraft({ rewardType: v });
+                      }
+                    }}
+                    options={[
+                      { value: 'percent_discount', label: '% de descuento' },
+                      { value: 'free_service', label: 'Servicio gratis' },
+                    ]}
+                  />
+                </Grid>
+
+                {loyaltyDraft.rewardType === 'percent_discount' ? (
+                  <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+                    <NumberInput
+                      label="Descuento (%)"
+                      value={loyaltyDraft.discountPercent ?? 50}
+                      min={1}
+                      max={100}
+                      units="%"
+                      isIntegerOnly
+                      onChange={(v) => updateLoyaltyDraft({ discountPercent: v })}
+                    />
+                    <NumberInput
+                      label="Tope máximo (MXN)"
+                      value={
+                        loyaltyDraft.maxDiscountCents !== null
+                          ? Math.round(loyaltyDraft.maxDiscountCents / 100)
+                          : 250
+                      }
+                      min={0}
+                      units="MXN"
+                      isIntegerOnly
+                      onChange={(v) =>
+                        updateLoyaltyDraft({
+                          maxDiscountCents: Math.max(0, Math.round(v * 100)),
+                        })
+                      }
+                    />
+                  </Grid>
+                ) : (
+                  <Selector
+                    label="Servicio incluido en el premio"
+                    value={loyaltyDraft.rewardServiceId ?? activeServices[0]?.id ?? ''}
+                    onChange={(v) => updateLoyaltyDraft({ rewardServiceId: v || null })}
+                    options={activeServices.map((srv) => ({
+                      value: srv.id,
+                      label: `${srv.name} (${formatCurrency(srv.priceCents, draft.currency)})`,
+                    }))}
+                  />
+                )}
+              </VStack>
+            </Card>
+
+            <Card padding={5}>
+              <VStack gap={3}>
+                <HStack gap={2} align="center">
+                  <ShieldCheck size={18} aria-hidden="true" />
+                  <Heading level={3}>Blindaje Operativo y Privacidad (LFPDPPP)</Heading>
+                </HStack>
+                <Switch
+                  label="Bloquear edición o cancelación de citas pasadas"
+                  description="Evita modificaciones retroactivas de recepcionistas o especialistas; solo la Dueña puede sobreescribir dejando registro en bitácora."
+                  value={lockPastBookings}
+                  onChange={(v) => updateDraft({ lockPastBookings: v })}
+                />
+                <Grid columns={{ minWidth: 180, max: 2 }} gap={3}>
+                  <NumberInput
+                    label="Máx. citas activas por clienta (1–10)"
+                    value={maxActiveBookingsPerClient}
+                    min={1}
+                    max={10}
+                    isIntegerOnly
+                    onChange={(v) => updateDraft({ maxActiveBookingsPerClient: v })}
+                  />
+                  <TextInput
+                    label="Versión Aviso de Privacidad"
+                    value={privacyPolicyVersion}
+                    onChange={(v) => updateDraft({ privacyPolicyVersion: v })}
+                    placeholder="2026-11"
+                  />
+                </Grid>
+                <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                  <Text type="supporting" color="secondary">
+                    Las clientas aceptan tu aviso vigente antes de confirmar en /reservar.
+                  </Text>
+                  <Button
+                    label="Ver Aviso de Privacidad"
+                    variant="secondary"
+                    size="sm"
+                    icon={<ExternalLink size={14} />}
+                    href="/aviso-de-privacidad"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                </HStack>
+              </VStack>
+            </Card>
+
+            <Card padding={5}>
+              <VStack gap={3}>
+                <HStack gap={2} align="center">
                   <Palette size={18} aria-hidden="true" />
                   <Heading level={3}>Tema Astryx y Apariencia</Heading>
                 </HStack>
@@ -226,6 +425,7 @@ export default function AdminBrandPage() {
                   {ACCENT_PRESETS.map((p) => (
                     <Button
                       key={p.label}
+                      type="button"
                       size="sm"
                       variant={
                         draft.brandAccentLight.toLowerCase() === p.light.toLowerCase()
@@ -397,66 +597,110 @@ export default function AdminBrandPage() {
           </VStack>
         </form>
 
-        <Card variant="muted" padding={5}>
-          <VStack gap={4}>
-            <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <Text type="label" color="accent" weight="semibold">
-                VISTA PREVIA EN VIVO DEL SITIO PÚBLICO
-              </Text>
-              <StatusDot variant="success" label="Aplicando tema en vivo" isPulsing />
-            </HStack>
+        <VStack gap={4}>
+          <Card variant="muted" padding={5}>
+            <VStack gap={4}>
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <Text type="label" color="accent" weight="semibold">
+                  VISTA PREVIA EN VIVO DEL SITIO PÚBLICO
+                </Text>
+                <StatusDot variant="success" label="Aplicando tema en vivo" isPulsing />
+              </HStack>
 
-            <Card padding={5} elevation="low">
-              <VStack gap={3}>
-                <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <VStack gap={0}>
-                    <Text weight="bold">{draft.name}</Text>
+              <Card padding={5} elevation="low">
+                <VStack gap={3}>
+                  <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                    <VStack gap={0}>
+                      <Text weight="bold">{draft.name}</Text>
+                      <Text type="supporting" color="secondary">
+                        {draft.city || 'Puebla, México'}
+                        {draft.sisterStudioHandle ? ` · ${draft.sisterStudioHandle}` : ''}
+                      </Text>
+                    </VStack>
+                    <Button label="Agendar cita" variant="primary" size="sm" href="/reservar" />
+                  </HStack>
+                  <Divider />
+                  <VStack gap={1.5}>
+                    <HStack gap={1.5} wrap="wrap">
+                      <Token size="sm" label={draft.landingContent.heroEyebrow} />
+                      <Badge variant="neutral" label={serviceModeLabel(activeServiceMode)} />
+                    </HStack>
+                    <Heading level={2}>{draft.landingContent.heroTitle}</Heading>
                     <Text type="supporting" color="secondary">
-                      {draft.city || 'Puebla, México'}
-                      {draft.sisterStudioHandle ? ` · ${draft.sisterStudioHandle}` : ''}
+                      {draft.landingContent.heroSubtitle}
                     </Text>
                   </VStack>
-                  <Button label="Agendar cita" variant="primary" size="sm" href="/reservar" />
-                </HStack>
-                <Divider />
-                <VStack gap={1.5}>
-                  <HStack gap={1.5} wrap="wrap">
-                    <Token size="sm" label={draft.landingContent.heroEyebrow} />
-                    <Badge variant="neutral" label={serviceModeLabel(activeServiceMode)} />
+                  <HStack gap={2}>
+                    <Button label="Agendar ahora" variant="primary" size="sm" href="/reservar" />
+                    <Button label="Ver servicios" variant="secondary" size="sm" href="/" />
                   </HStack>
-                  <Heading level={2}>{draft.landingContent.heroTitle}</Heading>
+                  <Divider />
+                  <Card variant="muted" padding={3}>
+                    <VStack gap={1}>
+                      <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                        <Text type="label" color="accent" weight="semibold">
+                          ANTICIPO SPEI ({formatCurrency(depositAmountCents, draft.currency)})
+                        </Text>
+                        <Badge variant="info" label={draft.depositBankName || 'Mercado Pago'} />
+                      </HStack>
+                      <Text type="supporting">Titular: {depositBeneficiary}</Text>
+                      <Text type="code" weight="semibold">
+                        CLABE: {draft.depositClabe}
+                      </Text>
+                    </VStack>
+                  </Card>
                   <Text type="supporting" color="secondary">
-                    {draft.landingContent.heroSubtitle}
+                    {draft.address} · {draft.instagramHandle}
                   </Text>
                 </VStack>
-                <HStack gap={2}>
-                  <Button label="Agendar ahora" variant="primary" size="sm" href="/reservar" />
-                  <Button label="Ver servicios" variant="secondary" size="sm" href="/" />
+              </Card>
+            </VStack>
+          </Card>
+
+          <QrShareCard appUrl={data.integration.appUrl} salonName={draft.name} />
+
+          {data.session.user.role === 'owner' ? (
+            <Card padding={5}>
+              <VStack gap={3}>
+                <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                  <HStack gap={2} align="center">
+                    <ShieldCheck size={18} aria-hidden="true" />
+                    <Heading level={3}>Bitácora de auditoría</Heading>
+                  </HStack>
+                  <Badge variant="neutral" label={String(data.recentAuditLogs.length)} />
                 </HStack>
-                <Divider />
-                <Card variant="muted" padding={3}>
-                  <VStack gap={1}>
-                    <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                      <Text type="label" color="accent" weight="semibold">
-                        ANTICIPO SPEI ({formatCurrency(depositAmountCents, draft.currency)})
-                      </Text>
-                      <Badge variant="info" label={draft.depositBankName || 'Mercado Pago'} />
-                    </HStack>
-                    <Text type="supporting">
-                      Titular: {depositBeneficiary}
-                    </Text>
-                    <Text type="code" weight="semibold">
-                      CLABE: {draft.depositClabe}
-                    </Text>
-                  </VStack>
-                </Card>
                 <Text type="supporting" color="secondary">
-                  {draft.address} · {draft.instagramHandle}
+                  Registro automático de cancelaciones, ajustes de precio, aprobaciones de anticipo, canjes de sellos y exportaciones CSV (solo visible para Dueña).
                 </Text>
+                {data.recentAuditLogs.length === 0 ? (
+                  <Text type="supporting" color="secondary">
+                    Sin eventos registrados en la bitácora todavía.
+                  </Text>
+                ) : (
+                  <List hasDividers>
+                    {data.recentAuditLogs.slice(0, 12).map((entry) => {
+                      const meta = AUDIT_ACTION_META[entry.action];
+                      return (
+                        <ListItem
+                          key={entry.id}
+                          label={`${meta.label} · ${entry.entityType} (${entry.entityId})`}
+                          description={
+                            <Text type="supporting" color="secondary">
+                              {entry.actorEmail} ({entry.actorRole}) ·{' '}
+                              {formatDateShortInTimezone(entry.createdAt, tz)}{' '}
+                              {formatTimeInTimezone(entry.createdAt, tz)}
+                            </Text>
+                          }
+                          endContent={<Badge variant={meta.variant} label={meta.label} />}
+                        />
+                      );
+                    })}
+                  </List>
+                )}
               </VStack>
             </Card>
-          </VStack>
-        </Card>
+          ) : null}
+        </VStack>
       </Grid>
     </VStack>
   );

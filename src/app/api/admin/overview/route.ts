@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { isActiveBookingStatus } from '@/lib/booking/state-machine';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
-import { getBookingsWithRelations, getSnapshot } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
+import { computeBookingPaymentSummary } from '@/lib/payments/splits';
+import {
+  getBookingsWithRelations,
+  getNearRewardClients,
+  getSnapshot,
+} from '@/lib/repositories/db';
+import type { PaymentSplit } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -200,6 +207,94 @@ export async function GET(request: NextRequest) {
     ),
   };
 
+  const visibleBookingIds = new Set(bookings.map((b) => b.id));
+  const visibleClientIds = new Set(bookings.map((b) => b.clientId));
+  const allPaymentSplits = db.paymentSplits ?? [];
+  const paymentSplits = allPaymentSplits.filter((s) => visibleBookingIds.has(s.bookingId));
+
+  const splitsByBookingId = new Map<string, PaymentSplit[]>();
+  for (const split of paymentSplits) {
+    const list = splitsByBookingId.get(split.bookingId) ?? [];
+    list.push(split);
+    splitsByBookingId.set(split.bookingId, list);
+  }
+
+  const uncollectedUnsorted: Array<{
+    bookingId: string;
+    bookingCode: string;
+    status: string;
+    clientId: string;
+    clientName: string;
+    clientPhone: string;
+    clientInstagram: string | null;
+    serviceName: string;
+    staffId: string;
+    staffName: string;
+    startAt: string;
+    endAt: string;
+    totalPriceCents: number;
+    paidCents: number;
+    remainingCents: number;
+  }> = [];
+
+  for (const b of bookings) {
+    const isPastActive =
+      isActiveBookingStatus(b.status) && new Date(b.endAt).getTime() < nowMs;
+    if (b.status !== 'completed' && !isPastActive) continue;
+    const summary = computeBookingPaymentSummary(
+      b.totalPriceCents,
+      splitsByBookingId.get(b.id) ?? [],
+    );
+    if (!summary.isUncollected) continue;
+    uncollectedUnsorted.push({
+      bookingId: b.id,
+      bookingCode: b.bookingCode,
+      status: b.status,
+      clientId: b.clientId,
+      clientName: b.client.fullName,
+      clientPhone: b.client.phoneE164,
+      clientInstagram: b.clientInstagram ?? b.client.instagramHandle ?? null,
+      serviceName: b.service.name,
+      staffId: b.staffId,
+      staffName: b.staff.name,
+      startAt: b.startAt,
+      endAt: b.endAt,
+      totalPriceCents: summary.totalPriceCents,
+      paidCents: summary.paidCents,
+      remainingCents: summary.remainingCents,
+    });
+  }
+
+  const uncollectedBookings = uncollectedUnsorted.toSorted(
+    (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
+  );
+
+  const allRecurringBlocks = db.recurringBlocks ?? [];
+  const recurringBlocks =
+    session.user.role === 'specialist'
+      ? session.user.staffMemberId
+        ? allRecurringBlocks.filter((r) => r.staffId === session.user.staffMemberId)
+        : []
+      : allRecurringBlocks;
+
+  const loyaltyPrograms = db.loyaltyPrograms ?? [];
+  const loyaltyProgram =
+    loyaltyPrograms.find((p) => p.isActive) ?? loyaltyPrograms[0] ?? null;
+  const allLoyaltyStamps = db.loyaltyStamps ?? [];
+  const loyaltyStamps =
+    session.user.role === 'specialist'
+      ? allLoyaltyStamps.filter((st) => visibleClientIds.has(st.clientId))
+      : allLoyaltyStamps;
+
+  const allNearRewardClients = getNearRewardClients();
+  const nearRewardClients =
+    session.user.role === 'specialist'
+      ? allNearRewardClients.filter((c) => visibleClientIds.has(c.clientId))
+      : allNearRewardClients;
+
+  const recentAuditLogs =
+    session.user.role === 'owner' ? (db.auditLogs ?? []).slice(0, 50) : [];
+
   return NextResponse.json({
     session,
     integration,
@@ -225,6 +320,13 @@ export async function GET(request: NextRequest) {
     onboardingChecklist,
     pendingDeposits,
     retention,
+    uncollectedBookings,
+    nearRewardClients,
+    paymentSplits,
+    recurringBlocks,
+    loyaltyProgram,
+    loyaltyStamps,
+    recentAuditLogs,
     bookings,
     services: db.services,
     categories: db.categories,

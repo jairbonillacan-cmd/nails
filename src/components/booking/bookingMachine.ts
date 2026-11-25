@@ -20,6 +20,10 @@ interface BookingFlowState {
   holdExpiresAt: number | null;
   conflict: BookingConflictState | null;
   formError: string | null;
+  formErrorCode: string | null;
+  privacyConsentAccepted: boolean;
+  marketingOptIn: boolean;
+  privacyConsentError: string | null;
   confirmedManageUrl: string | null;
 }
 
@@ -41,11 +45,24 @@ export type BookingFlowAction =
       message: string;
     }
   | {
+      type: 'SET_PRIVACY_CONSENT';
+      accepted: boolean;
+    }
+  | {
+      type: 'SET_MARKETING_OPT_IN';
+      optedIn: boolean;
+    }
+  | {
+      type: 'CONSENT_REQUIRED_ERROR';
+      message: string;
+    }
+  | {
       type: 'START_SUBMIT';
     }
   | {
       type: 'SUBMIT_FAILED';
       error: string;
+      code?: string | null;
     }
   | {
       type: 'SUBMIT_CONFIRMED';
@@ -70,6 +87,10 @@ export function createInitialBookingFlowState(): BookingFlowState {
     holdExpiresAt: null,
     conflict: null,
     formError: null,
+    formErrorCode: null,
+    privacyConsentAccepted: false,
+    marketingOptIn: false,
+    privacyConsentError: null,
     confirmedManageUrl: null,
   };
 }
@@ -89,6 +110,8 @@ export function bookingReducer(
         holdExpiresAt: action.holdExpiresAt,
         conflict: null,
         formError: null,
+        formErrorCode: null,
+        privacyConsentError: null,
       };
 
     case 'SLOT_CONFLICT':
@@ -104,6 +127,7 @@ export function bookingReducer(
           suggestions: action.suggestions,
         },
         formError: null,
+        formErrorCode: null,
       };
 
     case 'HOLD_EXPIRED':
@@ -120,20 +144,56 @@ export function bookingReducer(
         },
       };
 
+    case 'SET_PRIVACY_CONSENT':
+      return {
+        ...state,
+        privacyConsentAccepted: action.accepted,
+        privacyConsentError: action.accepted ? null : state.privacyConsentError,
+        formError:
+          action.accepted && state.formErrorCode === 'PRIVACY_CONSENT_REQUIRED'
+            ? null
+            : state.formError,
+        formErrorCode:
+          action.accepted && state.formErrorCode === 'PRIVACY_CONSENT_REQUIRED'
+            ? null
+            : state.formErrorCode,
+      };
+
+    case 'SET_MARKETING_OPT_IN':
+      return {
+        ...state,
+        marketingOptIn: action.optedIn,
+      };
+
+    case 'CONSENT_REQUIRED_ERROR':
+      return {
+        ...state,
+        privacyConsentError: action.message,
+        formError: action.message,
+        formErrorCode: 'PRIVACY_CONSENT_REQUIRED',
+      };
+
     case 'START_SUBMIT':
       return {
         ...state,
         phase: 'submitting',
         conflict: null,
         formError: null,
+        formErrorCode: null,
+        privacyConsentError: null,
       };
 
-    case 'SUBMIT_FAILED':
+    case 'SUBMIT_FAILED': {
+      const code = action.code ?? null;
       return {
         ...state,
         phase: state.holdId ? 'holding' : 'browsing',
         formError: action.error,
+        formErrorCode: code,
+        privacyConsentError:
+          code === 'PRIVACY_CONSENT_REQUIRED' ? action.error : null,
       };
+    }
 
     case 'SUBMIT_CONFIRMED':
       return {
@@ -141,6 +201,8 @@ export function bookingReducer(
         phase: 'confirmed',
         conflict: null,
         formError: null,
+        formErrorCode: null,
+        privacyConsentError: null,
         confirmedManageUrl: action.manageUrl,
       };
 
@@ -153,6 +215,8 @@ export function bookingReducer(
         holdId: null,
         holdExpiresAt: null,
         formError: null,
+        formErrorCode: null,
+        privacyConsentError: null,
       };
 
     case 'SELECTION_CHANGED':
@@ -164,6 +228,8 @@ export function bookingReducer(
         holdExpiresAt: null,
         conflict: null,
         formError: null,
+        formErrorCode: null,
+        privacyConsentError: null,
       };
 
     case 'DISMISS_CONFLICT':

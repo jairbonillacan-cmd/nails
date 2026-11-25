@@ -23,6 +23,7 @@ const PURE_DOMAIN_FILES = new Set([
   'src/lib/public-dto.ts',
   'src/lib/sanitize.ts',
   'src/lib/clock.ts',
+  'src/lib/qr.ts',
 ]);
 
 const PUBLIC_UI_DTO_BOUNDARY_FILES = new Set([
@@ -178,7 +179,9 @@ function isPureDomainFile(rel) {
   return (
     PURE_DOMAIN_FILES.has(rel) ||
     rel.startsWith('src/lib/availability/') ||
-    rel.startsWith('src/lib/booking/')
+    rel.startsWith('src/lib/booking/') ||
+    rel.startsWith('src/lib/loyalty/') ||
+    rel.startsWith('src/lib/payments/')
   );
 }
 

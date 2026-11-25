@@ -5,6 +5,7 @@ import {
   getRepository,
   PolicyError,
   queryAvailabilityWithExtras,
+  quickSearchAvailability,
 } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (mode !== 'range' && mode !== 'quick') {
+    if (mode !== 'range' && mode !== 'quick' && mode !== 'quick_search') {
       return NextResponse.json({ error: 'Modo de consulta inválido' }, { status: 400 });
     }
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     const rawServiceId = searchParams.get('serviceId')?.trim();
     const rawStartDate = searchParams.get('startDate')?.trim();
     const bootstrap =
-      !rawServiceId || (mode === 'range' && !rawStartDate)
+      !rawServiceId || ((mode === 'range' || mode === 'quick_search') && !rawStartDate)
         ? await repo.getPublicBootstrap()
         : null;
     const serviceId = rawServiceId || bootstrap?.services[0]?.id;
@@ -69,9 +70,29 @@ export async function GET(request: NextRequest) {
         new Date(),
         bootstrap?.settings.timezone || 'America/Mexico_City',
       );
-    const days = Number(searchParams.get('days') || '35');
     const cookieSessionToken = await readClientSessionToken(request);
     const sessionToken = cookieSessionToken ?? searchParams.get('sessionToken');
+
+    if (mode === 'quick_search') {
+      const rawDays = Number(searchParams.get('days') || '14');
+      const rawLimit = Number(searchParams.get('limit') || '12');
+      const days = Number.isFinite(rawDays) ? Math.min(Math.max(rawDays, 1), 45) : 14;
+      const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 30) : 12;
+
+      const quickResult = quickSearchAvailability({
+        serviceId,
+        extraServiceIds,
+        addonIds,
+        staffId,
+        startDate,
+        days,
+        limit,
+        sessionToken,
+      });
+      return NextResponse.json(quickResult);
+    }
+
+    const days = Number(searchParams.get('days') || '35');
     const manageToken = searchParams.get('manageToken')?.trim();
     const resolvedBooking = manageToken
       ? await repo.getBookingByToken(manageToken)

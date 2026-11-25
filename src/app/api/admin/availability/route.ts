@@ -6,8 +6,12 @@ import { getDateKeyInTimezone } from '@/lib/format';
 import {
   addDateOverride,
   deleteDateOverride,
+  deleteRecurringBlock,
   getSnapshot,
+  PolicyError,
   saveStaffSchedule,
+  toggleRecurringBlock,
+  upsertRecurringBlock,
 } from '@/lib/repositories/db';
 import type { AvailabilityRule } from '@/lib/types';
 
@@ -58,22 +62,74 @@ const postOverrideSchema = z.object({
   reason: z.string().max(240).default(''),
 });
 
+const postRecurringBlockSchema = z
+  .object({
+    kind: z.literal('recurring_block'),
+    id: z.string().min(1).optional(),
+    staffId: z.string().min(1),
+    reason: z.string().trim().min(1, 'Escribe un motivo').max(240),
+    frequency: z.enum(['weekly', 'monthly']),
+    weekdays: z.array(z.number().int().min(0).max(6)).max(7).default([]),
+    dayOfMonth: z.number().int().min(1).max(31).nullable().default(null),
+    startTime: z.string().regex(hhmmRegex, 'Hora de inicio inválida (HH:mm)'),
+    endTime: z.string().regex(hhmmRegex, 'Hora de fin inválida (HH:mm)'),
+    untilDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha límite inválida (YYYY-MM-DD)')
+      .nullable()
+      .default(null),
+    isActive: z.boolean().default(true),
+  })
+  .refine((block) => block.startTime < block.endTime, {
+    message: 'La hora de inicio debe ser menor a la hora de fin.',
+  })
+  .refine(
+    (block) =>
+      block.frequency === 'weekly'
+        ? block.weekdays.length > 0
+        : block.dayOfMonth !== null,
+    {
+      message: 'Define al menos un día de la semana o el día del mes.',
+    },
+  );
+
+const toggleRecurringBlockSchema = z.object({
+  kind: z.literal('recurring_block_toggle'),
+  id: z.string().min(1),
+  isActive: z.boolean(),
+});
+
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get('mode');
+  const db = getSnapshot();
+  const requestedStaffId = searchParams.get('staffId')?.trim() || '';
+
+  const allBlocks = db.recurringBlocks ?? [];
+  const scopedBlocks =
+    session.user.role === 'specialist'
+      ? session.user.staffMemberId
+        ? allBlocks.filter((b) => b.staffId === session.user.staffMemberId)
+        : []
+      : requestedStaffId
+        ? allBlocks.filter((b) => b.staffId === requestedStaffId)
+        : allBlocks;
+
+  if (!mode || mode === 'blocks') {
+    return NextResponse.json({ recurringBlocks: scopedBlocks });
+  }
+
   if (mode !== 'diagnose') {
     return NextResponse.json({ error: 'Modo no soportado' }, { status: 400 });
   }
 
-  const db = getSnapshot();
   const date =
     searchParams.get('date')?.trim() ||
     getDateKeyInTimezone(new Date(), db.settings.timezone);
   const serviceId = searchParams.get('serviceId')?.trim() || db.services[0]?.id;
-  const requestedStaffId = searchParams.get('staffId')?.trim() || '';
 
   let targetStaffId: string;
   if (session.user.role === 'specialist') {
@@ -96,7 +152,12 @@ export async function GET(request: NextRequest) {
 
   const service = db.services.find((s) => s.id === serviceId);
   if (!targetStaffId || !service) {
-    return NextResponse.json({ date, diagnosis: [], diagnostics: [] });
+    return NextResponse.json({
+      date,
+      diagnosis: [],
+      diagnostics: [],
+      recurringBlocks: scopedBlocks,
+    });
   }
 
   const addonIdsParam = searchParams.get('addonIds') || '';
@@ -125,6 +186,7 @@ export async function GET(request: NextRequest) {
       staffMembers: db.staff,
       schedules: db.schedules,
       dateOverrides: db.dateOverrides,
+      recurringBlocks: db.recurringBlocks ?? [],
       bookings: db.bookings,
       slotHolds: db.slotHolds,
       calendarConnections: db.calendarConnections,
@@ -133,7 +195,12 @@ export async function GET(request: NextRequest) {
     targetStaffId,
   );
 
-  return NextResponse.json({ date, diagnosis, diagnostics: diagnosis });
+  return NextResponse.json({
+    date,
+    diagnosis,
+    diagnostics: diagnosis,
+    recurringBlocks: scopedBlocks,
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -182,7 +249,59 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   try {
-    const body = postOverrideSchema.parse(await request.json());
+    const raw = (await request.json()) as unknown;
+    const rawKind =
+      typeof raw === 'object' && raw !== null && 'kind' in raw
+        ? (raw as { kind?: unknown }).kind
+        : undefined;
+
+    if (rawKind === 'recurring_block') {
+      const parsed = postRecurringBlockSchema.parse(raw);
+      if (session.user.role === 'specialist') {
+        if (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId) {
+          return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        }
+        if (parsed.id) {
+          const existing = (getSnapshot().recurringBlocks ?? []).find(
+            (b) => b.id === parsed.id,
+          );
+          if (!existing || existing.staffId !== session.user.staffMemberId) {
+            return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+          }
+        }
+      }
+      const block = await upsertRecurringBlock({
+        id: parsed.id,
+        staffId: parsed.staffId,
+        reason: parsed.reason,
+        frequency: parsed.frequency,
+        weekdays: Array.from(new Set(parsed.weekdays)).toSorted((a, b) => a - b),
+        dayOfMonth: parsed.dayOfMonth,
+        startTime: parsed.startTime,
+        endTime: parsed.endTime,
+        untilDate: parsed.untilDate,
+        isActive: parsed.isActive,
+      });
+      return NextResponse.json({ block }, { status: 201 });
+    }
+
+    if (rawKind === 'recurring_block_toggle') {
+      const parsed = toggleRecurringBlockSchema.parse(raw);
+      if (session.user.role === 'specialist') {
+        const target = (getSnapshot().recurringBlocks ?? []).find((b) => b.id === parsed.id);
+        if (
+          !session.user.staffMemberId ||
+          !target ||
+          target.staffId !== session.user.staffMemberId
+        ) {
+          return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        }
+      }
+      const block = await toggleRecurringBlock(parsed.id, parsed.isActive);
+      return NextResponse.json({ block });
+    }
+
+    const body = postOverrideSchema.parse(raw);
     if (
       session.user.role === 'specialist' &&
       (!session.user.staffMemberId || body.staffId !== session.user.staffMemberId)
@@ -192,13 +311,17 @@ export async function POST(request: NextRequest) {
     const override = await addDateOverride(body);
     return NextResponse.json({ override });
   } catch (err) {
+    if (err instanceof PolicyError) {
+      const status = err.code === 'BLOCK_NOT_FOUND' ? 404 : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
+    }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: err.issues[0]?.message || 'Excepción de fecha inválida.' },
+        { error: err.issues[0]?.message || 'Datos de bloqueo inválidos.' },
         { status: 400 },
       );
     }
-    return NextResponse.json({ error: 'No se pudo guardar la excepción.' }, { status: 400 });
+    return NextResponse.json({ error: 'No se pudo guardar el bloqueo.' }, { status: 400 });
   }
 }
 
@@ -207,6 +330,22 @@ export async function DELETE(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
+  const blockId = searchParams.get('blockId')?.trim();
+  if (blockId) {
+    if (session.user.role === 'specialist') {
+      const target = (getSnapshot().recurringBlocks ?? []).find((b) => b.id === blockId);
+      if (
+        !session.user.staffMemberId ||
+        !target ||
+        target.staffId !== session.user.staffMemberId
+      ) {
+        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+      }
+    }
+    await deleteRecurringBlock(blockId);
+    return NextResponse.json({ ok: true });
+  }
+
   const id = searchParams.get('id');
   if (id) {
     if (session.user.role === 'specialist') {

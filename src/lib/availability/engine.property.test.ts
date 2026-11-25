@@ -15,6 +15,7 @@ import type {
   AvailabilityRule,
   Booking,
   DateOverride,
+  RecurringBlock,
   Service,
   ServiceAddon,
   SlotHold,
@@ -932,6 +933,70 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
             expect(startMs - occStartMs).toBe(expectedBufB * 60_000);
             expect(occEndMs - endMs).toBe(expectedBufA * 60_000);
             expect(endMs).toBeLessThanOrEqual(windowEndMs);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('Property 11 (Recurring Blocks): slots never overlap active recurring blocks and stay 1:1 with D1/D7', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom<'weekly' | 'monthly'>('weekly', 'monthly'),
+        fc.integer({ min: 9, max: 16 }),
+        fc.integer({ min: 1, max: 3 }),
+        fc.boolean(),
+        fc.boolean(),
+        fc.constantFrom(60, 120),
+        (frequency, blockStartH, blockDurH, isActive, expiredUntil, duration) => {
+          const staffId = PRIMARY_STAFF_ID;
+          const blockStartStr = toTimeStr(blockStartH * 60);
+          const blockEndStr = toTimeStr((blockStartH + blockDurH) * 60);
+          const block: RecurringBlock = {
+            id: 'rb-prop',
+            staffId,
+            reason: 'Bloqueo test',
+            frequency,
+            weekdays: frequency === 'weekly' ? [TEST_DOW] : [],
+            dayOfMonth: frequency === 'monthly' ? 15 : null,
+            startTime: blockStartStr,
+            endTime: blockEndStr,
+            untilDate: expiredUntil ? '2026-12-10' : '2026-12-31',
+            isActive,
+          };
+
+          const baseCtx = makeBaseContext(duration, 0, 15, 30, [
+            { id: 'r-rb', dayOfWeek: TEST_DOW, startTime: '09:00', endTime: '20:00' },
+          ]);
+          const ctx: AvailabilityContext = {
+            ...baseCtx,
+            recurringBlocks: [block],
+          };
+
+          const slots = getAvailableSlotsForDate(ctx, TEST_DATE, staffId);
+          const availableTimes = new Set(slots.map((s) => s.localTime24));
+          const bStartMs = zonedDateTimeToUtc(TEST_DATE, blockStartStr, TZ).getTime();
+          const bEndMs = zonedDateTimeToUtc(TEST_DATE, blockEndStr, TZ).getTime();
+          const applies = isActive && !expiredUntil;
+
+          for (const slot of slots) {
+            if (applies) {
+              const occStart = new Date(slot.occupiedStartAt).getTime();
+              const occEnd = new Date(slot.occupiedEndAt).getTime();
+              expect(rangesOverlap(occStart, occEnd, bStartMs, bEndMs)).toBe(false);
+            }
+          }
+
+          if (slots[0]) {
+            expect(
+              assertSlotBookable(ctx, { startAt: slots[0].startAt, staffId }).ok,
+            ).toBe(true);
+          }
+
+          const diag = diagnoseDateSlots(ctx, TEST_DATE, staffId);
+          for (const d of diag) {
+            expect(d.isAvailable).toBe(availableTimes.has(d.time24));
           }
         },
       ),

@@ -236,8 +236,18 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(parsed.settings.name).toBe('LAIKONA NAILS');
     expect(parsed.settings.depositClabe).toBe('7229 6901 3959 779869');
     expect(parsed.settings.onboardingCompleted).toBe(false);
+    expect(parsed.settings.lockPastBookings).toBe(true);
+    expect(parsed.settings.maxActiveBookingsPerClient).toBe(3);
+    expect(parsed.settings.privacyPolicyVersion).toBe('2026-11');
     expect(parsed.staff.map((s) => s.name)).toEqual(['Karla', 'Paty', 'Tere']);
     expect(parsed.services).toHaveLength(9);
+    expect(parsed.reviews.length).toBeGreaterThanOrEqual(4);
+    expect(parsed.loyaltyPrograms?.length).toBe(1);
+    expect(parsed.loyaltyStamps?.filter((s) => s.clientId === 'client-sofia')).toHaveLength(6);
+    expect(parsed.paymentSplits?.length).toBeGreaterThanOrEqual(4);
+    expect(parsed.recurringBlocks?.length).toBe(1);
+    expect(parsed.consents?.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.auditLogs?.length).toBeGreaterThanOrEqual(1);
     expect(parsed.schedules[0]?.rules[0]?.fixedStartTimes).toEqual([
       '10:00',
       '13:30',
@@ -263,11 +273,25 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
       teamSizeTier: _tier,
       onboardingCompleted: _onb,
       soundAlertsEnabled: _sound,
+      lockPastBookings: _lpb,
+      maxActiveBookingsPerClient: _maxAct,
+      privacyPolicyVersion: _ppv,
       ...legacySettings
     } = seeded.settings;
 
+    const {
+      paymentSplits: _ps,
+      recurringBlocks: _rb,
+      loyaltyPrograms: _lp,
+      loyaltyStamps: _ls,
+      couponRedemptions: _cr,
+      consents: _cn,
+      auditLogs: _al,
+      ...legacyRoot
+    } = seeded;
+
     const legacySnapshot = {
-      ...seeded,
+      ...legacyRoot,
       settings: legacySettings,
       services: seeded.services.map(({ isStartingPrice: _sp, ...rest }) => rest),
       schedules: seeded.schedules.map((sched) => ({
@@ -286,7 +310,14 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
         }) => rest,
       ),
     };
-    expect(DemoDatabaseSchema.safeParse(legacySnapshot).success).toBe(true);
+    const parsedLegacy = parseDemoDatabase(legacySnapshot);
+    expect(parsedLegacy.paymentSplits).toEqual([]);
+    expect(parsedLegacy.recurringBlocks).toEqual([]);
+    expect(parsedLegacy.loyaltyPrograms).toEqual([]);
+    expect(parsedLegacy.loyaltyStamps).toEqual([]);
+    expect(parsedLegacy.couponRedemptions).toEqual([]);
+    expect(parsedLegacy.consents).toEqual([]);
+    expect(parsedLegacy.auditLogs).toEqual([]);
 
     expect(DemoDatabaseSchema.safeParse(null).success).toBe(false);
     expect(DemoDatabaseSchema.safeParse({}).success).toBe(false);

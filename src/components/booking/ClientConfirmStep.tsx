@@ -1,13 +1,17 @@
 'use client';
 
 import type React from 'react';
+import { useRef } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
+import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
+import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { FileInput } from '@astryxdesign/core/FileInput';
@@ -51,8 +55,12 @@ interface ClientConfirmStepProps {
   inspoDataUrl: string | null;
   proofDeliveryMethod: ProofDeliveryMethod;
   proofFile: File | null;
+  privacyConsentAccepted: boolean;
+  marketingOptIn: boolean;
+  privacyConsentError: string | null;
   submitting: boolean;
   formError: string | null;
+  formErrorCode: string | null;
   onChangeCouponInput: (value: string) => void;
   onApplyCoupon: () => void;
   onChangeClientName: (value: string) => void;
@@ -64,7 +72,19 @@ interface ClientConfirmStepProps {
   onChangeInspoFile: (file: File | null, dataUrl: string | null) => void;
   onChangeProofMethod: (method: ProofDeliveryMethod) => void;
   onChangeProofFile: (file: File | null, dataUrl: string | null) => void;
+  onChangePrivacyConsent: (accepted: boolean) => void;
+  onChangeMarketingOptIn: (optedIn: boolean) => void;
   onSubmit: (e: React.FormEvent) => void;
+}
+
+function resolveErrorTitle(code: string | null): string {
+  if (code === 'MAX_ACTIVE_BOOKINGS') {
+    return 'Límite de citas activas alcanzado';
+  }
+  if (code === 'PRIVACY_CONSENT_REQUIRED') {
+    return 'Confirma el Aviso de Privacidad';
+  }
+  return 'No pudimos registrar la cita';
 }
 
 export function ClientConfirmStep({
@@ -93,8 +113,12 @@ export function ClientConfirmStep({
   inspoDataUrl,
   proofDeliveryMethod,
   proofFile,
+  privacyConsentAccepted,
+  marketingOptIn,
+  privacyConsentError,
   submitting,
   formError,
+  formErrorCode,
   onChangeCouponInput,
   onApplyCoupon,
   onChangeClientName,
@@ -106,12 +130,27 @@ export function ClientConfirmStep({
   onChangeInspoFile,
   onChangeProofMethod,
   onChangeProofFile,
+  onChangePrivacyConsent,
+  onChangeMarketingOptIn,
   onSubmit,
 }: ClientConfirmStepProps) {
+  const privacyCheckboxRef = useRef<HTMLInputElement>(null);
   const showDepositCard = hasConfiguredDeposit(settings, depositAmountCents);
   const allowInspo =
     Boolean(selectedService?.allowInspoPhoto) ||
     selectedExtraServices.some((srv) => srv.allowInspoPhoto);
+  const policyVersion = settings.privacyPolicyVersion || '2026-11';
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    if (
+      clientName.trim().length >= 2 &&
+      clientPhone.replace(/\D/g, '').length >= 8 &&
+      !privacyConsentAccepted
+    ) {
+      privacyCheckboxRef.current?.focus();
+    }
+    onSubmit(e);
+  };
 
   return (
     <Grid columns={{ minWidth: 320, max: 2 }} gap={5} align="start">
@@ -135,7 +174,7 @@ export function ClientConfirmStep({
       />
 
       <Card padding={5}>
-        <form onSubmit={onSubmit}>
+        <form onSubmit={handleFormSubmit} noValidate>
           <VStack gap={4}>
             <VStack gap={0.5}>
               <Text type="label" color="accent" weight="semibold">
@@ -150,9 +189,9 @@ export function ClientConfirmStep({
             {formError ? (
               <Banner
                 status="error"
-                title="No pudimos registrar la cita"
+                title={resolveErrorTitle(formErrorCode)}
                 description={formError}
-                icon={<ShieldAlert size={18} />}
+                icon={<ShieldAlert size={18} aria-hidden="true" />}
               />
             ) : null}
 
@@ -268,13 +307,54 @@ export function ClientConfirmStep({
               />
             ) : null}
 
+            <Card padding={4} variant="muted" width="100%">
+              <VStack gap={3} width="100%">
+                <VStack gap={1.5} width="100%">
+                  <CheckboxInput
+                    ref={privacyCheckboxRef}
+                    htmlName="privacyConsentAccepted"
+                    label="He leído y acepto el Aviso de Privacidad"
+                    description="Necesario para gestionar tu cita, recordatorios y anticipo conforme a la LFPDPPP."
+                    value={privacyConsentAccepted}
+                    onChange={(checked) => onChangePrivacyConsent(checked)}
+                    isRequired
+                    status={
+                      privacyConsentError
+                        ? { type: 'error', message: privacyConsentError }
+                        : undefined
+                    }
+                  />
+                  <HStack gap={2} align="center" wrap="wrap">
+                    <Link
+                      href="/aviso-de-privacidad"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      isExternalLink
+                      type="supporting"
+                    >
+                      Leer Aviso de Privacidad integral (v{policyVersion})
+                    </Link>
+                  </HStack>
+                </VStack>
+
+                <CheckboxInput
+                  htmlName="marketingOptIn"
+                  label={`Quiero recibir recordatorios y promociones exclusivas de ${settings.name}`}
+                  description="Opcional. Incluye avisos de retoque, cortesías de cumpleaños y beneficios de fidelidad."
+                  value={marketingOptIn}
+                  onChange={(checked) => onChangeMarketingOptIn(checked)}
+                  isOptional
+                />
+              </VStack>
+            </Card>
+
             <Button
               type="submit"
               variant="primary"
               size="lg"
               width="100%"
               isLoading={submitting}
-              icon={<Check size={18} />}
+              icon={<Check size={18} aria-hidden="true" />}
               label={
                 selectedService?.requiresConfirmation || showDepositCard
                   ? 'Solicitar y apartar horario'

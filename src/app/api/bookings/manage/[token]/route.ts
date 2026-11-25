@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   getBookingByToken,
+  getClientLoyaltySummary,
   getSnapshot,
   manageClientBookingAction,
   PolicyError,
@@ -41,12 +42,14 @@ export async function GET(
   const db = getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
+  const loyaltySummary = getClientLoyaltySummary(booking.clientId);
 
   return NextResponse.json({
     booking: toPublicManageBooking(booking),
     settings: toPublicSettingsDTO(db.settings),
     calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
     whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
+    loyaltySummary,
   });
 }
 

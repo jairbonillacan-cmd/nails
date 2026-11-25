@@ -62,6 +62,9 @@ export interface Database {
           team_size_tier?: string | null;
           onboarding_completed?: boolean;
           sound_alerts_enabled?: boolean;
+          lock_past_bookings?: boolean;
+          max_active_bookings_per_client?: number;
+          privacy_policy_version?: string;
           landing_content: Json;
           whatsapp_booking_enabled: boolean;
           sms_reminders_enabled: boolean;
@@ -534,6 +537,7 @@ export interface Database {
           amount_cents: number;
           status: 'active' | 'released';
           created_at: string;
+          released_at?: string | null;
         };
         Insert: Pick<
           Database['public']['Tables']['coupon_redemptions']['Row'],
@@ -685,6 +689,128 @@ export interface Database {
         Insert: Pick<Database['public']['Tables']['outbox_events']['Row'], 'event_type'> &
           Partial<Database['public']['Tables']['outbox_events']['Row']>;
         Update: Partial<Database['public']['Tables']['outbox_events']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      payment_splits: {
+        Row: {
+          id: string;
+          booking_id: string;
+          method: 'cash' | 'card' | 'transfer' | 'giftcard' | 'online';
+          amount_cents: number;
+          tip_cents: number;
+          tip_staff_id: string | null;
+          reference: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['payment_splits']['Row'],
+          'booking_id' | 'method' | 'amount_cents'
+        > &
+          Partial<Database['public']['Tables']['payment_splits']['Row']>;
+        Update: Partial<Database['public']['Tables']['payment_splits']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      recurring_blocks: {
+        Row: {
+          id: string;
+          staff_id: string;
+          reason: string;
+          frequency: 'weekly' | 'monthly';
+          weekdays: number[];
+          day_of_month: number | null;
+          start_time: string;
+          end_time: string;
+          until_date: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['recurring_blocks']['Row'],
+          'staff_id' | 'frequency' | 'start_time' | 'end_time'
+        > &
+          Partial<Database['public']['Tables']['recurring_blocks']['Row']>;
+        Update: Partial<Database['public']['Tables']['recurring_blocks']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      loyalty_programs: {
+        Row: {
+          id: string;
+          is_active: boolean;
+          name: string;
+          stamps_required: number;
+          reward_type: 'free_service' | 'percent_discount';
+          reward_service_id: string | null;
+          discount_percent: number | null;
+          max_discount_cents: number | null;
+          valid_days: number | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['loyalty_programs']['Row'],
+          'name' | 'reward_type'
+        > &
+          Partial<Database['public']['Tables']['loyalty_programs']['Row']>;
+        Update: Partial<Database['public']['Tables']['loyalty_programs']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      loyalty_stamps: {
+        Row: {
+          id: string;
+          client_id: string;
+          booking_id: string;
+          program_id: string;
+          stamped_date: string;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['loyalty_stamps']['Row'],
+          'client_id' | 'booking_id' | 'program_id' | 'stamped_date'
+        > &
+          Partial<Database['public']['Tables']['loyalty_stamps']['Row']>;
+        Update: Partial<Database['public']['Tables']['loyalty_stamps']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      consents: {
+        Row: {
+          id: string;
+          client_id: string;
+          booking_id: string | null;
+          policy_version: string;
+          accepted_at: string;
+          marketing_opt_in: boolean;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['consents']['Row'],
+          'client_id' | 'policy_version'
+        > &
+          Partial<Database['public']['Tables']['consents']['Row']>;
+        Update: Partial<Database['public']['Tables']['consents']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      audit_logs: {
+        Row: {
+          id: string;
+          actor_id: string;
+          actor_email: string;
+          actor_role: 'owner' | 'admin' | 'specialist';
+          action:
+            | 'booking_canceled'
+            | 'booking_price_override'
+            | 'csv_exported'
+            | 'past_booking_override'
+            | 'deposit_approved'
+            | 'loyalty_redeemed';
+          entity_type: string;
+          entity_id: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['audit_logs']['Row'],
+          'actor_id' | 'actor_email' | 'actor_role' | 'action' | 'entity_type' | 'entity_id'
+        > &
+          Partial<Database['public']['Tables']['audit_logs']['Row']>;
+        Update: Partial<Database['public']['Tables']['audit_logs']['Row']>;
         Relationships: TableRelationship[];
       };
     };

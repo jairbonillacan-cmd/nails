@@ -19,10 +19,42 @@ import { TextArea } from '@astryxdesign/core/TextArea';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Switch } from '@astryxdesign/core/Switch';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
-import { Cake, MessageCircle, Search, UserPlus } from 'lucide-react';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
+import { Token } from '@astryxdesign/core/Token';
+import { Divider } from '@astryxdesign/core/Divider';
+import {
+  Award,
+  Cake,
+  Download,
+  MessageCircle,
+  Search,
+  Sparkles,
+  UserPlus,
+} from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { ClientProfile } from '@/lib/types';
 import { buildWhatsAppLink, formatDateShortInTimezone } from '@/lib/format';
+
+type ClientsTab = 'directory' | 'retention' | 'rewards';
+
+interface InactiveClientRow {
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
+  totalVisits: number;
+}
+
+const INACTIVE_DAY_PRESETS = [
+  { days: 21, label: '21 días · Retoque' },
+  { days: 30, label: '30 días' },
+  { days: 45, label: '45 días · Reactivación' },
+  { days: 60, label: '60 días' },
+] as const;
 
 function formatInstagramDisplay(handle: string): string {
   const clean = handle.trim().replace(/^@+/, '');
@@ -46,9 +78,29 @@ function getInitialLetter(fullName: string): string {
 
 export default function AdminClientsPage() {
   const { data, refresh } = useAdminData();
-  const [activeTab, setActiveTab] = useState<'directory' | 'retention'>('directory');
-  const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<ClientsTab>(() => {
+    if (typeof window !== 'undefined') {
+      const tab = new URLSearchParams(window.location.search).get('tab');
+      if (tab === 'retencion' || tab === 'retention') return 'retention';
+      if (tab === 'premios' || tab === 'rewards') return 'rewards';
+    }
+    return 'directory';
+  });
+  const [query, setQuery] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('q')?.trim() ?? '';
+    }
+    return '';
+  });
   const [onlyBirthdays, setOnlyBirthdays] = useState(false);
+
+  const [inactiveDays, setInactiveDays] = useState<number>(21);
+  const [inactiveResult, setInactiveResult] = useState<{
+    days: number;
+    clients: InactiveClientRow[];
+  } | null>(null);
+  const [inactiveLoading, setInactiveLoading] = useState(false);
+  const [inactiveError, setInactiveError] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<ClientProfile | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
@@ -71,6 +123,49 @@ export default function AdminClientsPage() {
 
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
 
+  const canManageClients = Boolean(
+    data && (data.session.user.role === 'owner' || data.session.user.role === 'admin'),
+  );
+
+  useExternalSync(
+    activeTab === 'retention' && canManageClients
+      ? `inactive-clients-${inactiveDays}`
+      : 'inactive-clients-idle',
+    async (signal, key) => {
+      if (key === 'inactive-clients-idle') return;
+      setInactiveLoading(true);
+      setInactiveError(null);
+      try {
+        const res = await fetch(`/api/admin/clients?inactiveDays=${inactiveDays}`, {
+          cache: 'no-store',
+          signal,
+        });
+        if (signal.aborted) return;
+        const json = (await res.json()) as {
+          error?: string;
+          inactiveDays?: number;
+          clients?: InactiveClientRow[];
+        };
+        if (!res.ok) {
+          setInactiveError(json.error || 'No se pudo consultar el filtro de inactividad.');
+          return;
+        }
+        setInactiveResult({
+          days: json.inactiveDays ?? inactiveDays,
+          clients: json.clients ?? [],
+        });
+      } catch {
+        if (!signal.aborted) {
+          setInactiveError('Error de conexión al consultar clientas inactivas.');
+        }
+      } finally {
+        if (!signal.aborted) {
+          setInactiveLoading(false);
+        }
+      }
+    },
+  );
+
   const currentMonth = data ? data.serverTodayKey.slice(5, 7) : '';
 
   const visitCountByClient = useMemo(() => {
@@ -83,17 +178,42 @@ export default function AdminClientsPage() {
     return map;
   }, [data]);
 
+  const loyaltyByClientId = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeClientLoyaltySummary>>();
+    if (!data || !data.loyaltyProgram) return map;
+    const rewardServiceName = data.loyaltyProgram.rewardServiceId
+      ? (data.services.find((s) => s.id === data.loyaltyProgram?.rewardServiceId)?.name ??
+        null)
+      : null;
+    for (const client of data.clients) {
+      map.set(
+        client.id,
+        computeClientLoyaltySummary(
+          data.loyaltyProgram,
+          data.loyaltyStamps,
+          client.id,
+          rewardServiceName,
+        ),
+      );
+    }
+    return map;
+  }, [data]);
+
   const rows = useMemo(() => {
     if (!data) return [];
+    const trimmed = query.trim();
+    const q = trimmed.toLowerCase();
+    const qDigits = trimmed.replace(/\D/g, '');
     const filtered = data.clients.filter((c) => {
       if (onlyBirthdays && (!c.birthday || c.birthday.slice(5, 7) !== currentMonth)) {
         return false;
       }
-      if (!query.trim()) return true;
-      const q = query.toLowerCase();
+      if (!trimmed) return true;
+      const phoneDigits = c.phoneE164.replace(/\D/g, '');
       return (
         c.fullName.toLowerCase().includes(q) ||
-        c.phoneE164.includes(q) ||
+        c.phoneE164.toLowerCase().includes(q) ||
+        (qDigits.length >= 4 && phoneDigits.includes(qDigits)) ||
         (c.email || '').toLowerCase().includes(q) ||
         (c.instagramHandle || '').toLowerCase().includes(q) ||
         c.notes.toLowerCase().includes(q)
@@ -132,9 +252,12 @@ export default function AdminClientsPage() {
 
   if (!data || !retention) return null;
 
-  const canManageClients =
-    data.session.user.role === 'owner' || data.session.user.role === 'admin';
   const tz = data.settings.timezone || 'America/Mexico_City';
+  const nearRewardClients = data.nearRewardClients;
+  const displayedInactiveClients: InactiveClientRow[] = canManageClients
+    ? (inactiveResult?.clients ?? retention.inactiveClients)
+    : retention.inactiveClients.filter((item) => item.daysSinceLastVisit >= inactiveDays);
+  const selectedLoyalty = selected ? (loyaltyByClientId.get(selected.id) ?? null) : null;
 
   const openNotes = (c: ClientProfile) => {
     setSelected(c);
@@ -143,6 +266,13 @@ export default function AdminClientsPage() {
     setEmailDraft(c.email || '');
     setInstagramDraft(c.instagramHandle || '');
     setEditError(null);
+  };
+
+  const openClientById = (clientId: string) => {
+    const found = data.clients.find((c) => c.id === clientId);
+    if (found) {
+      openNotes(found);
+    }
   };
 
   const saveClient = async () => {
@@ -234,7 +364,7 @@ export default function AdminClientsPage() {
         <VStack gap={0.5}>
           <Heading level={1}>Directorio de Clientas</Heading>
           <Text color="secondary">
-            Directorio A–Z con Instagram, historial de visitas, fórmulas técnicas y seguimiento de retención.
+            Directorio A–Z, filtro inverso de retoques/reactivación, sellos de fidelidad y exportación LFPDPPP (ARCO).
           </Text>
         </VStack>
 
@@ -265,13 +395,17 @@ export default function AdminClientsPage() {
 
       <TabList
         value={activeTab}
-        onChange={(v) => setActiveTab(v as 'directory' | 'retention')}
+        onChange={(v) => setActiveTab(v as ClientsTab)}
         hasDivider
       >
         <Tab value="directory" label={`Directorio A–Z (${rows.length})`} />
         <Tab
           value="retention"
-          label={`Retención (${retention.inactiveClients.length} inactivas)`}
+          label={`Retención (${displayedInactiveClients.length})`}
+        />
+        <Tab
+          value="rewards"
+          label={`Cerca de su premio (${nearRewardClients.length})`}
         />
       </TabList>
 
@@ -330,6 +464,7 @@ export default function AdminClientsPage() {
                     <List hasDividers>
                       {clientsInGroup.map((c) => {
                         const visits = visitCountByClient.get(c.id) ?? 0;
+                        const loyalty = loyaltyByClientId.get(c.id) ?? null;
                         return (
                           <ListItem
                             key={c.id}
@@ -373,6 +508,13 @@ export default function AdminClientsPage() {
                             endContent={
                               <HStack gap={1.5} align="center" wrap="wrap">
                                 <Badge variant="neutral" label={`${visits} citas`} />
+                                {loyalty && loyalty.currentStamps > 0 ? (
+                                  <Token
+                                    size="sm"
+                                    color={loyalty.isRewardReady ? 'green' : 'purple'}
+                                    label={`${loyalty.currentStamps} / ${loyalty.stampsRequired} sellos`}
+                                  />
+                                ) : null}
                                 {c.noShowCount > 0 ? (
                                   <Badge
                                     variant="error"
@@ -407,7 +549,7 @@ export default function AdminClientsPage() {
             </VStack>
           )}
         </VStack>
-      ) : (
+      ) : activeTab === 'retention' ? (
         <VStack gap={5}>
           <Grid columns={{ minWidth: 200, max: 3 }} gap={4}>
             <Card padding={4}>
@@ -421,42 +563,86 @@ export default function AdminClientsPage() {
             <Card padding={4}>
               <VStack gap={0.5}>
                 <Text type="label" color="secondary">
-                  Inactivas (30+ días sin visita)
+                  Sin reserva en {inactiveDays}+ días
                 </Text>
-                <Heading level={2}>{retention.inactiveClients.length}</Heading>
+                <Heading level={2}>{displayedInactiveClients.length}</Heading>
               </VStack>
             </Card>
             <Card padding={4} variant="muted">
               <VStack gap={0.5}>
                 <Text type="label" color="accent">
-                  Total en directorio
+                  Cerca de su premio
                 </Text>
-                <Heading level={2}>{data.clients.length}</Heading>
+                <Heading level={2}>{nearRewardClients.length}</Heading>
               </VStack>
             </Card>
           </Grid>
 
-          <Card padding={5}>
-            <VStack gap={3}>
-              <VStack gap={0.5}>
-                <Heading level={2}>
-                  Clientas inactivas (30+ días sin visita)
-                </Heading>
-                <Text type="supporting" color="secondary">
-                  Recupera clientas que no han agendado su retoque o nuevo set en más de un mes con un mensaje directo por WhatsApp.
-                </Text>
-              </VStack>
+          {nearRewardClients.length > 0 ? (
+            <Banner
+              status="info"
+              icon={<Sparkles size={18} />}
+              title={`${nearRewardClients.length} clienta(s) están cerca o listas para canjear su premio de sellos`}
+              description="Envíales un recordatorio personalizado para impulsar su próxima visita."
+              endContent={
+                <Button
+                  label="Ver clientas cerca de premio"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setActiveTab('rewards')}
+                />
+              }
+            />
+          ) : null}
 
-              {retention.inactiveClients.length === 0 ? (
+          <Card padding={5}>
+            <VStack gap={4}>
+              <HStack justify="between" align="center" wrap="wrap" gap={3}>
+                <VStack gap={0.5}>
+                  <Heading level={2}>
+                    Sin reserva en los últimos {inactiveDays} días
+                  </Heading>
+                  <Text type="supporting" color="secondary">
+                    Filtro inverso para detectar retoques vencidos (21 días) o clientas inactivas (45–60 días) sin cita próxima y reactivarlas por WhatsApp.
+                  </Text>
+                </VStack>
+                <HStack gap={1.5} wrap="wrap">
+                  {INACTIVE_DAY_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.days}
+                      label={preset.label}
+                      size="sm"
+                      variant={inactiveDays === preset.days ? 'primary' : 'secondary'}
+                      onClick={() => setInactiveDays(preset.days)}
+                    />
+                  ))}
+                </HStack>
+              </HStack>
+
+              {inactiveError ? (
+                <Banner status="error" title={inactiveError} />
+              ) : null}
+
+              {inactiveLoading ? (
+                <ProgressBar
+                  label="Consultando clientas sin reserva"
+                  isIndeterminate
+                />
+              ) : displayedInactiveClients.length === 0 ? (
                 <EmptyState
                   isCompact
-                  title="Sin clientas inactivas por ahora"
-                  description="Todas tus clientas con visitas pasadas han vuelto recientemente o ya tienen próxima cita."
+                  title={`Sin clientas inactivas en los últimos ${inactiveDays} días`}
+                  description="Todas tus clientas ya tienen visita reciente o una cita próxima agendada en ese periodo."
                 />
               ) : (
                 <List hasDividers>
-                  {retention.inactiveClients.map((item) => {
-                    const comebackMsg = `Hola ${item.fullName}, te extrañamos en ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última visita. ¿Te apartamos horario para tu nuevo set o retoque?`;
+                  {displayedInactiveClients.map((item) => {
+                    const comebackMsg =
+                      item.daysSinceLastVisit !== null
+                        ? inactiveDays <= 21
+                          ? `Hola ${item.fullName}, te saludamos de ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última cita — ¿te apartamos horario para tu retoque?`
+                          : `Hola ${item.fullName}, te extrañamos en ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última visita. ¿Te apartamos horario para tu nuevo set o retoque?`
+                        : `Hola ${item.fullName}, te saludamos de ${data.settings.name}! ¿Te gustaría agendar tu próxima cita con nosotras?`;
                     return (
                       <ListItem
                         key={item.clientId}
@@ -477,15 +663,26 @@ export default function AdminClientsPage() {
                               </Link>
                             ) : null}
                             <Text type="supporting" color="secondary">
-                              Última visita: {formatDateShortInTimezone(item.lastVisitAt, tz)}
+                              {item.lastVisitAt
+                                ? `Última visita: ${formatDateShortInTimezone(item.lastVisitAt, tz)}`
+                                : 'Sin visitas completadas aún'}
                             </Text>
                           </HStack>
                         }
                         endContent={
                           <HStack gap={2} align="center" wrap="wrap">
                             <Badge
-                              variant="warning"
-                              label={`Hace ${item.daysSinceLastVisit} días`}
+                              variant={
+                                item.daysSinceLastVisit !== null &&
+                                item.daysSinceLastVisit >= 45
+                                  ? 'error'
+                                  : 'warning'
+                              }
+                              label={
+                                item.daysSinceLastVisit !== null
+                                  ? `Hace ${item.daysSinceLastVisit} días`
+                                  : 'Sin visita'
+                              }
                             />
                             <Button
                               label="Enviar mensaje de regreso (WhatsApp)"
@@ -539,6 +736,106 @@ export default function AdminClientsPage() {
                       }
                     />
                   ))}
+                </List>
+              )}
+            </VStack>
+          </Card>
+        </VStack>
+      ) : (
+        <VStack gap={4}>
+          <Card padding={5}>
+            <VStack gap={4}>
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <VStack gap={0.5}>
+                  <Heading level={2}>
+                    Clientas cerca de su premio
+                  </Heading>
+                  <Text type="supporting" color="secondary">
+                    {data.loyaltyProgram
+                      ? `${data.loyaltyProgram.name} (${data.loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a completar o canjear su beneficio.`
+                      : 'Activa tu Tarjeta de Sellos en Marca y Políticas para seguir el progreso de fidelidad.'}
+                  </Text>
+                </VStack>
+                <Badge
+                  variant="purple"
+                  label={`${nearRewardClients.length} clienta(s)`}
+                />
+              </HStack>
+
+              {nearRewardClients.length === 0 ? (
+                <EmptyState
+                  isCompact
+                  title="Sin clientas cerca de su premio aún"
+                  description="Cuando una clienta esté a 2 visitas o menos de llenar su tarjeta aparecerá aquí automáticamente."
+                />
+              ) : (
+                <List hasDividers>
+                  {nearRewardClients.map((entry) => {
+                    const nudgeMsg = entry.summary.isRewardReady
+                      ? `Hola ${entry.fullName}! Ya juntaste ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${data.settings.name}. Tienes listo tu premio (${entry.summary.rewardLabel}) para tu próxima cita!`
+                      : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${data.settings.name}. Te faltan solo ${entry.summary.remainingForReward} visita(s) para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
+                    return (
+                      <ListItem
+                        key={entry.clientId}
+                        startContent={<Avatar name={entry.fullName} size="sm" />}
+                        label={entry.fullName}
+                        description={
+                          <VStack gap={1.5}>
+                            <HStack gap={2} wrap="wrap" align="center">
+                              <Text type="supporting" color="secondary" hasTabularNumbers>
+                                {entry.phoneE164}
+                              </Text>
+                              {entry.instagramHandle ? (
+                                <Link
+                                  href={formatInstagramUrl(entry.instagramHandle)}
+                                  isExternalLink
+                                  type="supporting"
+                                >
+                                  {formatInstagramDisplay(entry.instagramHandle)}
+                                </Link>
+                              ) : null}
+                              <Text type="supporting" color="secondary">
+                                Beneficio: {entry.summary.rewardLabel}
+                              </Text>
+                            </HStack>
+                            <ProgressBar
+                              label={`${entry.summary.currentStamps} / ${entry.summary.stampsRequired} sellos`}
+                              value={entry.summary.currentStamps}
+                              max={entry.summary.stampsRequired}
+                              variant={entry.summary.isRewardReady ? 'success' : 'accent'}
+                              hasValueLabel
+                              formatValueLabel={(val, max) => `${val} / ${max} sellos`}
+                            />
+                          </VStack>
+                        }
+                        endContent={
+                          <HStack gap={1.5} align="center" wrap="wrap">
+                            <Badge
+                              variant={entry.summary.isRewardReady ? 'success' : 'purple'}
+                              label={
+                                entry.summary.isRewardReady
+                                  ? '¡Premio listo!'
+                                  : `Faltan ${entry.summary.remainingForReward}`
+                              }
+                            />
+                            <Button
+                              label="Ficha"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openClientById(entry.clientId)}
+                            />
+                            <Button
+                              label="Recordar por WhatsApp"
+                              size="sm"
+                              variant="primary"
+                              icon={<MessageCircle size={14} />}
+                              href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
+                            />
+                          </HStack>
+                        }
+                      />
+                    );
+                  })}
                 </List>
               )}
             </VStack>
@@ -636,7 +933,7 @@ export default function AdminClientsPage() {
       <Dialog
         isOpen={Boolean(selected)}
         onOpenChange={(open) => !open && setSelected(null)}
-        width={480}
+        width={500}
         padding={5}
       >
         <DialogHeader
@@ -646,6 +943,36 @@ export default function AdminClientsPage() {
         />
         <VStack gap={3} paddingBlockStart={4}>
           {editError ? <Banner status="error" title={editError} /> : null}
+
+          {selectedLoyalty ? (
+            <Card padding={3} variant="muted">
+              <VStack gap={2}>
+                <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                  <HStack gap={1.5} align="center">
+                    <Award size={15} aria-hidden="true" />
+                    <Text weight="semibold">{selectedLoyalty.programName}</Text>
+                  </HStack>
+                  <Badge
+                    variant={selectedLoyalty.isRewardReady ? 'success' : 'purple'}
+                    label={`${selectedLoyalty.currentStamps} / ${selectedLoyalty.stampsRequired} sellos`}
+                  />
+                </HStack>
+                <ProgressBar
+                  label="Sellos de fidelidad"
+                  isLabelHidden
+                  value={selectedLoyalty.currentStamps}
+                  max={selectedLoyalty.stampsRequired}
+                  variant={selectedLoyalty.isRewardReady ? 'success' : 'accent'}
+                />
+                <Text type="supporting" color="secondary">
+                  {selectedLoyalty.isRewardReady
+                    ? `¡Premio listo para canjear! (${selectedLoyalty.rewardLabel})`
+                    : `Faltan ${selectedLoyalty.remainingForReward} visita(s) para: ${selectedLoyalty.rewardLabel}`}
+                </Text>
+              </VStack>
+            </Card>
+          ) : null}
+
           {selected?.instagramHandle ? (
             <HStack gap={2} align="center">
               <Text type="supporting" color="secondary">
@@ -695,6 +1022,23 @@ export default function AdminClientsPage() {
             isLoading={savingEdit}
             onClick={saveClient}
           />
+          {canManageClients && selected ? (
+            <>
+              <Divider />
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <Text type="supporting" color="secondary">
+                  Derechos ARCO (LFPDPPP) · Exportación JSON sin notas internas
+                </Text>
+                <Button
+                  label="Descargar datos (ARCO)"
+                  variant="secondary"
+                  size="sm"
+                  icon={<Download size={14} />}
+                  href={`/api/admin/clients?exportClientId=${encodeURIComponent(selected.id)}`}
+                />
+              </HStack>
+            </>
+          ) : null}
         </VStack>
       </Dialog>
     </VStack>

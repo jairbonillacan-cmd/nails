@@ -125,7 +125,7 @@
     },
     {
       "thing": "--color-background-muted",
-      "value": "#F7E9E7",
+      "value": "#F2F4E8",
       "source": "token",
       "mode": "light"
     }

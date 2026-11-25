@@ -15,7 +15,15 @@ export type ThemeModePreference = 'light' | 'dark' | 'system';
 export type CornerStyle = 'sharp' | 'soft' | 'rounded' | 'pill';
 export type PaymentMode = 'none' | 'manual_transfer' | 'stripe' | 'mercadopago';
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'gift_card';
+export type PaymentSplitMethod = 'cash' | 'card' | 'transfer' | 'giftcard' | 'online';
 export type NotificationChannel = 'email' | 'whatsapp' | 'sms';
+export type AuditAction =
+  | 'booking_canceled'
+  | 'booking_price_override'
+  | 'csv_exported'
+  | 'past_booking_override'
+  | 'deposit_approved'
+  | 'loyalty_redeemed';
 
 interface LandingContent {
   heroEyebrow: string;
@@ -75,6 +83,9 @@ export interface SalonSettings {
   teamSizeTier?: string;
   onboardingCompleted?: boolean;
   soundAlertsEnabled?: boolean;
+  lockPastBookings?: boolean;
+  maxActiveBookingsPerClient?: number;
+  privacyPolicyVersion?: string;
 
   landingContent: LandingContent;
 
@@ -392,6 +403,83 @@ export type CashRegisterEntry = {
   recordedBy: string;
 };
 
+export interface PaymentSplit {
+  id: string;
+  bookingId: string;
+  method: PaymentSplitMethod;
+  amountCents: number;
+  tipCents: number;
+  tipStaffId: string | null;
+  reference?: string;
+  createdAt: string;
+}
+
+export interface RecurringBlock {
+  id: string;
+  staffId: string;
+  reason: string;
+  frequency: 'weekly' | 'monthly';
+  weekdays: number[];
+  dayOfMonth: number | null;
+  startTime: string;
+  endTime: string;
+  untilDate: string | null;
+  isActive: boolean;
+}
+
+export interface LoyaltyProgram {
+  id: string;
+  isActive: boolean;
+  name: string;
+  stampsRequired: number;
+  rewardType: 'free_service' | 'percent_discount';
+  rewardServiceId: string | null;
+  discountPercent: number | null;
+  maxDiscountCents: number | null;
+  validDays: number | null;
+}
+
+export interface LoyaltyStamp {
+  id: string;
+  clientId: string;
+  bookingId: string;
+  programId: string;
+  stampedDate: string;
+  createdAt: string;
+}
+
+export interface CouponRedemption {
+  id: string;
+  couponId: string;
+  bookingId: string;
+  clientId: string;
+  amountCents: number;
+  status: 'active' | 'released';
+  createdAt: string;
+  releasedAt: string | null;
+}
+
+export interface ConsentRecord {
+  id: string;
+  clientId: string;
+  bookingId: string | null;
+  policyVersion: string;
+  acceptedAt: string;
+  marketingOptIn: boolean;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorId: string;
+  actorEmail: string;
+  actorRole: AdminRole;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  metadata: Record<string, string | number | boolean | null>;
+  createdAt: string;
+}
+
 export interface DemoDatabase {
   settings: SalonSettings;
   staff: StaffMember[];
@@ -414,4 +502,11 @@ export interface DemoDatabase {
   inventory: InventoryItem[];
   inventoryMovements: InventoryMovement[];
   cashEntries: CashRegisterEntry[];
+  paymentSplits?: PaymentSplit[];
+  recurringBlocks?: RecurringBlock[];
+  loyaltyPrograms?: LoyaltyProgram[];
+  loyaltyStamps?: LoyaltyStamp[];
+  couponRedemptions?: CouponRedemption[];
+  consents?: ConsentRecord[];
+  auditLogs?: AuditLogEntry[];
 }

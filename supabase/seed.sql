@@ -1,4 +1,4 @@
--- Seed inicial para LAIKONA NAILS BY KARLA (ejecutar después de 0001..0004)
+-- Seed inicial para LAIKONA NAILS BY KARLA (ejecutar después de 0001..0005)
 -- Alineado con src/lib/demo-seed.ts (verificado por scripts/check-seed-parity.mjs)
 
 INSERT INTO public.salon_settings (
@@ -43,6 +43,9 @@ INSERT INTO public.salon_settings (
   team_size_tier,
   onboarding_completed,
   sound_alerts_enabled,
+  lock_past_bookings,
+  max_active_bookings_per_client,
+  privacy_policy_version,
   landing_content,
   whatsapp_booking_enabled,
   sms_reminders_enabled,
@@ -91,10 +94,13 @@ VALUES (
   '3 a 5',
   false,
   true,
+  true,
+  3,
+  '2026-11',
   '{
-    "heroEyebrow": "Manicure y nail art · Puebla",
-    "heroTitle": "Uñas a tu manera.",
-    "heroSubtitle": "Del gel al acrílico, elige tu técnica y agenda tu próximo set con Laikona Nails by Karla.",
+    "heroEyebrow": "Laikona Nails by Karla · Puebla",
+    "heroTitle": "De tu idea a tus uñas.",
+    "heroSubtitle": "Trabajo acrílico escultural, Softgel y Rubber. Elige tu técnica y trae una referencia para tu cita.",
     "aboutTitle": "Técnica precisa, higiene clínica y bloques dedicados en Puebla",
     "aboutBody": "En LAIKONA NAILS by Karla cada cita tiene su bloque de horario reservado para trabajar con preparación en seco, instrumental esterilizado y acabados duraderos."
   }'::jsonb,
@@ -648,5 +654,57 @@ VALUES
     false,
     '¿Lista para tu retoque en {{salon_name}}?',
     'Hola {{client_name}}, ya casi cumplen 3 semanas tus uñas. Aparta tu retoque aquí: {{booking_url}}'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.loyalty_programs (
+  id,
+  is_active,
+  name,
+  stamps_required,
+  reward_type,
+  reward_service_id,
+  discount_percent,
+  max_discount_cents,
+  valid_days
+)
+VALUES
+  (
+    '10000000-0000-4000-8000-000000001001',
+    true,
+    'Tarjeta de Sellos LAIKONA',
+    8,
+    'percent_discount',
+    NULL,
+    50,
+    25000,
+    90
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.recurring_blocks (
+  id,
+  staff_id,
+  reason,
+  frequency,
+  weekdays,
+  day_of_month,
+  start_time,
+  end_time,
+  until_date,
+  is_active
+)
+VALUES
+  (
+    '10000000-0000-4000-8000-000000001101',
+    (SELECT id FROM public.staff_members WHERE booking_slug = 'karla'),
+    'Comida y esterilización de instrumental',
+    'weekly',
+    ARRAY[1, 2, 3, 4, 5, 6],
+    NULL,
+    '12:30',
+    '13:15',
+    NULL,
+    true
   )
 ON CONFLICT (id) DO NOTHING;

@@ -4,6 +4,7 @@ import {
   addCashEntry,
   adjustInventoryItem,
   getSnapshot,
+  recordAuditEvent,
   updateCalendarConnection,
   updateWaitlistStatus,
   updateWorkflow,
@@ -45,6 +46,20 @@ export async function GET(request: NextRequest) {
       e.recordedBy,
     ]);
     const csv = serializeCsv(headers, rows);
+
+    await recordAuditEvent({
+      actor: {
+        id: session.user.id,
+        email: session.user.email,
+        role: session.user.role,
+        fullName: session.user.fullName,
+      },
+      action: 'csv_exported',
+      entityType: 'cash_register',
+      entityId: 'cash-entries',
+      metadata: { rowCount: rows.length },
+    });
+
     return new NextResponse(csv, {
       status: 200,
       headers: {

@@ -16,7 +16,16 @@ const ThemeModePreferenceSchema = z.enum(['light', 'dark', 'system']);
 const CornerStyleSchema = z.enum(['sharp', 'soft', 'rounded', 'pill']);
 const PaymentModeSchema = z.enum(['none', 'manual_transfer', 'stripe', 'mercadopago']);
 const PaymentMethodSchema = z.enum(['cash', 'transfer', 'card', 'gift_card']);
+const PaymentSplitMethodSchema = z.enum(['cash', 'card', 'transfer', 'giftcard', 'online']);
 const NotificationChannelSchema = z.enum(['email', 'whatsapp', 'sms']);
+const AuditActionSchema = z.enum([
+  'booking_canceled',
+  'booking_price_override',
+  'csv_exported',
+  'past_booking_override',
+  'deposit_approved',
+  'loyalty_redeemed',
+]);
 
 const LandingContentSchema = z.object({
   heroEyebrow: z.string(),
@@ -72,6 +81,9 @@ const SalonSettingsSchema = z.object({
   teamSizeTier: z.string().optional(),
   onboardingCompleted: z.boolean().optional(),
   soundAlertsEnabled: z.boolean().optional(),
+  lockPastBookings: z.boolean().optional(),
+  maxActiveBookingsPerClient: z.number().int().positive().max(50).optional(),
+  privacyPolicyVersion: z.string().optional(),
   landingContent: LandingContentSchema,
   whatsappBookingEnabled: z.boolean(),
   smsRemindersEnabled: z.boolean(),
@@ -420,6 +432,86 @@ const CashRegisterEntrySchema = z.object({
   recordedBy: z.string(),
 });
 
+const PaymentSplitSchema = z.object({
+  id: z.string(),
+  bookingId: z.string(),
+  method: PaymentSplitMethodSchema,
+  amountCents: z.number().int().nonnegative(),
+  tipCents: z.number().int().nonnegative(),
+  tipStaffId: z.string().nullable(),
+  reference: z.string().optional(),
+  createdAt: z.string(),
+});
+
+const RecurringBlockSchema = z.object({
+  id: z.string(),
+  staffId: z.string(),
+  reason: z.string(),
+  frequency: z.enum(['weekly', 'monthly']),
+  weekdays: z.array(z.number().int().min(0).max(6)),
+  dayOfMonth: z.number().int().min(1).max(31).nullable(),
+  startTime: FixedStartTimeSchema,
+  endTime: FixedStartTimeSchema,
+  untilDate: z.string().nullable(),
+  isActive: z.boolean(),
+});
+
+const LoyaltyProgramSchema = z.object({
+  id: z.string(),
+  isActive: z.boolean(),
+  name: z.string(),
+  stampsRequired: z.number().int().positive(),
+  rewardType: z.enum(['free_service', 'percent_discount']),
+  rewardServiceId: z.string().nullable(),
+  discountPercent: z.number().int().min(1).max(100).nullable(),
+  maxDiscountCents: z.number().int().nonnegative().nullable(),
+  validDays: z.number().int().positive().nullable(),
+});
+
+const LoyaltyStampSchema = z.object({
+  id: z.string(),
+  clientId: z.string(),
+  bookingId: z.string(),
+  programId: z.string(),
+  stampedDate: z.string(),
+  createdAt: z.string(),
+});
+
+const CouponRedemptionSchema = z.object({
+  id: z.string(),
+  couponId: z.string(),
+  bookingId: z.string(),
+  clientId: z.string(),
+  amountCents: z.number().int().nonnegative(),
+  status: z.enum(['active', 'released']),
+  createdAt: z.string(),
+  releasedAt: z.string().nullable(),
+});
+
+const ConsentRecordSchema = z.object({
+  id: z.string(),
+  clientId: z.string(),
+  bookingId: z.string().nullable(),
+  policyVersion: z.string(),
+  acceptedAt: z.string(),
+  marketingOptIn: z.boolean(),
+});
+
+const AuditLogEntrySchema = z.object({
+  id: z.string(),
+  actorId: z.string(),
+  actorEmail: z.string(),
+  actorRole: AdminRoleSchema,
+  action: AuditActionSchema,
+  entityType: z.string(),
+  entityId: z.string(),
+  metadata: z.record(
+    z.string(),
+    z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  ),
+  createdAt: z.string(),
+});
+
 export const DemoDatabaseSchema = z.object({
   settings: SalonSettingsSchema,
   staff: z.array(StaffMemberSchema),
@@ -442,6 +534,13 @@ export const DemoDatabaseSchema = z.object({
   inventory: z.array(InventoryItemSchema),
   inventoryMovements: z.array(InventoryMovementSchema),
   cashEntries: z.array(CashRegisterEntrySchema),
+  paymentSplits: z.array(PaymentSplitSchema).default([]),
+  recurringBlocks: z.array(RecurringBlockSchema).default([]),
+  loyaltyPrograms: z.array(LoyaltyProgramSchema).default([]),
+  loyaltyStamps: z.array(LoyaltyStampSchema).default([]),
+  couponRedemptions: z.array(CouponRedemptionSchema).default([]),
+  consents: z.array(ConsentRecordSchema).default([]),
+  auditLogs: z.array(AuditLogEntrySchema).default([]),
 });
 
 export function parseDemoDatabase(raw: unknown): DemoDatabase {

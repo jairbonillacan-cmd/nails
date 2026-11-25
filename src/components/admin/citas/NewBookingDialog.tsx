@@ -32,6 +32,18 @@ interface QuickSlotOption extends AvailableSlot {
   date: string;
 }
 
+export interface NewBookingPrefill {
+  serviceId?: string;
+  extraServiceIds?: string[];
+  staffId?: string;
+  startDate?: string;
+  preferredStartAt?: string;
+  clientName?: string;
+  clientPhone?: string;
+  clientInstagram?: string;
+  internalNotes?: string;
+}
+
 interface NewBookingDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,6 +53,7 @@ interface NewBookingDialogProps {
   timezone: string;
   initialStaffId: string;
   lockedStaffId: string | null;
+  prefill?: NewBookingPrefill | null;
   onCreated: (message: string) => Promise<void>;
 }
 
@@ -53,6 +66,7 @@ export function NewBookingDialog({
   timezone,
   initialStaffId,
   lockedStaffId,
+  prefill,
   onCreated,
 }: NewBookingDialogProps) {
   const activeServices = useMemo(
@@ -64,20 +78,22 @@ export function NewBookingDialog({
     [staff],
   );
 
-  const defaultServiceId = activeServices[0]?.id ?? '';
-  const defaultStaffSelection = lockedStaffId ?? (initialStaffId || 'any');
+  const defaultServiceId = prefill?.serviceId || activeServices[0]?.id || '';
+  const defaultStaffSelection = lockedStaffId ?? (prefill?.staffId || initialStaffId || 'any');
 
   const [serviceId, setServiceId] = useState(defaultServiceId);
-  const [extraServiceIds, setExtraServiceIds] = useState<string[]>([]);
+  const [extraServiceIds, setExtraServiceIds] = useState<string[]>(
+    prefill?.extraServiceIds ?? [],
+  );
   const [staffId, setStaffId] = useState(defaultStaffSelection);
   const [slots, setSlots] = useState<QuickSlotOption[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<QuickSlotOption | null>(null);
 
-  const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
-  const [clientInstagram, setClientInstagram] = useState('');
-  const [internalNotes, setInternalNotes] = useState('');
+  const [clientName, setClientName] = useState(prefill?.clientName ?? '');
+  const [clientPhone, setClientPhone] = useState(prefill?.clientPhone ?? '');
+  const [clientInstagram, setClientInstagram] = useState(prefill?.clientInstagram ?? '');
+  const [internalNotes, setInternalNotes] = useState(prefill?.internalNotes ?? '');
   const [source, setSource] = useState<'manual' | 'walk_in'>('manual');
 
   const [useCustomOverride, setUseCustomOverride] = useState(false);
@@ -108,7 +124,7 @@ export function NewBookingDialog({
   const activeDurationMinutes = useCustomOverride ? customDuration : catalogDurationMinutes;
 
   const availabilitySyncKey = isOpen
-    ? `${effectiveServiceId}|${extraServiceIds.join(',')}|${effectiveStaffId}`
+    ? `${effectiveServiceId}|${extraServiceIds.join(',')}|${effectiveStaffId}|${prefill?.startDate ?? ''}|${prefill?.preferredStartAt ?? ''}`
     : 'closed';
 
   useExternalSync(availabilitySyncKey, async (signal, key) => {
@@ -121,6 +137,9 @@ export function NewBookingDialog({
         serviceId: effectiveServiceId,
         days: '14',
       });
+      if (prefill?.startDate) {
+        qs.set('startDate', prefill.startDate);
+      }
       const cleanExtras = extraServiceIds.filter((id) => id !== effectiveServiceId);
       if (cleanExtras.length > 0) {
         qs.set('extraServiceIds', cleanExtras.join(','));
@@ -143,12 +162,19 @@ export function NewBookingDialog({
       for (const day of json.days ?? []) {
         for (const slot of day.slots) {
           flattened.push({ ...slot, date: day.date });
-          if (flattened.length >= 12) break;
+          if (flattened.length >= 16) break;
         }
-        if (flattened.length >= 12) break;
+        if (flattened.length >= 16) break;
       }
       setSlots(flattened);
-      setSelectedSlot(flattened[0] ?? null);
+      const matchedPreferred = prefill?.preferredStartAt
+        ? flattened.find(
+            (s) =>
+              s.startAt === prefill.preferredStartAt &&
+              (!prefill.staffId || s.staffId === prefill.staffId),
+          )
+        : null;
+      setSelectedSlot(matchedPreferred ?? flattened[0] ?? null);
     } catch {
       if (!signal.aborted) {
         setSlots([]);

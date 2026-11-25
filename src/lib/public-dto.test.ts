@@ -2,13 +2,19 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { createInitialDemoDatabase } from './demo-seed';
 import {
+  PublicLoyaltySummarySchema,
+  PublicReviewDTOSchema,
   PublicServiceDTOSchema,
   PublicSettingsDTOSchema,
   PublicStaffDTOSchema,
+  toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type PublicLoyaltySummaryDTO,
+  type PublicReviewDTO,
 } from './public-dto';
+import { computeClientLoyaltySummary } from './loyalty/stamps';
 import type { StaffMember } from './types';
 
 describe('Public DTO schemas and mappers (S3)', () => {
@@ -94,12 +100,15 @@ describe('Public DTO schemas and mappers (S3)', () => {
       'teamSizeTier',
       'onboardingCompleted',
       'soundAlertsEnabled',
+      'lockPastBookings',
+      'maxActiveBookingsPerClient',
     ]) {
       expect(privateKey in dto).toBe(false);
       expect(JSON.stringify(dto)).not.toContain(privateKey);
     }
 
     expect(dto.name).toBe('LAIKONA NAILS');
+    expect(dto.privacyPolicyVersion).toBe('2026-11');
     expect(dto.city).toBe('Puebla, México');
     expect(dto.instagramHandle).toBe('@laikona.nailsss');
     expect(dto.instagramUrl).toBe('https://www.instagram.com/laikona.nailsss/');
@@ -150,5 +159,37 @@ describe('Public DTO schemas and mappers (S3)', () => {
       ),
       { numRuns: 100 },
     );
+  });
+
+  it('toPublicReviewDTO exposes only client first name and strips internal IDs and PII', () => {
+    const db = createInitialDemoDatabase();
+    const review = db.reviews[0];
+    if (!review) throw new Error('Expected seeded review');
+
+    const dto: PublicReviewDTO = toPublicReviewDTO(review, {
+      serviceId: 'srv-rubber',
+      clientFullName: 'Sofía Ramírez Pérez',
+    });
+    expect(PublicReviewDTOSchema.safeParse(dto).success).toBe(true);
+    expect(dto.clientFirstName).toBe('Sofía');
+    expect(JSON.stringify(dto)).not.toContain('Ramírez');
+    expect('clientId' in dto).toBe(false);
+    expect('bookingId' in dto).toBe(false);
+    expect('staffId' in dto).toBe(false);
+    expect('clickedGoogleReview' in dto).toBe(false);
+
+    const anonymousDto = toPublicReviewDTO(review, {
+      serviceId: 'srv-rubber',
+      clientFullName: '   ',
+    });
+    expect(anonymousDto.clientFirstName).toBe('Clienta verificada');
+
+    const program = db.loyaltyPrograms?.[0];
+    if (!program) throw new Error('Expected seeded loyalty program');
+    const summary: PublicLoyaltySummaryDTO = PublicLoyaltySummarySchema.parse(
+      computeClientLoyaltySummary(program, db.loyaltyStamps ?? [], 'client-sofia'),
+    );
+    expect(summary.currentStamps).toBe(6);
+    expect(summary.isNearReward).toBe(true);
   });
 });

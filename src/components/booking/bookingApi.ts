@@ -131,11 +131,13 @@ export async function submitBookingRequest(
     couponCode: string | null;
     holdId?: string;
     sessionToken: string;
+    privacyConsentAccepted: boolean;
+    marketingOptIn: boolean;
   },
 ): Promise<
   | { kind: 'ok'; manageUrl: string }
   | { kind: 'conflict'; error: string; suggestedSlots: AvailableSlot[] }
-  | { kind: 'error'; error: string }
+  | { kind: 'error'; error: string; code?: string }
 > {
   const res = await fetch('/api/bookings', {
     method: 'POST',
@@ -161,9 +163,28 @@ export async function submitBookingRequest(
       suggestedSlots: data.suggestedSlots ?? [],
     };
   }
+  if (res.status === 409 && data.code === 'MAX_ACTIVE_BOOKINGS') {
+    return {
+      kind: 'error',
+      code: 'MAX_ACTIVE_BOOKINGS',
+      error:
+        data.error ||
+        'Ya alcanzaste el límite de citas activas simultáneas. Reagenda o cancela una cita desde tu link personal o escríbenos por WhatsApp.',
+    };
+  }
+  if (res.status === 400 && data.code === 'PRIVACY_CONSENT_REQUIRED') {
+    return {
+      kind: 'error',
+      code: 'PRIVACY_CONSENT_REQUIRED',
+      error:
+        data.error ||
+        'Debes aceptar el Aviso de Privacidad para completar tu reserva.',
+    };
+  }
   if (!res.ok) {
     return {
       kind: 'error',
+      code: data.code,
       error: data.error || 'No se pudo completar la cita. Revisa tus datos.',
     };
   }

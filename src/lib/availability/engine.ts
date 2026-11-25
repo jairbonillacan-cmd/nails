@@ -3,6 +3,7 @@ import type {
   Booking,
   CalendarConnection,
   DateOverride,
+  RecurringBlock,
   SalonSettings,
   Service,
   ServiceAddon,
@@ -48,6 +49,7 @@ export interface AvailabilityContext {
   staffMembers: StaffMember[];
   schedules: AvailabilitySchedule[];
   dateOverrides: DateOverride[];
+  recurringBlocks?: RecurringBlock[];
   bookings: Booking[];
   slotHolds: SlotHold[];
   calendarConnections: CalendarConnection[];
@@ -503,6 +505,20 @@ function resolveWindowsForDate(
   }));
 }
 
+function doesRecurringBlockApplyToDate(
+  block: RecurringBlock,
+  dateStr: string,
+): boolean {
+  if (!block.isActive) return false;
+  if (block.untilDate && dateStr > block.untilDate) return false;
+  if (block.frequency === 'weekly') {
+    const dow = getDayOfWeekForDateStr(dateStr);
+    return block.weekdays.includes(dow);
+  }
+  const { d } = parseYmd(dateStr);
+  return block.dayOfMonth !== null && block.dayOfMonth === d;
+}
+
 function getStaffBusyIntervals(
   staffId: string,
   bookings: Booking[],
@@ -511,6 +527,9 @@ function getStaffBusyIntervals(
   nowMs: number,
   callerSessionToken?: string | null,
   ignoreBookingId?: string | null,
+  dateStr?: string,
+  dayResolver?: DayTimeResolver,
+  recurringBlocks?: RecurringBlock[],
 ): BusyInterval[] {
   const busy: BusyInterval[] = [];
 
@@ -543,6 +562,25 @@ function getStaffBusyIntervals(
         startMs: new Date(blk.startAt).getTime(),
         endMs: new Date(blk.endAt).getTime(),
         reason: blk.summary || 'Conflicto en Google Calendar',
+      });
+    }
+  }
+
+  if (dateStr && dayResolver && recurringBlocks?.length) {
+    for (const block of recurringBlocks) {
+      if (block.staffId !== staffId) continue;
+      if (!doesRecurringBlockApplyToDate(block, dateStr)) continue;
+      const startMin = parseTimeToMinutes(block.startTime);
+      const endMin = parseTimeToMinutes(block.endTime);
+      if (endMin <= startMin) continue;
+      const startMs = dayResolver.resolve(startMin).ms;
+      const endMs = dayResolver.resolve(endMin).ms;
+      if (endMs <= startMs) continue;
+      const cleanReason = block.reason.trim();
+      busy.push({
+        startMs,
+        endMs,
+        reason: cleanReason ? `Bloqueo recurrente: ${cleanReason}` : 'Bloqueo recurrente',
       });
     }
   }
@@ -594,6 +632,9 @@ export function getAvailableSlotsForDate(
       nowMs,
       ctx.callerSessionToken,
       ctx.ignoreBookingId,
+      dateStr,
+      dayResolver,
+      ctx.recurringBlocks,
     );
 
     for (const win of windows) {
@@ -658,6 +699,29 @@ export function getAvailabilityForRange(
     });
   }
   return results;
+}
+
+export function findEarliestAvailableSlots(
+  ctx: AvailabilityContext,
+  startDate: string,
+  days: number,
+  limit = 5,
+  staffId?: string | null,
+): AvailableSlot[] {
+  const safeDays = Math.max(1, Math.min(90, Math.floor(days)));
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const found: AvailableSlot[] = [];
+
+  for (let offset = 0; offset < safeDays && found.length < safeLimit; offset += 1) {
+    const date = addDaysToDateStr(startDate, offset);
+    const daySlots = getAvailableSlotsForDate(ctx, date, staffId);
+    for (const slot of daySlots) {
+      found.push(slot);
+      if (found.length >= safeLimit) break;
+    }
+  }
+
+  return found;
 }
 
 export function findNearestAvailableSlots(
@@ -888,6 +952,9 @@ export function diagnoseDateSlots(
     nowMs,
     ctx.callerSessionToken,
     ctx.ignoreBookingId,
+    dateStr,
+    dayResolver,
+    ctx.recurringBlocks,
   );
   const { totalDurationMinutes, bufferBeforeMinutes, bufferAfterMinutes } =
     computeServiceTotals(ctx.service, ctx.addons, ctx.extraServices ?? []);

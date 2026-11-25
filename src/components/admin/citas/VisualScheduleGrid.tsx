@@ -14,18 +14,22 @@ import { Link } from '@astryxdesign/core/Link';
 import { Divider } from '@astryxdesign/core/Divider';
 import {
   AtSign,
+  Ban,
   Bell,
   Check,
-  CheckCheck,
   ChevronLeft,
   ChevronRight,
   Clock,
+  DollarSign,
   Plus,
 } from 'lucide-react';
+import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import type {
   AvailabilitySchedule,
   BookingStatus,
   BookingWithRelations,
+  PaymentSplit,
+  RecurringBlock,
   Service,
   StaffMember,
 } from '@/lib/types';
@@ -70,17 +74,47 @@ function getLocalHourInTimezone(iso: string, timeZone: string): number {
   return raw === 24 ? 0 : raw;
 }
 
+function parseTimeMinutes(hhmm: string): number {
+  const [h = 0, m = 0] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function doesRecurringBlockApplyOnDate(
+  block: RecurringBlock,
+  dateKey: string,
+  dow: number,
+): boolean {
+  if (!block.isActive) return false;
+  if (block.untilDate && dateKey > block.untilDate) return false;
+  if (block.frequency === 'weekly') {
+    return block.weekdays.includes(dow);
+  }
+  const dayOfMonth = Number(dateKey.slice(8, 10));
+  return block.dayOfMonth === dayOfMonth;
+}
+
+function doesBlockOverlapHour(block: RecurringBlock, hour: number): boolean {
+  const startMin = parseTimeMinutes(block.startTime);
+  const endMin = parseTimeMinutes(block.endTime);
+  const hourStart = hour * 60;
+  const hourEnd = (hour + 1) * 60;
+  return startMin < hourEnd && endMin > hourStart;
+}
+
 interface VisualScheduleGridProps {
   dateKey: string;
   todayKey: string;
   timezone: string;
   staff: StaffMember[];
   schedules: AvailabilitySchedule[];
+  recurringBlocks?: RecurringBlock[];
+  paymentSplits?: PaymentSplit[];
   bookings: BookingWithRelations[];
   allServices: Service[];
   remindingBookingId: string | null;
   onChangeDate: (nextDateKey: string) => void;
   onOpenNewForStaff: (staffId: string) => void;
+  onSelectBooking: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
@@ -92,11 +126,14 @@ export function VisualScheduleGrid({
   timezone,
   staff,
   schedules,
+  recurringBlocks = [],
+  paymentSplits = [],
   bookings,
   allServices,
   remindingBookingId,
   onChangeDate,
   onOpenNewForStaff,
+  onSelectBooking,
   onUpdateStatus,
   onOpenCheckout,
   onSendReminder,
@@ -115,6 +152,19 @@ export function VisualScheduleGrid({
   );
 
   const dow = getDayOfWeekFromDateKey(dateKey);
+
+  const activeBlocksByStaff = useMemo(() => {
+    const map = new Map<string, RecurringBlock[]>();
+    for (const st of activeStaff) {
+      map.set(
+        st.id,
+        recurringBlocks.filter(
+          (b) => b.staffId === st.id && doesRecurringBlockApplyOnDate(b, dateKey, dow),
+        ),
+      );
+    }
+    return map;
+  }, [activeStaff, recurringBlocks, dateKey, dow]);
 
   const fixedTimesByStaff = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -180,29 +230,45 @@ export function VisualScheduleGrid({
         {activeStaff.map((st) => {
           const staffDayCount = dayBookings.filter((b) => b.staffId === st.id).length;
           const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
+          const staffDayBlocks = activeBlocksByStaff.get(st.id) ?? [];
           return (
             <Card key={st.id} variant="muted" padding={3}>
-              <HStack justify="between" align="center" gap={2}>
-                <VStack gap={0.5}>
-                  <HStack gap={1.5} align="center">
-                    <Heading level={4}>{st.name}</Heading>
-                    <Badge variant="neutral" label={String(staffDayCount)} />
+              <VStack gap={1.5}>
+                <HStack justify="between" align="center" gap={2}>
+                  <VStack gap={0.5}>
+                    <HStack gap={1.5} align="center">
+                      <Heading level={4}>{st.name}</Heading>
+                      <Badge variant="neutral" label={String(staffDayCount)} />
+                    </HStack>
+                    <Text type="supporting" color="secondary">
+                      {fixedTimes.length > 0
+                        ? `Turnos: ${fixedTimes.join(' · ')}`
+                        : st.roleTitle}
+                    </Text>
+                  </VStack>
+                  <Button
+                    label={`Agendar con ${st.name}`}
+                    isIconOnly
+                    size="sm"
+                    variant="secondary"
+                    icon={<Plus size={14} />}
+                    onClick={() => onOpenNewForStaff(st.id)}
+                  />
+                </HStack>
+                {staffDayBlocks.length > 0 ? (
+                  <HStack gap={1} wrap="wrap">
+                    {staffDayBlocks.map((blk) => (
+                      <Token
+                        key={blk.id}
+                        size="sm"
+                        color="orange"
+                        icon={<Ban size={11} />}
+                        label={`${blk.startTime}–${blk.endTime} ${blk.reason}`}
+                      />
+                    ))}
                   </HStack>
-                  <Text type="supporting" color="secondary">
-                    {fixedTimes.length > 0
-                      ? `Turnos: ${fixedTimes.join(' · ')}`
-                      : st.roleTitle}
-                  </Text>
-                </VStack>
-                <Button
-                  label={`Agendar con ${st.name}`}
-                  isIconOnly
-                  size="sm"
-                  variant="secondary"
-                  icon={<Plus size={14} />}
-                  onClick={() => onOpenNewForStaff(st.id)}
-                />
-              </HStack>
+                ) : null}
+              </VStack>
             </Card>
           );
         })}
@@ -217,6 +283,11 @@ export function VisualScheduleGrid({
           const hasFixedAtHour = activeStaff.some((st) =>
             (fixedTimesByStaff.get(st.id) ?? []).some((t) => Number(t.slice(0, 2)) === hour),
           );
+          const hasBlockAtHour = activeStaff.some((st) =>
+            (activeBlocksByStaff.get(st.id) ?? []).some((blk) =>
+              doesBlockOverlapHour(blk, hour),
+            ),
+          );
 
           return (
             <Card
@@ -225,16 +296,21 @@ export function VisualScheduleGrid({
               padding={3}
             >
               <VStack gap={2}>
-                <HStack justify="between" align="center" gap={2}>
+                <HStack justify="between" align="center" gap={2} wrap="wrap">
                   <HStack gap={1.5} align="center">
                     <Clock size={14} aria-hidden="true" />
                     <Text weight="semibold" hasTabularNumbers>
                       {hourLabel}
                     </Text>
                   </HStack>
-                  {hasFixedAtHour ? (
-                    <Token size="sm" color="default" label="Bloque de turno fijo" />
-                  ) : null}
+                  <HStack gap={1.5} wrap="wrap">
+                    {hasFixedAtHour ? (
+                      <Token size="sm" color="default" label="Bloque de turno fijo" />
+                    ) : null}
+                    {hasBlockAtHour ? (
+                      <Token size="sm" color="orange" label="Bloqueo recurrente" />
+                    ) : null}
+                  </HStack>
                 </HStack>
 
                 <Grid
@@ -247,32 +323,57 @@ export function VisualScheduleGrid({
                     const staffFixedInHour = (fixedTimesByStaff.get(st.id) ?? []).filter(
                       (t) => Number(t.slice(0, 2)) === hour,
                     );
+                    const cellBlocks = (activeBlocksByStaff.get(st.id) ?? []).filter(
+                      (blk) => doesBlockOverlapHour(blk, hour),
+                    );
 
                     if (cellBookings.length === 0) {
                       return (
                         <Card key={st.id} variant="transparent" padding={2}>
-                          <HStack justify="between" align="center" gap={2}>
-                            <Text type="supporting" color="secondary">
-                              {st.name}:{' '}
-                              {staffFixedInHour.length > 0
-                                ? `Libre (${staffFixedInHour.join(', ')})`
-                                : 'Sin citas'}
-                            </Text>
-                            {staffFixedInHour.length > 0 ? (
-                              <Button
-                                label="Agendar"
+                          <VStack gap={1}>
+                            <HStack justify="between" align="center" gap={2}>
+                              <Text type="supporting" color="secondary">
+                                {st.name}:{' '}
+                                {cellBlocks.length > 0
+                                  ? 'Bloqueado'
+                                  : staffFixedInHour.length > 0
+                                    ? `Libre (${staffFixedInHour.join(', ')})`
+                                    : 'Sin citas'}
+                              </Text>
+                              {cellBlocks.length === 0 && staffFixedInHour.length > 0 ? (
+                                <Button
+                                  label="Agendar"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => onOpenNewForStaff(st.id)}
+                                />
+                              ) : null}
+                            </HStack>
+                            {cellBlocks.map((blk) => (
+                              <Token
+                                key={blk.id}
                                 size="sm"
-                                variant="ghost"
-                                onClick={() => onOpenNewForStaff(st.id)}
+                                color="orange"
+                                icon={<Ban size={11} />}
+                                label={`${blk.startTime}–${blk.endTime} · ${blk.reason}`}
                               />
-                            ) : null}
-                          </HStack>
+                            ))}
+                          </VStack>
                         </Card>
                       );
                     }
 
                     return (
                       <VStack key={st.id} gap={2}>
+                        {cellBlocks.map((blk) => (
+                          <Token
+                            key={blk.id}
+                            size="sm"
+                            color="orange"
+                            icon={<Ban size={11} />}
+                            label={`${blk.startTime}–${blk.endTime} · ${blk.reason}`}
+                          />
+                        ))}
                         {cellBookings.map((b) => {
                           const statusMeta = BOOKING_STATUS_BADGE[b.status];
                           const igHandle =
@@ -282,10 +383,17 @@ export function VisualScheduleGrid({
                           const extraNames = (b.extraServiceIds ?? [])
                             .map((id) => allServices.find((s) => s.id === id)?.name)
                             .filter((n): n is string => Boolean(n));
+                          const paymentSummary = computeBookingPaymentSummary(
+                            b.totalPriceCents,
+                            paymentSplits.filter((s) => s.bookingId === b.id),
+                          );
                           const canRemind =
                             b.status === 'confirmed' ||
                             b.status === 'pending_confirmation' ||
                             b.status === 'pending_payment';
+                          const canCollect =
+                            b.status === 'confirmed' ||
+                            (b.status === 'completed' && paymentSummary.isUncollected);
 
                           return (
                             <Card key={b.id} padding={3} elevation="low">
@@ -301,7 +409,13 @@ export function VisualScheduleGrid({
                                   />
                                 </HStack>
 
-                                <Text weight="semibold">{b.client.fullName}</Text>
+                                <Button
+                                  label={b.client.fullName}
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => onSelectBooking(b)}
+                                />
+
                                 <Text type="supporting" color="secondary">
                                   {b.service.name}
                                   {extraNames.length > 0
@@ -326,11 +440,26 @@ export function VisualScheduleGrid({
                                       label={proofMeta.label}
                                     />
                                   ) : null}
+                                  {b.status !== 'canceled' &&
+                                  b.status !== 'no_show' &&
+                                  paymentSummary.isUncollected ? (
+                                    <Token
+                                      size="sm"
+                                      color="orange"
+                                      label="Por cobrar"
+                                    />
+                                  ) : null}
                                 </HStack>
 
                                 <Divider />
 
                                 <HStack gap={1} wrap="wrap">
+                                  <Button
+                                    label="Gestionar"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => onSelectBooking(b)}
+                                  />
                                   {b.status === 'pending_confirmation' ||
                                   b.status === 'pending_payment' ? (
                                     <Button
@@ -341,12 +470,12 @@ export function VisualScheduleGrid({
                                       onClick={() => onUpdateStatus(b.id, 'confirmed')}
                                     />
                                   ) : null}
-                                  {b.status === 'confirmed' ? (
+                                  {canCollect ? (
                                     <Button
-                                      label="Cobrar"
+                                      label="$ Cobrar"
                                       size="sm"
                                       variant="primary"
-                                      icon={<CheckCheck size={13} />}
+                                      icon={<DollarSign size={13} />}
                                       onClick={() => onOpenCheckout(b)}
                                     />
                                   ) : null}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -29,8 +29,9 @@ import {
   Star,
   XCircle,
 } from 'lucide-react';
-import type { BookingWithRelations, SalonSettings } from '@/lib/types';
+import type { BookingWithRelations } from '@/lib/types';
 import type {
+  PublicLoyaltySummaryDTO,
   PublicServiceDTO,
   PublicSettingsDTO,
   PublicStaffDTO,
@@ -44,6 +45,8 @@ import {
   formatTimeInTimezone,
   getDateKeyInTimezone,
 } from '@/lib/format';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { LoyaltyStampCard } from './LoyaltyStampCard';
 import { PublicShell } from './PublicShell';
 
 type PublicManageBooking = Omit<BookingWithRelations, 'staff' | 'service'> & {
@@ -53,7 +56,7 @@ type PublicManageBooking = Omit<BookingWithRelations, 'staff' | 'service'> & {
 
 interface ManageBookingViewProps {
   initialBooking: PublicManageBooking;
-  settings: PublicSettingsDTO | SalonSettings;
+  settings: PublicSettingsDTO;
   calendarLinks: {
     google: string;
     outlook: string;
@@ -61,6 +64,7 @@ interface ManageBookingViewProps {
     icsDownload: string;
   };
   whatsappUrl: string;
+  initialLoyaltySummary?: PublicLoyaltySummaryDTO | null;
 }
 
 const STATUS_META: Record<
@@ -80,10 +84,41 @@ export function ManageBookingView({
   settings,
   calendarLinks,
   whatsappUrl,
+  initialLoyaltySummary = null,
 }: ManageBookingViewProps) {
   const [booking, setBooking] = useState<PublicManageBooking>(initialBooking);
+  const [loyaltySummary, setLoyaltySummary] =
+    useState<PublicLoyaltySummaryDTO | null>(initialLoyaltySummary);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const syncManageState = useCallback(
+    async (signal: AbortSignal) => {
+      try {
+        const res = await fetch(
+          `/api/bookings/manage/${encodeURIComponent(initialBooking.manageToken)}`,
+          { cache: 'no-store', signal },
+        );
+        if (!res.ok || signal.aborted) return;
+        const data = (await res.json()) as {
+          booking?: PublicManageBooking;
+          loyaltySummary?: PublicLoyaltySummaryDTO | null;
+        };
+        if (signal.aborted) return;
+        if (data.booking) {
+          setBooking(data.booking);
+        }
+        if ('loyaltySummary' in data) {
+          setLoyaltySummary(data.loyaltySummary ?? null);
+        }
+      } catch {
+        return;
+      }
+    },
+    [initialBooking.manageToken],
+  );
+
+  useExternalSync(initialBooking.manageToken, syncManageState);
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -380,6 +415,13 @@ export function ManageBookingView({
               ) : null}
             </VStack>
           </Card>
+
+          {loyaltySummary ? (
+            <LoyaltyStampCard
+              loyaltySummary={loyaltySummary}
+              studioName={settings.name}
+            />
+          ) : null}
 
           {booking.status === 'completed' ? (
             <Card padding={5} variant="muted">

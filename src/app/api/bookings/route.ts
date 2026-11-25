@@ -30,11 +30,23 @@ const createBookingSchema = z.object({
   couponCode: z.string().max(40).optional().nullable(),
   sessionToken: z.string().optional().nullable(),
   holdId: z.string().min(1).optional().nullable(),
+  privacyConsentAccepted: z.boolean(),
+  marketingOptIn: z.boolean().default(false),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const parsed = createBookingSchema.parse(await request.json());
+    if (!parsed.privacyConsentAccepted) {
+      return NextResponse.json(
+        {
+          code: 'PRIVACY_CONSENT_REQUIRED',
+          error: 'Debes aceptar el aviso de privacidad para completar tu reserva.',
+        },
+        { status: 400 },
+      );
+    }
+
     const idempotencyKey = request.headers.get('Idempotency-Key');
     const cookieSessionToken = await readClientSessionToken(request);
     const effectiveSessionToken = cookieSessionToken ?? parsed.sessionToken ?? null;
@@ -58,6 +70,9 @@ export async function POST(request: NextRequest) {
       idempotencyKey,
       source: 'web',
       forceConfirmed: false,
+      privacyConsentAccepted: true,
+      marketingOptIn: parsed.marketingOptIn,
+      enforceMaxActiveBookings: true,
     });
 
     const manageUrl = `/cita/${booking.manageToken}`;
@@ -96,9 +111,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
     }
     if (err instanceof PolicyError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+      const status = err.code === 'MAX_ACTIVE_BOOKINGS' ? 409 : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
     }
     if (err instanceof z.ZodError) {
+      const missingConsent = err.issues.some((i) =>
+        i.path.includes('privacyConsentAccepted'),
+      );
+      if (missingConsent) {
+        return NextResponse.json(
+          {
+            code: 'PRIVACY_CONSENT_REQUIRED',
+            error: 'Debes aceptar el aviso de privacidad para completar tu reserva.',
+          },
+          { status: 400 },
+        );
+      }
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos ingresados' },
         { status: 400 },

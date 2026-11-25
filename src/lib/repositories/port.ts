@@ -7,6 +7,8 @@ import type {
 import type {
   AdminRole,
   AdminUser,
+  AuditAction,
+  AuditLogEntry,
   AvailabilityRule,
   BookingReview,
   BookingSource,
@@ -15,13 +17,19 @@ import type {
   CalendarConnection,
   CashRegisterEntry,
   ClientProfile,
+  ConsentRecord,
   Coupon,
   DateOverride,
   DemoDatabase,
   GalleryItem,
   InventoryItem,
+  LoyaltyProgram,
+  LoyaltyStamp,
   NotificationWorkflow,
   PaymentMethod,
+  PaymentSplit,
+  PaymentSplitMethod,
+  RecurringBlock,
   SalonSettings,
   ScheduledNotification,
   Service,
@@ -83,6 +91,7 @@ export interface PublicBootstrapData {
 
 export interface QueryAvailabilityInput {
   serviceId: string;
+  extraServiceIds?: string[];
   addonIds: string[];
   staffId?: string | null;
   startDate: string;
@@ -93,6 +102,7 @@ export interface QueryAvailabilityInput {
 
 export interface QueryAvailabilityOutput {
   service: Service;
+  extraServices?: Service[];
   addons: ServiceAddon[];
   totals: {
     totalDurationMinutes: number;
@@ -111,6 +121,7 @@ export type ValidateCouponResult =
 
 export interface CreateSlotHoldInput {
   serviceId: string;
+  extraServiceIds?: string[];
   addonIds: string[];
   staffId: string;
   startAt: string;
@@ -123,16 +134,24 @@ export interface SlotHoldResult extends SlotHold {
 
 export interface CreateBookingAtomicInput {
   serviceId: string;
+  extraServiceIds?: string[];
   addonIds: string[];
   staffId?: string | null;
   startAt: string;
   clientName: string;
   clientPhone: string;
   clientEmail?: string | null;
+  clientInstagram?: string | null;
   clientBirthday?: string | null;
   clientNotes?: string;
+  internalNotes?: string | null;
+  customDurationMinutes?: number | null;
+  customPriceCents?: number | null;
   inspoPhotoUrl?: string | null;
   paymentProofUrl?: string | null;
+  proofDeliveryMethod?: 'web_upload' | 'instagram_dm' | 'none';
+  privacyConsentAccepted?: boolean;
+  marketingOptIn?: boolean;
   couponCode?: string | null;
   source?: BookingSource;
   sessionToken?: string | null;
@@ -181,6 +200,42 @@ export interface UpdateClientNotesInput {
   notes?: string;
   birthday?: string | null;
   email?: string | null;
+  instagramHandle?: string | null;
+}
+
+export interface RecordPaymentSplitsInput {
+  bookingId: string;
+  splits: Array<{
+    method: PaymentSplitMethod;
+    amountCents: number;
+    tipCents?: number;
+    tipStaffId?: string | null;
+    reference?: string | null;
+  }>;
+}
+
+export interface AwardLoyaltyStampInput {
+  clientId: string;
+  bookingId: string;
+  programId: string;
+  stampedDate: string;
+}
+
+export interface RecordConsentInput {
+  clientId: string;
+  bookingId?: string | null;
+  policyVersion: string;
+  marketingOptIn?: boolean;
+}
+
+export interface WriteAuditLogInput {
+  actorId: string;
+  actorEmail: string;
+  actorRole: AdminRole;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  metadata?: Record<string, string | number | boolean | null>;
 }
 
 export interface SubmitReviewInput {
@@ -289,4 +344,15 @@ export interface SalonRepository {
     input: Omit<GalleryItem, 'id' | 'displayOrder'> & { id?: string },
   ): Promise<GalleryItem>;
   deleteGalleryItem(id: string): Promise<void>;
+  recordPaymentSplits?(params: RecordPaymentSplitsInput): Promise<PaymentSplit[]>;
+  upsertRecurringBlock?(
+    input: Omit<RecurringBlock, 'id'> & { id?: string },
+  ): Promise<RecurringBlock>;
+  deleteRecurringBlock?(id: string): Promise<void>;
+  upsertLoyaltyProgram?(
+    input: Omit<LoyaltyProgram, 'id'> & { id?: string },
+  ): Promise<LoyaltyProgram>;
+  awardLoyaltyStamp?(params: AwardLoyaltyStampInput): Promise<LoyaltyStamp>;
+  recordConsent?(params: RecordConsentInput): Promise<ConsentRecord>;
+  writeAuditLog?(params: WriteAuditLogInput): Promise<AuditLogEntry>;
 }

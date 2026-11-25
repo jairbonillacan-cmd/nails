@@ -138,6 +138,62 @@ describe('bookingMachine reducer', () => {
     expect(back.holdId).toBeNull();
     expect(back.formError).toBeNull();
   });
+
+  it('tracks LFPDPPP privacy consent, marketing opt-in, and policy error codes', () => {
+    const initial = createInitialBookingFlowState();
+    expect(initial.privacyConsentAccepted).toBe(false);
+    expect(initial.marketingOptIn).toBe(false);
+    expect(initial.privacyConsentError).toBeNull();
+    expect(initial.formErrorCode).toBeNull();
+
+    const held = bookingReducer(initial, {
+      type: 'SELECT_SLOT_HOLD_ACQUIRED',
+      slot: SAMPLE_SLOT,
+      holdId: 'hold-789',
+      holdExpiresAt: 1_900_000_000_000,
+    });
+
+    const missingConsent = bookingReducer(held, {
+      type: 'CONSENT_REQUIRED_ERROR',
+      message: 'Debes aceptar el Aviso de Privacidad.',
+    });
+    expect(missingConsent.phase).toBe('holding');
+    expect(missingConsent.privacyConsentError).toBe(
+      'Debes aceptar el Aviso de Privacidad.',
+    );
+    expect(missingConsent.formErrorCode).toBe('PRIVACY_CONSENT_REQUIRED');
+
+    const accepted = bookingReducer(missingConsent, {
+      type: 'SET_PRIVACY_CONSENT',
+      accepted: true,
+    });
+    expect(accepted.privacyConsentAccepted).toBe(true);
+    expect(accepted.privacyConsentError).toBeNull();
+    expect(accepted.formError).toBeNull();
+    expect(accepted.formErrorCode).toBeNull();
+
+    const optedIn = bookingReducer(accepted, {
+      type: 'SET_MARKETING_OPT_IN',
+      optedIn: true,
+    });
+    expect(optedIn.marketingOptIn).toBe(true);
+
+    const maxActiveFailed = bookingReducer(
+      bookingReducer(optedIn, { type: 'START_SUBMIT' }),
+      {
+        type: 'SUBMIT_FAILED',
+        error: 'Ya alcanzaste el límite de citas activas.',
+        code: 'MAX_ACTIVE_BOOKINGS',
+      },
+    );
+    expect(maxActiveFailed.phase).toBe('holding');
+    expect(maxActiveFailed.formErrorCode).toBe('MAX_ACTIVE_BOOKINGS');
+
+    const back = bookingReducer(maxActiveFailed, { type: 'RESET_TO_SCHEDULE' });
+    expect(back.privacyConsentAccepted).toBe(true);
+    expect(back.marketingOptIn).toBe(true);
+    expect(back.formErrorCode).toBeNull();
+  });
 });
 
 describe('bookingHelpers', () => {

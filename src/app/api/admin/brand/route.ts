@@ -7,6 +7,7 @@ import {
   PolicyError,
   updateSalonSettings,
   upsertGalleryItem,
+  upsertLoyaltyProgram,
 } from '@/lib/repositories/db';
 import type { SalonSettings } from '@/lib/types';
 
@@ -19,6 +20,20 @@ const landingContentPatchSchema = z
     aboutBody: z.string().max(1200),
   })
   .partial();
+
+const loyaltyProgramPatchSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    isActive: z.boolean().optional(),
+    name: z.string().trim().min(2).max(120).optional(),
+    stampsRequired: z.number().int().min(1).max(30).optional(),
+    rewardType: z.enum(['free_service', 'percent_discount']).optional(),
+    rewardServiceId: z.string().min(1).nullable().optional(),
+    discountPercent: z.number().int().min(1).max(100).nullable().optional(),
+    maxDiscountCents: z.number().int().nonnegative().max(10_000_000).nullable().optional(),
+    validDays: z.number().int().min(1).max(365).nullable().optional(),
+  })
+  .optional();
 
 const brandPatchSchema = z
   .object({
@@ -70,8 +85,12 @@ const brandPatchSchema = z
     teamSizeTier: z.string().max(60),
     onboardingCompleted: z.boolean(),
     soundAlertsEnabled: z.boolean(),
+    lockPastBookings: z.boolean(),
+    maxActiveBookingsPerClient: z.number().int().min(1).max(20),
+    privacyPolicyVersion: z.string().trim().min(1).max(40),
 
     landingContent: landingContentPatchSchema,
+    loyaltyProgram: loyaltyProgramPatchSchema,
 
     whatsappBookingEnabled: z.boolean(),
     smsRemindersEnabled: z.boolean(),
@@ -107,7 +126,7 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const parsed = brandPatchSchema.parse(await request.json());
-    const { landingContent, ...rest } = parsed;
+    const { landingContent, loyaltyProgram, ...rest } = parsed;
     const patch: Partial<SalonSettings> = { ...rest };
 
     if (parsed.instagramHandle !== undefined) {
@@ -128,7 +147,15 @@ export async function PATCH(request: NextRequest) {
       ...patch,
       ...(landingContent ? { landingContent } : {}),
     });
-    return NextResponse.json({ settings });
+
+    const updatedProgram = loyaltyProgram
+      ? await upsertLoyaltyProgram(loyaltyProgram)
+      : undefined;
+
+    return NextResponse.json({
+      settings,
+      ...(updatedProgram ? { loyaltyProgram: updatedProgram } : {}),
+    });
   } catch (err) {
     if (err instanceof PolicyError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });

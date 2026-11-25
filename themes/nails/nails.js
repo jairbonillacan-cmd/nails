@@ -118,7 +118,7 @@ export const nailsTheme = {
     "--color-background-body": "light-dark(#FAF7F5, #121011)",
     "--color-background-card": "light-dark(#ffffff, #121011)",
     "--color-background-popover": "light-dark(#ffffff, #121011)",
-    "--color-background-muted": "light-dark(#F7E9E7, #121011)",
+    "--color-background-muted": "light-dark(#F2F4E8, #121011)",
     "--color-accent": "light-dark(#8b1e2b, #E57A89)",
     "--color-accent-muted": "light-dark(#e6cecd, #7b222a)",
     "--color-neutral": "light-dark(#0000000F, #ffffff1A)",

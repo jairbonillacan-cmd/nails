@@ -18,10 +18,19 @@ interface RecordedRequest {
 const TZ = 'America/Mexico_City';
 const STAFF_ID = '11111111-1111-4111-8111-111111111111';
 const SERVICE_ID = '22222222-2222-4222-8222-222222222222';
+const EXTRA_SERVICE_ID = '22222222-2222-4222-8222-222222222223';
 const CLIENT_ID = '33333333-3333-4333-8333-333333333333';
 const BOOKING_ID = '44444444-4444-4444-8444-444444444444';
 const HOLD_ID = '55555555-5555-4555-8555-555555555555';
 const SCHEDULE_ID = '66666666-6666-4666-8666-666666666666';
+const PROGRAM_ID = '99999999-9999-4999-8999-999999999991';
+const BLOCK_ID = '99999999-9999-4999-8999-999999999992';
+const SPLIT_ID = '99999999-9999-4999-8999-999999999993';
+const STAMP_ID = '99999999-9999-4999-8999-999999999994';
+const CONSENT_ID = '99999999-9999-4999-8999-999999999995';
+const AUDIT_ID = '99999999-9999-4999-8999-999999999996';
+const COUPON_ID = '99999999-9999-4999-8999-999999999997';
+const REDEMPTION_ID = '99999999-9999-4999-8999-999999999998';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -36,12 +45,33 @@ function buildMockSupabase(options: {
     (body: unknown) => { status?: number; data: unknown }
   >;
   slotHoldInsertResult?: { status?: number; data: unknown };
+  loyaltyStampInsertResult?: { status?: number; data: unknown };
+  settingsOverrides?: Partial<Database['public']['Tables']['salon_settings']['Row']>;
+  serviceOverrides?: Partial<Database['public']['Tables']['services']['Row']>;
+  extraServicesRows?: Array<Database['public']['Tables']['services']['Row']>;
+  clientOverrides?: Partial<Database['public']['Tables']['clients']['Row']>;
+  rulesRows?: Array<Database['public']['Tables']['availability_rules']['Row']>;
   bookingsRows?: Array<Database['public']['Tables']['bookings']['Row']>;
   outboxRows?: Array<Database['public']['Tables']['outbox_events']['Row']>;
+  paymentSplitsRows?: Array<Database['public']['Tables']['payment_splits']['Row']>;
+  recurringBlocksRows?: Array<Database['public']['Tables']['recurring_blocks']['Row']>;
+  loyaltyProgramsRows?: Array<Database['public']['Tables']['loyalty_programs']['Row']>;
+  loyaltyStampsRows?: Array<Database['public']['Tables']['loyalty_stamps']['Row']>;
+  couponRedemptionsRows?: Array<Database['public']['Tables']['coupon_redemptions']['Row']>;
+  consentsRows?: Array<Database['public']['Tables']['consents']['Row']>;
+  auditLogsRows?: Array<Database['public']['Tables']['audit_logs']['Row']>;
 } = {}) {
   const requests: RecordedRequest[] = [];
   const bookingsRows = options.bookingsRows ?? [];
   const outboxRows = options.outboxRows ?? [];
+  const extraServicesRows = options.extraServicesRows ?? [];
+  const paymentSplitsRows = options.paymentSplitsRows ?? [];
+  const recurringBlocksRows = options.recurringBlocksRows ?? [];
+  const loyaltyProgramsRows = options.loyaltyProgramsRows ?? [];
+  const loyaltyStampsRows = options.loyaltyStampsRows ?? [];
+  const couponRedemptionsRows = options.couponRedemptionsRows ?? [];
+  const consentsRows = options.consentsRows ?? [];
+  const auditLogsRows = options.auditLogsRows ?? [];
 
   const settingsRow: Database['public']['Tables']['salon_settings']['Row'] = {
     id: 'default',
@@ -93,6 +123,7 @@ function buildMockSupabase(options: {
     google_review_url: null,
     default_commission_percent: 35,
     updated_at: '2026-12-01T10:00:00.000Z',
+    ...options.settingsOverrides,
   };
 
   const serviceRow: Database['public']['Tables']['services']['Row'] = {
@@ -115,7 +146,10 @@ function buildMockSupabase(options: {
     image_url: null,
     created_at: '2026-12-01T10:00:00.000Z',
     updated_at: '2026-12-01T10:00:00.000Z',
+    ...options.serviceOverrides,
   };
+
+  const allServicesRows = [serviceRow, ...extraServicesRows];
 
   const staffRow: Database['public']['Tables']['staff_members']['Row'] = {
     id: STAFF_ID,
@@ -141,6 +175,7 @@ function buildMockSupabase(options: {
     no_show_count: 0,
     created_at: '2026-12-01T10:00:00.000Z',
     updated_at: '2026-12-01T10:00:00.000Z',
+    ...options.clientOverrides,
   };
 
   const scheduleRow: Database['public']['Tables']['availability_schedules']['Row'] = {
@@ -152,22 +187,23 @@ function buildMockSupabase(options: {
     created_at: '2026-12-01T10:00:00.000Z',
   };
 
-  const rulesRows: Array<Database['public']['Tables']['availability_rules']['Row']> = [
-    {
-      id: 'rule-tue',
-      schedule_id: SCHEDULE_ID,
-      day_of_week: 2,
-      start_time: '10:00',
-      end_time: '18:00',
-    },
-    {
-      id: 'rule-wed',
-      schedule_id: SCHEDULE_ID,
-      day_of_week: 3,
-      start_time: '10:00',
-      end_time: '18:00',
-    },
-  ];
+  const rulesRows: Array<Database['public']['Tables']['availability_rules']['Row']> =
+    options.rulesRows ?? [
+      {
+        id: 'rule-tue',
+        schedule_id: SCHEDULE_ID,
+        day_of_week: 2,
+        start_time: '10:00',
+        end_time: '18:00',
+      },
+      {
+        id: 'rule-wed',
+        schedule_id: SCHEDULE_ID,
+        day_of_week: 3,
+        start_time: '10:00',
+        end_time: '18:00',
+      },
+    ];
 
   const mockFetch: typeof fetch = async (input, init) => {
     const urlStr =
@@ -215,28 +251,61 @@ function buildMockSupabase(options: {
     const wantsSingleObject = acceptHeader.includes('application/vnd.pgrst.object+json');
 
     if (table === 'salon_settings') {
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const merged = { ...settingsRow, ...(rawBody as Record<string, unknown>) };
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
       return jsonResponse(wantsSingleObject ? settingsRow : [settingsRow]);
     }
     if (table === 'services') {
-      return jsonResponse(wantsSingleObject ? serviceRow : [serviceRow]);
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const merged = { ...serviceRow, ...(rawBody as Record<string, unknown>) };
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const created = { ...serviceRow, ...(rawBody as Record<string, unknown>) };
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      const idFilter = url.searchParams.get('id');
+      if (idFilter?.startsWith('eq.')) {
+        const targetId = idFilter.slice(3);
+        const matched = allServicesRows.filter((s) => s.id === targetId);
+        return jsonResponse(wantsSingleObject ? matched[0] ?? null : matched);
+      }
+      if (idFilter?.startsWith('in.(') && idFilter.endsWith(')')) {
+        const ids = new Set(idFilter.slice(4, -1).split(','));
+        return jsonResponse(allServicesRows.filter((s) => ids.has(s.id)));
+      }
+      return jsonResponse(wantsSingleObject ? serviceRow : allServicesRows);
     }
     if (table === 'staff_members') {
       return jsonResponse(wantsSingleObject ? staffRow : [staffRow]);
     }
     if (table === 'staff_services') {
-      return jsonResponse([
-        { staff_id: STAFF_ID, service_id: SERVICE_ID, custom_duration_minutes: null },
-      ]);
+      return jsonResponse(
+        allServicesRows.map((s) => ({
+          staff_id: STAFF_ID,
+          service_id: s.id,
+          custom_duration_minutes: null,
+        })),
+      );
     }
     if (table === 'availability_schedules') {
-      return jsonResponse([scheduleRow]);
+      return jsonResponse(wantsSingleObject ? scheduleRow : [scheduleRow]);
     }
     if (table === 'availability_rules') {
+      if (method === 'POST') {
+        return jsonResponse(Array.isArray(rawBody) ? rawBody : [], 201);
+      }
       return jsonResponse(rulesRows);
     }
     if (table === 'clients') {
-      if (method === 'PATCH' || method === 'POST') {
-        return jsonResponse(wantsSingleObject ? clientRow : [clientRow]);
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const merged = { ...clientRow, ...(rawBody as Record<string, unknown>) };
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      if (method === 'POST') {
+        return jsonResponse(wantsSingleObject ? clientRow : [clientRow], 201);
       }
       return jsonResponse(wantsSingleObject ? clientRow : [clientRow]);
     }
@@ -270,6 +339,119 @@ function buildMockSupabase(options: {
         return jsonResponse(null);
       }
       return jsonResponse(wantsSingleObject ? bookingsRows[0] ?? null : bookingsRows);
+    }
+    if (table === 'payment_splits') {
+      if (method === 'POST' && Array.isArray(rawBody)) {
+        const created = rawBody.map((item, index) => ({
+          id: `${SPLIT_ID.slice(0, -1)}${index + 1}`,
+          booking_id: BOOKING_ID,
+          method: 'cash',
+          amount_cents: 0,
+          tip_cents: 0,
+          tip_staff_id: null,
+          reference: null,
+          created_at: '2026-12-01T13:00:00.000Z',
+          ...(item as Record<string, unknown>),
+        }));
+        return jsonResponse(created, 201);
+      }
+      return jsonResponse(paymentSplitsRows);
+    }
+    if (table === 'recurring_blocks') {
+      if ((method === 'POST' || method === 'PATCH') && rawBody && typeof rawBody === 'object') {
+        const created = {
+          id: BLOCK_ID,
+          staff_id: STAFF_ID,
+          reason: '',
+          frequency: 'weekly',
+          weekdays: [],
+          day_of_month: null,
+          start_time: '12:30',
+          end_time: '13:15',
+          until_date: null,
+          is_active: true,
+          created_at: '2026-12-01T13:00:00.000Z',
+          ...(rawBody as Record<string, unknown>),
+        };
+        return jsonResponse(wantsSingleObject ? created : [created], method === 'POST' ? 201 : 200);
+      }
+      return jsonResponse(recurringBlocksRows);
+    }
+    if (table === 'loyalty_programs') {
+      if ((method === 'POST' || method === 'PATCH') && rawBody && typeof rawBody === 'object') {
+        const created = {
+          id: PROGRAM_ID,
+          is_active: true,
+          name: 'Tarjeta de Sellos LAIKONA',
+          stamps_required: 8,
+          reward_type: 'percent_discount',
+          reward_service_id: null,
+          discount_percent: 50,
+          max_discount_cents: 25000,
+          valid_days: 90,
+          created_at: '2026-12-01T13:00:00.000Z',
+          ...(rawBody as Record<string, unknown>),
+        };
+        return jsonResponse(wantsSingleObject ? created : [created], method === 'POST' ? 201 : 200);
+      }
+      return jsonResponse(loyaltyProgramsRows);
+    }
+    if (table === 'loyalty_stamps') {
+      if (method === 'POST') {
+        if (options.loyaltyStampInsertResult) {
+          return jsonResponse(
+            options.loyaltyStampInsertResult.data,
+            options.loyaltyStampInsertResult.status ?? 201,
+          );
+        }
+        const created = {
+          id: STAMP_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          program_id: PROGRAM_ID,
+          stamped_date: '2026-12-01',
+          created_at: '2026-12-01T13:00:00.000Z',
+          ...(rawBody as Record<string, unknown>),
+        };
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      return jsonResponse(loyaltyStampsRows);
+    }
+    if (table === 'coupon_redemptions') {
+      return jsonResponse(couponRedemptionsRows);
+    }
+    if (table === 'consents') {
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const created = {
+          id: CONSENT_ID,
+          client_id: CLIENT_ID,
+          booking_id: null,
+          policy_version: '2026-11',
+          accepted_at: '2026-12-01T13:00:00.000Z',
+          marketing_opt_in: false,
+          ...(rawBody as Record<string, unknown>),
+        };
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      return jsonResponse(consentsRows);
+    }
+    if (table === 'audit_logs') {
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const created = {
+          id: AUDIT_ID,
+          actor_id: 'adm-owner',
+          actor_email: 'duena@nails.studio',
+          actor_role: 'owner',
+          action: 'booking_canceled',
+          entity_type: 'booking',
+          entity_id: BOOKING_ID,
+          metadata: {},
+          created_at: '2026-12-01T13:00:00.000Z',
+          ...(rawBody as Record<string, unknown>),
+        };
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      return jsonResponse(auditLogsRows);
     }
     if (table === 'outbox_events') {
       if (method === 'POST') {
@@ -659,5 +841,579 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     });
     expect(failRes.ok).toBe(false);
     expect(failRes.error).toContain('Provider callback exploded');
+  });
+
+  it('maps 0004 and 0005 columns and collections on read and applies fixed_start_times + recurring_blocks + extraServiceIds in queryAvailability', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-01', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-01', '11:30', TZ).toISOString();
+    const extraServiceRow: Database['public']['Tables']['services']['Row'] = {
+      id: EXTRA_SERVICE_ID,
+      category_id: null,
+      name: 'Retiro',
+      slug: 'retiro',
+      description: 'Retiro seguro',
+      duration_minutes: 30,
+      price_cents: 8000,
+      is_starting_price: true,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      requires_confirmation: false,
+      deposit_required: false,
+      deposit_amount_cents: 0,
+      allow_inspo_photo: false,
+      is_active: true,
+      is_featured: false,
+      display_order: 1,
+      image_url: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+
+    const { client } = buildMockSupabase({
+      settingsOverrides: {
+        sister_studio_handle: '@lumiere.beautymx',
+        deposit_beneficiary: 'Karla Patricia Carrillo Rodríguez',
+        deposit_amount_cents: 20000,
+        service_mode: 'studio',
+        business_type: 'Salón de Manicure y Uñas',
+        team_size_tier: '3 a 5',
+        onboarding_completed: true,
+        sound_alerts_enabled: false,
+        lock_past_bookings: true,
+        max_active_bookings_per_client: 3,
+        privacy_policy_version: '2026-11',
+      },
+      serviceOverrides: {
+        is_starting_price: true,
+        buffer_after_minutes: 0,
+      },
+      extraServicesRows: [extraServiceRow],
+      clientOverrides: {
+        instagram_handle: '@sofia.ramirez.pue',
+      },
+      rulesRows: [
+        {
+          id: 'rule-tue-fixed',
+          schedule_id: SCHEDULE_ID,
+          day_of_week: 2,
+          start_time: '10:00',
+          end_time: '19:30',
+          fixed_start_times: ['10:00', '13:30', '16:30'],
+        },
+      ],
+      bookingsRows: [
+        {
+          id: BOOKING_ID,
+          booking_code: 'NL-3A0001',
+          manage_token: 'tok-3a',
+          idempotency_key: null,
+          service_id: SERVICE_ID,
+          extra_service_ids: [EXTRA_SERVICE_ID],
+          staff_id: STAFF_ID,
+          client_id: CLIENT_ID,
+          client_instagram: '@sofia.ramirez.pue',
+          start_at: startAt,
+          end_at: endAt,
+          occupied_start_at: startAt,
+          occupied_end_at: endAt,
+          occupied_range: `[${startAt},${endAt})`,
+          total_duration_minutes: 90,
+          custom_duration_minutes: 90,
+          subtotal_cents: 46000,
+          discount_cents: 0,
+          total_price_cents: 46000,
+          custom_price_cents: 46000,
+          deposit_amount_cents: 20000,
+          coupon_code: null,
+          status: 'confirmed',
+          source: 'web',
+          client_notes: 'Traigo referencia',
+          internal_notes: 'Base milky #04',
+          inspo_photo_url: null,
+          payment_proof_url: null,
+          proof_delivery_method: 'instagram_dm',
+          google_event_id: null,
+          cancellation_reason: null,
+          rescheduled_from_id: null,
+          created_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      paymentSplitsRows: [
+        {
+          id: SPLIT_ID,
+          booking_id: BOOKING_ID,
+          method: 'transfer',
+          amount_cents: 46000,
+          tip_cents: 5000,
+          tip_staff_id: STAFF_ID,
+          reference: 'SPEI-442',
+          created_at: '2026-12-01T11:30:00.000Z',
+        },
+      ],
+      recurringBlocksRows: [
+        {
+          id: BLOCK_ID,
+          staff_id: STAFF_ID,
+          reason: 'Comida',
+          frequency: 'weekly',
+          weekdays: [2],
+          day_of_month: null,
+          start_time: '13:00',
+          end_time: '14:00',
+          until_date: null,
+          is_active: true,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      loyaltyProgramsRows: [
+        {
+          id: PROGRAM_ID,
+          is_active: true,
+          name: 'Tarjeta de Sellos LAIKONA',
+          stamps_required: 8,
+          reward_type: 'percent_discount',
+          reward_service_id: null,
+          discount_percent: 50,
+          max_discount_cents: 25000,
+          valid_days: 90,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      loyaltyStampsRows: [
+        {
+          id: STAMP_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          program_id: PROGRAM_ID,
+          stamped_date: '2026-12-01',
+          created_at: '2026-12-01T11:30:00.000Z',
+        },
+      ],
+      couponRedemptionsRows: [
+        {
+          id: REDEMPTION_ID,
+          coupon_id: COUPON_ID,
+          booking_id: BOOKING_ID,
+          client_id: CLIENT_ID,
+          amount_cents: 4600,
+          status: 'released',
+          created_at: '2026-12-01T10:00:00.000Z',
+          released_at: '2026-12-01T10:30:00.000Z',
+        },
+      ],
+      consentsRows: [
+        {
+          id: CONSENT_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          policy_version: '2026-11',
+          accepted_at: '2026-12-01T10:00:00.000Z',
+          marketing_opt_in: true,
+        },
+      ],
+      auditLogsRows: [
+        {
+          id: AUDIT_ID,
+          actor_id: 'adm-owner',
+          actor_email: 'duena@nails.studio',
+          actor_role: 'owner',
+          action: 'deposit_approved',
+          entity_type: 'booking',
+          entity_id: BOOKING_ID,
+          metadata: { bookingCode: 'NL-3A0001', depositAmountCents: 20000 },
+          created_at: '2026-12-01T10:05:00.000Z',
+        },
+      ],
+    });
+
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'read-0004-0005');
+    const repo = createSupabaseRepository(clock, client);
+    const snap = await repo.getSnapshot();
+
+    expect(snap.settings.sisterStudioHandle).toBe('@lumiere.beautymx');
+    expect(snap.settings.depositBeneficiary).toBe('Karla Patricia Carrillo Rodríguez');
+    expect(snap.settings.depositAmountCents).toBe(20000);
+    expect(snap.settings.serviceMode).toBe('studio');
+    expect(snap.settings.businessType).toBe('Salón de Manicure y Uñas');
+    expect(snap.settings.teamSizeTier).toBe('3 a 5');
+    expect(snap.settings.onboardingCompleted).toBe(true);
+    expect(snap.settings.soundAlertsEnabled).toBe(false);
+    expect(snap.settings.lockPastBookings).toBe(true);
+    expect(snap.settings.maxActiveBookingsPerClient).toBe(3);
+    expect(snap.settings.privacyPolicyVersion).toBe('2026-11');
+
+    expect(snap.services[0]?.isStartingPrice).toBe(true);
+    expect(snap.schedules[0]?.rules[0]?.fixedStartTimes).toEqual([
+      '10:00',
+      '13:30',
+      '16:30',
+    ]);
+    expect(snap.clients[0]?.instagramHandle).toBe('@sofia.ramirez.pue');
+    expect(snap.bookings[0]?.extraServiceIds).toEqual([EXTRA_SERVICE_ID]);
+    expect(snap.bookings[0]?.clientInstagram).toBe('@sofia.ramirez.pue');
+    expect(snap.bookings[0]?.customDurationMinutes).toBe(90);
+    expect(snap.bookings[0]?.customPriceCents).toBe(46000);
+    expect(snap.bookings[0]?.internalNotes).toBe('Base milky #04');
+    expect(snap.bookings[0]?.proofDeliveryMethod).toBe('instagram_dm');
+
+    expect(snap.paymentSplits?.[0]).toMatchObject({
+      id: SPLIT_ID,
+      bookingId: BOOKING_ID,
+      method: 'transfer',
+      amountCents: 46000,
+      tipCents: 5000,
+      reference: 'SPEI-442',
+    });
+    expect(snap.recurringBlocks?.[0]).toMatchObject({
+      id: BLOCK_ID,
+      staffId: STAFF_ID,
+      frequency: 'weekly',
+      weekdays: [2],
+      startTime: '13:00',
+      endTime: '14:00',
+    });
+    expect(snap.loyaltyPrograms?.[0]).toMatchObject({
+      id: PROGRAM_ID,
+      name: 'Tarjeta de Sellos LAIKONA',
+      stampsRequired: 8,
+    });
+    expect(snap.loyaltyStamps?.[0]).toMatchObject({
+      id: STAMP_ID,
+      clientId: CLIENT_ID,
+      stampedDate: '2026-12-01',
+    });
+    expect(snap.couponRedemptions?.[0]).toMatchObject({
+      id: REDEMPTION_ID,
+      status: 'released',
+      releasedAt: '2026-12-01T10:30:00.000Z',
+    });
+    expect(snap.consents?.[0]).toMatchObject({
+      id: CONSENT_ID,
+      policyVersion: '2026-11',
+      marketingOptIn: true,
+    });
+    expect(snap.auditLogs?.[0]).toMatchObject({
+      id: AUDIT_ID,
+      action: 'deposit_approved',
+      metadata: { bookingCode: 'NL-3A0001', depositAmountCents: 20000 },
+    });
+
+    const availability = await repo.queryAvailability({
+      serviceId: SERVICE_ID,
+      extraServiceIds: [EXTRA_SERVICE_ID],
+      addonIds: [],
+      staffId: STAFF_ID,
+      startDate: '2026-12-01',
+      days: 1,
+    });
+    expect(availability.extraServices).toHaveLength(1);
+    expect(availability.totals.totalDurationMinutes).toBe(90);
+    expect(availability.totals.subtotalCents).toBe(46000);
+    expect(availability.days[0]?.slots.map((s) => s.localTime24)).toEqual([
+      '10:00',
+      '16:30',
+    ]);
+  });
+
+  it('persists 0004 and 0005 columns across createBookingAtomic, updateSalonSettings, upsertService, saveStaffSchedule, and updateClientNotes', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-01', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-01', '11:30', TZ).toISOString();
+    const extraServiceRow: Database['public']['Tables']['services']['Row'] = {
+      id: EXTRA_SERVICE_ID,
+      category_id: null,
+      name: 'Retiro',
+      slug: 'retiro',
+      description: 'Retiro seguro',
+      duration_minutes: 30,
+      price_cents: 8000,
+      is_starting_price: true,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      requires_confirmation: false,
+      deposit_required: false,
+      deposit_amount_cents: 0,
+      allow_inspo_photo: false,
+      is_active: true,
+      is_featured: false,
+      display_order: 1,
+      image_url: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+    const createdBookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-WR0001',
+      manage_token: 'tok-wr',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      extra_service_ids: [EXTRA_SERVICE_ID],
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      client_instagram: '@sofia.nails',
+      start_at: startAt,
+      end_at: endAt,
+      occupied_start_at: startAt,
+      occupied_end_at: endAt,
+      occupied_range: `[${startAt},${endAt})`,
+      total_duration_minutes: 90,
+      custom_duration_minutes: 90,
+      subtotal_cents: 42000,
+      discount_cents: 0,
+      total_price_cents: 42000,
+      custom_price_cents: 42000,
+      deposit_amount_cents: 0,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: 'VIP clienta',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      proof_delivery_method: 'instagram_dm',
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T13:00:00.000Z',
+      updated_at: '2026-12-01T13:00:00.000Z',
+    };
+
+    const { client, requests } = buildMockSupabase({
+      settingsOverrides: { privacy_policy_version: '2026-11' },
+      serviceOverrides: { buffer_after_minutes: 0 },
+      extraServicesRows: [extraServiceRow],
+      bookingsRows: [createdBookingRow],
+      rpcHandlers: {
+        create_booking_atomic: () => ({ status: 200, data: BOOKING_ID }),
+      },
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'write-0004-0005');
+    const repo = createSupabaseRepository(clock, client);
+
+    await repo.createBookingAtomic({
+      serviceId: SERVICE_ID,
+      extraServiceIds: [EXTRA_SERVICE_ID],
+      addonIds: [],
+      staffId: STAFF_ID,
+      startAt,
+      clientName: 'Sofía Ramírez',
+      clientPhone: '5511223344',
+      clientInstagram: 'https://instagram.com/Sofia.Nails/',
+      customDurationMinutes: 90,
+      customPriceCents: 42000,
+      internalNotes: 'VIP clienta',
+      proofDeliveryMethod: 'instagram_dm',
+      privacyConsentAccepted: true,
+      marketingOptIn: true,
+    });
+
+    const clientPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/clients',
+    );
+    expect(clientPatch?.body).toMatchObject({ instagram_handle: '@sofia.nails' });
+
+    const bookingPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/bookings',
+    );
+    expect(bookingPatch?.body).toEqual({
+      extra_service_ids: [EXTRA_SERVICE_ID],
+      client_instagram: '@sofia.nails',
+      custom_duration_minutes: 90,
+      custom_price_cents: 42000,
+      internal_notes: 'VIP clienta',
+      proof_delivery_method: 'instagram_dm',
+    });
+
+    const consentPost = requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/consents',
+    );
+    expect(consentPost?.body).toMatchObject({
+      client_id: CLIENT_ID,
+      booking_id: BOOKING_ID,
+      policy_version: '2026-11',
+      marketing_opt_in: true,
+    });
+
+    const updatedSettings = await repo.updateSalonSettings({
+      sisterStudioHandle: '@lumiere.beautymx',
+      depositBeneficiary: 'Karla Patricia Carrillo Rodríguez',
+      depositAmountCents: 20000,
+      serviceMode: 'studio',
+      onboardingCompleted: true,
+      soundAlertsEnabled: false,
+      lockPastBookings: true,
+      maxActiveBookingsPerClient: 4,
+      privacyPolicyVersion: '2026-12',
+    });
+    expect(updatedSettings.lockPastBookings).toBe(true);
+    expect(updatedSettings.maxActiveBookingsPerClient).toBe(4);
+    expect(updatedSettings.privacyPolicyVersion).toBe('2026-12');
+
+    const settingsPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/salon_settings',
+    );
+    expect(settingsPatch?.body).toMatchObject({
+      sister_studio_handle: '@lumiere.beautymx',
+      deposit_beneficiary: 'Karla Patricia Carrillo Rodríguez',
+      deposit_amount_cents: 20000,
+      service_mode: 'studio',
+      onboarding_completed: true,
+      sound_alerts_enabled: false,
+      lock_past_bookings: true,
+      max_active_bookings_per_client: 4,
+      privacy_policy_version: '2026-12',
+    });
+
+    await repo.upsertService({
+      id: SERVICE_ID,
+      name: 'Rubber',
+      durationMinutes: 120,
+      priceCents: 35000,
+      isStartingPrice: true,
+    });
+    const servicePatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/services',
+    );
+    expect(servicePatch?.body).toMatchObject({ is_starting_price: true });
+
+    await repo.saveStaffSchedule(STAFF_ID, [
+      {
+        id: 'r-1',
+        dayOfWeek: 1,
+        startTime: '10:00',
+        endTime: '19:30',
+        fixedStartTimes: ['10:00', '13:30', '16:30'],
+      },
+    ]);
+    const rulesPost = requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/availability_rules',
+    );
+    expect(rulesPost?.body).toEqual([
+      {
+        schedule_id: SCHEDULE_ID,
+        day_of_week: 1,
+        start_time: '10:00',
+        end_time: '19:30',
+        fixed_start_times: ['10:00', '13:30', '16:30'],
+      },
+    ]);
+
+    const updatedClient = await repo.updateClientNotes({
+      clientId: CLIENT_ID,
+      instagramHandle: '@laikona.vip',
+    });
+    expect(updatedClient.instagramHandle).toBe('@laikona.vip');
+  });
+
+  it('persists Phase 3A payment_splits, recurring_blocks, loyalty_programs, loyalty_stamps, consents, and audit_logs', async () => {
+    const { client, requests } = buildMockSupabase();
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'phase3a-writes');
+    const repo = createSupabaseRepository(clock, client);
+
+    if (
+      !repo.recordPaymentSplits ||
+      !repo.upsertRecurringBlock ||
+      !repo.deleteRecurringBlock ||
+      !repo.upsertLoyaltyProgram ||
+      !repo.awardLoyaltyStamp ||
+      !repo.recordConsent ||
+      !repo.writeAuditLog
+    ) {
+      throw new Error('Expected Phase 3A persistence methods on Supabase repository');
+    }
+
+    const splits = await repo.recordPaymentSplits({
+      bookingId: BOOKING_ID,
+      splits: [
+        { method: 'cash', amountCents: 20000, tipCents: 3000, tipStaffId: STAFF_ID },
+        { method: 'card', amountCents: 18000, reference: 'TERM-99' },
+      ],
+    });
+    expect(splits).toHaveLength(2);
+    expect(splits[0]?.method).toBe('cash');
+    expect(splits[1]?.reference).toBe('TERM-99');
+
+    const block = await repo.upsertRecurringBlock({
+      staffId: STAFF_ID,
+      reason: 'Comida',
+      frequency: 'weekly',
+      weekdays: [1, 2, 3, 4, 5],
+      dayOfMonth: null,
+      startTime: '12:30',
+      endTime: '13:15',
+      untilDate: null,
+      isActive: true,
+    });
+    expect(block.id).toBe(BLOCK_ID);
+    await repo.deleteRecurringBlock(BLOCK_ID);
+    expect(
+      requests.some((r) => r.method === 'DELETE' && r.path === '/rest/v1/recurring_blocks'),
+    ).toBe(true);
+
+    const program = await repo.upsertLoyaltyProgram({
+      isActive: true,
+      name: 'Tarjeta de Sellos LAIKONA',
+      stampsRequired: 8,
+      rewardType: 'percent_discount',
+      rewardServiceId: null,
+      discountPercent: 50,
+      maxDiscountCents: 25000,
+      validDays: 90,
+    });
+    expect(program.stampsRequired).toBe(8);
+
+    const stamp = await repo.awardLoyaltyStamp({
+      clientId: CLIENT_ID,
+      bookingId: BOOKING_ID,
+      programId: PROGRAM_ID,
+      stampedDate: '2026-12-01',
+    });
+    expect(stamp.id).toBe(STAMP_ID);
+
+    const consent = await repo.recordConsent({
+      clientId: CLIENT_ID,
+      bookingId: BOOKING_ID,
+      policyVersion: '2026-11',
+      marketingOptIn: false,
+    });
+    expect(consent.policyVersion).toBe('2026-11');
+
+    const audit = await repo.writeAuditLog({
+      actorId: 'adm-owner',
+      actorEmail: 'duena@nails.studio',
+      actorRole: 'owner',
+      action: 'past_booking_override',
+      entityType: 'booking',
+      entityId: BOOKING_ID,
+      metadata: { reason: 'Corrección autorizada' },
+    });
+    expect(audit.action).toBe('past_booking_override');
+    expect(audit.metadata).toEqual({ reason: 'Corrección autorizada' });
+
+    const duplicateMock = buildMockSupabase({
+      loyaltyStampInsertResult: {
+        status: 409,
+        data: {
+          code: '23505',
+          message: 'duplicate key value violates unique constraint',
+        },
+      },
+    });
+    const duplicateRepo = createSupabaseRepository(clock, duplicateMock.client);
+    let stampErr: unknown = null;
+    try {
+      await duplicateRepo.awardLoyaltyStamp?.({
+        clientId: CLIENT_ID,
+        bookingId: BOOKING_ID,
+        programId: PROGRAM_ID,
+        stampedDate: '2026-12-01',
+      });
+    } catch (err) {
+      stampErr = err;
+    }
+    expect(stampErr).toBeInstanceOf(PolicyError);
+    if (stampErr instanceof PolicyError) {
+      expect(stampErr.code).toBe('STAMP_ALREADY_AWARDED');
+    }
   });
 });

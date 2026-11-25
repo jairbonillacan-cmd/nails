@@ -9,17 +9,28 @@ import {
   createBookingAtomic,
   createClientProfile,
   createOrRefreshSlotHold,
+  deleteRecurringBlock,
   getBookingByToken,
+  getClientArcoExport,
+  getClientLoyaltySummary,
+  getInactiveClients,
+  getNearRewardClients,
   getSnapshot,
   manageClientBookingAction,
   PolicyError,
   queryAvailability,
+  quickSearchAvailability,
+  recordBookingCheckoutAtomic,
   releaseSlotHold,
   saveOnboardingSetup,
   sendManualBookingReminder,
   SlotConflictError,
+  toggleRecurringBlock,
   updateBookingStatus,
   updateClientNotes,
+  upsertLoyaltyProgram,
+  upsertRecurringBlock,
+  validateCouponCode,
 } from './db';
 import { zonedDateTimeToUtc } from '../availability/engine';
 import { getDateKeyInTimezone } from '../format';
@@ -744,5 +755,283 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
       ),
       { numRuns: 50 },
     );
+  });
+
+  it('Phase 3A (D4/D5): enforces single-use coupon per client, gift card redemption balance, recurring block reschedule guard, and salon alerts', async () => {
+    const db = getSnapshot();
+    const tz = db.settings.timezone;
+    const today = getDateKeyInTimezone(new Date(), tz);
+    const avail = queryAvailability({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: 'staff-tere',
+      startDate: today,
+      days: 14,
+    });
+    const farSlots = avail.days
+      .flatMap((d) => d.slots)
+      .filter((s) => new Date(s.startAt).getTime() - Date.now() > 48 * 3_600_000);
+    const slot1 = farSlots[0];
+    const slot2 = farSlots[1];
+    const slot3 = farSlots[farSlots.length - 1];
+    if (!slot1 || !slot2 || !slot3) {
+      throw new Error('Expected three far future slots for Tere');
+    }
+
+    const firstBooking = await createBookingAtomic({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slot1.staffId,
+      startAt: slot1.startAt,
+      clientName: 'Clienta Cupon Unico',
+      clientPhone: '+522229010001',
+      couponCode: 'BIENVENIDA10',
+      privacyConsentAccepted: true,
+      marketingOptIn: true,
+    });
+
+    const dupCheck = validateCouponCode('BIENVENIDA10', 35000, firstBooking.clientId);
+    expect(dupCheck.valid).toBe(false);
+
+    await expect(
+      createBookingAtomic({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: slot2.staffId,
+        startAt: slot2.startAt,
+        clientName: 'Clienta Cupon Unico',
+        clientPhone: '+522229010001',
+        couponCode: 'BIENVENIDA10',
+      }),
+    ).rejects.toMatchObject({ code: 'COUPON_INVALID' });
+
+    const blockDateKey = getDateKeyInTimezone(new Date(slot2.startAt), tz);
+    const blockWeekday = new Date(`${blockDateKey}T12:00:00Z`).getUTCDay();
+    const createdBlock = await upsertRecurringBlock({
+      staffId: slot2.staffId,
+      reason: 'Bloqueo test D4',
+      frequency: 'weekly',
+      weekdays: [blockWeekday],
+      dayOfMonth: null,
+      startTime: '08:00',
+      endTime: '22:00',
+      untilDate: null,
+      isActive: true,
+    });
+
+    await expect(
+      manageClientBookingAction({
+        token: firstBooking.manageToken,
+        action: 'reschedule',
+        newStartAt: slot2.startAt,
+        newStaffId: slot2.staffId,
+      }),
+    ).rejects.toBeInstanceOf(SlotConflictError);
+
+    await expect(
+      manageClientBookingAction({
+        token: firstBooking.manageToken,
+        action: 'reschedule',
+        newStartAt: slot2.startAt,
+        newStaffId: 'staff-nonexistent',
+      }),
+    ).rejects.toMatchObject({ code: 'STAFF_INELIGIBLE' });
+
+    await toggleRecurringBlock(createdBlock.id, false);
+    const notifsBeforeResched = getSnapshot().notifications.length;
+    const rescheduled = await manageClientBookingAction({
+      token: firstBooking.manageToken,
+      action: 'reschedule',
+      newStartAt: slot2.startAt,
+      newStaffId: slot2.staffId,
+    });
+    expect(rescheduled.startAt).toBe(slot2.startAt);
+    const reschedNotifs = getSnapshot().notifications.slice(
+      0,
+      getSnapshot().notifications.length - notifsBeforeResched,
+    );
+    expect(
+      reschedNotifs.some((n) => n.subject.includes('Aviso al estudio: cita reagendada')),
+    ).toBe(true);
+
+    await deleteRecurringBlock(createdBlock.id);
+
+    const notifsBeforeCancel = getSnapshot().notifications.length;
+    await manageClientBookingAction({
+      token: firstBooking.manageToken,
+      action: 'cancel',
+      reason: 'Cambio de planes',
+    });
+    const cancelNotifs = getSnapshot().notifications.slice(
+      0,
+      getSnapshot().notifications.length - notifsBeforeCancel,
+    );
+    expect(
+      cancelNotifs.some((n) => n.subject.includes('Aviso al estudio: cita cancelada')),
+    ).toBe(true);
+
+    const releasedRedemption = (getSnapshot().couponRedemptions ?? []).find(
+      (r) => r.bookingId === firstBooking.id,
+    );
+    expect(releasedRedemption?.status).toBe('released');
+    expect(releasedRedemption?.releasedAt).toBeTruthy();
+
+    const reusedBooking = await createBookingAtomic({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slot3.staffId,
+      startAt: slot3.startAt,
+      clientName: 'Clienta Cupon Unico',
+      clientPhone: '+522229010001',
+      couponCode: 'BIENVENIDA10',
+    });
+    expect(reusedBooking.couponCode).toBe('BIENVENIDA10');
+    expect(reusedBooking.discountCents).toBe(3500);
+  });
+
+  it('Phase 3A (N1/N3/N4/S8/N6/N7): quickSearch, split checkout + retail, loyalty stamp max 1/day, ARCO export, inactive filter, and past lock', async () => {
+    const db = getSnapshot();
+    const tz = db.settings.timezone;
+    const today = getDateKeyInTimezone(new Date(), tz);
+
+    const quick = quickSearchAvailability({
+      serviceId: 'srv-rubber',
+      extraServiceIds: ['srv-retiro'],
+      addonIds: [],
+      startDate: today,
+      days: 14,
+      limit: 6,
+    });
+    expect(quick.slots.length).toBeGreaterThan(0);
+    expect(quick.slots.length).toBeLessThanOrEqual(6);
+    expect(quick.totals.totalDurationMinutes).toBe(150);
+
+    const ownerActor = {
+      id: 'adm-owner',
+      email: 'duena@nails.studio',
+      role: 'owner' as const,
+      fullName: 'Karla Rodríguez (Dueña)',
+    };
+    const adminActor = {
+      id: 'adm-frontdesk',
+      email: 'recepcion@nails.studio',
+      role: 'admin' as const,
+      fullName: 'Recepción',
+    };
+
+    await expect(
+      recordBookingCheckoutAtomic({
+        bookingId: 'bk-1005',
+        splits: [{ method: 'cash', amountCents: 45000 }],
+        actor: adminActor,
+      }),
+    ).rejects.toMatchObject({ code: 'PAST_BOOKING_LOCKED' });
+
+    const invBefore = getSnapshot().inventory.find((i) => i.id === 'inv-3')?.stockQuantity ?? 0;
+    const checkout = await recordBookingCheckoutAtomic({
+      bookingId: 'bk-1005',
+      splits: [
+        { method: 'cash', amountCents: 39000, tipCents: 3000, tipStaffId: 'staff-tere' },
+        { method: 'card', amountCents: 30000, reference: 'TERM-P3A' },
+      ],
+      extraItem: { inventoryItemId: 'inv-3', quantity: 1 },
+      markCompleted: true,
+      actor: ownerActor,
+    });
+    expect(checkout.summary.totalPriceCents).toBe(69000);
+    expect(checkout.summary.paidCents).toBe(69000);
+    expect(checkout.summary.isFullyPaid).toBe(true);
+    expect(checkout.summary.isUncollected).toBe(false);
+    expect(checkout.summary.totalTipsCents).toBe(3000);
+    expect(checkout.splits).toHaveLength(2);
+    expect(checkout.stampAwarded?.clientId).toBe('client-andrea');
+    expect(getSnapshot().inventory.find((i) => i.id === 'inv-3')?.stockQuantity).toBe(
+      invBefore - 1,
+    );
+    const bk1005CashEntries = getSnapshot().cashEntries.filter((c) => c.bookingId === 'bk-1005');
+    const patyCashEntries = bk1005CashEntries.filter((c) => c.staffId === 'staff-paty');
+    const tereTipEntry = bk1005CashEntries.find((c) => c.staffId === 'staff-tere');
+    expect(patyCashEntries.reduce((sum, e) => sum + e.amountCents, 0)).toBe(69000);
+    expect(patyCashEntries.every((e) => e.commissionCents > 0 && e.tipCents === 0)).toBe(true);
+    expect(tereTipEntry?.amountCents).toBe(0);
+    expect(tereTipEntry?.tipCents).toBe(3000);
+    expect(tereTipEntry?.commissionCents).toBe(0);
+    expect(
+      (getSnapshot().auditLogs ?? []).some(
+        (a) => a.action === 'past_booking_override' && a.entityId === 'bk-1005',
+      ),
+    ).toBe(true);
+
+    const stampsCountAfterFirst = (getSnapshot().loyaltyStamps ?? []).filter(
+      (s) => s.clientId === 'client-andrea',
+    ).length;
+    await updateBookingStatus({
+      bookingId: 'bk-1003',
+      status: 'confirmed',
+      actor: ownerActor,
+    });
+    await updateBookingStatus({
+      bookingId: 'bk-1003',
+      status: 'completed',
+      actor: ownerActor,
+    });
+    const stampsCountAfterSecondSameDay = (getSnapshot().loyaltyStamps ?? []).filter(
+      (s) => s.clientId === 'client-andrea',
+    ).length;
+    expect(stampsCountAfterSecondSameDay).toBe(stampsCountAfterFirst);
+
+    const sofiaSummary = getClientLoyaltySummary('client-sofia');
+    expect(sofiaSummary?.currentStamps).toBe(6);
+    expect(sofiaSummary?.isNearReward).toBe(true);
+    expect(getNearRewardClients().some((c) => c.clientId === 'client-sofia')).toBe(true);
+
+    const updatedProgram = await upsertLoyaltyProgram({
+      name: 'Club LAIKONA VIP',
+      stampsRequired: 6,
+    });
+    expect(updatedProgram.stampsRequired).toBe(6);
+    expect(getClientLoyaltySummary('client-sofia')?.isRewardReady).toBe(true);
+
+    await recordBookingCheckoutAtomic({
+      bookingId: 'bk-1001',
+      splits: [{ method: 'card', amountCents: 23000 }],
+      markCompleted: false,
+      redeemLoyaltyReward: true,
+      actor: ownerActor,
+    });
+    const sofiaAfterRedeem = getClientLoyaltySummary('client-sofia');
+    expect(sofiaAfterRedeem?.totalStamps).toBe(0);
+    expect(sofiaAfterRedeem?.isRewardReady).toBe(false);
+    const redeemAudit = (getSnapshot().auditLogs ?? []).find(
+      (a) => a.action === 'loyalty_redeemed' && a.entityId === 'client-sofia',
+    );
+    expect(redeemAudit?.metadata.stampsConsumed).toBe(6);
+
+    await expect(
+      recordBookingCheckoutAtomic({
+        bookingId: 'bk-1001',
+        splits: [{ method: 'cash', amountCents: 23000 }],
+        markCompleted: false,
+        redeemLoyaltyReward: true,
+        actor: ownerActor,
+      }),
+    ).rejects.toMatchObject({ code: 'LOYALTY_NOT_READY' });
+
+    const arco = getClientArcoExport('client-sofia');
+    expect(arco?.client.id).toBe('client-sofia');
+    expect(arco?.bookings.length).toBeGreaterThan(0);
+    expect(arco?.consents.length).toBeGreaterThan(0);
+    expect(arco?.loyaltySummary?.programName).toBe('Club LAIKONA VIP');
+
+    const liveDb = getSnapshot();
+    const oldBooking = liveDb.bookings.find((b) => b.id === 'bk-1000');
+    if (oldBooking) {
+      const oldIso = new Date(Date.now() - 60 * 86_400_000).toISOString();
+      oldBooking.startAt = oldIso;
+      oldBooking.endAt = oldIso;
+    }
+    const inactive = getInactiveClients(30);
+    expect(inactive.some((c) => c.clientId === 'client-paula')).toBe(true);
+    expect(inactive.some((c) => c.clientId === 'client-sofia')).toBe(false);
   });
 });

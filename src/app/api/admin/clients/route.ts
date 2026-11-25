@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import {
   createClientProfile,
+  getClientArcoExport,
+  getInactiveClients,
+  getNearRewardClients,
+  getSnapshot,
   PolicyError,
   updateClientNotes,
 } from '@/lib/repositories/db';
@@ -25,6 +29,57 @@ const patchClientSchema = z.object({
   email: z.string().trim().email('Correo inválido').optional().or(z.literal('')).nullable(),
   instagramHandle: z.string().max(120).optional().nullable(),
 });
+
+export async function GET(request: NextRequest) {
+  const session = await requireAdmin(undefined, request);
+  if (!session) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+  if (session.user.role !== 'owner' && session.user.role !== 'admin') {
+    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const exportClientId = searchParams.get('exportClientId')?.trim();
+  if (exportClientId) {
+    const exported = getClientArcoExport(exportClientId);
+    if (!exported) {
+      return NextResponse.json({ error: 'Clienta no encontrada' }, { status: 404 });
+    }
+    const safeFileId = exportClientId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || 'client';
+    return new NextResponse(JSON.stringify(exported, null, 2), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="arco-${safeFileId}.json"`,
+      },
+    });
+  }
+
+  const nearRewardClients = getNearRewardClients();
+  const inactiveDaysParam = searchParams.get('inactiveDays')?.trim();
+  if (inactiveDaysParam) {
+    const parsedDays = Number(inactiveDaysParam);
+    if (!Number.isInteger(parsedDays) || parsedDays < 1 || parsedDays > 3650) {
+      return NextResponse.json(
+        { error: 'inactiveDays debe ser un entero entre 1 y 3650.' },
+        { status: 400 },
+      );
+    }
+    const inactiveClients = getInactiveClients(parsedDays);
+    return NextResponse.json({
+      inactiveDays: parsedDays,
+      clients: inactiveClients,
+      nearRewardClients,
+    });
+  }
+
+  const db = getSnapshot();
+  return NextResponse.json({
+    clients: db.clients,
+    nearRewardClients,
+  });
+}
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);

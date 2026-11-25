@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   AdminUser,
+  AuditLogEntry,
   AvailabilitySchedule,
   BookingReview,
   BookingStatus,
@@ -16,7 +17,11 @@ import type {
   GalleryItem,
   InventoryItem,
   InventoryMovement,
+  LoyaltyProgram,
+  LoyaltyStamp,
   NotificationWorkflow,
+  PaymentSplit,
+  RecurringBlock,
   SalonSettings,
   ScheduledNotification,
   Service,
@@ -25,6 +30,7 @@ import type {
   StaffMember,
   WaitlistEntry,
 } from '@/lib/types';
+import type { PublicLoyaltySummaryDTO } from '@/lib/public-dto';
 import type { RuntimeIntegrationStatus } from '@/lib/env';
 import { useSalonAppearance } from '../SalonThemeProvider';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
@@ -88,6 +94,35 @@ export interface AdminOverviewPayload {
       totalVisits: number;
     }>;
   };
+  uncollectedBookings: Array<{
+    bookingId: string;
+    bookingCode: string;
+    status: BookingStatus;
+    clientId: string;
+    clientName: string;
+    clientPhone: string;
+    clientInstagram: string | null;
+    serviceName: string;
+    staffId: string;
+    staffName: string;
+    startAt: string;
+    endAt: string;
+    totalPriceCents: number;
+    paidCents: number;
+    remainingCents: number;
+  }>;
+  nearRewardClients: Array<{
+    clientId: string;
+    fullName: string;
+    phoneE164: string;
+    instagramHandle: string | null;
+    summary: PublicLoyaltySummaryDTO;
+  }>;
+  paymentSplits: PaymentSplit[];
+  recurringBlocks: RecurringBlock[];
+  loyaltyProgram: LoyaltyProgram | null;
+  loyaltyStamps: LoyaltyStamp[];
+  recentAuditLogs: AuditLogEntry[];
   bookings: BookingWithRelations[];
   services: Service[];
   categories: ServiceCategory[];

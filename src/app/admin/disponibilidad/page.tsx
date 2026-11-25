@@ -12,26 +12,47 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { Selector } from '@astryxdesign/core/Selector';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { TextInput } from '@astryxdesign/core/TextInput';
+import { NumberInput } from '@astryxdesign/core/NumberInput';
+import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Divider } from '@astryxdesign/core/Divider';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { List, ListItem } from '@astryxdesign/core/List';
-import { Clock, Copy, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { Clock, Copy, Pause, Play, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
-import type { AvailabilityRule } from '@/lib/types';
+import type { AvailabilityRule, RecurringBlock } from '@/lib/types';
 import type { SlotDiagnosis } from '@/lib/availability/engine';
 
-const DAYS: Array<{ dow: 0 | 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
-  { dow: 1, label: 'Lunes' },
-  { dow: 2, label: 'Martes' },
-  { dow: 3, label: 'Miércoles' },
-  { dow: 4, label: 'Jueves' },
-  { dow: 5, label: 'Viernes' },
-  { dow: 6, label: 'Sábado' },
-  { dow: 0, label: 'Domingo' },
+const DAYS: Array<{ dow: 0 | 1 | 2 | 3 | 4 | 5 | 6; label: string; short: string }> = [
+  { dow: 1, label: 'Lunes', short: 'Lun' },
+  { dow: 2, label: 'Martes', short: 'Mar' },
+  { dow: 3, label: 'Miércoles', short: 'Mié' },
+  { dow: 4, label: 'Jueves', short: 'Jue' },
+  { dow: 5, label: 'Viernes', short: 'Vie' },
+  { dow: 6, label: 'Sábado', short: 'Sáb' },
+  { dow: 0, label: 'Domingo', short: 'Dom' },
 ];
+
+const WEEKDAY_SHORT_BY_DOW: Record<number, string> = {
+  0: 'Dom',
+  1: 'Lun',
+  2: 'Mar',
+  3: 'Mié',
+  4: 'Jue',
+  5: 'Vie',
+  6: 'Sáb',
+};
+
+function formatRecurringSummary(block: RecurringBlock): string {
+  const freqLabel =
+    block.frequency === 'weekly'
+      ? `Semanal (${block.weekdays.map((d) => WEEKDAY_SHORT_BY_DOW[d] ?? String(d)).join(', ')})`
+      : `Mensual (día ${block.dayOfMonth ?? 1})`;
+  const untilSuffix = block.untilDate ? ` · Hasta ${block.untilDate}` : '';
+  return `${freqLabel} · ${block.startTime} – ${block.endTime}${untilSuffix}`;
+}
 
 const TIME_OPTIONS = Array.from({ length: 29 }, (_, i) => {
   const totalMin = 8 * 60 + i * 30;
@@ -62,6 +83,15 @@ export default function AdminAvailabilityPage() {
   const [ovrStart, setOvrStart] = useState('10:00');
   const [ovrEnd, setOvrEnd] = useState('16:00');
   const [ovrReason, setOvrReason] = useState('');
+
+  const [recFrequency, setRecFrequency] = useState<'weekly' | 'monthly'>('weekly');
+  const [recWeekdays, setRecWeekdays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [recDayOfMonth, setRecDayOfMonth] = useState<number>(15);
+  const [recStartTime, setRecStartTime] = useState('12:30');
+  const [recEndTime, setRecEndTime] = useState('13:15');
+  const [recReason, setRecReason] = useState('');
+  const [recUntilDate, setRecUntilDate] = useState('');
+  const [savingRecurring, setSavingRecurring] = useState(false);
 
   const [diagDateInput, setDiagDateInput] = useState<string | null>(null);
   const [diagServiceInput, setDiagServiceInput] = useState<string | null>(null);
@@ -311,7 +341,120 @@ export default function AdminAvailabilityPage() {
     setDiagnostics(json.diagnosis ?? json.diagnostics ?? []);
   };
 
+  const toggleRecWeekday = (dow: number, checked: boolean) => {
+    setRecWeekdays((prev) => {
+      const next = checked
+        ? Array.from(new Set([...prev, dow]))
+        : prev.filter((d) => d !== dow);
+      return next.toSorted((a, b) => a - b);
+    });
+  };
+
+  const createRecurringBlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffId) return;
+    if (recFrequency === 'weekly' && recWeekdays.length === 0) {
+      setMsg({
+        status: 'error',
+        text: 'Selecciona al menos un día de la semana para el bloqueo recurrente.',
+      });
+      return;
+    }
+    if (recStartTime >= recEndTime) {
+      setMsg({
+        status: 'error',
+        text: 'La hora de inicio debe ser menor a la hora de fin.',
+      });
+      return;
+    }
+    setSavingRecurring(true);
+    try {
+      const res = await fetch('/api/admin/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'recurring_block',
+          staffId,
+          reason: recReason.trim() || 'Bloqueo recurrente',
+          frequency: recFrequency,
+          weekdays: recFrequency === 'weekly' ? recWeekdays : [],
+          dayOfMonth: recFrequency === 'monthly' ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1))) : null,
+          startTime: recStartTime,
+          endTime: recEndTime,
+          untilDate: recUntilDate.trim() || null,
+          isActive: true,
+        }),
+      });
+      if (res.ok) {
+        setRecReason('');
+        setRecUntilDate('');
+        setMsg({
+          status: 'success',
+          text: 'Bloqueo recurrente guardado y aplicado a la disponibilidad.',
+        });
+        await refresh();
+      } else {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({
+          status: 'error',
+          text: errJson?.error || 'No se pudo crear el bloqueo recurrente.',
+        });
+      }
+    } finally {
+      setSavingRecurring(false);
+    }
+  };
+
+  const handleToggleRecurringBlock = async (block: RecurringBlock) => {
+    const res = await fetch('/api/admin/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'recurring_block_toggle',
+        id: block.id,
+        isActive: !block.isActive,
+      }),
+    });
+    if (res.ok) {
+      setMsg({
+        status: 'success',
+        text: block.isActive
+          ? `Bloqueo "${block.reason}" pausado.`
+          : `Bloqueo "${block.reason}" reactivado.`,
+      });
+      await refresh();
+    } else {
+      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+      setMsg({
+        status: 'error',
+        text: errJson?.error || 'No se pudo actualizar el bloqueo recurrente.',
+      });
+    }
+  };
+
+  const handleDeleteRecurringBlock = async (block: RecurringBlock) => {
+    const res = await fetch(
+      `/api/admin/availability?blockId=${encodeURIComponent(block.id)}`,
+      { method: 'DELETE' },
+    );
+    if (res.ok) {
+      setMsg({
+        status: 'success',
+        text: `Bloqueo "${block.reason}" eliminado.`,
+      });
+      await refresh();
+    } else {
+      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+      setMsg({
+        status: 'error',
+        text: errJson?.error || 'No se pudo eliminar el bloqueo recurrente.',
+      });
+    }
+  };
+
   const staffOverrides = data.dateOverrides.filter((o) => o.staffId === staffId);
+  const staffRecurringBlocks = data.recurringBlocks.filter((b) => b.staffId === staffId);
+  const activeRecurringCount = staffRecurringBlocks.filter((b) => b.isActive).length;
 
   return (
     <VStack gap={5}>
@@ -319,7 +462,7 @@ export default function AdminAvailabilityPage() {
         <VStack gap={0.5}>
           <Heading level={1}>Disponibilidad y Horarios</Heading>
           <Text color="secondary">
-            Configura turnos fijos (como 10:00 · 13:30 · 16:30), rangos continuos, vacaciones y diagnóstico.
+            Configura turnos fijos (como 10:00 · 13:30 · 16:30), bloqueos recurrentes, vacaciones y diagnóstico.
           </Text>
         </VStack>
 
@@ -336,7 +479,7 @@ export default function AdminAvailabilityPage() {
       {msg ? (
         <Banner
           status={msg.status}
-          role={msg.status === 'error' ? 'alert' : undefined}
+          role={msg.status === 'error' ? 'alert' : 'status'}
           title={msg.text}
           isDismissable
           onDismiss={() => setMsg(null)}
@@ -345,6 +488,15 @@ export default function AdminAvailabilityPage() {
 
       <TabList value={tab} onChange={setTab} hasDivider>
         <Tab value="weekly" label="Horario semanal (fijos y tramos)" />
+        <Tab
+          value="recurring"
+          label="Bloqueos recurrentes"
+          endContent={
+            activeRecurringCount > 0 ? (
+              <Badge variant="warning" label={String(activeRecurringCount)} />
+            ) : undefined
+          }
+        />
         <Tab
           value="overrides"
           label="Excepciones y vacaciones"
@@ -555,6 +707,161 @@ export default function AdminAvailabilityPage() {
             </VStack>
           </VStack>
         </Card>
+      ) : tab === 'recurring' ? (
+        <Grid columns={{ minWidth: 300, max: 2 }} gap={5} align="start">
+          <Card padding={5}>
+            <form onSubmit={createRecurringBlock}>
+              <VStack gap={3}>
+                <VStack gap={0.5}>
+                  <Heading level={3}>Crear bloqueo recurrente</Heading>
+                  <Text type="supporting" color="secondary">
+                    Bloquea comida, esterilización o cursos cada semana o cada mes sin crear excepciones una por una.
+                  </Text>
+                </VStack>
+
+                <SegmentedControl
+                  label="Frecuencia del bloqueo"
+                  size="sm"
+                  value={recFrequency}
+                  onChange={(val) => setRecFrequency(val as 'weekly' | 'monthly')}
+                >
+                  <SegmentedControlItem value="weekly" label="Semanal" />
+                  <SegmentedControlItem value="monthly" label="Mensual" />
+                </SegmentedControl>
+
+                {recFrequency === 'weekly' ? (
+                  <VStack gap={1.5}>
+                    <Text type="label" weight="semibold">
+                      Días de la semana
+                    </Text>
+                    <Grid columns={{ minWidth: 96, max: 4 }} gap={1.5}>
+                      {DAYS.map(({ dow, short }) => (
+                        <CheckboxInput
+                          key={dow}
+                          size="sm"
+                          label={short}
+                          value={recWeekdays.includes(dow)}
+                          onChange={(checked) => toggleRecWeekday(dow, checked)}
+                        />
+                      ))}
+                    </Grid>
+                  </VStack>
+                ) : (
+                  <NumberInput
+                    label="Día del mes (1–31)"
+                    value={recDayOfMonth}
+                    min={1}
+                    max={31}
+                    onChange={(val) => setRecDayOfMonth(val || 1)}
+                  />
+                )}
+
+                <Grid columns={2} gap={2}>
+                  <Selector
+                    label="Hora inicio"
+                    value={recStartTime}
+                    onChange={(v) => v && setRecStartTime(v)}
+                    options={FIXED_TIME_OPTIONS}
+                  />
+                  <Selector
+                    label="Hora fin"
+                    value={recEndTime}
+                    onChange={(v) => v && setRecEndTime(v)}
+                    options={FIXED_TIME_OPTIONS}
+                  />
+                </Grid>
+
+                <TextInput
+                  label="Motivo del bloqueo"
+                  placeholder="Ej. Comida y esterilización de instrumental"
+                  value={recReason}
+                  onChange={setRecReason}
+                  isRequired
+                />
+
+                <TextInput
+                  label="Repetir hasta (opcional, YYYY-MM-DD)"
+                  placeholder="Sin límite si se deja vacío"
+                  value={recUntilDate}
+                  autoCapitalize="none"
+                  hasAutoCorrect={false}
+                  hasSpellCheck={false}
+                  onChange={setRecUntilDate}
+                />
+
+                <Button
+                  type="submit"
+                  label="Crear bloqueo recurrente"
+                  variant="primary"
+                  width="100%"
+                  icon={<Plus size={14} />}
+                  isLoading={savingRecurring}
+                  isDisabled={savingRecurring}
+                />
+              </VStack>
+            </form>
+          </Card>
+
+          <Card padding={5}>
+            <VStack gap={3}>
+              <HStack justify="between" align="center">
+                <Heading level={3}>Bloqueos recurrentes activos</Heading>
+                <Badge variant="neutral" label={String(staffRecurringBlocks.length)} />
+              </HStack>
+
+              {staffRecurringBlocks.length === 0 ? (
+                <Text type="supporting" color="secondary">
+                  Sin bloqueos recurrentes configurados para esta especialista.
+                </Text>
+              ) : (
+                <List hasDividers>
+                  {staffRecurringBlocks.map((block) => (
+                    <ListItem
+                      key={block.id}
+                      label={block.reason}
+                      description={
+                        <VStack gap={1}>
+                          <Text type="supporting" color="secondary">
+                            {formatRecurringSummary(block)}
+                          </Text>
+                          <HStack gap={1.5}>
+                            <Badge
+                              variant={block.isActive ? 'success' : 'neutral'}
+                              label={block.isActive ? 'Activo' : 'Pausado'}
+                            />
+                          </HStack>
+                        </VStack>
+                      }
+                      endContent={
+                        <HStack gap={1}>
+                          <Button
+                            type="button"
+                            label={block.isActive ? 'Pausar' : 'Reanudar'}
+                            variant="secondary"
+                            size="sm"
+                            icon={
+                              block.isActive ? <Pause size={13} /> : <Play size={13} />
+                            }
+                            onClick={() => void handleToggleRecurringBlock(block)}
+                          />
+                          <Button
+                            type="button"
+                            label="Eliminar"
+                            isIconOnly
+                            variant="ghost"
+                            size="sm"
+                            icon={<Trash2 size={14} />}
+                            onClick={() => void handleDeleteRecurringBlock(block)}
+                          />
+                        </HStack>
+                      }
+                    />
+                  ))}
+                </List>
+              )}
+            </VStack>
+          </Card>
+        </Grid>
       ) : tab === 'overrides' ? (
         <Grid columns={{ minWidth: 300, max: 2 }} gap={5} align="start">
           <Card padding={5}>

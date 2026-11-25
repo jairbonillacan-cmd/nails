@@ -28,10 +28,13 @@ import {
 import { GET as getAdminOperations } from '@/app/api/admin/operations/route';
 import { GET as getAdminOverview } from '@/app/api/admin/overview/route';
 import {
+  DELETE as deleteAdminAvailability,
   GET as getAdminAvailability,
+  POST as postAdminAvailability,
   PUT as putAdminAvailability,
 } from '@/app/api/admin/availability/route';
 import {
+  GET as getAdminClients,
   PATCH as patchAdminClients,
   POST as postAdminClients,
 } from '@/app/api/admin/clients/route';
@@ -54,7 +57,10 @@ import {
 import { GET as getGoogleOAuth } from '@/app/api/integrations/google/route';
 import { GET as getGoogleOAuthCallback } from '@/app/api/integrations/google/callback/route';
 import { POST as postCronReminders } from '@/app/api/cron/reminders/route';
-import { GET as getManageBooking } from '@/app/api/bookings/manage/[token]/route';
+import {
+  GET as getManageBooking,
+  PATCH as patchManageBooking,
+} from '@/app/api/bookings/manage/[token]/route';
 import { GET as getRealtimeStream } from '@/app/api/realtime/route';
 import {
   publishRealtimeEvent,
@@ -470,6 +476,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             startAt: openSlot.startAt,
             clientName: 'Clienta Maliciosa',
             clientPhone: '+525577889900',
+            privacyConsentAccepted: true,
             forceConfirmed: true,
             source: 'manual',
             role: 'owner',
@@ -1381,6 +1388,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             startAt: openSlot.startAt,
             clientName: 'Otra Clienta',
             clientPhone: '+525588990011',
+            privacyConsentAccepted: true,
             holdId: holdJson.holdId,
             sessionToken: 'forged-other-session',
           }),
@@ -1403,6 +1411,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             startAt: openSlot.startAt,
             clientName: 'Clienta Con Cookie',
             clientPhone: '+525588990022',
+            privacyConsentAccepted: true,
             holdId: holdJson.holdId,
           }),
         }),
@@ -1446,6 +1455,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
               startAt: openSlot.startAt,
               clientName: 'Spoofed Upload',
               clientPhone: '+525599001122',
+              privacyConsentAccepted: true,
               inspoPhotoUrl: spoofedSvgDataUrl,
             }),
           }),
@@ -1463,6 +1473,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
               startAt: openSlot.startAt,
               clientName: 'Bad Scheme',
               clientPhone: '+525599001123',
+              privacyConsentAccepted: true,
               inspoPhotoUrl: 'javascript:alert(1)',
             }),
           }),
@@ -1480,6 +1491,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
               startAt: openSlot.startAt,
               clientName: 'Foto Real',
               clientPhone: '+525599001133',
+              privacyConsentAccepted: true,
               inspoPhotoUrl: validPngDataUrl,
             }),
           }),
@@ -1785,6 +1797,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             startAt: slot1.startAt,
             clientName: 'Handle Invalido',
             clientPhone: '+522227770001',
+            privacyConsentAccepted: true,
             clientInstagram: '<script>alert(1)</script>',
           }),
         }),
@@ -1804,6 +1817,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             clientPhone: '+522227770002',
             clientInstagram: '@Camila.Laikona',
             proofDeliveryMethod: 'instagram_dm',
+            privacyConsentAccepted: true,
             forceConfirmed: true,
             source: 'manual',
           }),
@@ -2153,6 +2167,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             clientPhone: '+522229001122',
             clientInstagram: '@multi.hold',
             proofDeliveryMethod: 'instagram_dm',
+            privacyConsentAccepted: true,
             holdId: holdJson.holdId,
           }),
         }),
@@ -2168,6 +2183,631 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(bookingJson.booking.totalDurationMinutes).toBe(150);
       expect(bookingJson.booking.extraServiceIds).toEqual(['srv-retiro']);
       expect(bookingJson.booking.clientInstagram).toBe('@multi.hold');
+    });
+  });
+
+  describe('Phase 3A Wave 1: LFPDPPP Consent/ARCO, Quick Search, Recurring Blocks, Split Checkout, Loyalty, Policies & Audit', () => {
+    it('S8 & N6: requires privacyConsentAccepted on POST /api/bookings and protects ARCO export + inactive CRM filter', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3a-s8');
+      const db = getSnapshot();
+      const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+      const openSlot = queryAvailability({
+        serviceId: 'srv-gel-semipermanente-manos',
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: today,
+        days: 14,
+      }).days.flatMap((d) => d.slots)[0];
+      if (!openSlot) throw new Error('Expected open slot');
+
+      const missingConsentRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-gel-semipermanente-manos',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Sin Aviso',
+            clientPhone: '+522229110001',
+          }),
+        }),
+      );
+      expect(missingConsentRes.status).toBe(400);
+      expect(((await missingConsentRes.json()) as { code: string }).code).toBe(
+        'PRIVACY_CONSENT_REQUIRED',
+      );
+
+      const falseConsentRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-gel-semipermanente-manos',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Aviso Falso',
+            clientPhone: '+522229110001',
+            privacyConsentAccepted: false,
+          }),
+        }),
+      );
+      expect(falseConsentRes.status).toBe(400);
+      expect(((await falseConsentRes.json()) as { code: string }).code).toBe(
+        'PRIVACY_CONSENT_REQUIRED',
+      );
+
+      const acceptedRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-gel-semipermanente-manos',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Consentida LFPDPPP',
+            clientPhone: '+522229110002',
+            privacyConsentAccepted: true,
+            marketingOptIn: true,
+          }),
+        }),
+      );
+      expect(acceptedRes.status).toBe(201);
+      const acceptedJson = (await acceptedRes.json()) as {
+        booking: { id: string; clientId: string };
+      };
+      const consentRecord = (getSnapshot().consents ?? []).find(
+        (c) => c.bookingId === acceptedJson.booking.id,
+      );
+      expect(consentRecord?.clientId).toBe(acceptedJson.booking.clientId);
+      expect(consentRecord?.marketingOptIn).toBe(true);
+      expect(consentRecord?.policyVersion).toBe('2026-11');
+
+      const unauthArco = await getAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients?exportClientId=client-sofia'),
+      );
+      expect(unauthArco.status).toBe(401);
+
+      const specArco = await getAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients?exportClientId=client-sofia', {
+          headers: { cookie: getSpecialistCookieHeader() },
+        }),
+      );
+      expect(specArco.status).toBe(403);
+
+      const ownerArco = await getAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients?exportClientId=client-sofia', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(ownerArco.status).toBe(200);
+      expect(ownerArco.headers.get('content-disposition')).toContain(
+        'attachment; filename="arco-client-sofia.json"',
+      );
+      const arcoRaw = await ownerArco.text();
+      expect(arcoRaw).not.toContain('internalNotes');
+      const arcoJson = JSON.parse(arcoRaw) as {
+        client: { id: string };
+        bookings: unknown[];
+        consents: unknown[];
+        loyaltySummary: { currentStamps: number } | null;
+      };
+      expect(arcoJson.client.id).toBe('client-sofia');
+      expect(arcoJson.bookings.length).toBeGreaterThan(0);
+      expect(arcoJson.consents.length).toBeGreaterThan(0);
+      expect(arcoJson.loyaltySummary?.currentStamps).toBe(6);
+
+      const liveDb = getSnapshot();
+      const paulaBooking = liveDb.bookings.find((b) => b.id === 'bk-1000');
+      if (paulaBooking) {
+        const oldIso = new Date(Date.now() - 45 * 86_400_000).toISOString();
+        paulaBooking.startAt = oldIso;
+        paulaBooking.endAt = oldIso;
+      }
+
+      const inactiveRes = await getAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients?inactiveDays=30', {
+          headers: { cookie: getAdminCookieHeader() },
+        }),
+      );
+      expect(inactiveRes.status).toBe(200);
+      const inactiveJson = (await inactiveRes.json()) as {
+        inactiveDays: number;
+        clients: Array<{ clientId: string }>;
+        nearRewardClients: Array<{ clientId: string }>;
+      };
+      expect(inactiveJson.inactiveDays).toBe(30);
+      expect(inactiveJson.clients.some((c) => c.clientId === 'client-paula')).toBe(true);
+      expect(inactiveJson.nearRewardClients.some((c) => c.clientId === 'client-sofia')).toBe(
+        true,
+      );
+    });
+
+    it('N1 & N2: quick_search honors recurringBlocks and /api/admin/availability enforces RBAC on recurring blocks CRUD', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3a-n1n2');
+      const db = getSnapshot();
+      const tz = db.settings.timezone;
+      const today = getDateKeyInTimezone(new Date(), tz);
+
+      const quickRes = await getPublicAvailability(
+        makeRequest(
+          `http://localhost:3000/api/availability?mode=quick_search&serviceId=srv-rubber&extraServiceIds=srv-retiro&startDate=${today}&days=14&limit=6`,
+        ),
+      );
+      expect(quickRes.status).toBe(200);
+      const quickJson = (await quickRes.json()) as {
+        slots: Array<{ staffId: string; startAt: string }>;
+        totals: { totalDurationMinutes: number };
+      };
+      expect(quickJson.slots.length).toBeGreaterThan(0);
+      expect(quickJson.slots.length).toBeLessThanOrEqual(6);
+      expect(quickJson.totals.totalDurationMinutes).toBe(150);
+
+      const unauthBlock = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'recurring_block',
+            staffId: 'staff-karla',
+            reason: 'Sin auth',
+            frequency: 'weekly',
+            weekdays: [1],
+            startTime: '14:00',
+            endTime: '15:00',
+          }),
+        }),
+      );
+      expect(unauthBlock.status).toBe(401);
+
+      const crossSpecBlock = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'recurring_block',
+            staffId: 'staff-karla',
+            reason: 'Cross specialist',
+            frequency: 'weekly',
+            weekdays: [1],
+            startTime: '14:00',
+            endTime: '15:00',
+          }),
+        }),
+      );
+      expect(crossSpecBlock.status).toBe(403);
+
+      const hijackBlockIdor = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'recurring_block',
+            id: 'rblk-karla-lunch',
+            staffId: 'staff-tere',
+            reason: 'Hijack attempt',
+            frequency: 'weekly',
+            weekdays: [1],
+            startTime: '14:00',
+            endTime: '15:00',
+          }),
+        }),
+      );
+      expect(hijackBlockIdor.status).toBe(403);
+      expect(
+        (getSnapshot().recurringBlocks ?? []).find((b) => b.id === 'rblk-karla-lunch')
+          ?.staffId,
+      ).toBe('staff-karla');
+
+      const createBlockRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'recurring_block',
+            staffId: 'staff-tere',
+            reason: 'Capacitación semanal',
+            frequency: 'weekly',
+            weekdays: [1, 2, 3, 4, 5, 6],
+            startTime: '08:00',
+            endTime: '22:00',
+            isActive: true,
+          }),
+        }),
+      );
+      expect(createBlockRes.status).toBe(201);
+      const createdBlockJson = (await createBlockRes.json()) as {
+        block: { id: string; isActive: boolean };
+      };
+      expect(createdBlockJson.block.isActive).toBe(true);
+
+      const blockedTereQuick = await getPublicAvailability(
+        makeRequest(
+          `http://localhost:3000/api/availability?mode=quick_search&serviceId=srv-gel-semipermanente-manos&staffId=staff-tere&startDate=${today}&days=10&limit=5`,
+        ),
+      );
+      expect(blockedTereQuick.status).toBe(200);
+      const blockedJson = (await blockedTereQuick.json()) as { slots: unknown[] };
+      expect(blockedJson.slots).toHaveLength(0);
+
+      const toggleRes = await postAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'recurring_block_toggle',
+            id: createdBlockJson.block.id,
+            isActive: false,
+          }),
+        }),
+      );
+      expect(toggleRes.status).toBe(200);
+
+      const listBlocksRes = await getAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability?mode=blocks', {
+          headers: { cookie: getSpecialistCookieHeader() },
+        }),
+      );
+      expect(listBlocksRes.status).toBe(200);
+      const listJson = (await listBlocksRes.json()) as {
+        recurringBlocks: Array<{ id: string; staffId: string }>;
+      };
+      expect(listJson.recurringBlocks.every((b) => b.staffId === 'staff-tere')).toBe(true);
+
+      const crossDeleteRes = await deleteAdminAvailability(
+        makeRequest(
+          'http://localhost:3000/api/admin/availability?blockId=rblk-karla-lunch',
+          {
+            method: 'DELETE',
+            headers: { cookie: getSpecialistCookieHeader() },
+          },
+        ),
+      );
+      expect(crossDeleteRes.status).toBe(403);
+
+      const ownDeleteRes = await deleteAdminAvailability(
+        makeRequest(
+          `http://localhost:3000/api/admin/availability?blockId=${encodeURIComponent(createdBlockJson.block.id)}`,
+          {
+            method: 'DELETE',
+            headers: { cookie: getSpecialistCookieHeader() },
+          },
+        ),
+      );
+      expect(ownDeleteRes.status).toBe(200);
+      expect(
+        (getSnapshot().recurringBlocks ?? []).some(
+          (b) => b.id === createdBlockJson.block.id,
+        ),
+      ).toBe(false);
+    });
+
+    it('N3, N4, N7 & D5: split checkout, past booking lock, audit log visibility, maxActiveBookings, loyalty DTO, and coupon reuse on cancel', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3a-core');
+
+      const ovBefore = await getAdminOverview(
+        makeRequest('http://localhost:3000/api/admin/overview', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(ovBefore.status).toBe(200);
+      const ovBeforeJson = (await ovBefore.json()) as {
+        uncollectedBookings: Array<{ bookingId: string; remainingCents: number }>;
+        nearRewardClients: Array<{ clientId: string }>;
+        recentAuditLogs: unknown[];
+        loyaltyProgram: { id: string } | null;
+      };
+      expect(ovBeforeJson.uncollectedBookings.some((u) => u.bookingId === 'bk-1005')).toBe(
+        true,
+      );
+      expect(ovBeforeJson.nearRewardClients.some((c) => c.clientId === 'client-sofia')).toBe(
+        true,
+      );
+      expect(ovBeforeJson.loyaltyProgram?.id).toBe('loy-laikona-default');
+      expect(ovBeforeJson.recentAuditLogs.length).toBeGreaterThan(0);
+
+      const adminOv = await getAdminOverview(
+        makeRequest('http://localhost:3000/api/admin/overview', {
+          headers: { cookie: getAdminCookieHeader() },
+        }),
+      );
+      expect(adminOv.status).toBe(200);
+      const adminOvJson = (await adminOv.json()) as { recentAuditLogs: unknown[] };
+      expect(adminOvJson.recentAuditLogs).toEqual([]);
+
+      const specCheckoutIdor = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'checkout_split',
+            bookingId: 'bk-1005',
+            splits: [{ method: 'cash', amountCents: 45000 }],
+          }),
+        }),
+      );
+      expect(specCheckoutIdor.status).toBe(403);
+
+      const adminPastLockRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'checkout_split',
+            bookingId: 'bk-1005',
+            splits: [{ method: 'cash', amountCents: 45000 }],
+          }),
+        }),
+      );
+      expect(adminPastLockRes.status).toBe(403);
+      expect(((await adminPastLockRes.json()) as { code: string }).code).toBe(
+        'PAST_BOOKING_LOCKED',
+      );
+
+      const ownerCheckoutRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'checkout_split',
+            bookingId: 'bk-1005',
+            splits: [
+              { method: 'cash', amountCents: 25000, tipCents: 4000, tipStaffId: 'staff-paty' },
+              { method: 'card', amountCents: 20000, reference: 'POS-999' },
+            ],
+            markCompleted: true,
+          }),
+        }),
+      );
+      expect(ownerCheckoutRes.status).toBe(200);
+      const checkoutJson = (await ownerCheckoutRes.json()) as {
+        summary: { isFullyPaid: boolean; totalTipsCents: number };
+        stampAwarded: { clientId: string } | null;
+      };
+      expect(checkoutJson.summary.isFullyPaid).toBe(true);
+      expect(checkoutJson.summary.totalTipsCents).toBe(4000);
+      expect(checkoutJson.stampAwarded?.clientId).toBe('client-andrea');
+
+      const ovAfter = await getAdminOverview(
+        makeRequest('http://localhost:3000/api/admin/overview', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      const ovAfterJson = (await ovAfter.json()) as {
+        uncollectedBookings: Array<{ bookingId: string }>;
+        recentAuditLogs: Array<{ action: string; entityId: string }>;
+      };
+      expect(ovAfterJson.uncollectedBookings.some((u) => u.bookingId === 'bk-1005')).toBe(
+        false,
+      );
+      expect(
+        ovAfterJson.recentAuditLogs.some(
+          (a) => a.action === 'past_booking_override' && a.entityId === 'bk-1005',
+        ),
+      ).toBe(true);
+
+      const approveRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            bookingId: 'bk-1003',
+            status: 'confirmed',
+          }),
+        }),
+      );
+      expect(approveRes.status).toBe(200);
+      expect(
+        (getSnapshot().paymentSplits ?? []).some(
+          (s) => s.bookingId === 'bk-1003' && s.amountCents === 20000,
+        ),
+      ).toBe(true);
+      expect(
+        (getSnapshot().auditLogs ?? []).some(
+          (a) => a.action === 'deposit_approved' && a.entityId === 'bk-1003',
+        ),
+      ).toBe(true);
+
+      const csvRes = await getAdminOperations(
+        makeRequest('http://localhost:3000/api/admin/operations?export=csv', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(csvRes.status).toBe(200);
+      expect(
+        (getSnapshot().auditLogs ?? []).some((a) => a.action === 'csv_exported'),
+      ).toBe(true);
+
+      const manageRes = await getManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-sofia-1042'),
+        { params: Promise.resolve({ token: 'demo-token-sofia-1042' }) },
+      );
+      expect(manageRes.status).toBe(200);
+      const manageJson = (await manageRes.json()) as {
+        loyaltySummary: {
+          currentStamps: number;
+          stampsRequired: number;
+          isNearReward: boolean;
+        } | null;
+      };
+      expect(manageJson.loyaltySummary?.currentStamps).toBe(6);
+      expect(manageJson.loyaltySummary?.stampsRequired).toBe(8);
+      expect(manageJson.loyaltySummary?.isNearReward).toBe(true);
+
+      const brandPatchRes = await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            lockPastBookings: true,
+            maxActiveBookingsPerClient: 1,
+            privacyPolicyVersion: '2026-12',
+            loyaltyProgram: {
+              name: 'LAIKONA Rewards',
+              stampsRequired: 7,
+            },
+          }),
+        }),
+      );
+      expect(brandPatchRes.status).toBe(200);
+      const brandJson = (await brandPatchRes.json()) as {
+        settings: { maxActiveBookingsPerClient?: number; privacyPolicyVersion?: string };
+        loyaltyProgram?: { name: string; stampsRequired: number };
+      };
+      expect(brandJson.settings.maxActiveBookingsPerClient).toBe(1);
+      expect(brandJson.settings.privacyPolicyVersion).toBe('2026-12');
+      expect(brandJson.loyaltyProgram?.stampsRequired).toBe(7);
+
+      const today = getDateKeyInTimezone(new Date(), getSnapshot().settings.timezone);
+      const slots = queryAvailability({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: 'staff-tere',
+        startDate: today,
+        days: 14,
+      })
+        .days.flatMap((d) => d.slots)
+        .filter((s) => new Date(s.startAt).getTime() - Date.now() > 48 * 3_600_000);
+      const slotA = slots[0];
+      const slotB = slots[1];
+      if (!slotA || !slotB) throw new Error('Expected two open far slots');
+
+      const firstClientBooking = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slotA.staffId,
+            startAt: slotA.startAt,
+            clientName: 'Clienta Limite',
+            clientPhone: '+522229220001',
+            couponCode: 'BIENVENIDA10',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(firstClientBooking.status).toBe(201);
+      const firstJson = (await firstClientBooking.json()) as {
+        booking: { manageToken: string };
+      };
+
+      const maxLimitRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slotB.staffId,
+            startAt: slotB.startAt,
+            clientName: 'Clienta Limite',
+            clientPhone: '+522229220001',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(maxLimitRes.status).toBe(409);
+      expect(((await maxLimitRes.json()) as { code: string }).code).toBe(
+        'MAX_ACTIVE_BOOKINGS',
+      );
+
+      await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({ maxActiveBookingsPerClient: 3 }),
+        }),
+      );
+
+      const secondCouponRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slotB.staffId,
+            startAt: slotB.startAt,
+            clientName: 'Clienta Limite',
+            clientPhone: '+522229220001',
+            couponCode: 'BIENVENIDA10',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(secondCouponRes.status).toBe(400);
+      expect(((await secondCouponRes.json()) as { code: string }).code).toBe(
+        'COUPON_INVALID',
+      );
+
+      const cancelFirstRes = await patchManageBooking(
+        makeRequest(
+          `http://localhost:3000/api/bookings/manage/${firstJson.booking.manageToken}`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              action: 'cancel',
+              reason: 'Reagendaré después',
+            }),
+          },
+        ),
+        { params: Promise.resolve({ token: firstJson.booking.manageToken }) },
+      );
+      expect(cancelFirstRes.status).toBe(200);
+
+      const reuseCouponRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: slotB.staffId,
+            startAt: slotB.startAt,
+            clientName: 'Clienta Limite',
+            clientPhone: '+522229220001',
+            couponCode: 'BIENVENIDA10',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(reuseCouponRes.status).toBe(201);
     });
   });
 });

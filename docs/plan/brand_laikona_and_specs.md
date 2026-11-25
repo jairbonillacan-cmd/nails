@@ -6,36 +6,30 @@
 
 ## 1. Identidad visual de Laikona Nails by Karla
 
-**Uñas a tu manera.** La dirección parte del rojo cereza de los esmaltes y del sello con dos cerezas. El logotipo serif lleva la firma «Nails by Karla». La marca se presenta como un estudio de manicure y nail art en Puebla, México. En redes usa [@laikona.nailsss](https://www.instagram.com/laikona.nailsss/) y acredita a [@lumiere.beautymx](https://www.instagram.com/lumiere.beautymx/) cuando corresponda.
+**De tu idea a tus uñas.** La identidad parte del perfil de Karla Rodríguez. Su avatar usa un logotipo monocromo con las cerezas integradas entre las letras y la firma «By Karla». La bio en Puebla nombra acrílico escultural, Softgel y Rubber y enlaza a Lumière. El destacado «Exp vs Realidad» y el carrusel que compara referencias con resultados dan pie al texto de la portada. [@laikona.nailsss](https://www.instagram.com/laikona.nailsss/) · [Carrusel de referencias y resultados](https://www.instagram.com/laikona.nailsss/p/DczwaQBgD_Y/) · [@lumiere.beautymx](https://www.instagram.com/lumiere.beautymx/)
 
-De Valentina se retoma el contraste editorial entre granate y marfil. De Clawcrafter se retoma la continuidad de la paleta y los encuadres de manicure entre piezas impresas, redes y web. [Valentina Nails Salon, Álvaro Quijano](https://www.behance.net/gallery/199899457/Visual-Identity-Valentina-Nails-Salon-%28manicure%29) · [Nail studio, Anto Cividin](https://www.behance.net/gallery/181037825/Nail-studio-Branding)
+La fotografía lleva el color. Los sets del perfil mezclan cuadros, rayas y lunares, esmalte rojo con volumen y bordes dorados, y flores translúcidas con detalles metálicos. La portada muestra los primeros dos trabajos juntos, con crédito a Karla y enlace a su perfil. La lámina reúne los tres. [Set de estampados](https://www.instagram.com/laikona.nailsss/p/DPMztzKEWm-/) · [Set rojo en relieve](https://www.instagram.com/laikona.nailsss/p/Dej6gDwFEsB/) · [Set floral](https://www.instagram.com/laikona.nailsss/p/DflaVptoEca/)
 
 | Color | Hex | Aplicación |
 |---|---|---|
-| Cereza laca | `#8B1E2B` | Acento principal, botón de agenda y sello |
-| Rosa leche | `#F7E9E7` | Portada y superficies suaves en modo claro |
-| Alabastro | `#FAF7F5` | Fondo claro y logotipo en negativo |
-| Porcelana | `#FFFFFF` | Superficies del sitio y texto del botón sobre Cereza laca |
-| Rosa cereza | `#E57A89` | Acento en modo oscuro |
+| Porcelana | `#FFFFFF` | Blanco del avatar, superficies y texto sobre Cereza laca |
 | Obsidiana | `#121011` | Fondo oscuro, con superficies elevadas en `#191617` |
+| Marfil oliva | `#F2F4E8` | Fondo de portada y superficies suaves en modo claro |
+| Pistache | `#E1E9B6` | Acento para piezas de redes, inspirado en el «VS» verde del carrusel |
+| Cereza laca | `#8B1E2B` | Botones de agenda y enlaces en modo claro |
+| Rosa cereza | `#E57A89` | Acento en modo oscuro |
 
-La tinta del logotipo en modo claro es `#341722`. El contraste es 9.06:1 entre Cereza laca y Porcelana, 7.66:1 entre Cereza laca y Rosa leche y 6.56:1 entre Rosa cereza y el texto oscuro `#141414` del botón. En la web, Astryx aplica los tokens de `themes/nails` a la portada y a la agenda.
+En la web, Astryx aplica los tokens de `themes/nails` a la portada y a la agenda. Los botones principales ofrecen un contraste de 9.06:1 en claro y 6.56:1 en oscuro.
 
-**Tipografía.** Source Serif 4 en titulares y DM Sans en texto, navegación y formularios. Ambas familias se sirven con Fontsource. El logotipo vectorial tiene las letras trazadas para mantener su forma al abrirlo sin las fuentes web.
+**Tipografía.** Source Serif 4 en titulares y DM Sans en texto, navegación y formularios. Ambas familias se sirven con Fontsource. El logotipo se vectorizó a partir del JPEG proporcionado para conservar el dibujo original, incluidas las leyendas «NAILS» y «BY KARLA».
 
-**Aplicaciones.** Para el avatar de Instagram, usa el sello sobre Cereza laca con aire suficiente para el recorte circular. En portadas de agenda y publicaciones, combina un titular serif corto con un acercamiento a las uñas. Para mostrar trabajo del estudio, usa fotografías de sets realizados y luz lateral que deje ver el acabado. La imagen de campaña de la web es una pieza conceptual creada con ImageGen a partir de un manicure rojo cereza, un detalle de nail art y una composición con satén marfil y laca granate.
+**Aplicaciones.** En publicaciones de referencia y resultado, usa una portada breve con letra sans y un acento pistache. En fotos de sets, conserva el color del esmalte, la firma y el encuadre cercano que deja ver los detalles. En la web, la galería de ideas acompaña a la portada con trabajos de Karla.
 
-- [Lámina de identidad](../brand/laikona-identidad.png)
-- [Logotipo vectorial](../../public/brand/laikona-wordmark.svg)
-- [Sello vectorial](../../public/brand/laikona-avatar.svg) y [avatar PNG de 1080 × 1080](../brand/laikona-avatar.png)
-- [Fotografía editorial WebP](../../public/brand/laikona-cherry-editorial.webp)
-
-<details>
-<summary>Prompt de la fotografía editorial en ImageGen</summary>
-
-Photorealistic editorial beauty campaign photograph for the website of Puebla nail studio Laikona Nails by Karla. Squarish landscape crop, roughly 6:5. One anatomically natural feminine hand with warm medium-brown skin, naturally separated relaxed fingers, emerging from a slightly gathered butter-ivory satin cuff, resting diagonally on a wine-red lacquered tabletop. Magazine close-up, all visible nails glossy short-to-medium almond shape in rich black cherry red, one translucent rose accent nail with tiny painted double cherries, realistic cuticles and skin texture. A pair of actual dark red cherries near the lower edge, well away from fingers. Background fills frame in muted oxblood and bordeaux, tactile and almost monochrome, with hard directional window light and soft shadows, gentle 35mm grain, restrained beauty editorial. Keep manicure centered, crop-safe and sharply readable in a square crop. No jewelry, no face, no text, no logo, no border, no watermark.
-
-</details>
+- [Lámina de identidad desde Instagram](../brand/laikona-desde-instagram.png)
+- [Kit de logotipo y recursos web](../brand/laikona-kit-logotipo.zip)
+- [Logotipo vectorial para web](../../public/brand/laikona-logo-instagram.svg) y [PNG transparente de 3920 × 1656](../brand/laikona-logo-hd.png)
+- [Favicon de cerezas](../../public/brand/laikona-favicon.svg) y [patrón de cerezas](../../public/brand/laikona-patron-cerezas.svg)
+- [Fotos de la portada](../../public/brand/laikona-sets-instagram.webp)
 
 ---
 

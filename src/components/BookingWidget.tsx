@@ -330,6 +330,30 @@ export function BookingWidget({
     e.preventDefault();
     if (!selectedService || !flow.selectedSlot) return;
 
+    if (clientName.trim().length < 2) {
+      dispatch({
+        type: 'SUBMIT_FAILED',
+        error: 'Escribe tu nombre completo para registrar tu cita.',
+      });
+      return;
+    }
+
+    if (clientPhone.replace(/\D/g, '').length < 8) {
+      dispatch({
+        type: 'SUBMIT_FAILED',
+        error: 'Escribe un número de WhatsApp válido (10 dígitos).',
+      });
+      return;
+    }
+
+    if (!flow.privacyConsentAccepted) {
+      dispatch({
+        type: 'CONSENT_REQUIRED_ERROR',
+        message: 'Debes leer y aceptar el Aviso de Privacidad para completar tu reserva.',
+      });
+      return;
+    }
+
     dispatch({ type: 'START_SUBMIT' });
     const showDeposit = hasConfiguredDeposit(settings, depositAmountCents);
     const effectiveProofMethod: ProofDeliveryMethod = !showDeposit
@@ -359,6 +383,8 @@ export function BookingWidget({
         couponCode: appliedCoupon?.code || null,
         holdId: flow.holdId ?? undefined,
         sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
+        privacyConsentAccepted: true,
+        marketingOptIn: flow.marketingOptIn,
       });
 
       if (result.kind === 'conflict') {
@@ -371,7 +397,11 @@ export function BookingWidget({
         return;
       }
       if (result.kind === 'error') {
-        dispatch({ type: 'SUBMIT_FAILED', error: result.error });
+        dispatch({
+          type: 'SUBMIT_FAILED',
+          error: result.error,
+          code: result.code ?? null,
+        });
         return;
       }
 
@@ -525,8 +555,12 @@ export function BookingWidget({
               inspoDataUrl={inspoDataUrl}
               proofDeliveryMethod={proofDeliveryMethod}
               proofFile={proofFile}
+              privacyConsentAccepted={flow.privacyConsentAccepted}
+              marketingOptIn={flow.marketingOptIn}
+              privacyConsentError={flow.privacyConsentError}
               submitting={flow.phase === 'submitting'}
               formError={flow.formError}
+              formErrorCode={flow.formErrorCode}
               onChangeCouponInput={setCouponInput}
               onApplyCoupon={handleApplyCoupon}
               onChangeClientName={setClientName}
@@ -544,6 +578,12 @@ export function BookingWidget({
                 setProofFile(file);
                 setProofDataUrl(dataUrl);
               }}
+              onChangePrivacyConsent={(accepted) =>
+                dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })
+              }
+              onChangeMarketingOptIn={(optedIn) =>
+                dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })
+              }
               onSubmit={handleConfirmBooking}
             />
           )}

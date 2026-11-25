@@ -14,13 +14,16 @@ import {
   Ban,
   Bell,
   Check,
-  CheckCheck,
+  DollarSign,
   MessageCircle,
+  UserRound,
   UserX,
 } from 'lucide-react';
+import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import type {
   BookingStatus,
   BookingWithRelations,
+  PaymentSplit,
   Service,
 } from '@/lib/types';
 import {
@@ -70,10 +73,12 @@ export function getProofBadgeMeta(
 interface BookingCardProps {
   booking: BookingWithRelations;
   allServices: Service[];
+  paymentSplits?: PaymentSplit[];
   salonName: string;
   currency: 'MXN' | 'USD';
   timezone: string;
   isReminding: boolean;
+  onSelectBooking?: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
@@ -82,10 +87,12 @@ interface BookingCardProps {
 export function BookingCard({
   booking: b,
   allServices,
+  paymentSplits = [],
   salonName,
   currency,
   timezone,
   isReminding,
+  onSelectBooking,
   onUpdateStatus,
   onOpenCheckout,
   onSendReminder,
@@ -97,10 +104,15 @@ export function BookingCard({
   const igHandle = b.clientInstagram ?? b.client.instagramHandle ?? null;
   const igUrl = buildInstagramProfileUrl(igHandle);
   const proofMeta = getProofBadgeMeta(b);
+  const bookingSplits = paymentSplits.filter((s) => s.bookingId === b.id);
+  const paymentSummary = computeBookingPaymentSummary(b.totalPriceCents, bookingSplits);
   const canRemind =
     b.status === 'confirmed' ||
     b.status === 'pending_confirmation' ||
     b.status === 'pending_payment';
+  const canCollect =
+    b.status === 'confirmed' ||
+    (b.status === 'completed' && paymentSummary.isUncollected);
 
   const waHref = buildWhatsAppLink(
     b.client.phoneE164,
@@ -120,6 +132,16 @@ export function BookingCard({
                 {b.client.fullName}
               </Text>
               <Badge variant={meta.variant} label={meta.label} />
+              {b.status !== 'canceled' && b.status !== 'no_show' ? (
+                <Badge
+                  variant={paymentSummary.isFullyPaid ? 'success' : 'warning'}
+                  label={
+                    paymentSummary.isFullyPaid
+                      ? 'Pagado'
+                      : `Saldo ${formatCurrency(paymentSummary.remainingCents, currency)}`
+                  }
+                />
+              ) : null}
               <Token size="sm" label={b.bookingCode} />
               <Token
                 size="sm"
@@ -207,13 +229,21 @@ export function BookingCard({
                 onClick={() => onUpdateStatus(b.id, 'confirmed')}
               />
             ) : null}
-            {b.status === 'confirmed' ? (
+            {canCollect ? (
               <Button
-                label="Completar y cobrar"
+                label="$ Cobrar"
                 variant="primary"
                 size="sm"
-                icon={<CheckCheck size={14} />}
+                icon={<DollarSign size={14} />}
                 onClick={() => onOpenCheckout(b)}
+              />
+            ) : null}
+            {onSelectBooking ? (
+              <Button
+                label="Gestionar"
+                variant="secondary"
+                size="sm"
+                onClick={() => onSelectBooking(b)}
               />
             ) : null}
             {canRemind ? (
@@ -257,6 +287,13 @@ export function BookingCard({
               href={waHref}
               target="_blank"
               rel="noopener noreferrer"
+            />
+            <Button
+              label="Ver ficha"
+              variant="ghost"
+              size="sm"
+              icon={<UserRound size={14} />}
+              href={`/admin/clientas?q=${encodeURIComponent(b.client.phoneE164)}`}
             />
             <Button
               label="Link clienta"

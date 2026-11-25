@@ -3,10 +3,13 @@ import { getBookingByToken, getSnapshot } from '@/lib/repositories/db';
 import { buildCalendarAddLinks } from '@/lib/ics';
 import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import {
+  PublicLoyaltySummarySchema,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type PublicLoyaltySummaryDTO,
 } from '@/lib/public-dto';
 import { ManageBookingView } from '@/components/ManageBookingView';
 
@@ -26,6 +29,24 @@ export default async function ManageBookingPage({
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
 
+  const activeLoyaltyProgram =
+    (db.loyaltyPrograms ?? []).find((program) => program.isActive) ?? null;
+  const rewardServiceName = activeLoyaltyProgram?.rewardServiceId
+    ? db.services.find((srv) => srv.id === activeLoyaltyProgram.rewardServiceId)
+        ?.name ?? null
+    : null;
+  const initialLoyaltySummary: PublicLoyaltySummaryDTO | null =
+    activeLoyaltyProgram
+      ? PublicLoyaltySummarySchema.parse(
+          computeClientLoyaltySummary(
+            activeLoyaltyProgram,
+            db.loyaltyStamps ?? [],
+            booking.clientId,
+            rewardServiceName,
+          ),
+        )
+      : null;
+
   const initialBooking = {
     ...booking,
     internalNotes: '',
@@ -39,6 +60,7 @@ export default async function ManageBookingPage({
       settings={toPublicSettingsDTO(db.settings)}
       calendarLinks={buildCalendarAddLinks(booking, db.settings, manageUrl)}
       whatsappUrl={buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl)}
+      initialLoyaltySummary={initialLoyaltySummary}
     />
   );
 }

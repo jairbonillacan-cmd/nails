@@ -24,6 +24,7 @@ import { dispatchOutboxEvent } from '../use-cases/outbox';
 import type {
   AdminRole,
   AdminUser,
+  AuditLogEntry,
   AvailabilityRule,
   AvailabilitySchedule,
   Booking,
@@ -33,14 +34,20 @@ import type {
   CalendarConnection,
   CashRegisterEntry,
   ClientProfile,
+  ConsentRecord,
   Coupon,
+  CouponRedemption,
   DateOverride,
   DemoDatabase,
   GalleryItem,
   InventoryItem,
   InventoryMovement,
+  LoyaltyProgram,
+  LoyaltyStamp,
   NotificationChannel,
   NotificationWorkflow,
+  PaymentSplit,
+  RecurringBlock,
   SalonSettings,
   ScheduledNotification,
   Service,
@@ -56,6 +63,7 @@ import {
   PolicyError,
   SlotConflictError,
   type AdjustInventoryInput,
+  type AwardLoyaltyStampInput,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
   type ManageClientBookingInput,
@@ -65,12 +73,15 @@ import {
   type PublicBootstrapData,
   type QueryAvailabilityInput,
   type QueryAvailabilityOutput,
+  type RecordConsentInput,
+  type RecordPaymentSplitsInput,
   type SalonRepository,
   type SlotHoldResult,
   type SubmitReviewInput,
   type UpdateBookingStatusInput,
   type UpdateClientNotesInput,
   type ValidateCouponResult,
+  type WriteAuditLogInput,
 } from './port';
 
 type Tables = Database['public']['Tables'];
@@ -153,6 +164,7 @@ function mapSettingsRow(row: Tables['salon_settings']['Row']): SalonSettings {
     address: row.address,
     mapsUrl: row.maps_url,
     instagramHandle: row.instagram_handle,
+    ...(row.sister_studio_handle ? { sisterStudioHandle: row.sister_studio_handle } : {}),
     whatsappNumber: row.whatsapp_number,
     contactEmail: row.contact_email,
     timezone: row.timezone,
@@ -176,9 +188,31 @@ function mapSettingsRow(row: Tables['salon_settings']['Row']): SalonSettings {
     paymentMode: row.payment_mode,
     depositBankName: row.deposit_bank_name ?? '',
     depositAccountHolder: row.deposit_account_holder ?? '',
+    ...(row.deposit_beneficiary ? { depositBeneficiary: row.deposit_beneficiary } : {}),
     depositClabe: row.deposit_clabe ?? '',
+    ...(typeof row.deposit_amount_cents === 'number'
+      ? { depositAmountCents: row.deposit_amount_cents }
+      : {}),
     depositInstructions: row.deposit_instructions ?? '',
     currency: row.currency === 'USD' ? 'USD' : 'MXN',
+    ...(row.service_mode ? { serviceMode: row.service_mode } : {}),
+    ...(row.business_type ? { businessType: row.business_type } : {}),
+    ...(row.team_size_tier ? { teamSizeTier: row.team_size_tier } : {}),
+    ...(typeof row.onboarding_completed === 'boolean'
+      ? { onboardingCompleted: row.onboarding_completed }
+      : {}),
+    ...(typeof row.sound_alerts_enabled === 'boolean'
+      ? { soundAlertsEnabled: row.sound_alerts_enabled }
+      : {}),
+    ...(typeof row.lock_past_bookings === 'boolean'
+      ? { lockPastBookings: row.lock_past_bookings }
+      : {}),
+    ...(typeof row.max_active_bookings_per_client === 'number'
+      ? { maxActiveBookingsPerClient: row.max_active_bookings_per_client }
+      : {}),
+    ...(row.privacy_policy_version
+      ? { privacyPolicyVersion: row.privacy_policy_version }
+      : {}),
     landingContent: mapLandingContent(row.landing_content),
     whatsappBookingEnabled: row.whatsapp_booking_enabled,
     smsRemindersEnabled: row.sms_reminders_enabled,
@@ -240,6 +274,9 @@ function mapServiceRow(row: Tables['services']['Row']): Service {
     description: row.description,
     durationMinutes: row.duration_minutes,
     priceCents: row.price_cents,
+    ...(typeof row.is_starting_price === 'boolean'
+      ? { isStartingPrice: row.is_starting_price }
+      : {}),
     bufferBeforeMinutes: row.buffer_before_minutes,
     bufferAfterMinutes: row.buffer_after_minutes,
     requiresConfirmation: row.requires_confirmation,
@@ -284,6 +321,9 @@ function mapScheduleRow(
         dayOfWeek: asDayOfWeek(r.day_of_week),
         startTime: r.start_time,
         endTime: r.end_time,
+        ...(Array.isArray(r.fixed_start_times) && r.fixed_start_times.length > 0
+          ? { fixedStartTimes: r.fixed_start_times }
+          : {}),
       })),
   };
 }
@@ -373,6 +413,7 @@ function mapClientRow(row: Tables['clients']['Row']): ClientProfile {
     fullName: row.full_name,
     phoneE164: row.phone_e164,
     email: row.email,
+    ...(row.instagram_handle ? { instagramHandle: row.instagram_handle } : {}),
     birthday: row.birthday,
     notes: row.notes,
     noShowCount: row.no_show_count,
@@ -404,16 +445,26 @@ function mapBookingRow(
     manageToken: row.manage_token,
     idempotencyKey: row.idempotency_key,
     serviceId: row.service_id,
+    ...(Array.isArray(row.extra_service_ids) && row.extra_service_ids.length > 0
+      ? { extraServiceIds: row.extra_service_ids }
+      : {}),
     staffId: row.staff_id,
     clientId: row.client_id,
+    ...(row.client_instagram ? { clientInstagram: row.client_instagram } : {}),
     startAt: row.start_at,
     endAt: row.end_at,
     occupiedStartAt: row.occupied_start_at,
     occupiedEndAt: row.occupied_end_at,
     totalDurationMinutes: row.total_duration_minutes,
+    ...(typeof row.custom_duration_minutes === 'number'
+      ? { customDurationMinutes: row.custom_duration_minutes }
+      : {}),
     subtotalCents: row.subtotal_cents,
     discountCents: row.discount_cents,
     totalPriceCents: row.total_price_cents,
+    ...(typeof row.custom_price_cents === 'number'
+      ? { customPriceCents: row.custom_price_cents }
+      : {}),
     depositAmountCents: row.deposit_amount_cents,
     couponCode: row.coupon_code,
     status: row.status,
@@ -422,6 +473,9 @@ function mapBookingRow(
     internalNotes: row.internal_notes,
     inspoPhotoUrl: row.inspo_photo_url,
     paymentProofUrl: row.payment_proof_url,
+    ...(row.proof_delivery_method
+      ? { proofDeliveryMethod: row.proof_delivery_method }
+      : {}),
     googleEventId: row.google_event_id,
     cancellationReason: row.cancellation_reason,
     rescheduledFromId: row.rescheduled_from_id,
@@ -596,6 +650,130 @@ function mapOutboxRow(row: Tables['outbox_events']['Row']): OutboxEventRecord {
     lastError: row.last_error,
     createdAt: row.created_at,
   };
+}
+
+function mapAuditMetadata(
+  raw: unknown,
+): Record<string, string | number | boolean | null> {
+  if (!isRecord(raw)) return {};
+  const out: Record<string, string | number | boolean | null> = {};
+  for (const [key, val] of Object.entries(raw)) {
+    if (
+      val === null ||
+      typeof val === 'string' ||
+      typeof val === 'number' ||
+      typeof val === 'boolean'
+    ) {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
+function mapPaymentSplitRow(row: Tables['payment_splits']['Row']): PaymentSplit {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    method: row.method,
+    amountCents: row.amount_cents,
+    tipCents: row.tip_cents,
+    tipStaffId: row.tip_staff_id,
+    ...(row.reference ? { reference: row.reference } : {}),
+    createdAt: row.created_at,
+  };
+}
+
+function mapRecurringBlockRow(row: Tables['recurring_blocks']['Row']): RecurringBlock {
+  return {
+    id: row.id,
+    staffId: row.staff_id,
+    reason: row.reason,
+    frequency: row.frequency,
+    weekdays: Array.isArray(row.weekdays) ? row.weekdays : [],
+    dayOfMonth: row.day_of_month,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    untilDate: row.until_date,
+    isActive: row.is_active,
+  };
+}
+
+function mapLoyaltyProgramRow(row: Tables['loyalty_programs']['Row']): LoyaltyProgram {
+  return {
+    id: row.id,
+    isActive: row.is_active,
+    name: row.name,
+    stampsRequired: row.stamps_required,
+    rewardType: row.reward_type,
+    rewardServiceId: row.reward_service_id,
+    discountPercent: row.discount_percent,
+    maxDiscountCents: row.max_discount_cents,
+    validDays: row.valid_days,
+  };
+}
+
+function mapLoyaltyStampRow(row: Tables['loyalty_stamps']['Row']): LoyaltyStamp {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    bookingId: row.booking_id,
+    programId: row.program_id,
+    stampedDate: row.stamped_date,
+    createdAt: row.created_at,
+  };
+}
+
+function mapCouponRedemptionRow(
+  row: Tables['coupon_redemptions']['Row'],
+): CouponRedemption {
+  return {
+    id: row.id,
+    couponId: row.coupon_id,
+    bookingId: row.booking_id,
+    clientId: row.client_id,
+    amountCents: row.amount_cents,
+    status: row.status,
+    createdAt: row.created_at,
+    releasedAt: row.released_at ?? null,
+  };
+}
+
+function mapConsentRow(row: Tables['consents']['Row']): ConsentRecord {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    bookingId: row.booking_id,
+    policyVersion: row.policy_version,
+    acceptedAt: row.accepted_at,
+    marketingOptIn: row.marketing_opt_in,
+  };
+}
+
+function mapAuditLogRow(row: Tables['audit_logs']['Row']): AuditLogEntry {
+  return {
+    id: row.id,
+    actorId: row.actor_id,
+    actorEmail: row.actor_email,
+    actorRole: row.actor_role,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    metadata: mapAuditMetadata(row.metadata),
+    createdAt: row.created_at,
+  };
+}
+
+function normalizeOptionalInstagram(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const stripped = trimmed
+    .replace(/^https?:\/\/(?:www\.)?instagram\.com\//i, '')
+    .replace(/^(?:www\.)?instagram\.com\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/^@+/, '')
+    .trim();
+  return stripped ? `@${stripped.toLowerCase()}` : null;
 }
 
 function parsePgTstzRange(rangeStr: string): { startAt: string; endAt: string } | null {
@@ -778,11 +956,17 @@ function resolveBookableSlotOrThrow(params: {
     ? null
     : getDateKeyInTimezone(startDate, tz);
 
+  const requiredServiceIds = [
+    ctx.service.id,
+    ...(ctx.extraServices ?? []).map((s) => s.id),
+  ];
+
   const eligibleStaff = ctx.staffMembers
     .filter(
       (st) =>
         st.isActive &&
-        (st.serviceIds.length === 0 || st.serviceIds.includes(ctx.service.id)),
+        (st.serviceIds.length === 0 ||
+          requiredServiceIds.every((id) => st.serviceIds.includes(id))),
     )
     .toSorted((a, b) => {
       if (targetDateKey) {
@@ -849,40 +1033,55 @@ export function createSupabaseRepository(
 
   async function loadPublicAvailabilityContext(params: {
     serviceId: string;
+    extraServiceIds?: string[];
     addonIds: string[];
     sessionToken?: string | null;
     ignoreBookingId?: string | null;
   }): Promise<{
     settings: SalonSettings;
     service: Service;
+    extraServices: Service[];
     addons: ServiceAddon[];
     eligibleStaff: StaffMember[];
     ctx: AvailabilityContext;
   }> {
     const supabase = getClient();
     const nowIso = clock.now().toISOString();
+    const uniqueExtraIds = Array.from(
+      new Set(
+        (params.extraServiceIds ?? [])
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0 && id !== params.serviceId),
+      ),
+    );
 
     const [
       settingsRes,
       servicesRes,
+      extraServicesRes,
       addonsRes,
       staffRes,
       staffServicesRes,
       schedulesRes,
       rulesRes,
       publicOverridesRes,
+      recurringBlocksRes,
       busyIntervalsRes,
       holdsRes,
       calRes,
     ] = await Promise.all([
       supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
       supabase.from('services').select('*').eq('id', params.serviceId).maybeSingle(),
+      uniqueExtraIds.length > 0
+        ? supabase.from('services').select('*').in('id', uniqueExtraIds).eq('is_active', true)
+        : Promise.resolve({ data: [] as Tables['services']['Row'][] }),
       supabase.from('service_addons').select('*').eq('is_active', true),
       supabase.from('staff_members').select('*').eq('is_active', true),
       supabase.from('staff_services').select('*'),
       supabase.from('availability_schedules').select('*'),
       supabase.from('availability_rules').select('*'),
       supabase.from('public_busy_overrides').select('*'),
+      supabase.from('recurring_blocks').select('*').eq('is_active', true),
       supabase.from('public_busy_intervals').select('*'),
       supabase.from('slot_holds').select('*').gt('expires_at', nowIso),
       supabase.from('calendar_connections').select('*').eq('is_connected', true),
@@ -897,19 +1096,33 @@ export function createSupabaseRepository(
 
     const settings = mapSettingsRow(settingsRes.data);
     const service = mapServiceRow(servicesRes.data);
+    const extraServices = (extraServicesRes.data ?? [])
+      .filter((row) => uniqueExtraIds.includes(row.id) && row.is_active)
+      .map(mapServiceRow);
+    if (extraServices.length !== uniqueExtraIds.length) {
+      throw new PolicyError(
+        'SERVICE_NOT_FOUND',
+        'Uno de los servicios adicionales seleccionados no está disponible.',
+      );
+    }
+
     const addons = (addonsRes.data ?? [])
       .filter((a) => params.addonIds.includes(a.id))
       .map(mapAddonRow);
 
+    const requiredServiceIds = [service.id, ...extraServices.map((s) => s.id)];
     const staffLinks = staffServicesRes.data ?? [];
     const allActiveStaff = (staffRes.data ?? []).map((row) => mapStaffRow(row, staffLinks));
     const eligibleStaff = allActiveStaff.filter(
-      (st) => st.serviceIds.length === 0 || st.serviceIds.includes(service.id),
+      (st) =>
+        st.serviceIds.length === 0 ||
+        requiredServiceIds.every((id) => st.serviceIds.includes(id)),
     );
     const schedules = (schedulesRes.data ?? []).map((row) =>
       mapScheduleRow(row, rulesRes.data ?? []),
     );
     const dateOverrides = (publicOverridesRes.data ?? []).map(mapPublicOverrideRow);
+    const recurringBlocks = (recurringBlocksRes.data ?? []).map(mapRecurringBlockRow);
     const slotHolds = (holdsRes.data ?? []).map(mapSlotHoldRow);
     const calendarConnections = (calRes.data ?? []).map(mapCalendarConnectionRow);
 
@@ -955,10 +1168,12 @@ export function createSupabaseRepository(
     const ctx: AvailabilityContext = {
       settings,
       service,
+      extraServices,
       addons,
       staffMembers: eligibleStaff,
       schedules,
       dateOverrides,
+      recurringBlocks,
       bookings: busyBookings,
       slotHolds,
       calendarConnections,
@@ -967,7 +1182,7 @@ export function createSupabaseRepository(
       ignoreBookingId: params.ignoreBookingId ?? null,
     };
 
-    return { settings, service, addons, eligibleStaff, ctx };
+    return { settings, service, extraServices, addons, eligibleStaff, ctx };
   }
 
   async function getSnapshot(): Promise<Readonly<DemoDatabase>> {
@@ -999,6 +1214,13 @@ export function createSupabaseRepository(
       inventoryRes,
       movementsRes,
       cashRes,
+      paymentSplitsRes,
+      recurringBlocksRes,
+      loyaltyProgramsRes,
+      loyaltyStampsRes,
+      couponRedemptionsRes,
+      consentsRes,
+      auditLogsRes,
     ] = await Promise.all([
       supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
       supabase.from('staff_members').select('*'),
@@ -1024,6 +1246,13 @@ export function createSupabaseRepository(
       supabase.from('inventory_items').select('*'),
       supabase.from('inventory_movements').select('*'),
       supabase.from('cash_register_entries').select('*'),
+      supabase.from('payment_splits').select('*'),
+      supabase.from('recurring_blocks').select('*'),
+      supabase.from('loyalty_programs').select('*'),
+      supabase.from('loyalty_stamps').select('*'),
+      supabase.from('coupon_redemptions').select('*'),
+      supabase.from('consents').select('*'),
+      supabase.from('audit_logs').select('*'),
     ]);
 
     if (!settingsRes.data) {
@@ -1056,6 +1285,13 @@ export function createSupabaseRepository(
       inventory: (inventoryRes.data ?? []).map(mapInventoryItemRow),
       inventoryMovements: (movementsRes.data ?? []).map(mapInventoryMovementRow),
       cashEntries: (cashRes.data ?? []).map(mapCashEntryRow),
+      paymentSplits: (paymentSplitsRes.data ?? []).map(mapPaymentSplitRow),
+      recurringBlocks: (recurringBlocksRes.data ?? []).map(mapRecurringBlockRow),
+      loyaltyPrograms: (loyaltyProgramsRes.data ?? []).map(mapLoyaltyProgramRow),
+      loyaltyStamps: (loyaltyStampsRes.data ?? []).map(mapLoyaltyStampRow),
+      couponRedemptions: (couponRedemptionsRes.data ?? []).map(mapCouponRedemptionRow),
+      consents: (consentsRes.data ?? []).map(mapConsentRow),
+      auditLogs: (auditLogsRes.data ?? []).map(mapAuditLogRow),
     };
   }
 
@@ -1223,9 +1459,10 @@ export function createSupabaseRepository(
     async queryAvailability(
       params: QueryAvailabilityInput,
     ): Promise<QueryAvailabilityOutput> {
-      const { settings, service, addons, eligibleStaff, ctx } =
+      const { settings, service, extraServices, addons, eligibleStaff, ctx } =
         await loadPublicAvailabilityContext({
           serviceId: params.serviceId,
+          extraServiceIds: params.extraServiceIds,
           addonIds: params.addonIds,
           sessionToken: params.sessionToken,
           ignoreBookingId: params.ignoreBookingId,
@@ -1237,10 +1474,11 @@ export function createSupabaseRepository(
         Math.min(Math.max(params.days, 1), 45),
         params.staffId || null,
       );
-      const totals = computeServiceTotals(service, addons);
+      const totals = computeServiceTotals(service, addons, extraServices);
 
       return {
         service,
+        extraServices,
         addons,
         totals,
         activeStaffCount: eligibleStaff.length,
@@ -1278,6 +1516,7 @@ export function createSupabaseRepository(
       const supabase = getClient();
       const { settings, ctx } = await loadPublicAvailabilityContext({
         serviceId: params.serviceId,
+        extraServiceIds: params.extraServiceIds,
         addonIds: params.addonIds,
         sessionToken: params.sessionToken,
       });
@@ -1368,11 +1607,13 @@ export function createSupabaseRepository(
         }
       }
 
-      const { settings, service, addons, ctx } = await loadPublicAvailabilityContext({
-        serviceId: params.serviceId,
-        addonIds: params.addonIds,
-        sessionToken: params.sessionToken,
-      });
+      const { settings, service, extraServices, addons, ctx } =
+        await loadPublicAvailabilityContext({
+          serviceId: params.serviceId,
+          extraServiceIds: params.extraServiceIds,
+          addonIds: params.addonIds,
+          sessionToken: params.sessionToken,
+        });
 
       if (!service.isActive) {
         throw new PolicyError(
@@ -1381,19 +1622,42 @@ export function createSupabaseRepository(
         );
       }
 
+      const computedTotals = computeServiceTotals(service, addons, extraServices);
+      const customDuration =
+        typeof params.customDurationMinutes === 'number' &&
+        params.customDurationMinutes > 0
+          ? params.customDurationMinutes
+          : null;
+      const customPrice =
+        typeof params.customPriceCents === 'number' && params.customPriceCents >= 0
+          ? params.customPriceCents
+          : null;
+      const totalDurationMinutes = customDuration ?? computedTotals.totalDurationMinutes;
+      const subtotalCents = customPrice ?? computedTotals.subtotalCents;
+
+      const ctxForSlot: AvailabilityContext =
+        customDuration !== null
+          ? {
+              ...ctx,
+              service: {
+                ...service,
+                durationMinutes: customDuration,
+                bufferBeforeMinutes: computedTotals.bufferBeforeMinutes,
+                bufferAfterMinutes: computedTotals.bufferAfterMinutes,
+              },
+              extraServices: [],
+              addons: [],
+            }
+          : ctx;
+
       const slot = resolveBookableSlotOrThrow({
-        ctx,
+        ctx: ctxForSlot,
         startAt: params.startAt,
         staffId: params.staffId,
         ignoreHoldSessionToken: params.sessionToken ?? undefined,
         conflictMessage:
           'Ese horario acaba de ser reservado hace unos segundos. Elige uno de los horarios más cercanos sin perder tus datos.',
       });
-
-      const { totalDurationMinutes, subtotalCents } = computeServiceTotals(
-        service,
-        addons,
-      );
 
       let discountCents = 0;
       let appliedCouponCode: string | null = null;
@@ -1408,6 +1672,7 @@ export function createSupabaseRepository(
       }
 
       const phoneE164 = normalizePhoneE164(params.clientPhone);
+      const normalizedInstagram = normalizeOptionalInstagram(params.clientInstagram);
       const nowIso = clock.now().toISOString();
       const existingClientRes = await supabase
         .from('clients')
@@ -1418,15 +1683,16 @@ export function createSupabaseRepository(
       let clientId: string;
       if (existingClientRes.data) {
         clientId = existingClientRes.data.id;
-        await supabase
-          .from('clients')
-          .update({
-            full_name: params.clientName.trim() || existingClientRes.data.full_name,
-            email: params.clientEmail?.trim() || existingClientRes.data.email,
-            birthday: params.clientBirthday || existingClientRes.data.birthday,
-            updated_at: nowIso,
-          })
-          .eq('id', clientId);
+        const clientPatch: Tables['clients']['Update'] = {
+          full_name: params.clientName.trim() || existingClientRes.data.full_name,
+          email: params.clientEmail?.trim() || existingClientRes.data.email,
+          birthday: params.clientBirthday || existingClientRes.data.birthday,
+          updated_at: nowIso,
+        };
+        if (normalizedInstagram) {
+          clientPatch.instagram_handle = normalizedInstagram;
+        }
+        await supabase.from('clients').update(clientPatch).eq('id', clientId);
       } else {
         const insertedClient = await supabase
           .from('clients')
@@ -1434,6 +1700,7 @@ export function createSupabaseRepository(
             full_name: params.clientName.trim(),
             phone_e164: phoneE164,
             email: params.clientEmail?.trim() || null,
+            ...(normalizedInstagram ? { instagram_handle: normalizedInstagram } : {}),
             birthday: params.clientBirthday || null,
             notes: '',
             no_show_count: 0,
@@ -1497,7 +1764,7 @@ export function createSupabaseRepository(
 
       if (rpcError || !createdBookingId) {
         if (isSlotConflictPgError(rpcError)) {
-          const suggestions = findNearestAfterConflict(ctx, slot, slot.staffId);
+          const suggestions = findNearestAfterConflict(ctxForSlot, slot, slot.staffId);
           throw new SlotConflictError(
             'Ese horario acaba de ser reservado hace unos segundos. Elige uno de los horarios más cercanos sin perder tus datos.',
             suggestions,
@@ -1505,6 +1772,44 @@ export function createSupabaseRepository(
         }
         const pgErr = extractPgErrorCode(rpcError);
         throw new PolicyError(pgErr.code || 'BOOKING_FAILED', pgErr.message);
+      }
+
+      const extraBookingPatch: Tables['bookings']['Update'] = {};
+      if (extraServices.length > 0) {
+        extraBookingPatch.extra_service_ids = extraServices.map((s) => s.id);
+      }
+      if (normalizedInstagram) {
+        extraBookingPatch.client_instagram = normalizedInstagram;
+      }
+      if (customDuration !== null) {
+        extraBookingPatch.custom_duration_minutes = customDuration;
+      }
+      if (customPrice !== null) {
+        extraBookingPatch.custom_price_cents = customPrice;
+      }
+      if (params.internalNotes && params.internalNotes.trim().length > 0) {
+        extraBookingPatch.internal_notes = params.internalNotes.trim();
+      }
+      if (params.proofDeliveryMethod !== undefined) {
+        extraBookingPatch.proof_delivery_method = params.proofDeliveryMethod;
+      } else if (params.paymentProofUrl) {
+        extraBookingPatch.proof_delivery_method = 'web_upload';
+      }
+      if (Object.keys(extraBookingPatch).length > 0) {
+        await supabase
+          .from('bookings')
+          .update(extraBookingPatch)
+          .eq('id', createdBookingId);
+      }
+
+      if (params.privacyConsentAccepted) {
+        await supabase.from('consents').insert({
+          client_id: clientId,
+          booking_id: createdBookingId,
+          policy_version: settings.privacyPolicyVersion ?? '2026-11',
+          accepted_at: nowIso,
+          marketing_opt_in: Boolean(params.marketingOptIn),
+        });
       }
 
       const snapshot = await getSnapshot();
@@ -1665,7 +1970,7 @@ export function createSupabaseRepository(
           if (coupon) {
             await supabase
               .from('coupon_redemptions')
-              .update({ status: 'released' })
+              .update({ status: 'released', released_at: nowIso })
               .eq('booking_id', booking.id)
               .eq('coupon_id', coupon.id);
             await supabase
@@ -1751,6 +2056,7 @@ export function createSupabaseRepository(
 
       const { ctx } = await loadPublicAvailabilityContext({
         serviceId: booking.serviceId,
+        extraServiceIds: booking.extraServiceIds,
         addonIds: booking.addons.map((a) => a.addonId),
         ignoreBookingId: booking.id,
       });
@@ -1994,6 +2300,9 @@ export function createSupabaseRepository(
       if (patch.instagramHandle !== undefined) {
         dbPatch.instagram_handle = patch.instagramHandle;
       }
+      if (patch.sisterStudioHandle !== undefined) {
+        dbPatch.sister_studio_handle = patch.sisterStudioHandle;
+      }
       if (patch.whatsappNumber !== undefined) {
         dbPatch.whatsapp_number = patch.whatsappNumber;
       }
@@ -2053,11 +2362,35 @@ export function createSupabaseRepository(
       if (patch.depositAccountHolder !== undefined) {
         dbPatch.deposit_account_holder = patch.depositAccountHolder;
       }
+      if (patch.depositBeneficiary !== undefined) {
+        dbPatch.deposit_beneficiary = patch.depositBeneficiary;
+      }
       if (patch.depositClabe !== undefined) dbPatch.deposit_clabe = patch.depositClabe;
+      if (patch.depositAmountCents !== undefined) {
+        dbPatch.deposit_amount_cents = patch.depositAmountCents;
+      }
       if (patch.depositInstructions !== undefined) {
         dbPatch.deposit_instructions = patch.depositInstructions;
       }
       if (patch.currency !== undefined) dbPatch.currency = patch.currency;
+      if (patch.serviceMode !== undefined) dbPatch.service_mode = patch.serviceMode;
+      if (patch.businessType !== undefined) dbPatch.business_type = patch.businessType;
+      if (patch.teamSizeTier !== undefined) dbPatch.team_size_tier = patch.teamSizeTier;
+      if (patch.onboardingCompleted !== undefined) {
+        dbPatch.onboarding_completed = patch.onboardingCompleted;
+      }
+      if (patch.soundAlertsEnabled !== undefined) {
+        dbPatch.sound_alerts_enabled = patch.soundAlertsEnabled;
+      }
+      if (patch.lockPastBookings !== undefined) {
+        dbPatch.lock_past_bookings = patch.lockPastBookings;
+      }
+      if (patch.maxActiveBookingsPerClient !== undefined) {
+        dbPatch.max_active_bookings_per_client = patch.maxActiveBookingsPerClient;
+      }
+      if (patch.privacyPolicyVersion !== undefined) {
+        dbPatch.privacy_policy_version = patch.privacyPolicyVersion;
+      }
       if (patch.landingContent !== undefined) {
         dbPatch.landing_content = {
           heroEyebrow: patch.landingContent.heroEyebrow,
@@ -2123,6 +2456,9 @@ export function createSupabaseRepository(
             description: input.description,
             duration_minutes: input.durationMinutes,
             price_cents: input.priceCents,
+            ...(input.isStartingPrice !== undefined
+              ? { is_starting_price: input.isStartingPrice }
+              : {}),
             buffer_before_minutes: input.bufferBeforeMinutes,
             buffer_after_minutes: input.bufferAfterMinutes,
             requires_confirmation: input.requiresConfirmation,
@@ -2158,6 +2494,7 @@ export function createSupabaseRepository(
           description: input.description ?? '',
           duration_minutes: input.durationMinutes,
           price_cents: input.priceCents,
+          is_starting_price: input.isStartingPrice ?? false,
           buffer_before_minutes: input.bufferBeforeMinutes ?? 0,
           buffer_after_minutes: input.bufferAfterMinutes ?? 15,
           requires_confirmation: input.requiresConfirmation ?? false,
@@ -2254,6 +2591,10 @@ export function createSupabaseRepository(
             day_of_week: r.dayOfWeek,
             start_time: r.startTime,
             end_time: r.endTime,
+            fixed_start_times:
+              r.fixedStartTimes && r.fixedStartTimes.length > 0
+                ? r.fixedStartTimes
+                : null,
           })),
         );
       }
@@ -2408,6 +2749,9 @@ export function createSupabaseRepository(
       if (params.notes !== undefined) patch.notes = params.notes;
       if (params.birthday !== undefined) patch.birthday = params.birthday;
       if (params.email !== undefined) patch.email = params.email;
+      if (params.instagramHandle !== undefined) {
+        patch.instagram_handle = normalizeOptionalInstagram(params.instagramHandle);
+      }
 
       const { data, error } = await supabase
         .from('clients')
@@ -2815,6 +3159,178 @@ export function createSupabaseRepository(
     async deleteGalleryItem(id: string): Promise<void> {
       const supabase = getClient();
       await supabase.from('gallery_items').delete().eq('id', id);
+    },
+
+    async recordPaymentSplits(params: RecordPaymentSplitsInput): Promise<PaymentSplit[]> {
+      const supabase = getClient();
+      if (params.splits.length === 0) return [];
+      const { data, error } = await supabase
+        .from('payment_splits')
+        .insert(
+          params.splits.map((split) => ({
+            booking_id: params.bookingId,
+            method: split.method,
+            amount_cents: split.amountCents,
+            tip_cents: split.tipCents ?? 0,
+            tip_staff_id: split.tipStaffId ?? null,
+            reference: split.reference ?? null,
+          })),
+        )
+        .select('*');
+      if (error || !data) {
+        throw new PolicyError(
+          'PAYMENT_SPLITS_FAILED',
+          error?.message ?? 'No se pudieron registrar los pagos divididos.',
+        );
+      }
+      return data.map(mapPaymentSplitRow);
+    },
+
+    async upsertRecurringBlock(
+      input: Omit<RecurringBlock, 'id'> & { id?: string },
+    ): Promise<RecurringBlock> {
+      const supabase = getClient();
+      const payload = {
+        staff_id: input.staffId,
+        reason: input.reason,
+        frequency: input.frequency,
+        weekdays: input.weekdays,
+        day_of_month: input.dayOfMonth,
+        start_time: input.startTime,
+        end_time: input.endTime,
+        until_date: input.untilDate,
+        is_active: input.isActive,
+      };
+      const query = input.id
+        ? supabase
+            .from('recurring_blocks')
+            .update(payload)
+            .eq('id', input.id)
+            .select('*')
+            .single()
+        : supabase.from('recurring_blocks').insert(payload).select('*').single();
+
+      const { data, error } = await query;
+      if (error || !data) {
+        throw new PolicyError(
+          'RECURRING_BLOCK_FAILED',
+          error?.message ?? 'No se pudo guardar el bloqueo recurrente.',
+        );
+      }
+      await dispatchOutboxEvent({
+        type: 'Realtime',
+        eventType: 'schedule_changed',
+        payload: { staffId: input.staffId },
+      });
+      return mapRecurringBlockRow(data);
+    },
+
+    async deleteRecurringBlock(id: string): Promise<void> {
+      const supabase = getClient();
+      await supabase.from('recurring_blocks').delete().eq('id', id);
+      await dispatchOutboxEvent({ type: 'Realtime', eventType: 'schedule_changed' });
+    },
+
+    async upsertLoyaltyProgram(
+      input: Omit<LoyaltyProgram, 'id'> & { id?: string },
+    ): Promise<LoyaltyProgram> {
+      const supabase = getClient();
+      const payload = {
+        is_active: input.isActive,
+        name: input.name,
+        stamps_required: input.stampsRequired,
+        reward_type: input.rewardType,
+        reward_service_id: input.rewardServiceId,
+        discount_percent: input.discountPercent,
+        max_discount_cents: input.maxDiscountCents,
+        valid_days: input.validDays,
+      };
+      const query = input.id
+        ? supabase
+            .from('loyalty_programs')
+            .update(payload)
+            .eq('id', input.id)
+            .select('*')
+            .single()
+        : supabase.from('loyalty_programs').insert(payload).select('*').single();
+
+      const { data, error } = await query;
+      if (error || !data) {
+        throw new PolicyError(
+          'LOYALTY_PROGRAM_FAILED',
+          error?.message ?? 'No se pudo guardar el programa de lealtad.',
+        );
+      }
+      return mapLoyaltyProgramRow(data);
+    },
+
+    async awardLoyaltyStamp(params: AwardLoyaltyStampInput): Promise<LoyaltyStamp> {
+      const supabase = getClient();
+      const { data, error } = await supabase
+        .from('loyalty_stamps')
+        .insert({
+          client_id: params.clientId,
+          booking_id: params.bookingId,
+          program_id: params.programId,
+          stamped_date: params.stampedDate,
+        })
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError(
+          error?.code === '23505' ? 'STAMP_ALREADY_AWARDED' : 'LOYALTY_STAMP_FAILED',
+          error?.code === '23505'
+            ? 'La clienta ya recibió su sello del día.'
+            : (error?.message ?? 'No se pudo registrar el sello de lealtad.'),
+        );
+      }
+      return mapLoyaltyStampRow(data);
+    },
+
+    async recordConsent(params: RecordConsentInput): Promise<ConsentRecord> {
+      const supabase = getClient();
+      const { data, error } = await supabase
+        .from('consents')
+        .insert({
+          client_id: params.clientId,
+          booking_id: params.bookingId ?? null,
+          policy_version: params.policyVersion,
+          accepted_at: clock.now().toISOString(),
+          marketing_opt_in: Boolean(params.marketingOptIn),
+        })
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError(
+          'CONSENT_RECORD_FAILED',
+          error?.message ?? 'No se pudo registrar el consentimiento de privacidad.',
+        );
+      }
+      return mapConsentRow(data);
+    },
+
+    async writeAuditLog(params: WriteAuditLogInput): Promise<AuditLogEntry> {
+      const supabase = getClient();
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .insert({
+          actor_id: params.actorId,
+          actor_email: params.actorEmail,
+          actor_role: params.actorRole,
+          action: params.action,
+          entity_type: params.entityType,
+          entity_id: params.entityId,
+          metadata: params.metadata ?? {},
+        })
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError(
+          'AUDIT_LOG_FAILED',
+          error?.message ?? 'No se pudo escribir el registro de auditoría.',
+        );
+      }
+      return mapAuditLogRow(data);
     },
   };
 }

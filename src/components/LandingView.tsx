@@ -160,29 +160,41 @@ export function LandingView({
                 </Text>
               </HStack>
             </VStack>
-            <Image
-              src={customCover || '/brand/laikona-cherry-editorial.webp'}
-              alt={customCover ? '' : 'Manicure rojo cereza con un diseño de dos cerezas'}
-              width={1200}
-              height={1000}
-              fetchPriority="high"
-              loading="eager"
-              style={{
-                display: 'block',
-                width: '100%',
-                height: 'auto',
-                aspectRatio: '6 / 5',
-                objectFit: 'cover',
-                borderRadius: 'var(--radius-element)',
-              }}
-            />
+            <VStack as="figure" gap={2} style={{ margin: 0 }}>
+              <Image
+                src={customCover || '/brand/laikona-sets-instagram.webp'}
+                alt={customCover ? '' : 'Dos sets de Laikona: uñas con cuadros, rayas y lunares, y uñas rojas con relieves y bordes dorados'}
+                width={808}
+                height={640}
+                fetchPriority="high"
+                loading="eager"
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  height: 'auto',
+                  aspectRatio: '808 / 640',
+                  objectFit: 'cover',
+                  borderRadius: 'var(--radius-element)',
+                }}
+              />
+              {customCover ? null : (
+                <HStack as="figcaption" gap={2} wrap="wrap" justify="between">
+                  <Text type="supporting" color="secondary">Sets de Karla Rodríguez</Text>
+                  <Link href={instagramUrl} type="supporting" isExternalLink>
+                    Ver más sets en Instagram
+                  </Link>
+                </HStack>
+              )}
+            </VStack>
           </Grid>
           <Divider />
           <HStack gap={4} wrap="wrap" align="center" justify="between">
             <HStack gap={4} wrap="wrap">
-              <Link href={instagramUrl} type="supporting" isExternalLink>
-                {instagramHandle}
-              </Link>
+              {customCover ? (
+                <Link href={instagramUrl} type="supporting" isExternalLink>
+                  {instagramHandle}
+                </Link>
+              ) : null}
               <Link href={whatsappUrl} type="supporting" isExternalLink>
                 WhatsApp
               </Link>
@@ -323,9 +335,9 @@ export function LandingView({
         >
           <HStack justify="between" align="end" wrap="wrap" gap={4}>
             <VStack gap={1.5} maxWidth={640}>
-              <Heading level={2}>Inspiración del estudio · {instagramHandle}</Heading>
+              <Heading level={2}>Ideas para tu próximo set</Heading>
               <Text color="secondary">
-                ¿Te gustó algún diseño? Elígelo directamente para reservar el servicio exacto con esa referencia adjunta.
+                Elige una idea para llevar como referencia a tu cita.
               </Text>
             </VStack>
             <Button
