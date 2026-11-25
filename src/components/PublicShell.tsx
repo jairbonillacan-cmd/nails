@@ -11,13 +11,29 @@ import { Section } from '@astryxdesign/core/Section';
 import { Text } from '@astryxdesign/core/Text';
 import { Link } from '@astryxdesign/core/Link';
 import { Divider } from '@astryxdesign/core/Divider';
-import { CalendarDays, Moon, Sparkles, Sun } from 'lucide-react';
+import { CalendarDays, Moon, Sun } from 'lucide-react';
 import { useSalonAppearance } from './SalonThemeProvider';
 import { buildWhatsAppLink } from '@/lib/format';
+
+const DEFAULT_INSTAGRAM_HANDLE = '@laikona.nailsss';
+const DEFAULT_SISTER_STUDIO_HANDLE = '@lumiere.beautymx';
+
+function normalizeInstagramHandle(value: string | null | undefined, fallback: string): string {
+  const cleaned = value?.trim() ?? '';
+  if (!cleaned) return fallback;
+  return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
+}
+
+function buildInstagramUrl(handle: string): string {
+  const slug = handle.replace(/^@+/, '').replace(/[^a-zA-Z0-9._]/g, '');
+  return `https://www.instagram.com/${encodeURIComponent(slug || 'laikona.nailsss')}/`;
+}
 
 export function PublicShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { mode, setMode, settings } = useSalonAppearance();
+  const logo = settings.logoUrl?.trim() || '/brand/laikona-wordmark.svg';
+  const logoColorScheme = mode === 'system' ? 'light dark' : mode;
 
   const toggleMode = () => {
     setMode(mode === 'dark' ? 'light' : 'dark');
@@ -27,6 +43,18 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
     settings.whatsappNumber,
     `Hola ${settings.name}, tengo una consulta sobre citas.`,
   );
+  const instagramHandle = normalizeInstagramHandle(
+    settings.instagramHandle,
+    DEFAULT_INSTAGRAM_HANDLE,
+  );
+  const instagramUrl = buildInstagramUrl(instagramHandle);
+  const sisterStudioHandle = normalizeInstagramHandle(
+    'sisterStudioHandle' in settings && typeof settings.sisterStudioHandle === 'string'
+      ? settings.sisterStudioHandle
+      : null,
+    DEFAULT_SISTER_STUDIO_HANDLE,
+  );
+  const sisterStudioUrl = buildInstagramUrl(sisterStudioHandle);
 
   return (
     <AppShell
@@ -38,9 +66,15 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
           label="Navegación principal del salón"
           heading={
             <TopNavHeading
-              heading={settings.name}
               headingHref="/"
-              logo={<Sparkles size={18} aria-hidden="true" />}
+              logoLabel={`${settings.name} — Inicio`}
+              logo={
+                <img
+                  src={logo}
+                  alt=""
+                  style={{ height: '2.25rem', width: 'auto', display: 'block', colorScheme: logoColorScheme }}
+                />
+              }
             />
           }
           startContent={
@@ -90,10 +124,12 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
         <Section variant="muted" paddingBlock={6} paddingInline={4} dividers={['top']}>
           <VStack gap={4} maxWidth={1160} width="100%" style={{ marginInline: 'auto' }}>
             <HStack gap={6} justify="between" align="start" wrap="wrap">
-              <VStack gap={1.5} maxWidth={380}>
-                <Text weight="semibold" size="lg">
-                  {settings.name}
-                </Text>
+              <VStack gap={2} maxWidth={380} align="start">
+                <img
+                  src={logo}
+                  alt={settings.name}
+                  style={{ height: '3rem', width: 'auto', display: 'block', colorScheme: logoColorScheme }}
+                />
                 <Text type="supporting" color="secondary">
                   {settings.tagline}
                 </Text>
@@ -122,15 +158,15 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
                   <Text type="label" weight="semibold">
                     Contacto
                   </Text>
+                  <Link href={instagramUrl} isExternalLink type="supporting">
+                    Instagram ({instagramHandle})
+                  </Link>
                   <Link href={whatsappDirect} isExternalLink type="supporting">
                     WhatsApp ({settings.whatsappNumber})
                   </Link>
                   <Link href={settings.mapsUrl} isExternalLink type="supporting">
                     Cómo llegar (Google Maps)
                   </Link>
-                  <Text type="supporting" color="secondary">
-                    Instagram: {settings.instagramHandle}
-                  </Text>
                 </VStack>
               </HStack>
             </HStack>
@@ -138,9 +174,14 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
             <Divider />
 
             <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <Text type="supporting" color="secondary">
-                © {settings.updatedAt.slice(0, 4)} {settings.name}. Todos los derechos reservados.
-              </Text>
+              <HStack gap={2} align="center" wrap="wrap">
+                <Text type="supporting" color="secondary">
+                  © {settings.updatedAt.slice(0, 4)} {settings.name} · Puebla ·
+                </Text>
+                <Link href={sisterStudioUrl} isExternalLink type="supporting" color="secondary">
+                  {sisterStudioHandle}
+                </Link>
+              </HStack>
               <Link href="/admin" type="supporting" color="secondary">
                 Acceso para equipo y administración
               </Link>

@@ -9,11 +9,10 @@ import type { SalonRepository } from './port';
 
 function readMigrationsSql(): string {
   const dir = path.join(process.cwd(), 'supabase', 'migrations');
-  const files = [
-    '0001_initial_schema.sql',
-    '0002_salon_growth_features.sql',
-    '0003_phase1_hardening.sql',
-  ];
+  const files = fs
+    .readdirSync(dir)
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
   return files.map((file) => fs.readFileSync(path.join(dir, file), 'utf-8')).join('\n');
 }
 
@@ -229,13 +228,65 @@ function extractDatabaseTsSchema(): {
 }
 
 describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', () => {
-  it('parseDemoDatabase validates the seeded database and rejects corrupted snapshots', () => {
+  it('parseDemoDatabase validates LAIKONA seed, preserves backward compatibility, and rejects invalid snapshots', () => {
     const seeded = createInitialDemoDatabase();
     const parsed = parseDemoDatabase(seeded);
 
     expect(parsed.settings.id).toBe('default');
-    expect(parsed.staff.length).toBe(seeded.staff.length);
+    expect(parsed.settings.name).toBe('LAIKONA NAILS');
+    expect(parsed.settings.depositClabe).toBe('7229 6901 3959 779869');
+    expect(parsed.settings.onboardingCompleted).toBe(false);
+    expect(parsed.staff.map((s) => s.name)).toEqual(['Karla', 'Paty', 'Tere']);
+    expect(parsed.services).toHaveLength(9);
+    expect(parsed.schedules[0]?.rules[0]?.fixedStartTimes).toEqual([
+      '10:00',
+      '13:30',
+      '16:30',
+    ]);
+    expect(parsed.schedules[2]?.rules[0]?.fixedStartTimes).toEqual([
+      '14:00',
+      '16:00',
+      '18:00',
+    ]);
     expect(parsed.bookings.length).toBe(seeded.bookings.length);
+    expect(parsed.bookings[0]?.proofDeliveryMethod).toBe('web_upload');
+    expect(parsed.bookings[0]?.clientInstagram).toBe('@sofia.ramirez.pue');
+
+    const {
+      city: _city,
+      instagramUrl: _instagramUrl,
+      sisterStudioHandle: _sister,
+      depositBeneficiary: _beneficiary,
+      depositAmountCents: _depAmt,
+      serviceMode: _mode,
+      businessType: _btype,
+      teamSizeTier: _tier,
+      onboardingCompleted: _onb,
+      soundAlertsEnabled: _sound,
+      ...legacySettings
+    } = seeded.settings;
+
+    const legacySnapshot = {
+      ...seeded,
+      settings: legacySettings,
+      services: seeded.services.map(({ isStartingPrice: _sp, ...rest }) => rest),
+      schedules: seeded.schedules.map((sched) => ({
+        ...sched,
+        rules: sched.rules.map(({ fixedStartTimes: _fx, ...rest }) => rest),
+      })),
+      clients: seeded.clients.map(({ instagramHandle: _ig, ...rest }) => rest),
+      bookings: seeded.bookings.map(
+        ({
+          extraServiceIds: _ex,
+          clientInstagram: _cig,
+          customDurationMinutes: _cd,
+          customPriceCents: _cp,
+          proofDeliveryMethod: _pdm,
+          ...rest
+        }) => rest,
+      ),
+    };
+    expect(DemoDatabaseSchema.safeParse(legacySnapshot).success).toBe(true);
 
     expect(DemoDatabaseSchema.safeParse(null).success).toBe(false);
     expect(DemoDatabaseSchema.safeParse({}).success).toBe(false);
@@ -248,7 +299,41 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(
       DemoDatabaseSchema.safeParse({
         ...seeded,
+        settings: { ...seeded.settings, serviceMode: 'spaceship' },
+      }).success,
+    ).toBe(false);
+    expect(
+      DemoDatabaseSchema.safeParse({
+        ...seeded,
+        schedules: [
+          {
+            ...seeded.schedules[0],
+            rules: [
+              {
+                ...seeded.schedules[0]?.rules[0],
+                fixedStartTimes: ['99:99'],
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      DemoDatabaseSchema.safeParse({
+        ...seeded,
         bookings: [{ ...seeded.bookings[0], status: 'hacked_status' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      DemoDatabaseSchema.safeParse({
+        ...seeded,
+        bookings: [{ ...seeded.bookings[0], proofDeliveryMethod: 'fax' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      DemoDatabaseSchema.safeParse({
+        ...seeded,
+        bookings: [{ ...seeded.bookings[0], customPriceCents: -100 }],
       }).success,
     ).toBe(false);
     expect(() =>
@@ -270,7 +355,7 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     ).toThrow();
   });
 
-  it('every table, column, view, and RPC in database.types.ts exists in migrations 0001-0003', () => {
+  it('every table, column, view, and RPC in database.types.ts exists in SQL migrations', () => {
     const rawSql = readMigrationsSql();
     const sqlSchema = extractSqlSchema(rawSql);
     const tsSchema = extractDatabaseTsSchema();
@@ -285,6 +370,35 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
           `Column "${tableName}.${col}" in database.types.ts missing from SQL migrations`,
         ).toBe(true);
       }
+    }
+
+    expect(sqlSchema.tables.get('availability_rules')?.has('fixed_start_times')).toBe(true);
+    expect(sqlSchema.tables.get('services')?.has('is_starting_price')).toBe(true);
+    expect(sqlSchema.tables.get('clients')?.has('instagram_handle')).toBe(true);
+    for (const bookingCol of [
+      'extra_service_ids',
+      'client_instagram',
+      'custom_duration_minutes',
+      'custom_price_cents',
+      'internal_notes',
+      'proof_delivery_method',
+    ]) {
+      expect(sqlSchema.tables.get('bookings')?.has(bookingCol)).toBe(true);
+    }
+    for (const settingsCol of [
+      'instagram_handle',
+      'sister_studio_handle',
+      'deposit_bank_name',
+      'deposit_beneficiary',
+      'deposit_clabe',
+      'deposit_amount_cents',
+      'service_mode',
+      'business_type',
+      'team_size_tier',
+      'onboarding_completed',
+      'sound_alerts_enabled',
+    ]) {
+      expect(sqlSchema.tables.get('salon_settings')?.has(settingsCol)).toBe(true);
     }
 
     expect(tsSchema.views.has('public_busy_overrides')).toBe(true);

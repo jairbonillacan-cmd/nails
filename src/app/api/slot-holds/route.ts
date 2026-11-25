@@ -5,6 +5,7 @@ import {
   readClientSessionToken,
 } from '@/lib/auth/client-session';
 import {
+  createOrRefreshSlotHoldWithExtras,
   getRepository,
   PolicyError,
   SlotConflictError,
@@ -12,6 +13,7 @@ import {
 
 const holdSchema = z.object({
   serviceId: z.string().min(1),
+  extraServiceIds: z.array(z.string().min(1)).max(8).default([]),
   addonIds: z.array(z.string()).default([]),
   staffId: z.string().min(1),
   startAt: z.string().min(1),
@@ -22,9 +24,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = holdSchema.parse(await request.json());
     const clientSession = await getOrCreateClientSession(request);
-    const repo = getRepository();
-    const hold = await repo.createOrRefreshSlotHold({
+    const hold = await createOrRefreshSlotHoldWithExtras({
       serviceId: body.serviceId,
+      extraServiceIds: body.extraServiceIds,
       addonIds: body.addonIds,
       staffId: body.staffId,
       startAt: body.startAt,

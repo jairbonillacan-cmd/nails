@@ -1,19 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" fill="none">
   <defs>
-    <linearGradient id="bg2" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F3EFF0"/>
-      <stop offset="1" stop-color="#DFD3D7"/>
+    <linearGradient id="chrome-bg" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F6F8"/>
+      <stop offset="0.5" stop-color="#EAE8ED"/>
+      <stop offset="1" stop-color="#DAD6DE"/>
     </linearGradient>
-    <linearGradient id="nail2" x1="220" y1="70" x2="380" y2="340" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFDFC"/>
-      <stop offset="0.5" stop-color="#EEDCE0"/>
-      <stop offset="1" stop-color="#D2B9C0"/>
+    <linearGradient id="chrome-mirror" x1="240" y1="58" x2="364" y2="352" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.22" stop-color="#E6E1EB"/>
+      <stop offset="0.45" stop-color="#FAF8FC"/>
+      <stop offset="0.68" stop-color="#B9B2C2"/>
+      <stop offset="0.86" stop-color="#EFEAF3"/>
+      <stop offset="1" stop-color="#8E8698"/>
+    </linearGradient>
+    <linearGradient id="chrome-side" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F8F7FA"/>
+      <stop offset="0.48" stop-color="#CFCAD6"/>
+      <stop offset="1" stop-color="#9A92A3"/>
     </linearGradient>
   </defs>
-  <rect width="600" height="450" fill="url(#bg2)"/>
-  <circle cx="160" cy="110" r="130" fill="#FFFFFF" fill-opacity="0.5"/>
-  <rect x="235" y="75" width="130" height="275" rx="65" fill="url(#nail2)" stroke="#CBB2B8" stroke-width="3"/>
-  <ellipse cx="275" cy="185" rx="18" ry="72" fill="#FFFFFF" fill-opacity="0.72"/>
-  <circle cx="335" cy="135" r="7" fill="#FFFFFF"/>
-  <text x="300" y="405" text-anchor="middle" fill="#645459" font-family="Georgia, serif" font-size="22" letter-spacing="3">GLAZED PEARL CHROME</text>
+  <rect width="600" height="450" fill="url(#chrome-bg)"/>
+  <rect x="20" y="20" width="560" height="410" rx="18" stroke="#141414" stroke-opacity="0.1" stroke-width="1.5"/>
+  <circle cx="130" cy="95" r="120" fill="#FFFFFF" fill-opacity="0.58"/>
+  <circle cx="485" cy="345" r="130" fill="#141414" fill-opacity="0.04"/>
+
+  <g opacity="0.92" transform="translate(-108 26) rotate(-7 300 215)">
+    <path d="M258 312 C258 215, 266 112, 300 84 C334 112, 342 215, 342 312 C342 336, 324 352, 300 352 C276 352, 258 336, 258 312 Z" fill="url(#chrome-side)" stroke="#8E8796" stroke-width="2"/>
+    <ellipse cx="283" cy="190" rx="8" ry="56" fill="#FFFFFF" fill-opacity="0.72"/>
+  </g>
+
+  <g opacity="0.92" transform="translate(108 26) rotate(7 300 215)">
+    <path d="M258 312 C258 215, 266 112, 300 84 C334 112, 342 215, 342 312 C342 336, 324 352, 300 352 C276 352, 258 336, 258 312 Z" fill="url(#chrome-side)" stroke="#8E8796" stroke-width="2"/>
+    <ellipse cx="283" cy="190" rx="8" ry="56" fill="#FFFFFF" fill-opacity="0.72"/>
+  </g>
+
+  <ellipse cx="300" cy="348" rx="68" ry="14" fill="#141414" fill-opacity="0.14"/>
+  <path d="M244 304 C244 195, 256 88, 300 58 C344 88, 356 195, 356 304 C356 332, 332 350, 300 350 C268 350, 244 332, 244 304 Z" fill="url(#chrome-mirror)" stroke="#857E8E" stroke-width="2.5"/>
+  <ellipse cx="277" cy="172" rx="14" ry="74" fill="#FFFFFF" fill-opacity="0.82"/>
+  <path d="M320 112 L323 122 L333 125 L323 128 L320 138 L317 128 L307 125 L317 122 Z" fill="#FFFFFF"/>
+  <circle cx="300" cy="316" r="5" fill="#FFFFFF" stroke="#857E8E" stroke-width="1"/>
+  <circle cx="286" cy="312" r="3" fill="#FFFFFF" stroke="#857E8E" stroke-width="0.9"/>
+  <circle cx="314" cy="312" r="3" fill="#FFFFFF" stroke="#857E8E" stroke-width="0.9"/>
+
+  <text x="300" y="395" text-anchor="middle" fill="#141414" font-family="Georgia, serif" font-size="19" letter-spacing="4">CHROME · SCULPTED ALMOND</text>
+  <text x="300" y="416" text-anchor="middle" fill="#8B1E2B" font-family="'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" letter-spacing="3.5">LAIKONA NAILS · PUEBLA</text>
 </svg>

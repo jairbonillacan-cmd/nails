@@ -4,6 +4,7 @@ import { getDateKeyInTimezone } from '@/lib/format';
 import {
   getRepository,
   PolicyError,
+  queryAvailabilityWithExtras,
 } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,22 @@ export async function GET(request: NextRequest) {
 
     const addonIdsParam = searchParams.get('addonIds') || '';
     const addonIds = addonIdsParam ? addonIdsParam.split(',').filter(Boolean) : [];
+    const extraServiceIdsParam = searchParams.get('extraServiceIds') || '';
+    const extraServiceIds = Array.from(
+      new Set(
+        extraServiceIdsParam
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0 && id !== serviceId),
+      ),
+    );
+    if (extraServiceIds.length > 8) {
+      return NextResponse.json(
+        { error: 'Máximo 8 servicios adicionales por reserva.' },
+        { status: 400 },
+      );
+    }
+
     const startDate =
       rawStartDate ||
       getDateKeyInTimezone(
@@ -60,8 +77,9 @@ export async function GET(request: NextRequest) {
       ? await repo.getBookingByToken(manageToken)
       : null;
 
-    const data = await repo.queryAvailability({
+    const data = await queryAvailabilityWithExtras({
       serviceId,
+      extraServiceIds,
       addonIds,
       staffId,
       startDate,

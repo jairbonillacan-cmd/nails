@@ -1,7 +1,7 @@
 import type { CornerStyle } from './types';
 
-export const DEFAULT_BRAND_ACCENT_LIGHT = '#9E5C64';
-export const DEFAULT_BRAND_ACCENT_DARK = '#D89BA3';
+export const DEFAULT_BRAND_ACCENT_LIGHT = '#8B1E2B';
+export const DEFAULT_BRAND_ACCENT_DARK = '#E57A89';
 
 export interface AccentPreset {
   label: string;
@@ -10,11 +10,11 @@ export interface AccentPreset {
 }
 
 export const ACCENT_PRESETS: readonly AccentPreset[] = [
-  { label: 'Palo de rosa editorial', light: '#9E5C64', dark: '#D89BA3' },
-  { label: 'Espresso & Terracota', light: '#7C4D3A', dark: '#D1A08B' },
-  { label: 'Matcha Botánico', light: '#4E6E58', dark: '#9FC5A9' },
-  { label: 'Noir Cal.com', light: '#1B1B1B', dark: '#F1F1F1' },
-  { label: 'Ciruela Velvet', light: '#6B3FA0', dark: '#C8A6F0' },
+  { label: 'Laikona Cherry', light: '#8B1E2B', dark: '#E57A89' },
+  { label: 'Studio Sage', light: '#2F4536', dark: '#8DB59A' },
+  { label: 'Obsidian Editorial', light: '#141414', dark: '#E8E4E2' },
+  { label: 'Rosewood', light: '#9E5C64', dark: '#D89BA3' },
+  { label: 'Espresso', light: '#7C4D3A', dark: '#D1A08B' },
 ];
 
 export const CORNER_RADIUS_MAP: Record<

@@ -1,21 +1,52 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" fill="none">
   <defs>
-    <linearGradient id="bg4" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#EFEAE4"/>
-      <stop offset="1" stop-color="#DCD2C7"/>
+    <linearGradient id="sage-bg" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6F7F5"/>
+      <stop offset="0.55" stop-color="#E7ECE8"/>
+      <stop offset="1" stop-color="#D6DFD8"/>
     </linearGradient>
-    <linearGradient id="nail4" x1="230" y1="70" x2="370" y2="350" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#A66D43"/>
-      <stop offset="0.55" stop-color="#5B3624"/>
-      <stop offset="1" stop-color="#2E1B12"/>
+    <linearGradient id="sage-base" x1="244" y1="60" x2="356" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3C5845"/>
+      <stop offset="0.5" stop-color="#283D2F"/>
+      <stop offset="1" stop-color="#152119"/>
+    </linearGradient>
+    <radialGradient id="sage-aura" cx="50%" cy="52%" r="44%">
+      <stop stop-color="#C8DFC9" stop-opacity="0.88"/>
+      <stop offset="0.48" stop-color="#7EA68A" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#283D2F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sage-side" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#37513F"/>
+      <stop offset="0.6" stop-color="#223428"/>
+      <stop offset="1" stop-color="#131E17"/>
     </linearGradient>
   </defs>
-  <rect width="600" height="450" fill="url(#bg4)"/>
-  <circle cx="130" cy="100" r="120" fill="#B97F2A" fill-opacity="0.12"/>
-  <rect x="235" y="75" width="130" height="275" rx="65" fill="url(#nail4)" stroke="#48291A" stroke-width="3"/>
-  <circle cx="285" cy="175" r="24" fill="#2A160D" fill-opacity="0.65"/>
-  <circle cx="325" cy="245" r="28" fill="#2A160D" fill-opacity="0.6"/>
-  <circle cx="270" cy="275" r="16" fill="#C98A2E" fill-opacity="0.5"/>
-  <ellipse cx="272" cy="160" rx="9" ry="48" fill="#FFFFFF" fill-opacity="0.4"/>
-  <text x="300" y="405" text-anchor="middle" fill="#4D372B" font-family="Georgia, serif" font-size="22" letter-spacing="3">SCULPTED ESPRESSO</text>
+  <rect width="600" height="450" fill="url(#sage-bg)"/>
+  <rect x="20" y="20" width="560" height="410" rx="18" stroke="#141414" stroke-opacity="0.1" stroke-width="1.5"/>
+  <circle cx="120" cy="100" r="120" fill="#2F4536" fill-opacity="0.06"/>
+  <circle cx="485" cy="355" r="130" fill="#2F4536" fill-opacity="0.06"/>
+
+  <g opacity="0.93" transform="translate(-108 26) rotate(-7 300 215)">
+    <path d="M258 312 C258 215, 266 112, 300 84 C334 112, 342 215, 342 312 C342 336, 324 352, 300 352 C276 352, 258 336, 258 312 Z" fill="url(#sage-side)" stroke="#16231A" stroke-width="2"/>
+    <ellipse cx="300" cy="222" rx="34" ry="72" fill="url(#sage-aura)"/>
+    <ellipse cx="282" cy="186" rx="6.5" ry="48" fill="#FFFFFF" fill-opacity="0.3"/>
+  </g>
+
+  <g opacity="0.93" transform="translate(108 26) rotate(7 300 215)">
+    <path d="M258 312 C258 215, 266 112, 300 84 C334 112, 342 215, 342 312 C342 336, 324 352, 300 352 C276 352, 258 336, 258 312 Z" fill="url(#sage-side)" stroke="#16231A" stroke-width="2"/>
+    <ellipse cx="300" cy="222" rx="34" ry="72" fill="url(#sage-aura)"/>
+    <ellipse cx="282" cy="186" rx="6.5" ry="48" fill="#FFFFFF" fill-opacity="0.3"/>
+  </g>
+
+  <ellipse cx="300" cy="348" rx="68" ry="14" fill="#152119" fill-opacity="0.16"/>
+  <path d="M244 304 C244 195, 256 88, 300 58 C344 88, 356 195, 356 304 C356 332, 332 350, 300 350 C268 350, 244 332, 244 304 Z" fill="url(#sage-base)" stroke="#152119" stroke-width="2.5"/>
+  <ellipse cx="300" cy="212" rx="44" ry="96" fill="url(#sage-aura)"/>
+  <ellipse cx="274" cy="156" rx="9" ry="54" fill="#FFFFFF" fill-opacity="0.38"/>
+  <circle cx="300" cy="314" r="6" fill="#FAF7F5" stroke="#C5CEC7" stroke-width="1"/>
+  <circle cx="283" cy="309" r="3.8" fill="#FAF7F5" stroke="#C5CEC7" stroke-width="0.9"/>
+  <circle cx="317" cy="309" r="3.8" fill="#FAF7F5" stroke="#C5CEC7" stroke-width="0.9"/>
+  <circle cx="300" cy="208" r="3.5" fill="#FAF7F5" fill-opacity="0.92"/>
+
+  <text x="300" y="395" text-anchor="middle" fill="#141414" font-family="Georgia, serif" font-size="19" letter-spacing="4">DARK SAGE · AURA &amp; PEARLS</text>
+  <text x="300" y="416" text-anchor="middle" fill="#8B1E2B" font-family="'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" letter-spacing="3.5">LAIKONA NAILS · PUEBLA</text>
 </svg>

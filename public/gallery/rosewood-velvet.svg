@@ -1,19 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" fill="none">
   <defs>
-    <linearGradient id="bg3" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F5EAEB"/>
-      <stop offset="1" stop-color="#E4CED1"/>
+    <linearGradient id="cherry-bg" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAF7F5"/>
+      <stop offset="0.55" stop-color="#F2E7E8"/>
+      <stop offset="1" stop-color="#E6D5D7"/>
     </linearGradient>
-    <linearGradient id="nail3" x1="230" y1="80" x2="370" y2="340" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#C6878F"/>
-      <stop offset="0.5" stop-color="#9E5C64"/>
-      <stop offset="1" stop-color="#6F373F"/>
+    <linearGradient id="cherry-lacquer" x1="240" y1="60" x2="365" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B92C3E"/>
+      <stop offset="0.45" stop-color="#8B1E2B"/>
+      <stop offset="1" stop-color="#4A0B14"/>
     </linearGradient>
+    <linearGradient id="cherry-side" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#A62435"/>
+      <stop offset="0.55" stop-color="#7A1724"/>
+      <stop offset="1" stop-color="#3E0810"/>
+    </linearGradient>
+    <radialGradient id="drop-glint" cx="35%" cy="30%" r="65%">
+      <stop stop-color="#FFFFFF" stop-opacity="0.82"/>
+      <stop offset="0.55" stop-color="#F7C7CE" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#8B1E2B" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="600" height="450" fill="url(#bg3)"/>
-  <circle cx="460" cy="360" r="140" fill="#9E5C64" fill-opacity="0.14"/>
-  <rect x="235" y="75" width="130" height="275" rx="65" fill="url(#nail3)" stroke="#81454D" stroke-width="3"/>
-  <ellipse cx="295" cy="200" rx="28" ry="85" fill="#F6C5CB" fill-opacity="0.32"/>
-  <ellipse cx="272" cy="170" rx="10" ry="44" fill="#FFFFFF" fill-opacity="0.52"/>
-  <text x="300" y="405" text-anchor="middle" fill="#6A3A40" font-family="Georgia, serif" font-size="22" letter-spacing="3">ROSEWOOD VELVET CAT EYE</text>
+  <rect width="600" height="450" fill="url(#cherry-bg)"/>
+  <rect x="20" y="20" width="560" height="410" rx="18" stroke="#141414" stroke-opacity="0.09" stroke-width="1.5"/>
+  <circle cx="485" cy="95" r="120" fill="#8B1E2B" fill-opacity="0.06"/>
+  <circle cx="115" cy="355" r="130" fill="#8B1E2B" fill-opacity="0.05"/>
+
+  <g opacity="0.92" transform="translate(-108 26) rotate(-7 300 215)">
+    <path d="M258 312 C258 215, 266 112, 300 84 C334 112, 342 215, 342 312 C342 336, 324 352, 300 352 C276 352, 258 336, 258 312 Z" fill="url(#cherry-side)" stroke="#3D0911" stroke-width="2"/>
+    <ellipse cx="282" cy="188" rx="7" ry="52" fill="#FFFFFF" fill-opacity="0.34"/>
+  </g>
+
+  <g opacity="0.92" transform="translate(108 26) rotate(7 300 215)">
+    <path d="M258 312 C258 215, 266 112, 300 84 C334 112, 342 215, 342 312 C342 336, 324 352, 300 352 C276 352, 258 336, 258 312 Z" fill="url(#cherry-side)" stroke="#3D0911" stroke-width="2"/>
+    <ellipse cx="284" cy="188" rx="7" ry="52" fill="#FFFFFF" fill-opacity="0.34"/>
+  </g>
+
+  <ellipse cx="300" cy="348" rx="68" ry="14" fill="#3D0911" fill-opacity="0.16"/>
+  <path d="M244 304 C244 195, 256 88, 300 58 C344 88, 356 195, 356 304 C356 332, 332 350, 300 350 C268 350, 244 332, 244 304 Z" fill="url(#cherry-lacquer)" stroke="#3B0810" stroke-width="2.5"/>
+  <path d="M266 155 C280 178, 320 178, 334 155" stroke="#F8D2D8" stroke-opacity="0.58" stroke-width="6" stroke-linecap="round"/>
+  <path d="M260 216 C284 238, 318 232, 340 206" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="282" cy="264" rx="18" ry="13" fill="url(#drop-glint)" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1"/>
+  <ellipse cx="318" cy="195" rx="12" ry="9" fill="url(#drop-glint)" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1"/>
+  <ellipse cx="274" cy="154" rx="9" ry="56" fill="#FFFFFF" fill-opacity="0.46"/>
+  <circle cx="300" cy="108" r="4.5" fill="#FFFFFF" fill-opacity="0.88"/>
+
+  <text x="300" y="395" text-anchor="middle" fill="#141414" font-family="Georgia, serif" font-size="19" letter-spacing="4">CHERRY LACQUER · 3D GEL</text>
+  <text x="300" y="416" text-anchor="middle" fill="#8B1E2B" font-family="'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" letter-spacing="3.5">LAIKONA NAILS · PUEBLA</text>
 </svg>

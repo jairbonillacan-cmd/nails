@@ -13,19 +13,70 @@ import {
 import { createInitialDemoDatabase } from '../demo-seed';
 import { generateBookingIcs } from '../ics';
 
-function buildBaseContext(): AvailabilityContext {
+function buildContinuousContext(): AvailabilityContext {
   const db = createInitialDemoDatabase();
   const now = new Date('2026-12-01T13:00:00.000Z');
-  const service = db.services.find((s) => s.id === 'srv-gelish-manicure');
-  const primaryStaff = db.staff[0];
-  if (!service || !primaryStaff) {
+  const baseService = db.services.find((s) => s.id === 'srv-gel-semipermanente-manos');
+  const primaryStaff = db.staff.find((s) => s.id === 'staff-karla');
+  if (!baseService || !primaryStaff) {
     throw new Error('Demo seed missing expected service or staff');
+  }
+  return {
+    settings: {
+      ...db.settings,
+      slotIntervalMinutes: 30,
+    },
+    service: {
+      ...baseService,
+      durationMinutes: 60,
+      priceCents: 38000,
+      bufferBeforeMinutes: 0,
+      bufferAfterMinutes: 15,
+    },
+    addons: [],
+    staffMembers: [primaryStaff],
+    schedules: [
+      {
+        id: 'sched-continuous-test',
+        staffId: primaryStaff.id,
+        name: 'Turno partido continuo',
+        timezone: 'America/Mexico_City',
+        isDefault: true,
+        rules: [
+          { id: 'rc-1', dayOfWeek: 1, startTime: '10:00', endTime: '14:00' },
+          { id: 'rc-2', dayOfWeek: 1, startTime: '15:00', endTime: '19:30' },
+          { id: 'rc-3', dayOfWeek: 2, startTime: '10:00', endTime: '14:00' },
+          { id: 'rc-4', dayOfWeek: 2, startTime: '15:00', endTime: '19:30' },
+          { id: 'rc-5', dayOfWeek: 3, startTime: '10:00', endTime: '14:00' },
+          { id: 'rc-6', dayOfWeek: 3, startTime: '15:00', endTime: '19:30' },
+          { id: 'rc-7', dayOfWeek: 4, startTime: '10:00', endTime: '14:00' },
+          { id: 'rc-8', dayOfWeek: 4, startTime: '15:00', endTime: '19:30' },
+          { id: 'rc-9', dayOfWeek: 5, startTime: '10:00', endTime: '14:00' },
+          { id: 'rc-10', dayOfWeek: 5, startTime: '15:00', endTime: '19:30' },
+          { id: 'rc-11', dayOfWeek: 6, startTime: '10:00', endTime: '16:00' },
+        ],
+      },
+    ],
+    dateOverrides: [],
+    bookings: [],
+    slotHolds: [],
+    calendarConnections: [],
+    now,
+  };
+}
+
+function buildLaikonaContext(): AvailabilityContext {
+  const db = createInitialDemoDatabase();
+  const now = new Date('2026-12-01T13:00:00.000Z');
+  const service = db.services.find((s) => s.id === 'srv-rubber');
+  if (!service) {
+    throw new Error('Demo seed missing expected Rubber service');
   }
   return {
     settings: db.settings,
     service,
     addons: [],
-    staffMembers: [primaryStaff],
+    staffMembers: db.staff,
     schedules: db.schedules,
     dateOverrides: [],
     bookings: [],
@@ -35,11 +86,11 @@ function buildBaseContext(): AvailabilityContext {
   };
 }
 
-describe('Availability Engine (Nails)', () => {
-  it('respects split-shift working hours (lunch break 14:00-15:00)', () => {
-    const ctx = buildBaseContext();
+describe('Availability Engine (Nails & LAIKONA NAILS)', () => {
+  it('respects continuous split-shift working hours (lunch break 14:00-15:00)', () => {
+    const ctx = buildContinuousContext();
 
-    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-valeria');
+    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla');
     const times = slots.map((s) => s.localTime24);
 
     expect(times).toContain('10:00');
@@ -51,9 +102,149 @@ describe('Availability Engine (Nails)', () => {
     expect(times).not.toContain('19:00');
   });
 
+  it('enforces LAIKONA fixed start-time blocks per specialist (Karla/Paty vs Tere)', () => {
+    const ctx = buildLaikonaContext();
+    const tz = ctx.settings.timezone;
+
+    const karlaSlots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla');
+    expect(karlaSlots.map((s) => s.localTime24)).toEqual(['10:00', '13:30', '16:30']);
+
+    const patySlots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-paty');
+    expect(patySlots.map((s) => s.localTime24)).toEqual(['10:00', '13:30', '16:30']);
+
+    const tereSlots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-tere');
+    expect(tereSlots.map((s) => s.localTime24)).toEqual(['14:00', '16:00', '18:00']);
+
+    expect(getAvailableSlotsForDate(ctx, '2026-12-06', 'staff-karla')).toHaveLength(0);
+    expect(getAvailableSlotsForDate(ctx, '2026-12-06', 'staff-paty')).toHaveLength(0);
+    expect(getAvailableSlotsForDate(ctx, '2026-12-06', 'staff-tere')).toHaveLength(0);
+
+    const validKarla = assertSlotBookable(ctx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '13:30', tz).toISOString(),
+      staffId: 'staff-karla',
+    });
+    expect(validKarla.ok).toBe(true);
+
+    const offBlockKarla = assertSlotBookable(ctx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '11:00', tz).toISOString(),
+      staffId: 'staff-karla',
+    });
+    expect(offBlockKarla.ok).toBe(false);
+    if (!offBlockKarla.ok) {
+      expect(offBlockKarla.code).toBe('INVALID_ALIGNMENT');
+      expect(offBlockKarla.message).toContain('horarios fijos');
+    }
+
+    const offBlockTere = assertSlotBookable(ctx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '15:00', tz).toISOString(),
+      staffId: 'staff-tere',
+    });
+    expect(offBlockTere.ok).toBe(false);
+    if (!offBlockTere.ok) {
+      expect(offBlockTere.code).toBe('INVALID_ALIGNMENT');
+    }
+
+    const karlaDiag = diagnoseDateSlots(ctx, '2026-12-01', 'staff-karla');
+    const karlaAvailSet = new Set(karlaSlots.map((s) => s.localTime24));
+    for (const d of karlaDiag) {
+      expect(d.isAvailable).toBe(karlaAvailSet.has(d.time24));
+    }
+    const diagAt11 = karlaDiag.find((d) => d.time24 === '11:00');
+    expect(diagAt11?.isAvailable).toBe(false);
+    expect(diagAt11?.reason).toContain('horarios fijos');
+
+    const closedCtx: AvailabilityContext = {
+      ...ctx,
+      dateOverrides: [
+        {
+          id: 'ovr-karla-closed',
+          staffId: 'staff-karla',
+          overrideDate: '2026-12-01',
+          isUnavailable: true,
+          startTime: null,
+          endTime: null,
+          reason: 'Curso técnico',
+        },
+      ],
+    };
+    const closedCheck = assertSlotBookable(closedCtx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString(),
+      staffId: 'staff-karla',
+    });
+    expect(closedCheck.ok).toBe(false);
+    if (!closedCheck.ok) {
+      expect(closedCheck.code).toBe('OUTSIDE_HOURS');
+    }
+  });
+
+  it('combines primary service, extraServices, and add-ons for totals, window fit, and eligibility', () => {
+    const db = createInitialDemoDatabase();
+    const rubber = db.services.find((s) => s.id === 'srv-rubber');
+    const pedispaGel = db.services.find((s) => s.id === 'srv-pedispa-gel');
+    const nailArt1 = db.addons.find((a) => a.id === 'addon-nail-art-1');
+    if (!rubber || !pedispaGel || !nailArt1) {
+      throw new Error('Demo seed missing expected LAIKONA services or add-ons');
+    }
+
+    const totals = computeServiceTotals(
+      { ...rubber, bufferBeforeMinutes: 5, bufferAfterMinutes: 10 },
+      [nailArt1],
+      [{ ...pedispaGel, bufferBeforeMinutes: 15, bufferAfterMinutes: 5 }],
+    );
+    expect(totals.totalDurationMinutes).toBe(120 + 90 + 15);
+    expect(totals.subtotalCents).toBe(35000 + 50000 + 11000);
+    expect(totals.bufferBeforeMinutes).toBe(15);
+    expect(totals.bufferAfterMinutes).toBe(10);
+
+    const ctx: AvailabilityContext = {
+      ...buildLaikonaContext(),
+      service: rubber,
+      extraServices: [pedispaGel],
+    };
+    const tz = ctx.settings.timezone;
+
+    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla');
+    expect(slots.map((s) => s.localTime24)).toEqual(['10:00', '13:30']);
+    for (const slot of slots) {
+      const durationMs = new Date(slot.endAt).getTime() - new Date(slot.startAt).getTime();
+      expect(durationMs).toBe(210 * 60_000);
+    }
+
+    const fits1330 = assertSlotBookable(ctx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '13:30', tz).toISOString(),
+      staffId: 'staff-karla',
+    });
+    expect(fits1330.ok).toBe(true);
+
+    const overflows1630 = assertSlotBookable(ctx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '16:30', tz).toISOString(),
+      staffId: 'staff-karla',
+    });
+    expect(overflows1630.ok).toBe(false);
+    if (!overflows1630.ok) {
+      expect(overflows1630.code).toBe('OUTSIDE_HOURS');
+    }
+
+    const restrictedCtx: AvailabilityContext = {
+      ...ctx,
+      staffMembers: ctx.staffMembers.map((member) =>
+        member.id === 'staff-tere' ? { ...member, serviceIds: [rubber.id] } : member,
+      ),
+    };
+    expect(getAvailableSlotsForDate(restrictedCtx, '2026-12-01', 'staff-tere')).toHaveLength(0);
+    const ineligibleExtra = assertSlotBookable(restrictedCtx, {
+      startAt: zonedDateTimeToUtc('2026-12-01', '14:00', tz).toISOString(),
+      staffId: 'staff-tere',
+    });
+    expect(ineligibleExtra.ok).toBe(false);
+    if (!ineligibleExtra.ok) {
+      expect(ineligibleExtra.code).toBe('STAFF_INELIGIBLE');
+    }
+  });
+
   it('dynamically adjusts slots when add-ons increase duration', () => {
     const db = createInitialDemoDatabase();
-    const ctx = buildBaseContext();
+    const ctx = buildContinuousContext();
     const retiro = db.addons.find((a) => a.id === 'addon-retiro');
     const art2 = db.addons.find((a) => a.id === 'addon-nail-art-2');
     if (!retiro || !art2) {
@@ -65,14 +256,14 @@ describe('Availability Engine (Nails)', () => {
     expect(totals.totalDurationMinutes).toBe(110);
     expect(totals.subtotalCents).toBe(38000 + 12000 + 22000);
 
-    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-valeria');
+    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla');
     const times = slots.map((s) => s.localTime24);
     expect(times).toContain('12:00');
     expect(times).not.toContain('12:30');
   });
 
   it('blocks overlapping slots including bufferAfterMinutes', () => {
-    const ctx = buildBaseContext();
+    const ctx = buildContinuousContext();
     const startIso = zonedDateTimeToUtc('2026-12-01', '10:00', 'America/Mexico_City').toISOString();
     const endIso = zonedDateTimeToUtc('2026-12-01', '11:00', 'America/Mexico_City').toISOString();
     const occEndIso = zonedDateTimeToUtc('2026-12-01', '11:15', 'America/Mexico_City').toISOString();
@@ -84,7 +275,7 @@ describe('Availability Engine (Nails)', () => {
         manageToken: 'tok-9999',
         idempotencyKey: null,
         serviceId: ctx.service.id,
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         clientId: 'client-1',
         startAt: startIso,
         endAt: endIso,
@@ -94,7 +285,7 @@ describe('Availability Engine (Nails)', () => {
         subtotalCents: 38000,
         discountCents: 0,
         totalPriceCents: 38000,
-        depositAmountCents: 0,
+        depositAmountCents: 20000,
         couponCode: null,
         status: 'confirmed',
         source: 'web',
@@ -111,7 +302,7 @@ describe('Availability Engine (Nails)', () => {
       },
     ];
 
-    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-valeria');
+    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla');
     const times = slots.map((s) => s.localTime24);
     expect(times).not.toContain('10:00');
     expect(times).not.toContain('10:30');
@@ -120,7 +311,7 @@ describe('Availability Engine (Nails)', () => {
   });
 
   it('respects 3-minute slot holds for other sessions while allowing the holder session', () => {
-    const ctx = buildBaseContext();
+    const ctx = buildContinuousContext();
     const now = ctx.now ?? new Date('2026-12-01T13:00:00.000Z');
     const startIso = zonedDateTimeToUtc('2026-12-01', '10:00', 'America/Mexico_City').toISOString();
     const occEndIso = zonedDateTimeToUtc('2026-12-01', '11:15', 'America/Mexico_City').toISOString();
@@ -128,7 +319,7 @@ describe('Availability Engine (Nails)', () => {
     ctx.slotHolds = [
       {
         id: 'hold-1',
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         serviceId: ctx.service.id,
         sessionToken: 'session-A',
         startAt: startIso,
@@ -141,27 +332,27 @@ describe('Availability Engine (Nails)', () => {
     const slotsForB = getAvailableSlotsForDate(
       { ...ctx, callerSessionToken: 'session-B' },
       '2026-12-01',
-      'staff-valeria',
+      'staff-karla',
     );
     expect(slotsForB.map((s) => s.localTime24)).not.toContain('10:00');
 
     const slotsForA = getAvailableSlotsForDate(
       { ...ctx, callerSessionToken: 'session-A' },
       '2026-12-01',
-      'staff-valeria',
+      'staff-karla',
     );
     expect(slotsForA.map((s) => s.localTime24)).toContain('10:00');
   });
 
   it('blocks Google Calendar external conflicts and date overrides, and diagnoses reasons', () => {
-    const ctx = buildBaseContext();
+    const ctx = buildContinuousContext();
     const now = ctx.now ?? new Date('2026-12-01T13:00:00.000Z');
     ctx.calendarConnections = [
       {
         id: 'gcal-1',
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         provider: 'google',
-        accountEmail: 'valeria@nails.studio',
+        accountEmail: 'karla@laikonanails.mx',
         destinationCalendarId: 'primary',
         conflictCalendarIds: ['primary'],
         availableCalendars: [],
@@ -177,10 +368,10 @@ describe('Availability Engine (Nails)', () => {
       },
     ];
 
-    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-valeria');
+    const slots = getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla');
     expect(slots.map((s) => s.localTime24)).not.toContain('16:00');
 
-    const diag = diagnoseDateSlots(ctx, '2026-12-01', 'staff-valeria');
+    const diag = diagnoseDateSlots(ctx, '2026-12-01', 'staff-karla');
     const at16 = diag.find((d) => d.time24 === '16:00');
     expect(at16?.isAvailable).toBe(false);
     expect(at16?.reason).toContain('Cita médica personal');
@@ -188,7 +379,7 @@ describe('Availability Engine (Nails)', () => {
     ctx.dateOverrides = [
       {
         id: 'ovr-close',
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         overrideDate: '2026-12-01',
         isUnavailable: true,
         startTime: null,
@@ -196,15 +387,15 @@ describe('Availability Engine (Nails)', () => {
         reason: 'Día festivo',
       },
     ];
-    expect(getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-valeria')).toHaveLength(0);
+    expect(getAvailableSlotsForDate(ctx, '2026-12-01', 'staff-karla')).toHaveLength(0);
   });
 
   it('suggests the 3 nearest alternative slots on collision and generates valid RFC 5545 ICS', () => {
     const db = createInitialDemoDatabase();
-    const ctx = buildBaseContext();
+    const ctx = buildContinuousContext();
     const targetIso = zonedDateTimeToUtc('2026-12-01', '10:00', 'America/Mexico_City').toISOString();
 
-    const suggestions = findNearestAvailableSlots(ctx, targetIso, 'staff-valeria', 3);
+    const suggestions = findNearestAvailableSlots(ctx, targetIso, 'staff-karla', 3);
     expect(suggestions).toHaveLength(3);
     expect(suggestions[0]?.localTime24).toBe('10:00');
 
@@ -235,19 +426,23 @@ describe('Availability Engine (Nails)', () => {
 
   it('D1: assertSlotBookable accepts valid slots and rejects each failure mode with typed codes', () => {
     const db = createInitialDemoDatabase();
-    const ctx = buildBaseContext();
-    ctx.staffMembers = db.staff;
+    const ctx = buildContinuousContext();
+    ctx.staffMembers = db.staff.map((member) =>
+      member.id === 'staff-tere'
+        ? { ...member, serviceIds: ['srv-gel-semipermanente-manos'] }
+        : member,
+    );
     const tz = ctx.settings.timezone;
 
     const validStart = zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString();
     const okRes = assertSlotBookable(ctx, {
       startAt: validStart,
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(okRes.ok).toBe(true);
     if (okRes.ok) {
       expect(okRes.slot.localTime24).toBe('10:00');
-      expect(okRes.slot.staffId).toBe('staff-valeria');
+      expect(okRes.slot.staffId).toBe('staff-karla');
     }
 
     const expectedCodes: readonly SlotRejectionCode[] = [
@@ -263,7 +458,7 @@ describe('Availability Engine (Nails)', () => {
     const threeAm = zonedDateTimeToUtc('2026-12-02', '03:00', tz).toISOString();
     const outsideRes = assertSlotBookable(ctx, {
       startAt: threeAm,
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(outsideRes.ok).toBe(false);
     if (!outsideRes.ok) {
@@ -274,7 +469,7 @@ describe('Availability Engine (Nails)', () => {
 
     const lunchRes = assertSlotBookable(ctx, {
       startAt: zonedDateTimeToUtc('2026-12-01', '14:00', tz).toISOString(),
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(lunchRes.ok).toBe(false);
     if (!lunchRes.ok) {
@@ -283,7 +478,7 @@ describe('Availability Engine (Nails)', () => {
 
     const pastRes = assertSlotBookable(ctx, {
       startAt: zonedDateTimeToUtc('2026-11-30', '10:00', tz).toISOString(),
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(pastRes.ok).toBe(false);
     if (!pastRes.ok) {
@@ -294,7 +489,7 @@ describe('Availability Engine (Nails)', () => {
 
     const withinNoticeRes = assertSlotBookable(ctx, {
       startAt: zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString(),
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       now: zonedDateTimeToUtc('2026-12-01', '09:00', tz),
     });
     expect(withinNoticeRes.ok).toBe(false);
@@ -304,7 +499,7 @@ describe('Availability Engine (Nails)', () => {
 
     const farFutureRes = assertSlotBookable(ctx, {
       startAt: zonedDateTimeToUtc('2027-06-01', '10:00', tz).toISOString(),
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(farFutureRes.ok).toBe(false);
     if (!farFutureRes.ok) {
@@ -314,7 +509,7 @@ describe('Availability Engine (Nails)', () => {
 
     const unalignedRes = assertSlotBookable(ctx, {
       startAt: zonedDateTimeToUtc('2026-12-01', '10:07', tz).toISOString(),
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(unalignedRes.ok).toBe(false);
     if (!unalignedRes.ok) {
@@ -324,27 +519,27 @@ describe('Availability Engine (Nails)', () => {
 
     const invalidDateRes = assertSlotBookable(ctx, {
       startAt: 'not-a-real-date',
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(invalidDateRes.ok).toBe(false);
     if (!invalidDateRes.ok) {
       expect(invalidDateRes.code).toBe('INVALID_ALIGNMENT');
     }
 
-    const pediService = db.services.find((s) => s.id === 'srv-spa-pedicure');
+    const pediService = db.services.find((s) => s.id === 'srv-pedispa-gel');
     if (!pediService) throw new Error('Expected pedicure service');
     const ineligibleRes = assertSlotBookable(
       { ...ctx, service: pediService },
       {
         startAt: zonedDateTimeToUtc('2026-12-01', '10:00', tz).toISOString(),
-        staffId: 'staff-camila',
+        staffId: 'staff-tere',
       },
     );
     expect(ineligibleRes.ok).toBe(false);
     if (!ineligibleRes.ok) {
       observedCodes.add(ineligibleRes.code);
       expect(ineligibleRes.code).toBe('STAFF_INELIGIBLE');
-      expect(ineligibleRes.suggestedSlots.every((s) => s.staffId === 'staff-valeria')).toBe(
+      expect(ineligibleRes.suggestedSlots.every((s) => s.staffId === 'staff-karla')).toBe(
         true,
       );
     }
@@ -361,7 +556,7 @@ describe('Availability Engine (Nails)', () => {
           manageToken: 'tok-7777',
           idempotencyKey: null,
           serviceId: ctx.service.id,
-          staffId: 'staff-valeria',
+          staffId: 'staff-karla',
           clientId: 'client-1',
           startAt: occupiedStart,
           endAt: occupiedEnd,
@@ -371,7 +566,7 @@ describe('Availability Engine (Nails)', () => {
           subtotalCents: 38000,
           discountCents: 0,
           totalPriceCents: 38000,
-          depositAmountCents: 0,
+          depositAmountCents: 20000,
           couponCode: null,
           status: 'confirmed',
           source: 'web',
@@ -391,7 +586,7 @@ describe('Availability Engine (Nails)', () => {
 
     const takenRes = assertSlotBookable(takenCtx, {
       startAt: occupiedStart,
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
     });
     expect(takenRes.ok).toBe(false);
     if (!takenRes.ok) {
@@ -404,7 +599,7 @@ describe('Availability Engine (Nails)', () => {
 
     const ignoredRes = assertSlotBookable(takenCtx, {
       startAt: occupiedStart,
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       ignoreBookingId: 'bk-existing',
     });
     expect(ignoredRes.ok).toBe(true);
@@ -417,7 +612,7 @@ describe('Availability Engine (Nails)', () => {
       slotHolds: [
         {
           id: 'hold-x',
-          staffId: 'staff-valeria',
+          staffId: 'staff-karla',
           serviceId: ctx.service.id,
           sessionToken: 'sess-owner',
           startAt: holdStart,
@@ -430,7 +625,7 @@ describe('Availability Engine (Nails)', () => {
 
     const blockedByHold = assertSlotBookable(heldCtx, {
       startAt: holdStart,
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       ignoreHoldSessionToken: 'sess-other',
     });
     expect(blockedByHold.ok).toBe(false);
@@ -440,14 +635,14 @@ describe('Availability Engine (Nails)', () => {
 
     const allowedForHolder = assertSlotBookable(heldCtx, {
       startAt: holdStart,
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       ignoreHoldSessionToken: 'sess-owner',
     });
     expect(allowedForHolder.ok).toBe(true);
   });
 
   it('D7: diagnoseDateSlots respects slotIntervalMinutes and maxBookingDaysAhead', () => {
-    const ctx = buildBaseContext();
+    const ctx = buildContinuousContext();
     ctx.settings = {
       ...ctx.settings,
       slotIntervalMinutes: 15,
@@ -455,8 +650,8 @@ describe('Availability Engine (Nails)', () => {
     };
 
     const nearDate = '2026-12-03';
-    const nearSlots = getAvailableSlotsForDate(ctx, nearDate, 'staff-valeria');
-    const nearDiag = diagnoseDateSlots(ctx, nearDate, 'staff-valeria');
+    const nearSlots = getAvailableSlotsForDate(ctx, nearDate, 'staff-karla');
+    const nearDiag = diagnoseDateSlots(ctx, nearDate, 'staff-karla');
 
     expect(nearDiag.some((d) => d.time24 === '10:15')).toBe(true);
     expect(nearDiag.some((d) => d.time24 === '10:45')).toBe(true);
@@ -467,8 +662,8 @@ describe('Availability Engine (Nails)', () => {
     }
 
     const beyondDate = '2026-12-25';
-    const beyondSlots = getAvailableSlotsForDate(ctx, beyondDate, 'staff-valeria');
-    const beyondDiag = diagnoseDateSlots(ctx, beyondDate, 'staff-valeria');
+    const beyondSlots = getAvailableSlotsForDate(ctx, beyondDate, 'staff-karla');
+    const beyondDiag = diagnoseDateSlots(ctx, beyondDate, 'staff-karla');
     expect(beyondSlots).toHaveLength(0);
     expect(beyondDiag.every((d) => d.isAvailable === false)).toBe(true);
     const atTenBeyond = beyondDiag.find((d) => d.time24 === '10:00');
@@ -476,8 +671,8 @@ describe('Availability Engine (Nails)', () => {
   });
 
   it('handles DST spring-forward and fall-back transition dates accurately', () => {
-    const ctx = buildBaseContext();
-    const staffId = 'staff-valeria';
+    const ctx = buildContinuousContext();
+    const staffId = 'staff-karla';
 
     const nySpringCtx: AvailabilityContext = {
       ...ctx,

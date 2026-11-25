@@ -37,14 +37,14 @@ describe('Public DTO schemas and mappers (S3)', () => {
   it('PublicStaffDTOSchema strips unknown internal properties on parse', () => {
     const parsed = PublicStaffDTOSchema.parse({
       id: 'staff-1',
-      name: 'Valeria',
+      name: 'Karla',
       roleTitle: 'Master',
       bio: 'Bio',
       avatarUrl: null,
-      bookingSlug: 'valeria',
+      bookingSlug: 'karla',
       displayOrder: 0,
-      serviceIds: ['srv-1'],
-      commissionPercent: 45,
+      serviceIds: ['srv-rubber'],
+      commissionPercent: 40,
       isActive: true,
       internalSecret: 'leaked',
     });
@@ -54,7 +54,7 @@ describe('Public DTO schemas and mappers (S3)', () => {
     expect('internalSecret' in parsed).toBe(false);
   });
 
-  it('toPublicServiceDTO omits internal scheduling buffers and isActive', () => {
+  it('toPublicServiceDTO exposes isStartingPrice while omitting internal buffers and isActive', () => {
     const db = createInitialDemoDatabase();
     for (const service of db.services) {
       const dto = toPublicServiceDTO(service);
@@ -69,26 +69,61 @@ describe('Public DTO schemas and mappers (S3)', () => {
       expect(dto.slug).toBe(service.slug);
       expect(dto.priceCents).toBe(service.priceCents);
       expect(dto.durationMinutes).toBe(service.durationMinutes);
+      expect(dto.isStartingPrice).toBe(service.isStartingPrice);
     }
+
+    const rubber = db.services.find((s) => s.slug === 'rubber');
+    const pediGel = db.services.find((s) => s.slug === 'pedispa-gel');
+    if (!rubber || !pediGel) {
+      throw new Error('Expected LAIKONA services in seed');
+    }
+    expect(toPublicServiceDTO(rubber).isStartingPrice).toBe(true);
+    expect(toPublicServiceDTO(pediGel).isStartingPrice).toBe(false);
   });
 
-  it('toPublicSettingsDTO omits defaultCommissionPercent, defaultAdminMode, and smsRemindersEnabled', () => {
+  it('toPublicSettingsDTO exposes LAIKONA public deposit/social fields while omitting internal admin fields', () => {
     const db = createInitialDemoDatabase();
     const dto = toPublicSettingsDTO(db.settings);
 
     expect(PublicSettingsDTOSchema.safeParse(dto).success).toBe(true);
-    expect('defaultCommissionPercent' in dto).toBe(false);
-    expect('defaultAdminMode' in dto).toBe(false);
-    expect('smsRemindersEnabled' in dto).toBe(false);
-    expect(JSON.stringify(dto)).not.toContain('defaultCommissionPercent');
+    for (const privateKey of [
+      'defaultCommissionPercent',
+      'defaultAdminMode',
+      'smsRemindersEnabled',
+      'businessType',
+      'teamSizeTier',
+      'onboardingCompleted',
+      'soundAlertsEnabled',
+    ]) {
+      expect(privateKey in dto).toBe(false);
+      expect(JSON.stringify(dto)).not.toContain(privateKey);
+    }
 
-    expect(dto.name).toBe(db.settings.name);
+    expect(dto.name).toBe('LAIKONA NAILS');
+    expect(dto.city).toBe('Puebla, México');
+    expect(dto.instagramHandle).toBe('@laikona.nailsss');
+    expect(dto.instagramUrl).toBe('https://www.instagram.com/laikona.nailsss/');
+    expect(dto.sisterStudioHandle).toBe('@lumiere.beautymx');
+    expect(dto.depositBankName).toBe('Mercado Pago');
+    expect(dto.depositBeneficiary).toBe('Karla Patricia Carrillo Rodríguez');
+    expect(dto.depositClabe).toBe('7229 6901 3959 779869');
+    expect(dto.depositAmountCents).toBe(20000);
+    expect(dto.serviceMode).toBe('studio');
     expect(dto.timezone).toBe(db.settings.timezone);
     expect(dto.landingContent).toEqual(db.settings.landingContent);
     expect(dto.enabledBookingLayouts).toEqual(db.settings.enabledBookingLayouts);
 
     dto.enabledBookingLayouts.push('column');
     expect(db.settings.enabledBookingLayouts).toHaveLength(3);
+
+    const parsed = PublicSettingsDTOSchema.parse({
+      ...db.settings,
+      internalOnlyFlag: true,
+    });
+    expect('defaultCommissionPercent' in parsed).toBe(false);
+    expect('onboardingCompleted' in parsed).toBe(false);
+    expect('soundAlertsEnabled' in parsed).toBe(false);
+    expect('internalOnlyFlag' in parsed).toBe(false);
   });
 
   it('Property (S3): toPublicStaffDTO never leaks commissionPercent for any staff input', () => {

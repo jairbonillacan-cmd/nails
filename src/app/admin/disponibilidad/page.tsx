@@ -10,13 +10,15 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Selector } from '@astryxdesign/core/Selector';
+import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { TextInput } from '@astryxdesign/core/TextInput';
+import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Divider } from '@astryxdesign/core/Divider';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { List, ListItem } from '@astryxdesign/core/List';
-import { Copy, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { Clock, Copy, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import type { AvailabilityRule } from '@/lib/types';
 import type { SlotDiagnosis } from '@/lib/availability/engine';
@@ -31,19 +33,29 @@ const DAYS: Array<{ dow: 0 | 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
   { dow: 0, label: 'Domingo' },
 ];
 
-const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
+const TIME_OPTIONS = Array.from({ length: 29 }, (_, i) => {
   const totalMin = 8 * 60 + i * 30;
   const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
   const mm = String(totalMin % 60).padStart(2, '0');
   return { value: `${hh}:${mm}`, label: `${hh}:${mm}` };
 });
 
+const FIXED_TIME_OPTIONS = Array.from({ length: 57 }, (_, i) => {
+  const totalMin = 8 * 60 + i * 15;
+  const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
+  const mm = String(totalMin % 60).padStart(2, '0');
+  return { value: `${hh}:${mm}`, label: `${hh}:${mm}` };
+});
+
+const DEFAULT_FIXED_BLOCKS = ['10:00', '13:30', '16:30'];
+
 export default function AdminAvailabilityPage() {
   const { data, refresh } = useAdminData();
   const [tab, setTab] = useState('weekly');
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [rulesDraft, setRulesDraft] = useState<AvailabilityRule[] | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [newFixedByRule, setNewFixedByRule] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
 
   const [ovrDateInput, setOvrDateInput] = useState<string | null>(null);
   const [ovrClosed, setOvrClosed] = useState(true);
@@ -78,6 +90,7 @@ export default function AdminAvailabilityPage() {
   const handleSelectStaff = (nextId: string) => {
     setSelectedStaffId(nextId);
     setRulesDraft(null);
+    setNewFixedByRule({});
   };
 
   const toggleDay = (dow: 0 | 1 | 2 | 3 | 4 | 5 | 6, enabled: boolean) => {
@@ -90,10 +103,112 @@ export default function AdminAvailabilityPage() {
           id: `r-${dow}-${Date.now()}`,
           dayOfWeek: dow,
           startTime: '10:00',
-          endTime: '18:00',
+          endTime: '19:30',
+          fixedStartTimes: [...DEFAULT_FIXED_BLOCKS],
         },
       ]);
     }
+  };
+
+  const setDayScheduleMode = (
+    dow: 0 | 1 | 2 | 3 | 4 | 5 | 6,
+    mode: 'fixed' | 'continuous',
+  ) => {
+    updateRules((prev) => {
+      const dayRules = prev.filter((r) => r.dayOfWeek === dow);
+      const otherRules = prev.filter((r) => r.dayOfWeek !== dow);
+      if (dayRules.length === 0) return prev;
+
+      if (mode === 'continuous') {
+        const cleaned = dayRules.map((r) => ({
+          id: r.id,
+          dayOfWeek: r.dayOfWeek,
+          startTime: r.startTime,
+          endTime: r.endTime,
+        }));
+        return [...otherRules, ...cleaned];
+      }
+
+      const earliestStart = dayRules
+        .map((r) => r.startTime)
+        .toSorted()[0] ?? '10:00';
+      const latestEnd = dayRules
+        .map((r) => r.endTime)
+        .toSorted()
+        .at(-1) ?? '19:30';
+      const existingFixed = dayRules.flatMap((r) => r.fixedStartTimes ?? []);
+      const seededFixed =
+        existingFixed.length > 0
+          ? existingFixed.filter((t) => t >= earliestStart && t < latestEnd)
+          : DEFAULT_FIXED_BLOCKS.filter((t) => t >= earliestStart && t < latestEnd);
+      const finalFixed =
+        seededFixed.length > 0 ? Array.from(new Set(seededFixed)).toSorted() : [earliestStart];
+
+      return [
+        ...otherRules,
+        {
+          id: dayRules[0]?.id ?? `r-${dow}-${Date.now()}`,
+          dayOfWeek: dow,
+          startTime: earliestStart,
+          endTime: latestEnd,
+          fixedStartTimes: finalFixed,
+        },
+      ];
+    });
+  };
+
+  const addFixedStartTime = (ruleId: string, timeToAdd: string) => {
+    if (!timeToAdd) return;
+    updateRules((prev) =>
+      prev.map((r) => {
+        if (r.id !== ruleId) return r;
+        if (timeToAdd < r.startTime || timeToAdd >= r.endTime) return r;
+        const nextTimes = Array.from(
+          new Set([...(r.fixedStartTimes ?? []), timeToAdd]),
+        ).toSorted();
+        return { ...r, fixedStartTimes: nextTimes };
+      }),
+    );
+  };
+
+  const removeFixedStartTime = (ruleId: string, timeToRemove: string) => {
+    updateRules((prev) =>
+      prev.map((r) => {
+        if (r.id !== ruleId) return r;
+        const remaining = (r.fixedStartTimes ?? []).filter((t) => t !== timeToRemove);
+        return {
+          ...r,
+          fixedStartTimes: remaining.length > 0 ? remaining : [r.startTime],
+        };
+      }),
+    );
+  };
+
+  const updateRuleBoundary = (
+    ruleId: string,
+    field: 'startTime' | 'endTime',
+    val: string,
+  ) => {
+    updateRules((prev) =>
+      prev.map((r) => {
+        if (r.id !== ruleId) return r;
+        const nextStart = field === 'startTime' ? val : r.startTime;
+        const nextEnd = field === 'endTime' ? val : r.endTime;
+        if (nextStart >= nextEnd) return r;
+        if (!r.fixedStartTimes || r.fixedStartTimes.length === 0) {
+          return { ...r, startTime: nextStart, endTime: nextEnd };
+        }
+        const inWindow = r.fixedStartTimes.filter(
+          (t) => t >= nextStart && t < nextEnd,
+        );
+        return {
+          ...r,
+          startTime: nextStart,
+          endTime: nextEnd,
+          fixedStartTimes: inWindow.length > 0 ? inWindow : [nextStart],
+        };
+      }),
+    );
   };
 
   const addSplitShift = (dow: 0 | 1 | 2 | 3 | 4 | 5 | 6) => {
@@ -118,28 +233,43 @@ export default function AdminAvailabilityPage() {
           ...sr,
           id: `r-copy-${d}-${i}-${Date.now()}`,
           dayOfWeek: d,
+          ...(sr.fixedStartTimes ? { fixedStartTimes: [...sr.fixedStartTimes] } : {}),
         })),
       );
       return [...kept, ...copied];
     });
-    setMsg('Horario copiado de lunes a viernes. Recuerda guardar cambios.');
+    setMsg({
+      status: 'success',
+      text: 'Horario copiado de lunes a viernes. Recuerda guardar cambios.',
+    });
   };
 
   const saveWeekly = async () => {
-    await fetch('/api/admin/availability', {
+    const res = await fetch('/api/admin/availability', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ staffId, rules }),
     });
-    setRulesDraft(null);
-    setMsg('Horarios semanales guardados y sincronizados con la agenda pública.');
-    await refresh();
+    if (res.ok) {
+      setRulesDraft(null);
+      setMsg({
+        status: 'success',
+        text: 'Horarios semanales guardados y sincronizados con la agenda pública.',
+      });
+      await refresh();
+    } else {
+      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+      setMsg({
+        status: 'error',
+        text: errJson?.error || 'Revisa que los horarios fijos estén dentro de la ventana laboral.',
+      });
+    }
   };
 
   const addOverride = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ovrDate) return;
-    await fetch('/api/admin/availability', {
+    const res = await fetch('/api/admin/availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -151,9 +281,17 @@ export default function AdminAvailabilityPage() {
         reason: ovrReason || (ovrClosed ? 'Día cerrado' : 'Horario especial'),
       }),
     });
-    setOvrReason('');
-    setMsg(`Excepción guardada para ${ovrDate}.`);
-    await refresh();
+    if (res.ok) {
+      setOvrReason('');
+      setMsg({ status: 'success', text: `Excepción guardada para ${ovrDate}.` });
+      await refresh();
+    } else {
+      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+      setMsg({
+        status: 'error',
+        text: errJson?.error || 'No se pudo guardar la excepción.',
+      });
+    }
   };
 
   const runDiagnose = async () => {
@@ -181,7 +319,7 @@ export default function AdminAvailabilityPage() {
         <VStack gap={0.5}>
           <Heading level={1}>Disponibilidad y Horarios</Heading>
           <Text color="secondary">
-            Configura turnos partidos (hora de comida), vacaciones y diagnostica por qué una hora aparece ocupada.
+            Configura turnos fijos (como 10:00 · 13:30 · 16:30), rangos continuos, vacaciones y diagnóstico.
           </Text>
         </VStack>
 
@@ -196,11 +334,17 @@ export default function AdminAvailabilityPage() {
       </HStack>
 
       {msg ? (
-        <Banner status="success" title={msg} isDismissable onDismiss={() => setMsg(null)} />
+        <Banner
+          status={msg.status}
+          role={msg.status === 'error' ? 'alert' : undefined}
+          title={msg.text}
+          isDismissable
+          onDismiss={() => setMsg(null)}
+        />
       ) : null}
 
       <TabList value={tab} onChange={setTab} hasDivider>
-        <Tab value="weekly" label="Horario semanal (tramos partidos)" />
+        <Tab value="weekly" label="Horario semanal (fijos y tramos)" />
         <Tab
           value="overrides"
           label="Excepciones y vacaciones"
@@ -220,7 +364,7 @@ export default function AdminAvailabilityPage() {
               <VStack gap={0}>
                 <Heading level={3}>Horario laboral ({data.settings.timezone})</Heading>
                 <Text type="supporting" color="secondary">
-                  Usa + para agregar un segundo turno (por ejemplo, descanso de comida 14:00–15:00).
+                  Elige por día entre Turnos fijos (ej. Karla/Paty 10:00 · 13:30 · 16:30; Tere 14:00 · 16:00 · 18:00) o Rango continuo con descansos.
                 </Text>
               </VStack>
               <Button
@@ -237,70 +381,36 @@ export default function AdminAvailabilityPage() {
               {DAYS.map(({ dow, label }) => {
                 const dayRules = rules.filter((r) => r.dayOfWeek === dow);
                 const enabled = dayRules.length > 0;
+                const isFixedMode = dayRules.some(
+                  (r) => (r.fixedStartTimes?.length ?? 0) > 0,
+                );
+
                 return (
                   <Card key={dow} variant="muted" padding={3}>
-                    <HStack justify="between" align="start" wrap="wrap" gap={3}>
-                      <Switch
-                        label={label}
-                        value={enabled}
-                        onChange={(checked) => toggleDay(dow, checked)}
-                      />
+                    <VStack gap={3}>
+                      <HStack justify="between" align="center" wrap="wrap" gap={3}>
+                        <Switch
+                          label={label}
+                          value={enabled}
+                          onChange={(checked) => toggleDay(dow, checked)}
+                        />
 
-                      {enabled ? (
-                        <VStack gap={2}>
-                          {dayRules.map((rule) => (
-                            <HStack key={rule.id} gap={2} align="center" wrap="wrap">
-                              <Selector
-                                label="Inicio"
-                                isLabelHidden
-                                size="sm"
-                                value={rule.startTime}
-                                onChange={(val) =>
-                                  val &&
-                                  updateRules((prev) =>
-                                    prev.map((r) =>
-                                      r.id === rule.id ? { ...r, startTime: val } : r,
-                                    ),
-                                  )
-                                }
-                                options={TIME_OPTIONS}
-                              />
-                              <Text color="secondary">a</Text>
-                              <Selector
-                                label="Fin"
-                                isLabelHidden
-                                size="sm"
-                                value={rule.endTime}
-                                onChange={(val) =>
-                                  val &&
-                                  updateRules((prev) =>
-                                    prev.map((r) =>
-                                      r.id === rule.id ? { ...r, endTime: val } : r,
-                                    ),
-                                  )
-                                }
-                                options={TIME_OPTIONS}
-                              />
-                              <Button
-                                label="Quitar tramo"
-                                isIconOnly
-                                size="sm"
-                                variant="ghost"
-                                icon={<Trash2 size={14} />}
-                                onClick={() =>
-                                  updateRules((prev) => prev.filter((r) => r.id !== rule.id))
-                                }
-                              />
-                            </HStack>
-                          ))}
-                          <HStack gap={1.5}>
-                            <Button
-                              label="Agregar turno"
+                        {enabled ? (
+                          <HStack gap={2} align="center" wrap="wrap">
+                            <SegmentedControl
+                              label={`Modo de horarios ${label}`}
                               size="sm"
-                              variant="secondary"
-                              icon={<Plus size={13} />}
-                              onClick={() => addSplitShift(dow)}
-                            />
+                              value={isFixedMode ? 'fixed' : 'continuous'}
+                              onChange={(val) =>
+                                setDayScheduleMode(dow, val as 'fixed' | 'continuous')
+                              }
+                            >
+                              <SegmentedControlItem value="fixed" label="Turnos fijos" />
+                              <SegmentedControlItem
+                                value="continuous"
+                                label="Rango continuo"
+                              />
+                            </SegmentedControl>
                             <Button
                               label="Copiar a L–V"
                               size="sm"
@@ -309,13 +419,136 @@ export default function AdminAvailabilityPage() {
                               onClick={() => copyDayToWeekdays(dow)}
                             />
                           </HStack>
+                        ) : (
+                          <Text type="supporting" color="secondary">
+                            No laborable
+                          </Text>
+                        )}
+                      </HStack>
+
+                      {enabled ? (
+                        <VStack gap={3}>
+                          {dayRules.map((rule) => {
+                            const fixedList = rule.fixedStartTimes ?? [];
+                            const windowOptions = FIXED_TIME_OPTIONS.filter(
+                              (opt) =>
+                                opt.value >= rule.startTime &&
+                                opt.value < rule.endTime &&
+                                !fixedList.includes(opt.value),
+                            );
+                            const selectedForRule = newFixedByRule[rule.id];
+                            const pendingFixed: string =
+                              selectedForRule &&
+                              windowOptions.some((o) => o.value === selectedForRule)
+                                ? selectedForRule
+                                : (windowOptions[0]?.value ?? '');
+
+                            return (
+                              <VStack key={rule.id} gap={2}>
+                                <HStack gap={2} align="center" wrap="wrap">
+                                  <Text type="supporting" color="secondary">
+                                    Ventana:
+                                  </Text>
+                                  <Selector
+                                    label={`Inicio ${label}`}
+                                    isLabelHidden
+                                    size="sm"
+                                    value={rule.startTime}
+                                    onChange={(val) =>
+                                      val && updateRuleBoundary(rule.id, 'startTime', val)
+                                    }
+                                    options={TIME_OPTIONS}
+                                  />
+                                  <Text color="secondary">a</Text>
+                                  <Selector
+                                    label={`Fin ${label}`}
+                                    isLabelHidden
+                                    size="sm"
+                                    value={rule.endTime}
+                                    onChange={(val) =>
+                                      val && updateRuleBoundary(rule.id, 'endTime', val)
+                                    }
+                                    options={TIME_OPTIONS}
+                                  />
+                                  {!isFixedMode ? (
+                                    <Button
+                                      label="Quitar tramo"
+                                      isIconOnly
+                                      size="sm"
+                                      variant="ghost"
+                                      icon={<Trash2 size={14} />}
+                                      onClick={() =>
+                                        updateRules((prev) =>
+                                          prev.filter((r) => r.id !== rule.id),
+                                        )
+                                      }
+                                    />
+                                  ) : null}
+                                </HStack>
+
+                                {isFixedMode ? (
+                                  <VStack gap={1.5}>
+                                    <HStack gap={1.5} align="center" wrap="wrap">
+                                      {fixedList.map((time) => (
+                                        <Token
+                                          key={time}
+                                          size="md"
+                                          icon={<Clock size={12} />}
+                                          label={time}
+                                          onRemove={() =>
+                                            removeFixedStartTime(rule.id, time)
+                                          }
+                                        />
+                                      ))}
+                                    </HStack>
+
+                                    {windowOptions.length > 0 ? (
+                                      <HStack gap={2} align="center" wrap="wrap">
+                                        <Selector
+                                          label={`Nuevo turno fijo ${label}`}
+                                          isLabelHidden
+                                          size="sm"
+                                          value={pendingFixed}
+                                          onChange={(val) =>
+                                            val &&
+                                            setNewFixedByRule((prev) => ({
+                                              ...prev,
+                                              [rule.id]: val,
+                                            }))
+                                          }
+                                          options={windowOptions}
+                                        />
+                                        <Button
+                                          label="Agregar turno fijo"
+                                          size="sm"
+                                          variant="secondary"
+                                          icon={<Plus size={13} />}
+                                          onClick={() =>
+                                            addFixedStartTime(rule.id, pendingFixed)
+                                          }
+                                        />
+                                      </HStack>
+                                    ) : null}
+                                  </VStack>
+                                ) : null}
+                              </VStack>
+                            );
+                          })}
+
+                          {!isFixedMode ? (
+                            <HStack gap={1.5}>
+                              <Button
+                                label="Agregar turno"
+                                size="sm"
+                                variant="secondary"
+                                icon={<Plus size={13} />}
+                                onClick={() => addSplitShift(dow)}
+                              />
+                            </HStack>
+                          ) : null}
                         </VStack>
-                      ) : (
-                        <Text type="supporting" color="secondary">
-                          No laborable
-                        </Text>
-                      )}
-                    </HStack>
+                      ) : null}
+                    </VStack>
                   </Card>
                 );
               })}
@@ -408,13 +641,12 @@ export default function AdminAvailabilityPage() {
           </Card>
         </Grid>
       ) : (
-
         <Card padding={5}>
           <VStack gap={4}>
             <VStack gap={0.5}>
               <Heading level={3}>¿Por qué no aparece un horario disponible?</Heading>
               <Text type="supporting" color="secondary">
-                Inspecciona hora por hora si un espacio está libre o bloqueado por descanso, cita activa, apartado de 3 min o Google Calendar.
+                Inspecciona hora por hora si un espacio está libre o bloqueado por turno fijo, descanso, cita activa, apartado de 3 min o Google Calendar.
               </Text>
             </VStack>
 

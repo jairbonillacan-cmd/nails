@@ -28,6 +28,7 @@ export interface Database {
           address: string;
           maps_url: string;
           instagram_handle: string;
+          sister_studio_handle?: string | null;
           whatsapp_number: string;
           contact_email: string;
           timezone: string;
@@ -51,9 +52,16 @@ export interface Database {
           payment_mode: 'none' | 'manual_transfer' | 'stripe' | 'mercadopago';
           deposit_bank_name: string | null;
           deposit_account_holder: string | null;
+          deposit_beneficiary?: string | null;
           deposit_clabe: string | null;
+          deposit_amount_cents?: number;
           deposit_instructions: string | null;
           currency: string;
+          service_mode?: 'studio' | 'home' | 'online';
+          business_type?: string | null;
+          team_size_tier?: string | null;
+          onboarding_completed?: boolean;
+          sound_alerts_enabled?: boolean;
           landing_content: Json;
           whatsapp_booking_enabled: boolean;
           sms_reminders_enabled: boolean;
@@ -134,6 +142,7 @@ export interface Database {
           description: string;
           duration_minutes: number;
           price_cents: number;
+          is_starting_price?: boolean;
           buffer_before_minutes: number;
           buffer_after_minutes: number;
           requires_confirmation: boolean;
@@ -210,6 +219,7 @@ export interface Database {
           day_of_week: number;
           start_time: string;
           end_time: string;
+          fixed_start_times?: string[] | null;
         };
         Insert: Pick<
           Database['public']['Tables']['availability_rules']['Row'],
@@ -272,6 +282,7 @@ export interface Database {
           full_name: string;
           phone_e164: string;
           email: string | null;
+          instagram_handle?: string | null;
           birthday: string | null;
           notes: string;
           no_show_count: number;
@@ -313,17 +324,21 @@ export interface Database {
           manage_token: string;
           idempotency_key: string | null;
           service_id: string;
+          extra_service_ids?: string[];
           staff_id: string;
           client_id: string;
+          client_instagram?: string | null;
           start_at: string;
           end_at: string;
           occupied_start_at: string;
           occupied_end_at: string;
           occupied_range: string;
           total_duration_minutes: number;
+          custom_duration_minutes?: number | null;
           subtotal_cents: number;
           discount_cents: number;
           total_price_cents: number;
+          custom_price_cents?: number | null;
           deposit_amount_cents: number;
           coupon_code: string | null;
           status:
@@ -338,6 +353,7 @@ export interface Database {
           internal_notes: string;
           inspo_photo_url: string | null;
           payment_proof_url: string | null;
+          proof_delivery_method?: 'web_upload' | 'instagram_dm' | 'none';
           google_event_id: string | null;
           cancellation_reason: string | null;
           rescheduled_from_id: string | null;

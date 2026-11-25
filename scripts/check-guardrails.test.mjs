@@ -659,15 +659,15 @@ test('M3 checkSeedParity: passes on synced demo-seed.ts + seed.sql and catches s
   const okRes = checkSeedParity(demoSeed, seedSql);
   assert.equal(okRes.ok, true);
   assert.deepEqual(okRes.diffs, []);
-  assert.equal(okRes.counts.staff, 2);
-  assert.equal(okRes.counts.services, 6);
+  assert.equal(okRes.counts.staff, 3);
+  assert.equal(okRes.counts.services, 9);
   assert.equal(okRes.counts.coupons, 2);
 
   const driftedSql = seedSql
     .replace("'GIFT500'", "'GIFT999'")
-    .replace('38000', '39000');
+    .replace('35000', '36000');
   const driftRes = checkSeedParity(demoSeed, driftedSql);
   assert.equal(driftRes.ok, false);
   assert.ok(driftRes.diffs.some((d) => d.includes('GIFT500')));
-  assert.ok(driftRes.diffs.some((d) => d.includes('manicura-rusa-gelish')));
+  assert.ok(driftRes.diffs.some((d) => d.includes('rubber')));
 });

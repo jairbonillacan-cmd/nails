@@ -24,8 +24,19 @@ import {
   systemClock,
   type Clock,
 } from '../clock';
-import { assertProductionEnvValid } from '../env';
-import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
+import { assertProductionEnvValid, getRuntimeIntegrationStatus } from '../env';
+import {
+  buildWhatsAppLink,
+  formatDateLongInTimezone,
+  formatTimeInTimezone,
+  getDateKeyInTimezone,
+  normalizePhoneE164,
+  slugify,
+} from '../format';
+import {
+  dispatchEmailNotification,
+  dispatchWhatsAppNotification,
+} from '../integrations/notifications';
 import {
   toPublicServiceDTO,
   toPublicSettingsDTO,
@@ -44,6 +55,7 @@ import {
   type CreateSlotHoldInput,
   type OutboxEventRecord,
   type PublicBootstrapData,
+  type QueryAvailabilityInput,
   type SalonRepository,
   type SlotHoldResult,
 } from './port';
@@ -86,6 +98,13 @@ function getActiveTestDbPath(): string | null {
   return null;
 }
 
+function demoDbFileExists(testDbPath: string | null): boolean {
+  if (process.env.NODE_ENV === 'test' && testDbPath) {
+    return fs.existsSync(testDbPath);
+  }
+  return fs.existsSync(DEFAULT_DEMO_DB_PATH);
+}
+
 function readRawDemoDb(testDbPath: string | null): string | null {
   if (process.env.NODE_ENV === 'test' && testDbPath) {
     return fs.existsSync(testDbPath) ? fs.readFileSync(testDbPath, 'utf-8') : null;
@@ -106,6 +125,7 @@ function writeRawDemoDb(testDbPath: string | null, serialized: string): void {
 declare global {
   var nailsDbCache: DemoDatabase | undefined;
   var nailsDbCachePath: string | undefined;
+  var nailsDbPersistedToDisk: boolean | undefined;
   var nailsWriteMutex: Promise<void> | undefined;
   var nailsDemoOutbox: OutboxEventRecord[] | undefined;
 }
@@ -113,20 +133,29 @@ declare global {
 function readDbFromDisk(): DemoDatabase {
   const testDbPath = getActiveTestDbPath();
   const cacheKey = testDbPath ?? DEFAULT_DEMO_DB_PATH;
-  if (globalThis.nailsDbCache && globalThis.nailsDbCachePath === cacheKey) {
+  if (
+    globalThis.nailsDbCache &&
+    globalThis.nailsDbCachePath === cacheKey &&
+    (globalThis.nailsDbPersistedToDisk === false || demoDbFileExists(testDbPath))
+  ) {
     return globalThis.nailsDbCache;
   }
+  globalThis.nailsDbCache = undefined;
+  globalThis.nailsDbCachePath = undefined;
+  globalThis.nailsDbPersistedToDisk = undefined;
   try {
     const raw = readRawDemoDb(testDbPath);
     if (raw !== null) {
       const parsed = parseDemoDatabase(JSON.parse(raw) as unknown);
       globalThis.nailsDbCache = parsed;
       globalThis.nailsDbCachePath = cacheKey;
+      globalThis.nailsDbPersistedToDisk = true;
       return parsed;
     }
   } catch {
     globalThis.nailsDbCache = undefined;
     globalThis.nailsDbCachePath = undefined;
+    globalThis.nailsDbPersistedToDisk = undefined;
   }
   const seeded = createInitialDemoDatabase();
   globalThis.nailsDbCache = seeded;
@@ -142,7 +171,9 @@ function writeDbToDisk(db: DemoDatabase): void {
   globalThis.nailsDbCachePath = cacheKey;
   try {
     writeRawDemoDb(testDbPath, JSON.stringify(db, null, 2));
+    globalThis.nailsDbPersistedToDisk = true;
   } catch {
+    globalThis.nailsDbPersistedToDisk = false;
     return;
   }
 }
@@ -245,29 +276,100 @@ export function getBookingByToken(token: string): BookingWithRelations | null {
   return found ? hydrateBooking(db, found) : null;
 }
 
-export function queryAvailability(params: {
-  serviceId: string;
-  addonIds: string[];
-  staffId?: string | null;
-  startDate: string;
-  days: number;
-  sessionToken?: string | null;
-  ignoreBookingId?: string | null;
-}) {
+const INSTAGRAM_HANDLE_RE = /^[a-zA-Z0-9._]{1,30}$/;
+
+export function normalizeInstagramHandle(
+  raw: string | null | undefined,
+): string | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const stripped = trimmed
+    .replace(/^https?:\/\/(?:www\.)?instagram\.com\//i, '')
+    .replace(/^(?:www\.)?instagram\.com\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/^@+/, '')
+    .trim();
+  if (!stripped || !INSTAGRAM_HANDLE_RE.test(stripped)) {
+    throw new PolicyError(
+      'INVALID_INSTAGRAM_HANDLE',
+      'Ingresa un usuario de Instagram válido (ej. @tu.usuario).',
+    );
+  }
+  return `@${stripped.toLowerCase()}`;
+}
+
+function resolveExtraServices(
+  db: DemoDatabase,
+  primaryServiceId: string,
+  extraServiceIds?: string[],
+): Service[] {
+  if (!extraServiceIds || extraServiceIds.length === 0) return [];
+  const uniqueIds = Array.from(
+    new Set(
+      extraServiceIds
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0 && id !== primaryServiceId),
+    ),
+  );
+  const resolved: Service[] = [];
+  for (const id of uniqueIds) {
+    const found = db.services.find((s) => s.id === id && s.isActive);
+    if (!found) {
+      throw new PolicyError(
+        'SERVICE_NOT_FOUND',
+        'Uno de los servicios adicionales seleccionados no está disponible.',
+      );
+    }
+    resolved.push(found);
+  }
+  return resolved;
+}
+
+function isStaffEligibleForAllServices(
+  staff: StaffMember,
+  requiredServiceIds: readonly string[],
+): boolean {
+  return (
+    staff.isActive &&
+    (staff.serviceIds.length === 0 ||
+      requiredServiceIds.every((id) => staff.serviceIds.includes(id)))
+  );
+}
+
+interface ExtendedQueryAvailabilityInput extends QueryAvailabilityInput {
+  extraServiceIds?: string[];
+}
+
+interface ExtendedCreateBookingAtomicInput extends CreateBookingAtomicInput {
+  extraServiceIds?: string[];
+  clientInstagram?: string | null;
+  proofDeliveryMethod?: 'web_upload' | 'instagram_dm' | 'none';
+  customDurationMinutes?: number | null;
+  customPriceCents?: number | null;
+  internalNotes?: string | null;
+  notifyEmail?: boolean;
+  notifyWhatsapp?: boolean;
+}
+
+export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
   const db = getSnapshot();
   const service = db.services.find((s) => s.id === params.serviceId);
   if (!service) {
     throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
   }
+  const extraServices = resolveExtraServices(db, service.id, params.extraServiceIds);
   const addons = db.addons.filter((a) => params.addonIds.includes(a.id) && a.isActive);
-  const eligibleStaff = db.staff.filter(
-    (st) => st.isActive && (st.serviceIds.length === 0 || st.serviceIds.includes(service.id)),
+  const requiredServiceIds = [service.id, ...extraServices.map((s) => s.id)];
+  const eligibleStaff = db.staff.filter((st) =>
+    isStaffEligibleForAllServices(st, requiredServiceIds),
   );
 
   const summary = getAvailabilityForRange(
     {
       settings: db.settings,
       service,
+      extraServices,
       addons,
       staffMembers: eligibleStaff,
       schedules: db.schedules,
@@ -283,14 +385,25 @@ export function queryAvailability(params: {
     params.staffId || null,
   );
 
-  const totals = computeServiceTotals(service, addons);
+  const totals = computeServiceTotals(service, addons, extraServices);
   return {
     service,
+    extraServices,
     addons,
     totals,
     activeStaffCount: eligibleStaff.length,
     days: summary,
   };
+}
+
+export async function queryAvailabilityWithExtras(
+  params: ExtendedQueryAvailabilityInput,
+) {
+  const repo = getRepository();
+  if (isSupabaseEnabled()) {
+    return repo.queryAvailability(params);
+  }
+  return queryAvailability(params);
 }
 
 export function validateCouponCode(code: string, subtotalCents: number) {
@@ -334,6 +447,7 @@ function buildAvailabilityContext(
   service: Service,
   addons: ServiceAddon[],
   options?: {
+    extraServices?: Service[];
     now?: Date;
     callerSessionToken?: string | null;
     ignoreBookingId?: string | null;
@@ -342,6 +456,7 @@ function buildAvailabilityContext(
   return {
     settings: db.settings,
     service,
+    extraServices: options?.extraServices,
     addons,
     staffMembers: db.staff,
     schedules: db.schedules,
@@ -375,6 +490,8 @@ function countActiveBookingsForStaffOnDate(
 function resolveBookableSlotOrThrow(params: {
   db: DemoDatabase;
   service: Service;
+  extraServices?: Service[];
+  requiredServiceIds?: readonly string[];
   addons: ServiceAddon[];
   startAt: string;
   staffId?: string | null;
@@ -383,13 +500,29 @@ function resolveBookableSlotOrThrow(params: {
   ignoreHoldSessionToken?: string;
   conflictMessage: string;
 }): { slot: AvailableSlot; staff: StaffMember } {
+  const requiredServiceIds = params.requiredServiceIds ?? [
+    params.service.id,
+    ...(params.extraServices ?? []).map((s) => s.id),
+  ];
   const ctx = buildAvailabilityContext(params.db, params.service, params.addons, {
+    extraServices: params.extraServices,
     now: params.now,
     callerSessionToken: params.ignoreHoldSessionToken ?? null,
     ignoreBookingId: params.ignoreBookingId ?? null,
   });
 
   if (params.staffId) {
+    const requestedStaff = params.db.staff.find((s) => s.id === params.staffId);
+    if (
+      !requestedStaff ||
+      !isStaffEligibleForAllServices(requestedStaff, requiredServiceIds)
+    ) {
+      throw new PolicyError(
+        'STAFF_INELIGIBLE',
+        'La especialista seleccionada no está disponible para todos los servicios elegidos.',
+      );
+    }
+
     const check = assertSlotBookable(ctx, {
       startAt: params.startAt,
       staffId: params.staffId,
@@ -403,20 +536,11 @@ function resolveBookableSlotOrThrow(params: {
       }
       throw new PolicyError(check.code, check.message, check.suggestedSlots);
     }
-    const staff = params.db.staff.find((s) => s.id === check.slot.staffId);
-    if (!staff) {
-      throw new PolicyError(
-        'STAFF_INELIGIBLE',
-        'Especialista no disponible para este servicio.',
-      );
-    }
-    return { slot: check.slot, staff };
+    return { slot: check.slot, staff: requestedStaff };
   }
 
-  const eligibleStaff = params.db.staff.filter(
-    (st) =>
-      st.isActive &&
-      (st.serviceIds.length === 0 || st.serviceIds.includes(params.service.id)),
+  const eligibleStaff = params.db.staff.filter((st) =>
+    isStaffEligibleForAllServices(st, requiredServiceIds),
   );
   if (eligibleStaff.length === 0) {
     throw new PolicyError(
@@ -623,8 +747,12 @@ export async function persistBookingMediaField(
   throw new PolicyError('INVALID_MEDIA_URL', 'Referencia de imagen inválida.');
 }
 
+interface ExtendedCreateSlotHoldInput extends CreateSlotHoldInput {
+  extraServiceIds?: string[];
+}
+
 export async function createOrRefreshSlotHold(
-  params: CreateSlotHoldInput,
+  params: ExtendedCreateSlotHoldInput,
 ): Promise<SlotHoldResult> {
   const created = await withWriteLock((db) => {
     const service = db.services.find((s) => s.id === params.serviceId);
@@ -632,11 +760,15 @@ export async function createOrRefreshSlotHold(
       throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
     }
 
+    const extraServices = resolveExtraServices(db, service.id, params.extraServiceIds);
+    const requiredServiceIds = [service.id, ...extraServices.map((s) => s.id)];
     const addons = db.addons.filter((a) => params.addonIds.includes(a.id) && a.isActive);
     const now = new Date();
     const { slot } = resolveBookableSlotOrThrow({
       db,
       service,
+      extraServices,
+      requiredServiceIds,
       addons,
       startAt: params.startAt,
       staffId: params.staffId,
@@ -670,6 +802,16 @@ export async function createOrRefreshSlotHold(
   return created.hold;
 }
 
+export async function createOrRefreshSlotHoldWithExtras(
+  params: ExtendedCreateSlotHoldInput,
+): Promise<SlotHoldResult> {
+  const repo = getRepository();
+  if (isSupabaseEnabled()) {
+    return repo.createOrRefreshSlotHold(params);
+  }
+  return createOrRefreshSlotHold(params);
+}
+
 export async function releaseSlotHold(sessionToken: string): Promise<void> {
   const released = await withWriteLock((db) => {
     const before = db.slotHolds.length;
@@ -685,8 +827,9 @@ export async function releaseSlotHold(sessionToken: string): Promise<void> {
 }
 
 export async function createBookingAtomic(
-  params: CreateBookingAtomicInput,
+  params: ExtendedCreateBookingAtomicInput,
 ): Promise<BookingWithRelations> {
+  const normalizedInstagram = normalizeInstagramHandle(params.clientInstagram);
   const storedInspoPhotoUrl = await persistBookingMediaField(
     params.inspoPhotoUrl,
     'inspo',
@@ -714,13 +857,39 @@ export async function createBookingAtomic(
       throw new PolicyError('SERVICE_NOT_FOUND', 'El servicio seleccionado no está disponible.');
     }
 
+    const extraServices = resolveExtraServices(db, service.id, params.extraServiceIds);
     const addons = db.addons.filter((a) => params.addonIds.includes(a.id) && a.isActive);
-    const { totalDurationMinutes, subtotalCents } = computeServiceTotals(service, addons);
+    const computedTotals = computeServiceTotals(service, addons, extraServices);
+    const customDuration =
+      typeof params.customDurationMinutes === 'number' && params.customDurationMinutes > 0
+        ? params.customDurationMinutes
+        : null;
+    const hasCustomDuration = customDuration !== null;
+    const totalDurationMinutes = customDuration ?? computedTotals.totalDurationMinutes;
+    const subtotalCents =
+      typeof params.customPriceCents === 'number' && params.customPriceCents >= 0
+        ? params.customPriceCents
+        : computedTotals.subtotalCents;
+
+    const requiredServiceIds = [service.id, ...extraServices.map((s) => s.id)];
+    const serviceForSlot: Service = hasCustomDuration
+      ? {
+          ...service,
+          durationMinutes: totalDurationMinutes,
+          bufferBeforeMinutes: computedTotals.bufferBeforeMinutes,
+          bufferAfterMinutes: computedTotals.bufferAfterMinutes,
+        }
+      : service;
+    const extraServicesForSlot = hasCustomDuration ? [] : extraServices;
+    const addonsForSlot = hasCustomDuration ? [] : addons;
+
     const now = new Date();
     const { slot, staff: chosenStaff } = resolveBookableSlotOrThrow({
       db,
-      service,
-      addons,
+      service: serviceForSlot,
+      extraServices: extraServicesForSlot,
+      requiredServiceIds,
+      addons: addonsForSlot,
       startAt: params.startAt,
       staffId: params.staffId,
       now,
@@ -742,7 +911,8 @@ export async function createBookingAtomic(
         new Date(matchingHold.endAt).getTime() >= slotOccEndMs;
 
       if (!holdMatches) {
-        const ctx = buildAvailabilityContext(db, service, addons, {
+        const ctx = buildAvailabilityContext(db, serviceForSlot, addonsForSlot, {
+          extraServices: extraServicesForSlot,
           now,
           callerSessionToken: params.sessionToken ?? null,
         });
@@ -787,6 +957,7 @@ export async function createBookingAtomic(
         fullName: params.clientName.trim(),
         phoneE164,
         email: params.clientEmail?.trim() || null,
+        ...(normalizedInstagram ? { instagramHandle: normalizedInstagram } : {}),
         birthday: params.clientBirthday || null,
         notes: '',
         noShowCount: 0,
@@ -797,18 +968,32 @@ export async function createBookingAtomic(
     } else {
       client.fullName = params.clientName.trim() || client.fullName;
       if (params.clientEmail?.trim()) client.email = params.clientEmail.trim();
+      if (normalizedInstagram) client.instagramHandle = normalizedInstagram;
       if (params.clientBirthday) client.birthday = params.clientBirthday;
       client.updatedAt = nowIso;
     }
 
+    const anyRequiresConfirmation =
+      service.requiresConfirmation || extraServices.some((s) => s.requiresConfirmation);
+    const anyDepositRequired =
+      service.depositRequired || extraServices.some((s) => s.depositRequired);
+    const depositAmountCents = anyDepositRequired
+      ? Math.max(
+          service.depositRequired ? service.depositAmountCents : 0,
+          ...extraServices.map((s) => (s.depositRequired ? s.depositAmountCents : 0)),
+          db.settings.depositAmountCents ?? 0,
+        )
+      : 0;
+
     const needsManualConfirm =
       !params.forceConfirmed &&
-      (service.requiresConfirmation ||
-        (service.depositRequired && db.settings.paymentMode === 'manual_transfer'));
+      (anyRequiresConfirmation ||
+        (anyDepositRequired && db.settings.paymentMode === 'manual_transfer'));
 
     const status: BookingStatus = needsManualConfirm ? 'pending_confirmation' : 'confirmed';
     const bookingCode = generateBookingCode();
     const manageToken = crypto.randomBytes(12).toString('hex');
+    const resolvedInstagram = normalizedInstagram ?? client.instagramHandle;
 
     const booking: Booking = {
       id: generateId('bk'),
@@ -816,24 +1001,32 @@ export async function createBookingAtomic(
       manageToken,
       idempotencyKey: params.idempotencyKey || null,
       serviceId: service.id,
+      extraServiceIds: extraServices.map((s) => s.id),
       staffId: chosenStaff.id,
       clientId: client.id,
+      ...(resolvedInstagram ? { clientInstagram: resolvedInstagram } : {}),
       startAt: slot.startAt,
       endAt: slot.endAt,
       occupiedStartAt: slot.occupiedStartAt,
       occupiedEndAt: slot.occupiedEndAt,
       totalDurationMinutes,
+      ...(hasCustomDuration ? { customDurationMinutes: totalDurationMinutes } : {}),
       subtotalCents,
       discountCents,
       totalPriceCents: Math.max(0, subtotalCents - discountCents),
-      depositAmountCents: service.depositRequired ? service.depositAmountCents : 0,
+      ...(typeof params.customPriceCents === 'number'
+        ? { customPriceCents: params.customPriceCents }
+        : {}),
+      depositAmountCents,
       couponCode: appliedCouponCode,
       status,
       source: params.source ?? 'web',
       clientNotes: params.clientNotes?.trim() || '',
-      internalNotes: '',
+      internalNotes: params.internalNotes?.trim() || '',
       inspoPhotoUrl: storedInspoPhotoUrl,
       paymentProofUrl: storedPaymentProofUrl,
+      proofDeliveryMethod:
+        params.proofDeliveryMethod ?? (storedPaymentProofUrl ? 'web_upload' : 'none'),
       googleEventId: null,
       cancellationReason: null,
       rescheduledFromId: null,
@@ -860,7 +1053,14 @@ export async function createBookingAtomic(
     const hydrated = hydrateBooking(db, booking);
     const bookingId = booking.id;
     const settingsSnapshot = { ...db.settings };
-    const workflowsSnapshot = [...db.workflows];
+    const workflowsSnapshot = db.workflows.map((wf) => ({
+      ...wf,
+      channels: wf.channels.filter((ch) => {
+        if (ch === 'email' && params.notifyEmail === false) return false;
+        if (ch === 'whatsapp' && params.notifyWhatsapp === false) return false;
+        return true;
+      }),
+    }));
 
     const outboxEvents: OutboxEventInput[] = [
       {
@@ -904,6 +1104,16 @@ export async function createBookingAtomic(
 
   await dispatchPostCommitOutbox(committed.outboxEvents);
   return committed.hydrated;
+}
+
+export async function createBookingWithExtras(
+  params: ExtendedCreateBookingAtomicInput,
+): Promise<BookingWithRelations> {
+  const repo = getRepository();
+  if (isSupabaseEnabled()) {
+    return repo.createBookingAtomic(params);
+  }
+  return createBookingAtomic(params);
 }
 
 export async function updateBookingStatus(params: {
@@ -1019,6 +1229,9 @@ export async function manageClientBookingAction(params: {
     if (!service || !service.isActive) {
       throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
     }
+    const extraServices = booking.extraServiceIds?.length
+      ? db.services.filter((s) => booking.extraServiceIds?.includes(s.id) && s.isActive)
+      : [];
     const addons = db.addons.filter((a) =>
       booking.addons.some((ba) => ba.addonId === a.id),
     );
@@ -1027,6 +1240,7 @@ export async function manageClientBookingAction(params: {
     const { slot } = resolveBookableSlotOrThrow({
       db,
       service,
+      extraServices,
       addons,
       startAt: params.newStartAt,
       staffId: targetStaffId,
@@ -1094,8 +1308,123 @@ export async function manageClientBookingAction(params: {
   return committed.hydrated;
 }
 
+export async function sendManualBookingReminder(params: {
+  bookingId: string;
+  channel?: 'whatsapp' | 'email' | 'both';
+}): Promise<{
+  ok: true;
+  bookingId: string;
+  channel: 'whatsapp' | 'email' | 'both';
+  waMeUrl: string;
+  messagePreview: string;
+  logs: ScheduledNotification[];
+}> {
+  const db = getSnapshot();
+  const booking = db.bookings.find((b) => b.id === params.bookingId);
+  if (!booking) {
+    throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+  }
+  if (isTerminalBookingStatus(booking.status)) {
+    throw new PolicyError(
+      'INVALID_STATE',
+      'Solo puedes enviar recordatorios para citas activas.',
+    );
+  }
+
+  const hydrated = hydrateBooking(db, booking);
+  const settings = { ...db.settings };
+  const channel = params.channel ?? 'whatsapp';
+  const env = getRuntimeIntegrationStatus();
+  const tz = settings.timezone || 'America/Mexico_City';
+  const dateLabel = formatDateLongInTimezone(hydrated.startAt, tz);
+  const timeLabel = formatTimeInTimezone(hydrated.startAt, tz, false);
+  const extraNames = (hydrated.extraServiceIds ?? [])
+    .map((id) => db.services.find((s) => s.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
+  const serviceSummary = [hydrated.service.name, ...extraNames].join(' + ');
+  const manageUrl = `${env.appUrl}/cita/${hydrated.manageToken}`;
+  const messagePreview = `Hola ${hydrated.client.fullName}, te recordamos tu cita en ${settings.name} (${hydrated.bookingCode}) de ${serviceSummary} con ${hydrated.staff.name} el ${dateLabel} a las ${timeLabel}. Gestiona tu cita aquí: ${manageUrl}`;
+  const waMeUrl = buildWhatsAppLink(hydrated.client.phoneE164, messagePreview);
+
+  const createdLogs: ScheduledNotification[] = [];
+  const nowIso = new Date().toISOString();
+
+  if (channel === 'whatsapp' || channel === 'both') {
+    const waRes = await dispatchWhatsAppNotification({
+      toPhoneE164: hydrated.client.phoneE164,
+      bodyText: messagePreview,
+    });
+    createdLogs.push({
+      id: generateId('ntf'),
+      bookingId: hydrated.id,
+      workflowId: null,
+      channel: 'whatsapp',
+      recipient: hydrated.client.phoneE164,
+      scheduledFor: nowIso,
+      status: waRes.status,
+      subject: `Recordatorio manual (${hydrated.bookingCode})`,
+      previewText: messagePreview.slice(0, 160),
+      providerMessageId: waRes.providerMessageId,
+      errorMessage: waRes.errorMessage,
+      sentAt: waRes.status === 'sent' ? nowIso : null,
+      createdAt: nowIso,
+    });
+  }
+
+  if (channel === 'email' || channel === 'both') {
+    if (!hydrated.client.email) {
+      if (channel === 'email') {
+        throw new PolicyError(
+          'CLIENT_NO_EMAIL',
+          'La clienta no tiene correo registrado para enviar recordatorio por email.',
+        );
+      }
+    } else {
+      const subject = `Recordatorio de tu cita en ${settings.name} (${hydrated.bookingCode})`;
+      const emailRes = await dispatchEmailNotification({
+        to: hydrated.client.email,
+        subject,
+        bodyText: messagePreview,
+        booking: hydrated,
+        settings,
+        appUrl: env.appUrl,
+      });
+      createdLogs.push({
+        id: generateId('ntf'),
+        bookingId: hydrated.id,
+        workflowId: null,
+        channel: 'email',
+        recipient: hydrated.client.email,
+        scheduledFor: nowIso,
+        status: emailRes.status,
+        subject,
+        previewText: messagePreview.slice(0, 160),
+        providerMessageId: emailRes.providerMessageId,
+        errorMessage: emailRes.errorMessage,
+        sentAt: emailRes.status === 'sent' ? nowIso : null,
+        createdAt: nowIso,
+      });
+    }
+  }
+
+  await withWriteLock((liveDb) => {
+    liveDb.notifications.unshift(...createdLogs);
+  });
+
+  return {
+    ok: true,
+    bookingId: hydrated.id,
+    channel,
+    waMeUrl,
+    messagePreview,
+    logs: createdLogs,
+  };
+}
+
 export async function updateSalonSettings(
-  patch: Partial<SalonSettings>,
+  patch: Partial<Omit<SalonSettings, 'landingContent'>> & {
+    landingContent?: Partial<SalonSettings['landingContent']>;
+  },
 ): Promise<SalonSettings> {
   return withWriteLock((db) => {
     db.settings = {
@@ -1108,6 +1437,91 @@ export async function updateSalonSettings(
     };
     publishRealtimeEvent('settings_updated');
     return db.settings;
+  });
+}
+
+export async function saveOnboardingSetup(params: {
+  businessType?: string;
+  teamSizeTier?: string;
+  salonName?: string;
+  serviceMode?: 'studio' | 'home' | 'online';
+  address?: string;
+  soundAlertsEnabled?: boolean;
+  onboardingCompleted?: boolean;
+  starterService?: {
+    id?: string;
+    name: string;
+    priceCents: number;
+    durationMinutes: number;
+    isStartingPrice?: boolean;
+  };
+}): Promise<{ settings: SalonSettings; starterService: Service | null }> {
+  return withWriteLock((db) => {
+    const nowIso = new Date().toISOString();
+    db.settings = {
+      ...db.settings,
+      ...(params.salonName?.trim() ? { name: params.salonName.trim() } : {}),
+      ...(params.businessType !== undefined ? { businessType: params.businessType } : {}),
+      ...(params.teamSizeTier !== undefined ? { teamSizeTier: params.teamSizeTier } : {}),
+      ...(params.serviceMode !== undefined ? { serviceMode: params.serviceMode } : {}),
+      ...(params.address !== undefined ? { address: params.address } : {}),
+      ...(params.soundAlertsEnabled !== undefined
+        ? { soundAlertsEnabled: params.soundAlertsEnabled }
+        : {}),
+      ...(params.onboardingCompleted !== undefined
+        ? { onboardingCompleted: params.onboardingCompleted }
+        : {}),
+      updatedAt: nowIso,
+    };
+
+    let starterService: Service | null = null;
+    if (params.starterService) {
+      const existing = params.starterService.id
+        ? db.services.find((s) => s.id === params.starterService?.id)
+        : null;
+      if (existing) {
+        existing.name = params.starterService.name;
+        existing.priceCents = params.starterService.priceCents;
+        existing.durationMinutes = params.starterService.durationMinutes;
+        if (params.starterService.isStartingPrice !== undefined) {
+          existing.isStartingPrice = params.starterService.isStartingPrice;
+        }
+        starterService = existing;
+      } else {
+        const depositCents = db.settings.depositAmountCents ?? 20000;
+        const created: Service = {
+          id: generateId('srv'),
+          categoryId: db.categories[0]?.id ?? null,
+          name: params.starterService.name,
+          slug: `${slugify(params.starterService.name)}-${generateId().slice(0, 6)}`,
+          description: '',
+          durationMinutes: params.starterService.durationMinutes,
+          priceCents: params.starterService.priceCents,
+          isStartingPrice: params.starterService.isStartingPrice ?? false,
+          bufferBeforeMinutes: 0,
+          bufferAfterMinutes: 0,
+          requiresConfirmation: depositCents > 0,
+          depositRequired: depositCents > 0,
+          depositAmountCents: depositCents,
+          allowInspoPhoto: true,
+          isActive: true,
+          isFeatured: true,
+          displayOrder: db.services.length,
+          imageUrl: null,
+        };
+        db.services.push(created);
+        for (const st of db.staff) {
+          if (!st.serviceIds.includes(created.id)) {
+            st.serviceIds.push(created.id);
+          }
+        }
+        starterService = created;
+      }
+      publishRealtimeEvent('availability_updated');
+    }
+
+    publishRealtimeEvent('settings_updated');
+    return { settings: db.settings, starterService };
   });
 }
 
@@ -1129,6 +1543,7 @@ export async function upsertService(
       description: input.description ?? '',
       durationMinutes: input.durationMinutes,
       priceCents: input.priceCents,
+      isStartingPrice: input.isStartingPrice ?? false,
       bufferBeforeMinutes: input.bufferBeforeMinutes ?? 0,
       bufferAfterMinutes: input.bufferAfterMinutes ?? 15,
       requiresConfirmation: input.requiresConfirmation ?? false,
@@ -1286,18 +1701,62 @@ export async function upsertAdminUser(
   });
 }
 
+export async function createClientProfile(params: {
+  fullName: string;
+  phone: string;
+  email?: string | null;
+  instagramHandle?: string | null;
+  birthday?: string | null;
+  notes?: string;
+}): Promise<ClientProfile> {
+  const normalizedInstagram = normalizeInstagramHandle(params.instagramHandle);
+  return withWriteLock((db) => {
+    const phoneE164 = normalizePhoneE164(params.phone);
+    const existing = db.clients.find((c) => c.phoneE164 === phoneE164);
+    if (existing) {
+      throw new PolicyError(
+        'CLIENT_EXISTS',
+        'Ya existe una clienta registrada con ese número de teléfono.',
+      );
+    }
+    const nowIso = new Date().toISOString();
+    const created: ClientProfile = {
+      id: generateId('cli'),
+      fullName: params.fullName.trim(),
+      phoneE164,
+      email: params.email?.trim() || null,
+      ...(normalizedInstagram ? { instagramHandle: normalizedInstagram } : {}),
+      birthday: params.birthday?.trim() || null,
+      notes: params.notes?.trim() || '',
+      noShowCount: 0,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    db.clients.unshift(created);
+    return created;
+  });
+}
+
 export async function updateClientNotes(params: {
   clientId: string;
   notes?: string;
   birthday?: string | null;
   email?: string | null;
+  instagramHandle?: string | null;
 }): Promise<ClientProfile> {
+  const hasInstagramUpdate = params.instagramHandle !== undefined;
+  const normalizedInstagram = hasInstagramUpdate
+    ? normalizeInstagramHandle(params.instagramHandle)
+    : undefined;
   return withWriteLock((db) => {
     const client = db.clients.find((c) => c.id === params.clientId);
     if (!client) throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
     if (params.notes !== undefined) client.notes = params.notes;
     if (params.birthday !== undefined) client.birthday = params.birthday;
     if (params.email !== undefined) client.email = params.email;
+    if (hasInstagramUpdate) {
+      client.instagramHandle = normalizedInstagram;
+    }
     client.updatedAt = new Date().toISOString();
     return client;
   });

@@ -21,7 +21,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - **Precondiciones:** Ninguna (acceso público).
 - **Elementos clave y selectores:**
   - TopNav: `role="navigation"` (`Navegación principal del salón`), botones `Panel` (`/admin`), `Agendar cita` (`/reservar`), toggle modo claro/oscuro (`aria-label*="modo"`).
-  - Hero: `h1` con `settings.landingContent.heroTitle`, `StatusDot` (`aria-label="Agenda abierta en tiempo real"`), CTA `Agendar mi cita ahora` (`/reservar`).
+  - Hero: `h1` con `settings.landingContent.heroTitle`, texto `Agenda abierta en tiempo real`, foto de manicure y CTA `Agendar mi cita ahora` (`/reservar`).
   - Catálogo `#servicios`: `TabList` (`Todos los servicios`, `Uña Natural & Gel`, `Extensiones & Esculturales`, `Pies & Spa`), cards de servicio con botón `Reservar` (`/reservar/[slug]`).
   - Galería `#galeria`: `TabList` por categoría + 4 ilustraciones SVG + botones `Quiero este diseño` (`/reservar/[slug]?inspo=...`).
 - **Flujo de verificación:**

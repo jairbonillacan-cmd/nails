@@ -6,6 +6,7 @@ import type {
   AdminUser,
   AvailabilitySchedule,
   BookingReview,
+  BookingStatus,
   BookingWithRelations,
   CalendarConnection,
   CashRegisterEntry,
@@ -48,6 +49,45 @@ export interface AdminOverviewPayload {
     avgRating: number;
     reviewsCount: number;
   };
+  onboardingChecklist: {
+    completedCount: number;
+    totalCount: number;
+    steps: Array<{
+      id: string;
+      label: string;
+      href: string;
+      done: boolean;
+    }>;
+  };
+  pendingDeposits: Array<{
+    bookingId: string;
+    bookingCode: string;
+    status: BookingStatus;
+    clientId: string;
+    clientName: string;
+    clientPhone: string;
+    clientInstagram: string | null;
+    serviceName: string;
+    staffId: string;
+    staffName: string;
+    startAt: string;
+    depositAmountCents: number;
+    totalPriceCents: number;
+    proofDeliveryMethod: 'web_upload' | 'instagram_dm' | 'none';
+    paymentProofUrl: string | null;
+  }>;
+  retention: {
+    returningClientsCount: number;
+    inactiveClients: Array<{
+      clientId: string;
+      fullName: string;
+      phoneE164: string;
+      instagramHandle: string | null;
+      lastVisitAt: string;
+      daysSinceLastVisit: number;
+      totalVisits: number;
+    }>;
+  };
   bookings: BookingWithRelations[];
   services: Service[];
   categories: ServiceCategory[];
@@ -72,6 +112,7 @@ export interface AdminOverviewPayload {
 interface AdminContextValue {
   data: AdminOverviewPayload | null;
   loading: boolean;
+  bookingEventSeq: number;
   refresh: () => Promise<void>;
   switchDemoUser: (email: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -90,6 +131,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const { setSettingsOverride } = useSalonAppearance();
   const [data, setData] = useState<AdminOverviewPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bookingEventSeq, setBookingEventSeq] = useState(0);
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
@@ -126,6 +168,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     useCallback(
       (evt) => {
         if (evt.type !== 'connected') {
+          if (evt.type === 'slot_changed' || evt.type === 'booking_created') {
+            setBookingEventSeq((prev) => prev + 1);
+          }
           void refresh();
         }
       },
@@ -149,7 +194,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AdminContext.Provider value={{ data, loading, refresh, switchDemoUser, logout }}>
+    <AdminContext.Provider
+      value={{ data, loading, bookingEventSeq, refresh, switchDemoUser, logout }}
+    >
       {children}
     </AdminContext.Provider>
   );

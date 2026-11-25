@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { getSnapshot } from '@/lib/repositories/db';
+import { DEFAULT_BRAND_ACCENT_LIGHT } from '@/lib/theme-presets';
 
 export default function manifest(): MetadataRoute.Manifest {
   const db = getSnapshot();
@@ -9,12 +10,12 @@ export default function manifest(): MetadataRoute.Manifest {
     description: db.settings.tagline,
     start_url: '/admin',
     display: 'standalone',
-    background_color: '#FAF8F6',
-    theme_color: db.settings.brandAccentLight || '#9E5C64',
+    background_color: '#FAF7F5',
+    theme_color: db.settings.brandAccentLight || DEFAULT_BRAND_ACCENT_LIGHT,
     lang: 'es-MX',
     icons: [
       {
-        src: '/icon.svg',
+        src: '/brand/laikona-avatar.svg',
         sizes: 'any',
         type: 'image/svg+xml',
         purpose: 'any',

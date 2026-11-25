@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   assertSlotBookable,
+  computeServiceTotals,
   diagnoseDateSlots,
   getAvailableSlotsForDate,
   rangesOverlap,
@@ -14,6 +15,7 @@ import type {
   AvailabilityRule,
   Booking,
   DateOverride,
+  Service,
   ServiceAddon,
   SlotHold,
 } from '../types';
@@ -23,6 +25,8 @@ const TEST_DOW = 2 as const;
 const TZ = 'America/Mexico_City';
 const NOW = new Date('2026-12-10T12:00:00.000Z');
 const SEED_DB = createInitialDemoDatabase();
+const PRIMARY_STAFF_ID = SEED_DB.staff[0]?.id ?? 'staff-karla';
+const PRIMARY_SERVICE_ID = SEED_DB.services[0]?.id ?? 'srv-rubber';
 
 function toTimeStr(minutes: number): string {
   const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
@@ -40,6 +44,7 @@ function makeBaseContext(
   bookings: Booking[] = [],
   slotHolds: SlotHold[] = [],
   dateOverrides: DateOverride[] = [],
+  extraServices: Service[] = [],
 ): AvailabilityContext {
   const baseService = SEED_DB.services[0];
   const baseStaff = SEED_DB.staff[0];
@@ -61,6 +66,7 @@ function makeBaseContext(
       bufferBeforeMinutes,
       bufferAfterMinutes,
     },
+    extraServices,
     addons,
     staffMembers: [baseStaff],
     schedules: [
@@ -97,7 +103,7 @@ function makeActiveBooking(
     bookingCode: `NL-${id}`,
     manageToken: `tok-${id}`,
     idempotencyKey: null,
-    serviceId: 'srv-gelish-manicure',
+    serviceId: PRIMARY_SERVICE_ID,
     staffId,
     clientId: 'client-1',
     startAt: new Date(startMs).toISOString(),
@@ -108,7 +114,7 @@ function makeActiveBooking(
     subtotalCents: 38000,
     discountCents: 0,
     totalPriceCents: 38000,
-    depositAmountCents: 0,
+    depositAmountCents: 20000,
     couponCode: null,
     status: 'confirmed',
     source: 'web',
@@ -150,7 +156,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
           { minLength: 0, maxLength: 4 },
         ),
         (duration, bufBefore, bufAfter, interval, rawBookings, rawHolds) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const rules: AvailabilityRule[] = [
             { id: 'r1', dayOfWeek: TEST_DOW, startTime: '09:00', endTime: '20:00' },
           ];
@@ -162,7 +168,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
             return {
               id: `h-${i}`,
               staffId,
-              serviceId: 'srv-gelish-manicure',
+              serviceId: PRIMARY_SERVICE_ID,
               sessionToken: `other-session-${i}`,
               startAt: new Date(sMs).toISOString(),
               endAt: new Date(sMs + h.dur * 60_000).toISOString(),
@@ -215,7 +221,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
         fc.integer({ min: 10, max: 13 }),
         fc.integer({ min: 14, max: 18 }),
         (duration, mStart, mEnd, aStart, aEnd, overrideKind, ovrStartH, ovrEndH) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const rules: AvailabilityRule[] = [
             {
               id: 'morning',
@@ -316,7 +322,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
         fc.constantFrom(0, 5, 10, 15, 20),
         fc.array(fc.integer({ min: 0, max: 45 }), { minLength: 0, maxLength: 5 }),
         (baseDuration, bufBefore, bufAfter, addonMinutesList) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const addons: ServiceAddon[] = addonMinutesList.map((extraMinutes, idx) => ({
             id: `a-${idx}`,
             name: `Extra ${idx}`,
@@ -368,7 +374,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
         fc.integer({ min: 9 * 60, max: 18 * 60 }),
         fc.constantFrom(30, 60, 90),
         (duration, startH, endH, trimStartH, trimEndH, extraBookMin, extraBookDur) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const initialRules: AvailabilityRule[] = [
             {
               id: 'r1',
@@ -481,7 +487,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
           probeMinutes,
           dayOffsetFromNow,
         ) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const probeDateDt = new Date(NOW.getTime() + dayOffsetFromNow * 86_400_000);
           const probeDateStr = probeDateDt.toISOString().slice(0, 10);
           const probeDow = probeDateDt.getUTCDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -572,7 +578,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
           { minLength: 0, maxLength: 4 },
         ),
         (duration, bufB, bufA, interval, minNotice, maxDays, overrideKind, rawBookings) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const rules: AvailabilityRule[] = [
             { id: 'r1', dayOfWeek: TEST_DOW, startTime: '08:30', endTime: '13:30' },
             { id: 'r2', dayOfWeek: TEST_DOW, startTime: '15:00', endTime: '20:30' },
@@ -663,7 +669,7 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
         fc.integer({ min: 5, max: 14 }),
         fc.integer({ min: 0, max: 100 }),
         (dstCase, duration, interval, startH, endH, pickIdx) => {
-          const staffId = 'staff-valeria';
+          const staffId = PRIMARY_STAFF_ID;
           const baseCtx = makeBaseContext(duration, 0, 15, interval, [
             {
               id: 'r-dst',
@@ -721,6 +727,211 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
 
           for (const d of diag) {
             expect(d.isAvailable).toBe(availableSet.has(d.time24));
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('Property 9 (Fixed Start Times): only configured fixed blocks are offered and D1/D7 stay equivalent', () => {
+    const fixedPool = [
+      '09:00',
+      '10:00',
+      '11:30',
+      '13:30',
+      '14:00',
+      '16:00',
+      '16:30',
+      '18:00',
+    ];
+    fc.assert(
+      fc.property(
+        fc.subarray(fixedPool, { minLength: 1, maxLength: 6 }),
+        fc.constantFrom(30, 60, 90, 120, 150),
+        fc.constantFrom<15 | 30 | 60>(15, 30, 60),
+        fc.array(
+          fc.record({
+            startMin: fc.integer({ min: 9 * 60, max: 19 * 60 }),
+            dur: fc.constantFrom(60, 120),
+          }),
+          { minLength: 0, maxLength: 3 },
+        ),
+        fc.constantFrom('10:30', '12:00', '15:00', '17:00'),
+        fc.boolean(),
+        (fixedStartTimes, duration, interval, rawBookings, probeTime, isClosed) => {
+          const staffId = PRIMARY_STAFF_ID;
+          const fixedSet = new Set(fixedStartTimes);
+          const rules: AvailabilityRule[] = [
+            {
+              id: 'r-fixed',
+              dayOfWeek: TEST_DOW,
+              startTime: '09:00',
+              endTime: '20:30',
+              fixedStartTimes,
+            },
+          ];
+          const bookings = rawBookings.map((b, i) =>
+            makeActiveBooking(`fx-${i}`, staffId, b.startMin, b.dur, 0, 0),
+          );
+          const overrides: DateOverride[] = isClosed
+            ? [
+                {
+                  id: 'ovr-fx',
+                  staffId,
+                  overrideDate: TEST_DATE,
+                  isUnavailable: true,
+                  startTime: null,
+                  endTime: null,
+                  reason: 'Cerrado',
+                },
+              ]
+            : [];
+
+          const ctx = makeBaseContext(
+            duration,
+            0,
+            0,
+            interval,
+            rules,
+            [],
+            bookings,
+            [],
+            overrides,
+          );
+
+          const slots = getAvailableSlotsForDate(ctx, TEST_DATE, staffId);
+          const availableTimes = new Set(slots.map((s) => s.localTime24));
+
+          for (const slot of slots) {
+            expect(fixedSet.has(slot.localTime24)).toBe(true);
+            const check = assertSlotBookable(ctx, {
+              startAt: slot.startAt,
+              staffId,
+            });
+            expect(check.ok).toBe(true);
+          }
+
+          const probeIso = zonedDateTimeToUtc(TEST_DATE, probeTime, TZ).toISOString();
+          const probeCheck = assertSlotBookable(ctx, {
+            startAt: probeIso,
+            staffId,
+          });
+          expect(probeCheck.ok).toBe(false);
+
+          const diag = diagnoseDateSlots(ctx, TEST_DATE, staffId);
+          const diagByTime = new Map(diag.map((d) => [d.time24, d]));
+          for (const d of diag) {
+            expect(d.isAvailable).toBe(availableTimes.has(d.time24));
+          }
+          for (const slot of slots) {
+            expect(diagByTime.get(slot.localTime24)?.isAvailable).toBe(true);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('Property 10 (Multi-service): extraServices sum durations/prices and take max buffers accurately', () => {
+    const templateService = SEED_DB.services[0];
+    if (!templateService) {
+      throw new Error('Seed requires at least one service');
+    }
+
+    fc.assert(
+      fc.property(
+        fc.constantFrom(30, 60, 90, 120),
+        fc.constantFrom(0, 5, 10),
+        fc.constantFrom(0, 5, 10),
+        fc.array(
+          fc.record({
+            durationMinutes: fc.constantFrom(30, 45, 60, 90),
+            priceCents: fc.constantFrom(8000, 15000, 25000, 50000),
+            bufferBeforeMinutes: fc.constantFrom(0, 5, 15),
+            bufferAfterMinutes: fc.constantFrom(0, 10, 15),
+          }),
+          { minLength: 1, maxLength: 3 },
+        ),
+        fc.array(fc.constantFrom(15, 20, 30), { minLength: 0, maxLength: 3 }),
+        (baseDur, baseBufB, baseBufA, rawExtras, addonMins) => {
+          const staffId = PRIMARY_STAFF_ID;
+          const extraServices: Service[] = rawExtras.map((extra, idx) => ({
+            ...templateService,
+            id: SEED_DB.services[(idx + 1) % SEED_DB.services.length]?.id ?? `srv-extra-${idx}`,
+            durationMinutes: extra.durationMinutes,
+            priceCents: extra.priceCents,
+            bufferBeforeMinutes: extra.bufferBeforeMinutes,
+            bufferAfterMinutes: extra.bufferAfterMinutes,
+          }));
+          const addons: ServiceAddon[] = addonMins.map((extraMinutes, idx) => ({
+            id: `a-ms-${idx}`,
+            name: `Extra ${idx}`,
+            description: '',
+            extraMinutes,
+            extraPriceCents: 10000,
+            appliesToAll: true,
+            serviceIds: [],
+            isActive: true,
+            displayOrder: idx,
+          }));
+
+          const ctx = makeBaseContext(
+            baseDur,
+            baseBufB,
+            baseBufA,
+            30,
+            [
+              {
+                id: 'r-ms',
+                dayOfWeek: TEST_DOW,
+                startTime: '09:00',
+                endTime: '20:30',
+                fixedStartTimes: ['10:00', '13:30', '16:30'],
+              },
+            ],
+            addons,
+            [],
+            [],
+            [],
+            extraServices,
+          );
+
+          const expectedDuration =
+            baseDur +
+            extraServices.reduce((acc, s) => acc + s.durationMinutes, 0) +
+            addonMins.reduce((acc, m) => acc + m, 0);
+          const expectedPrice =
+            ctx.service.priceCents +
+            extraServices.reduce((acc, s) => acc + s.priceCents, 0) +
+            addons.length * 10000;
+          const expectedBufB = Math.max(
+            baseBufB,
+            ...extraServices.map((s) => s.bufferBeforeMinutes),
+          );
+          const expectedBufA = Math.max(
+            baseBufA,
+            ...extraServices.map((s) => s.bufferAfterMinutes),
+          );
+
+          const totals = computeServiceTotals(ctx.service, addons, extraServices);
+          expect(totals.totalDurationMinutes).toBe(expectedDuration);
+          expect(totals.subtotalCents).toBe(expectedPrice);
+          expect(totals.bufferBeforeMinutes).toBe(expectedBufB);
+          expect(totals.bufferAfterMinutes).toBe(expectedBufA);
+
+          const windowEndMs = zonedDateTimeToUtc(TEST_DATE, '20:30', TZ).getTime();
+          const slots = getAvailableSlotsForDate(ctx, TEST_DATE, staffId);
+          for (const slot of slots) {
+            const startMs = new Date(slot.startAt).getTime();
+            const endMs = new Date(slot.endAt).getTime();
+            const occStartMs = new Date(slot.occupiedStartAt).getTime();
+            const occEndMs = new Date(slot.occupiedEndAt).getTime();
+
+            expect(endMs - startMs).toBe(expectedDuration * 60_000);
+            expect(startMs - occStartMs).toBe(expectedBufB * 60_000);
+            expect(occEndMs - endMs).toBe(expectedBufA * 60_000);
+            expect(endMs).toBeLessThanOrEqual(windowEndMs);
           }
         },
       ),

@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import {
   addDateOverride,
   createBookingAtomic,
+  createClientProfile,
   createOrRefreshSlotHold,
   getBookingByToken,
   getSnapshot,
@@ -14,8 +15,11 @@ import {
   PolicyError,
   queryAvailability,
   releaseSlotHold,
+  saveOnboardingSetup,
+  sendManualBookingReminder,
   SlotConflictError,
   updateBookingStatus,
+  updateClientNotes,
 } from './db';
 import { zonedDateTimeToUtc } from '../availability/engine';
 import { getDateKeyInTimezone } from '../format';
@@ -30,6 +34,7 @@ let originalDbPathEnv: string | undefined;
 function resetIsolatedDb(): void {
   globalThis.nailsDbCache = undefined;
   globalThis.nailsDbCachePath = undefined;
+  globalThis.nailsDbPersistedToDisk = undefined;
   if (fs.existsSync(TEMP_DB_PATH)) {
     fs.unlinkSync(TEMP_DB_PATH);
   }
@@ -61,14 +66,14 @@ afterAll(() => {
 describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', () => {
   it('prevents double-booking when two clients race for the exact same slot and returns 3 alternatives', async () => {
     const db = getSnapshot();
-    const service = db.services.find((s) => s.id === 'srv-gelish-manicure');
+    const service = db.services.find((s) => s.id === 'srv-gel-semipermanente-manos');
     if (!service) throw new Error('Expected seed service');
     const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
 
     const avail = queryAvailability({
       serviceId: service.id,
       addonIds: [],
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       startDate: today,
       days: 14,
     });
@@ -118,14 +123,14 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
 
   it('deduplicates double submissions via Idempotency-Key and enforces 3-minute slot holds', async () => {
     const db = getSnapshot();
-    const service = db.services.find((s) => s.id === 'srv-gelish-manicure');
+    const service = db.services.find((s) => s.id === 'srv-gel-semipermanente-manos');
     if (!service) throw new Error('Expected seed service');
     const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
 
     const avail = queryAvailability({
       serviceId: service.id,
       addonIds: [],
-      staffId: 'staff-camila',
+      staffId: 'staff-tere',
       startDate: today,
       days: 14,
     });
@@ -183,9 +188,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const db = getSnapshot();
     const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
     const avail = queryAvailability({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-camila',
+      staffId: 'staff-tere',
       startDate: today,
       days: 14,
     });
@@ -197,7 +202,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     }
 
     const hold = await createOrRefreshSlotHold({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
       staffId: slotA.staffId,
       startAt: slotA.startAt,
@@ -207,7 +212,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
 
     await expect(
       createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
         staffId: slotA.staffId,
         startAt: slotA.startAt,
@@ -220,7 +225,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
 
     await expect(
       createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
         staffId: slotB.staffId,
         startAt: slotB.startAt,
@@ -232,7 +237,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     ).rejects.toBeInstanceOf(SlotConflictError);
 
     const confirmed = await createBookingAtomic({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
       staffId: slotA.staffId,
       startAt: slotA.startAt,
@@ -250,9 +255,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const tz = db.settings.timezone;
     const today = getDateKeyInTimezone(new Date(), tz);
     const avail = queryAvailability({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       startDate: today,
       days: 14,
     });
@@ -264,9 +269,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     let caughtThreeAm: unknown = null;
     try {
       await createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startAt: threeAmIso,
         clientName: 'Nocturna',
         clientPhone: '+525511223344',
@@ -280,9 +285,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
 
     await expect(
       createOrRefreshSlotHold({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startAt: threeAmIso,
         sessionToken: 'sess-3am',
       }),
@@ -291,9 +296,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const pastIso = new Date(Date.now() - 3_600_000).toISOString();
     await expect(
       createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startAt: pastIso,
         clientName: 'Pasado',
         clientPhone: '+525511223345',
@@ -305,9 +310,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     ).toISOString();
     await expect(
       createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startAt: beyondMaxIso,
         clientName: 'Futuro Lejano',
         clientPhone: '+525511223346',
@@ -319,9 +324,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     ).toISOString();
     await expect(
       createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startAt: unalignedIso,
         clientName: 'Desalineada',
         clientPhone: '+525511223347',
@@ -329,7 +334,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     ).rejects.toMatchObject({ code: 'INVALID_ALIGNMENT' });
 
     await addDateOverride({
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       overrideDate: validDay.date,
       isUnavailable: true,
       startTime: null,
@@ -338,9 +343,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     });
     await expect(
       createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startAt: validSlot.startAt,
         clientName: 'Dia Cerrado',
         clientPhone: '+525511223348',
@@ -348,9 +353,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     ).rejects.toMatchObject({ code: 'OUTSIDE_HOURS' });
 
     const farAvail = queryAvailability({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-camila',
+      staffId: 'staff-tere',
       startDate: today,
       days: 14,
     });
@@ -361,9 +366,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     );
     if (!farDay || !farDay.slots[0]) throw new Error('Expected future slot >48h');
     const created = await createBookingAtomic({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-camila',
+      staffId: 'staff-tere',
       startAt: farDay.slots[0].startAt,
       clientName: 'Reagendar D1',
       clientPhone: '+525511223349',
@@ -374,7 +379,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
         token: created.manageToken,
         action: 'reschedule',
         newStartAt: threeAmIso,
-        newStaffId: 'staff-camila',
+        newStaffId: 'staff-tere',
       }),
     ).rejects.toMatchObject({ code: 'OUTSIDE_HOURS' });
 
@@ -386,9 +391,9 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const db = getSnapshot();
     const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
     const avail = queryAvailability({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-rubber',
       addonIds: [],
-      staffId: 'staff-camila',
+      staffId: 'staff-tere',
       startDate: today,
       days: 14,
     });
@@ -404,7 +409,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const initialCouponUses =
       getSnapshot().coupons.find((c) => c.code === 'BIENVENIDA10')?.usedCount ?? 0;
     const withCoupon = await createBookingAtomic({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-rubber',
       addonIds: [],
       staffId: slot1.staffId,
       startAt: slot1.startAt,
@@ -445,7 +450,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const initialGiftBal =
       getSnapshot().coupons.find((c) => c.code === 'GIFT500')?.remainingBalanceCents ?? 0;
     const withGift = await createBookingAtomic({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-rubber',
       addonIds: [],
       staffId: slot2.staffId,
       startAt: slot2.startAt,
@@ -472,96 +477,189 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const db = getSnapshot();
     const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
 
-    const valeriaAvail = queryAvailability({
-      serviceId: 'srv-gelish-manicure',
+    const karlaAvail = queryAvailability({
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-valeria',
+      staffId: 'staff-karla',
       startDate: today,
       days: 14,
     });
-    const camilaAvail = queryAvailability({
-      serviceId: 'srv-gelish-manicure',
+    const patyAvail = queryAvailability({
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-camila',
+      staffId: 'staff-paty',
       startDate: today,
       days: 14,
     });
 
-    const camilaByTime = new Set(
-      camilaAvail.days.flatMap((d) => d.slots).map((s) => s.startAt),
-    );
-    const sharedSlots = valeriaAvail.days
-      .flatMap((d) => d.slots)
-      .filter((s) => camilaByTime.has(s.startAt));
+    const patyDayMap = new Map(patyAvail.days.map((d) => [d.date, d]));
+    const cleanSharedDay = karlaAvail.days.find((kd) => {
+      const pd = patyDayMap.get(kd.date);
+      return kd.date > today && kd.slots.length >= 3 && pd && pd.slots.length >= 3;
+    });
+    if (!cleanSharedDay || cleanSharedDay.slots.length < 3) {
+      throw new Error('Expected clean shared day with 3 fixed blocks for Karla and Paty');
+    }
 
-    const firstShared = sharedSlots[0];
-    const laterSharedSameDay = sharedSlots.find(
-      (s) =>
-        s.startAt !== firstShared?.startAt &&
-        getDateKeyInTimezone(new Date(s.startAt), db.settings.timezone) ===
-          getDateKeyInTimezone(new Date(firstShared?.startAt ?? 0), db.settings.timezone) &&
-        Math.abs(
-          new Date(s.startAt).getTime() - new Date(firstShared?.startAt ?? 0).getTime(),
-        ) >= 120 * 60_000,
-    );
-    if (!firstShared || !laterSharedSameDay) {
-      throw new Error('Expected two shared slots on the same day');
+    const slotMorning = cleanSharedDay.slots[0];
+    const slotMidday = cleanSharedDay.slots[1];
+    const slotEvening = cleanSharedDay.slots[2];
+    if (!slotMorning || !slotMidday || !slotEvening) {
+      throw new Error('Expected three fixed slots on clean shared day');
     }
 
     await createBookingAtomic({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
-      staffId: 'staff-valeria',
-      startAt: firstShared.startAt,
-      clientName: 'Ocupa Valeria',
+      staffId: 'staff-karla',
+      startAt: slotMorning.startAt,
+      clientName: 'Ocupa Karla',
       clientPhone: '+525544556601',
     });
 
     const autoFree = await createBookingAtomic({
-      serviceId: 'srv-gelish-manicure',
+      serviceId: 'srv-gel-semipermanente-manos',
       addonIds: [],
       staffId: null,
-      startAt: firstShared.startAt,
+      startAt: slotMorning.startAt,
       clientName: 'Cualquiera Libre',
       clientPhone: '+525544556602',
     });
-    expect(autoFree.staffId).toBe('staff-camila');
+    expect(autoFree.staffId).toBe('staff-paty');
 
-    const extraValeriaSlot = valeriaAvail.days
-      .flatMap((d) => d.slots)
-      .find(
-        (s) =>
-          s.startAt !== firstShared.startAt &&
-          s.startAt !== laterSharedSameDay.startAt &&
-          getDateKeyInTimezone(new Date(s.startAt), db.settings.timezone) ===
-            getDateKeyInTimezone(new Date(laterSharedSameDay.startAt), db.settings.timezone) &&
-          Math.abs(
-            new Date(s.startAt).getTime() - new Date(firstShared.startAt).getTime(),
-          ) >= 90 * 60_000 &&
-          Math.abs(
-            new Date(s.startAt).getTime() - new Date(laterSharedSameDay.startAt).getTime(),
-          ) >= 90 * 60_000,
-      );
-    if (extraValeriaSlot) {
-      await createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
-        addonIds: [],
-        staffId: 'staff-valeria',
-        startAt: extraValeriaSlot.startAt,
-        clientName: 'Extra Valeria',
-        clientPhone: '+525544556603',
-      });
+    await createBookingAtomic({
+      serviceId: 'srv-gel-semipermanente-manos',
+      addonIds: [],
+      staffId: 'staff-karla',
+      startAt: slotMidday.startAt,
+      clientName: 'Extra Karla',
+      clientPhone: '+525544556603',
+    });
 
-      const leastBusyPick = await createBookingAtomic({
-        serviceId: 'srv-gelish-manicure',
-        addonIds: [],
-        staffId: null,
-        startAt: laterSharedSameDay.startAt,
-        clientName: 'Menor Carga',
-        clientPhone: '+525544556604',
-      });
-      expect(leastBusyPick.staffId).toBe('staff-camila');
-    }
+    const leastBusyPick = await createBookingAtomic({
+      serviceId: 'srv-gel-semipermanente-manos',
+      addonIds: [],
+      staffId: null,
+      startAt: slotEvening.startAt,
+      clientName: 'Menor Carga',
+      clientPhone: '+525544556604',
+    });
+    expect(leastBusyPick.staffId).toBe('staff-paty');
+  });
+
+  it('Phase 2: supports multi-service booking, @instagram persistence, custom overrides, manual reminders, clients & onboarding', async () => {
+    const db = getSnapshot();
+    const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+
+    const multiAvail = queryAvailability({
+      serviceId: 'srv-unas-acrilicas',
+      extraServiceIds: ['srv-retiro'],
+      addonIds: [],
+      staffId: 'staff-karla',
+      startDate: today,
+      days: 14,
+    });
+    expect(multiAvail.totals.totalDurationMinutes).toBe(180);
+    expect(multiAvail.totals.subtotalCents).toBe(53000);
+    expect(multiAvail.extraServices.map((s) => s.id)).toEqual(['srv-retiro']);
+
+    const openSlot = multiAvail.days.find((d) => d.date > today && d.slots.length > 0)?.slots[0];
+    if (!openSlot) throw new Error('Expected multi-service slot for Karla');
+
+    const created = await createBookingAtomic({
+      serviceId: 'srv-unas-acrilicas',
+      extraServiceIds: ['srv-retiro'],
+      addonIds: [],
+      staffId: openSlot.staffId,
+      startAt: openSlot.startAt,
+      clientName: 'Valeria Puebla',
+      clientPhone: '+522229998877',
+      clientEmail: 'valeria.puebla@ejemplo.mx',
+      clientInstagram: 'https://instagram.com/Valeria.Nails_Pue/',
+      proofDeliveryMethod: 'instagram_dm',
+    });
+
+    expect(created.extraServiceIds).toEqual(['srv-retiro']);
+    expect(created.totalDurationMinutes).toBe(180);
+    expect(created.subtotalCents).toBe(53000);
+    expect(created.depositAmountCents).toBe(20000);
+    expect(created.clientInstagram).toBe('@valeria.nails_pue');
+    expect(created.client.instagramHandle).toBe('@valeria.nails_pue');
+    expect(created.proofDeliveryMethod).toBe('instagram_dm');
+
+    const reminder = await sendManualBookingReminder({
+      bookingId: created.id,
+      channel: 'both',
+    });
+    expect(reminder.ok).toBe(true);
+    expect(reminder.waMeUrl).toContain('https://wa.me/522229998877');
+    expect(reminder.messagePreview).toContain('LAIKONA NAILS');
+    expect(reminder.logs).toHaveLength(2);
+
+    const clientCreated = await createClientProfile({
+      fullName: 'Daniela Ortiz',
+      phone: '2223334455',
+      email: 'daniela@ejemplo.mx',
+      instagramHandle: 'daniela.pue',
+      notes: 'Cutícula seca',
+    });
+    expect(clientCreated.instagramHandle).toBe('@daniela.pue');
+    expect(clientCreated.notes).toBe('Cutícula seca');
+
+    await expect(
+      createClientProfile({
+        fullName: 'Duplicada',
+        phone: '+522223334455',
+      }),
+    ).rejects.toMatchObject({ code: 'CLIENT_EXISTS' });
+
+    const updatedClient = await updateClientNotes({
+      clientId: clientCreated.id,
+      instagramHandle: '@daniela.nails.mx',
+      notes: 'Prefiere Cherry Red',
+    });
+    expect(updatedClient.instagramHandle).toBe('@daniela.nails.mx');
+
+    const onboarding = await saveOnboardingSetup({
+      businessType: 'Salón de Manicure y Uñas',
+      teamSizeTier: '3 a 5',
+      salonName: 'LAIKONA NAILS Puebla',
+      serviceMode: 'studio',
+      address: 'Puebla Centro',
+      soundAlertsEnabled: true,
+      onboardingCompleted: true,
+      starterService: {
+        name: 'Diseño Editorial Cherry',
+        priceCents: 48000,
+        durationMinutes: 120,
+        isStartingPrice: true,
+      },
+    });
+    expect(onboarding.settings.onboardingCompleted).toBe(true);
+    expect(onboarding.settings.name).toBe('LAIKONA NAILS Puebla');
+    expect(onboarding.starterService?.isStartingPrice).toBe(true);
+  });
+
+  it('invalidates in-memory cache and re-seeds cleanly when the demo DB file is deleted from disk', async () => {
+    const initial = getSnapshot();
+    expect(initial.settings.name).toBe('LAIKONA NAILS');
+    expect(fs.existsSync(TEMP_DB_PATH)).toBe(true);
+
+    await saveOnboardingSetup({
+      salonName: 'Temporarily Mutated Salon',
+      onboardingCompleted: true,
+    });
+    expect(getSnapshot().settings.name).toBe('Temporarily Mutated Salon');
+
+    fs.unlinkSync(TEMP_DB_PATH);
+    expect(fs.existsSync(TEMP_DB_PATH)).toBe(false);
+
+    const reseeded = getSnapshot();
+    expect(reseeded.settings.name).toBe('LAIKONA NAILS');
+    expect(reseeded.settings.onboardingCompleted).toBe(false);
+    expect(reseeded.staff.some((s) => s.id === 'staff-karla')).toBe(true);
+    expect(reseeded.services.some((s) => s.id === 'srv-rubber')).toBe(true);
+    expect(fs.existsSync(TEMP_DB_PATH)).toBe(true);
   });
 
   it('Property: /cita/[token] cancel/reschedule inside minimum notice window throws PolicyError without mutating booking', async () => {
@@ -580,7 +678,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
         fc.integer({ min: 5, max: Math.max(10, minWindowHours * 60 - 15) }),
         fc.constantFrom<'cancel' | 'reschedule'>('cancel', 'reschedule'),
         async (minutesFromNow, action) => {
-          const token = `prop-policy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const token = `prop-policy-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
           const startAt = new Date(Date.now() + minutesFromNow * 60_000).toISOString();
           const endAt = new Date(Date.now() + (minutesFromNow + 60) * 60_000).toISOString();
           const updatedAt = new Date().toISOString();

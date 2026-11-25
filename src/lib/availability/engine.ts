@@ -43,6 +43,7 @@ export interface SlotDiagnosis {
 export interface AvailabilityContext {
   settings: SalonSettings;
   service: Service;
+  extraServices?: Service[];
   addons: ServiceAddon[];
   staffMembers: StaffMember[];
   schedules: AvailabilitySchedule[];
@@ -252,11 +253,22 @@ function getDayPeriod(time24: string): DayPeriod {
   return 'evening';
 }
 
-function isStaffEligibleForService(staff: StaffMember, serviceId: string): boolean {
-  return (
-    staff.isActive &&
-    (staff.serviceIds.length === 0 || staff.serviceIds.includes(serviceId))
-  );
+const HH_MM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function getRequiredServiceIds(ctx: AvailabilityContext): string[] {
+  if (!ctx.extraServices || ctx.extraServices.length === 0) {
+    return [ctx.service.id];
+  }
+  return [ctx.service.id, ...ctx.extraServices.map((s) => s.id)];
+}
+
+function isStaffEligibleForServices(
+  staff: StaffMember,
+  requiredServiceIds: readonly string[],
+): boolean {
+  if (!staff.isActive) return false;
+  if (staff.serviceIds.length === 0) return true;
+  return requiredServiceIds.every((id) => staff.serviceIds.includes(id));
 }
 
 export function rangesOverlap(
@@ -268,14 +280,34 @@ export function rangesOverlap(
   return aStart < bEnd && bStart < aEnd;
 }
 
-export function computeServiceTotals(service: Service, selectedAddons: ServiceAddon[]) {
+export function computeServiceTotals(
+  service: Service,
+  selectedAddons: ServiceAddon[],
+  extraServices: Service[] = [],
+) {
+  const extraServiceMinutes = extraServices.reduce(
+    (sum, s) => sum + s.durationMinutes,
+    0,
+  );
+  const extraServicePriceCents = extraServices.reduce(
+    (sum, s) => sum + s.priceCents,
+    0,
+  );
   const extraMinutes = selectedAddons.reduce((sum, a) => sum + a.extraMinutes, 0);
   const extraPriceCents = selectedAddons.reduce((sum, a) => sum + a.extraPriceCents, 0);
+  const bufferBeforeMinutes = extraServices.reduce(
+    (max, s) => Math.max(max, s.bufferBeforeMinutes),
+    service.bufferBeforeMinutes,
+  );
+  const bufferAfterMinutes = extraServices.reduce(
+    (max, s) => Math.max(max, s.bufferAfterMinutes),
+    service.bufferAfterMinutes,
+  );
   return {
-    totalDurationMinutes: service.durationMinutes + extraMinutes,
-    subtotalCents: service.priceCents + extraPriceCents,
-    bufferBeforeMinutes: service.bufferBeforeMinutes,
-    bufferAfterMinutes: service.bufferAfterMinutes,
+    totalDurationMinutes: service.durationMinutes + extraServiceMinutes + extraMinutes,
+    subtotalCents: service.priceCents + extraServicePriceCents + extraPriceCents,
+    bufferBeforeMinutes,
+    bufferAfterMinutes,
   };
 }
 
@@ -285,11 +317,70 @@ interface BusyInterval {
   reason: string;
 }
 
+interface RawWorkingWindow {
+  startMin: number;
+  endMin: number;
+  fixedStartMinutes: number[] | null;
+}
+
 interface ResolvedWindow {
   startMin: number;
   endMin: number;
   startMs: number;
   endMs: number;
+  fixedStartMinutes: number[] | null;
+}
+
+function parseFixedStartMinutes(
+  fixedStartTimes: string[] | undefined,
+  startMin: number,
+  endMin: number,
+): number[] | null {
+  if (!fixedStartTimes || fixedStartTimes.length === 0) {
+    return null;
+  }
+  const unique = new Set<number>();
+  for (const raw of fixedStartTimes) {
+    const trimmed = raw.trim();
+    if (!HH_MM_RE.test(trimmed)) continue;
+    const mins = parseTimeToMinutes(trimmed);
+    if (mins >= startMin && mins < endMin) {
+      unique.add(mins);
+    }
+  }
+  return Array.from(unique).sort((a, b) => a - b);
+}
+
+function getWindowCandidateCursors(
+  win: ResolvedWindow,
+  totalDurationMinutes: number,
+  step: number,
+): number[] {
+  if (win.fixedStartMinutes !== null) {
+    return win.fixedStartMinutes.filter(
+      (cursor) => cursor + totalDurationMinutes <= win.endMin,
+    );
+  }
+  const cursors: number[] = [];
+  for (
+    let cursor = win.startMin;
+    cursor + totalDurationMinutes <= win.endMin;
+    cursor += step
+  ) {
+    cursors.push(cursor);
+  }
+  return cursors;
+}
+
+function isCursorAlignedToWindow(
+  win: ResolvedWindow,
+  cursor: number,
+  step: number,
+): boolean {
+  if (win.fixedStartMinutes !== null) {
+    return win.fixedStartMinutes.includes(cursor);
+  }
+  return (cursor - win.startMin) % step === 0;
 }
 
 function getStaffWorkingWindows(
@@ -297,7 +388,7 @@ function getStaffWorkingWindows(
   dateStr: string,
   schedules: AvailabilitySchedule[],
   dateOverrides: DateOverride[],
-): Array<{ startMin: number; endMin: number }> {
+): RawWorkingWindow[] {
   const override = dateOverrides.find(
     (o) => o.staffId === staffId && o.overrideDate === dateStr,
   );
@@ -309,6 +400,7 @@ function getStaffWorkingWindows(
       {
         startMin: parseTimeToMinutes(override.startTime),
         endMin: parseTimeToMinutes(override.endTime),
+        fixedStartMinutes: null,
       },
     ];
   }
@@ -321,10 +413,15 @@ function getStaffWorkingWindows(
   const dow = getDayOfWeekForDateStr(dateStr);
   return schedule.rules
     .filter((r) => r.dayOfWeek === dow)
-    .map((r) => ({
-      startMin: parseTimeToMinutes(r.startTime),
-      endMin: parseTimeToMinutes(r.endTime),
-    }))
+    .map((r) => {
+      const startMin = parseTimeToMinutes(r.startTime);
+      const endMin = parseTimeToMinutes(r.endTime);
+      return {
+        startMin,
+        endMin,
+        fixedStartMinutes: parseFixedStartMinutes(r.fixedStartTimes, startMin, endMin),
+      };
+    })
     .sort((a, b) => a.startMin - b.startMin);
 }
 
@@ -394,7 +491,7 @@ function createDayTimeResolver(dateStr: string, timeZone: string): DayTimeResolv
 }
 
 function resolveWindowsForDate(
-  windows: Array<{ startMin: number; endMin: number }>,
+  windows: RawWorkingWindow[],
   dayResolver: DayTimeResolver,
 ): ResolvedWindow[] {
   return windows.map((w) => ({
@@ -402,6 +499,7 @@ function resolveWindowsForDate(
     endMin: w.endMin,
     startMs: dayResolver.resolve(w.startMin).ms,
     endMs: dayResolver.resolve(w.endMin).ms,
+    fixedStartMinutes: w.fixedStartMinutes,
   }));
 }
 
@@ -464,11 +562,12 @@ export function getAvailableSlotsForDate(
   const tz = ctx.settings.timezone || 'America/Mexico_City';
 
   const { totalDurationMinutes, bufferBeforeMinutes, bufferAfterMinutes } =
-    computeServiceTotals(ctx.service, ctx.addons);
+    computeServiceTotals(ctx.service, ctx.addons, ctx.extraServices ?? []);
   const step = ctx.settings.slotIntervalMinutes || 30;
+  const requiredServiceIds = getRequiredServiceIds(ctx);
 
   const eligibleStaff = ctx.staffMembers.filter((s) =>
-    isStaffEligibleForService(s, ctx.service.id),
+    isStaffEligibleForServices(s, requiredServiceIds),
   );
   const candidateStaff = preferredStaffId
     ? eligibleStaff.filter((s) => s.id === preferredStaffId)
@@ -498,11 +597,8 @@ export function getAvailableSlotsForDate(
     );
 
     for (const win of windows) {
-      for (
-        let cursor = win.startMin;
-        cursor + totalDurationMinutes <= win.endMin;
-        cursor += step
-      ) {
+      const cursors = getWindowCandidateCursors(win, totalDurationMinutes, step);
+      for (const cursor of cursors) {
         const resolved = dayResolver.resolve(cursor);
         if (!resolved.existsInZone) continue;
 
@@ -613,8 +709,9 @@ export function assertSlotBookable(
   const tz = effectiveCtx.settings.timezone || 'America/Mexico_City';
   const startMs = new Date(params.startAt).getTime();
 
+  const requiredServiceIds = getRequiredServiceIds(effectiveCtx);
   const staff = effectiveCtx.staffMembers.find((s) => s.id === params.staffId);
-  if (!staff || !isStaffEligibleForService(staff, effectiveCtx.service.id)) {
+  if (!staff || !isStaffEligibleForServices(staff, requiredServiceIds)) {
     const fallbackIso =
       Number.isNaN(startMs) || startMs < nowMs
         ? effectiveNow.toISOString()
@@ -700,6 +797,7 @@ export function assertSlotBookable(
   const { totalDurationMinutes } = computeServiceTotals(
     effectiveCtx.service,
     effectiveCtx.addons,
+    effectiveCtx.extraServices ?? [],
   );
   const step = effectiveCtx.settings.slotIntervalMinutes || 30;
   const localParts = getZonedParts(new Date(startMs), tz);
@@ -733,13 +831,16 @@ export function assertSlotBookable(
     subSecondMs === 0 &&
     canonicalTime.existsInZone &&
     canonicalTime.ms === startMs &&
-    fittingWindows.some((w) => (localMin - w.startMin) % step === 0);
+    fittingWindows.some((w) => isCursorAlignedToWindow(w, localMin, step));
 
   if (!isAlignedToWindow) {
+    const usesFixedTimes = fittingWindows.some((w) => w.fixedStartMinutes !== null);
     return {
       ok: false,
       code: 'INVALID_ALIGNMENT',
-      message: `El horario debe estar alineado al intervalo de agenda (${step} min).`,
+      message: usesFixedTimes
+        ? 'El horario debe coincidir con uno de los horarios fijos disponibles.'
+        : `El horario debe estar alineado al intervalo de agenda (${step} min).`,
       suggestedSlots,
     };
   }
@@ -766,7 +867,7 @@ export function diagnoseDateSlots(
   const maxFutureMs = nowMs + ctx.settings.maxBookingDaysAhead * 86_400_000;
   const tz = ctx.settings.timezone || 'America/Mexico_City';
   const step = ctx.settings.slotIntervalMinutes || 30;
-  const isEligible = isStaffEligibleForService(staff, ctx.service.id);
+  const isEligible = isStaffEligibleForServices(staff, getRequiredServiceIds(ctx));
 
   const override = ctx.dateOverrides.find(
     (o) => o.staffId === staffId && o.overrideDate === dateStr,
@@ -789,7 +890,7 @@ export function diagnoseDateSlots(
     ctx.ignoreBookingId,
   );
   const { totalDurationMinutes, bufferBeforeMinutes, bufferAfterMinutes } =
-    computeServiceTotals(ctx.service, ctx.addons);
+    computeServiceTotals(ctx.service, ctx.addons, ctx.extraServices ?? []);
 
   const availableTimeSet = new Set(
     getAvailableSlotsForDate(ctx, dateStr, staffId).map((s) => s.localTime24),
@@ -800,9 +901,17 @@ export function diagnoseDateSlots(
     candidateMinutes.add(cursor);
   }
   for (const w of rawWindows) {
-    for (let cursor = w.startMin; cursor <= w.endMin; cursor += step) {
-      if (cursor >= 0 && cursor < 24 * 60) {
-        candidateMinutes.add(cursor);
+    if (w.fixedStartMinutes !== null) {
+      for (const fixedMin of w.fixedStartMinutes) {
+        if (fixedMin >= 0 && fixedMin < 24 * 60) {
+          candidateMinutes.add(fixedMin);
+        }
+      }
+    } else {
+      for (let cursor = w.startMin; cursor <= w.endMin; cursor += step) {
+        if (cursor >= 0 && cursor < 24 * 60) {
+          candidateMinutes.add(cursor);
+        }
       }
     }
   }
@@ -877,15 +986,20 @@ export function diagnoseDateSlots(
       continue;
     }
 
-    const isAligned = fittingWindows.some((w) => (cursor - w.startMin) % step === 0);
+    const isAligned = fittingWindows.some((w) =>
+      isCursorAlignedToWindow(w, cursor, step),
+    );
     if (!isAligned) {
+      const usesFixedTimes = fittingWindows.some((w) => w.fixedStartMinutes !== null);
       diagnostics.push({
         date: dateStr,
         time24,
         staffId,
         staffName: staff.name,
         isAvailable: false,
-        reason: `Fuera de la cuadrícula de intervalos (${step} min)`,
+        reason: usesFixedTimes
+          ? 'Fuera de los horarios fijos configurados'
+          : `Fuera de la cuadrícula de intervalos (${step} min)`,
       });
       continue;
     }

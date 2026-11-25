@@ -33,8 +33,11 @@ export interface SalonSettings {
   logoUrl: string | null;
   coverImageUrl: string | null;
   address: string;
+  city?: string;
   mapsUrl: string;
   instagramHandle: string;
+  instagramUrl?: string;
+  sisterStudioHandle?: string;
   whatsappNumber: string;
   contactEmail: string;
   timezone: string;
@@ -61,9 +64,17 @@ export interface SalonSettings {
   paymentMode: PaymentMode;
   depositBankName: string;
   depositAccountHolder: string;
+  depositBeneficiary?: string;
   depositClabe: string;
+  depositAmountCents?: number;
   depositInstructions: string;
   currency: 'MXN' | 'USD';
+
+  serviceMode?: 'studio' | 'home' | 'online';
+  businessType?: string;
+  teamSizeTier?: string;
+  onboardingCompleted?: boolean;
+  soundAlertsEnabled?: boolean;
 
   landingContent: LandingContent;
 
@@ -115,6 +126,7 @@ export interface Service {
   description: string;
   durationMinutes: number;
   priceCents: number;
+  isStartingPrice?: boolean;
   bufferBeforeMinutes: number;
   bufferAfterMinutes: number;
   requiresConfirmation: boolean;
@@ -144,6 +156,7 @@ export interface AvailabilityRule {
   dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   startTime: string;
   endTime: string;
+  fixedStartTimes?: string[];
 }
 
 export interface AvailabilitySchedule {
@@ -183,6 +196,7 @@ export type ClientProfile = {
   fullName: string;
   phoneE164: string;
   email: string | null;
+  instagramHandle?: string;
   birthday: string | null;
   notes: string;
   noShowCount: number;
@@ -214,16 +228,20 @@ export interface Booking {
   manageToken: string;
   idempotencyKey: string | null;
   serviceId: string;
+  extraServiceIds?: string[];
   staffId: string;
   clientId: string;
+  clientInstagram?: string;
   startAt: string;
   endAt: string;
   occupiedStartAt: string;
   occupiedEndAt: string;
   totalDurationMinutes: number;
+  customDurationMinutes?: number;
   subtotalCents: number;
   discountCents: number;
   totalPriceCents: number;
+  customPriceCents?: number;
   depositAmountCents: number;
   couponCode: string | null;
   status: BookingStatus;
@@ -232,6 +250,7 @@ export interface Booking {
   internalNotes: string;
   inspoPhotoUrl: string | null;
   paymentProofUrl: string | null;
+  proofDeliveryMethod?: 'web_upload' | 'instagram_dm' | 'none';
   googleEventId: string | null;
   cancellationReason: string | null;
   rescheduledFromId: string | null;

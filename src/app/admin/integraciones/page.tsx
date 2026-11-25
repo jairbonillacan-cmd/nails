@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -21,18 +21,24 @@ import {
   BarChart3,
   Bell,
   Calendar,
+  Check,
+  Copy,
   CreditCard,
   MessageCircle,
   Send,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { formatCurrency } from '@/lib/format';
 import type { NotificationChannel, PaymentMode } from '@/lib/types';
 
 export default function AdminIntegrationsPage() {
   const { data, refresh } = useAdminData();
   const [msg, setMsg] = useState<string | null>(null);
+  const copyFeedback = useEphemeralMessage(2500);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [simName, setSimName] = useState('Daniela (Prueba WhatsApp)');
-  const [simPhone, setSimPhone] = useState('+525599112233');
+  const [simPhone, setSimPhone] = useState('+522229112233');
   const [simServiceId, setSimServiceId] = useState('');
   const [simLoading, setSimLoading] = useState(false);
 
@@ -40,12 +46,68 @@ export default function AdminIntegrationsPage() {
   const [ga4Id, setGa4Id] = useState<string | null>(null);
   const [googleReviewUrl, setGoogleReviewUrl] = useState<string | null>(null);
 
+  const whatsappTemplates = useMemo(() => {
+    if (!data) return [];
+    const s = data.settings;
+    const depositLabel = formatCurrency(s.depositAmountCents ?? 20000, s.currency);
+    const bank = s.depositBankName || 'Mercado Pago';
+    const holder = s.depositBeneficiary || s.depositAccountHolder;
+    const clabe = s.depositClabe || '7229 6901 3959 779869';
+    const ig = s.instagramHandle || '@laikona.nailsss';
+    return [
+      {
+        id: 'confirm-deposit',
+        title: `Confirmación + Anticipo SPEI (${depositLabel})`,
+        tag: 'Anticipo',
+        body: `¡Hola {{clienta}}! Recibimos tu solicitud en ${s.name} para {{servicio}} el {{fecha}} a las {{hora}}. Para apartar tu lugar envía tu anticipo de ${depositLabel} por transferencia SPEI a ${bank} · Titular: ${holder} · CLABE: ${clabe}. Mándanos tu comprobante por aquí o por DM a ${ig} para confirmar tu cita.`,
+      },
+      {
+        id: 'reminder-24h',
+        title: 'Recordatorio 24 horas antes',
+        tag: 'Recordatorio 24h',
+        body: `Hola {{clienta}}, te recordamos tu cita mañana en ${s.name} ({{servicio}}) a las {{hora}} con {{especialista}}. Por favor confírmanos tu asistencia respondiendo este mensaje. Si necesitas reagendar, avísanos con al menos ${s.minRescheduleHours}h de anticipación.`,
+      },
+      {
+        id: 'reminder-2h',
+        title: 'Recordatorio 2 horas antes',
+        tag: 'Recordatorio 2h',
+        body: `¡Nos vemos en 2 horas en ${s.name}! Te esperamos a las {{hora}} (${s.address}). Recuerda que contamos con 10 minutos de tolerancia para respetar los bloques de todas nuestras clientas.`,
+      },
+      {
+        id: 'refill-3w',
+        title: 'Retoque a las 3 semanas',
+        tag: 'Retoque',
+        body: `Hola {{clienta}}, ya casi cumplen 3 semanas tus uñas de ${s.name}! ¿Te apartamos tu bloque de retoque o cambio de set con Karla, Paty o Tere? Puedes elegir tu horario directo en nuestra agenda en línea.`,
+      },
+      {
+        id: 'winback-30d',
+        title: 'Recuperar clienta inactiva (30+ días)',
+        tag: 'Retención',
+        body: `¡Hola {{clienta}}! Te extrañamos en ${s.name}. Tenemos nuevos tonos y diseños en ${ig}. Si gustas agendar tu próximo set esta semana, entra a nuestra agenda en línea o escríbenos y con gusto te apartamos lugar.`,
+      },
+    ];
+  }, [data]);
+
   if (!data) return null;
 
   const { integration, settings } = data;
   const activeMetaPixel = metaPixel ?? settings.metaPixelId ?? '';
   const activeGa4 = ga4Id ?? settings.ga4MeasurementId ?? '';
   const activeReviewUrl = googleReviewUrl ?? settings.googleReviewUrl ?? '';
+  const depositLabel = formatCurrency(
+    settings.depositAmountCents ?? 20000,
+    settings.currency,
+  );
+
+  const handleCopyTemplate = async (id: string, title: string, body: string) => {
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopiedId(id);
+      copyFeedback.show(`Plantilla "${title}" copiada al portapapeles.`);
+    } catch {
+      copyFeedback.show('No se pudo copiar automáticamente; selecciona el texto manualmente.');
+    }
+  };
 
   const simulateWhatsAppBooking = async () => {
     setSimLoading(true);
@@ -109,12 +171,26 @@ export default function AdminIntegrationsPage() {
       <VStack gap={0.5}>
         <Heading level={1}>Integraciones, WhatsApp y Recordatorios</Heading>
         <Text color="secondary">
-          Todo está listo para conectar tus llaves en .env sin tocar código. Mientras tanto puedes probar cada flujo en modo demo.
+          Todo está listo para conectar tus llaves en .env sin tocar código. Mientras tanto puedes copiar plantillas listas y probar cada flujo en modo demo.
         </Text>
       </VStack>
 
       {msg ? (
-        <Banner status="success" title={msg} isDismissable onDismiss={() => setMsg(null)} />
+        <Banner
+          status="success"
+          title={msg}
+          isDismissable
+          onDismiss={() => setMsg(null)}
+        />
+      ) : null}
+
+      {copyFeedback.message ? (
+        <Banner
+          status="info"
+          title={copyFeedback.message}
+          isDismissable
+          onDismiss={copyFeedback.clear}
+        />
       ) : null}
 
       <Card variant="muted" padding={4}>
@@ -144,6 +220,90 @@ export default function AdminIntegrationsPage() {
               label={`Twilio SMS: ${integration.twilioSmsConfigured ? 'Activo' : 'Opcional (.env)'}`}
             />
           </HStack>
+        </VStack>
+      </Card>
+
+      <Card padding={5}>
+        <VStack gap={4}>
+          <HStack justify="between" align="center" wrap="wrap" gap={2}>
+            <HStack gap={2} align="center">
+              <MessageCircle size={18} aria-hidden="true" />
+              <Heading level={2}>Plantillas de WhatsApp listas para enviar</Heading>
+            </HStack>
+            <Token
+              size="sm"
+              color="green"
+              label={`Sincronizadas con ${settings.name} · ${depositLabel}`}
+            />
+          </HStack>
+          <Text type="supporting" color="secondary">
+            Copia en 1 clic cualquiera de los mensajes con los datos actuales de tu salón, tu CLABE ({settings.depositClabe}) y tu cuenta {settings.instagramHandle}.
+          </Text>
+          <Grid columns={{ minWidth: 280, max: 2 }} gap={3}>
+            {whatsappTemplates.map((tpl) => {
+              const isCopied = copiedId === tpl.id && Boolean(copyFeedback.message);
+              return (
+                <Card key={tpl.id} variant="muted" padding={4}>
+                  <VStack gap={2}>
+                    <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                      <Text weight="semibold">{tpl.title}</Text>
+                      <Token size="sm" label={tpl.tag} />
+                    </HStack>
+                    <Text type="supporting" color="secondary">
+                      {tpl.body}
+                    </Text>
+                    <Button
+                      label={isCopied ? 'Plantilla copiada' : 'Copiar plantilla'}
+                      variant={isCopied ? 'primary' : 'secondary'}
+                      size="sm"
+                      icon={isCopied ? <Check size={14} /> : <Copy size={14} />}
+                      onClick={() => void handleCopyTemplate(tpl.id, tpl.title, tpl.body)}
+                    />
+                  </VStack>
+                </Card>
+              );
+            })}
+          </Grid>
+        </VStack>
+      </Card>
+
+      <Card padding={5}>
+        <VStack gap={4}>
+          <HStack gap={2} align="center">
+            <CreditCard size={18} aria-hidden="true" />
+            <Heading level={2}>Comparativa de cobro de anticipos ({depositLabel})</Heading>
+          </HStack>
+          <Grid columns={{ minWidth: 280, max: 2 }} gap={4}>
+            <Card variant="muted" padding={4}>
+              <VStack gap={2}>
+                <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                  <Text weight="semibold">Opción A · Transferencia SPEI</Text>
+                  <Badge variant="success" label="$0 comisión · Activo ahora" />
+                </HStack>
+                <Text type="supporting" color="secondary">
+                  La clienta copia tu CLABE ({settings.depositClabe} · {settings.depositBankName}), transfiere {depositLabel} y sube su comprobante en la web o lo manda por Instagram DM a {settings.instagramHandle}. Tú apruebas en 1 clic desde Caja → Anticipos.
+                </Text>
+              </VStack>
+            </Card>
+            <Card variant="muted" padding={4}>
+              <VStack gap={2}>
+                <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                  <Text weight="semibold">Opción B · Checkout Mercado Pago</Text>
+                  <Badge
+                    variant={integration.mercadoPagoConfigured ? 'success' : 'info'}
+                    label={
+                      integration.mercadoPagoConfigured
+                        ? 'Credenciales activas'
+                        : 'Listo al pegar credenciales'
+                    }
+                  />
+                </HStack>
+                <Text type="supporting" color="secondary">
+                  Genera un link de pago automático (SPEI, tarjeta u OXXO) y confirma la cita al instante vía webhook idempotente sin revisión manual. Aplica comisión estándar de Mercado Pago al pegar MERCADOPAGO_ACCESS_TOKEN en .env.
+                </Text>
+              </VStack>
+            </Card>
+          </Grid>
         </VStack>
       </Card>
 
@@ -210,8 +370,12 @@ export default function AdminIntegrationsPage() {
                                 value={checked}
                                 onChange={async (next) => {
                                   const ids = next
-                                    ? Array.from(new Set([...conn.conflictCalendarIds, cal.id]))
-                                    : conn.conflictCalendarIds.filter((i) => i !== cal.id);
+                                    ? Array.from(
+                                        new Set([...conn.conflictCalendarIds, cal.id]),
+                                      )
+                                    : conn.conflictCalendarIds.filter(
+                                        (i) => i !== cal.id,
+                                      );
                                   await fetch('/api/admin/operations', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
@@ -456,13 +620,24 @@ export default function AdminIntegrationsPage() {
               }
               options={[
                 { value: 'none', label: 'Sin anticipo (reserva directa)' },
-                { value: 'manual_transfer', label: 'Transferencia SPEI con comprobante (Activa en v1)' },
-                { value: 'stripe', label: 'Stripe Checkout (Listo al pegar STRIPE_SECRET_KEY)' },
-                { value: 'mercadopago', label: 'Mercado Pago (Listo al pegar MERCADOPAGO_ACCESS_TOKEN)' },
+                {
+                  value: 'manual_transfer',
+                  label: 'Transferencia SPEI con comprobante (Activa en v1)',
+                },
+                {
+                  value: 'stripe',
+                  label: 'Stripe Checkout (Listo al pegar STRIPE_SECRET_KEY)',
+                },
+                {
+                  value: 'mercadopago',
+                  label: 'Mercado Pago (Listo al pegar MERCADOPAGO_ACCESS_TOKEN)',
+                },
               ]}
             />
             <Divider />
-            <Heading level={4}>Historial reciente de envíos ({data.notifications.length})</Heading>
+            <Heading level={4}>
+              Historial reciente de envíos ({data.notifications.length})
+            </Heading>
             <List hasDividers>
               {data.notifications.slice(0, 5).map((n) => (
                 <ListItem
@@ -476,7 +651,13 @@ export default function AdminIntegrationsPage() {
                   endContent={
                     <Token
                       size="sm"
-                      color={n.status === 'sent' ? 'green' : n.status === 'pending' ? 'yellow' : 'red'}
+                      color={
+                        n.status === 'sent'
+                          ? 'green'
+                          : n.status === 'pending'
+                            ? 'yellow'
+                            : 'red'
+                      }
                       label={n.status}
                     />
                   }

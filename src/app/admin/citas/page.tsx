@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -9,7 +9,6 @@ import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Badge } from '@astryxdesign/core/Badge';
-import { Token } from '@astryxdesign/core/Token';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
@@ -17,59 +16,53 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Divider } from '@astryxdesign/core/Divider';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import {
-  Ban,
   Calendar,
-  Check,
-  CheckCheck,
+  CalendarClock,
+  CalendarX,
   List as ListIcon,
   MessageCircle,
   Plus,
   Search,
-  UserX,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import {
+  BOOKING_STATUS_BADGE,
+  BookingCard,
+} from '@/components/admin/citas/BookingCard';
+import { VisualScheduleGrid } from '@/components/admin/citas/VisualScheduleGrid';
+import { NewBookingDialog } from '@/components/admin/citas/NewBookingDialog';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import type { BookingStatus, BookingWithRelations, PaymentMethod } from '@/lib/types';
-import type { AvailableSlot } from '@/lib/availability/engine';
 import {
   buildWhatsAppLink,
   formatCurrency,
   formatDateShortInTimezone,
-  formatDuration,
   formatTimeInTimezone,
   getDateKeyInTimezone,
 } from '@/lib/format';
 
-const STATUS_BADGE: Record<
-  BookingStatus,
-  { label: string; variant: 'success' | 'warning' | 'error' | 'info' | 'neutral' }
-> = {
-  confirmed: { label: 'Confirmada', variant: 'success' },
-  pending_confirmation: { label: 'Por confirmar', variant: 'warning' },
-  pending_payment: { label: 'Anticipo pendiente', variant: 'warning' },
-  completed: { label: 'Completada', variant: 'info' },
-  canceled: { label: 'Cancelada', variant: 'error' },
-  no_show: { label: 'No asistió', variant: 'error' },
-};
+interface FeedbackState {
+  status: 'success' | 'error';
+  title: string;
+  description?: string;
+  waMeUrl?: string;
+}
 
 export default function AdminBookingsPage() {
   const { data, refresh } = useAdminData();
   const [tab, setTab] = useState('upcoming');
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [viewMode, setViewMode] = useState<'visual' | 'list' | 'calendar'>('visual');
   const [search, setSearch] = useState('');
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [selectedVisualDate, setSelectedVisualDate] = useState<string | null>(null);
 
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
-  const [mServiceId, setMServiceId] = useState('');
-  const [mStaffId, setMStaffId] = useState('any');
-  const [mQuickSlots, setMQuickSlots] = useState<Array<AvailableSlot & { date: string }>>([]);
-  const [mSelectedSlot, setMSelectedSlot] = useState<AvailableSlot | null>(null);
-  const [mName, setMName] = useState('');
-  const [mPhone, setMPhone] = useState('');
-  const [mSource, setMSource] = useState<'manual' | 'walk_in'>('manual');
-  const [mSaving, setMSaving] = useState(false);
+  const [manualInitStaffId, setManualInitStaffId] = useState('any');
+  const [manualSessionKey, setManualSessionKey] = useState(0);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
 
   const [checkoutBooking, setCheckoutBooking] = useState<BookingWithRelations | null>(null);
   const [payMethod, setPayMethod] = useState<PaymentMethod>('card');
@@ -80,7 +73,20 @@ export default function AdminBookingsPage() {
   const [blockDate, setBlockDate] = useState('');
   const [blockReason, setBlockReason] = useState('Bloqueo rápido');
 
+  const autoOpenedNewRef = useRef(false);
+
   const tz = data?.settings.timezone || 'America/Mexico_City';
+
+  useExternalSync(data ? 'citas-ready' : 'citas-loading', async (signal, key) => {
+    if (signal.aborted || key !== 'citas-ready' || typeof window === 'undefined') return;
+    if (autoOpenedNewRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') === '1') {
+      autoOpenedNewRef.current = true;
+      setManualInitStaffId('any');
+      setManualOpen(true);
+    }
+  });
 
   const filteredBookings = useMemo(() => {
     if (!data) return [];
@@ -88,16 +94,20 @@ export default function AdminBookingsPage() {
     return data.bookings.filter((b) => {
       if (search.trim()) {
         const q = search.toLowerCase();
+        const ig = (b.clientInstagram ?? b.client.instagramHandle ?? '').toLowerCase();
         const hit =
           b.client.fullName.toLowerCase().includes(q) ||
           b.service.name.toLowerCase().includes(q) ||
           b.bookingCode.toLowerCase().includes(q) ||
-          b.client.phoneE164.includes(q);
+          b.client.phoneE164.includes(q) ||
+          ig.includes(q);
         if (!hit) return false;
       }
       if (tab === 'upcoming') {
-        return ['confirmed', 'pending_confirmation', 'pending_payment'].includes(b.status) &&
-          new Date(b.endAt).getTime() >= nowMs - 86_400_000;
+        return (
+          ['confirmed', 'pending_confirmation', 'pending_payment'].includes(b.status) &&
+          new Date(b.endAt).getTime() >= nowMs - 86_400_000
+        );
       }
       if (tab === 'unconfirmed') {
         return b.status === 'pending_confirmation' || b.status === 'pending_payment';
@@ -125,6 +135,33 @@ export default function AdminBookingsPage() {
 
   if (!data) return null;
 
+  const isSpecialistOnly =
+    data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
+  const lockedStaffId = isSpecialistOnly ? data.session.user.staffMemberId : null;
+  const visibleStaff = lockedStaffId
+    ? data.staff.filter((s) => s.id === lockedStaffId)
+    : data.staff;
+
+  const activeVisualDate =
+    selectedVisualDate ??
+    (filteredBookings[0]
+      ? getDateKeyInTimezone(new Date(filteredBookings[0].startAt), tz)
+      : data.serverTodayKey);
+
+  const openManualModal = (preferredStaffId = 'any') => {
+    setManualInitStaffId(lockedStaffId ?? preferredStaffId);
+    setManualSessionKey((prev) => prev + 1);
+    setQuickAddOpen(false);
+    setManualOpen(true);
+  };
+
+  const openBlockModal = () => {
+    setBlockStaffId(lockedStaffId ?? data.staff[0]?.id ?? '');
+    setBlockDate(activeVisualDate || data.serverTodayKey);
+    setQuickAddOpen(false);
+    setBlockOpen(true);
+  };
+
   const updateStatus = async (
     bookingId: string,
     status: BookingStatus,
@@ -136,70 +173,61 @@ export default function AdminBookingsPage() {
       body: JSON.stringify({ bookingId, status, ...extra }),
     });
     if (res.ok) {
-      setFeedback(`Estado actualizado a: ${STATUS_BADGE[status].label}`);
+      setFeedback({
+        status: 'success',
+        title: `Estado actualizado a: ${BOOKING_STATUS_BADGE[status].label}`,
+      });
       setCheckoutBooking(null);
       await refresh();
     } else {
-      const json = await res.json().catch(() => null);
-      setFeedback(json?.error || 'No se pudo actualizar el estado de la cita.');
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      setFeedback({
+        status: 'error',
+        title: json?.error || 'No se pudo actualizar el estado de la cita.',
+      });
     }
   };
 
-  const loadQuickSlots = async (serviceId: string, staffId: string) => {
-    const qs = new URLSearchParams({ mode: 'quick', serviceId });
-    if (staffId && staffId !== 'any') qs.set('staffId', staffId);
-    const res = await fetch(`/api/availability?${qs.toString()}`);
-    const json = await res.json();
-    setMQuickSlots(json.slots || []);
-    setMSelectedSlot(json.slots?.[0] ?? null);
-  };
-
-  const openManualModal = () => {
-    const firstSrv = data.services[0]?.id || '';
-    setMServiceId(firstSrv);
-    setMStaffId('any');
-    setManualOpen(true);
-    if (firstSrv) void loadQuickSlots(firstSrv, 'any');
-  };
-
-  const submitManualBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!mServiceId || !mSelectedSlot) return;
-    setMSaving(true);
+  const sendReminder = async (bookingId: string) => {
+    setRemindingId(bookingId);
     try {
       const res = await fetch('/api/admin/bookings', {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serviceId: mServiceId,
-          addonIds: [],
-          staffId: mSelectedSlot.staffId,
-          startAt: mSelectedSlot.startAt,
-          clientName: mName,
-          clientPhone: mPhone,
-          source: mSource,
-          forceConfirmed: true,
+          action: 'send_reminder',
+          bookingId,
+          channel: 'whatsapp',
         }),
       });
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        waMeUrl?: string;
+        messagePreview?: string;
+      } | null;
       if (res.ok) {
-        setManualOpen(false);
-        setMName('');
-        setMPhone('');
-        setFeedback('Cita manual registrada y bloqueada en tiempo real.');
+        setFeedback({
+          status: 'success',
+          title: 'Recordatorio registrado y enviado por WhatsApp.',
+          description: json?.messagePreview,
+          waMeUrl: json?.waMeUrl,
+        });
         await refresh();
       } else {
-        const json = await res.json().catch(() => null);
-        setFeedback(json?.error || 'No se pudo registrar la cita manual.');
+        setFeedback({
+          status: 'error',
+          title: json?.error || 'No se pudo enviar el recordatorio.',
+        });
       }
     } finally {
-      setMSaving(false);
+      setRemindingId(null);
     }
   };
 
   const submitQuickBlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!blockStaffId || !blockDate) return;
-    await fetch('/api/admin/availability', {
+    const res = await fetch('/api/admin/availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -211,144 +239,20 @@ export default function AdminBookingsPage() {
         reason: blockReason,
       }),
     });
-    setBlockOpen(false);
-    setFeedback(`Día ${blockDate} bloqueado en la agenda pública.`);
-    await refresh();
-  };
-
-  const renderBookingCard = (b: BookingWithRelations) => {
-    const meta = STATUS_BADGE[b.status];
-    const waHref = buildWhatsAppLink(
-      b.client.phoneE164,
-      `Hola ${b.client.fullName}, te escribimos de ${data.settings.name} sobre tu cita (${b.bookingCode}) de ${b.service.name} el ${formatDateShortInTimezone(
-        b.startAt,
-        tz,
-      )} a las ${formatTimeInTimezone(b.startAt, tz)}.`,
-    );
-
-    return (
-      <Card key={b.id} padding={4}>
-        <VStack gap={3}>
-          <HStack justify="between" align="start" wrap="wrap" gap={2}>
-            <VStack gap={0.5}>
-              <HStack gap={2} align="center" wrap="wrap">
-                <Text weight="semibold" size="lg">
-                  {b.client.fullName}
-                </Text>
-                <Badge variant={meta.variant} label={meta.label} />
-                <Token size="sm" label={b.bookingCode} />
-                <Token
-                  size="sm"
-                  color={b.source === 'whatsapp' ? 'green' : 'default'}
-                  label={
-                    b.source === 'whatsapp'
-                      ? 'WhatsApp'
-                      : b.source === 'walk_in'
-                        ? 'Walk-in'
-                        : b.source === 'manual'
-                          ? 'Manual'
-                          : 'Web'
-                  }
-                />
-              </HStack>
-              <Text weight="medium">
-                {b.service.name}
-                {b.addons.length > 0
-                  ? ` + ${b.addons.map((a) => a.name).join(', ')}`
-                  : ''}
-              </Text>
-              <Text type="supporting" color="secondary">
-                {formatDateShortInTimezone(b.startAt, tz)} ·{' '}
-                {formatTimeInTimezone(b.startAt, tz)} – {formatTimeInTimezone(b.endAt, tz)} (
-                {formatDuration(b.totalDurationMinutes)}) · Especialista: {b.staff.name}
-              </Text>
-              {b.clientNotes ? (
-                <Text type="supporting" color="secondary">
-                  Nota clienta: {b.clientNotes}
-                </Text>
-              ) : null}
-              {b.paymentProofUrl ? (
-                <Token size="sm" color="orange" label="Comprobante SPEI adjunto" />
-              ) : null}
-            </VStack>
-
-            <VStack align="end" gap={1}>
-              <Text weight="bold" size="lg" hasTabularNumbers>
-                {formatCurrency(b.totalPriceCents, data.settings.currency)}
-              </Text>
-              <Text type="supporting" color="secondary">
-                {b.client.phoneE164}
-              </Text>
-            </VStack>
-          </HStack>
-
-          <Divider />
-
-          <HStack gap={2} wrap="wrap" justify="between" align="center">
-            <HStack gap={1.5} wrap="wrap">
-              {b.status === 'pending_confirmation' || b.status === 'pending_payment' ? (
-                <Button
-                  label="Confirmar"
-                  variant="primary"
-                  size="sm"
-                  icon={<Check size={14} />}
-                  onClick={() => void updateStatus(b.id, 'confirmed')}
-                />
-              ) : null}
-              {b.status === 'confirmed' ? (
-                <Button
-                  label="Completar y cobrar"
-                  variant="primary"
-                  size="sm"
-                  icon={<CheckCheck size={14} />}
-                  onClick={() => {
-                    setCheckoutBooking(b);
-                    setPayMethod('card');
-                    setTipMxn(0);
-                  }}
-                />
-              ) : null}
-              {b.status === 'confirmed' ? (
-                <Button
-                  label="No asistió"
-                  variant="secondary"
-                  size="sm"
-                  icon={<UserX size={14} />}
-                  onClick={() => void updateStatus(b.id, 'no_show')}
-                />
-              ) : null}
-              {b.status !== 'canceled' &&
-              b.status !== 'completed' &&
-              b.status !== 'no_show' ? (
-                <Button
-                  label="Cancelar"
-                  variant="ghost"
-                  size="sm"
-                  icon={<Ban size={14} />}
-                  onClick={() => void updateStatus(b.id, 'canceled')}
-                />
-              ) : null}
-            </HStack>
-
-            <HStack gap={1.5}>
-              <Button
-                label="Hablar por WhatsApp"
-                variant="secondary"
-                size="sm"
-                icon={<MessageCircle size={14} />}
-                href={waHref}
-              />
-              <Button
-                label="Link clienta"
-                variant="ghost"
-                size="sm"
-                href={`/cita/${b.manageToken}`}
-              />
-            </HStack>
-          </HStack>
-        </VStack>
-      </Card>
-    );
+    if (res.ok) {
+      setBlockOpen(false);
+      setFeedback({
+        status: 'success',
+        title: `Día ${blockDate} bloqueado en la agenda pública.`,
+      });
+      await refresh();
+    } else {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      setFeedback({
+        status: 'error',
+        title: json?.error || 'No se pudo bloquear esa fecha.',
+      });
+    }
   };
 
   return (
@@ -357,7 +261,7 @@ export default function AdminBookingsPage() {
         <VStack gap={0.5}>
           <Heading level={1}>Citas y Agenda</Heading>
           <Text color="secondary">
-            Gestiona confirmaciones, walk-ins, lista de espera y cobro directo a caja.
+            Agenda visual por especialista, recordatorios en 1 clic, walk-ins y cobro a caja.
           </Text>
         </VStack>
 
@@ -366,26 +270,37 @@ export default function AdminBookingsPage() {
             label="Bloquear día"
             variant="secondary"
             size="sm"
-            onClick={() => {
-              setBlockStaffId(data.staff[0]?.id || '');
-              setBlockDate(getDateKeyInTimezone(new Date(), tz));
-              setBlockOpen(true);
-            }}
+            onClick={openBlockModal}
           />
           <Button
-            label="Nueva cita manual / Walk-in"
+            label="Agregar"
             variant="primary"
             size="sm"
             icon={<Plus size={15} />}
-            onClick={openManualModal}
+            onClick={() => setQuickAddOpen(true)}
           />
         </HStack>
       </HStack>
 
       {feedback ? (
         <Banner
-          status="success"
-          title={feedback}
+          status={feedback.status}
+          role={feedback.status === 'error' ? 'alert' : undefined}
+          title={feedback.title}
+          description={feedback.description}
+          endContent={
+            feedback.waMeUrl ? (
+              <Button
+                label="Abrir WhatsApp"
+                variant="primary"
+                size="sm"
+                icon={<MessageCircle size={14} />}
+                href={feedback.waMeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            ) : undefined
+          }
           isDismissable
           onDismiss={() => setFeedback(null)}
         />
@@ -419,13 +334,18 @@ export default function AdminBookingsPage() {
           />
         </TabList>
 
-        <HStack gap={2} align="center">
+        <HStack gap={2} align="center" wrap="wrap">
           <TextInput
+            type="search"
             label="Buscar cita"
             isLabelHidden
-            placeholder="Clienta, código o servicio..."
+            placeholder="Clienta, @instagram, código..."
             startIcon={<Search size={14} />}
             size="sm"
+            autoCapitalize="none"
+            hasAutoCorrect={false}
+            hasSpellCheck={false}
+            enterKeyHint="search"
             value={search}
             onChange={setSearch}
           />
@@ -434,9 +354,18 @@ export default function AdminBookingsPage() {
               label="Vista de citas"
               size="sm"
               value={viewMode}
-              onChange={(v) => setViewMode(v as 'list' | 'calendar')}
+              onChange={(v) => setViewMode(v as 'visual' | 'list' | 'calendar')}
             >
-              <SegmentedControlItem value="list" label="Lista" icon={<ListIcon size={14} />} />
+              <SegmentedControlItem
+                value="visual"
+                label="Agenda visual"
+                icon={<CalendarClock size={14} />}
+              />
+              <SegmentedControlItem
+                value="list"
+                label="Lista"
+                icon={<ListIcon size={14} />}
+              />
               <SegmentedControlItem
                 value="calendar"
                 label="Por día"
@@ -489,6 +418,8 @@ export default function AdminBookingsPage() {
                         size="sm"
                         icon={<MessageCircle size={14} />}
                         href={waHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={async () => {
                           await fetch('/api/admin/operations', {
                             method: 'POST',
@@ -509,16 +440,59 @@ export default function AdminBookingsPage() {
             })
           )}
         </VStack>
+      ) : viewMode === 'visual' ? (
+        <VisualScheduleGrid
+          dateKey={activeVisualDate}
+          todayKey={data.serverTodayKey}
+          timezone={tz}
+          staff={visibleStaff}
+          schedules={data.schedules}
+          bookings={filteredBookings}
+          allServices={data.services}
+          remindingBookingId={remindingId}
+          onChangeDate={setSelectedVisualDate}
+          onOpenNewForStaff={(staffId) => openManualModal(staffId)}
+          onUpdateStatus={(id, status) => void updateStatus(id, status)}
+          onOpenCheckout={(b) => {
+            setCheckoutBooking(b);
+            setPayMethod('card');
+            setTipMxn(0);
+          }}
+          onSendReminder={(id) => void sendReminder(id)}
+        />
       ) : filteredBookings.length === 0 ? (
         <EmptyState
           title="No hay citas en esta vista"
           description="Puedes crear una cita manual o compartir tu link público."
           actions={
-            <Button label="Nueva cita manual" variant="primary" onClick={openManualModal} />
+            <Button
+              label="Nueva cita manual"
+              variant="primary"
+              onClick={() => openManualModal()}
+            />
           }
         />
       ) : viewMode === 'list' ? (
-        <VStack gap={3}>{filteredBookings.map(renderBookingCard)}</VStack>
+        <VStack gap={3}>
+          {filteredBookings.map((b) => (
+            <BookingCard
+              key={b.id}
+              booking={b}
+              allServices={data.services}
+              salonName={data.settings.name}
+              currency={data.settings.currency}
+              timezone={tz}
+              isReminding={remindingId === b.id}
+              onUpdateStatus={(id, status) => void updateStatus(id, status)}
+              onOpenCheckout={(bk) => {
+                setCheckoutBooking(bk);
+                setPayMethod('card');
+                setTipMxn(0);
+              }}
+              onSendReminder={(id) => void sendReminder(id)}
+            />
+          ))}
+        </VStack>
       ) : (
         <Grid columns={{ minWidth: 300, max: 3 }} gap={4} align="start">
           {groupedByDate.map(([dateKey, items]) => (
@@ -538,8 +512,8 @@ export default function AdminBookingsPage() {
                           {formatTimeInTimezone(b.startAt, tz)}
                         </Text>
                         <Badge
-                          variant={STATUS_BADGE[b.status].variant}
-                          label={STATUS_BADGE[b.status].label}
+                          variant={BOOKING_STATUS_BADGE[b.status].variant}
+                          label={BOOKING_STATUS_BADGE[b.status].label}
                         />
                       </HStack>
                       <Text weight="medium">{b.client.fullName}</Text>
@@ -555,104 +529,45 @@ export default function AdminBookingsPage() {
         </Grid>
       )}
 
-      <Dialog isOpen={manualOpen} onOpenChange={setManualOpen} width={540} padding={5}>
+      <Dialog isOpen={quickAddOpen} onOpenChange={setQuickAddOpen} width={420} padding={5}>
         <DialogHeader
-          title="Nueva cita manual / Walk-in"
-          subtitle="Elige primero el servicio y selecciona uno de los próximos horarios libres reales."
-          onOpenChange={setManualOpen}
+          title="¿Qué deseas agregar?"
+          subtitle="Elige una acción rápida para tu agenda."
+          onOpenChange={setQuickAddOpen}
         />
-        <form onSubmit={submitManualBooking}>
-          <VStack gap={3} paddingBlockStart={4}>
-            <Selector
-              label="Servicio"
-              value={mServiceId}
-              onChange={(val) => {
-                if (val) {
-                  setMServiceId(val);
-                  void loadQuickSlots(val, mStaffId);
-                }
-              }}
-              options={data.services.map((s) => ({
-                value: s.id,
-                label: `${s.name} (${s.durationMinutes}m · ${formatCurrency(
-                  s.priceCents,
-                  data.settings.currency,
-                )})`,
-              }))}
-            />
-
-            <Selector
-              label="Especialista"
-              value={mStaffId}
-              onChange={(val) => {
-                const next = val || 'any';
-                setMStaffId(next);
-                if (mServiceId) void loadQuickSlots(mServiceId, next);
-              }}
-              options={[
-                { value: 'any', label: 'Cualquier disponible' },
-                ...data.staff
-                  .filter((s) => s.isActive)
-                  .map((s) => ({ value: s.id, label: s.name })),
-              ]}
-            />
-
-            <VStack gap={1.5}>
-              <Text type="label" weight="semibold">
-                Próximos horarios libres encontrados
-              </Text>
-              <HStack gap={1.5} wrap="wrap">
-                {mQuickSlots.map((slot) => (
-                  <Button
-                    key={`${slot.staffId}-${slot.startAt}`}
-                    size="sm"
-                    variant={
-                      mSelectedSlot?.startAt === slot.startAt ? 'primary' : 'secondary'
-                    }
-                    label={`${formatDateShortInTimezone(slot.startAt, tz)} · ${slot.localTime12}`}
-                    onClick={() => setMSelectedSlot(slot)}
-                  />
-                ))}
-              </HStack>
-            </VStack>
-
-            <Grid columns={2} gap={3}>
-              <TextInput
-                label="Nombre de clienta"
-                value={mName}
-                onChange={setMName}
-                isRequired
-              />
-              <TextInput
-                label="WhatsApp"
-                value={mPhone}
-                onChange={setMPhone}
-                placeholder="55 1234 5678"
-                isRequired
-              />
-            </Grid>
-
-            <SegmentedControl
-              label="Origen"
-              size="sm"
-              value={mSource}
-              onChange={(v) => setMSource(v as 'manual' | 'walk_in')}
-            >
-              <SegmentedControlItem value="manual" label="Cita por DM / Teléfono" />
-              <SegmentedControlItem value="walk_in" label="Llegó directo (Walk-in)" />
-            </SegmentedControl>
-
-            <Button
-              type="submit"
-              label="Guardar y bloquear horario"
-              variant="primary"
-              width="100%"
-              isLoading={mSaving}
-              isDisabled={!mSelectedSlot}
-            />
-          </VStack>
-        </form>
+        <VStack gap={3} paddingBlockStart={4}>
+          <Button
+            label="Nueva cita (manual / DM / walk-in)"
+            variant="primary"
+            width="100%"
+            icon={<Plus size={15} />}
+            onClick={() => openManualModal()}
+          />
+          <Button
+            label="Bloquear horario / cerrar día"
+            variant="secondary"
+            width="100%"
+            icon={<CalendarX size={15} />}
+            onClick={openBlockModal}
+          />
+        </VStack>
       </Dialog>
+
+      <NewBookingDialog
+        key={`${manualInitStaffId}-${manualSessionKey}`}
+        isOpen={manualOpen}
+        onOpenChange={setManualOpen}
+        services={data.services}
+        staff={data.staff}
+        currency={data.settings.currency}
+        timezone={tz}
+        initialStaffId={manualInitStaffId}
+        lockedStaffId={lockedStaffId}
+        onCreated={async (message) => {
+          setFeedback({ status: 'success', title: message });
+          await refresh();
+        }}
+      />
 
       <Dialog
         isOpen={Boolean(checkoutBooking)}
@@ -722,8 +637,9 @@ export default function AdminBookingsPage() {
             <Selector
               label="Especialista"
               value={blockStaffId}
+              isDisabled={Boolean(lockedStaffId)}
               onChange={(v) => v && setBlockStaffId(v)}
-              options={data.staff.map((s) => ({ value: s.id, label: s.name }))}
+              options={visibleStaff.map((s) => ({ value: s.id, label: s.name }))}
             />
             <TextInput
               label="Fecha (YYYY-MM-DD)"

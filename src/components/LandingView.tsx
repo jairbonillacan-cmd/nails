@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -20,11 +21,10 @@ import {
   ArrowRight,
   CalendarCheck,
   Clock,
+  ExternalLink,
   MapPin,
   MessageCircle,
-  ShieldCheck,
   Sparkles,
-  Star,
 } from 'lucide-react';
 import type {
   GalleryItem,
@@ -39,6 +39,13 @@ import type {
 import { buildWhatsAppLink, formatCurrency, formatDuration } from '@/lib/format';
 import { PublicShell } from './PublicShell';
 import { useSalonAppearance } from './SalonThemeProvider';
+import {
+  DEFAULT_SISTER_STUDIO_HANDLE,
+  formatServicePrice,
+  getStaffScheduleLabel,
+  normalizeInstagramHandle,
+  resolveInstagramUrl,
+} from './booking/bookingHelpers';
 
 interface LandingViewProps {
   initialSettings: PublicSettingsDTO;
@@ -84,67 +91,109 @@ export function LandingView({
     settings.whatsappNumber,
     `Hola ${settings.name}, me gustaría información para agendar mis uñas.`,
   );
+  const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
+  const instagramUrl = resolveInstagramUrl(settings);
+  const sisterStudioHandle = normalizeInstagramHandle(
+    settings.sisterStudioHandle,
+    DEFAULT_SISTER_STUDIO_HANDLE,
+  );
+  const cityLabel = settings.city || 'Puebla, México';
+  const customCover = settings.coverImageUrl?.trim();
+  const depositAmount = formatCurrency(
+    settings.depositAmountCents ?? 20000,
+    settings.currency,
+  );
+  const depositBeneficiary =
+    settings.depositBeneficiary || settings.depositAccountHolder;
 
   return (
     <PublicShell>
-
-      <Section variant="section" paddingBlock={10} paddingInline={4} dividers={['bottom']}>
+      <Section variant="muted" paddingBlock={10} paddingInline={4} dividers={['bottom']}>
         <VStack
           gap={6}
-          maxWidth={920}
+          maxWidth={1160}
           width="100%"
-          align="center"
           style={{ marginInline: 'auto' }}
         >
-          <HStack gap={2} align="center" wrap="wrap" justify="center">
-            <StatusDot variant="success" label="Agenda abierta en tiempo real" isPulsing />
-            <Text type="label" color="secondary">
-              {settings.landingContent.heroEyebrow}
-            </Text>
-          </HStack>
-
-          <VStack gap={3} align="center" maxWidth={780}>
-            <Heading level={1} type="display-1" justify="center" textWrap="balance">
-              {settings.landingContent.heroTitle}
-            </Heading>
-            <Text type="large" color="secondary" justify="center" textWrap="pretty">
-              {settings.landingContent.heroSubtitle}
-            </Text>
-          </VStack>
-
-          <HStack gap={3} wrap="wrap" justify="center">
-            <Button
-              label="Agendar mi cita ahora"
-              variant="primary"
-              size="lg"
-              icon={<CalendarCheck size={18} />}
-              href="/reservar"
+          <Grid columns={{ minWidth: 425, max: 2 }} gap={6} align="center" width="100%">
+            <VStack gap={5} maxWidth={480} align="start">
+              <VStack gap={2}>
+                <Text type="label" weight="semibold" color="accent">
+                  {settings.landingContent.heroEyebrow || cityLabel}
+                </Text>
+                <Heading
+                  level={1}
+                  type="display-1"
+                  weight="normal"
+                  textWrap="balance"
+                  style={{
+                    fontSize: 'clamp(var(--text-display-1-size), 5.9vw, calc(var(--text-display-1-size) * 1.76))',
+                    lineHeight: 1.02,
+                    maxWidth: '12ch',
+                  }}
+                >
+                  {settings.landingContent.heroTitle}
+                </Heading>
+                <Text type="large" color="secondary" textWrap="pretty">
+                  {settings.landingContent.heroSubtitle}
+                </Text>
+              </VStack>
+              <HStack gap={2} wrap="wrap">
+                <Button
+                  label="Agendar mi cita ahora"
+                  variant="primary"
+                  size="lg"
+                  icon={<CalendarCheck size={18} />}
+                  href="/reservar"
+                />
+                <Button
+                  label="Ver servicios y precios"
+                  variant="secondary"
+                  size="lg"
+                  href="#servicios"
+                />
+              </HStack>
+              <HStack gap={2} wrap="wrap" align="center">
+                <StatusDot variant="success" label="Agenda abierta en tiempo real" aria-hidden="true" />
+                <Text type="supporting" color="secondary">
+                  Agenda abierta en tiempo real
+                </Text>
+              </HStack>
+            </VStack>
+            <Image
+              src={customCover || '/brand/laikona-cherry-editorial.webp'}
+              alt={customCover ? '' : 'Manicure rojo cereza con un diseño de dos cerezas'}
+              width={1200}
+              height={1000}
+              fetchPriority="high"
+              loading="eager"
+              style={{
+                display: 'block',
+                width: '100%',
+                height: 'auto',
+                aspectRatio: '6 / 5',
+                objectFit: 'cover',
+                borderRadius: 'var(--radius-element)',
+              }}
             />
-            <Button
-              label="Ver servicios y precios"
-              variant="secondary"
-              size="lg"
-              href="#servicios"
-            />
-            <Button
-              label="Escribir por WhatsApp"
-              variant="ghost"
-              size="lg"
-              icon={<MessageCircle size={18} />}
-              href={whatsappUrl}
-            />
-          </HStack>
-
-          <HStack gap={4} wrap="wrap" justify="center" paddingBlockStart={2}>
-            <Token
-              label={`${reviewsSummary.average} ★ (${reviewsSummary.count} reseñas verificadas)`}
-              icon={<Star size={14} />}
-            />
-            <Token
-              label="Confirmación al instante + Google / Apple Calendar"
-              icon={<CalendarCheck size={14} />}
-            />
-            <Token label="Sin crear cuenta · Reagenda en 1 clic" icon={<ShieldCheck size={14} />} />
+          </Grid>
+          <Divider />
+          <HStack gap={4} wrap="wrap" align="center" justify="between">
+            <HStack gap={4} wrap="wrap">
+              <Link href={instagramUrl} type="supporting" isExternalLink>
+                {instagramHandle}
+              </Link>
+              <Link href={whatsappUrl} type="supporting" isExternalLink>
+                WhatsApp
+              </Link>
+              {reviewsSummary.count > 0 ? (
+                <Text type="supporting" color="secondary">
+                  {reviewsSummary.average} de 5 · {reviewsSummary.count}{' '}
+                  {reviewsSummary.count === 1 ? 'reseña' : 'reseñas'}
+                </Text>
+              ) : null}
+            </HStack>
+            <Text type="supporting" color="secondary">Anticipo de {depositAmount}</Text>
           </HStack>
         </VStack>
       </Section>
@@ -158,13 +207,10 @@ export function LandingView({
           id="servicios"
         >
           <HStack justify="between" align="end" wrap="wrap" gap={4}>
-            <VStack gap={1.5} maxWidth={640}>
-              <Text type="label" color="accent" weight="semibold">
-                MENÚ DE SERVICIOS
-              </Text>
-              <Heading level={2}>Elige tu técnica y personaliza tu tiempo</Heading>
+            <VStack gap={1.5} maxWidth={660}>
+              <Heading level={2}>Menú de servicios</Heading>
               <Text color="secondary">
-                Precios transparentes y duraciones reales. Al reservar puedes sumar retiro, nail art o acabados especiales con cálculo automático.
+                Consulta precios y duración. Puedes combinar servicios y agregar extras al reservar.
               </Text>
             </VStack>
             <Button
@@ -190,7 +236,7 @@ export function LandingView({
                     <HStack justify="between" align="start" gap={2}>
                       <Heading level={3}>{srv.name}</Heading>
                       <Text weight="semibold" size="lg" hasTabularNumbers>
-                        {formatCurrency(srv.priceCents, settings.currency)}
+                        {formatServicePrice(srv.priceCents, srv.isStartingPrice, settings.currency)}
                       </Text>
                     </HStack>
 
@@ -198,7 +244,7 @@ export function LandingView({
                       <Token
                         size="sm"
                         icon={<Clock size={12} />}
-                        label={formatDuration(srv.durationMinutes)}
+                        label={`Aprox. ${formatDuration(srv.durationMinutes)}`}
                       />
                       {srv.depositRequired ? (
                         <Token
@@ -240,7 +286,7 @@ export function LandingView({
                   <VStack gap={0.5}>
                     <Heading level={3}>Extras y Nail Art combinables</Heading>
                     <Text type="supporting" color="secondary">
-                      Agrégalos durante tu reserva para ajustar el tiempo exacto en tu cita sin cotizaciones eternas por mensaje.
+                      Agrégalos durante tu reserva junto con servicios adicionales para apartar el tiempo exacto sin esperar cotizaciones por mensaje.
                     </Text>
                   </VStack>
                   <Sparkles size={20} aria-hidden="true" />
@@ -275,15 +321,21 @@ export function LandingView({
           style={{ marginInline: 'auto' }}
           id="galeria"
         >
-          <VStack gap={1.5} maxWidth={640}>
-            <Text type="label" color="accent" weight="semibold">
-              PORTAFOLIO RECIENTE
-            </Text>
-            <Heading level={2}>Inspiración del estudio</Heading>
-            <Text color="secondary">
-              ¿Te gustó algún diseño? Elígelo directamente para reservar el servicio exacto con esa referencia adjunta.
-            </Text>
-          </VStack>
+          <HStack justify="between" align="end" wrap="wrap" gap={4}>
+            <VStack gap={1.5} maxWidth={640}>
+              <Heading level={2}>Inspiración del estudio · {instagramHandle}</Heading>
+              <Text color="secondary">
+                ¿Te gustó algún diseño? Elígelo directamente para reservar el servicio exacto con esa referencia adjunta.
+              </Text>
+            </VStack>
+            <Button
+              label={`Ver más en ${instagramHandle}`}
+              variant="secondary"
+              size="sm"
+              icon={<ExternalLink size={15} />}
+              href={instagramUrl}
+            />
+          </HStack>
 
           <TabList value={selectedGalleryCat} onChange={setSelectedGalleryCat}>
             {galleryCategories.map((cat) => (
@@ -351,40 +403,55 @@ export function LandingView({
           {staff.length > 0 ? (
             <VStack gap={4}>
               <VStack gap={1}>
-                <Text type="label" color="accent" weight="semibold">
-                  ESPECIALISTAS
-                </Text>
                 <Heading level={2}>
-                  {staff.length === 1 ? 'Tu Nail Artist' : 'Nuestro equipo'}
+                  {staff.length === 1 ? 'Tu Nail Artist' : 'Nuestro equipo y turnos fijos'}
                 </Heading>
+                <Text color="secondary">
+                  Cada especialista trabaja en bloques dedicados para cuidar los detalles de tu set sin prisas.
+                </Text>
               </VStack>
-              <Grid columns={{ minWidth: 300, max: 2 }} gap={4}>
-                {staff.map((member) => (
-                  <Card key={member.id} padding={5}>
-                    <HStack gap={4} align="start">
-                      <Avatar name={member.name} src={member.avatarUrl ?? undefined} size="lg" />
-                      <VStack gap={1.5}>
-                        <VStack gap={0.5}>
-                          <Heading level={3}>{member.name}</Heading>
-                          <Text type="supporting" color="accent" weight="medium">
-                            {member.roleTitle}
+              <Grid columns={{ minWidth: 280, max: 3 }} gap={4}>
+                {staff.map((member) => {
+                  const scheduleLabel = getStaffScheduleLabel(member);
+                  return (
+                    <Card key={member.id} padding={5}>
+                      <VStack gap={3} height="100%" justify="between">
+                        <VStack gap={2}>
+                          <HStack gap={3} align="center">
+                            <Avatar
+                              name={member.name}
+                              src={member.avatarUrl ?? undefined}
+                              size="lg"
+                            />
+                            <VStack gap={0.5}>
+                              <Heading level={3}>{member.name}</Heading>
+                              <Text type="supporting" color="accent" weight="medium">
+                                {member.roleTitle}
+                              </Text>
+                            </VStack>
+                          </HStack>
+                          {scheduleLabel ? (
+                            <Token
+                              size="sm"
+                              icon={<Clock size={12} />}
+                              label={scheduleLabel}
+                            />
+                          ) : null}
+                          <Text type="supporting" color="secondary">
+                            {member.bio}
                           </Text>
                         </VStack>
-                        <Text type="supporting" color="secondary">
-                          {member.bio}
-                        </Text>
-                        <HStack paddingBlockStart={1}>
-                          <Button
-                            label={`Agendar con ${member.name.split(' ')[0]}`}
-                            variant="secondary"
-                            size="sm"
-                            href={`/reservar?staff=${member.bookingSlug}`}
-                          />
-                        </HStack>
+                        <Button
+                          label={`Agendar con ${member.name.split(' ')[0]}`}
+                          variant="secondary"
+                          size="sm"
+                          width="100%"
+                          href={`/reservar?staff=${member.bookingSlug}`}
+                        />
                       </VStack>
-                    </HStack>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
               </Grid>
             </VStack>
           ) : null}
@@ -396,6 +463,21 @@ export function LandingView({
                 <Text color="secondary">{settings.landingContent.aboutBody}</Text>
                 <Divider />
                 <List hasDividers>
+                  <ListItem
+                    label={`Anticipo transparente de ${depositAmount} (${settings.depositBankName})`}
+                    description={
+                      <VStack gap={1}>
+                        <Text type="supporting" color="secondary">
+                          Aparta tu lugar por transferencia SPEI a {settings.depositBankName} ({depositBeneficiary}) y sube tu comprobante al reservar o envíalo por Instagram DM a {instagramHandle}.
+                        </Text>
+                        {settings.depositClabe ? (
+                          <Text type="code" weight="semibold" hasTabularNumbers>
+                            CLABE: {settings.depositClabe}
+                          </Text>
+                        ) : null}
+                      </VStack>
+                    }
+                  />
                   <ListItem
                     label="Política de cancelación y reagendado"
                     description={
@@ -421,11 +503,11 @@ export function LandingView({
                 <VStack gap={3}>
                   <HStack gap={2} align="center">
                     <MapPin size={18} aria-hidden="true" />
-                    <Heading level={3}>Visítanos</Heading>
+                    <Heading level={3}>Visítanos en {cityLabel}</Heading>
                   </HStack>
                   <Text weight="medium">{settings.address}</Text>
                   <Text type="supporting" color="secondary">
-                    Atención únicamente con cita previa. Al confirmar tu reserva recibirás la ubicación exacta y botón directo para agregarla a Google Calendar, Apple o Outlook.
+                    Atención únicamente con cita previa junto a {sisterStudioHandle}. Al confirmar tu reserva recibirás la ubicación exacta y botón directo para agregarla a Google Calendar, Apple o Outlook.
                   </Text>
                 </VStack>
 
@@ -439,6 +521,18 @@ export function LandingView({
                     label="Abrir en Google Maps"
                     variant="secondary"
                     href={settings.mapsUrl}
+                  />
+                  <Button
+                    label={instagramHandle}
+                    variant="ghost"
+                    icon={<ExternalLink size={15} />}
+                    href={instagramUrl}
+                  />
+                  <Button
+                    label="WhatsApp"
+                    variant="ghost"
+                    icon={<MessageCircle size={15} />}
+                    href={whatsappUrl}
                   />
                 </HStack>
               </VStack>

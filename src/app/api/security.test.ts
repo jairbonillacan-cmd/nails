@@ -27,7 +27,20 @@ import {
 } from '@/app/api/admin/bookings/route';
 import { GET as getAdminOperations } from '@/app/api/admin/operations/route';
 import { GET as getAdminOverview } from '@/app/api/admin/overview/route';
-import { GET as getAdminAvailability } from '@/app/api/admin/availability/route';
+import {
+  GET as getAdminAvailability,
+  PUT as putAdminAvailability,
+} from '@/app/api/admin/availability/route';
+import {
+  PATCH as patchAdminClients,
+  POST as postAdminClients,
+} from '@/app/api/admin/clients/route';
+import { POST as postAdminServices } from '@/app/api/admin/services/route';
+import { PATCH as patchAdminBrand } from '@/app/api/admin/brand/route';
+import {
+  GET as getAdminOnboarding,
+  POST as postAdminOnboarding,
+} from '@/app/api/admin/onboarding/route';
 import { GET as getPublicAvailability } from '@/app/api/availability/route';
 import { POST as postWhatsAppSimulate } from '@/app/api/admin/integrations/whatsapp-simulate/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
@@ -364,7 +377,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       const body = JSON.stringify({
         clientName: 'Simulacion Segura',
         phone: '+525512340000',
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
       });
 
       const unauthRes = await postWhatsAppSimulate(
@@ -433,9 +446,9 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       const db = getSnapshot();
       const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
       const avail = queryAvailability({
-        serviceId: 'srv-acrilico-escultural',
+        serviceId: 'srv-unas-acrilicas',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startDate: today,
         days: 14,
       });
@@ -451,7 +464,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             'Idempotency-Key': `sec-c5-${Date.now()}`,
           },
           body: JSON.stringify({
-            serviceId: 'srv-acrilico-escultural',
+            serviceId: 'srv-unas-acrilicas',
             addonIds: [],
             staffId: openSlot.staffId,
             startAt: openSlot.startAt,
@@ -478,7 +491,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       const specialistCookie = getSpecialistCookieHeader();
 
       const beforeOther = getSnapshot().bookings.find((b) => b.id === 'bk-1001');
-      expect(beforeOther?.staffId).toBe('staff-valeria');
+      expect(beforeOther?.staffId).toBe('staff-karla');
       expect(beforeOther?.status).toBe('confirmed');
 
       const idorRes = await patchAdminBookings(
@@ -531,19 +544,19 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       const specialistCookie = getSpecialistCookieHeader();
 
       const unauthInit = await getGoogleOAuth(
-        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-camila'),
+        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-tere'),
       );
       expect(unauthInit.status).toBe(401);
 
       const unauthCb = await getGoogleOAuthCallback(
         makeRequest(
-          'http://localhost:3000/api/integrations/google/callback?code=abc&state=staff-camila',
+          'http://localhost:3000/api/integrations/google/callback?code=abc&state=staff-tere',
         ),
       );
       expect(unauthCb.status).toBe(401);
 
       const crossSpecialistInit = await getGoogleOAuth(
-        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-valeria', {
+        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-karla', {
           headers: { cookie: specialistCookie },
         }),
       );
@@ -558,7 +571,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
 
       const forgedRawStateCb = await getGoogleOAuthCallback(
         makeRequest(
-          'http://localhost:3000/api/integrations/google/callback?code=abc&state=staff-camila',
+          'http://localhost:3000/api/integrations/google/callback?code=abc&state=staff-tere',
           {
             headers: {
               cookie: `${ownerCookie}; ${GOOGLE_OAUTH_STATE_COOKIE}=fake-nonce-value`,
@@ -568,14 +581,14 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       );
       expect(forgedRawStateCb.status).toBe(403);
       const camilaBefore = getSnapshot().calendarConnections.find(
-        (c) => c.staffId === 'staff-camila',
+        (c) => c.staffId === 'staff-tere',
       );
       expect(camilaBefore?.isConnected).toBe(false);
 
       const owner = getSnapshot().adminUsers.find((u) => u.role === 'owner');
       if (!owner) throw new Error('Missing seed owner');
       const expiredOAuth = createGoogleOAuthState({
-        staffId: 'staff-camila',
+        staffId: 'staff-tere',
         adminId: owner.id,
         ttlSeconds: -5,
       });
@@ -594,7 +607,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(expiredCb.status).toBe(403);
 
       const initRes = await getGoogleOAuth(
-        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-camila', {
+        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-tere', {
           headers: { cookie: ownerCookie },
         }),
       );
@@ -638,7 +651,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(validCb.headers.get('set-cookie') ?? '').toContain('Max-Age=0');
 
       const camilaAfter = getSnapshot().calendarConnections.find(
-        (c) => c.staffId === 'staff-camila',
+        (c) => c.staffId === 'staff-tere',
       );
       expect(camilaAfter?.isConnected).toBe(true);
 
@@ -874,7 +887,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-w2-s4');
 
       const publicDiagRes = await getPublicAvailability(
-        makeRequest('http://localhost:3000/api/availability?mode=diagnose&staffId=staff-valeria'),
+        makeRequest('http://localhost:3000/api/availability?mode=diagnose&staffId=staff-karla'),
       );
       expect(publicDiagRes.status).toBe(403);
 
@@ -916,14 +929,14 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
 
       const unauthAdminDiag = await getAdminAvailability(
         makeRequest(
-          `http://localhost:3000/api/admin/availability?mode=diagnose&serviceId=srv-gelish-manicure&date=${sofiaDate}&staffId=staff-valeria`,
+          `http://localhost:3000/api/admin/availability?mode=diagnose&serviceId=srv-gel-semipermanente-manos&date=${sofiaDate}&staffId=staff-karla`,
         ),
       );
       expect(unauthAdminDiag.status).toBe(401);
 
       const crossSpecDiag = await getAdminAvailability(
         makeRequest(
-          `http://localhost:3000/api/admin/availability?mode=diagnose&serviceId=srv-gelish-manicure&date=${sofiaDate}&staffId=staff-valeria`,
+          `http://localhost:3000/api/admin/availability?mode=diagnose&serviceId=srv-gel-semipermanente-manos&date=${sofiaDate}&staffId=staff-karla`,
           { headers: { cookie: getSpecialistCookieHeader() } },
         ),
       );
@@ -931,7 +944,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
 
       const ownerDiag = await getAdminAvailability(
         makeRequest(
-          `http://localhost:3000/api/admin/availability?mode=diagnose&serviceId=srv-gelish-manicure&date=${sofiaDate}&staffId=staff-valeria`,
+          `http://localhost:3000/api/admin/availability?mode=diagnose&serviceId=srv-gel-semipermanente-manos&date=${sofiaDate}&staffId=staff-karla`,
           { headers: { cookie: getOwnerCookieHeader() } },
         ),
       );
@@ -950,16 +963,16 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       const tz = db.settings.timezone;
       const today = getDateKeyInTimezone(new Date(), tz);
       const valeriaSlot = queryAvailability({
-        serviceId: 'srv-acrilico-escultural',
+        serviceId: 'srv-unas-acrilicas',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startDate: today,
         days: 14,
       }).days.flatMap((d) => d.slots)[0];
       const camilaSlot = queryAvailability({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-camila',
+        staffId: 'staff-tere',
         startDate: today,
         days: 14,
       }).days.flatMap((d) => d.slots)[0];
@@ -970,7 +983,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            serviceId: 'srv-acrilico-escultural',
+            serviceId: 'srv-unas-acrilicas',
             staffId: valeriaSlot.staffId,
             startAt: valeriaSlot.startAt,
             clientName: 'Sin Auth',
@@ -988,8 +1001,8 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             cookie: getSpecialistCookieHeader(),
           },
           body: JSON.stringify({
-            serviceId: 'srv-acrilico-escultural',
-            staffId: 'staff-valeria',
+            serviceId: 'srv-unas-acrilicas',
+            staffId: 'staff-karla',
             startAt: valeriaSlot.startAt,
             clientName: 'Otra Especialista',
             clientPhone: '+525500112234',
@@ -1006,7 +1019,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             cookie: getOwnerCookieHeader(),
           },
           body: JSON.stringify({
-            serviceId: 'srv-acrilico-escultural',
+            serviceId: 'srv-unas-acrilicas',
             staffId: valeriaSlot.staffId,
             startAt: valeriaSlot.startAt,
             clientName: 'Walk In Confirmada',
@@ -1031,8 +1044,8 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             cookie: getSpecialistCookieHeader(),
           },
           body: JSON.stringify({
-            serviceId: 'srv-gelish-manicure',
-            staffId: 'staff-camila',
+            serviceId: 'srv-gel-semipermanente-manos',
+            staffId: 'staff-tere',
             startAt: camilaSlot.startAt,
             clientName: 'Manual Propia',
             clientPhone: '+525500112236',
@@ -1042,9 +1055,9 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(specialistOwnRes.status).toBe(201);
 
       const futureValeriaDay = queryAvailability({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-valeria',
+        staffId: 'staff-karla',
         startDate: today,
         days: 14,
       }).days.find((d) => d.date > today && d.slots.length > 0);
@@ -1057,8 +1070,8 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             cookie: getOwnerCookieHeader(),
           },
           body: JSON.stringify({
-            serviceId: 'srv-gelish-manicure',
-            staffId: 'staff-valeria',
+            serviceId: 'srv-gel-semipermanente-manos',
+            staffId: 'staff-karla',
             startAt: zonedDateTimeToUtc(futureValeriaDay.date, '03:00', tz).toISOString(),
             clientName: 'Madrugada Admin',
             clientPhone: '+525500112237',
@@ -1094,12 +1107,12 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
           clientName: 'Clienta Privada',
           clientPhone: '+525500001234',
           clientEmail: 'privada@ejemplo.mx',
-          staffId: 'staff-valeria',
+          staffId: 'staff-karla',
           startAt: '2026-12-01T16:00:00.000Z',
         });
 
         expect(emitted.type).toBe('slot_changed');
-        expect(emitted.staffId).toBe('staff-valeria');
+        expect(emitted.staffId).toBe('staff-karla');
         expect(emitted.date).toBe('2026-12-01');
         expect(Object.keys(emitted).sort()).toEqual(['date', 'staffId', 'timestamp', 'type']);
 
@@ -1168,7 +1181,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         email: 'duena@nails.studio',
         full_name: 'Valeria Supabase',
         role: 'owner',
-        staff_member_id: 'staff-valeria',
+        staff_member_id: 'staff-karla',
         is_active: true,
         created_at: '2026-01-01T00:00:00.000Z',
       };
@@ -1321,9 +1334,9 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       const db = getSnapshot();
       const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
       const avail = queryAvailability({
-        serviceId: 'srv-gelish-manicure',
+        serviceId: 'srv-gel-semipermanente-manos',
         addonIds: [],
-        staffId: 'staff-camila',
+        staffId: 'staff-tere',
         startDate: today,
         days: 14,
       });
@@ -1335,7 +1348,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            serviceId: 'srv-gelish-manicure',
+            serviceId: 'srv-gel-semipermanente-manos',
             addonIds: [],
             staffId: openSlot.staffId,
             startAt: openSlot.startAt,
@@ -1362,7 +1375,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            serviceId: 'srv-gelish-manicure',
+            serviceId: 'srv-gel-semipermanente-manos',
             addonIds: [],
             staffId: openSlot.staffId,
             startAt: openSlot.startAt,
@@ -1384,7 +1397,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             cookie: clientCookiePair,
           },
           body: JSON.stringify({
-            serviceId: 'srv-gelish-manicure',
+            serviceId: 'srv-gel-semipermanente-manos',
             addonIds: [],
             staffId: openSlot.staffId,
             startAt: openSlot.startAt,
@@ -1414,9 +1427,9 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         const db = getSnapshot();
         const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
         const openSlot = queryAvailability({
-          serviceId: 'srv-gelish-manicure',
+          serviceId: 'srv-gel-semipermanente-manos',
           addonIds: [],
-          staffId: 'staff-valeria',
+          staffId: 'staff-karla',
           startDate: today,
           days: 14,
         }).days.flatMap((d) => d.slots)[0];
@@ -1427,7 +1440,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-              serviceId: 'srv-gelish-manicure',
+              serviceId: 'srv-gel-semipermanente-manos',
               addonIds: [],
               staffId: openSlot.staffId,
               startAt: openSlot.startAt,
@@ -1444,7 +1457,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-              serviceId: 'srv-gelish-manicure',
+              serviceId: 'srv-gel-semipermanente-manos',
               addonIds: [],
               staffId: openSlot.staffId,
               startAt: openSlot.startAt,
@@ -1461,7 +1474,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-              serviceId: 'srv-gelish-manicure',
+              serviceId: 'srv-gel-semipermanente-manos',
               addonIds: [],
               staffId: openSlot.staffId,
               startAt: openSlot.startAt,
@@ -1512,6 +1525,649 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
           fs.rmSync(tempUploadsDir, { recursive: true, force: true });
         }
       }
+    });
+  });
+
+  describe('Phase 2 Wave 1: LAIKONA APIs, Onboarding, Reminders, Manual Clients & Overview', () => {
+    it('protects GET & POST /api/admin/onboarding as owner-only and persists settings + starter service', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p2-onb');
+
+      const unauthGet = await getAdminOnboarding(
+        makeRequest('http://localhost:3000/api/admin/onboarding'),
+      );
+      expect(unauthGet.status).toBe(401);
+
+      const adminPost = await postAdminOnboarding(
+        makeRequest('http://localhost:3000/api/admin/onboarding', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({ onboardingCompleted: true }),
+        }),
+      );
+      expect(adminPost.status).toBe(403);
+
+      const specialistPost = await postAdminOnboarding(
+        makeRequest('http://localhost:3000/api/admin/onboarding', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({ onboardingCompleted: true }),
+        }),
+      );
+      expect(specialistPost.status).toBe(403);
+
+      const ownerPost = await postAdminOnboarding(
+        makeRequest('http://localhost:3000/api/admin/onboarding', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            businessType: 'Salón de Manicure y Uñas',
+            teamSizeTier: '3 a 5',
+            salonName: 'LAIKONA NAILS',
+            serviceMode: 'studio',
+            address: 'Puebla, México',
+            soundAlertsEnabled: true,
+            onboardingCompleted: true,
+            starterService: {
+              name: 'Softgel Cherry Custom',
+              priceCents: 49000,
+              durationMinutes: 120,
+              isStartingPrice: true,
+            },
+          }),
+        }),
+      );
+      expect(ownerPost.status).toBe(200);
+      const onbJson = (await ownerPost.json()) as {
+        settings: { onboardingCompleted: boolean; soundAlertsEnabled: boolean };
+        starterService: { id: string; name: string; isStartingPrice: boolean } | null;
+      };
+      expect(onbJson.settings.onboardingCompleted).toBe(true);
+      expect(onbJson.settings.soundAlertsEnabled).toBe(true);
+      expect(onbJson.starterService?.isStartingPrice).toBe(true);
+
+      const ownerGet = await getAdminOnboarding(
+        makeRequest('http://localhost:3000/api/admin/onboarding', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(ownerGet.status).toBe(200);
+      const getJson = (await ownerGet.json()) as {
+        onboarding: { onboardingCompleted: boolean; serviceMode: string };
+      };
+      expect(getJson.onboarding.onboardingCompleted).toBe(true);
+      expect(getJson.onboarding.serviceMode).toBe('studio');
+    });
+
+    it('protects POST & PATCH /api/admin/clients and persists @instagramHandle + technicalNotes', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p2-cli');
+
+      const unauthRes = await postAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ fullName: 'Sin Auth', phone: '2221112233' }),
+        }),
+      );
+      expect(unauthRes.status).toBe(401);
+
+      const specialistRes = await postAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({ fullName: 'Especialista', phone: '2221112233' }),
+        }),
+      );
+      expect(specialistRes.status).toBe(403);
+
+      const adminCreateRes = await postAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({
+            fullName: 'Renata Campos',
+            phone: '2225556677',
+            email: 'renata@ejemplo.mx',
+            instagramHandle: '@Renata.Puebla',
+            technicalNotes: 'Alergia a monómero fuerte',
+          }),
+        }),
+      );
+      expect(adminCreateRes.status).toBe(201);
+      const createdJson = (await adminCreateRes.json()) as {
+        client: { id: string; instagramHandle?: string; notes: string };
+      };
+      expect(createdJson.client.instagramHandle).toBe('@renata.puebla');
+      expect(createdJson.client.notes).toBe('Alergia a monómero fuerte');
+
+      const dupRes = await postAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({ fullName: 'Renata Dup', phone: '+522225556677' }),
+        }),
+      );
+      expect(dupRes.status).toBe(409);
+
+      const patchRes = await patchAdminClients(
+        makeRequest('http://localhost:3000/api/admin/clients', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            clientId: createdJson.client.id,
+            instagramHandle: 'renata.cherry',
+            technicalNotes: 'Prefiere almendra media',
+          }),
+        }),
+      );
+      expect(patchRes.status).toBe(200);
+      const patchedJson = (await patchRes.json()) as {
+        client: { instagramHandle?: string; notes: string };
+      };
+      expect(patchedJson.client.instagramHandle).toBe('@renata.cherry');
+      expect(patchedJson.client.notes).toBe('Prefiere almendra media');
+    });
+
+    it('enforces specialist IDOR on PATCH /api/admin/bookings send_reminder and returns waMeUrl + logs notification', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p2-rem');
+
+      const unauthRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'send_reminder', bookingId: 'bk-1001' }),
+        }),
+      );
+      expect(unauthRes.status).toBe(401);
+
+      const idorRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'send_reminder',
+            bookingId: 'bk-1001',
+            channel: 'whatsapp',
+          }),
+        }),
+      );
+      expect(idorRes.status).toBe(403);
+
+      const beforeCount = getSnapshot().notifications.length;
+      const ownSpecRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'send_reminder',
+            bookingId: 'bk-1002',
+            channel: 'whatsapp',
+          }),
+        }),
+      );
+      expect(ownSpecRes.status).toBe(200);
+      const remJson = (await ownSpecRes.json()) as {
+        ok: boolean;
+        bookingId: string;
+        channel: string;
+        waMeUrl: string;
+        messagePreview: string;
+      };
+      expect(remJson.ok).toBe(true);
+      expect(remJson.bookingId).toBe('bk-1002');
+      expect(remJson.channel).toBe('whatsapp');
+      expect(remJson.waMeUrl).toContain('https://wa.me/');
+      expect(remJson.messagePreview).toContain('NL-1043');
+      expect(getSnapshot().notifications.length).toBe(beforeCount + 1);
+    });
+
+    it('supports multi-service availability & booking, @instagram sanitization, and admin custom duration/price overrides', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p2-multi');
+      const db = getSnapshot();
+      const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+
+      const availRes = await getPublicAvailability(
+        makeRequest(
+          `http://localhost:3000/api/availability?serviceId=srv-unas-acrilicas&extraServiceIds=srv-retiro&staffId=staff-karla&startDate=${today}&days=14`,
+        ),
+      );
+      expect(availRes.status).toBe(200);
+      const availJson = (await availRes.json()) as {
+        totals: { totalDurationMinutes: number; subtotalCents: number };
+        extraServices: Array<{ id: string }>;
+        days: Array<{ date: string; slots: Array<{ startAt: string; staffId: string }> }>;
+      };
+      expect(availJson.totals.totalDurationMinutes).toBe(180);
+      expect(availJson.totals.subtotalCents).toBe(53000);
+      expect(availJson.extraServices.map((s) => s.id)).toEqual(['srv-retiro']);
+
+      const openSlots = availJson.days.flatMap((d) => d.slots);
+      const slot1 = openSlots[0];
+      const slot2 = openSlots[openSlots.length - 1];
+      if (!slot1 || !slot2 || slot1.startAt === slot2.startAt) {
+        throw new Error('Expected two open multi-service slots');
+      }
+
+      const xssHandleRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-unas-acrilicas',
+            extraServiceIds: ['srv-retiro'],
+            staffId: slot1.staffId,
+            startAt: slot1.startAt,
+            clientName: 'Handle Invalido',
+            clientPhone: '+522227770001',
+            clientInstagram: '<script>alert(1)</script>',
+          }),
+        }),
+      );
+      expect(xssHandleRes.status).toBe(400);
+
+      const publicMultiRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-unas-acrilicas',
+            extraServiceIds: ['srv-retiro'],
+            staffId: slot1.staffId,
+            startAt: slot1.startAt,
+            clientName: 'Camila Puebla',
+            clientPhone: '+522227770002',
+            clientInstagram: '@Camila.Laikona',
+            proofDeliveryMethod: 'instagram_dm',
+            forceConfirmed: true,
+            source: 'manual',
+          }),
+        }),
+      );
+      expect(publicMultiRes.status).toBe(201);
+      const publicMultiJson = (await publicMultiRes.json()) as {
+        booking: {
+          status: string;
+          source: string;
+          extraServiceIds?: string[];
+          totalDurationMinutes: number;
+          subtotalCents: number;
+          depositAmountCents: number;
+          clientInstagram?: string;
+          proofDeliveryMethod?: string;
+          client: { instagramHandle?: string };
+        };
+      };
+      expect(publicMultiJson.booking.status).toBe('pending_confirmation');
+      expect(publicMultiJson.booking.source).toBe('web');
+      expect(publicMultiJson.booking.extraServiceIds).toEqual(['srv-retiro']);
+      expect(publicMultiJson.booking.totalDurationMinutes).toBe(180);
+      expect(publicMultiJson.booking.subtotalCents).toBe(53000);
+      expect(publicMultiJson.booking.depositAmountCents).toBe(20000);
+      expect(publicMultiJson.booking.clientInstagram).toBe('@camila.laikona');
+      expect(publicMultiJson.booking.client.instagramHandle).toBe('@camila.laikona');
+      expect(publicMultiJson.booking.proofDeliveryMethod).toBe('instagram_dm');
+
+      const adminOverrideRes = await postAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            extraServiceIds: ['srv-retiro'],
+            staffId: slot2.staffId,
+            startAt: slot2.startAt,
+            clientName: 'Override Admin',
+            clientPhone: '+522227770003',
+            clientInstagram: 'override.ig',
+            customDurationMinutes: 90,
+            customPriceCents: 42000,
+            internalNotes: 'Precio preferencial VIP',
+            notifyEmail: false,
+            notifyWhatsapp: false,
+          }),
+        }),
+      );
+      expect(adminOverrideRes.status).toBe(201);
+      const overrideJson = (await adminOverrideRes.json()) as {
+        booking: {
+          totalDurationMinutes: number;
+          customDurationMinutes?: number;
+          subtotalCents: number;
+          customPriceCents?: number;
+          internalNotes: string;
+          clientInstagram?: string;
+        };
+      };
+      expect(overrideJson.booking.totalDurationMinutes).toBe(90);
+      expect(overrideJson.booking.customDurationMinutes).toBe(90);
+      expect(overrideJson.booking.subtotalCents).toBe(42000);
+      expect(overrideJson.booking.customPriceCents).toBe(42000);
+      expect(overrideJson.booking.internalNotes).toBe('Precio preferencial VIP');
+      expect(overrideJson.booking.clientInstagram).toBe('@override.ig');
+    });
+
+    it('validates fixedStartTimes, isStartingPrice, brand LAIKONA settings, and overview checklist/pendingDeposits/retention', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p2-cfg');
+
+      const badFixedRes = await putAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            staffId: 'staff-karla',
+            rules: [
+              {
+                id: 'r-k-1',
+                dayOfWeek: 1,
+                startTime: '10:00',
+                endTime: '19:30',
+                fixedStartTimes: ['25:99'],
+              },
+            ],
+          }),
+        }),
+      );
+      expect(badFixedRes.status).toBe(400);
+
+      const outOfWindowFixedRes = await putAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            staffId: 'staff-karla',
+            rules: [
+              {
+                id: 'r-k-1',
+                dayOfWeek: 1,
+                startTime: '10:00',
+                endTime: '19:30',
+                fixedStartTimes: ['09:00', '13:30'],
+              },
+            ],
+          }),
+        }),
+      );
+      expect(outOfWindowFixedRes.status).toBe(400);
+
+      const atEndBoundaryFixedRes = await putAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            staffId: 'staff-karla',
+            rules: [
+              {
+                id: 'r-k-1',
+                dayOfWeek: 1,
+                startTime: '10:00',
+                endTime: '19:30',
+                fixedStartTimes: ['10:00', '19:30'],
+              },
+            ],
+          }),
+        }),
+      );
+      expect(atEndBoundaryFixedRes.status).toBe(400);
+
+      const goodFixedRes = await putAdminAvailability(
+        makeRequest('http://localhost:3000/api/admin/availability', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            staffId: 'staff-karla',
+            rules: [
+              {
+                id: 'r-k-1',
+                dayOfWeek: 1,
+                startTime: '10:00',
+                endTime: '19:30',
+                fixedStartTimes: ['16:30', '10:00', '13:30'],
+              },
+            ],
+          }),
+        }),
+      );
+      expect(goodFixedRes.status).toBe(200);
+      const savedRule = getSnapshot()
+        .schedules.find((s) => s.staffId === 'staff-karla')
+        ?.rules.find((r) => r.id === 'r-k-1');
+      expect(savedRule?.fixedStartTimes).toEqual(['10:00', '13:30', '16:30']);
+
+      const svcRes = await postAdminServices(
+        makeRequest('http://localhost:3000/api/admin/services', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'service',
+            data: {
+              name: 'Press-on Cherry',
+              durationMinutes: 60,
+              priceCents: 30000,
+              isStartingPrice: true,
+            },
+          }),
+        }),
+      );
+      expect(svcRes.status).toBe(200);
+      const svcJson = (await svcRes.json()) as { service: { isStartingPrice?: boolean } };
+      expect(svcJson.service.isStartingPrice).toBe(true);
+
+      const brandForbiddenRes = await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({ depositAmountCents: 25000 }),
+        }),
+      );
+      expect(brandForbiddenRes.status).toBe(403);
+
+      const brandOwnerRes = await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            instagramHandle: '@laikona.nailsss',
+            sisterStudioHandle: '@lumiere.beautymx',
+            depositBankName: 'Mercado Pago',
+            depositBeneficiary: 'Karla Patricia Carrillo Rodríguez',
+            depositClabe: '7229 6901 3959 779869',
+            depositAmountCents: 20000,
+            serviceMode: 'studio',
+            soundAlertsEnabled: false,
+          }),
+        }),
+      );
+      expect(brandOwnerRes.status).toBe(200);
+      const brandJson = (await brandOwnerRes.json()) as {
+        settings: {
+          depositBeneficiary?: string;
+          depositAmountCents?: number;
+          soundAlertsEnabled?: boolean;
+        };
+      };
+      expect(brandJson.settings.depositBeneficiary).toBe('Karla Patricia Carrillo Rodríguez');
+      expect(brandJson.settings.depositAmountCents).toBe(20000);
+      expect(brandJson.settings.soundAlertsEnabled).toBe(false);
+
+      const liveDb = getSnapshot();
+      const oldVisitIso = new Date(Date.now() - 45 * 86_400_000).toISOString();
+      const oldBooking = liveDb.bookings.find((b) => b.id === 'bk-1000');
+      if (oldBooking) {
+        oldBooking.startAt = oldVisitIso;
+        oldBooking.endAt = oldVisitIso;
+      }
+
+      const ovRes = await getAdminOverview(
+        makeRequest('http://localhost:3000/api/admin/overview', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(ovRes.status).toBe(200);
+      const ovJson = (await ovRes.json()) as {
+        onboardingChecklist: {
+          completedCount: number;
+          totalCount: number;
+          steps: Array<{ id: string; href: string; done: boolean }>;
+        };
+        pendingDeposits: Array<{
+          bookingId: string;
+          depositAmountCents: number;
+          clientInstagram: string | null;
+          proofDeliveryMethod: string;
+        }>;
+        retention: {
+          returningClientsCount: number;
+          inactiveClients: Array<{ clientId: string; daysSinceLastVisit: number }>;
+        };
+      };
+      expect(ovJson.onboardingChecklist.totalCount).toBe(6);
+      expect(ovJson.onboardingChecklist.steps).toHaveLength(6);
+      expect(
+        ovJson.onboardingChecklist.steps.find((s) => s.id === 'staff-schedules')?.href,
+      ).toBe('/admin/disponibilidad');
+      expect(
+        ovJson.onboardingChecklist.steps.find((s) => s.id === 'first-booking')?.href,
+      ).toBe('/admin/citas');
+      expect(ovJson.pendingDeposits.some((d) => d.bookingId === 'bk-1003')).toBe(true);
+      const pendingAndrea = ovJson.pendingDeposits.find((d) => d.bookingId === 'bk-1003');
+      expect(pendingAndrea?.depositAmountCents).toBe(20000);
+      expect(pendingAndrea?.clientInstagram).toBe('@andrealopez.nails');
+      expect(pendingAndrea?.proofDeliveryMethod).toBe('web_upload');
+      expect(
+        ovJson.retention.inactiveClients.some(
+          (c) => c.clientId === 'client-paula' && c.daysSinceLastVisit >= 30,
+        ),
+      ).toBe(true);
+    });
+
+    it('holds full combined multi-service range in POST /api/slot-holds so POST /api/bookings with holdId succeeds (201)', async () => {
+      vi.stubEnv('CLIENT_SESSION_SECRET', 'test-client-secret-p2-multi-hold');
+      const db = getSnapshot();
+      const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+
+      const multiAvail = queryAvailability({
+        serviceId: 'srv-rubber',
+        extraServiceIds: ['srv-retiro'],
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: today,
+        days: 14,
+      });
+      const openSlot = multiAvail.days
+        .flatMap((d) => d.slots)
+        .find((s) => s.staffId === 'staff-karla');
+      if (!openSlot) throw new Error('Expected open multi-service slot');
+
+      const holdRes = await postSlotHold(
+        makeRequest('http://localhost:3000/api/slot-holds', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            extraServiceIds: ['srv-retiro'],
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+          }),
+        }),
+      );
+      expect(holdRes.status).toBe(200);
+      const setCookieHeader = holdRes.headers.get('set-cookie') ?? '';
+      expect(setCookieHeader).toContain(`${CLIENT_SESSION_COOKIE}=`);
+      const clientCookiePair = setCookieHeader.split(';')[0] ?? '';
+
+      const holdJson = (await holdRes.json()) as {
+        holdId: string;
+        hold: { startAt: string; endAt: string };
+      };
+      const heldMinutes =
+        (new Date(holdJson.hold.endAt).getTime() -
+          new Date(holdJson.hold.startAt).getTime()) /
+        60_000;
+      expect(heldMinutes).toBe(150);
+
+      const bookingRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: clientCookiePair,
+          },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            extraServiceIds: ['srv-retiro'],
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Clienta Multi Hold',
+            clientPhone: '+522229001122',
+            clientInstagram: '@multi.hold',
+            proofDeliveryMethod: 'instagram_dm',
+            holdId: holdJson.holdId,
+          }),
+        }),
+      );
+      expect(bookingRes.status).toBe(201);
+      const bookingJson = (await bookingRes.json()) as {
+        booking: {
+          totalDurationMinutes: number;
+          extraServiceIds?: string[];
+          clientInstagram?: string;
+        };
+      };
+      expect(bookingJson.booking.totalDurationMinutes).toBe(150);
+      expect(bookingJson.booking.extraServiceIds).toEqual(['srv-retiro']);
+      expect(bookingJson.booking.clientInstagram).toBe('@multi.hold');
     });
   });
 });

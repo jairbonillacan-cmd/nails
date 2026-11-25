@@ -22,11 +22,22 @@ import { useAdminData } from '@/components/admin/AdminProvider';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import type { Service } from '@/lib/types';
 
+function formatServicePriceLabel(
+  priceCents: number,
+  isStartingPrice: boolean | undefined,
+  currency: 'MXN' | 'USD',
+): string {
+  const formatted = formatCurrency(priceCents, currency);
+  return isStartingPrice ? `Desde ${formatted}` : formatted;
+}
+
 export default function AdminServicesPage() {
   const { data, refresh } = useAdminData();
   const [section, setSection] = useState('services');
   const [editing, setEditing] = useState<Partial<Service> | null>(null);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(
+    null,
+  );
 
   const [addonName, setAddonName] = useState('');
   const [addonDesc, setAddonDesc] = useState('');
@@ -38,12 +49,13 @@ export default function AdminServicesPage() {
   const activeDraft: Partial<Service> = editing ?? {
     name: '',
     description: '',
-    durationMinutes: 60,
-    priceCents: 45000,
-    bufferAfterMinutes: 15,
-    requiresConfirmation: false,
-    depositRequired: false,
-    depositAmountCents: 15000,
+    durationMinutes: 120,
+    priceCents: 35000,
+    isStartingPrice: true,
+    bufferAfterMinutes: 0,
+    requiresConfirmation: true,
+    depositRequired: true,
+    depositAmountCents: data.settings.depositAmountCents ?? 20000,
     allowInspoPhoto: true,
     isActive: true,
     isFeatured: true,
@@ -58,9 +70,18 @@ export default function AdminServicesPage() {
       body: JSON.stringify({ kind: 'service', data: activeDraft }),
     });
     if (res.ok) {
-      setSavedMsg('Servicio guardado y publicado en tu agenda.');
+      setSavedMsg({
+        status: 'success',
+        text: 'Servicio guardado y publicado en tu agenda.',
+      });
       setEditing(null);
       await refresh();
+    } else {
+      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+      setSavedMsg({
+        status: 'error',
+        text: errJson?.error || 'No se pudo guardar el servicio.',
+      });
     }
   };
 
@@ -84,15 +105,27 @@ export default function AdminServicesPage() {
     if (res.ok) {
       setAddonName('');
       setAddonDesc('');
-      setSavedMsg('Extra agregado al flujo de reservas.');
+      setSavedMsg({
+        status: 'success',
+        text: 'Extra agregado al flujo de reservas.',
+      });
       await refresh();
+    } else {
+      const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+      setSavedMsg({
+        status: 'error',
+        text: errJson?.error || 'No se pudo guardar el extra.',
+      });
     }
   };
 
   const copyServiceLink = async (slug: string) => {
     const url = `${window.location.origin}/reservar/${slug}`;
     await navigator.clipboard.writeText(url);
-    setSavedMsg(`Link directo copiado: /reservar/${slug}`);
+    setSavedMsg({
+      status: 'success',
+      text: `Link directo copiado: /reservar/${slug}`,
+    });
   };
 
   return (
@@ -113,12 +146,13 @@ export default function AdminServicesPage() {
             setEditing({
               name: '',
               description: '',
-              durationMinutes: 60,
-              priceCents: 45000,
-              bufferAfterMinutes: 15,
-              requiresConfirmation: false,
-              depositRequired: false,
-              depositAmountCents: 15000,
+              durationMinutes: 120,
+              priceCents: 35000,
+              isStartingPrice: true,
+              bufferAfterMinutes: 0,
+              requiresConfirmation: true,
+              depositRequired: true,
+              depositAmountCents: data.settings.depositAmountCents ?? 20000,
               allowInspoPhoto: true,
               isActive: true,
               isFeatured: true,
@@ -129,8 +163,9 @@ export default function AdminServicesPage() {
 
       {savedMsg ? (
         <Banner
-          status="success"
-          title={savedMsg}
+          status={savedMsg.status}
+          role={savedMsg.status === 'error' ? 'alert' : undefined}
+          title={savedMsg.text}
           isDismissable
           onDismiss={() => setSavedMsg(null)}
         />
@@ -143,7 +178,6 @@ export default function AdminServicesPage() {
 
       {section === 'services' ? (
         <Grid columns={{ minWidth: 320, max: 2 }} gap={5} align="start">
-
           <VStack gap={3}>
             {data.services.map((srv) => (
               <Card key={srv.id} padding={4}>
@@ -158,7 +192,11 @@ export default function AdminServicesPage() {
                       </Text>
                     </VStack>
                     <Text weight="bold" hasTabularNumbers>
-                      {formatCurrency(srv.priceCents, data.settings.currency)}
+                      {formatServicePriceLabel(
+                        srv.priceCents,
+                        srv.isStartingPrice,
+                        data.settings.currency,
+                      )}
                     </Text>
                   </HStack>
 
@@ -166,13 +204,20 @@ export default function AdminServicesPage() {
                     <Token
                       size="sm"
                       icon={<Clock size={12} />}
-                      label={`${srv.durationMinutes} min (+${srv.bufferAfterMinutes}m limpieza)`}
+                      label={
+                        srv.bufferAfterMinutes > 0
+                          ? `${formatDuration(srv.durationMinutes)} (+${srv.bufferAfterMinutes}m limpieza)`
+                          : formatDuration(srv.durationMinutes)
+                      }
                     />
+                    {srv.isStartingPrice ? (
+                      <Token size="sm" color="default" label="Precio aproximado (Desde)" />
+                    ) : null}
                     {srv.depositRequired ? (
                       <Token
                         size="sm"
                         color="orange"
-                        label={`Anticipo ${formatCurrency(srv.depositAmountCents)}`}
+                        label={`Anticipo ${formatCurrency(srv.depositAmountCents, data.settings.currency)}`}
                       />
                     ) : null}
                     {!srv.isActive ? <Token size="sm" color="gray" label="Oculto" /> : null}
@@ -232,7 +277,7 @@ export default function AdminServicesPage() {
                   </Heading>
                   <TextInput
                     label="Nombre del servicio"
-                    placeholder="Ej. Nivelación Rubber Base"
+                    placeholder="Ej. Rubber / Uñas acrílicas"
                     value={activeDraft.name || ''}
                     onChange={(v) => setEditing({ ...activeDraft, name: v })}
                     isRequired
@@ -248,6 +293,7 @@ export default function AdminServicesPage() {
                       label="Duración (min)"
                       value={activeDraft.durationMinutes ?? 60}
                       min={15}
+                      max={480}
                       onChange={(v) =>
                         setEditing({ ...activeDraft, durationMinutes: v })
                       }
@@ -262,14 +308,20 @@ export default function AdminServicesPage() {
                     />
                     <NumberInput
                       label="Buffer limpieza (m)"
-                      value={activeDraft.bufferAfterMinutes ?? 15}
+                      value={activeDraft.bufferAfterMinutes ?? 0}
                       min={0}
+                      max={120}
                       onChange={(v) =>
                         setEditing({ ...activeDraft, bufferAfterMinutes: v })
                       }
                     />
                   </Grid>
 
+                  <Switch
+                    label="Mostrar como precio aproximado ('Desde $...')"
+                    value={Boolean(activeDraft.isStartingPrice)}
+                    onChange={(v) => setEditing({ ...activeDraft, isStartingPrice: v })}
+                  />
                   <Switch
                     label="Permitir que la clienta suba foto de inspiración (inspo)"
                     value={Boolean(activeDraft.allowInspoPhoto)}
@@ -291,7 +343,7 @@ export default function AdminServicesPage() {
                   {activeDraft.depositRequired ? (
                     <NumberInput
                       label="Monto de anticipo (MXN)"
-                      value={(activeDraft.depositAmountCents ?? 15000) / 100}
+                      value={(activeDraft.depositAmountCents ?? 20000) / 100}
                       min={0}
                       onChange={(v) =>
                         setEditing({
@@ -323,13 +375,14 @@ export default function AdminServicesPage() {
                 </HStack>
                 <Card padding={4}>
                   <VStack gap={2}>
-                    <HStack justify="between" align="start">
+                    <HStack justify="between" align="start" gap={2}>
                       <Heading level={4}>
                         {activeDraft.name || 'Nombre del servicio'}
                       </Heading>
                       <Text weight="bold" hasTabularNumbers>
-                        {formatCurrency(
+                        {formatServicePriceLabel(
                           activeDraft.priceCents ?? 0,
+                          activeDraft.isStartingPrice,
                           data.settings.currency,
                         )}
                       </Text>
@@ -346,6 +399,7 @@ export default function AdminServicesPage() {
                           color="orange"
                           label={`Anticipo ${formatCurrency(
                             activeDraft.depositAmountCents ?? 0,
+                            data.settings.currency,
                           )}`}
                         />
                       ) : null}

@@ -1,4 +1,4 @@
--- Seed inicial para Nails (ejecutar después de 0001_initial_schema.sql y 0002_salon_growth_features.sql)
+-- Seed inicial para LAIKONA NAILS BY KARLA (ejecutar después de 0001..0004)
 -- Alineado con src/lib/demo-seed.ts (verificado por scripts/check-seed-parity.mjs)
 
 INSERT INTO public.salon_settings (
@@ -9,6 +9,7 @@ INSERT INTO public.salon_settings (
   address,
   maps_url,
   instagram_handle,
+  sister_studio_handle,
   whatsapp_number,
   contact_email,
   timezone,
@@ -32,9 +33,16 @@ INSERT INTO public.salon_settings (
   payment_mode,
   deposit_bank_name,
   deposit_account_holder,
+  deposit_beneficiary,
   deposit_clabe,
+  deposit_amount_cents,
   deposit_instructions,
   currency,
+  service_mode,
+  business_type,
+  team_size_tier,
+  onboarding_completed,
+  sound_alerts_enabled,
   landing_content,
   whatsapp_booking_enabled,
   sms_reminders_enabled,
@@ -43,17 +51,18 @@ INSERT INTO public.salon_settings (
 )
 VALUES (
   'default',
-  'Nails',
-  'Estudio boutique de uñas, cuidado natural y nail art editorial',
-  'Reserva tu set con disponibilidad en tiempo real, extras personalizados y confirmación inmediata por correo y WhatsApp.',
-  'Av. Álvaro Obregón 148, Col. Roma Norte, CDMX',
-  'https://maps.google.com/?q=Roma+Norte+CDMX',
-  '@nails.studio.mx',
-  '+525512345678',
-  'hola@nails.studio',
+  'LAIKONA NAILS',
+  'by Karla · Manicure y nail art en Puebla',
+  'Laikona Nails by Karla, estudio de manicure, pedicure y nail art en Puebla. Consulta servicios y agenda tu cita en línea.',
+  'Puebla, México · Con @lumiere.beautymx (ubicación exacta al confirmar cita)',
+  'https://maps.google.com/?q=Puebla+Mexico',
+  '@laikona.nailsss',
+  '@lumiere.beautymx',
+  '+522221234567',
+  'hola@laikonanails.mx',
   'America/Mexico_City',
-  '#9E5C64',
-  '#D89BA3',
+  '#8B1E2B',
+  '#E57A89',
   'light',
   'system',
   'soft',
@@ -67,24 +76,31 @@ VALUES (
   45,
   12,
   12,
-  'Puedes reagendar o cancelar sin cargo hasta 12 horas antes de tu cita desde tu link personal. Después de ese límite el anticipo no es reembolsable.',
-  'Te pedimos llegar 5 minutos antes. Si traes gel o acrílico de otro estudio, agrega el extra de retiro para reservar el tiempo adecuado.',
+  'Para apartar tu lugar se requiere anticipo de $200 MXN vía transferencia SPEI a Mercado Pago. Puedes reagendar o cancelar sin perder tu anticipo hasta 12 horas antes de tu cita desde tu link personal.',
+  'Te pedimos llegar puntual a tu bloque (10 min de tolerancia). Si traes gel o acrílico previo, agrega el servicio de Retiro o extra para apartar el tiempo exacto.',
   'manual_transfer',
-  'BBVA México',
-  'Nails Studio MX',
-  '012180001234567890',
-  'Para servicios largos o esculturales aparta con $150 MXN por transferencia SPEI y sube tu comprobante para confirmación prioritaria.',
+  'Mercado Pago',
+  'Karla Patricia Carrillo Rodríguez',
+  'Karla Patricia Carrillo Rodríguez',
+  '7229 6901 3959 779869',
+  20000,
+  'Aparta tu cita con $200 MXN por transferencia SPEI a Mercado Pago (CLABE 7229 6901 3959 779869 · Karla Patricia Carrillo Rodríguez). Sube tu comprobante aquí o envíalo por DM a @laikona.nailsss.',
   'MXN',
+  'studio',
+  'Salón de Manicure y Uñas',
+  '3 a 5',
+  false,
+  true,
   '{
-    "heroEyebrow": "Estudio privado · Agenda en tiempo real",
-    "heroTitle": "Uñas diseñadas al detalle, reservadas en segundos.",
-    "heroSubtitle": "Elige tu técnica, suma extras o diseño, sube tu foto de inspiración y aparta tu lugar sin esperar respuestas por mensaje.",
-    "aboutTitle": "Higiene clínica, tiempos reales y estética atemporal",
-    "aboutBody": "Cada cita incluye preparación en seco (manicura rusa), instrumental esterilizado en autoclave y un margen entre clientas para atenderte sin prisas."
+    "heroEyebrow": "Manicure y nail art · Puebla",
+    "heroTitle": "Uñas a tu manera.",
+    "heroSubtitle": "Del gel al acrílico, elige tu técnica y agenda tu próximo set con Laikona Nails by Karla.",
+    "aboutTitle": "Técnica precisa, higiene clínica y bloques dedicados en Puebla",
+    "aboutBody": "En LAIKONA NAILS by Karla cada cita tiene su bloque de horario reservado para trabajar con preparación en seco, instrumental esterilizado y acabados duraderos."
   }'::jsonb,
   true,
   false,
-  'https://g.page/r/nails-studio-demo/review',
+  'https://g.page/r/laikona-nails-puebla/review',
   35.00
 )
 ON CONFLICT (id) DO NOTHING;
@@ -103,33 +119,44 @@ INSERT INTO public.staff_members (
 VALUES
   (
     '10000000-0000-4000-8000-000000000101',
-    'Valeria Mendoza',
+    'Karla',
     'Fundadora & Master Nail Artist',
-    'Especialista en manicura rusa, rubber base y diseño minimalista editorial.',
+    'Especialista en acrílico escultural, Softgel, Rubber y diseños editoriales en LAIKONA NAILS Puebla.',
     NULL,
-    'valeria',
+    'karla',
     40.00,
     true,
     0
   ),
   (
     '10000000-0000-4000-8000-000000000102',
-    'Camila Rojas',
+    'Paty',
     'Senior Nail Artist',
-    'Experta en Soft Gel, acrílico escultural y acabados chrome / cat eye.',
+    'Experta en Rubber, retoques de alta retención, gel semipermanente y PediSpa.',
     NULL,
-    'camila',
+    'paty',
     35.00,
     true,
     1
+  ),
+  (
+    '10000000-0000-4000-8000-000000000103',
+    'Tere',
+    'Nail Artist · Turno Vespertino',
+    'Especialista en Softgel, acrílico, gel en manos/pies y acabados modernos en horario de tarde.',
+    NULL,
+    'tere',
+    35.00,
+    true,
+    2
   )
 ON CONFLICT (booking_slug) DO NOTHING;
 
 INSERT INTO public.service_categories (id, name, slug, display_order)
 VALUES
-  ('10000000-0000-4000-8000-000000000201', 'Uña Natural & Gel', 'una-natural', 0),
-  ('10000000-0000-4000-8000-000000000202', 'Extensiones & Esculturales', 'extensiones', 1),
-  ('10000000-0000-4000-8000-000000000203', 'Pies & Spa', 'pies-spa', 2)
+  ('10000000-0000-4000-8000-000000000201', 'Uñas & Esculturales', 'unas-esculturales', 0),
+  ('10000000-0000-4000-8000-000000000202', 'Gel & Retiro', 'gel-retiro', 1),
+  ('10000000-0000-4000-8000-000000000203', 'Pies & PediSpa', 'pies-pedispa', 2)
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO public.services (
@@ -140,6 +167,7 @@ INSERT INTO public.services (
   description,
   duration_minutes,
   price_cents,
+  is_starting_price,
   buffer_before_minutes,
   buffer_after_minutes,
   requires_confirmation,
@@ -154,17 +182,18 @@ INSERT INTO public.services (
 VALUES
   (
     '10000000-0000-4000-8000-000000000301',
-    (SELECT id FROM public.service_categories WHERE slug = 'una-natural'),
-    'Manicura Rusa + Gelish',
-    'manicura-rusa-gelish',
-    'Limpieza profunda de cutícula en seco, limado preciso y esmaltado en gel liso de larga duración (hasta 3 semanas).',
-    60,
-    38000,
+    (SELECT id FROM public.service_categories WHERE slug = 'unas-esculturales'),
+    'Rubber',
+    'rubber',
+    'Nivelación y refuerzo con base Rubber sobre uña natural para máxima resistencia, ápice limpio y acabado duradero.',
+    120,
+    35000,
+    true,
     0,
-    15,
-    false,
-    false,
     0,
+    true,
+    true,
+    20000,
     true,
     true,
     true,
@@ -173,17 +202,18 @@ VALUES
   ),
   (
     '10000000-0000-4000-8000-000000000302',
-    (SELECT id FROM public.service_categories WHERE slug = 'una-natural'),
-    'Nivelación Rubber Base / BIAB',
-    'rubber-base-biab',
-    'Refuerzo estructural flexible sobre uña natural para aportar fuerza, ápice limpio y brillo espejo sin dañar la lámina.',
-    75,
-    49000,
+    (SELECT id FROM public.service_categories WHERE slug = 'unas-esculturales'),
+    'Uñas acrílicas',
+    'unas-acrilicas',
+    'Set completo de acrílico escultural con forma personalizada, sellado limpio en cutícula y estructura resistente.',
+    150,
+    45000,
+    true,
     0,
-    15,
-    false,
-    false,
     0,
+    true,
+    true,
+    20000,
     true,
     true,
     true,
@@ -192,17 +222,18 @@ VALUES
   ),
   (
     '10000000-0000-4000-8000-000000000303',
-    (SELECT id FROM public.service_categories WHERE slug = 'extensiones'),
-    'Extensiones Soft Gel (Gel-X)',
-    'extensiones-soft-gel',
-    'Extensiones ligeras de cobertura completa con acabado natural, ideales para largo S–M con excelente retención.',
-    90,
-    65000,
+    (SELECT id FROM public.service_categories WHERE slug = 'unas-esculturales'),
+    'Uñas Softgel',
+    'unas-softgel',
+    'Extensiones Softgel ligeras de cobertura completa con retención superior y acabado natural o editorial.',
+    120,
+    45000,
+    true,
     0,
-    15,
+    0,
     true,
     true,
-    15000,
+    20000,
     true,
     true,
     true,
@@ -211,14 +242,15 @@ VALUES
   ),
   (
     '10000000-0000-4000-8000-000000000304',
-    (SELECT id FROM public.service_categories WHERE slug = 'extensiones'),
-    'Acrílico Escultural Full Set',
-    'acrilico-escultural',
-    'Esculpido a medida con forma profesional (almond, coffin o square) y sellado perfecto en zona de cutícula.',
+    (SELECT id FROM public.service_categories WHERE slug = 'unas-esculturales'),
+    'Retoque',
+    'retoque',
+    'Mantenimiento de acrílico o Rubber con relleno de crecimiento, limpieza de cutícula y renovación de diseño.',
     120,
-    78000,
+    34000,
+    true,
     0,
-    15,
+    0,
     true,
     true,
     20000,
@@ -230,40 +262,102 @@ VALUES
   ),
   (
     '10000000-0000-4000-8000-000000000305',
-    (SELECT id FROM public.service_categories WHERE slug = 'extensiones'),
-    'Retoque Acrílico / Rubber (2–3 sem)',
-    'retoque-acrilico-rubber',
-    'Mantenimiento completo con renovación de estructura, limpieza de cutícula y cambio de color.',
-    75,
-    52000,
+    (SELECT id FROM public.service_categories WHERE slug = 'gel-retiro'),
+    'Gel Semipermanente manos',
+    'gel-semipermanente-manos',
+    'Preparación de uña natural y esmaltado en gel semipermanente con brillo espejo de larga duración.',
+    60,
+    15000,
+    true,
     0,
-    15,
-    false,
-    false,
     0,
+    false,
+    true,
+    20000,
     true,
     true,
-    false,
+    true,
     4,
     NULL
   ),
   (
     '10000000-0000-4000-8000-000000000306',
-    (SELECT id FROM public.service_categories WHERE slug = 'pies-spa'),
-    'Spa Pedicure + Gel',
-    'spa-pedicure-gel',
-    'Cuidado completo de pies, exfoliación botánica, hidratación profunda y esmaltado en gel.',
-    60,
-    46000,
+    (SELECT id FROM public.service_categories WHERE slug = 'gel-retiro'),
+    'Retiro',
+    'retiro',
+    'Retiro profesional y cuidadoso de gel, Rubber, Softgel o acrílico cuidando la lámina natural.',
+    30,
+    8000,
+    true,
     0,
-    15,
-    false,
-    false,
     0,
     false,
+    false,
+    20000,
+    false,
     true,
-    true,
+    false,
     5,
+    NULL
+  ),
+  (
+    '10000000-0000-4000-8000-000000000307',
+    (SELECT id FROM public.service_categories WHERE slug = 'pies-pedispa'),
+    'PediSpa + Gel',
+    'pedispa-gel',
+    'Pedicure spa completo con exfoliación, hidratación profunda, limpieza detallada y gel semipermanente.',
+    90,
+    50000,
+    false,
+    0,
+    0,
+    true,
+    true,
+    20000,
+    false,
+    true,
+    true,
+    6,
+    NULL
+  ),
+  (
+    '10000000-0000-4000-8000-000000000308',
+    (SELECT id FROM public.service_categories WHERE slug = 'pies-pedispa'),
+    'PediSpa + Acripie',
+    'pedispa-acripie',
+    'Pedicure spa completo combinado con reconstrucción estética en acrílico para un acabado pulido y uniforme.',
+    105,
+    55000,
+    false,
+    0,
+    0,
+    true,
+    true,
+    20000,
+    false,
+    true,
+    false,
+    7,
+    NULL
+  ),
+  (
+    '10000000-0000-4000-8000-000000000309',
+    (SELECT id FROM public.service_categories WHERE slug = 'pies-pedispa'),
+    'Gel Pies en seco',
+    'gel-pies-en-seco',
+    'Limpieza en seco, limado anatómico y esmaltado en gel semipermanente para pies impecables.',
+    60,
+    25000,
+    false,
+    0,
+    0,
+    false,
+    true,
+    20000,
+    false,
+    true,
+    false,
+    8,
     NULL
   )
 ON CONFLICT (slug) DO NOTHING;
@@ -271,27 +365,18 @@ ON CONFLICT (slug) DO NOTHING;
 INSERT INTO public.staff_services (staff_id, service_id)
 SELECT sm.id, sv.id
 FROM public.staff_members sm
-JOIN public.services sv
-  ON (
-    sm.booking_slug = 'valeria'
-    AND sv.slug IN (
-      'manicura-rusa-gelish',
-      'rubber-base-biab',
-      'extensiones-soft-gel',
-      'acrilico-escultural',
-      'retoque-acrilico-rubber',
-      'spa-pedicure-gel'
-    )
-  )
-  OR (
-    sm.booking_slug = 'camila'
-    AND sv.slug IN (
-      'manicura-rusa-gelish',
-      'rubber-base-biab',
-      'extensiones-soft-gel',
-      'acrilico-escultural',
-      'retoque-acrilico-rubber'
-    )
+CROSS JOIN public.services sv
+WHERE sm.booking_slug IN ('karla', 'paty', 'tere')
+  AND sv.slug IN (
+    'rubber',
+    'unas-acrilicas',
+    'unas-softgel',
+    'retoque',
+    'gel-semipermanente-manos',
+    'retiro',
+    'pedispa-gel',
+    'pedispa-acripie',
+    'gel-pies-en-seco'
   )
 ON CONFLICT (staff_id, service_id) DO NOTHING;
 
@@ -361,7 +446,7 @@ VALUES
     ARRAY(
       SELECT id
       FROM public.services
-      WHERE slug IN ('extensiones-soft-gel', 'acrilico-escultural', 'retoque-acrilico-rubber')
+      WHERE slug IN ('unas-softgel', 'unas-acrilicas', 'retoque')
     ),
     true,
     4
@@ -372,43 +457,47 @@ INSERT INTO public.availability_schedules (id, staff_id, name, timezone, is_defa
 VALUES
   (
     '10000000-0000-4000-8000-000000000501',
-    (SELECT id FROM public.staff_members WHERE booking_slug = 'valeria'),
-    'Horario habitual',
+    (SELECT id FROM public.staff_members WHERE booking_slug = 'karla'),
+    'Bloques fijos Karla (10:00 · 13:30 · 16:30)',
     'America/Mexico_City',
     true
   ),
   (
     '10000000-0000-4000-8000-000000000502',
-    (SELECT id FROM public.staff_members WHERE booking_slug = 'camila'),
-    'Horario habitual',
+    (SELECT id FROM public.staff_members WHERE booking_slug = 'paty'),
+    'Bloques fijos Paty (10:00 · 13:30 · 16:30)',
+    'America/Mexico_City',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000000503',
+    (SELECT id FROM public.staff_members WHERE booking_slug = 'tere'),
+    'Bloques fijos Tere (14:00 · 16:00 · 18:00)',
     'America/Mexico_City',
     true
   )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.availability_rules (id, schedule_id, day_of_week, start_time, end_time)
+INSERT INTO public.availability_rules (id, schedule_id, day_of_week, start_time, end_time, fixed_start_times)
 VALUES
-  ('10000000-0000-4000-8000-000000000601', '10000000-0000-4000-8000-000000000501', 1, '11:00', '18:00'),
-  ('10000000-0000-4000-8000-000000000602', '10000000-0000-4000-8000-000000000501', 2, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000603', '10000000-0000-4000-8000-000000000501', 2, '15:00', '19:30'),
-  ('10000000-0000-4000-8000-000000000604', '10000000-0000-4000-8000-000000000501', 3, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000605', '10000000-0000-4000-8000-000000000501', 3, '15:00', '19:30'),
-  ('10000000-0000-4000-8000-000000000606', '10000000-0000-4000-8000-000000000501', 4, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000607', '10000000-0000-4000-8000-000000000501', 4, '15:00', '19:30'),
-  ('10000000-0000-4000-8000-000000000608', '10000000-0000-4000-8000-000000000501', 5, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000609', '10000000-0000-4000-8000-000000000501', 5, '15:00', '19:30'),
-  ('10000000-0000-4000-8000-000000000610', '10000000-0000-4000-8000-000000000501', 6, '09:30', '17:30'),
-  ('10000000-0000-4000-8000-000000000611', '10000000-0000-4000-8000-000000000502', 1, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000612', '10000000-0000-4000-8000-000000000502', 1, '15:00', '19:00'),
-  ('10000000-0000-4000-8000-000000000613', '10000000-0000-4000-8000-000000000502', 2, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000614', '10000000-0000-4000-8000-000000000502', 2, '15:00', '19:00'),
-  ('10000000-0000-4000-8000-000000000615', '10000000-0000-4000-8000-000000000502', 3, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000616', '10000000-0000-4000-8000-000000000502', 3, '15:00', '19:00'),
-  ('10000000-0000-4000-8000-000000000617', '10000000-0000-4000-8000-000000000502', 4, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000618', '10000000-0000-4000-8000-000000000502', 4, '15:00', '19:00'),
-  ('10000000-0000-4000-8000-000000000619', '10000000-0000-4000-8000-000000000502', 5, '10:00', '14:00'),
-  ('10000000-0000-4000-8000-000000000620', '10000000-0000-4000-8000-000000000502', 5, '15:00', '19:00'),
-  ('10000000-0000-4000-8000-000000000621', '10000000-0000-4000-8000-000000000502', 6, '10:00', '16:30')
+  ('10000000-0000-4000-8000-000000000601', '10000000-0000-4000-8000-000000000501', 1, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000602', '10000000-0000-4000-8000-000000000501', 2, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000603', '10000000-0000-4000-8000-000000000501', 3, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000604', '10000000-0000-4000-8000-000000000501', 4, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000605', '10000000-0000-4000-8000-000000000501', 5, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000606', '10000000-0000-4000-8000-000000000501', 6, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000611', '10000000-0000-4000-8000-000000000502', 1, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000612', '10000000-0000-4000-8000-000000000502', 2, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000613', '10000000-0000-4000-8000-000000000502', 3, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000614', '10000000-0000-4000-8000-000000000502', 4, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000615', '10000000-0000-4000-8000-000000000502', 5, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000616', '10000000-0000-4000-8000-000000000502', 6, '10:00', '19:30', ARRAY['10:00', '13:30', '16:30']),
+  ('10000000-0000-4000-8000-000000000621', '10000000-0000-4000-8000-000000000503', 1, '14:00', '20:30', ARRAY['14:00', '16:00', '18:00']),
+  ('10000000-0000-4000-8000-000000000622', '10000000-0000-4000-8000-000000000503', 2, '14:00', '20:30', ARRAY['14:00', '16:00', '18:00']),
+  ('10000000-0000-4000-8000-000000000623', '10000000-0000-4000-8000-000000000503', 3, '14:00', '20:30', ARRAY['14:00', '16:00', '18:00']),
+  ('10000000-0000-4000-8000-000000000624', '10000000-0000-4000-8000-000000000503', 4, '14:00', '20:30', ARRAY['14:00', '16:00', '18:00']),
+  ('10000000-0000-4000-8000-000000000625', '10000000-0000-4000-8000-000000000503', 5, '14:00', '20:30', ARRAY['14:00', '16:00', '18:00']),
+  ('10000000-0000-4000-8000-000000000626', '10000000-0000-4000-8000-000000000503', 6, '14:00', '20:30', ARRAY['14:00', '16:00', '18:00'])
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.coupons (
@@ -471,29 +560,29 @@ VALUES
     '10000000-0000-4000-8000-000000000801',
     'Milky Micro French',
     'Rubber base lechoso con línea ultra fina blanca sobre almendra corta.',
-    'Rubber Base',
+    'Rubber',
     '/gallery/milky-french.svg',
-    (SELECT id FROM public.services WHERE slug = 'rubber-base-biab'),
+    (SELECT id FROM public.services WHERE slug = 'rubber'),
     true,
     0
   ),
   (
     '10000000-0000-4000-8000-000000000802',
     'Glazed Pearl Chrome',
-    'Efecto perlado traslúcido con acabado espejo luminoso.',
-    'Soft Gel',
+    'Softgel efecto perlado traslúcido con acabado espejo luminoso.',
+    'Softgel',
     '/gallery/glazed-pearl.svg',
-    (SELECT id FROM public.services WHERE slug = 'extensiones-soft-gel'),
+    (SELECT id FROM public.services WHERE slug = 'unas-softgel'),
     true,
     1
   ),
   (
     '10000000-0000-4000-8000-000000000803',
-    'Rosewood Velvet Cat Eye',
-    'Tono palo de rosa aterciopelado con pigmento magnético.',
-    'Gelish',
+    'Cherry Lacquer Velvet',
+    'Gel semipermanente tono cereza editorial con brillo espejo.',
+    'Gel',
     '/gallery/rosewood-velvet.svg',
-    (SELECT id FROM public.services WHERE slug = 'manicura-rusa-gelish'),
+    (SELECT id FROM public.services WHERE slug = 'gel-semipermanente-manos'),
     true,
     2
   ),
@@ -503,7 +592,7 @@ VALUES
     'Acrílico escultural con detalle carey y acento dorado sutil.',
     'Acrílico',
     '/gallery/espresso-tortoise.svg',
-    (SELECT id FROM public.services WHERE slug = 'acrilico-escultural'),
+    (SELECT id FROM public.services WHERE slug = 'unas-acrilicas'),
     true,
     3
   )

@@ -47,6 +47,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: settings.description,
     applicationName: settings.name,
+    icons: { icon: '/brand/laikona-avatar.svg' },
     appleWebApp: {
       capable: true,
       title: settings.name,
