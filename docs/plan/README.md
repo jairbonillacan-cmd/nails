@@ -13,6 +13,7 @@ Punto de entrada para retomar el trabajo desde cualquier máquina (oficina, lapt
 | [super_mejoras.md](./super_mejoras.md) | Revisión #2 (complementa a la #1): bugs de dominio D1–D7, seguridad S1–S8, rendimiento medido P1–P4, datos M1–M6, integraciones, UX, funciones U1–U8, nuevas reglas de guardrail y **roadmap unificado** |
 | [bench-availability.md](./bench-availability.md) | Benchmark reproducible del motor de disponibilidad (129 ms → 18 ms) |
 | [../feature-map.md](../feature-map.md) | Mapa de rutas, selectores y flujos críticos para la verificación en navegador |
+| [../screenshots/README.md](../screenshots/README.md) | Capturas de pruebas en navegador de Nails y referencias competitivas de Cal.com y AgendaPro |
 
 ## Qué está hecho
 
