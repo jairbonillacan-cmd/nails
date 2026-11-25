@@ -37,6 +37,10 @@ To remove this block, run `astryx init --remove-agents`, which removes it from t
 
 ## Engineering Standards ("All Code Is Slop (Except Mine)")
 
+- **Herramientas y Skills obligatorias:** Todo entorno y agente IA que trabaje en este repo debe tener instalados obligatoriamente:
+  1. **Astryx de Meta** (`@astryxdesign/core`, `@stylexjs/stylex`, `@astryxdesign/theme-neutral`, `@astryxdesign/cli` + `npx @astryxdesign/cli init`).
+  2. **Cloudflare `security-audit`** (`https://github.com/cloudflare/security-audit-skill` -> `npx skills add https://github.com/cloudflare/security-audit-skill --skill security-audit --global`) para seguridad en APIs, autenticación, webhooks y fronteras de confianza.
+  3. **Google Chrome `modern-web-guidance`** (`https://developer.chrome.com/docs/modern-web-guidance?hl=es-419` -> `npx skills add https://github.com/GoogleChrome/modern-web-guidance --skill modern-web-guidance --global`) para estándares web modernos, accesibilidad y rendimiento (respetando siempre las reglas de Astryx del repo).
 - **Gatekeeper obligatorio:** Ninguna tarea o feature se declara terminada si `npm run verify` no pasa con **0 errores y 0 warnings** (`typecheck` + `guardrails` + `deadcode` + `test` + `doctor` + `build`), acompañado de verificación real en navegador para cambios de UI guiada por `docs/feature-map.md`.
 - **Guardrails mecánicos (`scripts/check-guardrails.mjs` + `oxlint`):**
   - Cero comentarios en `src/**` (única excepción: `// INVARIANT:` auditado cuando una restricción de negocio no puede expresarse en tipos).
