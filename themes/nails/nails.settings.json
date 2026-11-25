@@ -1,0 +1,93 @@
+{
+  "name": "nails",
+  "like": "neutral",
+  "mode": "both",
+  "settings": [
+    {
+      "thing": "accent",
+      "value": "#9E5C64",
+      "source": "dial"
+    },
+    {
+      "thing": "neutral",
+      "value": "#78716C",
+      "source": "dial"
+    },
+    {
+      "thing": "vibrancy",
+      "value": "38",
+      "source": "dial"
+    },
+    {
+      "thing": "corners",
+      "value": "medium",
+      "source": "dial"
+    },
+    {
+      "thing": "font",
+      "value": "dm-sans",
+      "source": "dial"
+    },
+    {
+      "thing": "font",
+      "value": "source-serif",
+      "source": "dial",
+      "on": "heading"
+    },
+    {
+      "thing": "headings",
+      "value": "semibold",
+      "source": "dial",
+      "axis": "weight"
+    },
+    {
+      "thing": "headings",
+      "value": "tight",
+      "source": "dial",
+      "axis": "tracking"
+    },
+    {
+      "thing": "info",
+      "value": "#5B7FA6",
+      "source": "dial"
+    },
+    {
+      "thing": "success",
+      "value": "#3E7B5B",
+      "source": "dial"
+    },
+    {
+      "thing": "danger",
+      "value": "#B54049",
+      "source": "dial"
+    },
+    {
+      "thing": "background-color",
+      "value": "#cac8c8",
+      "source": "property",
+      "on": "progress-bar-track",
+      "mode": "dark"
+    },
+    {
+      "thing": "background-color",
+      "value": "var(--color-accent-muted)",
+      "source": "property",
+      "on": "side-nav-item",
+      "state": "selected"
+    },
+    {
+      "thing": "background-color",
+      "value": "var(--color-accent-muted)",
+      "source": "property",
+      "on": "top-nav-item",
+      "state": "selected"
+    },
+    {
+      "thing": "warning",
+      "value": "#b97f2a",
+      "source": "dial"
+    }
+  ],
+  "lifted": [],
+  "palette": "21c9d12af90807788f235bfcc8ebfd30a46eb8af0aebc6b5eb91c4e9b34330de"
+}

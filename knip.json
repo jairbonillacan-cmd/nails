@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignore": [
+    "src/astryx-themes.ts",
+    "src/themes/**",
+    "themes/**"
+  ],
+  "ignoreDependencies": [
+    "@fontsource/dm-sans",
+    "@fontsource/source-serif-4",
+    "@supabase/ssr",
+    "@supabase/supabase-js"
+  ]
+}

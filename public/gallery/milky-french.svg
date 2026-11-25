@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" fill="none">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6EFEA"/>
+      <stop offset="1" stop-color="#E8DAD2"/>
+    </linearGradient>
+    <linearGradient id="nail1" x1="250" y1="80" x2="350" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.35" stop-color="#F8ECE7"/>
+      <stop offset="1" stop-color="#E7CFC7"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="450" fill="url(#bg1)"/>
+  <circle cx="480" cy="90" r="120" fill="#FFFFFF" fill-opacity="0.45"/>
+  <circle cx="110" cy="390" r="140" fill="#9E5C64" fill-opacity="0.08"/>
+  <rect x="235" y="75" width="130" height="275" rx="65" fill="url(#nail1)" stroke="#D9C3BB" stroke-width="3"/>
+  <path d="M238 145 C260 105, 340 105, 362 145" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
+  <ellipse cx="278" cy="195" rx="12" ry="52" fill="#FFFFFF" fill-opacity="0.55"/>
+  <text x="300" y="405" text-anchor="middle" fill="#6F5B56" font-family="Georgia, serif" font-size="22" letter-spacing="3">MILKY MICRO FRENCH</text>
+</svg>

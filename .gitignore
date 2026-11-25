@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+.nails-demo-db.json
+.nails-demo-uploads/
+npm-debug.log*
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+themes/*/*.png
+themes/*/preview.html
+themes/*/sheet*.html

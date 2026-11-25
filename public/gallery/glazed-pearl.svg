@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" fill="none">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="600" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3EFF0"/>
+      <stop offset="1" stop-color="#DFD3D7"/>
+    </linearGradient>
+    <linearGradient id="nail2" x1="220" y1="70" x2="380" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDFC"/>
+      <stop offset="0.5" stop-color="#EEDCE0"/>
+      <stop offset="1" stop-color="#D2B9C0"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="450" fill="url(#bg2)"/>
+  <circle cx="160" cy="110" r="130" fill="#FFFFFF" fill-opacity="0.5"/>
+  <rect x="235" y="75" width="130" height="275" rx="65" fill="url(#nail2)" stroke="#CBB2B8" stroke-width="3"/>
+  <ellipse cx="275" cy="185" rx="18" ry="72" fill="#FFFFFF" fill-opacity="0.72"/>
+  <circle cx="335" cy="135" r="7" fill="#FFFFFF"/>
+  <text x="300" y="405" text-anchor="middle" fill="#645459" font-family="Georgia, serif" font-size="22" letter-spacing="3">GLAZED PEARL CHROME</text>
+</svg>
