@@ -9,7 +9,14 @@ import {
   verifyGoogleOAuthState,
 } from '@/lib/auth/admin-session';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import {
+  encryptOAuthToken,
+  exchangeGoogleOAuthCode,
+  fetchGoogleFreeBusy,
+  registerGoogleCalendarWatch,
+} from '@/lib/integrations/google-calendar';
 import { getSnapshot, updateCalendarConnection } from '@/lib/repositories/db';
+import type { CalendarConnection } from '@/lib/types';
 
 function clearOAuthCookie(response: NextResponse): NextResponse {
   response.cookies.set(GOOGLE_OAUTH_STATE_COOKIE, '', {
@@ -104,13 +111,80 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  await updateCalendarConnection(statePayload.staffId, {
+  const env = getRuntimeIntegrationStatus();
+  const nowIso = new Date().toISOString();
+  const basePatch: Partial<CalendarConnection> = {
     isConnected: true,
-    lastSyncedAt: new Date().toISOString(),
-  });
+    lastSyncedAt: nowIso,
+  };
 
-  const { appUrl } = getRuntimeIntegrationStatus();
+  if (env.googleCalendarConfigured) {
+    try {
+      const exchanged = await exchangeGoogleOAuthCode({ code });
+      const encryptedPatch: Partial<CalendarConnection> = {
+        ...basePatch,
+        accessTokenEncrypted: encryptOAuthToken(exchanged.accessToken),
+        refreshTokenEncrypted: exchanged.refreshToken
+          ? encryptOAuthToken(exchanged.refreshToken)
+          : null,
+        tokenExpiresAt: exchanged.expiresAtIso,
+        ...(exchanged.accountEmail ? { accountEmail: exchanged.accountEmail } : {}),
+      };
+      const savedConn = await updateCalendarConnection(
+        statePayload.staffId,
+        encryptedPatch,
+      );
+
+      const postConnectPatch: Partial<CalendarConnection> = {};
+      try {
+        const freeBusy = await fetchGoogleFreeBusy({ connection: savedConn });
+        if (freeBusy.synced) {
+          postConnectPatch.externalBusyBlocks = freeBusy.busyBlocks;
+        }
+      } catch {
+        postConnectPatch.lastSyncedAt = nowIso;
+      }
+
+      const webhookToken = process.env.GOOGLE_WEBHOOK_TOKEN?.trim();
+      if (webhookToken) {
+        try {
+          const watch = await registerGoogleCalendarWatch({
+            connection: savedConn,
+            webhookUrl: `${env.appUrl}/api/webhooks/google-calendar`,
+            webhookToken,
+          });
+          if (watch) {
+            postConnectPatch.watchChannelId = watch.watchChannelId;
+            postConnectPatch.watchResourceId = watch.watchResourceId;
+            postConnectPatch.watchExpiration = watch.watchExpiration;
+          }
+        } catch {
+          postConnectPatch.lastSyncedAt = nowIso;
+        }
+      }
+
+      if (Object.keys(postConnectPatch).length > 0) {
+        await updateCalendarConnection(statePayload.staffId, postConnectPatch);
+      }
+
+      return clearOAuthCookie(
+        NextResponse.redirect(`${env.appUrl}/admin/integraciones?google=connected`),
+      );
+    } catch {
+      if (process.env.NODE_ENV === 'production') {
+        return clearOAuthCookie(
+          NextResponse.json(
+            { error: 'No se pudo completar el intercambio OAuth con Google.' },
+            { status: 502 },
+          ),
+        );
+      }
+    }
+  }
+
+  await updateCalendarConnection(statePayload.staffId, basePatch);
+
   return clearOAuthCookie(
-    NextResponse.redirect(`${appUrl}/admin/integraciones?google=connected`),
+    NextResponse.redirect(`${env.appUrl}/admin/integraciones?google=connected`),
   );
 }

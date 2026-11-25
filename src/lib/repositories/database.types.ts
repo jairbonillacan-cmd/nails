@@ -364,6 +364,8 @@ export interface Database {
           google_event_id: string | null;
           cancellation_reason: string | null;
           rescheduled_from_id: string | null;
+          confirmed_via?: 'manual' | 'email' | 'whatsapp' | 'payment' | null;
+          checkout_url?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -413,6 +415,7 @@ export interface Database {
           currency: string;
           status: 'pending' | 'paid' | 'refunded' | 'failed';
           proof_url: string | null;
+          checkout_url?: string | null;
           paid_at: string | null;
           created_at: string;
         };
@@ -564,6 +567,9 @@ export interface Database {
           notes: string;
           status: 'waiting' | 'notified' | 'booked' | 'expired';
           notified_at: string | null;
+          priority_offer_token?: string | null;
+          priority_offer_expires_at?: string | null;
+          priority_offer_slot_start_at?: string | null;
           created_at: string;
         };
         Insert: Pick<

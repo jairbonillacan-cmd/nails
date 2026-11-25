@@ -29,6 +29,7 @@ import type {
   AvailabilitySchedule,
   Booking,
   BookingLayoutView,
+  BookingPayment,
   BookingReview,
   BookingWithRelations,
   CalendarConnection,
@@ -416,6 +417,12 @@ function mapCalendarConnectionRow(
     isConnected: row.is_connected,
     lastSyncedAt: row.last_synced_at,
     externalBusyBlocks: parseExternalBusyBlocks(row.external_busy_blocks),
+    accessTokenEncrypted: row.access_token_encrypted,
+    refreshTokenEncrypted: row.refresh_token_encrypted,
+    tokenExpiresAt: row.token_expires_at,
+    watchChannelId: row.watch_channel_id,
+    watchResourceId: row.watch_resource_id,
+    watchExpiration: row.watch_expiration,
   };
 }
 
@@ -480,6 +487,8 @@ function mapBookingRow(
     depositAmountCents: row.deposit_amount_cents,
     couponCode: row.coupon_code,
     status: row.status,
+    ...(row.confirmed_via !== undefined ? { confirmedVia: row.confirmed_via } : {}),
+    ...(row.checkout_url !== undefined ? { checkoutUrl: row.checkout_url } : {}),
     source: row.source,
     clientNotes: row.client_notes,
     internalNotes: row.internal_notes,
@@ -583,7 +592,39 @@ function mapWaitlistRow(row: Tables['waitlist_entries']['Row']): WaitlistEntry {
     notes: row.notes,
     status: row.status,
     notifiedAt: row.notified_at,
+    ...(row.priority_offer_token !== undefined
+      ? { priorityOfferToken: row.priority_offer_token }
+      : {}),
+    ...(row.priority_offer_expires_at !== undefined
+      ? { priorityOfferExpiresAt: row.priority_offer_expires_at }
+      : {}),
+    ...(row.priority_offer_slot_start_at !== undefined
+      ? { priorityOfferSlotStartAt: row.priority_offer_slot_start_at }
+      : {}),
     createdAt: row.created_at,
+  };
+}
+
+function mapBookingPaymentStatus(
+  status: Tables['booking_payments']['Row']['status'],
+): BookingPayment['status'] {
+  if (status === 'paid') return 'approved';
+  if (status === 'failed') return 'rejected';
+  return status;
+}
+
+function mapBookingPaymentRow(row: Tables['booking_payments']['Row']): BookingPayment {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    provider: row.provider,
+    amountCents: row.amount_cents,
+    currency: row.currency === 'USD' ? 'USD' : 'MXN',
+    status: mapBookingPaymentStatus(row.status),
+    providerPaymentId: row.provider_payment_id,
+    checkoutUrl: row.checkout_url ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.paid_at ?? row.created_at,
   };
 }
 
@@ -1233,6 +1274,7 @@ export function createSupabaseRepository(
       couponRedemptionsRes,
       consentsRes,
       auditLogsRes,
+      bookingPaymentsRes,
     ] = await Promise.all([
       supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
       supabase.from('staff_members').select('*'),
@@ -1265,6 +1307,7 @@ export function createSupabaseRepository(
       supabase.from('coupon_redemptions').select('*'),
       supabase.from('consents').select('*'),
       supabase.from('audit_logs').select('*'),
+      supabase.from('booking_payments').select('*'),
     ]);
 
     if (!settingsRes.data) {
@@ -1304,6 +1347,7 @@ export function createSupabaseRepository(
       couponRedemptions: (couponRedemptionsRes.data ?? []).map(mapCouponRedemptionRow),
       consents: (consentsRes.data ?? []).map(mapConsentRow),
       auditLogs: (auditLogsRes.data ?? []).map(mapAuditLogRow),
+      bookingPayments: (bookingPaymentsRes.data ?? []).map(mapBookingPaymentRow),
     };
   }
 
@@ -3108,6 +3152,24 @@ export function createSupabaseRepository(
         dbPatch.external_busy_blocks = patch.externalBusyBlocks;
       }
       if (patch.isConnected !== undefined) dbPatch.is_connected = patch.isConnected;
+      if (patch.accessTokenEncrypted !== undefined) {
+        dbPatch.access_token_encrypted = patch.accessTokenEncrypted;
+      }
+      if (patch.refreshTokenEncrypted !== undefined) {
+        dbPatch.refresh_token_encrypted = patch.refreshTokenEncrypted;
+      }
+      if (patch.tokenExpiresAt !== undefined) {
+        dbPatch.token_expires_at = patch.tokenExpiresAt;
+      }
+      if (patch.watchChannelId !== undefined) {
+        dbPatch.watch_channel_id = patch.watchChannelId;
+      }
+      if (patch.watchResourceId !== undefined) {
+        dbPatch.watch_resource_id = patch.watchResourceId;
+      }
+      if (patch.watchExpiration !== undefined) {
+        dbPatch.watch_expiration = patch.watchExpiration;
+      }
 
       const query = existing.data
         ? supabase
@@ -3124,6 +3186,12 @@ export function createSupabaseRepository(
               destination_calendar_id: patch.destinationCalendarId ?? 'primary',
               conflict_calendar_ids: patch.conflictCalendarIds ?? ['primary'],
               is_connected: patch.isConnected ?? false,
+              access_token_encrypted: patch.accessTokenEncrypted ?? null,
+              refresh_token_encrypted: patch.refreshTokenEncrypted ?? null,
+              token_expires_at: patch.tokenExpiresAt ?? null,
+              watch_channel_id: patch.watchChannelId ?? null,
+              watch_resource_id: patch.watchResourceId ?? null,
+              watch_expiration: patch.watchExpiration ?? null,
               last_synced_at: nowIso,
               updated_at: nowIso,
             })

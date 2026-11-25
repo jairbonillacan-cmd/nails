@@ -11,10 +11,19 @@ import {
   GOOGLE_OAUTH_STATE_COOKIE,
 } from '@/lib/auth/admin-session';
 import { verifyMetaWebhookSignature } from '@/lib/integrations/whatsapp-booking';
+import {
+  decryptOAuthToken,
+  encryptOAuthToken,
+} from '@/lib/integrations/google-calendar';
 import { renderBookingEmailHtml } from '@/lib/integrations/notifications';
 import { zonedDateTimeToUtc } from '@/lib/availability/engine';
 import { getDateKeyInTimezone } from '@/lib/format';
-import { addCashEntry, getSnapshot, queryAvailability } from '@/lib/repositories/db';
+import {
+  addCashEntry,
+  getSnapshot,
+  queryAvailability,
+  updateCalendarConnection,
+} from '@/lib/repositories/db';
 import {
   DELETE as deleteAdminSession,
   GET as getAdminSessionRoute,
@@ -55,6 +64,8 @@ import {
   GET as getWhatsAppWebhook,
   POST as postWhatsAppWebhook,
 } from '@/app/api/webhooks/whatsapp/route';
+import { POST as postMercadoPagoWebhook } from '@/app/api/webhooks/mercadopago/route';
+import { POST as postGoogleCalendarWebhook } from '@/app/api/webhooks/google-calendar/route';
 import { GET as getGoogleOAuth } from '@/app/api/integrations/google/route';
 import { GET as getGoogleOAuthCallback } from '@/app/api/integrations/google/callback/route';
 import { POST as postCronReminders } from '@/app/api/cron/reminders/route';
@@ -643,6 +654,13 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         ),
       );
       expect(wrongAdminCb.status).toBe(403);
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ error: 'invalid_grant' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
 
       const validCb = await getGoogleOAuthCallback(
         makeRequest(
@@ -3175,6 +3193,332 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         }),
       );
       expect(vipBookRes.status).toBe(201);
+    });
+  });
+
+  describe('Phase 3B: Mercado Pago webhook idempotency, Google Calendar OAuth encryption & push webhook, and N5 cascade cron', () => {
+    it('Opción B: fails closed without MERCADOPAGO_WEBHOOK_SECRET, rejects tampered signatures, and confirms deposits idempotently without double-crediting', async () => {
+      vi.stubEnv('MERCADOPAGO_WEBHOOK_SECRET', '');
+      vi.stubEnv('MERCADOPAGO_ACCESS_TOKEN', 'TEST-mp-access-token');
+
+      const unconfiguredRes = await postMercadoPagoWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/mercadopago?data.id=777001', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ type: 'payment', data: { id: '777001' } }),
+        }),
+      );
+      expect(unconfiguredRes.status).toBe(503);
+
+      const mpSecret = 'mp-webhook-secret-phase3b';
+      vi.stubEnv('MERCADOPAGO_WEBHOOK_SECRET', mpSecret);
+
+      const badSigRes = await postMercadoPagoWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/mercadopago?data.id=777001', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': 'req-mp-777',
+            'x-signature': `ts=1730000000,v1=${'0'.repeat(64)}`,
+          },
+          body: JSON.stringify({ type: 'payment', data: { id: '777001' } }),
+        }),
+      );
+      expect(badSigRes.status).toBe(401);
+
+      const ts = '1730000000';
+      const requestId = 'req-mp-777';
+      const dataId = '777001';
+      const validV1 = crypto
+        .createHmac('sha256', mpSecret)
+        .update(`id:${dataId};request-id:${requestId};ts:${ts};`, 'utf8')
+        .digest('hex');
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('api.mercadopago.com/v1/payments/777001')) {
+          return new Response(
+            JSON.stringify({
+              id: 777001,
+              status: 'approved',
+              transaction_amount: 200,
+              currency_id: 'MXN',
+              external_reference: 'NL-1044',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 404 });
+      });
+
+      const makeValidWebhookReq = () =>
+        makeRequest(`http://localhost:3000/api/webhooks/mercadopago?data.id=${dataId}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': requestId,
+            'x-signature': `ts=${ts},v1=${validV1}`,
+          },
+          body: JSON.stringify({ type: 'payment', data: { id: dataId } }),
+        });
+
+      const firstRes = await postMercadoPagoWebhook(makeValidWebhookReq());
+      expect(firstRes.status).toBe(200);
+      expect(await firstRes.json()).toEqual({
+        ok: true,
+        idempotent: false,
+        bookingId: 'bk-1003',
+      });
+
+      const dbAfterFirst = getSnapshot();
+      const bk1003 = dbAfterFirst.bookings.find((b) => b.id === 'bk-1003');
+      expect(bk1003?.status).toBe('confirmed');
+      expect(bk1003?.confirmedVia).toBe('payment');
+      expect(
+        (dbAfterFirst.paymentSplits ?? []).filter((s) => s.bookingId === 'bk-1003'),
+      ).toHaveLength(1);
+      expect(dbAfterFirst.cashEntries.filter((c) => c.bookingId === 'bk-1003')).toHaveLength(1);
+      expect(
+        (dbAfterFirst.bookingPayments ?? []).filter((p) => p.bookingId === 'bk-1003'),
+      ).toHaveLength(1);
+
+      const replayRes = await postMercadoPagoWebhook(makeValidWebhookReq());
+      expect(replayRes.status).toBe(200);
+      expect(await replayRes.json()).toEqual({
+        ok: true,
+        idempotent: true,
+        bookingId: 'bk-1003',
+      });
+
+      const dbAfterReplay = getSnapshot();
+      expect(
+        (dbAfterReplay.paymentSplits ?? []).filter((s) => s.bookingId === 'bk-1003'),
+      ).toHaveLength(1);
+      expect(dbAfterReplay.cashEntries.filter((c) => c.bookingId === 'bk-1003')).toHaveLength(1);
+      expect(
+        (dbAfterReplay.bookingPayments ?? []).filter((p) => p.bookingId === 'bk-1003'),
+      ).toHaveLength(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('Google Calendar push webhook fails closed without GOOGLE_WEBHOOK_TOKEN, rejects bad tokens, and persists FreeBusy busy blocks', async () => {
+      vi.stubEnv('GOOGLE_WEBHOOK_TOKEN', '');
+      vi.stubEnv('GOOGLE_TOKEN_ENCRYPTION_KEY', 'gcal-enc-key-sec-test-32bytes');
+
+      const missingSecretRes = await postGoogleCalendarWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/google-calendar', {
+          method: 'POST',
+          headers: { 'x-goog-channel-id': 'chan-paty-1', 'x-goog-channel-token': 'any' },
+        }),
+      );
+      expect(missingSecretRes.status).toBe(503);
+
+      vi.stubEnv('GOOGLE_WEBHOOK_TOKEN', 'gcal-push-secret-xyz');
+
+      const wrongTokenRes = await postGoogleCalendarWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/google-calendar', {
+          method: 'POST',
+          headers: { 'x-goog-channel-id': 'chan-paty-1', 'x-goog-channel-token': 'wrong' },
+        }),
+      );
+      expect(wrongTokenRes.status).toBe(401);
+
+      await updateCalendarConnection('staff-paty', {
+        isConnected: true,
+        accessTokenEncrypted: encryptOAuthToken('ya29.paty-live-token'),
+        tokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        watchChannelId: 'chan-paty-1',
+      });
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('googleapis.com/calendar/v3/freeBusy')) {
+          return new Response(
+            JSON.stringify({
+              calendars: {
+                primary: {
+                  busy: [
+                    {
+                      start: '2026-12-05T16:00:00.000Z',
+                      end: '2026-12-05T17:30:00.000Z',
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 404 });
+      });
+
+      const validPushRes = await postGoogleCalendarWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/google-calendar', {
+          method: 'POST',
+          headers: {
+            'x-goog-channel-id': 'chan-paty-1',
+            'x-goog-channel-token': 'gcal-push-secret-xyz',
+          },
+        }),
+      );
+      expect(validPushRes.status).toBe(200);
+      expect(await validPushRes.json()).toEqual({
+        ok: true,
+        matched: true,
+        staffId: 'staff-paty',
+        busyCount: 1,
+      });
+
+      globalThis.nailsDbCache = undefined;
+      const reloadedPaty = getSnapshot().calendarConnections.find(
+        (c) => c.staffId === 'staff-paty',
+      );
+      expect(reloadedPaty?.externalBusyBlocks).toHaveLength(1);
+      expect(reloadedPaty?.externalBusyBlocks?.[0]?.startAt).toBe(
+        '2026-12-05T16:00:00.000Z',
+      );
+    });
+
+    it('Google OAuth callback exchanges authorization code, stores AES-256-GCM encrypted tokens, syncs FreeBusy, and registers watch channel', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-p3b-gcal');
+      vi.stubEnv('GOOGLE_CLIENT_ID', 'client-id-p3b.apps.googleusercontent.com');
+      vi.stubEnv('GOOGLE_CLIENT_SECRET', 'client-secret-p3b');
+      vi.stubEnv('GOOGLE_TOKEN_ENCRYPTION_KEY', 'enc-key-p3b-oauth-callback');
+      vi.stubEnv('GOOGLE_WEBHOOK_TOKEN', 'watch-secret-p3b');
+
+      const ownerCookie = getOwnerCookieHeader();
+      const initRes = await getGoogleOAuth(
+        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-paty', {
+          headers: { cookie: ownerCookie },
+        }),
+      );
+      expect(initRes.status).toBe(200);
+      const initJson = (await initRes.json()) as { oauthUrl: string | null };
+      const oauthState = new URL(initJson.oauthUrl ?? '').searchParams.get('state') ?? '';
+      const nonceCookie = initRes.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)?.value ?? '';
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return new Response(
+            JSON.stringify({
+              access_token: 'ya29.super-secret-plain-access',
+              refresh_token: '1//super-secret-plain-refresh',
+              expires_in: 3600,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('googleapis.com/oauth2/v2/userinfo')) {
+          return new Response(JSON.stringify({ email: 'paty.real@laikonanails.mx' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('googleapis.com/calendar/v3/freeBusy')) {
+          return new Response(
+            JSON.stringify({
+              calendars: {
+                primary: {
+                  busy: [
+                    {
+                      start: '2026-12-08T18:00:00.000Z',
+                      end: '2026-12-08T19:00:00.000Z',
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/events/watch')) {
+          return new Response(
+            JSON.stringify({
+              id: 'watch-chan-paty-cb',
+              resourceId: 'res-paty-cb',
+              expiration: String(Date.now() + 7 * 86_400_000),
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 404 });
+      });
+
+      const cbRes = await getGoogleOAuthCallback(
+        makeRequest(
+          `http://localhost:3000/api/integrations/google/callback?code=auth-code-real&state=${encodeURIComponent(oauthState)}`,
+          {
+            headers: {
+              cookie: `${ownerCookie}; ${GOOGLE_OAUTH_STATE_COOKIE}=${nonceCookie}`,
+            },
+          },
+        ),
+      );
+      expect(cbRes.status).toBe(307);
+      expect(cbRes.headers.get('location')).toContain('/admin/integraciones?google=connected');
+
+      const patyConn = getSnapshot().calendarConnections.find(
+        (c) => c.staffId === 'staff-paty',
+      );
+      expect(patyConn?.isConnected).toBe(true);
+      expect(patyConn?.accountEmail).toBe('paty.real@laikonanails.mx');
+      expect(patyConn?.accessTokenEncrypted?.startsWith('v1.')).toBe(true);
+      expect(patyConn?.accessTokenEncrypted).not.toContain('ya29.super-secret-plain-access');
+      expect(decryptOAuthToken(patyConn?.accessTokenEncrypted ?? '')).toBe(
+        'ya29.super-secret-plain-access',
+      );
+      expect(patyConn?.refreshTokenEncrypted?.startsWith('v1.')).toBe(true);
+      expect(decryptOAuthToken(patyConn?.refreshTokenEncrypted ?? '')).toBe(
+        '1//super-secret-plain-refresh',
+      );
+      expect(patyConn?.externalBusyBlocks).toHaveLength(1);
+      expect(patyConn?.watchChannelId).toBe('watch-chan-paty-cb');
+      expect(patyConn?.watchResourceId).toBe('res-paty-cb');
+    });
+
+    it('N5: POST /api/cron/reminders skips redundant WhatsApp reminders on already-confirmed bookings via cascade', async () => {
+      vi.stubEnv('CRON_SECRET', 'cron-secret-n5');
+      const pastIso = new Date(Date.now() - 60_000).toISOString();
+      const db = getSnapshot();
+      const bk1001 = db.bookings.find((b) => b.id === 'bk-1001');
+      if (!bk1001) throw new Error('Expected bk-1001');
+      bk1001.confirmedVia = 'payment';
+      db.notifications.unshift({
+        id: 'ntf-sec-n5-skip',
+        bookingId: 'bk-1001',
+        workflowId: 'wf-24h',
+        channel: 'whatsapp',
+        recipient: '+522224123987',
+        scheduledFor: pastIso,
+        status: 'pending',
+        subject: 'Recordatorio 24h cascada',
+        previewText: 'Test N5 skip via HTTP',
+        providerMessageId: null,
+        errorMessage: null,
+        sentAt: null,
+        createdAt: pastIso,
+      });
+
+      const res = await postCronReminders(
+        makeRequest('http://localhost:3000/api/cron/reminders', {
+          method: 'POST',
+          headers: { authorization: 'Bearer cron-secret-n5' },
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as {
+        processed: number;
+        sentCount: number;
+        skippedCount: number;
+      };
+      expect(json.processed).toBe(1);
+      expect(json.sentCount).toBe(0);
+      expect(json.skippedCount).toBe(1);
+
+      const persisted = getSnapshot().notifications.find((n) => n.id === 'ntf-sec-n5-skip');
+      expect(persisted?.status).toBe('canceled');
+      expect(persisted?.errorMessage).toBe('skipped_cascade');
     });
   });
 });

@@ -62,6 +62,9 @@ function buildMockSupabase(options: {
   auditLogsRows?: Array<Database['public']['Tables']['audit_logs']['Row']>;
   dateOverridesRows?: Array<Database['public']['Tables']['date_overrides']['Row']>;
   publicBusyOverridesRows?: Array<Database['public']['Views']['public_busy_overrides']['Row']>;
+  waitlistRows?: Array<Database['public']['Tables']['waitlist_entries']['Row']>;
+  bookingPaymentsRows?: Array<Database['public']['Tables']['booking_payments']['Row']>;
+  calendarConnectionsRows?: Array<Database['public']['Tables']['calendar_connections']['Row']>;
 } = {}) {
   const requests: RecordedRequest[] = [];
   const bookingsRows = options.bookingsRows ?? [];
@@ -76,6 +79,9 @@ function buildMockSupabase(options: {
   const auditLogsRows = options.auditLogsRows ?? [];
   const dateOverridesRows = options.dateOverridesRows ?? [];
   const publicBusyOverridesRows = options.publicBusyOverridesRows ?? [];
+  const waitlistRows = options.waitlistRows ?? [];
+  const bookingPaymentsRows = options.bookingPaymentsRows ?? [];
+  const calendarConnectionsRows = options.calendarConnectionsRows ?? [];
 
   const settingsRow: Database['public']['Tables']['salon_settings']['Row'] = {
     id: 'default',
@@ -324,6 +330,38 @@ function buildMockSupabase(options: {
     }
     if (table === 'public_busy_overrides') {
       return jsonResponse(publicBusyOverridesRows);
+    }
+    if (table === 'waitlist_entries') {
+      return jsonResponse(waitlistRows);
+    }
+    if (table === 'booking_payments') {
+      return jsonResponse(bookingPaymentsRows);
+    }
+    if (table === 'calendar_connections') {
+      if ((method === 'POST' || method === 'PATCH') && rawBody && typeof rawBody === 'object') {
+        const base = calendarConnectionsRows[0] ?? {
+          id: 'cal-1',
+          staff_id: STAFF_ID,
+          provider: 'google' as const,
+          account_email: 'karla@laikonanails.mx',
+          access_token_encrypted: null,
+          refresh_token_encrypted: null,
+          token_expires_at: null,
+          destination_calendar_id: 'primary',
+          conflict_calendar_ids: ['primary'],
+          available_calendars: [],
+          external_busy_blocks: [],
+          watch_channel_id: null,
+          watch_resource_id: null,
+          watch_expiration: null,
+          is_connected: true,
+          last_synced_at: '2026-12-01T13:00:00.000Z',
+          updated_at: '2026-12-01T13:00:00.000Z',
+        };
+        const merged = { ...base, ...(rawBody as Record<string, unknown>) };
+        return jsonResponse(wantsSingleObject ? merged : [merged], method === 'POST' ? 201 : 200);
+      }
+      return jsonResponse(wantsSingleObject ? calendarConnectionsRows[0] ?? null : calendarConnectionsRows);
     }
     if (table === 'clients') {
       if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
@@ -1572,6 +1610,151 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     expect(overridePost?.body).toMatchObject({
       public_note: 'Cerrado por Navidad',
       redirect_staff_id: altStaffId,
+    });
+  });
+
+  it('maps and persists 0007 Phase 3B columns (confirmedVia, checkoutUrl, waitlist priority offers, bookingPayments, and encrypted calendar watch fields)', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-01', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-01', '11:00', TZ).toISOString();
+
+    const { client, requests } = buildMockSupabase({
+      bookingsRows: [
+        {
+          id: BOOKING_ID,
+          booking_code: 'NL-3B0001',
+          manage_token: 'tok-3b',
+          idempotency_key: null,
+          service_id: SERVICE_ID,
+          staff_id: STAFF_ID,
+          client_id: CLIENT_ID,
+          start_at: startAt,
+          end_at: endAt,
+          occupied_start_at: startAt,
+          occupied_end_at: endAt,
+          occupied_range: `[${startAt},${endAt})`,
+          total_duration_minutes: 60,
+          subtotal_cents: 38000,
+          discount_cents: 0,
+          total_price_cents: 38000,
+          deposit_amount_cents: 20000,
+          coupon_code: null,
+          status: 'confirmed',
+          confirmed_via: 'payment',
+          checkout_url: 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=mp-123',
+          source: 'web',
+          client_notes: '',
+          internal_notes: '',
+          inspo_photo_url: null,
+          payment_proof_url: null,
+          google_event_id: null,
+          cancellation_reason: null,
+          rescheduled_from_id: null,
+          created_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      waitlistRows: [
+        {
+          id: 'wl-3b-1',
+          service_id: SERVICE_ID,
+          preferred_staff_id: STAFF_ID,
+          desired_date: '2026-12-02',
+          preferred_window: 'afternoon',
+          client_name: 'Renata Silva',
+          client_phone_e164: '+522226612009',
+          client_email: null,
+          notes: '',
+          status: 'notified',
+          notified_at: '2026-12-01T12:00:00.000Z',
+          priority_offer_token: 'offer-tok-10m',
+          priority_offer_expires_at: '2026-12-01T12:10:00.000Z',
+          priority_offer_slot_start_at: '2026-12-02T22:30:00.000Z',
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      bookingPaymentsRows: [
+        {
+          id: 'bp-3b-1',
+          booking_id: BOOKING_ID,
+          provider: 'mercadopago',
+          provider_payment_id: 'mp-pay-998877',
+          amount_cents: 20000,
+          currency: 'MXN',
+          status: 'paid',
+          proof_url: null,
+          checkout_url: 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=mp-123',
+          paid_at: '2026-12-01T10:05:00.000Z',
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      calendarConnectionsRows: [
+        {
+          id: 'cal-3b-1',
+          staff_id: STAFF_ID,
+          provider: 'google',
+          account_email: 'karla@laikonanails.mx',
+          access_token_encrypted: 'v1:enc-access',
+          refresh_token_encrypted: 'v1:enc-refresh',
+          token_expires_at: '2026-12-01T14:00:00.000Z',
+          destination_calendar_id: 'primary',
+          conflict_calendar_ids: ['primary'],
+          available_calendars: [],
+          external_busy_blocks: [],
+          watch_channel_id: 'chan-1',
+          watch_resource_id: 'res-1',
+          watch_expiration: '2026-12-08T10:00:00.000Z',
+          is_connected: true,
+          last_synced_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+    });
+
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'phase3b-0007');
+    const repo = createSupabaseRepository(clock, client);
+    const snap = await repo.getSnapshot();
+
+    expect(snap.bookings[0]).toMatchObject({
+      confirmedVia: 'payment',
+      checkoutUrl: 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=mp-123',
+    });
+    expect(snap.waitlist[0]).toMatchObject({
+      priorityOfferToken: 'offer-tok-10m',
+      priorityOfferExpiresAt: '2026-12-01T12:10:00.000Z',
+      priorityOfferSlotStartAt: '2026-12-02T22:30:00.000Z',
+    });
+    expect(snap.bookingPayments?.[0]).toMatchObject({
+      provider: 'mercadopago',
+      providerPaymentId: 'mp-pay-998877',
+      status: 'approved',
+      checkoutUrl: 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=mp-123',
+    });
+    expect(snap.calendarConnections[0]).toMatchObject({
+      accessTokenEncrypted: 'v1:enc-access',
+      refreshTokenEncrypted: 'v1:enc-refresh',
+      watchChannelId: 'chan-1',
+      watchResourceId: 'res-1',
+    });
+
+    const updatedCal = await repo.updateCalendarConnection(STAFF_ID, {
+      accessTokenEncrypted: 'v1:new-access',
+      refreshTokenEncrypted: 'v1:new-refresh',
+      tokenExpiresAt: '2026-12-01T15:00:00.000Z',
+      watchChannelId: 'chan-2',
+      watchResourceId: 'res-2',
+      watchExpiration: '2026-12-09T10:00:00.000Z',
+    });
+    expect(updatedCal.accessTokenEncrypted).toBe('v1:new-access');
+    expect(updatedCal.watchChannelId).toBe('chan-2');
+
+    const calPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/calendar_connections',
+    );
+    expect(calPatch?.body).toMatchObject({
+      access_token_encrypted: 'v1:new-access',
+      refresh_token_encrypted: 'v1:new-refresh',
+      watch_channel_id: 'chan-2',
+      watch_resource_id: 'res-2',
     });
   });
 });

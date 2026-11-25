@@ -225,6 +225,12 @@ const CalendarConnectionSchema = z.object({
       }),
     )
     .optional(),
+  accessTokenEncrypted: z.string().nullable().optional(),
+  refreshTokenEncrypted: z.string().nullable().optional(),
+  tokenExpiresAt: z.string().nullable().optional(),
+  watchChannelId: z.string().nullable().optional(),
+  watchResourceId: z.string().nullable().optional(),
+  watchExpiration: z.string().nullable().optional(),
 });
 
 const ClientProfileSchema = z.object({
@@ -281,6 +287,8 @@ const BookingSchema = z.object({
   depositAmountCents: z.number(),
   couponCode: z.string().nullable(),
   status: BookingStatusSchema,
+  confirmedVia: z.enum(['manual', 'email', 'whatsapp', 'payment']).nullable().optional(),
+  checkoutUrl: z.string().nullable().optional(),
   source: BookingSourceSchema,
   clientNotes: z.string(),
   internalNotes: z.string(),
@@ -368,7 +376,23 @@ const WaitlistEntrySchema = z.object({
   notes: z.string(),
   status: z.enum(['waiting', 'notified', 'booked', 'expired']),
   notifiedAt: z.string().nullable(),
+  priorityOfferToken: z.string().nullable().optional(),
+  priorityOfferExpiresAt: z.string().nullable().optional(),
+  priorityOfferSlotStartAt: z.string().nullable().optional(),
   createdAt: z.string(),
+});
+
+const BookingPaymentSchema = z.object({
+  id: z.string(),
+  bookingId: z.string(),
+  provider: z.enum(['manual_transfer', 'stripe', 'mercadopago']),
+  amountCents: z.number().int().nonnegative(),
+  currency: z.enum(['MXN', 'USD']),
+  status: z.enum(['pending', 'approved', 'rejected', 'refunded']),
+  providerPaymentId: z.string().nullable().optional(),
+  checkoutUrl: z.string().nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 const RatingSchema = z.union([
@@ -545,6 +569,7 @@ export const DemoDatabaseSchema = z.object({
   couponRedemptions: z.array(CouponRedemptionSchema).default([]),
   consents: z.array(ConsentRecordSchema).default([]),
   auditLogs: z.array(AuditLogEntrySchema).default([]),
+  bookingPayments: z.array(BookingPaymentSchema).default([]),
 });
 
 export function parseDemoDatabase(raw: unknown): DemoDatabase {

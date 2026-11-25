@@ -7,6 +7,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import {
   addDateOverride,
   addDateOverrideRange,
+  addWaitlistEntry,
+  confirmBookingDepositFromWebhook,
   createBookingAtomic,
   createClientProfile,
   createOrRefreshSlotHold,
@@ -22,6 +24,7 @@ import {
   MaxActiveBookingsError,
   PolicyError,
   preloadMexicoHolidays,
+  processDueScheduledNotifications,
   queryAvailability,
   quickSearchAvailability,
   recordBookingCheckoutAtomic,
@@ -1190,5 +1193,208 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const bootstrap = await getRepository().getPublicBootstrap();
     expect(bootstrap.services.some((s) => s.id === vipService.id)).toBe(false);
     expect(bootstrap.settings.optimizeContinuousSlots).toBe(true);
+  });
+
+  it('Phase 3B (Opción B / N5 / U3): handles idempotent Mercado Pago deposit confirmation, N5 WhatsApp cascade skip, and U3 waitlist 10-min priority offer on cancel', async () => {
+    const db = getSnapshot();
+    const tz = db.settings.timezone;
+    const today = getDateKeyInTimezone(new Date(), tz);
+
+    const mpFirst = await confirmBookingDepositFromWebhook({
+      provider: 'mercadopago',
+      providerPaymentId: 'mp-pay-9001',
+      bookingReference: 'NL-1044',
+      amountCents: 20000,
+      currency: 'MXN',
+    });
+    expect(mpFirst).toEqual({
+      status: 'ok',
+      idempotent: false,
+      bookingId: 'bk-1003',
+    });
+
+    const afterFirst = getSnapshot();
+    const bk1003 = afterFirst.bookings.find((b) => b.id === 'bk-1003');
+    expect(bk1003?.status).toBe('confirmed');
+    expect(bk1003?.confirmedVia).toBe('payment');
+    const splitsAfterFirst = (afterFirst.paymentSplits ?? []).filter(
+      (s) => s.bookingId === 'bk-1003',
+    );
+    const cashAfterFirst = afterFirst.cashEntries.filter((c) => c.bookingId === 'bk-1003');
+    const paymentsAfterFirst = (afterFirst.bookingPayments ?? []).filter(
+      (p) => p.bookingId === 'bk-1003',
+    );
+    const auditsAfterFirst = (afterFirst.auditLogs ?? []).filter(
+      (a) => a.entityId === 'bk-1003' && a.action === 'deposit_approved',
+    );
+    expect(splitsAfterFirst).toHaveLength(1);
+    expect(splitsAfterFirst[0]?.method).toBe('online');
+    expect(splitsAfterFirst[0]?.amountCents).toBe(20000);
+    expect(cashAfterFirst).toHaveLength(1);
+    expect(cashAfterFirst[0]?.entryType).toBe('deposit');
+    expect(paymentsAfterFirst).toHaveLength(1);
+    expect(auditsAfterFirst).toHaveLength(1);
+
+    const mpReplay = await confirmBookingDepositFromWebhook({
+      provider: 'mercadopago',
+      providerPaymentId: 'mp-pay-9001',
+      bookingReference: 'NL-1044',
+      amountCents: 20000,
+      currency: 'MXN',
+    });
+    expect(mpReplay).toEqual({
+      status: 'ok',
+      idempotent: true,
+      bookingId: 'bk-1003',
+    });
+
+    const afterReplay = getSnapshot();
+    expect(
+      (afterReplay.paymentSplits ?? []).filter((s) => s.bookingId === 'bk-1003'),
+    ).toHaveLength(1);
+    expect(afterReplay.cashEntries.filter((c) => c.bookingId === 'bk-1003')).toHaveLength(1);
+    expect(
+      (afterReplay.bookingPayments ?? []).filter((p) => p.bookingId === 'bk-1003'),
+    ).toHaveLength(1);
+    expect(
+      (afterReplay.auditLogs ?? []).filter(
+        (a) => a.entityId === 'bk-1003' && a.action === 'deposit_approved',
+      ),
+    ).toHaveLength(1);
+
+    const pastIso = new Date(Date.now() - 60_000).toISOString();
+    const liveDb = getSnapshot();
+    const bk1001 = liveDb.bookings.find((b) => b.id === 'bk-1001');
+    if (!bk1001) throw new Error('Expected bk-1001');
+    bk1001.confirmedVia = 'email';
+    liveDb.notifications.unshift(
+      {
+        id: 'ntf-cascade-wa-skip',
+        bookingId: 'bk-1001',
+        workflowId: 'wf-24h',
+        channel: 'whatsapp',
+        recipient: '+522224123987',
+        scheduledFor: pastIso,
+        status: 'pending',
+        subject: 'Recordatorio 24h WA',
+        previewText: 'Cascade WA test',
+        providerMessageId: null,
+        errorMessage: null,
+        sentAt: null,
+        createdAt: pastIso,
+      },
+      {
+        id: 'ntf-cascade-email-send',
+        bookingId: 'bk-1001',
+        workflowId: 'wf-24h',
+        channel: 'email',
+        recipient: 'sofia.ramirez@ejemplo.mx',
+        scheduledFor: pastIso,
+        status: 'pending',
+        subject: 'Recordatorio 24h Email',
+        previewText: 'Cascade Email test',
+        providerMessageId: null,
+        errorMessage: null,
+        sentAt: null,
+        createdAt: pastIso,
+      },
+    );
+
+    const dispatchedIds: string[] = [];
+    const cronSummary = await processDueScheduledNotifications(async ({ notification }) => {
+      dispatchedIds.push(notification.id);
+      return {
+        status: 'sent',
+        providerMessageId: `mock-${notification.id}`,
+        errorMessage: null,
+      };
+    });
+    expect(cronSummary.skippedCount).toBe(1);
+    expect(cronSummary.sentCount).toBe(1);
+    expect(dispatchedIds).toEqual(['ntf-cascade-email-send']);
+
+    const skippedLog = getSnapshot().notifications.find((n) => n.id === 'ntf-cascade-wa-skip');
+    expect(skippedLog?.status).toBe('canceled');
+    expect(skippedLog?.errorMessage).toBe('skipped_cascade');
+
+    const farSlot = queryAvailability({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: 'staff-tere',
+      startDate: today,
+      days: 14,
+    })
+      .days.flatMap((d) => d.slots)
+      .find((s) => new Date(s.startAt).getTime() - Date.now() > 48 * 3_600_000);
+    if (!farSlot) throw new Error('Expected far open slot for Tere');
+
+    const cancelBooking = await createBookingAtomic({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: farSlot.staffId,
+      startAt: farSlot.startAt,
+      clientName: 'Clienta Cancela U3',
+      clientPhone: '+522229440001',
+    });
+
+    const bookingDateKey = getDateKeyInTimezone(new Date(cancelBooking.startAt), tz);
+    const firstWaiter = await addWaitlistEntry({
+      serviceId: 'srv-rubber',
+      preferredStaffId: 'staff-tere',
+      desiredDate: bookingDateKey,
+      preferredWindow: 'any',
+      clientName: 'Primera en Fila U3',
+      clientPhoneE164: '+522229440010',
+      clientEmail: 'primera@ejemplo.mx',
+      notes: 'Prioridad 1',
+    });
+    const secondWaiter = await addWaitlistEntry({
+      serviceId: 'srv-rubber',
+      preferredStaffId: 'staff-tere',
+      desiredDate: bookingDateKey,
+      preferredWindow: 'any',
+      clientName: 'Segunda en Fila U3',
+      clientPhoneE164: '+522229440011',
+      clientEmail: 'segunda@ejemplo.mx',
+      notes: 'Prioridad 2',
+    });
+
+    const dbForOrder = getSnapshot();
+    const w1 = dbForOrder.waitlist.find((w) => w.id === firstWaiter.id);
+    const w2 = dbForOrder.waitlist.find((w) => w.id === secondWaiter.id);
+    if (w1 && w2) {
+      w1.createdAt = new Date(Date.now() - 120_000).toISOString();
+      w2.createdAt = new Date(Date.now() - 60_000).toISOString();
+    }
+
+    const beforeCancelMs = Date.now();
+    await manageClientBookingAction({
+      token: cancelBooking.manageToken,
+      action: 'cancel',
+      reason: 'Cambio de planes',
+    });
+
+    const afterCancelDb = getSnapshot();
+    const updatedFirst = afterCancelDb.waitlist.find((w) => w.id === firstWaiter.id);
+    const updatedSecond = afterCancelDb.waitlist.find((w) => w.id === secondWaiter.id);
+    expect(updatedFirst?.status).toBe('notified');
+    expect(updatedFirst?.priorityOfferToken).toBeTruthy();
+    expect(updatedFirst?.priorityOfferSlotStartAt).toBe(cancelBooking.startAt);
+    expect(updatedFirst?.priorityOfferExpiresAt).toBeTruthy();
+    const expiresDeltaMin =
+      (new Date(updatedFirst?.priorityOfferExpiresAt ?? 0).getTime() - beforeCancelMs) /
+      60_000;
+    expect(expiresDeltaMin).toBeGreaterThan(9);
+    expect(expiresDeltaMin).toBeLessThan(11.5);
+    expect(updatedSecond?.status).toBe('waiting');
+
+    const offerLog = afterCancelDb.notifications.find(
+      (n) =>
+        n.recipient === firstWaiter.clientPhoneE164 &&
+        n.subject.includes('Oferta prioritaria lista de espera'),
+    );
+    expect(offerLog).toBeDefined();
+    expect(offerLog?.previewText).toContain('/reservar/');
+    expect(offerLog?.previewText).toContain(updatedFirst?.priorityOfferToken ?? '');
   });
 });

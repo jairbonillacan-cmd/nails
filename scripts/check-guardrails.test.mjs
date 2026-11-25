@@ -130,7 +130,7 @@ test('astryx-boundaries: catches raw div/span and inline hex/px, allows Astryx t
   assert.deepEqual(rulesOf('src/app/layout.tsx', badUi), []);
 });
 
-test('dependency-graph: enforces pure domain boundaries for booking/, public-dto.ts, sanitize.ts, availability/, loyalty/, payments/, qr.ts, and contrast.ts', () => {
+test('dependency-graph: enforces pure domain boundaries for booking/, public-dto.ts, sanitize.ts, availability/, loyalty/, payments/, notifications/, qr.ts, and contrast.ts', () => {
   const forbiddenPaths = [
     'src/lib/booking/state-machine.ts',
     'src/lib/public-dto.ts',
@@ -139,6 +139,7 @@ test('dependency-graph: enforces pure domain boundaries for booking/, public-dto
     'src/lib/availability/holidays-mx.ts',
     'src/lib/loyalty/stamps.ts',
     'src/lib/payments/splits.ts',
+    'src/lib/notifications/cascade.ts',
     'src/lib/qr.ts',
     'src/lib/contrast.ts',
   ];

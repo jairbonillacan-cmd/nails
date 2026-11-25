@@ -21,6 +21,7 @@ import {
   CalendarPlus,
   CheckCircle2,
   Clock,
+  CreditCard,
   Download,
   ExternalLink,
   MapPin,
@@ -37,6 +38,10 @@ import type {
   PublicStaffDTO,
 } from '@/lib/public-dto';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
+import {
+  CANCELLATION_REASON_OPTIONS,
+  RESCHEDULE_REASON_OPTIONS,
+} from '@/lib/notifications/cascade';
 import {
   formatCurrency,
   formatDateLongInTimezone,
@@ -80,6 +85,19 @@ const STATUS_META: Record<
   no_show: { label: 'No asistió', variant: 'error' },
 };
 
+function resolveSafeCheckoutUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+      ? parsed.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ManageBookingView({
   initialBooking,
   settings,
@@ -100,12 +118,17 @@ export function ManageBookingView({
   const [cancelOpen, setCancelOpen] = useState(
     initialAction === 'cancel' && initialCanModify,
   );
+  const [cancelReasonChoice, setCancelReasonChoice] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(
     initialAction === 'reschedule' && initialCanModify,
   );
+  const [rescheduleReasonChoice, setRescheduleReasonChoice] = useState<string | null>(
+    null,
+  );
+  const [rescheduleReason, setRescheduleReason] = useState('');
   const [rescheduleDays, setRescheduleDays] = useState<DayAvailabilitySummary[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(
     initialAction === 'reschedule' && initialCanModify,
@@ -122,6 +145,33 @@ export function ManageBookingView({
   const statusInfo = STATUS_META[booking.status];
   const tz = settings.timezone || 'America/Mexico_City';
   const canModify = !['canceled', 'completed', 'no_show'].includes(booking.status);
+  const safeCheckoutUrl = resolveSafeCheckoutUrl(booking.checkoutUrl);
+
+  const handleSelectCancelChip = (option: string) => {
+    setCancelReasonChoice(option);
+    if (option === 'Otro') {
+      if (
+        CANCELLATION_REASON_OPTIONS.some((preset) => preset === cancelReason.trim())
+      ) {
+        setCancelReason('');
+      }
+      return;
+    }
+    setCancelReason(option);
+  };
+
+  const handleSelectRescheduleChip = (option: string) => {
+    setRescheduleReasonChoice(option);
+    if (option === 'Otro') {
+      if (
+        RESCHEDULE_REASON_OPTIONS.some((preset) => preset === rescheduleReason.trim())
+      ) {
+        setRescheduleReason('');
+      }
+      return;
+    }
+    setRescheduleReason(option);
+  };
 
   const syncManageState = useCallback(
     async (signal: AbortSignal) => {
@@ -230,6 +280,7 @@ export function ManageBookingView({
           action: 'reschedule',
           newStartAt: slot.startAt,
           newStaffId: slot.staffId,
+          reason: rescheduleReason.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -383,6 +434,30 @@ export function ManageBookingView({
                   startContent={<MapPin size={18} aria-hidden="true" />}
                 />
               </List>
+
+              {booking.status === 'pending_payment' && safeCheckoutUrl ? (
+                <Banner
+                  status="warning"
+                  title="Anticipo pendiente para confirmar tu cita"
+                  description={`Completa tu anticipo de ${formatCurrency(
+                    booking.depositAmountCents,
+                    settings.currency,
+                  )} para confirmar tu horario al instante.`}
+                >
+                  <VStack gap={2} paddingBlockStart={2}>
+                    <Button
+                      label="Pagar anticipo con Mercado Pago"
+                      variant="primary"
+                      size="md"
+                      width="100%"
+                      icon={<CreditCard size={16} aria-hidden="true" />}
+                      href={safeCheckoutUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  </VStack>
+                </Banner>
+              ) : null}
 
               {booking.inspoPhotoUrl ? (
                 <VStack gap={1.5}>
@@ -560,6 +635,32 @@ export function ManageBookingView({
           onOpenChange={setRescheduleOpen}
         />
         <VStack gap={3} paddingBlockStart={4}>
+          <VStack gap={1.5}>
+            <Text type="label" weight="semibold">
+              Motivo del cambio (opcional)
+            </Text>
+            <HStack gap={1.5} wrap="wrap">
+              {RESCHEDULE_REASON_OPTIONS.map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  label={option}
+                  size="sm"
+                  variant={rescheduleReasonChoice === option ? 'primary' : 'secondary'}
+                  onClick={() => handleSelectRescheduleChip(option)}
+                />
+              ))}
+            </HStack>
+            <TextArea
+              label="Detalles adicionales"
+              placeholder="Opcional: agrega cualquier nota sobre tu cambio de horario"
+              value={rescheduleReason}
+              onChange={setRescheduleReason}
+              isOptional
+              rows={2}
+            />
+          </VStack>
+
           {loadingSlots ? (
             <Text color="secondary">Cargando horarios disponibles...</Text>
           ) : rescheduleDays.length === 0 ? (
@@ -579,6 +680,7 @@ export function ManageBookingView({
                           label={slot.localTime12}
                           variant="secondary"
                           size="sm"
+                          style={{ fontVariantNumeric: 'tabular-nums' }}
                           isDisabled={busy}
                           onClick={() => handleConfirmReschedule(slot)}
                         />
@@ -592,16 +694,33 @@ export function ManageBookingView({
         </VStack>
       </Dialog>
 
-      <Dialog isOpen={cancelOpen} onOpenChange={setCancelOpen} width={440} padding={5}>
+      <Dialog isOpen={cancelOpen} onOpenChange={setCancelOpen} width={480} padding={5}>
         <DialogHeader
           title="¿Cancelar esta cita?"
           subtitle={`Política: mínimo ${settings.minCancelHours}h antes de tu horario.`}
           onOpenChange={setCancelOpen}
         />
         <VStack gap={3} paddingBlockStart={4}>
+          <VStack gap={1.5}>
+            <Text type="label" weight="semibold">
+              ¿Cuál es el motivo?
+            </Text>
+            <HStack gap={1.5} wrap="wrap">
+              {CANCELLATION_REASON_OPTIONS.map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  label={option}
+                  size="sm"
+                  variant={cancelReasonChoice === option ? 'primary' : 'secondary'}
+                  onClick={() => handleSelectCancelChip(option)}
+                />
+              ))}
+            </HStack>
+          </VStack>
           <TextArea
             label="Motivo de cancelación"
-            placeholder="Opcional"
+            placeholder="Opcional: agrega detalles adicionales"
             value={cancelReason}
             onChange={setCancelReason}
             isOptional

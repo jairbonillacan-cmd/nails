@@ -32,6 +32,11 @@ import {
   transitionBookingStatus,
   type BookingTransitionEffect,
 } from '../booking/state-machine';
+import {
+  selectNextWaitlistCandidate,
+  shouldSkipWhatsappCascade,
+  WAITLIST_OFFER_TTL_MINUTES,
+} from '../notifications/cascade';
 import { checkManagePolicyWindow } from '../availability/policy';
 import {
   generateBookingCode,
@@ -103,6 +108,7 @@ import type {
   AuditLogEntry,
   AvailabilityRule,
   Booking,
+  BookingPayment,
   BookingReview,
   BookingStatus,
   BookingWithRelations,
@@ -396,6 +402,7 @@ interface Phase3Collections {
   couponRedemptions: CouponRedemption[];
   consents: ConsentRecord[];
   auditLogs: AuditLogEntry[];
+  bookingPayments: BookingPayment[];
 }
 
 function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
@@ -406,6 +413,7 @@ function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
   if (!db.couponRedemptions) db.couponRedemptions = [];
   if (!db.consents) db.consents = [];
   if (!db.auditLogs) db.auditLogs = [];
+  if (!db.bookingPayments) db.bookingPayments = [];
   return {
     paymentSplits: db.paymentSplits,
     recurringBlocks: db.recurringBlocks,
@@ -414,6 +422,7 @@ function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
     couponRedemptions: db.couponRedemptions,
     consents: db.consents,
     auditLogs: db.auditLogs,
+    bookingPayments: db.bookingPayments,
   };
 }
 
@@ -577,6 +586,104 @@ async function dispatchSalonBookingAlert(params: {
       liveDb.notifications.unshift(...createdLogs);
     });
   }
+}
+
+interface WaitlistOfferDispatchPayload {
+  entryId: string;
+  bookingId: string;
+  clientName: string;
+  clientPhoneE164: string;
+  serviceName: string;
+  serviceSlug: string;
+  staffName: string;
+  slotStartAt: string;
+  dateKey: string;
+  offerToken: string;
+  offerExpiresAt: string;
+  settings: SalonSettings;
+}
+
+function assignWaitlistPriorityOfferInLock(
+  db: DemoDatabase,
+  canceledBooking: Booking,
+): WaitlistOfferDispatchPayload | null {
+  const tz = db.settings.timezone || 'America/Mexico_City';
+  const nowMs = Date.now();
+  const dateKey = getDateKeyInTimezone(new Date(canceledBooking.startAt), tz);
+  const candidate = selectNextWaitlistCandidate(db.waitlist, {
+    serviceId: canceledBooking.serviceId,
+    staffId: canceledBooking.staffId,
+    dateKey,
+    nowMs,
+  });
+  if (!candidate) return null;
+
+  const nowIso = new Date(nowMs).toISOString();
+  const offerToken = generateId('wlo');
+  const offerExpiresAt = new Date(
+    nowMs + WAITLIST_OFFER_TTL_MINUTES * 60_000,
+  ).toISOString();
+
+  candidate.status = 'notified';
+  candidate.notifiedAt = nowIso;
+  candidate.priorityOfferToken = offerToken;
+  candidate.priorityOfferExpiresAt = offerExpiresAt;
+  candidate.priorityOfferSlotStartAt = canceledBooking.startAt;
+
+  const service = db.services.find((s) => s.id === canceledBooking.serviceId);
+  const staff = db.staff.find((s) => s.id === canceledBooking.staffId);
+  return {
+    entryId: candidate.id,
+    bookingId: canceledBooking.id,
+    clientName: candidate.clientName,
+    clientPhoneE164: candidate.clientPhoneE164,
+    serviceName: service?.name ?? 'Servicio',
+    serviceSlug: service?.slug ?? 'servicio',
+    staffName: staff?.name ?? 'Especialista',
+    slotStartAt: canceledBooking.startAt,
+    dateKey,
+    offerToken,
+    offerExpiresAt,
+    settings: { ...db.settings },
+  };
+}
+
+async function dispatchWaitlistPriorityOffer(
+  offer: WaitlistOfferDispatchPayload,
+): Promise<void> {
+  const env = getRuntimeIntegrationStatus();
+  const tz = offer.settings.timezone || 'America/Mexico_City';
+  const dateLabel = formatDateLongInTimezone(offer.slotStartAt, tz);
+  const timeLabel = formatTimeInTimezone(offer.slotStartAt, tz, false);
+  const offerUrl = `${env.appUrl}/reservar/${offer.serviceSlug}?date=${encodeURIComponent(offer.dateKey)}&slot=${encodeURIComponent(offer.slotStartAt)}&offer=${encodeURIComponent(offer.offerToken)}`;
+  const bodyText = `Hola ${offer.clientName}, se liberó un espacio de ${offer.serviceName} con ${offer.staffName} (${dateLabel} ${timeLabel}) en ${offer.settings.name}. Tienes ${WAITLIST_OFFER_TTL_MINUTES} min de prioridad aquí: ${offerUrl}`;
+
+  const nowIso = new Date().toISOString();
+  const waRes = await dispatchWhatsAppNotification({
+    toPhoneE164: offer.clientPhoneE164,
+    bodyText,
+  });
+
+  const log: ScheduledNotification = {
+    id: generateId('ntf'),
+    bookingId: offer.bookingId,
+    workflowId: null,
+    channel: 'whatsapp',
+    recipient: offer.clientPhoneE164,
+    scheduledFor: nowIso,
+    status: waRes.status,
+    subject: `Oferta prioritaria lista de espera (${WAITLIST_OFFER_TTL_MINUTES} min)`,
+    previewText: bodyText,
+    providerMessageId: waRes.providerMessageId,
+    errorMessage: waRes.errorMessage,
+    sentAt: waRes.status === 'sent' ? nowIso : null,
+    createdAt: nowIso,
+  };
+
+  await withWriteLock((liveDb) => {
+    liveDb.notifications.unshift(log);
+  });
+  publishRealtimeEvent('waitlist_updated');
 }
 
 interface ExtendedQueryAvailabilityInput extends QueryAvailabilityInput {
@@ -1366,12 +1473,21 @@ export async function createBookingAtomic(
         )
       : 0;
 
+    const needsOnlinePayment =
+      !params.forceConfirmed &&
+      anyDepositRequired &&
+      (db.settings.paymentMode === 'mercadopago' || db.settings.paymentMode === 'stripe');
     const needsManualConfirm =
       !params.forceConfirmed &&
+      !needsOnlinePayment &&
       (anyRequiresConfirmation ||
         (anyDepositRequired && db.settings.paymentMode === 'manual_transfer'));
 
-    const status: BookingStatus = needsManualConfirm ? 'pending_confirmation' : 'confirmed';
+    const status: BookingStatus = needsOnlinePayment
+      ? 'pending_payment'
+      : needsManualConfirm
+        ? 'pending_confirmation'
+        : 'confirmed';
     const bookingCode = generateBookingCode();
     const manageToken = crypto.randomBytes(12).toString('hex');
     const resolvedInstagram = normalizedInstagram ?? client.instagramHandle;
@@ -1600,6 +1716,7 @@ export async function updateBookingStatus(params: {
       (prevStatus === 'pending_confirmation' || prevStatus === 'pending_payment') &&
       transition.nextStatus === 'confirmed'
     ) {
+      booking.confirmedVia = booking.confirmedVia ?? 'manual';
       if (
         booking.depositAmountCents > 0 &&
         !cols.paymentSplits.some((s) => s.bookingId === booking.id)
@@ -1642,6 +1759,11 @@ export async function updateBookingStatus(params: {
       });
     }
 
+    const waitlistOffer =
+      transition.nextStatus === 'canceled'
+        ? assignWaitlistPriorityOfferInLock(db, booking)
+        : null;
+
     if (transition.nextStatus === 'completed') {
       awardLoyaltyStampInLock(db, booking);
     }
@@ -1664,11 +1786,171 @@ export async function updateBookingStatus(params: {
       payload: { staffId: booking.staffId, startAt: booking.startAt },
     });
 
-    return { hydrated, outboxEvents };
+    return { hydrated, outboxEvents, waitlistOffer };
   });
 
   await dispatchPostCommitOutbox(committed.outboxEvents);
+  if (committed.waitlistOffer) {
+    await dispatchWaitlistPriorityOffer(committed.waitlistOffer);
+  }
   return committed.hydrated;
+}
+
+export async function confirmBookingDepositFromWebhook(params: {
+  provider: 'mercadopago' | 'stripe';
+  providerPaymentId: string;
+  bookingReference: string;
+  amountCents: number;
+  currency: 'MXN' | 'USD';
+}): Promise<
+  | { status: 'not_found' }
+  | { status: 'ok'; idempotent: boolean; bookingId: string }
+> {
+  const trimmedPaymentId = params.providerPaymentId.trim();
+  const trimmedRef = params.bookingReference.trim();
+  const normalizedRef = trimmedRef.toUpperCase();
+
+  const committed = await withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const existingApproved = cols.bookingPayments.find(
+      (p) =>
+        p.provider === params.provider &&
+        p.providerPaymentId === trimmedPaymentId &&
+        p.status === 'approved',
+    );
+    if (existingApproved) {
+      return {
+        status: 'ok' as const,
+        idempotent: true,
+        bookingId: existingApproved.bookingId,
+        outboxEvents: [] as OutboxEventInput[],
+      };
+    }
+
+    const booking = db.bookings.find(
+      (b) =>
+        b.bookingCode.toUpperCase() === normalizedRef || b.id === trimmedRef,
+    );
+    if (!booking) {
+      return {
+        status: 'not_found' as const,
+        idempotent: false,
+        bookingId: '',
+        outboxEvents: [] as OutboxEventInput[],
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const effectiveAmountCents =
+      params.amountCents > 0 ? params.amountCents : booking.depositAmountCents;
+
+    const paymentRecord: BookingPayment = {
+      id: generateId('pay'),
+      bookingId: booking.id,
+      provider: params.provider,
+      amountCents: effectiveAmountCents,
+      currency: params.currency,
+      status: 'approved',
+      providerPaymentId: trimmedPaymentId,
+      checkoutUrl: booking.checkoutUrl ?? null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    cols.bookingPayments.unshift(paymentRecord);
+
+    const outboxEvents: OutboxEventInput[] = [];
+    if (
+      booking.status === 'pending_payment' ||
+      booking.status === 'pending_confirmation'
+    ) {
+      const transition = transitionBookingStatus(booking, 'confirmed');
+      if (transition.ok) {
+        booking.status = transition.nextStatus;
+        booking.confirmedVia = 'payment';
+        booking.updatedAt = nowIso;
+        const hydrated = hydrateBooking(db, booking);
+        outboxEvents.push(
+          ...applyInLockTransitionEffects(
+            db,
+            booking,
+            hydrated,
+            transition.effects,
+            { recordedBy: 'Mercado Pago Webhook' },
+          ),
+        );
+      }
+    } else {
+      booking.confirmedVia = booking.confirmedVia ?? 'payment';
+      booking.updatedAt = nowIso;
+    }
+
+    if (effectiveAmountCents > 0) {
+      cols.paymentSplits.push({
+        id: generateId('ps'),
+        bookingId: booking.id,
+        method: 'online',
+        amountCents: effectiveAmountCents,
+        tipCents: 0,
+        tipStaffId: null,
+        reference: `${params.provider.toUpperCase()}-${trimmedPaymentId}`,
+        createdAt: nowIso,
+      });
+      db.cashEntries.unshift({
+        id: generateId('cash'),
+        bookingId: booking.id,
+        staffId: booking.staffId,
+        entryType: 'deposit',
+        description: `Anticipo en línea ${booking.bookingCode} (${params.provider})`,
+        amountCents: effectiveAmountCents,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'card',
+        occurredAt: nowIso,
+        recordedBy: 'Mercado Pago Webhook',
+      });
+    }
+
+    appendAuditLog(db, {
+      actor: {
+        id: 'system-mercadopago',
+        email: 'webhook@mercadopago.system',
+        role: 'owner',
+      },
+      action: 'deposit_approved',
+      entityType: 'booking',
+      entityId: booking.id,
+      metadata: {
+        bookingCode: booking.bookingCode,
+        provider: params.provider,
+        providerPaymentId: trimmedPaymentId,
+        amountCents: effectiveAmountCents,
+      },
+    });
+
+    outboxEvents.push({
+      type: 'Realtime',
+      eventType: 'slot_changed',
+      payload: { staffId: booking.staffId, startAt: booking.startAt },
+    });
+
+    return {
+      status: 'ok' as const,
+      idempotent: false,
+      bookingId: booking.id,
+      outboxEvents,
+    };
+  });
+
+  if (committed.status === 'not_found') {
+    return { status: 'not_found' };
+  }
+
+  await dispatchPostCommitOutbox(committed.outboxEvents);
+  return {
+    status: 'ok',
+    idempotent: committed.idempotent,
+    bookingId: committed.bookingId,
+  };
 }
 
 export async function recordBookingCheckoutAtomic(params: {
@@ -1986,6 +2268,7 @@ export async function manageClientBookingAction(params: {
       booking.cancellationReason =
         params.reason || 'Cancelada por la clienta desde link personal';
       booking.updatedAt = new Date().toISOString();
+      const waitlistOffer = assignWaitlistPriorityOfferInLock(db, booking);
       const hydrated = hydrateBooking(db, booking);
       const outboxEvents = applyInLockTransitionEffects(
         db,
@@ -2002,6 +2285,7 @@ export async function manageClientBookingAction(params: {
       return {
         hydrated,
         outboxEvents,
+        waitlistOffer,
         salonAlert: {
           booking: hydrated,
           settings: { ...db.settings },
@@ -2097,6 +2381,7 @@ export async function manageClientBookingAction(params: {
     return {
       hydrated,
       outboxEvents,
+      waitlistOffer: null,
       salonAlert: {
         booking: hydrated,
         settings: settingsSnapshot,
@@ -2107,6 +2392,9 @@ export async function manageClientBookingAction(params: {
 
   await dispatchPostCommitOutbox(committed.outboxEvents);
   await dispatchSalonBookingAlert(committed.salonAlert);
+  if (committed.waitlistOffer) {
+    await dispatchWaitlistPriorityOffer(committed.waitlistOffer);
+  }
   return committed.hydrated;
 }
 
@@ -3248,6 +3536,27 @@ export async function updateCalendarConnection(
   });
 }
 
+export async function syncCalendarConnectionBusyBlocks(params: {
+  staffId: string;
+  busyBlocks: Array<{ startAt: string; endAt: string; summary?: string }>;
+  refreshedAccessTokenEncrypted?: string;
+  refreshedTokenExpiresAt?: string;
+}): Promise<void> {
+  await withWriteLock((db) => {
+    const conn = db.calendarConnections.find((c) => c.staffId === params.staffId);
+    if (!conn) return;
+    conn.externalBusyBlocks = params.busyBlocks;
+    conn.lastSyncedAt = new Date().toISOString();
+    if (params.refreshedAccessTokenEncrypted) {
+      conn.accessTokenEncrypted = params.refreshedAccessTokenEncrypted;
+    }
+    if (params.refreshedTokenExpiresAt) {
+      conn.tokenExpiresAt = params.refreshedTokenExpiresAt;
+    }
+    publishRealtimeEvent('availability_updated', { staffId: params.staffId });
+  });
+}
+
 export async function upsertGalleryItem(
   input: Omit<GalleryItem, 'id' | 'displayOrder'> & { id?: string },
 ): Promise<GalleryItem> {
@@ -3289,6 +3598,7 @@ export async function processDueScheduledNotifications(
   sentCount: number;
   failedCount: number;
   canceledCount: number;
+  skippedCount: number;
 }> {
   return withWriteLock(async (db) => {
     const due = db.notifications.filter(
@@ -3298,11 +3608,39 @@ export async function processDueScheduledNotifications(
     let sentCount = 0;
     let failedCount = 0;
     let canceledCount = 0;
+    let skippedCount = 0;
 
     for (const item of due) {
       const rawBooking = db.bookings.find((b) => b.id === item.bookingId);
       if (!rawBooking || rawBooking.status === 'canceled' || rawBooking.status === 'no_show') {
         item.status = 'canceled';
+        canceledCount += 1;
+        continue;
+      }
+
+      const wf = item.workflowId
+        ? db.workflows.find((w) => w.id === item.workflowId)
+        : null;
+      const isAfterBooking = wf?.triggerEvent === 'after_booking';
+      const alreadySentEmail = db.notifications.some((n) => {
+        if (n.bookingId !== rawBooking.id || n.channel !== 'email' || n.status !== 'sent') {
+          return false;
+        }
+        const nWf = n.workflowId
+          ? db.workflows.find((w) => w.id === n.workflowId)
+          : null;
+        return nWf?.triggerEvent === 'before_booking';
+      });
+
+      if (
+        item.channel === 'whatsapp' &&
+        !isAfterBooking &&
+        shouldSkipWhatsappCascade(rawBooking, alreadySentEmail)
+      ) {
+        item.status = 'canceled';
+        item.errorMessage = 'skipped_cascade';
+        item.sentAt = null;
+        skippedCount += 1;
         canceledCount += 1;
         continue;
       }
@@ -3331,6 +3669,7 @@ export async function processDueScheduledNotifications(
       sentCount,
       failedCount,
       canceledCount,
+      skippedCount,
     };
   });
 }

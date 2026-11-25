@@ -182,7 +182,8 @@ function isPureDomainFile(rel) {
     rel.startsWith('src/lib/availability/') ||
     rel.startsWith('src/lib/booking/') ||
     rel.startsWith('src/lib/loyalty/') ||
-    rel.startsWith('src/lib/payments/')
+    rel.startsWith('src/lib/payments/') ||
+    rel.startsWith('src/lib/notifications/')
   );
 }
 

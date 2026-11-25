@@ -31,3 +31,28 @@ jobs:
 
       - name: Run full verification gate
         run: npm run verify
+
+      - name: Run E2E smoke & concurrency suite against built server
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3000
+        run: |
+          npm run start -- --hostname 127.0.0.1 --port 3000 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for i in $(seq 1 30); do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Next.js server exited prematurely before becoming ready." >&2
+              exit 1
+            fi
+            if curl -fsS http://127.0.0.1:3000/api/public/bootstrap > /dev/null; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo "Next.js server did not become ready within 30s." >&2
+            exit 1
+          fi
+          npm run test:e2e

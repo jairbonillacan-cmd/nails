@@ -204,6 +204,12 @@ export interface CalendarConnection {
   isConnected: boolean;
   lastSyncedAt: string | null;
   externalBusyBlocks?: Array<{ startAt: string; endAt: string; summary?: string }>;
+  accessTokenEncrypted?: string | null;
+  refreshTokenEncrypted?: string | null;
+  tokenExpiresAt?: string | null;
+  watchChannelId?: string | null;
+  watchResourceId?: string | null;
+  watchExpiration?: string | null;
 }
 
 export type ClientProfile = {
@@ -260,6 +266,8 @@ export interface Booking {
   depositAmountCents: number;
   couponCode: string | null;
   status: BookingStatus;
+  confirmedVia?: 'manual' | 'email' | 'whatsapp' | 'payment' | null;
+  checkoutUrl?: string | null;
   source: BookingSource;
   clientNotes: string;
   internalNotes: string;
@@ -353,7 +361,23 @@ export interface WaitlistEntry {
   notes: string;
   status: 'waiting' | 'notified' | 'booked' | 'expired';
   notifiedAt: string | null;
+  priorityOfferToken?: string | null;
+  priorityOfferExpiresAt?: string | null;
+  priorityOfferSlotStartAt?: string | null;
   createdAt: string;
+}
+
+export interface BookingPayment {
+  id: string;
+  bookingId: string;
+  provider: 'manual_transfer' | 'stripe' | 'mercadopago';
+  amountCents: number;
+  currency: 'MXN' | 'USD';
+  status: 'pending' | 'approved' | 'rejected' | 'refunded';
+  providerPaymentId?: string | null;
+  checkoutUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface BookingReview {
@@ -513,4 +537,5 @@ export interface DemoDatabase {
   couponRedemptions?: CouponRedemption[];
   consents?: ConsentRecord[];
   auditLogs?: AuditLogEntry[];
+  bookingPayments?: BookingPayment[];
 }

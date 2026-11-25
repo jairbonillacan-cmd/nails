@@ -1,5 +1,14 @@
 import type { BookingWithRelations, SalonSettings } from './types';
 
+const UTF8_ENCODER = new TextEncoder();
+const RFC5545_MAX_OCTETS = 75;
+
+export interface GenerateBookingIcsOptions {
+  method?: 'REQUEST' | 'CANCEL';
+  sequence?: number;
+  dtStampIso?: string;
+}
+
 function formatIcsDateUtc(iso: string): string {
   return new Date(iso)
     .toISOString()
@@ -7,57 +16,113 @@ function formatIcsDateUtc(iso: string): string {
     .replace(/\.\d{3}Z$/, 'Z');
 }
 
-function escapeIcsText(text: string): string {
+export function escapeIcsText(text: string): string {
   return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
     .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
+    .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;');
+    .replace(/\n/g, '\\n');
+}
+
+export function foldIcsLine(line: string, maxOctets: number = RFC5545_MAX_OCTETS): string {
+  const limit = Math.max(8, maxOctets);
+  const segments: string[] = [];
+  let current = '';
+  let currentBytes = 0;
+
+  for (const char of line) {
+    const charBytes = UTF8_ENCODER.encode(char).length;
+    if (currentBytes > 0 && currentBytes + charBytes > limit) {
+      segments.push(current);
+      current = ` ${char}`;
+      currentBytes = 1 + charBytes;
+    } else {
+      current += char;
+      currentBytes += charBytes;
+    }
+  }
+
+  segments.push(current);
+  return segments.join('\r\n');
 }
 
 export function generateBookingIcs(
   booking: BookingWithRelations,
   settings: SalonSettings,
   manageUrl: string,
+  options?: GenerateBookingIcsOptions,
 ): string {
+  const method: 'REQUEST' | 'CANCEL' =
+    options?.method ?? (booking.status === 'canceled' ? 'CANCEL' : 'REQUEST');
+  const defaultSequence =
+    method === 'CANCEL'
+      ? booking.rescheduledFromId
+        ? 2
+        : 1
+      : booking.rescheduledFromId
+        ? 1
+        : 0;
+  const sequence =
+    typeof options?.sequence === 'number' && Number.isFinite(options.sequence)
+      ? Math.max(0, Math.floor(options.sequence))
+      : defaultSequence;
+  const status = method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED';
+  const dtStampIso = options?.dtStampIso ?? new Date().toISOString();
+
   const addonsSummary =
     booking.addons.length > 0
       ? ` + ${booking.addons.map((a) => a.name).join(', ')}`
       : '';
   const summary = `${booking.service.name}${addonsSummary} — ${settings.name}`;
-  const description = [
+  const descriptionLines = [
     `Código de cita: ${booking.bookingCode}`,
     `Especialista: ${booking.staff.name}`,
     `Servicio: ${booking.service.name}${addonsSummary}`,
     `Gestionar, reagendar o cancelar: ${manageUrl}`,
-    settings.bookingInstructionsText,
-  ].join('\n');
+  ];
+  if (booking.clientNotes.trim().length > 0) {
+    descriptionLines.push(`Notas: ${booking.clientNotes.trim()}`);
+  }
+  if (settings.bookingInstructionsText.trim().length > 0) {
+    descriptionLines.push(settings.bookingInstructionsText.trim());
+  }
+  const description = descriptionLines.join('\n');
+  const prodIdOrg = escapeIcsText(settings.name.replace(/\//g, '-'));
 
-  const lines = [
+  const rawLines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    `PRODID:-//${escapeIcsText(settings.name)}//Booking//ES`,
+    `PRODID:-//${prodIdOrg}//Booking//ES`,
     'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
+    `METHOD:${method}`,
     'BEGIN:VEVENT',
     `UID:${booking.id}@nails.booking`,
-    `DTSTAMP:${formatIcsDateUtc(new Date().toISOString())}`,
+    `DTSTAMP:${formatIcsDateUtc(dtStampIso)}`,
+    `SEQUENCE:${sequence}`,
+    `STATUS:${status}`,
     `DTSTART:${formatIcsDateUtc(booking.startAt)}`,
     `DTEND:${formatIcsDateUtc(booking.endAt)}`,
     `SUMMARY:${escapeIcsText(summary)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `LOCATION:${escapeIcsText(settings.address)}`,
-    'STATUS:CONFIRMED',
-    'BEGIN:VALARM',
-    'TRIGGER:-PT2H',
-    'ACTION:DISPLAY',
-    `DESCRIPTION:Recordatorio de cita en ${escapeIcsText(settings.name)}`,
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR',
   ];
 
-  return `${lines.join('\r\n')}\r\n`;
+  if (method !== 'CANCEL') {
+    rawLines.push(
+      'BEGIN:VALARM',
+      'TRIGGER:-PT2H',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${escapeIcsText(`Recordatorio de cita en ${settings.name}`)}`,
+      'END:VALARM',
+    );
+  }
+
+  rawLines.push('END:VEVENT', 'END:VCALENDAR');
+
+  const foldedLines = rawLines.map((line) => foldIcsLine(line, RFC5545_MAX_OCTETS));
+  return `${foldedLines.join('\r\n')}\r\n`;
 }
 
 export function buildCalendarAddLinks(

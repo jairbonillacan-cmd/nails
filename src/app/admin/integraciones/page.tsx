@@ -18,19 +18,48 @@ import { Divider } from '@astryxdesign/core/Divider';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Token } from '@astryxdesign/core/Token';
 import {
+  ArrowRight,
   BarChart3,
   Bell,
   Calendar,
   Check,
   Copy,
   CreditCard,
+  Link2,
   MessageCircle,
   Send,
+  Sparkles,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
-import { formatCurrency } from '@/lib/format';
+import {
+  formatCurrency,
+  formatDateShortInTimezone,
+  formatTimeInTimezone,
+} from '@/lib/format';
+import {
+  summarizeCascadeMetrics,
+  WORKFLOW_TEMPLATE_GALLERY,
+  type WorkflowTemplateItem,
+} from '@/lib/notifications/cascade';
 import type { NotificationChannel, PaymentMode } from '@/lib/types';
+
+const TEMPLATE_CHANNEL_LABELS: Record<WorkflowTemplateItem['channel'], string> = {
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+  cascade: 'Cascada Email → WA',
+};
+
+const TEMPLATE_CATEGORY_COLORS: Record<
+  WorkflowTemplateItem['category'],
+  'green' | 'blue' | 'purple' | 'orange' | 'pink'
+> = {
+  confirmation: 'green',
+  reminder: 'blue',
+  preparation: 'purple',
+  recovery: 'orange',
+  waitlist: 'pink',
+};
 
 export default function AdminIntegrationsPage() {
   const { data, refresh } = useAdminData();
@@ -45,6 +74,16 @@ export default function AdminIntegrationsPage() {
   const [metaPixel, setMetaPixel] = useState<string | null>(null);
   const [ga4Id, setGa4Id] = useState<string | null>(null);
   const [googleReviewUrl, setGoogleReviewUrl] = useState<string | null>(null);
+
+  const cascadeMetrics = useMemo(() => {
+    if (!data) return null;
+    const referenceDate = new Date(data.serverNowIso);
+    return summarizeCascadeMetrics(
+      data.bookings,
+      data.notifications,
+      Number.isNaN(referenceDate.getTime()) ? new Date(0) : referenceDate,
+    );
+  }, [data]);
 
   const whatsappTemplates = useMemo(() => {
     if (!data) return [];
@@ -98,12 +137,17 @@ export default function AdminIntegrationsPage() {
     settings.depositAmountCents ?? 20000,
     settings.currency,
   );
+  const timezone = settings.timezone || 'America/Mexico_City';
+  const normalizedAppUrl = integration.appUrl.replace(/\/+$/, '');
+  const mercadoPagoWebhookUrl = `${normalizedAppUrl}/api/webhooks/mercadopago`;
+  const googleCalendarWebhookUrl = `${normalizedAppUrl}/api/webhooks/google-calendar`;
+  const bookingById = new Map(data.bookings.map((bk) => [bk.id, bk]));
 
-  const handleCopyTemplate = async (id: string, title: string, body: string) => {
+  const handleCopyText = async (id: string, label: string, content: string) => {
     try {
-      await navigator.clipboard.writeText(body);
+      await navigator.clipboard.writeText(content);
       setCopiedId(id);
-      copyFeedback.show(`Plantilla "${title}" copiada al portapapeles.`);
+      copyFeedback.show(`"${label}" copiado al portapapeles.`);
     } catch {
       copyFeedback.show('No se pudo copiar automáticamente; selecciona el texto manualmente.');
     }
@@ -208,6 +252,10 @@ export default function AdminIntegrationsPage() {
               label={`Google Calendar: ${integration.googleCalendarConfigured ? 'OAuth listo' : 'Simulado'}`}
             />
             <Badge
+              variant={integration.mercadoPagoConfigured ? 'success' : 'neutral'}
+              label={`Mercado Pago: ${integration.mercadoPagoConfigured ? 'Checkout activo' : 'SPEI manual / Demo'}`}
+            />
+            <Badge
               variant={integration.resendConfigured ? 'success' : 'neutral'}
               label={`Resend Email: ${integration.resendConfigured ? 'Activo' : 'Simulado'}`}
             />
@@ -220,6 +268,197 @@ export default function AdminIntegrationsPage() {
               label={`Twilio SMS: ${integration.twilioSmsConfigured ? 'Activo' : 'Opcional (.env)'}`}
             />
           </HStack>
+        </VStack>
+      </Card>
+
+      {cascadeMetrics ? (
+        <Card padding={5}>
+          <VStack gap={4}>
+            <HStack justify="between" align="center" wrap="wrap" gap={2}>
+              <HStack gap={2} align="center">
+                <Bell size={18} aria-hidden="true" />
+                <Heading level={2}>
+                  Recordatorios en cascada (Email 48 h → WhatsApp 24 h / 2 h)
+                </Heading>
+              </HStack>
+              <Token size="sm" color="green" label="Ahorro automático de WhatsApp" />
+            </HStack>
+
+            <Text type="supporting" color="secondary">
+              Enviamos primero el recordatorio gratuito por correo (.ics) 48 h antes. Si la clienta ya confirmó por Email, pago en línea o recepción, el sistema omite automáticamente el recordatorio pagado de WhatsApp para reducir costos de mensajería.
+            </Text>
+
+            <Grid columns={{ minWidth: 160, max: 5 }} gap={3}>
+              <Card variant="muted" padding={3}>
+                <VStack gap={0.5} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Text type="supporting" color="secondary">
+                    $ Ingresos confirmados
+                  </Text>
+                  <Text size="xl" weight="bold" hasTabularNumbers>
+                    {formatCurrency(cascadeMetrics.confirmedRevenueCents, settings.currency)}
+                  </Text>
+                </VStack>
+              </Card>
+              <Card variant="muted" padding={3}>
+                <VStack gap={0.5} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Text type="supporting" color="secondary">
+                    Confirmadas por Email
+                  </Text>
+                  <Text size="xl" weight="bold" hasTabularNumbers>
+                    {cascadeMetrics.emailConfirmedCount}
+                  </Text>
+                </VStack>
+              </Card>
+              <Card variant="muted" padding={3}>
+                <VStack gap={0.5} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Text type="supporting" color="secondary">
+                    Confirmadas por WhatsApp
+                  </Text>
+                  <Text size="xl" weight="bold" hasTabularNumbers>
+                    {cascadeMetrics.whatsappConfirmedCount}
+                  </Text>
+                </VStack>
+              </Card>
+              <Card variant="muted" padding={3}>
+                <VStack gap={0.5} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Text type="supporting" color="secondary">
+                    Confirmadas por Pago
+                  </Text>
+                  <Text size="xl" weight="bold" hasTabularNumbers>
+                    {cascadeMetrics.paymentConfirmedCount}
+                  </Text>
+                </VStack>
+              </Card>
+              <Card variant="muted" padding={3}>
+                <VStack gap={0.5} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Text type="supporting" color="secondary">
+                    Confirmadas Manual / Web
+                  </Text>
+                  <Text size="xl" weight="bold" hasTabularNumbers>
+                    {cascadeMetrics.manualConfirmedCount}
+                  </Text>
+                </VStack>
+              </Card>
+            </Grid>
+
+            <Divider />
+
+            <VStack gap={3}>
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <Heading level={3}>
+                  Citas sin recordatorio ({cascadeMetrics.bookingsWithoutReminders.length})
+                </Heading>
+                <Button
+                  label="Revisar en Citas"
+                  variant="secondary"
+                  size="sm"
+                  href="/admin/citas"
+                  icon={<ArrowRight size={14} aria-hidden="true" />}
+                />
+              </HStack>
+
+              {cascadeMetrics.bookingsWithoutReminders.length > 0 ? (
+                <List hasDividers density="compact">
+                  {cascadeMetrics.bookingsWithoutReminders.slice(0, 6).map((bk) => {
+                    const detailed = bookingById.get(bk.id);
+                    return (
+                      <ListItem
+                        key={bk.id}
+                        label={`${detailed?.client.fullName ?? 'Clienta'} · ${bk.bookingCode}`}
+                        description={
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {detailed?.service.name ?? 'Servicio'} ·{' '}
+                            {formatDateShortInTimezone(bk.startAt, timezone)} ·{' '}
+                            {formatTimeInTimezone(bk.startAt, timezone)}
+                          </Text>
+                        }
+                        endContent={
+                          <Button
+                            label="Abrir en Citas"
+                            variant="primary"
+                            size="sm"
+                            href="/admin/citas"
+                          />
+                        }
+                      />
+                    );
+                  })}
+                </List>
+              ) : (
+                <Banner
+                  status="success"
+                  title="Cobertura completa de recordatorios"
+                  description="Todas tus citas futuras activas ya cuentan con notificación enviada o programada."
+                />
+              )}
+            </VStack>
+          </VStack>
+        </Card>
+      ) : null}
+
+      <Card padding={5}>
+        <VStack gap={4}>
+          <HStack justify="between" align="center" wrap="wrap" gap={2}>
+            <HStack gap={2} align="center">
+              <Sparkles size={18} aria-hidden="true" />
+              <Heading level={2}>
+                Galería accionable de plantillas de automatización
+              </Heading>
+            </HStack>
+            <Token
+              size="sm"
+              color="blue"
+              label={`${WORKFLOW_TEMPLATE_GALLERY.length} flujos listos`}
+            />
+          </HStack>
+          <Text type="supporting" color="secondary">
+            Flujos probados para evitar inasistencias, preparar citas sin gel previo, recapturar cancelaciones y asignar huecos prioritarios de lista de espera en 10 minutos.
+          </Text>
+          <Grid columns={{ minWidth: 280, max: 2 }} gap={3}>
+            {WORKFLOW_TEMPLATE_GALLERY.map((tpl) => {
+              const isCopied = copiedId === tpl.id && Boolean(copyFeedback.message);
+              return (
+                <Card key={tpl.id} variant="muted" padding={4}>
+                  <VStack gap={2} justify="between" height="100%">
+                    <VStack gap={1.5}>
+                      <HStack justify="between" align="start" wrap="wrap" gap={1.5}>
+                        <Text weight="semibold">{tpl.title}</Text>
+                        <Token
+                          size="sm"
+                          color={TEMPLATE_CATEGORY_COLORS[tpl.category]}
+                          label={TEMPLATE_CHANNEL_LABELS[tpl.channel]}
+                        />
+                      </HStack>
+                      <Text type="label" color="accent">
+                        {tpl.timingLabel}
+                      </Text>
+                      <Text type="supporting" color="secondary">
+                        {tpl.description}
+                      </Text>
+                      <Text type="supporting" color="primary">
+                        {tpl.templateText}
+                      </Text>
+                    </VStack>
+                    <Button
+                      label={isCopied ? 'Plantilla copiada' : 'Copiar plantilla'}
+                      variant={isCopied ? 'primary' : 'secondary'}
+                      size="sm"
+                      icon={
+                        isCopied ? (
+                          <Check size={14} aria-hidden="true" />
+                        ) : (
+                          <Copy size={14} aria-hidden="true" />
+                        )
+                      }
+                      onClick={() =>
+                        void handleCopyText(tpl.id, tpl.title, tpl.templateText)
+                      }
+                    />
+                  </VStack>
+                </Card>
+              );
+            })}
+          </Grid>
         </VStack>
       </Card>
 
@@ -256,8 +495,14 @@ export default function AdminIntegrationsPage() {
                       label={isCopied ? 'Plantilla copiada' : 'Copiar plantilla'}
                       variant={isCopied ? 'primary' : 'secondary'}
                       size="sm"
-                      icon={isCopied ? <Check size={14} /> : <Copy size={14} />}
-                      onClick={() => void handleCopyTemplate(tpl.id, tpl.title, tpl.body)}
+                      icon={
+                        isCopied ? (
+                          <Check size={14} aria-hidden="true" />
+                        ) : (
+                          <Copy size={14} aria-hidden="true" />
+                        )
+                      }
+                      onClick={() => void handleCopyText(tpl.id, tpl.title, tpl.body)}
                     />
                   </VStack>
                 </Card>
@@ -299,8 +544,44 @@ export default function AdminIntegrationsPage() {
                   />
                 </HStack>
                 <Text type="supporting" color="secondary">
-                  Genera un link de pago automático (SPEI, tarjeta u OXXO) y confirma la cita al instante vía webhook idempotente sin revisión manual. Aplica comisión estándar de Mercado Pago al pegar MERCADOPAGO_ACCESS_TOKEN en .env.
+                  Genera un link de pago automático (SPEI, tarjeta u OXXO) y confirma la cita al instante vía webhook idempotente verificado por firma HMAC-SHA256 (`MERCADOPAGO_WEBHOOK_SECRET`).
                 </Text>
+                <VStack gap={1}>
+                  <HStack gap={1.5} align="center">
+                    <Link2 size={14} aria-hidden="true" />
+                    <Text type="label" weight="semibold">
+                      Webhook de producción (Mercado Pago Developers)
+                    </Text>
+                  </HStack>
+                  <HStack gap={2} align="center" wrap="wrap">
+                    <Text type="code" wordBreak="break-all">
+                      {mercadoPagoWebhookUrl}
+                    </Text>
+                    <Button
+                      label={
+                        copiedId === 'webhook-mp' && copyFeedback.message
+                          ? 'Copiado'
+                          : 'Copiar webhook'
+                      }
+                      variant="secondary"
+                      size="sm"
+                      icon={
+                        copiedId === 'webhook-mp' && copyFeedback.message ? (
+                          <Check size={14} aria-hidden="true" />
+                        ) : (
+                          <Copy size={14} aria-hidden="true" />
+                        )
+                      }
+                      onClick={() =>
+                        void handleCopyText(
+                          'webhook-mp',
+                          'Webhook Mercado Pago',
+                          mercadoPagoWebhookUrl,
+                        )
+                      }
+                    />
+                  </HStack>
+                </VStack>
               </VStack>
             </Card>
           </Grid>
@@ -314,8 +595,46 @@ export default function AdminIntegrationsPage() {
             <Heading level={2}>Google Calendar (Sincronización bidireccional)</Heading>
           </HStack>
           <Text type="supporting" color="secondary">
-            Elige a qué calendario agregar las citas nuevas y qué sub-calendarios revisar para bloquear horarios automáticamente si hay conflictos personales.
+            Elige a qué calendario agregar las citas nuevas y qué sub-calendarios revisar para bloquear horarios automáticamente si hay conflictos personales. Los tokens OAuth se cifran en reposo con AES-256-GCM.
           </Text>
+          <Card variant="muted" padding={3}>
+            <VStack gap={1}>
+              <HStack gap={1.5} align="center">
+                <Link2 size={14} aria-hidden="true" />
+                <Text type="label" weight="semibold">
+                  Webhook Push de Google Calendar (X-Goog-Channel-Token)
+                </Text>
+              </HStack>
+              <HStack gap={2} align="center" wrap="wrap">
+                <Text type="code" wordBreak="break-all">
+                  {googleCalendarWebhookUrl}
+                </Text>
+                <Button
+                  label={
+                    copiedId === 'webhook-gcal' && copyFeedback.message
+                      ? 'Copiado'
+                      : 'Copiar webhook'
+                  }
+                  variant="secondary"
+                  size="sm"
+                  icon={
+                    copiedId === 'webhook-gcal' && copyFeedback.message ? (
+                      <Check size={14} aria-hidden="true" />
+                    ) : (
+                      <Copy size={14} aria-hidden="true" />
+                    )
+                  }
+                  onClick={() =>
+                    void handleCopyText(
+                      'webhook-gcal',
+                      'Webhook Google Calendar',
+                      googleCalendarWebhookUrl,
+                    )
+                  }
+                />
+              </HStack>
+            </VStack>
+          </Card>
           <Grid columns={{ minWidth: 300, max: 2 }} gap={4}>
             {data.staff.map((st) => {
               const conn = data.calendarConnections.find((c) => c.staffId === st.id);
@@ -468,7 +787,7 @@ export default function AdminIntegrationsPage() {
                   label="Simular reserva entrante por WhatsApp"
                   variant="primary"
                   size="sm"
-                  icon={<Send size={14} />}
+                  icon={<Send size={14} aria-hidden="true" />}
                   isLoading={simLoading}
                   onClick={simulateWhatsAppBooking}
                 />
