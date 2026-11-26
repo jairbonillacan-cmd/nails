@@ -3,6 +3,7 @@
 import type React from 'react';
 import { useRef, useState } from 'react';
 import type { AvailableSlot } from '@/lib/availability/engine';
+import { isSafeExternalProofUrl } from '@/lib/contracts';
 import { normalizePhoneE164 } from '@/lib/format';
 import { getOrCreateBrowserSessionToken } from '@/lib/hooks/useSessionToken';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
@@ -59,8 +60,15 @@ interface UseBookingFlowActionsInput {
   showsDeposit: boolean;
   client: ClientFormValues;
   signedInPhoneE164?: string | null;
+  waitlistOfferToken?: string | null;
   todayKey: string;
   revalidateActive: () => void;
+  onBookingConfirmed?: (summary: {
+    serviceSlug: string;
+    serviceName: string;
+    staffSlug: string | null;
+    staffName: string | null;
+  }) => void;
   navigateToManageUrl: (url: string) => void;
 }
 
@@ -80,8 +88,10 @@ export function useBookingFlowActions({
   showsDeposit,
   client,
   signedInPhoneE164 = null,
+  waitlistOfferToken = null,
   todayKey,
   revalidateActive,
+  onBookingConfirmed,
   navigateToManageUrl,
 }: UseBookingFlowActionsInput) {
   const [chosenStaffId, setChosenStaffId] = useState('any');
@@ -328,6 +338,16 @@ export function useBookingFlowActions({
       return;
     }
 
+    const trimmedProof = client.proofDataUrl?.trim() ?? '';
+    if (showsDeposit && client.proofDeliveryMethod === 'web_link' && trimmedProof && !isSafeExternalProofUrl(trimmedProof)) {
+      dispatch({
+        type: 'SUBMIT_FAILED',
+        error: 'Pega un enlace HTTPS válido para tu comprobante o elige subirlo después.',
+      });
+      revealPanel();
+      return;
+    }
+
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = buildIdempotencyKey(flow.selectedSlot.staffId);
     }
@@ -335,9 +355,11 @@ export function useBookingFlowActions({
     submitLockRef.current = true;
     dispatch({ type: 'START_SUBMIT' });
     const effectiveProofMethod: ProofDeliveryMethod =
-      showsDeposit && client.proofDeliveryMethod !== 'none' && client.proofDataUrl
-        ? 'web_upload'
-        : 'none';
+      showsDeposit && client.proofDeliveryMethod === 'web_link' && trimmedProof && isSafeExternalProofUrl(trimmedProof)
+        ? 'web_link'
+        : showsDeposit && client.proofDeliveryMethod === 'web_upload' && trimmedProof
+          ? 'web_upload'
+          : 'none';
 
     try {
       const result = await submitBookingRequest(idempotencyKeyRef.current, {
@@ -353,13 +375,17 @@ export function useBookingFlowActions({
         clientBirthday: birthdayInputToIso(client.clientBirthday, salonTodayKey),
         clientNotes: client.clientNotes,
         inspoPhotoUrl: client.inspoDataUrl,
-        paymentProofUrl: effectiveProofMethod === 'web_upload' ? client.proofDataUrl : null,
+        paymentProofUrl:
+          effectiveProofMethod === 'web_upload' || effectiveProofMethod === 'web_link'
+            ? trimmedProof
+            : null,
         proofDeliveryMethod: effectiveProofMethod,
         couponCode: appliedCoupon?.code || null,
         holdId: flow.holdId ?? undefined,
         sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
         privacyConsentAccepted: true,
         marketingOptIn: flow.marketingOptIn,
+        waitlistOfferToken: waitlistOfferToken?.trim() || undefined,
       });
 
       if (result.kind === 'conflict') {
@@ -380,6 +406,13 @@ export function useBookingFlowActions({
         revealPanel();
         return;
       }
+      const matchedStaff = staff.find((member) => member.id === flow.selectedSlot?.staffId) ?? null;
+      onBookingConfirmed?.({
+        serviceSlug: selectedService.slug,
+        serviceName: selectedService.name,
+        staffSlug: matchedStaff ? (matchedStaff.bookingSlug || matchedStaff.id) : null,
+        staffName: matchedStaff?.name ?? flow.selectedSlot.staffName ?? null,
+      });
       dispatch({ type: 'SUBMIT_CONFIRMED', manageUrl: result.manageUrl });
       navigateToManageUrl(result.manageUrl);
     } catch {

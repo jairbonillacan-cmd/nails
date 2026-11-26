@@ -1427,8 +1427,8 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const expiresDeltaMin =
       (new Date(updatedFirst?.priorityOfferExpiresAt ?? 0).getTime() - beforeCancelMs) /
       60_000;
-    expect(expiresDeltaMin).toBeGreaterThan(9);
-    expect(expiresDeltaMin).toBeLessThan(11.5);
+    expect(expiresDeltaMin).toBeGreaterThan(29);
+    expect(expiresDeltaMin).toBeLessThan(31.5);
     expect(updatedSecond?.status).toBe('waiting');
 
     const offerLog = afterCancelDb.notifications.find(

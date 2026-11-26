@@ -18,12 +18,24 @@ export type PaymentMode = 'none' | 'manual_transfer' | 'stripe' | 'mercadopago';
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'gift_card';
 export type PaymentSplitMethod = 'cash' | 'card' | 'transfer' | 'giftcard' | 'online';
 export type NotificationChannel = 'email' | 'whatsapp' | 'sms';
+type BookingAttendanceStatus = 'pending' | 'confirmed' | 'rescheduled';
+
+export type FunnelEventType =
+  | 'page_view'
+  | 'booking_started'
+  | 'slot_held'
+  | 'details_completed'
+  | 'deposit_submitted'
+  | 'booking_confirmed';
+
 export type AuditAction =
   | 'booking_canceled'
   | 'booking_price_override'
   | 'csv_exported'
   | 'past_booking_override'
   | 'deposit_approved'
+  | 'deposit_rejected'
+  | 'booking_rescheduled'
   | 'loyalty_redeemed'
   | 'media_retention_warned'
   | 'media_retention_purged';
@@ -318,6 +330,9 @@ export interface Booking {
   depositAmountCents: number;
   couponCode: string | null;
   status: BookingStatus;
+  attendanceStatus?: BookingAttendanceStatus;
+  attendanceConfirmedAt?: string | null;
+  reminder24hSentAt?: string | null;
   confirmedVia?: 'manual' | 'email' | 'whatsapp' | 'payment' | null;
   checkoutUrl?: string | null;
   source: BookingSource;
@@ -325,7 +340,10 @@ export interface Booking {
   internalNotes: string;
   inspoPhotoUrl: string | null;
   paymentProofUrl: string | null;
-  proofDeliveryMethod?: 'web_upload' | 'instagram_dm' | 'none';
+  proofDeliveryMethod?: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
+  proofRejectedAt?: string | null;
+  proofRejectionReason?: string | null;
+  touchupInvitedAt?: string | null;
   googleEventId: string | null;
   cancellationReason: string | null;
   rescheduledFromId: string | null;
@@ -421,6 +439,7 @@ export interface WaitlistEntry {
   priorityOfferToken?: string | null;
   priorityOfferExpiresAt?: string | null;
   priorityOfferSlotStartAt?: string | null;
+  priorityOfferStaffId?: string | null;
   createdAt: string;
 }
 
@@ -676,6 +695,15 @@ export interface WebhookEventRecord {
   receivedAt: string;
 }
 
+export interface FunnelEventRecord {
+  id: string;
+  sessionId: string;
+  eventType: FunnelEventType;
+  serviceSlug: string | null;
+  staffSlug: string | null;
+  createdAt: string;
+}
+
 export interface DemoDatabase {
   settings: SalonSettings;
   staff: StaffMember[];
@@ -713,4 +741,5 @@ export interface DemoDatabase {
   whatsappTemplates?: WhatsAppTemplateConfig[];
   whatsappMonthlyUsage?: WhatsAppMonthlyUsage[];
   webhookEvents?: WebhookEventRecord[];
+  funnelEvents?: FunnelEventRecord[];
 }

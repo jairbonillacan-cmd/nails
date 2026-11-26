@@ -19,7 +19,7 @@ export function isAcceptableClientEmail(raw: string): boolean {
   return email.length === 0 || CLIENT_EMAIL_RE.test(email);
 }
 
-export type ProofDeliveryMethod = 'web_upload' | 'instagram_dm' | 'none';
+export type ProofDeliveryMethod = 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
 
 export interface AvailabilityCacheKeyInput {
   serviceId: string;

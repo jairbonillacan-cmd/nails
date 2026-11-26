@@ -92,6 +92,7 @@ export default function AdminClientsPage() {
     loyaltyHighlightsCount,
     kpiItems,
     visitCountByClient,
+    noShowStatsByClient,
     loyaltyByClientId,
     rows,
     groupedByLetter,
@@ -290,6 +291,7 @@ export default function AdminClientsPage() {
           onOnlyBirthdaysChange={setOnlyBirthdays}
           groupedByLetter={groupedByLetter}
           visitCountByClient={visitCountByClient}
+          noShowStatsByClient={noShowStatsByClient}
           loyaltyByClientId={loyaltyByClientId}
           packagesByClientId={packagesByClientId}
           noShowThreshold={noShowThreshold}
@@ -354,6 +356,7 @@ export default function AdminClientsPage() {
           salonName={data.settings.name}
           tz={tz}
           noShowThreshold={noShowThreshold}
+          noShowStats={noShowStatsByClient.get(selected.id) ?? null}
           canManageClients={canManageClients}
           loyalty={loyaltyByClientId.get(selected.id) ?? null}
           clientPackages={packagesByClientId.get(selected.id) ?? []}

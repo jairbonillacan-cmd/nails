@@ -19,6 +19,7 @@ import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/
 import {
   formatInstagramDisplay,
   formatInstagramUrl,
+  isImageProofHref,
   isSafeProofHref,
   proofMethodMeta,
   type PendingDepositRow,
@@ -33,7 +34,9 @@ interface CajaDepositsTabProps {
   tz: string;
   currency: 'MXN' | 'USD';
   approvingId: string | null;
+  rejectingId?: string | null;
   onApproveDeposit: (bookingId: string, bookingCode: string) => Promise<boolean>;
+  onRejectDeposit?: (bookingId: string, bookingCode: string) => Promise<boolean>;
 }
 
 export function CajaDepositsTab({
@@ -45,7 +48,9 @@ export function CajaDepositsTab({
   tz,
   currency,
   approvingId,
+  rejectingId = null,
   onApproveDeposit,
+  onRejectDeposit,
 }: CajaDepositsTabProps) {
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositRow | null>(null);
 
@@ -84,13 +89,21 @@ export function CajaDepositsTab({
               const proofUrl = isSafeProofHref(dep.paymentProofUrl)
                 ? dep.paymentProofUrl
                 : null;
+              const hasImageProof = isImageProofHref(
+                dep.paymentProofUrl,
+                dep.proofDeliveryMethod,
+              );
+              const isUploaded =
+                dep.proofDeliveryMethod !== 'none' || Boolean(dep.paymentProofUrl);
               const isApproving = approvingId === dep.bookingId;
+              const isRejecting = rejectingId === dep.bookingId;
+              const isRowBusy = isApproving || isRejecting;
 
               return (
                 <ActionRow
                   key={dep.bookingId}
                   leading={
-                    proofUrl ? (
+                    hasImageProof && proofUrl ? (
                       <button
                         type="button"
                         className="ad-proof-thumb"
@@ -150,11 +163,28 @@ export function CajaDepositsTab({
                       {proofUrl ? (
                         <Button
                           type="button"
-                          label="Ver foto"
+                          label={hasImageProof ? 'Ver foto' : 'Ver enlace'}
                           variant="secondary"
                           size="sm"
-                          icon={<ImageIcon size={14} aria-hidden="true" />}
+                          icon={
+                            hasImageProof ? (
+                              <ImageIcon size={14} aria-hidden="true" />
+                            ) : (
+                              <ExternalLink size={14} aria-hidden="true" />
+                            )
+                          }
                           onClick={() => setPreviewDeposit(dep)}
+                        />
+                      ) : null}
+                      {isUploaded && onRejectDeposit ? (
+                        <Button
+                          type="button"
+                          label={isRejecting ? 'Rechazando...' : 'Rechazar'}
+                          variant="ghost"
+                          size="sm"
+                          isLoading={isRejecting}
+                          isDisabled={isRowBusy}
+                          onClick={() => void onRejectDeposit(dep.bookingId, dep.bookingCode)}
                         />
                       ) : null}
                       <Button
@@ -164,7 +194,7 @@ export function CajaDepositsTab({
                         size="sm"
                         icon={<Check size={14} aria-hidden="true" />}
                         isLoading={isApproving}
-                        isDisabled={isApproving}
+                        isDisabled={isRowBusy}
                         onClick={() => void onApproveDeposit(dep.bookingId, dep.bookingCode)}
                       />
                       <Button
@@ -230,7 +260,10 @@ export function CajaDepositsTab({
               </HStack>
             </VStack>
 
-            {isSafeProofHref(previewDeposit.paymentProofUrl) ? (
+            {isImageProofHref(
+              previewDeposit.paymentProofUrl,
+              previewDeposit.proofDeliveryMethod,
+            ) && previewDeposit.paymentProofUrl ? (
               <VStack gap={2}>
                 <AspectRatio ratio={4 / 3} fit="contain">
                   <img
@@ -242,6 +275,24 @@ export function CajaDepositsTab({
                 <Button
                   label="Abrir imagen completa"
                   variant="ghost"
+                  size="sm"
+                  icon={<ExternalLink size={14} aria-hidden="true" />}
+                  href={previewDeposit.paymentProofUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              </VStack>
+            ) : isSafeProofHref(previewDeposit.paymentProofUrl) ? (
+              <VStack gap={2} className="ad-proof-note">
+                <Text weight="semibold" size="sm">
+                  Enlace de comprobante externo
+                </Text>
+                <Text type="supporting" color="secondary">
+                  Abre el recibo para verificar el depósito antes de confirmar.
+                </Text>
+                <Button
+                  label="Abrir enlace del recibo"
+                  variant="secondary"
                   size="sm"
                   icon={<ExternalLink size={14} aria-hidden="true" />}
                   href={previewDeposit.paymentProofUrl}
@@ -264,12 +315,43 @@ export function CajaDepositsTab({
             )}
 
             <HStack justify="end" gap={2} wrap="wrap">
+              {onRejectDeposit &&
+              (previewDeposit.proofDeliveryMethod !== 'none' ||
+                Boolean(previewDeposit.paymentProofUrl)) ? (
+                <Button
+                  type="button"
+                  label={
+                    rejectingId === previewDeposit.bookingId
+                      ? 'Rechazando...'
+                      : 'Rechazar comprobante'
+                  }
+                  variant="ghost"
+                  size="sm"
+                  isLoading={rejectingId === previewDeposit.bookingId}
+                  isDisabled={
+                    approvingId === previewDeposit.bookingId ||
+                    rejectingId === previewDeposit.bookingId
+                  }
+                  onClick={async () => {
+                    const ok = await onRejectDeposit(
+                      previewDeposit.bookingId,
+                      previewDeposit.bookingCode,
+                    );
+                    if (ok) {
+                      setPreviewDeposit(null);
+                    }
+                  }}
+                />
+              ) : null}
               <Button
                 type="button"
                 label="Cerrar"
                 variant="secondary"
                 size="sm"
-                isDisabled={approvingId === previewDeposit.bookingId}
+                isDisabled={
+                  approvingId === previewDeposit.bookingId ||
+                  rejectingId === previewDeposit.bookingId
+                }
                 onClick={() => setPreviewDeposit(null)}
               />
               <Button
@@ -279,7 +361,10 @@ export function CajaDepositsTab({
                 size="sm"
                 icon={<Check size={14} aria-hidden="true" />}
                 isLoading={approvingId === previewDeposit.bookingId}
-                isDisabled={approvingId === previewDeposit.bookingId}
+                isDisabled={
+                  approvingId === previewDeposit.bookingId ||
+                  rejectingId === previewDeposit.bookingId
+                }
                 onClick={async () => {
                   const ok = await onApproveDeposit(
                     previewDeposit.bookingId,

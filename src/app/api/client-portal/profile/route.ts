@@ -38,7 +38,11 @@ export async function GET(request: NextRequest) {
   const body = ClientPortalProfileResponseSchema.parse({
     authenticated: true,
     authMethod: 'whatsapp_otp',
-    profile: selectClientPortalProfile(db.clients, session.phoneE164),
+    profile: selectClientPortalProfile(db.clients, session.phoneE164, {
+      bookings: db.bookings,
+      services: db.services,
+      staff: db.staff,
+    }),
   });
 
   return NextResponse.json(body, { status: 200, headers: PRIVATE_HEADERS });

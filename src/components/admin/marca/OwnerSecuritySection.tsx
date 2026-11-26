@@ -34,10 +34,12 @@ const HISTORY_ACTION_META: Record<
   { label: string; tone: StatusTagTone }
 > = {
   booking_canceled: { label: 'Cita cancelada', tone: 'warning' },
+  booking_rescheduled: { label: 'Cita reagendada', tone: 'accent' },
   booking_price_override: { label: 'Precio ajustado', tone: 'warning' },
   csv_exported: { label: 'Reporte descargado', tone: 'neutral' },
   past_booking_override: { label: 'Cita pasada editada', tone: 'warning' },
   deposit_approved: { label: 'Anticipo aprobado', tone: 'success' },
+  deposit_rejected: { label: 'Anticipo rechazado', tone: 'warning' },
   loyalty_redeemed: { label: 'Premio canjeado', tone: 'accent' },
   media_retention_warned: { label: 'Aviso de respaldo de fotos', tone: 'warning' },
   media_retention_purged: { label: 'Fotos antiguas eliminadas', tone: 'neutral' },

@@ -32,8 +32,10 @@ interface DashboardAttentionCardProps {
   data: AdminOverviewPayload;
   metrics: DashboardMetrics;
   confirmingBookingId: string | null;
+  rejectingBookingId?: string | null;
   savedMessage?: string | null;
   onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
+  onRejectDeposit?: (bookingId: string, clientName: string) => Promise<boolean>;
   maxVisible?: number;
 }
 
@@ -50,6 +52,11 @@ interface AttentionTask {
   title: string;
   subtitle: string;
   isBusy?: boolean;
+  reject?: {
+    label: string;
+    isLoading?: boolean;
+    onClick: () => void;
+  };
   secondary?: {
     label: string;
     href?: string;
@@ -75,8 +82,10 @@ export function DashboardAttentionCard({
   data,
   metrics,
   confirmingBookingId,
+  rejectingBookingId = null,
   savedMessage,
   onConfirmDeposit,
+  onRejectDeposit,
   maxVisible = 5,
 }: DashboardAttentionCardProps) {
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositItem | null>(null);
@@ -90,11 +99,16 @@ export function DashboardAttentionCard({
     const amountCents = dep.depositAmountCents || depositFallbackCents;
     const dateLabel = formatDateShortInTimezone(dep.startAt, tz);
     const timeLabel = formatTimeInTimezone(dep.startAt, tz, true);
-    const proofImageUrl = isDisplayableProofUrl(dep.paymentProofUrl)
-      ? dep.paymentProofUrl
-      : null;
+    const isExternalLink =
+      dep.proofDeliveryMethod === 'web_link' ||
+      Boolean(dep.paymentProofUrl?.startsWith('https://'));
+    const proofImageUrl =
+      !isExternalLink && isDisplayableProofUrl(dep.paymentProofUrl)
+        ? dep.paymentProofUrl
+        : null;
     const isUploaded = dep.proofDeliveryMethod !== 'none' || Boolean(dep.paymentProofUrl);
     const isLoading = confirmingBookingId === dep.bookingId;
+    const isRejecting = rejectingBookingId === dep.bookingId;
 
     allTasks.push({
       id: `dep-${dep.bookingId}`,
@@ -109,13 +123,21 @@ export function DashboardAttentionCard({
           }
         : undefined,
       title: isUploaded
-        ? `${dep.clientName} subió su anticipo de ${formatCurrency(amountCents, currency)}`
+        ? `${dep.clientName} envió su anticipo de ${formatCurrency(amountCents, currency)}`
         : `Anticipo pendiente de ${dep.clientName} · ${formatCurrency(amountCents, currency)}`,
       subtitle: `${dep.serviceName} · ${dateLabel} ${timeLabel} con ${dep.staffName} · ${dep.bookingCode}`,
-      isBusy: isLoading,
+      isBusy: isLoading || isRejecting,
+      reject:
+        isUploaded && onRejectDeposit
+          ? {
+              label: isRejecting ? 'Rechazando...' : 'Rechazar',
+              isLoading: isRejecting,
+              onClick: () => void onRejectDeposit(dep.bookingId, dep.clientName),
+            }
+          : undefined,
       secondary: isUploaded
         ? {
-            label: 'Ver comprobante',
+            label: isExternalLink ? 'Ver enlace' : 'Ver comprobante',
             onClick: () => setPreviewDeposit(dep),
           }
         : {
@@ -304,6 +326,17 @@ export function DashboardAttentionCard({
                 subtitle={task.subtitle}
                 actions={
                   <HStack gap={2} wrap="wrap">
+                    {task.reject ? (
+                      <Button
+                        type="button"
+                        label={task.reject.label}
+                        variant="ghost"
+                        size="sm"
+                        isLoading={Boolean(task.reject.isLoading)}
+                        isDisabled={Boolean(task.isBusy)}
+                        onClick={task.reject.onClick}
+                      />
+                    ) : null}
                     {task.secondary ? (
                       <Button
                         type={task.secondary.href ? undefined : 'button'}
@@ -326,7 +359,7 @@ export function DashboardAttentionCard({
                         ) : undefined
                       }
                       isLoading={Boolean(task.primary.isLoading)}
-                      isDisabled={Boolean(task.primary.isLoading)}
+                      isDisabled={Boolean(task.isBusy)}
                       href={task.primary.href}
                       target={task.primary.isExternal ? '_blank' : undefined}
                       rel={task.primary.isExternal ? 'noopener noreferrer' : undefined}
@@ -346,8 +379,10 @@ export function DashboardAttentionCard({
         timezone={tz}
         depositFallbackCents={depositFallbackCents}
         confirmingBookingId={confirmingBookingId}
+        rejectingBookingId={rejectingBookingId}
         onClose={() => setPreviewDeposit(null)}
         onConfirmDeposit={onConfirmDeposit}
+        onRejectDeposit={onRejectDeposit}
       />
     </>
   );

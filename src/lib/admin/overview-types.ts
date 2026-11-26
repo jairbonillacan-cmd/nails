@@ -74,7 +74,7 @@ export interface AdminOverviewPayload {
     startAt: string;
     depositAmountCents: number;
     totalPriceCents: number;
-    proofDeliveryMethod: 'web_upload' | 'instagram_dm' | 'none';
+    proofDeliveryMethod: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
     paymentProofUrl: string | null;
   }>;
   retention: {

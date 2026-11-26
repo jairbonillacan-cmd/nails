@@ -1155,7 +1155,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
         isEnabled: true,
         subjectTemplate: 'Mañana te esperamos en {{salon_name}}',
         messageTemplate:
-          'Hola {{client_name}}, recordatorio de tu cita de {{service_name}} mañana {{date_label}} a las {{time_label}}. Si necesitas moverla entra a {{manage_url}}',
+          'Hola {{client_name}}, recordatorio de tu cita de {{service_name}} mañana {{date_label}} a las {{time_label}}. Confirma asistencia aquí: {{confirm_url}} o reagenda si lo necesitas: {{reschedule_url}}',
       },
       {
         id: 'wf-2h',
@@ -1173,11 +1173,11 @@ export function createInitialDemoDatabase(): DemoDatabase {
         name: 'Recordatorio de retoque (18 días después)',
         triggerEvent: 'after_booking',
         offsetMinutes: 25920,
-        channels: ['whatsapp'],
-        isEnabled: false,
+        channels: ['whatsapp', 'email'],
+        isEnabled: true,
         subjectTemplate: '¿Lista para tu retoque en {{salon_name}}?',
         messageTemplate:
-          'Hola {{client_name}}, ya casi cumplen 3 semanas tus uñas. Aparta tu retoque aquí: {{booking_url}}',
+          'Hola {{client_name}}, ya casi cumplen 3 semanas tus uñas. Aparta tu retoque con horario sugerido aquí: {{touchup_url}}',
       },
     ],
 

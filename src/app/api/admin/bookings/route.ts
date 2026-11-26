@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/admin-session';
 import {
   AdminCreateBookingSchema,
   AdminPatchBookingStatusSchema,
+  AdminRejectDepositSchema,
   AdminRescheduleBookingSchema,
   CheckoutSplitSchema,
   RequestRescheduleSchema,
@@ -15,6 +16,7 @@ import {
   getRepository,
   PolicyError,
   recordBookingCheckoutAtomic,
+  rejectBookingDeposit,
   requestBookingReschedule,
   rescheduleBookingAdmin,
   sendManualBookingReminder,
@@ -297,6 +299,32 @@ export async function PATCH(request: NextRequest) {
         staffId: rescheduleReq.staffId,
         durationMinutes: rescheduleReq.durationMinutes,
         reason: rescheduleReq.reason,
+        actor,
+      });
+      return NextResponse.json({ booking });
+    }
+
+    if (rawAction === 'reject_deposit') {
+      const rejectReq = AdminRejectDepositSchema.parse(raw);
+
+      if (session.user.role === 'specialist') {
+        const db = await getRepository().getSnapshot();
+        const target = db.bookings.find((b) => b.id === rejectReq.bookingId);
+        if (
+          !session.user.staffMemberId ||
+          !target ||
+          target.staffId !== session.user.staffMemberId
+        ) {
+          return NextResponse.json(
+            { error: 'No tienes permiso para rechazar comprobantes de otra profesional.' },
+            { status: 403 },
+          );
+        }
+      }
+
+      const booking = await rejectBookingDeposit({
+        bookingId: rejectReq.bookingId,
+        reason: rejectReq.reason,
         actor,
       });
       return NextResponse.json({ booking });

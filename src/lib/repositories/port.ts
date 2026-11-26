@@ -154,13 +154,14 @@ export interface CreateBookingAtomicInput {
   customPriceCents?: number | null;
   inspoPhotoUrl?: string | null;
   paymentProofUrl?: string | null;
-  proofDeliveryMethod?: 'web_upload' | 'instagram_dm' | 'none';
+  proofDeliveryMethod?: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
   privacyConsentAccepted?: boolean;
   marketingOptIn?: boolean;
   couponCode?: string | null;
   source?: BookingSource;
   sessionToken?: string | null;
   holdId?: string | null;
+  waitlistOfferToken?: string | null;
   idempotencyKey?: string | null;
   forceConfirmed?: boolean;
 }
@@ -177,11 +178,12 @@ export interface UpdateBookingStatusInput {
 
 export interface ManageClientBookingInput {
   token: string;
-  action: 'cancel' | 'reschedule' | 'upload_proof';
+  action: 'cancel' | 'reschedule' | 'upload_proof' | 'confirm_attendance';
   reason?: string;
   newStartAt?: string;
   newStaffId?: string;
   paymentProofUrl?: string;
+  confirmedVia?: 'email' | 'whatsapp';
 }
 
 export type NotificationDispatcher = (params: {

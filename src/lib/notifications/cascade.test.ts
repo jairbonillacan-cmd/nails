@@ -63,7 +63,7 @@ function buildWaitlistEntry(overrides: Partial<WaitlistEntry>): WaitlistEntry {
 
 describe('Cascade notifications, metrics & waitlist engine (N5/C8/U3)', () => {
   it('exposes structured Spanish cancel/reschedule reasons including Otro and 7 workflow gallery templates', () => {
-    expect(WAITLIST_OFFER_TTL_MINUTES).toBe(10);
+    expect(WAITLIST_OFFER_TTL_MINUTES).toBe(30);
     expect(CANCELLATION_REASON_OPTIONS).toContain('Otro');
     expect(RESCHEDULE_REASON_OPTIONS).toContain('Otro');
     expect(CANCELLATION_REASON_OPTIONS.length).toBeGreaterThanOrEqual(4);

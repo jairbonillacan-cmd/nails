@@ -214,6 +214,66 @@ export default function AdminReportsPage() {
             />
           </section>
 
+          {!isSpecialistScope ? (
+            <SurfaceCard
+              id="reports-funnel-heading"
+              title="Embudo de reservas"
+              subtitle="Sesiones únicas que avanzaron paso a paso en /reservar (sin datos personales)."
+              badge={
+                <StatusTag
+                  tone={report.funnel.overallConversionPercent >= 25 ? 'success' : 'accent'}
+                  label={`${report.funnel.overallConversionPercent}% conversión`}
+                  hasTabularNumbers
+                />
+              }
+            >
+              {report.funnel.totalSessions === 0 ? (
+                <VStack className="ad-empty" gap={2}>
+                  <EmptyStateCard
+                    framed={false}
+                    isCompact
+                    title="Sin visitas registradas en este período"
+                    description="Conforme las clientas entren a /reservar y avancen en los pasos, aquí verás en dónde se detienen o confirman."
+                  />
+                </VStack>
+              ) : (
+                <VStack as="ul" className="ad-row-list" gap={0}>
+                  {report.funnel.stages.map((stage, idx) => (
+                    <VStack
+                      as="li"
+                      key={stage.eventType}
+                      className="ad-rank-row"
+                      gap={1.5}
+                    >
+                      <HStack justify="between" align="center" gap={2} wrap="wrap">
+                        <Text weight="semibold" size="sm">
+                          {stage.label}
+                        </Text>
+                        <Text
+                          type="supporting"
+                          color="secondary"
+                          weight="semibold"
+                          hasTabularNumbers
+                        >
+                          {stage.sessionsCount}{' '}
+                          {stage.sessionsCount === 1 ? 'sesión' : 'sesiones'}
+                          {idx > 0 ? ` · ${stage.stepConversionPercent}% del paso anterior` : ''}
+                        </Text>
+                      </HStack>
+                      <VStack className="ad-bar-track" aria-hidden="true">
+                        <VStack
+                          className="ad-bar-fill"
+                          data-tone={stage.eventType === 'booking_confirmed' ? 'success' : 'accent'}
+                          style={{ width: `${Math.max(stage.sessionsCount > 0 ? 6 : 0, stage.shareOfTopPercent)}%` }}
+                        />
+                      </VStack>
+                    </VStack>
+                  ))}
+                </VStack>
+              )}
+            </SurfaceCard>
+          ) : null}
+
           <SurfaceCard
             id="reports-cancellations-heading"
             title="Motivos de cancelación"

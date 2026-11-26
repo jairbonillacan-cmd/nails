@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   PUBLIC_SLOTS_CHANNEL,
   subscribeRealtime,
@@ -6,10 +6,29 @@ import {
   type PublicRealtimeEvent,
 } from '@/lib/realtime';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request?: NextRequest) {
+  const rate = checkRateLimit({
+    bucket: 'public:realtime',
+    key: request ? getRequestIp(request) : 'local',
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { code: 'RATE_LIMITED', error: 'Demasiadas conexiones en tiempo real.' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rate.retryAfterSeconds),
+          'X-RateLimit-Remaining': '0',
+        },
+      },
+    );
+  }
   if (isSupabaseEnabled()) {
     return NextResponse.json(
       {

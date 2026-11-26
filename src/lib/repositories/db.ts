@@ -79,8 +79,10 @@ import {
   slugify,
 } from '../format';
 import {
+  dispatchDepositRejectedNotification,
   dispatchEmailNotification,
   dispatchSalonAlertEmail,
+  dispatchTouchUpInviteNotification,
   dispatchWhatsAppNotification,
 } from '../integrations/notifications';
 import { buildWaitlistOfferTemplatePayload } from '../integrations/resend-templates';
@@ -96,7 +98,10 @@ import {
   type PublicLoyaltySummaryDTO,
 } from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
-import { isSafeInternalBookingMediaPath } from '../contracts';
+import {
+  isSafeExternalProofUrl,
+  isSafeInternalBookingMediaPath,
+} from '../contracts';
 import { isSafeBrandMediaPath } from '../landing-config';
 import { MediaValidationError, storeMediaUpload } from '../storage/media';
 import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
@@ -157,6 +162,8 @@ import type {
   CouponRedemption,
   DateOverride,
   DemoDatabase,
+  FunnelEventRecord,
+  FunnelEventType,
   GalleryItem,
   InventoryItem,
   LoyaltyProgram,
@@ -854,14 +861,14 @@ interface WaitlistOfferDispatchPayload {
 
 function assignWaitlistPriorityOfferInLock(
   db: DemoDatabase,
-  canceledBooking: Booking,
+  vacatedSlot: { id: string; serviceId: string; staffId: string; startAt: string },
+  nowMs = Date.now(),
 ): WaitlistOfferDispatchPayload | null {
   const tz = db.settings.timezone || 'America/Mexico_City';
-  const nowMs = Date.now();
-  const dateKey = getDateKeyInTimezone(new Date(canceledBooking.startAt), tz);
+  const dateKey = getDateKeyInTimezone(new Date(vacatedSlot.startAt), tz);
   const candidate = selectNextWaitlistCandidate(db.waitlist, {
-    serviceId: canceledBooking.serviceId,
-    staffId: canceledBooking.staffId,
+    serviceId: vacatedSlot.serviceId,
+    staffId: vacatedSlot.staffId,
     dateKey,
     nowMs,
   });
@@ -877,23 +884,24 @@ function assignWaitlistPriorityOfferInLock(
   candidate.notifiedAt = nowIso;
   candidate.priorityOfferToken = offerToken;
   candidate.priorityOfferExpiresAt = offerExpiresAt;
-  candidate.priorityOfferSlotStartAt = canceledBooking.startAt;
+  candidate.priorityOfferSlotStartAt = vacatedSlot.startAt;
+  candidate.priorityOfferStaffId = vacatedSlot.staffId;
 
-  const service = db.services.find((s) => s.id === canceledBooking.serviceId);
-  const staff = db.staff.find((s) => s.id === canceledBooking.staffId);
+  const service = db.services.find((s) => s.id === vacatedSlot.serviceId);
+  const staff = db.staff.find((s) => s.id === vacatedSlot.staffId);
   const matchedClient = db.clients.find(
     (c) => c.phoneE164 === candidate.clientPhoneE164,
   );
   return {
     entryId: candidate.id,
-    bookingId: canceledBooking.id,
+    bookingId: vacatedSlot.id,
     clientName: candidate.clientName,
     clientPhoneE164: candidate.clientPhoneE164,
-    clientEmail: matchedClient?.email ?? null,
+    clientEmail: candidate.clientEmail ?? matchedClient?.email ?? null,
     serviceName: service?.name ?? 'Servicio',
     serviceSlug: service?.slug ?? 'servicio',
     staffName: staff?.name ?? 'Profesional',
-    slotStartAt: canceledBooking.startAt,
+    slotStartAt: vacatedSlot.startAt,
     dateKey,
     offerToken,
     offerExpiresAt,
@@ -984,7 +992,7 @@ interface ExtendedQueryAvailabilityInput extends QueryAvailabilityInput {
 interface ExtendedCreateBookingAtomicInput extends CreateBookingAtomicInput {
   extraServiceIds?: string[];
   clientInstagram?: string | null;
-  proofDeliveryMethod?: 'web_upload' | 'instagram_dm' | 'none';
+  proofDeliveryMethod?: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
   customDurationMinutes?: number | null;
   customPriceCents?: number | null;
   internalNotes?: string | null;
@@ -1516,12 +1524,17 @@ export async function persistBookingMediaField(
       throw err;
     }
   }
+  if (folder === 'proofs' && isSafeExternalProofUrl(trimmed)) {
+    return trimmed;
+  }
   if (isSafeInternalBookingMediaPath(trimmed, folder)) {
     return trimmed.startsWith('/api/media/') ? trimmed : `/api/media/${trimmed}`;
   }
   throw new PolicyError(
     'INVALID_MEDIA_URL',
-    'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+    folder === 'proofs'
+      ? 'Sube una imagen PNG, JPEG o WEBP, o pega un enlace HTTPS válido de tu comprobante.'
+      : 'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
   );
 }
 
@@ -1901,7 +1914,13 @@ export async function createBookingAtomic(
       inspoPhotoUrl: storedInspoPhotoUrl,
       paymentProofUrl: storedPaymentProofUrl,
       proofDeliveryMethod:
-        params.proofDeliveryMethod ?? (storedPaymentProofUrl ? 'web_upload' : 'none'),
+        params.proofDeliveryMethod ??
+        (storedPaymentProofUrl
+          ? storedPaymentProofUrl.startsWith('https://')
+            ? 'web_link'
+            : 'web_upload'
+          : 'none'),
+      attendanceStatus: 'pending',
       googleEventId: null,
       cancellationReason: null,
       rescheduledFromId: null,
@@ -1995,6 +2014,18 @@ export async function createBookingAtomic(
           (params.holdId ? h.id !== params.holdId : true) &&
           (params.sessionToken ? h.sessionToken !== params.sessionToken : true),
       );
+    }
+
+    if (params.waitlistOfferToken?.trim()) {
+      const token = params.waitlistOfferToken.trim();
+      const matchedOffer = db.waitlist.find(
+        (entry) =>
+          entry.priorityOfferToken === token &&
+          entry.status === 'notified',
+      );
+      if (matchedOffer) {
+        matchedOffer.status = 'booked';
+      }
     }
 
     const hydrated = hydrateBooking(db, booking);
@@ -3066,24 +3097,55 @@ export async function recordBookingCheckoutAtomic(params: {
 
 export async function manageClientBookingAction(params: {
   token: string;
-  action: 'cancel' | 'reschedule' | 'upload_proof';
+  action: 'cancel' | 'reschedule' | 'upload_proof' | 'confirm_attendance';
   reason?: string;
   newStartAt?: string;
   newStaffId?: string;
   paymentProofUrl?: string;
+  confirmedVia?: 'email' | 'whatsapp';
 }): Promise<BookingWithRelations> {
   if (isSupabaseEnabled()) {
     return createSupabaseRepository().manageClientBookingAction(params);
   }
+  if (params.action === 'confirm_attendance') {
+    const committedConfirm = await withWriteLock((db) => {
+      const booking = db.bookings.find((b) => b.manageToken === params.token);
+      if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
+      if (isTerminalBookingStatus(booking.status)) {
+        throw new PolicyError('INVALID_STATE', 'Esta cita ya no admite confirmación.');
+      }
+      const nowIso = new Date().toISOString();
+      booking.attendanceStatus = 'confirmed';
+      booking.attendanceConfirmedAt = nowIso;
+      booking.confirmedVia = params.confirmedVia ?? booking.confirmedVia ?? 'email';
+      booking.updatedAt = nowIso;
+      const hydrated = hydrateBooking(db, booking);
+      const outboxEvents: OutboxEventInput[] = [
+        {
+          type: 'Realtime',
+          eventType: 'booking_updated',
+          payload: { staffId: booking.staffId, startAt: booking.startAt },
+        },
+      ];
+      return { hydrated, outboxEvents };
+    });
+    await dispatchPostCommitOutbox(committedConfirm.outboxEvents);
+    return committedConfirm.hydrated;
+  }
+
   if (params.action === 'upload_proof') {
     const rawProof = params.paymentProofUrl?.trim() ?? '';
     if (!rawProof) {
-      throw new PolicyError('MISSING_PROOF', 'Selecciona una imagen de comprobante antes de enviar.');
+      throw new PolicyError(
+        'MISSING_PROOF',
+        'Sube una imagen o pega el enlace de tu comprobante antes de enviar.',
+      );
     }
     const storedProofUrl = await persistBookingMediaField(rawProof, 'proofs');
     if (!storedProofUrl) {
       throw new PolicyError('MISSING_PROOF', 'No se pudo procesar el comprobante.');
     }
+    const isExternalLink = storedProofUrl.startsWith('https://');
     const committedProof = await withWriteLock((db) => {
       const booking = db.bookings.find((b) => b.manageToken === params.token);
       if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
@@ -3091,16 +3153,20 @@ export async function manageClientBookingAction(params: {
         throw new PolicyError('INVALID_STATE', 'Esta cita ya no admite cambios.');
       }
       booking.paymentProofUrl = storedProofUrl;
-      booking.proofDeliveryMethod = 'web_upload';
+      booking.proofDeliveryMethod = isExternalLink ? 'web_link' : 'web_upload';
+      booking.proofRejectedAt = null;
+      booking.proofRejectionReason = null;
       booking.updatedAt = new Date().toISOString();
-      linkMediaAssetToBookingInLock(
-        db,
-        storedProofUrl,
-        'proofs',
-        booking.id,
-        booking.clientId,
-        booking.updatedAt,
-      );
+      if (!isExternalLink) {
+        linkMediaAssetToBookingInLock(
+          db,
+          storedProofUrl,
+          'proofs',
+          booking.id,
+          booking.clientId,
+          booking.updatedAt,
+        );
+      }
       const hydrated = hydrateBooking(db, booking);
       const outboxEvents: OutboxEventInput[] = [
         {
@@ -3206,12 +3272,26 @@ export async function manageClientBookingAction(params: {
         'Ese nuevo horario ya fue ocupado. Prueba con uno de los horarios cercanos.',
     });
 
+    const vacatedSlot = {
+      id: booking.id,
+      serviceId: booking.serviceId,
+      staffId: booking.staffId,
+      startAt: booking.startAt,
+    };
+
     booking.staffId = slot.staffId;
     booking.startAt = slot.startAt;
     booking.endAt = slot.endAt;
     booking.occupiedStartAt = slot.occupiedStartAt;
     booking.occupiedEndAt = slot.occupiedEndAt;
+    booking.attendanceStatus = 'rescheduled';
+    booking.attendanceConfirmedAt = null;
     booking.updatedAt = now.toISOString();
+
+    const waitlistOffer =
+      vacatedSlot.startAt !== slot.startAt || vacatedSlot.staffId !== slot.staffId
+        ? assignWaitlistPriorityOfferInLock(db, vacatedSlot, now.getTime())
+        : null;
 
     for (const n of db.notifications) {
       if (n.bookingId === booking.id && n.status === 'pending') n.status = 'canceled';
@@ -3260,7 +3340,7 @@ export async function manageClientBookingAction(params: {
     return {
       hydrated,
       outboxEvents,
-      waitlistOffer: null,
+      waitlistOffer,
       salonAlert: {
         booking: hydrated,
         settings: settingsSnapshot,
@@ -5661,7 +5741,11 @@ export async function processDueScheduledNotifications(
       item.providerMessageId = res.providerMessageId;
       item.errorMessage = res.errorMessage;
       if (res.status === 'sent') {
-        item.sentAt = new Date().toISOString();
+        const sentIso = new Date().toISOString();
+        item.sentAt = sentIso;
+        if (wf?.triggerEvent === 'before_booking' && wf.offsetMinutes >= 720) {
+          rawBooking.reminder24hSentAt = sentIso;
+        }
         sentCount += 1;
       } else {
         item.sentAt = null;
@@ -6288,6 +6372,597 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     claimWebhookEventIdempotent,
     cleanupExpiredSlotHolds,
   };
+}
+
+export async function confirmBookingAttendanceFromWebhook(params: {
+  bookingId?: string | null;
+  phoneE164?: string | null;
+  via: 'whatsapp' | 'email';
+}): Promise<BookingWithRelations | null> {
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const normalizedPhone = params.phoneE164
+    ? normalizePhoneE164(params.phoneE164)
+    : '';
+
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const supabase = createSupabaseAdminClient();
+    const snapshot = await repo.getSnapshot();
+    const target = params.bookingId
+      ? snapshot.bookings.find(
+          (b) => b.id === params.bookingId && isActiveBookingStatus(b.status),
+        )
+      : snapshot.bookings
+          .filter((b) => {
+            if (!isActiveBookingStatus(b.status)) return false;
+            if (new Date(b.endAt).getTime() < nowMs) return false;
+            const client = snapshot.clients.find((c) => c.id === b.clientId);
+            return Boolean(client && client.phoneE164 === normalizedPhone);
+          })
+          .toSorted(
+            (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+          )[0];
+
+    if (!target) return null;
+    await supabase
+      .from('bookings')
+      .update({
+        attendance_status: 'confirmed',
+        attendance_confirmed_at: nowIso,
+        confirmed_via: params.via,
+        updated_at: nowIso,
+      })
+      .eq('id', target.id);
+    const updatedSnapshot = await repo.getSnapshot();
+    const updated = updatedSnapshot.bookings.find((b) => b.id === target.id);
+    if (!updated) return null;
+    publishRealtimeEvent('booking_updated', {
+      staffId: updated.staffId,
+      date: getDateKeyInTimezone(
+        new Date(updated.startAt),
+        updatedSnapshot.settings.timezone,
+      ),
+    });
+    return hydrateBooking(updatedSnapshot, updated);
+  }
+
+  const result = await withWriteLock((db) => {
+    const target = params.bookingId
+      ? db.bookings.find(
+          (b) => b.id === params.bookingId && isActiveBookingStatus(b.status),
+        )
+      : db.bookings
+          .filter((b) => {
+            if (!isActiveBookingStatus(b.status)) return false;
+            if (new Date(b.endAt).getTime() < nowMs) return false;
+            const client = db.clients.find((c) => c.id === b.clientId);
+            return Boolean(client && client.phoneE164 === normalizedPhone);
+          })
+          .toSorted(
+            (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+          )[0];
+
+    if (!target) return null;
+    target.attendanceStatus = 'confirmed';
+    target.attendanceConfirmedAt = nowIso;
+    target.confirmedVia = params.via;
+    target.updatedAt = nowIso;
+    return hydrateBooking(db, target);
+  });
+
+  if (result) {
+    publishRealtimeEvent('booking_updated', {
+      staffId: result.staffId,
+      date: getDateKeyInTimezone(new Date(result.startAt), 'America/Mexico_City'),
+    });
+  }
+  return result;
+}
+
+export async function rejectBookingDeposit(params: {
+  bookingId: string;
+  reason?: string;
+  actor: AuditActor;
+}): Promise<BookingWithRelations> {
+  const cleanReason =
+    params.reason?.trim() ||
+    'No pudimos validar tu comprobante. Por favor sube una imagen clara o pega el enlace de tu recibo.';
+  const nowIso = new Date().toISOString();
+  const env = getRuntimeIntegrationStatus();
+
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const supabase = createSupabaseAdminClient();
+    const snapshot = await repo.getSnapshot();
+    const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (
+      booking.status !== 'pending_confirmation' &&
+      booking.status !== 'pending_payment'
+    ) {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'Solo se puede rechazar el comprobante de citas pendientes por confirmar.',
+      );
+    }
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        payment_proof_url: null,
+        proof_delivery_method: 'none',
+        proof_rejected_at: nowIso,
+        proof_rejection_reason: cleanReason,
+        updated_at: nowIso,
+      })
+      .eq('id', booking.id);
+    if (error) {
+      throw new PolicyError('REJECT_DEPOSIT_FAILED', error.message);
+    }
+    await repo.writeAuditLog({
+      actorId: params.actor.id,
+      actorEmail: params.actor.email,
+      actorRole: params.actor.role,
+      action: 'deposit_rejected',
+      entityType: 'booking',
+      entityId: booking.id,
+      metadata: {
+        bookingCode: booking.bookingCode,
+        reason: cleanReason,
+      },
+    });
+    const updatedSnapshot = await repo.getSnapshot();
+    const updatedRaw = updatedSnapshot.bookings.find((b) => b.id === booking.id);
+    if (!updatedRaw) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada tras actualizar.');
+    }
+    const hydrated = hydrateBooking(updatedSnapshot, updatedRaw);
+    await dispatchDepositRejectedNotification({
+      booking: hydrated,
+      settings: updatedSnapshot.settings,
+      appUrl: env.appUrl,
+      reason: cleanReason,
+    });
+    publishRealtimeEvent('booking_updated', {
+      staffId: hydrated.staffId,
+      date: getDateKeyInTimezone(
+        new Date(hydrated.startAt),
+        updatedSnapshot.settings.timezone,
+      ),
+    });
+    return hydrated;
+  }
+
+  const committed = await withWriteLock((db) => {
+    const booking = db.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (
+      booking.status !== 'pending_confirmation' &&
+      booking.status !== 'pending_payment'
+    ) {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'Solo se puede rechazar el comprobante de citas pendientes por confirmar.',
+      );
+    }
+    booking.paymentProofUrl = null;
+    booking.proofDeliveryMethod = 'none';
+    booking.proofRejectedAt = nowIso;
+    booking.proofRejectionReason = cleanReason;
+    booking.updatedAt = nowIso;
+    appendAuditLog(db, {
+      actor: params.actor,
+      action: 'deposit_rejected',
+      entityType: 'booking',
+      entityId: booking.id,
+      metadata: {
+        bookingCode: booking.bookingCode,
+        reason: cleanReason,
+      },
+    });
+    return {
+      hydrated: hydrateBooking(db, booking),
+      settings: { ...db.settings },
+    };
+  });
+
+  const notifyRes = await dispatchDepositRejectedNotification({
+    booking: committed.hydrated,
+    settings: committed.settings,
+    appUrl: env.appUrl,
+    reason: cleanReason,
+  });
+
+  await withWriteLock((liveDb) => {
+    liveDb.notifications.unshift({
+      id: generateId('ntf'),
+      bookingId: committed.hydrated.id,
+      workflowId: null,
+      channel: 'whatsapp',
+      recipient: committed.hydrated.client.phoneE164,
+      scheduledFor: nowIso,
+      status: notifyRes.status,
+      subject: `Comprobante rechazado (${committed.hydrated.bookingCode})`,
+      previewText: `Solicitamos un nuevo comprobante: ${cleanReason}`.slice(0, 160),
+      providerMessageId: notifyRes.providerMessageId,
+      errorMessage: notifyRes.errorMessage,
+      sentAt: notifyRes.status === 'sent' ? nowIso : null,
+      createdAt: nowIso,
+    });
+  });
+
+  publishRealtimeEvent('booking_updated', {
+    staffId: committed.hydrated.staffId,
+    date: getDateKeyInTimezone(
+      new Date(committed.hydrated.startAt),
+      committed.settings.timezone,
+    ),
+  });
+  return committed.hydrated;
+}
+
+export async function processExpiredWaitlistOffers(
+  nowMs = Date.now(),
+): Promise<{ expiredCount: number; rolledOverCount: number }> {
+  const nowIso = new Date(nowMs).toISOString();
+  const dispatches: WaitlistOfferDispatchPayload[] = [];
+  let expiredCount = 0;
+
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const supabase = createSupabaseAdminClient();
+    const snapshot = await repo.getSnapshot();
+    const overdue = snapshot.waitlist.filter((entry) => {
+      if (entry.status !== 'notified' || !entry.priorityOfferExpiresAt) return false;
+      const expMs = new Date(entry.priorityOfferExpiresAt).getTime();
+      return Number.isFinite(expMs) && expMs <= nowMs;
+    });
+
+    const mutableWaitlist = snapshot.waitlist.map((w) => ({ ...w }));
+    for (const entry of overdue) {
+      await supabase
+        .from('waitlist_entries')
+        .update({ status: 'expired' })
+        .eq('id', entry.id)
+        .eq('status', 'notified');
+      const localEntry = mutableWaitlist.find((w) => w.id === entry.id);
+      if (localEntry) localEntry.status = 'expired';
+      expiredCount += 1;
+
+      const slotStartAt = entry.priorityOfferSlotStartAt;
+      if (!slotStartAt || new Date(slotStartAt).getTime() <= nowMs) continue;
+      const service = snapshot.services.find((s) => s.id === entry.serviceId);
+      if (!service) continue;
+      const staffId = entry.priorityOfferStaffId ?? entry.preferredStaffId ?? null;
+      const slotStartMs = new Date(slotStartAt).getTime();
+      const slotEndMs = slotStartMs + service.durationMinutes * 60_000;
+      const slotOccupied = snapshot.bookings.some(
+        (b) =>
+          isActiveBookingStatus(b.status) &&
+          (!staffId || b.staffId === staffId) &&
+          new Date(b.occupiedStartAt).getTime() < slotEndMs &&
+          new Date(b.occupiedEndAt).getTime() > slotStartMs,
+      );
+      if (slotOccupied) continue;
+
+      const tz = snapshot.settings.timezone || 'America/Mexico_City';
+      const dateKey = getDateKeyInTimezone(new Date(slotStartAt), tz);
+      const nextCandidate = selectNextWaitlistCandidate(mutableWaitlist, {
+        serviceId: entry.serviceId,
+        staffId,
+        dateKey,
+        nowMs,
+      });
+      if (!nextCandidate) continue;
+
+      const offerToken = generateId('wlo');
+      const offerExpiresAt = new Date(
+        nowMs + WAITLIST_OFFER_TTL_MINUTES * 60_000,
+      ).toISOString();
+      const resolvedStaffId =
+        staffId ??
+        nextCandidate.preferredStaffId ??
+        snapshot.staff.find((s) => s.isActive)?.id ??
+        '';
+      await supabase
+        .from('waitlist_entries')
+        .update({
+          status: 'notified',
+          notified_at: nowIso,
+          priority_offer_token: offerToken,
+          priority_offer_expires_at: offerExpiresAt,
+          priority_offer_slot_start_at: slotStartAt,
+          priority_offer_staff_id: resolvedStaffId || null,
+        })
+        .eq('id', nextCandidate.id)
+        .eq('status', 'waiting');
+
+      nextCandidate.status = 'notified';
+      nextCandidate.notifiedAt = nowIso;
+      nextCandidate.priorityOfferToken = offerToken;
+      nextCandidate.priorityOfferExpiresAt = offerExpiresAt;
+      nextCandidate.priorityOfferSlotStartAt = slotStartAt;
+      nextCandidate.priorityOfferStaffId = resolvedStaffId || null;
+
+      const staff = snapshot.staff.find((s) => s.id === resolvedStaffId);
+      const matchedClient = snapshot.clients.find(
+        (c) => c.phoneE164 === nextCandidate.clientPhoneE164,
+      );
+      dispatches.push({
+        entryId: nextCandidate.id,
+        bookingId: nextCandidate.id,
+        clientName: nextCandidate.clientName,
+        clientPhoneE164: nextCandidate.clientPhoneE164,
+        clientEmail: nextCandidate.clientEmail ?? matchedClient?.email ?? null,
+        serviceName: service.name,
+        serviceSlug: service.slug,
+        staffName: staff?.name ?? 'Profesional',
+        slotStartAt,
+        dateKey,
+        offerToken,
+        offerExpiresAt,
+        settings: { ...snapshot.settings },
+      });
+    }
+
+    for (const offer of dispatches) {
+      await dispatchWaitlistPriorityOffer(offer);
+    }
+    return { expiredCount, rolledOverCount: dispatches.length };
+  }
+
+  await withWriteLock((db) => {
+    const overdue = db.waitlist.filter((entry) => {
+      if (entry.status !== 'notified' || !entry.priorityOfferExpiresAt) return false;
+      const expMs = new Date(entry.priorityOfferExpiresAt).getTime();
+      return Number.isFinite(expMs) && expMs <= nowMs;
+    });
+
+    for (const entry of overdue) {
+      entry.status = 'expired';
+      expiredCount += 1;
+
+      const slotStartAt = entry.priorityOfferSlotStartAt;
+      if (!slotStartAt || new Date(slotStartAt).getTime() <= nowMs) continue;
+      const service = db.services.find((s) => s.id === entry.serviceId);
+      if (!service) continue;
+      const staffId =
+        entry.priorityOfferStaffId ??
+        entry.preferredStaffId ??
+        db.staff.find((s) => s.isActive)?.id;
+      if (!staffId) continue;
+
+      const slotStartMs = new Date(slotStartAt).getTime();
+      const slotEndMs = slotStartMs + service.durationMinutes * 60_000;
+      const slotOccupied = db.bookings.some(
+        (b) =>
+          isActiveBookingStatus(b.status) &&
+          b.staffId === staffId &&
+          new Date(b.occupiedStartAt).getTime() < slotEndMs &&
+          new Date(b.occupiedEndAt).getTime() > slotStartMs,
+      );
+      if (slotOccupied) continue;
+
+      const nextOffer = assignWaitlistPriorityOfferInLock(
+        db,
+        {
+          id: entry.id,
+          serviceId: entry.serviceId,
+          staffId,
+          startAt: slotStartAt,
+        },
+        nowMs,
+      );
+      if (nextOffer) {
+        dispatches.push(nextOffer);
+      }
+    }
+  });
+
+  for (const offer of dispatches) {
+    await dispatchWaitlistPriorityOffer(offer);
+  }
+  return { expiredCount, rolledOverCount: dispatches.length };
+}
+
+export async function processProactiveTouchUpInvites(
+  nowMs = Date.now(),
+): Promise<{ eligibleCount: number; sentCount: number }> {
+  const MIN_AGE_MS = 18 * 86_400_000;
+  const MAX_AGE_MS = 25 * 86_400_000;
+  const nowIso = new Date(nowMs).toISOString();
+  const env = getRuntimeIntegrationStatus();
+
+  interface TouchUpTarget {
+    hydrated: BookingWithRelations;
+    touchUpUrl: string;
+    settings: SalonSettings;
+  }
+
+  const collectEligible = (db: Readonly<DemoDatabase>): TouchUpTarget[] => {
+    const touchUpEnabled = db.workflows.some(
+      (w) => w.triggerEvent === 'after_booking' && w.isEnabled,
+    );
+    if (!touchUpEnabled) return [];
+
+    const tz = db.settings.timezone || 'America/Mexico_City';
+    const targets: TouchUpTarget[] = [];
+    const seenClientIds = new Set<string>();
+
+    const candidates = db.bookings
+      .filter((b) => {
+        if (b.status !== 'completed' || b.touchupInvitedAt) return false;
+        const endMs = new Date(b.endAt).getTime();
+        if (!Number.isFinite(endMs)) return false;
+        const ageMs = nowMs - endMs;
+        return ageMs >= MIN_AGE_MS && ageMs <= MAX_AGE_MS;
+      })
+      .toSorted((a, b) => new Date(b.endAt).getTime() - new Date(a.endAt).getTime());
+
+    for (const booking of candidates) {
+      if (seenClientIds.has(booking.clientId)) continue;
+      const bookingEndMs = new Date(booking.endAt).getTime();
+      const hasNewerBooking = db.bookings.some(
+        (other) =>
+          other.id !== booking.id &&
+          other.clientId === booking.clientId &&
+          other.status !== 'canceled' &&
+          other.status !== 'no_show' &&
+          new Date(other.startAt).getTime() > bookingEndMs,
+      );
+      if (hasNewerBooking) continue;
+
+      seenClientIds.add(booking.clientId);
+      const hydrated = hydrateBooking(db, booking);
+      const suggestedDateKey = computeSuggestedTouchUpDateKey({
+        startAt: booking.endAt,
+        daysAhead: 21,
+        timezone: tz,
+      });
+      const touchUpUrl = buildTouchUpBookingUrl({
+        serviceSlug: hydrated.service.slug,
+        staffSlug: hydrated.staff.bookingSlug,
+        suggestedDateKey,
+      });
+      targets.push({
+        hydrated,
+        touchUpUrl,
+        settings: { ...db.settings },
+      });
+    }
+    return targets;
+  };
+
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const supabase = createSupabaseAdminClient();
+    const snapshot = await repo.getSnapshot();
+    const targets = collectEligible(snapshot);
+    let sentCount = 0;
+
+    for (const target of targets) {
+      const dispatch = await dispatchTouchUpInviteNotification({
+        booking: target.hydrated,
+        settings: target.settings,
+        appUrl: env.appUrl,
+        touchUpUrl: target.touchUpUrl,
+      });
+      const delivered =
+        dispatch.whatsapp.status === 'sent' || dispatch.email?.status === 'sent';
+      if (delivered) {
+        await supabase
+          .from('bookings')
+          .update({ touchup_invited_at: nowIso, updated_at: nowIso })
+          .eq('id', target.hydrated.id)
+          .is('touchup_invited_at', null);
+        sentCount += 1;
+      }
+    }
+    return { eligibleCount: targets.length, sentCount };
+  }
+
+  const snapshot = getSnapshot();
+  const targets = collectEligible(snapshot);
+  let sentCount = 0;
+
+  for (const target of targets) {
+    const dispatch = await dispatchTouchUpInviteNotification({
+      booking: target.hydrated,
+      settings: target.settings,
+      appUrl: env.appUrl,
+      touchUpUrl: target.touchUpUrl,
+    });
+    const delivered =
+      dispatch.whatsapp.status === 'sent' || dispatch.email?.status === 'sent';
+    if (delivered) {
+      sentCount += 1;
+      await withWriteLock((liveDb) => {
+        const raw = liveDb.bookings.find((b) => b.id === target.hydrated.id);
+        if (raw && !raw.touchupInvitedAt) {
+          raw.touchupInvitedAt = nowIso;
+          raw.updatedAt = nowIso;
+        }
+        liveDb.notifications.unshift({
+          id: generateId('ntf'),
+          bookingId: target.hydrated.id,
+          workflowId: 'wf-retoque',
+          channel: 'whatsapp',
+          recipient: target.hydrated.client.phoneE164,
+          scheduledFor: nowIso,
+          status: dispatch.whatsapp.status,
+          subject: `Invitación de retoque (${target.hydrated.service.name})`,
+          previewText: `Link sugerido: ${target.touchUpUrl}`.slice(0, 160),
+          providerMessageId: dispatch.whatsapp.providerMessageId,
+          errorMessage: dispatch.whatsapp.errorMessage,
+          sentAt: dispatch.whatsapp.status === 'sent' ? nowIso : null,
+          createdAt: nowIso,
+        });
+      });
+    }
+  }
+
+  return { eligibleCount: targets.length, sentCount };
+}
+
+export async function recordFunnelEvent(params: {
+  sessionId: string;
+  eventType: FunnelEventType;
+  serviceSlug?: string | null;
+  staffSlug?: string | null;
+}): Promise<FunnelEventRecord> {
+  const nowIso = new Date().toISOString();
+  const serviceSlug = params.serviceSlug?.trim() || null;
+  const staffSlug = params.staffSlug?.trim() || null;
+
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('funnel_events')
+      .insert({
+        session_id: params.sessionId,
+        event_type: params.eventType,
+        service_slug: serviceSlug,
+        staff_slug: staffSlug,
+        created_at: nowIso,
+      })
+      .select('*')
+      .single();
+    if (error || !data) {
+      throw new PolicyError(
+        'FUNNEL_EVENT_FAILED',
+        error?.message ?? 'No se pudo registrar el evento.',
+      );
+    }
+    return {
+      id: data.id,
+      sessionId: data.session_id,
+      eventType: data.event_type,
+      serviceSlug: data.service_slug,
+      staffSlug: data.staff_slug,
+      createdAt: data.created_at,
+    };
+  }
+
+  return withWriteLock((db) => {
+    if (!db.funnelEvents) db.funnelEvents = [];
+    const record: FunnelEventRecord = {
+      id: generateId('fnl'),
+      sessionId: params.sessionId,
+      eventType: params.eventType,
+      serviceSlug,
+      staffSlug,
+      createdAt: nowIso,
+    };
+    db.funnelEvents.unshift(record);
+    if (db.funnelEvents.length > 5000) {
+      db.funnelEvents.length = 5000;
+    }
+    return record;
+  });
 }
 
 export function getRepository(clock: Clock = systemClock): SalonRepository {

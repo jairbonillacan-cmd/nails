@@ -180,6 +180,7 @@ export async function submitBookingRequest(
     sessionToken: string;
     privacyConsentAccepted: boolean;
     marketingOptIn: boolean;
+    waitlistOfferToken?: string;
   },
 ): Promise<
   | { kind: 'ok'; manageUrl: string }

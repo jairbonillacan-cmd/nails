@@ -12,6 +12,8 @@ import { logError, logInfo, logWarn } from '@/lib/logger';
 import {
   cleanupExpiredSlotHolds,
   processDueScheduledNotifications,
+  processExpiredWaitlistOffers,
+  processProactiveTouchUpInvites,
 } from '@/lib/repositories/db';
 import type {
   BookingWithRelations,
@@ -136,11 +138,19 @@ export async function POST(request: NextRequest) {
             settings,
             env.appUrl,
           );
+          const interactiveButtons =
+            emailSituation === 'reminder_24h'
+              ? [
+                  { id: `confirm_booking:${booking.id}`, title: 'Confirmo' },
+                  { id: `reschedule_booking:${booking.id}`, title: 'Necesito reagendar' },
+                ]
+              : undefined;
           return dispatchWhatsAppNotification({
             toPhoneE164: notification.recipient,
             bodyText: notification.previewText,
             triggerKey: templateMeta.triggerKey,
             templateParameters: templateMeta.templateParameters,
+            interactiveButtons,
             withinServiceWindow: false,
             settingsTimezone: settings.timezone,
             fallbackEmail: booking.client.email
@@ -164,10 +174,17 @@ export async function POST(request: NextRequest) {
       nowMs,
     );
 
+    const waitlistRollover = await processExpiredWaitlistOffers(nowMs);
+    const touchUps = await processProactiveTouchUpInvites(nowMs);
+
     const result = {
       ...summary,
       cleanedHoldsCount: holdsCleanup.cleanedCount,
       dbKeepAlive: holdsCleanup.dbAlive,
+      waitlistExpiredCount: waitlistRollover.expiredCount,
+      waitlistRolledOverCount: waitlistRollover.rolledOverCount,
+      touchUpsEligibleCount: touchUps.eligibleCount,
+      touchUpsSentCount: touchUps.sentCount,
     };
 
     if (summary.failedCount > 0 || !holdsCleanup.dbAlive) {

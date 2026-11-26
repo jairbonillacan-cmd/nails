@@ -10,6 +10,7 @@ import {
 import {
   CentsNonNegativeSchema,
   ClientContactFieldsSchema,
+  createDepositProofInputSchema,
   createPublicMediaUrlSchema,
   DateKeySchema,
   NonEmptyIdSchema,
@@ -25,11 +26,12 @@ export const PublicCreateBookingSchema = z.object({
   ...ClientContactFieldsSchema.shape,
   clientNotes: z.string().max(1000).optional(),
   inspoPhotoUrl: createPublicMediaUrlSchema('inspo').optional().nullable(),
-  paymentProofUrl: createPublicMediaUrlSchema('proofs').optional().nullable(),
+  paymentProofUrl: createDepositProofInputSchema().optional().nullable(),
   proofDeliveryMethod: ProofDeliveryMethodSchema.optional(),
   couponCode: z.string().max(40).optional().nullable(),
   sessionToken: z.string().optional().nullable(),
   holdId: NonEmptyIdSchema.optional().nullable(),
+  waitlistOfferToken: z.string().trim().min(6).max(120).optional().nullable(),
   privacyConsentAccepted: z.boolean(),
   marketingOptIn: z.boolean().default(false),
 });
@@ -63,11 +65,11 @@ export const AdminCreateBookingSchema = z.object({
 });
 
 export const ManageBookingPatchSchema = z.object({
-  action: z.enum(['cancel', 'reschedule', 'upload_proof']),
+  action: z.enum(['cancel', 'reschedule', 'upload_proof', 'confirm_attendance']),
   reason: z.string().max(400).optional(),
   newStartAt: z.string().optional(),
   newStaffId: z.string().optional(),
-  paymentProofUrl: createPublicMediaUrlSchema('proofs').optional(),
+  paymentProofUrl: createDepositProofInputSchema().optional(),
 });
 
 export const SubmitReviewSchema = z.object({
@@ -94,6 +96,12 @@ export const AdminRescheduleBookingSchema = z.object({
   startAt: NonEmptyIdSchema,
   staffId: NonEmptyIdSchema.optional(),
   durationMinutes: z.number().int().min(15).max(480).optional(),
+  reason: z.string().trim().max(300).optional(),
+});
+
+export const AdminRejectDepositSchema = z.object({
+  action: z.literal('reject_deposit'),
+  bookingId: NonEmptyIdSchema,
   reason: z.string().trim().max(300).optional(),
 });
 

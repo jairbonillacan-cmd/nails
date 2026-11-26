@@ -5,8 +5,9 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Check } from 'lucide-react';
+import { Check, ExternalLink } from 'lucide-react';
 import { CopyableField } from '@/components/ui/CopyableField';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -70,8 +71,14 @@ export function CitaDepositSection({
   const displayAmount = formatCurrency(effectiveDepositCents, settings.currency);
   const beneficiary = settings.depositBeneficiary || settings.depositAccountHolder;
   const hasExistingProof = Boolean(booking.paymentProofUrl?.trim());
+  const isExternalProofLink =
+    booking.proofDeliveryMethod === 'web_link' ||
+    Boolean(booking.paymentProofUrl?.startsWith('https://'));
   const authorizedProofUrl = appendManageTokenToMediaUrl(booking.paymentProofUrl, booking.manageToken);
-  const canPreviewProof = isDisplayableMediaUrl(authorizedProofUrl);
+  const canPreviewProof = !isExternalProofLink && isDisplayableMediaUrl(authorizedProofUrl);
+  const safeExternalProofUrl = isExternalProofLink
+    ? resolveSafeHttpUrl(booking.paymentProofUrl)
+    : null;
   const cleanClabe = settings.depositClabe.replace(/\s+/g, '');
 
   if (hasExistingProof) {
@@ -107,6 +114,24 @@ export function CitaDepositSection({
                 decoding="async"
               />
             </VStack>
+          ) : safeExternalProofUrl ? (
+            <HStack gap={3} align="center" justify="between" padding={3} className="rb-card" wrap="wrap">
+              <VStack gap={0.5} className="rb-grow" style={{ minWidth: 0 }}>
+                <Text weight="semibold">Enlace de comprobante registrado</Text>
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  Anticipo {displayAmount} · Código {booking.bookingCode}
+                </Text>
+              </VStack>
+              <Button
+                label="Abrir enlace"
+                variant="secondary"
+                size="sm"
+                icon={<ExternalLink size={14} aria-hidden="true" />}
+                href={safeExternalProofUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            </HStack>
           ) : (
             <HStack gap={3} align="center" padding={3} className="rb-card">
               <BrandIcon name="comprobante" size={1.625} className="lk-cereza-text" />
@@ -154,6 +179,17 @@ export function CitaDepositSection({
       className="ck-panel rb-deposit fx-fade-up"
     >
       <VStack gap={3}>
+        {booking.proofRejectedAt ? (
+          <Banner
+            status="warning"
+            title="Necesitamos un nuevo comprobante"
+            description={
+              booking.proofRejectionReason ||
+              'No pudimos validar el comprobante anterior. Sube una nueva captura o pega el enlace de tu recibo.'
+            }
+          />
+        ) : null}
+
         {safeCheckoutUrl ? (
           <VStack gap={2}>
             <Text type="supporting" textWrap="pretty">

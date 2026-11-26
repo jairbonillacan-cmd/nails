@@ -60,6 +60,10 @@ export const ClientPortalProfileSchema = z.object({
   instagramHandle: z.string().max(120).nullable(),
   birthday: z.string().max(20).nullable(),
   isRegistered: z.boolean(),
+  lastServiceSlug: z.string().max(160).nullable().optional(),
+  lastServiceName: z.string().max(200).nullable().optional(),
+  lastStaffSlug: z.string().max(160).nullable().optional(),
+  lastStaffName: z.string().max(200).nullable().optional(),
 });
 
 export type ClientPortalProfile = z.infer<typeof ClientPortalProfileSchema>;

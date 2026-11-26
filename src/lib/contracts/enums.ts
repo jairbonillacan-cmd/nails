@@ -59,8 +59,24 @@ export const SlotIntervalMinutesSchema = z.union([
   z.literal(60),
 ]);
 
+export const BookingAttendanceStatusSchema = z.enum([
+  'pending',
+  'confirmed',
+  'rescheduled',
+]);
+
+export const FunnelEventTypeSchema = z.enum([
+  'page_view',
+  'booking_started',
+  'slot_held',
+  'details_completed',
+  'deposit_submitted',
+  'booking_confirmed',
+]);
+
 export const ProofDeliveryMethodSchema = z.enum([
   'web_upload',
+  'web_link',
   'instagram_dm',
   'none',
 ]);
@@ -111,6 +127,8 @@ export const AuditActionSchema = z.enum([
   'csv_exported',
   'past_booking_override',
   'deposit_approved',
+  'deposit_rejected',
+  'booking_rescheduled',
   'loyalty_redeemed',
   'media_retention_warned',
   'media_retention_purged',

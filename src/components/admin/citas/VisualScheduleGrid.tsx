@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { ConfirmActionDialog } from '@/components/ui/ConfirmActionDialog';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
-import { BookingStatusTag } from '@/components/ui/StatusTag';
+import { BookingStatusTag, StatusTag } from '@/components/ui/StatusTag';
 import { isActiveBookingStatus } from '@/lib/booking/state-machine';
 import {
   formatDateShortInTimezone,
@@ -319,11 +319,20 @@ export function VisualScheduleGrid({
                   : `${formatTimeInTimezone(booking.startAt, timezone, true)} – ${formatTimeInTimezone(booking.endAt, timezone, true)}`}
               </Text>
               {!compact ? (
-                <BookingStatusTag
-                  status={booking.status}
-                  hasPaymentProof={Boolean(booking.paymentProofUrl)}
-                  showDot
-                />
+                <HStack gap={1} align="center" wrap="wrap">
+                  <BookingStatusTag
+                    status={booking.status}
+                    hasPaymentProof={Boolean(booking.paymentProofUrl)}
+                    showDot
+                  />
+                  {isActiveBookingStatus(booking.status) &&
+                  booking.attendanceStatus === 'confirmed' ? (
+                    <StatusTag tone="success" label="Confirmó" />
+                  ) : isActiveBookingStatus(booking.status) &&
+                    booking.attendanceStatus === 'rescheduled' ? (
+                    <StatusTag tone="accent" label="Reagendó" />
+                  ) : null}
+                </HStack>
               ) : null}
             </HStack>
 

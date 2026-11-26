@@ -3,6 +3,8 @@ import type {
   Booking,
   BookingReview,
   ClientProfile,
+  FunnelEventRecord,
+  FunnelEventType,
   PaymentSplit,
   Service,
   StaffMember,
@@ -18,6 +20,7 @@ export interface ExecutiveReportInput {
   clients: readonly ClientProfile[];
   reviews: readonly BookingReview[];
   paymentSplits: readonly PaymentSplit[];
+  funnelEvents?: readonly FunnelEventRecord[];
   period: ReportPeriod;
   nowMs: number;
   timezone: string;
@@ -95,6 +98,21 @@ interface CancellationReasonRow {
   sharePercent: number;
 }
 
+interface FunnelStageRow {
+  eventType: FunnelEventType;
+  label: string;
+  sessionsCount: number;
+  stepConversionPercent: number;
+  shareOfTopPercent: number;
+}
+
+export interface BookingFunnelSummary {
+  totalSessions: number;
+  confirmedSessions: number;
+  overallConversionPercent: number;
+  stages: FunnelStageRow[];
+}
+
 export interface ExecutiveReport {
   period: ReportPeriod;
   rangeStartDate: string;
@@ -104,6 +122,89 @@ export interface ExecutiveReport {
   heatmap: DemandHeatmap;
   serviceProfitability: ServiceProfitabilityRow[];
   cancellationReasons: CancellationReasonRow[];
+  funnel: BookingFunnelSummary;
+}
+
+const FUNNEL_STAGE_DEFS: ReadonlyArray<{ eventType: FunnelEventType; label: string }> = [
+  { eventType: 'page_view', label: 'Visitaron /reservar' },
+  { eventType: 'booking_started', label: 'Eligieron servicio' },
+  { eventType: 'slot_held', label: 'Apartaron horario' },
+  { eventType: 'details_completed', label: 'Completaron datos' },
+  { eventType: 'deposit_submitted', label: 'Adjuntaron comprobante' },
+  { eventType: 'booking_confirmed', label: 'Confirmaron cita' },
+];
+
+export function buildFunnelSummary(
+  events: readonly FunnelEventRecord[],
+  period: ReportPeriod,
+  nowMs: number,
+  timezone: string,
+): BookingFunnelSummary {
+  const tz = resolveTimezone(timezone);
+  const safeNowMs = Number.isFinite(nowMs) ? nowMs : 0;
+  const todayKey = getZonedDateAndHour(safeNowMs, tz).dateKey;
+  const minMs = period === 'all' ? -Infinity : safeNowMs - PERIOD_DAYS[period] * DAY_MS;
+
+  const sessionsByStage = new Map<FunnelEventType, Set<string>>();
+  for (const def of FUNNEL_STAGE_DEFS) {
+    sessionsByStage.set(def.eventType, new Set<string>());
+  }
+  const allSessions = new Set<string>();
+
+  for (const event of events) {
+    const createdMs = Date.parse(event.createdAt);
+    if (!Number.isFinite(createdMs)) continue;
+    if (period !== 'all') {
+      const eventDateKey = getZonedDateAndHour(createdMs, tz).dateKey;
+      if (createdMs < minMs || eventDateKey > todayKey) continue;
+    }
+    const sid = event.sessionId.trim();
+    if (!sid) continue;
+    allSessions.add(sid);
+    sessionsByStage.get(event.eventType)?.add(sid);
+  }
+
+  const topCount = Math.max(
+    sessionsByStage.get('page_view')?.size ?? 0,
+    sessionsByStage.get('booking_started')?.size ?? 0,
+    allSessions.size,
+  );
+
+  let previousCount = 0;
+  const stages: FunnelStageRow[] = FUNNEL_STAGE_DEFS.map((def, idx) => {
+    const count = sessionsByStage.get(def.eventType)?.size ?? 0;
+    const stepConversionPercent =
+      idx === 0
+        ? count > 0
+          ? 100
+          : 0
+        : previousCount > 0
+          ? Math.min(100, Math.round((count / previousCount) * 100))
+          : 0;
+    const shareOfTopPercent =
+      topCount > 0 ? Math.min(100, Math.round((count / topCount) * 100)) : 0;
+    if (count > 0 || idx === 0) {
+      previousCount = count;
+    }
+    return {
+      eventType: def.eventType,
+      label: def.label,
+      sessionsCount: count,
+      stepConversionPercent,
+      shareOfTopPercent,
+    };
+  });
+
+  const confirmedSessions = sessionsByStage.get('booking_confirmed')?.size ?? 0;
+  const overallConversionPercent =
+    topCount > 0 ? Math.min(100, Math.round((confirmedSessions / topCount) * 100)) : 0;
+
+  return {
+    totalSessions: allSessions.size,
+    confirmedSessions,
+    overallConversionPercent,
+    stages,
+  };
 }
 
 const DAY_MS = 86_400_000;
@@ -703,6 +804,13 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
       (a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'es'),
     );
 
+  const funnel = buildFunnelSummary(
+    scopeId ? [] : (input.funnelEvents ?? []),
+    input.period,
+    nowMs,
+    tz,
+  );
+
   return {
     period: input.period,
     rangeStartDate,
@@ -712,5 +820,6 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     heatmap,
     serviceProfitability,
     cancellationReasons,
+    funnel,
   };
 }

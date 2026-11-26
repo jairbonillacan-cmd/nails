@@ -52,12 +52,14 @@ export default async function ManageBookingPage({
   const db = await repo.getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
-  const initialAction: 'reschedule' | 'cancel' | undefined =
+  const initialAction: 'reschedule' | 'cancel' | 'confirm' | undefined =
     query.action === 'reschedule'
       ? 'reschedule'
       : query.action === 'cancel'
         ? 'cancel'
-        : undefined;
+        : query.action === 'confirm'
+          ? 'confirm'
+          : undefined;
 
   const activeLoyaltyProgram =
     (db.loyaltyPrograms ?? []).find((program) => program.isActive) ?? null;

@@ -135,7 +135,11 @@ export default async function ReservarPage({
       initialInspoNote={params.inspo?.trim() || undefined}
       siteOrigin={siteOrigin}
       emitBookingBreadcrumb
-      initialClientProfile={await readSignedInClientProfile(db.clients)}
+      initialClientProfile={await readSignedInClientProfile(db.clients, {
+        bookings: db.bookings,
+        services: db.services,
+        staff: db.staff,
+      })}
     />
     </ViewTransition>
   );

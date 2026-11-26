@@ -163,6 +163,30 @@ export async function approveCajaDeposit(
   }
 }
 
+export async function rejectCajaDeposit(
+  bookingId: string,
+  bookingCode: string,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/admin/bookings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reject_deposit', bookingId }),
+    });
+    const json = (await res.json().catch(() => null)) as { error?: string } | null;
+    if (!res.ok) {
+      return { ok: false, error: json?.error || 'No se pudo rechazar el comprobante.' };
+    }
+    invalidateAdminCache('/api/admin/reports');
+    return {
+      ok: true,
+      message: `Comprobante de ${bookingCode} rechazado. Ya avisamos a la clienta para que suba uno nuevo.`,
+    };
+  } catch {
+    return { ok: false, error: 'No se pudo conectar para rechazar el comprobante.' };
+  }
+}
+
 export async function recordCajaCashEntry(input: {
   entryType: 'expense' | 'product_sale' | 'service_income';
   description: string;

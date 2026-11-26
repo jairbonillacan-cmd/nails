@@ -1,6 +1,6 @@
 import type { Booking, ScheduledNotification, WaitlistEntry } from '../types';
 
-export const WAITLIST_OFFER_TTL_MINUTES = 10;
+export const WAITLIST_OFFER_TTL_MINUTES = 30;
 
 export const CANCELLATION_REASON_OPTIONS = [
   'Cambio de planes',
@@ -97,14 +97,14 @@ export const WORKFLOW_TEMPLATE_GALLERY: readonly WorkflowTemplateItem[] = [
   },
   {
     id: 'tpl-waitlist-10m',
-    title: 'Oferta prioritaria lista de espera 10 min',
+    title: 'Oferta prioritaria lista de espera 30 min',
     category: 'waitlist',
     channel: 'whatsapp',
-    timingLabel: 'Al liberarse un hueco (TTL 10 min)',
+    timingLabel: 'Al liberarse un hueco (TTL 30 min)',
     description:
-      'Asigna un enlace prioritario de 10 minutos a la primera clienta en fila antes de pasar a la siguiente.',
+      'Asigna un enlace prioritario de 30 minutos a la primera clienta en fila antes de pasar automáticamente a la siguiente.',
     templateText:
-      'Hola {{client_name}}, ¡se acaba de liberar un espacio de {{service_name}} el {{date_label}} a las {{time_label}} en {{salon_name}}! Tienes acceso prioritario durante 10 minutos para apartarlo aquí: {{offer_url}}',
+      'Hola {{client_name}}, ¡se acaba de liberar un espacio de {{service_name}} el {{date_label}} a las {{time_label}} en {{salon_name}}! Tienes acceso prioritario durante 30 minutos para apartarlo aquí: {{offer_url}}',
   },
 ];
 
@@ -118,7 +118,7 @@ export interface CascadeMetricsSummary {
 }
 
 export function shouldSkipWhatsappCascade(
-  booking: Pick<Booking, 'status' | 'confirmedVia'>,
+  booking: Pick<Booking, 'status' | 'confirmedVia' | 'attendanceStatus'>,
   alreadySentEmail: boolean,
 ): boolean {
   if (
@@ -126,6 +126,9 @@ export function shouldSkipWhatsappCascade(
     booking.status === 'completed' ||
     booking.status === 'no_show'
   ) {
+    return true;
+  }
+  if (booking.attendanceStatus === 'confirmed') {
     return true;
   }
   if (

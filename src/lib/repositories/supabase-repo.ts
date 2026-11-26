@@ -14,7 +14,11 @@ import {
   transitionBookingStatus,
 } from '../booking/state-machine';
 import { generateBookingCode, systemClock, type Clock } from '../clock';
-import { isSafeInternalBookingMediaPath, LandingContentSchema } from '../contracts';
+import {
+  isSafeExternalProofUrl,
+  isSafeInternalBookingMediaPath,
+  LandingContentSchema,
+} from '../contracts';
 import { createDefaultWhatsAppTemplates } from '../demo-seed';
 import {
   getConfiguredWhatsAppMonthlyQuota,
@@ -48,6 +52,7 @@ import type {
   CouponRedemption,
   DateOverride,
   DemoDatabase,
+  FunnelEventRecord,
   GalleryItem,
   InventoryItem,
   InventoryMovement,
@@ -517,6 +522,15 @@ function mapBookingRow(
     depositAmountCents: row.deposit_amount_cents,
     couponCode: row.coupon_code,
     status: row.status,
+    ...(row.attendance_status !== undefined
+      ? { attendanceStatus: row.attendance_status }
+      : {}),
+    ...(row.attendance_confirmed_at !== undefined
+      ? { attendanceConfirmedAt: row.attendance_confirmed_at }
+      : {}),
+    ...(row.reminder_24h_sent_at !== undefined
+      ? { reminder24hSentAt: row.reminder_24h_sent_at }
+      : {}),
     ...(row.confirmed_via !== undefined ? { confirmedVia: row.confirmed_via } : {}),
     ...(row.checkout_url !== undefined ? { checkoutUrl: row.checkout_url } : {}),
     source: row.source,
@@ -526,6 +540,15 @@ function mapBookingRow(
     paymentProofUrl: row.payment_proof_url,
     ...(row.proof_delivery_method
       ? { proofDeliveryMethod: row.proof_delivery_method }
+      : {}),
+    ...(row.proof_rejected_at !== undefined
+      ? { proofRejectedAt: row.proof_rejected_at }
+      : {}),
+    ...(row.proof_rejection_reason !== undefined
+      ? { proofRejectionReason: row.proof_rejection_reason }
+      : {}),
+    ...(row.touchup_invited_at !== undefined
+      ? { touchupInvitedAt: row.touchup_invited_at }
       : {}),
     googleEventId: row.google_event_id,
     cancellationReason: row.cancellation_reason,
@@ -631,6 +654,22 @@ function mapWaitlistRow(row: Tables['waitlist_entries']['Row']): WaitlistEntry {
     ...(row.priority_offer_slot_start_at !== undefined
       ? { priorityOfferSlotStartAt: row.priority_offer_slot_start_at }
       : {}),
+    ...(row.priority_offer_staff_id !== undefined
+      ? { priorityOfferStaffId: row.priority_offer_staff_id }
+      : {}),
+    createdAt: row.created_at,
+  };
+}
+
+function mapFunnelEventRow(
+  row: Tables['funnel_events']['Row'],
+): FunnelEventRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    eventType: row.event_type,
+    serviceSlug: row.service_slug,
+    staffSlug: row.staff_slug,
     createdAt: row.created_at,
   };
 }
@@ -1489,12 +1528,14 @@ export function createSupabaseRepository(
       mediaAssetsRes,
       whatsappTemplatesRes,
       whatsappMonthlyUsageRes,
+      funnelEventsRes,
     ] = await Promise.all([
       supabase.from('audit_logs').select('*'),
       supabase.from('booking_payments').select('*'),
       supabase.from('media_assets').select('*'),
       supabase.from('whatsapp_templates').select('*'),
       supabase.from('whatsapp_monthly_usage').select('*'),
+      supabase.from('funnel_events').select('*'),
     ]);
 
     const staffLinks = staffServicesRes.data ?? [];
@@ -1538,6 +1579,7 @@ export function createSupabaseRepository(
       whatsappMonthlyUsage: (whatsappMonthlyUsageRes.data ?? []).map(
         mapWhatsAppMonthlyUsageRow,
       ),
+      funnelEvents: (funnelEventsRes.data ?? []).map(mapFunnelEventRow),
     };
   }
 
@@ -2121,15 +2163,18 @@ export function createSupabaseRepository(
           throw err;
         }
       } else if (persistedPaymentProofUrl) {
-        if (!isSafeInternalBookingMediaPath(persistedPaymentProofUrl, 'proofs')) {
+        if (isSafeExternalProofUrl(persistedPaymentProofUrl)) {
+          persistedPaymentProofUrl = persistedPaymentProofUrl.trim();
+        } else if (isSafeInternalBookingMediaPath(persistedPaymentProofUrl, 'proofs')) {
+          persistedPaymentProofUrl = persistedPaymentProofUrl.startsWith('/api/media/')
+            ? persistedPaymentProofUrl
+            : `/api/media/${persistedPaymentProofUrl}`;
+        } else {
           throw new PolicyError(
             'INVALID_MEDIA_URL',
-            'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+            'Sube una imagen PNG, JPEG o WEBP, o pega un enlace HTTPS válido de tu comprobante.',
           );
         }
-        persistedPaymentProofUrl = persistedPaymentProofUrl.startsWith('/api/media/')
-          ? persistedPaymentProofUrl
-          : `/api/media/${persistedPaymentProofUrl}`;
       }
 
       const { data: createdBookingId, error: rpcError } = await supabase.rpc(
@@ -2227,14 +2272,26 @@ export function createSupabaseRepository(
       }
       if (params.proofDeliveryMethod !== undefined) {
         extraBookingPatch.proof_delivery_method = params.proofDeliveryMethod;
-      } else if (params.paymentProofUrl) {
-        extraBookingPatch.proof_delivery_method = 'web_upload';
+      } else if (persistedPaymentProofUrl) {
+        extraBookingPatch.proof_delivery_method = persistedPaymentProofUrl.startsWith(
+          'https://',
+        )
+          ? 'web_link'
+          : 'web_upload';
       }
       if (Object.keys(extraBookingPatch).length > 0) {
         await supabase
           .from('bookings')
           .update(extraBookingPatch)
           .eq('id', createdBookingId);
+      }
+
+      if (params.waitlistOfferToken?.trim()) {
+        await supabase
+          .from('waitlist_entries')
+          .update({ status: 'booked' })
+          .eq('priority_offer_token', params.waitlistOfferToken.trim())
+          .eq('status', 'notified');
       }
 
       if (params.privacyConsentAccepted) {
@@ -2461,15 +2518,40 @@ export function createSupabaseRepository(
         );
       }
 
+      if (params.action === 'confirm_attendance') {
+        const nowIso = clock.now().toISOString();
+        const confirmedVia = params.confirmedVia ?? booking.confirmedVia ?? 'email';
+        const { error: confirmError } = await supabase
+          .from('bookings')
+          .update({
+            attendance_status: 'confirmed',
+            attendance_confirmed_at: nowIso,
+            confirmed_via: confirmedVia,
+            updated_at: nowIso,
+          })
+          .eq('id', booking.id);
+        if (confirmError) {
+          throw new Error(`No se pudo confirmar la asistencia: ${confirmError.message}`);
+        }
+        const hydrated = await getBookingByIdHydrated(booking.id);
+        await dispatchOutboxEvent({
+          type: 'Realtime',
+          eventType: 'booking_updated',
+          payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
+        });
+        return hydrated;
+      }
+
       if (params.action === 'upload_proof') {
         const rawProof = params.paymentProofUrl?.trim() ?? '';
         if (!rawProof) {
           throw new PolicyError(
             'MISSING_PROOF',
-            'Selecciona una imagen de comprobante antes de enviar.',
+            'Sube una imagen o pega el enlace de tu comprobante antes de enviar.',
           );
         }
         let persistedProofUrl = rawProof;
+        let proofDeliveryMethod: 'web_upload' | 'web_link' = 'web_upload';
         let uploadedProofMeta: {
           storagePath: string;
           contentType: string;
@@ -2490,22 +2572,27 @@ export function createSupabaseRepository(
             }
             throw err;
           }
-        } else if (!isSafeInternalBookingMediaPath(rawProof, 'proofs')) {
-          throw new PolicyError(
-            'INVALID_MEDIA_URL',
-            'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
-          );
-        } else {
+        } else if (isSafeExternalProofUrl(rawProof)) {
+          persistedProofUrl = rawProof;
+          proofDeliveryMethod = 'web_link';
+        } else if (isSafeInternalBookingMediaPath(rawProof, 'proofs')) {
           persistedProofUrl = rawProof.startsWith('/api/media/')
             ? rawProof
             : `/api/media/${rawProof}`;
+        } else {
+          throw new PolicyError(
+            'INVALID_MEDIA_URL',
+            'Sube una imagen PNG, JPEG o WEBP, o pega un enlace HTTPS válido de tu comprobante.',
+          );
         }
         const nowIso = clock.now().toISOString();
         const { error: proofError } = await supabase
           .from('bookings')
           .update({
             payment_proof_url: persistedProofUrl,
-            proof_delivery_method: 'web_upload',
+            proof_delivery_method: proofDeliveryMethod,
+            proof_rejected_at: null,
+            proof_rejection_reason: null,
             updated_at: nowIso,
           })
           .eq('id', booking.id);
@@ -2594,6 +2681,8 @@ export function createSupabaseRepository(
           occupied_start_at: slot.occupiedStartAt,
           occupied_end_at: slot.occupiedEndAt,
           occupied_range: `[${slot.occupiedStartAt},${slot.occupiedEndAt})`,
+          attendance_status: 'rescheduled',
+          attendance_confirmed_at: null,
           updated_at: nowIso,
         })
         .eq('id', booking.id);

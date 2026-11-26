@@ -4,7 +4,7 @@ import {
   type ClientPortalProfile,
 } from './contracts';
 import { normalizePhoneE164 } from './format';
-import type { ClientProfile } from './types';
+import type { Booking, ClientProfile, Service, StaffMember } from './types';
 
 interface ClientAuthMethodConfig {
   method: ClientAuthMethod;
@@ -28,16 +28,58 @@ export function isClientAuthMethodEnabled(
 type ClientProfileSource = Pick<
   ClientProfile,
   'fullName' | 'phoneE164' | 'email' | 'instagramHandle' | 'birthday'
->;
+> & { id?: string };
+
+export interface ClientPortalHistoryContext {
+  bookings: readonly Pick<Booking, 'clientId' | 'serviceId' | 'staffId' | 'status' | 'startAt'>[];
+  services: readonly Pick<Service, 'id' | 'slug' | 'name' | 'isActive' | 'isPrivate'>[];
+  staff: readonly Pick<StaffMember, 'id' | 'bookingSlug' | 'name' | 'isActive'>[];
+}
 
 export function selectClientPortalProfile(
   clients: readonly ClientProfileSource[],
   sessionPhoneE164: string,
+  history?: ClientPortalHistoryContext,
 ): ClientPortalProfile {
   const phoneE164 = normalizePhoneE164(sessionPhoneE164);
   const client = phoneE164
     ? clients.find((entry) => normalizePhoneE164(entry.phoneE164) === phoneE164)
     : undefined;
+
+  let lastServiceSlug: string | null | undefined;
+  let lastServiceName: string | null | undefined;
+  let lastStaffSlug: string | null | undefined;
+  let lastStaffName: string | null | undefined;
+
+  if (client?.id && history) {
+    let latestBooking: ClientPortalHistoryContext['bookings'][number] | null = null;
+    let latestStartMs = -Infinity;
+    for (const booking of history.bookings) {
+      if (booking.clientId !== client.id) continue;
+      if (booking.status === 'canceled') continue;
+      const startMs = Date.parse(booking.startAt);
+      const score = Number.isFinite(startMs) ? startMs : 0;
+      if (!latestBooking || score > latestStartMs) {
+        latestBooking = booking;
+        latestStartMs = score;
+      }
+    }
+    if (latestBooking) {
+      const matchedService = history.services.find(
+        (srv) => srv.id === latestBooking.serviceId && srv.isActive && !srv.isPrivate,
+      );
+      if (matchedService) {
+        lastServiceSlug = matchedService.slug;
+        lastServiceName = matchedService.name;
+        const matchedStaff = history.staff.find(
+          (member) => member.id === latestBooking.staffId && member.isActive,
+        );
+        lastStaffSlug = matchedStaff ? (matchedStaff.bookingSlug || matchedStaff.id) : null;
+        lastStaffName = matchedStaff ? matchedStaff.name : null;
+      }
+    }
+  }
+
   return ClientPortalProfileSchema.parse({
     fullName: client?.fullName.trim().slice(0, 200) ?? '',
     phoneE164,
@@ -45,5 +87,13 @@ export function selectClientPortalProfile(
     instagramHandle: client?.instagramHandle?.trim().slice(0, 120) || null,
     birthday: client?.birthday?.trim().slice(0, 20) || null,
     isRegistered: Boolean(client),
+    ...(lastServiceSlug !== undefined
+      ? {
+          lastServiceSlug,
+          lastServiceName,
+          lastStaffSlug: lastStaffSlug ?? null,
+          lastStaffName: lastStaffName ?? null,
+        }
+      : {}),
   });
 }

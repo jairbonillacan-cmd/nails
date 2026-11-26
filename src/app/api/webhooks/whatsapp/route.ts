@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { constantTimeEqual } from '@/lib/auth/admin-session';
+import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { dispatchWhatsAppNotification } from '@/lib/integrations/notifications';
 import {
   buildWhatsAppFlowJsonSchema,
   executeWhatsAppBookingFlow,
@@ -10,6 +12,7 @@ import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
 import { logError, logInfo, logWarn } from '@/lib/logger';
 import {
   claimWebhookEventIdempotent,
+  confirmBookingAttendanceFromWebhook,
   getRepository,
   incrementWhatsAppMonthlyUsage,
 } from '@/lib/repositories/db';
@@ -23,9 +26,21 @@ const metaInboundMessageSchema = z.object({
   timestamp: z.string().optional(),
   type: z.string().optional(),
   text: z.object({ body: z.string().optional() }).optional(),
+  button: z
+    .object({
+      payload: z.string().optional(),
+      text: z.string().optional(),
+    })
+    .optional(),
   interactive: z
     .object({
       type: z.string().optional(),
+      button_reply: z
+        .object({
+          id: z.string().optional(),
+          title: z.string().optional(),
+        })
+        .optional(),
       nfm_reply: z
         .object({
           response_json: z.string().optional(),
@@ -169,6 +184,7 @@ export async function POST(request: NextRequest) {
   let echoesProcessed = 0;
   let duplicatesSkipped = 0;
   let usageIncremented = 0;
+  let attendanceConfirmedCount = 0;
   let flowResult: Awaited<ReturnType<typeof executeWhatsAppBookingFlow>> | undefined;
 
   for (const entry of parsedBody.data.entry ?? []) {
@@ -296,6 +312,79 @@ export async function POST(request: NextRequest) {
               error: err,
             });
           }
+        } else if (
+          message.from &&
+          ((message.type === 'interactive' &&
+            message.interactive?.type === 'button_reply') ||
+            message.type === 'button')
+        ) {
+          const buttonId = (
+            message.interactive?.button_reply?.id ??
+            message.button?.payload ??
+            ''
+          ).trim();
+          const buttonTitle = (
+            message.interactive?.button_reply?.title ??
+            message.button?.text ??
+            ''
+          )
+            .trim()
+            .toLowerCase();
+          const phoneE164 = `+${message.from.replace(/^\+/, '')}`;
+          const isConfirmReply =
+            buttonId.startsWith('confirm_booking:') || buttonTitle.includes('confirmo');
+          const isRescheduleReply =
+            buttonId.startsWith('reschedule_booking:') ||
+            buttonTitle.includes('reagendar');
+
+          if (isConfirmReply) {
+            const explicitBookingId = buttonId.startsWith('confirm_booking:')
+              ? buttonId.slice('confirm_booking:'.length).trim()
+              : null;
+            const confirmed = await confirmBookingAttendanceFromWebhook({
+              bookingId: explicitBookingId || null,
+              phoneE164,
+              via: 'whatsapp',
+            });
+            if (confirmed) {
+              attendanceConfirmedCount += 1;
+              await dispatchWhatsAppNotification({
+                toPhoneE164: phoneE164,
+                bodyText: `¡Perfecto ${confirmed.client.fullName}! Confirmamos tu asistencia para ${confirmed.service.name} (${confirmed.bookingCode}). Te esperamos en ${snapshot.settings.name}.`,
+                withinServiceWindow: true,
+                settingsTimezone: tz,
+              });
+            }
+          } else if (isRescheduleReply) {
+            const explicitBookingId = buttonId.startsWith('reschedule_booking:')
+              ? buttonId.slice('reschedule_booking:'.length).trim()
+              : null;
+            const targetBooking = explicitBookingId
+              ? snapshot.bookings.find((b) => b.id === explicitBookingId)
+              : snapshot.bookings
+                  .filter((b) => {
+                    const c = snapshot.clients.find((cl) => cl.id === b.clientId);
+                    return (
+                      c?.phoneE164 === phoneE164 &&
+                      b.status !== 'canceled' &&
+                      b.status !== 'completed' &&
+                      b.status !== 'no_show'
+                    );
+                  })
+                  .toSorted(
+                    (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+                  )[0];
+            if (targetBooking) {
+              const env = getRuntimeIntegrationStatus();
+              const rescheduleUrl = `${env.appUrl.replace(/\/+$/, '')}/cita/${targetBooking.manageToken}?action=reschedule`;
+              await dispatchWhatsAppNotification({
+                toPhoneE164: phoneE164,
+                bodyText: `Sin problema, elige tu nuevo horario en segundos aquí: ${rescheduleUrl}`,
+                withinServiceWindow: true,
+                settingsTimezone: tz,
+              });
+            }
+          }
         } else {
           logInfo('webhook_whatsapp_inbound_message', {
             messageId: message.id ?? null,
@@ -316,6 +405,7 @@ export async function POST(request: NextRequest) {
       echoes: echoesProcessed,
       duplicates: duplicatesSkipped,
       usageIncremented,
+      attendanceConfirmed: attendanceConfirmedCount,
     },
   });
 }

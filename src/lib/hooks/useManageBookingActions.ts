@@ -31,7 +31,7 @@ interface UseManageBookingActionsInput {
   initialWhatsappUrl: string;
   initialManageUrl?: string;
   initialLoyaltySummary?: PublicLoyaltySummaryDTO | null;
-  initialAction?: 'reschedule' | 'cancel';
+  initialAction?: 'reschedule' | 'cancel' | 'confirm';
   renderedAtIso?: string;
 }
 
@@ -68,6 +68,8 @@ export function useManageBookingActions({
   const [cancelReason, setCancelReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [confirmingAttendance, setConfirmingAttendance] = useState(false);
+  const autoConfirmDoneRef = useRef(false);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(initialAction === 'reschedule' && initialCanModify);
   const [rescheduleReasonChoice, setRescheduleReasonChoice] = useState<string | null>(null);
@@ -166,6 +168,56 @@ export function useManageBookingActions({
       ? `reschedule:${booking.id}:${booking.serviceId}:${extraServiceIdsKey}:${addonIdsKey}:${booking.staffId}`
       : 'reschedule:closed',
     syncRescheduleSlots,
+  );
+
+  const handleConfirmAttendance = useCallback(async (): Promise<boolean> => {
+    if (confirmingAttendance) return false;
+    setConfirmingAttendance(true);
+    setActionError(null);
+    setActionErrorCode(null);
+    try {
+      const res = await patchManageBooking(booking.manageToken, {
+        action: 'confirm_attendance',
+      });
+      if (!res.ok) {
+        setActionError(res.data.error || 'No se pudo confirmar tu asistencia.');
+        return false;
+      }
+      applyPayload(res.data);
+      setActionSuccess('¡Listo! Confirmamos tu asistencia. Te esperamos en el estudio.');
+      return true;
+    } catch {
+      setActionError('Error de conexión al confirmar tu asistencia. Intenta de nuevo.');
+      return false;
+    } finally {
+      setConfirmingAttendance(false);
+    }
+  }, [applyPayload, booking.manageToken, confirmingAttendance]);
+
+  const syncAutoConfirm = useCallback(
+    async (signal: AbortSignal) => {
+      if (
+        initialAction !== 'confirm' ||
+        !initialCanModify ||
+        initialBooking.attendanceStatus === 'confirmed' ||
+        autoConfirmDoneRef.current
+      ) {
+        return;
+      }
+      autoConfirmDoneRef.current = true;
+      if (signal.aborted) return;
+      await handleConfirmAttendance();
+    },
+    [
+      handleConfirmAttendance,
+      initialAction,
+      initialBooking.attendanceStatus,
+      initialCanModify,
+    ],
+  );
+  useExternalSync(
+    initialAction === 'confirm' ? `confirm:${initialBooking.manageToken}` : 'confirm:none',
+    syncAutoConfirm,
   );
 
   const openReschedule = () => {
@@ -318,11 +370,11 @@ export function useManageBookingActions({
     canModify, reschedulePolicy, cancelPolicy, policyHelpWhatsappUrl, touchUpUrl,
     actionError, actionErrorCode, actionSuccess, reviewError, conflictSlots,
     submittingSlotStartAt, proofSavedMessage: proofSavedFeedback.message,
-    cancelOpen, cancelReasonChoice, cancelReason, busy, uploadingProof,
+    cancelOpen, cancelReasonChoice, cancelReason, busy, uploadingProof, confirmingAttendance,
     rescheduleOpen, rescheduleReasonChoice, rescheduleReason, rescheduleDays, loadingSlots,
     rating, reviewComment, reviewSaved, hasExistingReview,
     setRating, setReviewComment, setCancelReason, setRescheduleReason,
-    openReschedule, openCancel, handleUploadProof, handleConfirmReschedule,
+    openReschedule, openCancel, handleConfirmAttendance, handleUploadProof, handleConfirmReschedule,
     handleConfirmCancel, handleSubmitReview,
     handleSelectCancelChip: (option: string) => {
       setCancelReasonChoice(option);

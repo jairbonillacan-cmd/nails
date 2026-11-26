@@ -4,6 +4,7 @@ import { fetchGoogleFreeBusy } from '@/lib/integrations/google-calendar';
 import { logError, logWarn } from '@/lib/logger';
 import { publishRealtimeEvent } from '@/lib/realtime';
 import {
+  claimWebhookEventIdempotent,
   getRepository,
   syncCalendarConnectionBusyBlocks,
 } from '@/lib/repositories/db';
@@ -32,6 +33,18 @@ export async function POST(request: NextRequest) {
   const channelId = request.headers.get('x-goog-channel-id')?.trim() ?? '';
   if (!channelId) {
     return NextResponse.json({ ok: true, matched: false });
+  }
+
+  const messageNumber = request.headers.get('x-goog-message-number')?.trim() ?? '';
+  const resourceState = request.headers.get('x-goog-resource-state')?.trim() ?? 'exists';
+  if (messageNumber) {
+    const claimed = await claimWebhookEventIdempotent(
+      'google_calendar',
+      `${channelId}:${messageNumber}:${resourceState}`,
+    );
+    if (!claimed) {
+      return NextResponse.json({ ok: true, idempotent: true, matched: true });
+    }
   }
 
   const db = await getRepository().getSnapshot();

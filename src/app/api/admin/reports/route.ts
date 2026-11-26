@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
     clients: scopedClients,
     reviews: scopedReviews,
     paymentSplits: scopedPaymentSplits,
+    funnelEvents: isSpecialist ? [] : (db.funnelEvents ?? []),
     period,
     nowMs: now.getTime(),
     timezone: tz,

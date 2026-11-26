@@ -24,8 +24,10 @@ interface DepositProofPreviewDialogProps {
   timezone: string;
   depositFallbackCents: number;
   confirmingBookingId: string | null;
+  rejectingBookingId?: string | null;
   onClose: () => void;
   onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
+  onRejectDeposit?: (bookingId: string, clientName: string) => Promise<boolean>;
 }
 
 export function DepositProofPreviewDialog({
@@ -34,16 +36,32 @@ export function DepositProofPreviewDialog({
   timezone,
   depositFallbackCents,
   confirmingBookingId,
+  rejectingBookingId = null,
   onClose,
   onConfirmDeposit,
+  onRejectDeposit,
 }: DepositProofPreviewDialogProps) {
   const isConfirming = Boolean(deposit && confirmingBookingId === deposit.bookingId);
+  const isRejecting = Boolean(deposit && rejectingBookingId === deposit.bookingId);
+  const isBusy = isConfirming || isRejecting;
+  const isExternalLink = Boolean(
+    deposit &&
+      (deposit.proofDeliveryMethod === 'web_link' ||
+        deposit.paymentProofUrl?.startsWith('https://')),
+  );
+  const hasImageProof = Boolean(
+    deposit && !isExternalLink && isDisplayableProofUrl(deposit.paymentProofUrl),
+  );
+  const safeExternalUrl =
+    deposit && isExternalLink && isDisplayableProofUrl(deposit.paymentProofUrl)
+      ? deposit.paymentProofUrl
+      : null;
 
   return (
     <Dialog
       isOpen={Boolean(deposit)}
       onOpenChange={(open) => {
-        if (!open && !confirmingBookingId) onClose();
+        if (!open && !confirmingBookingId && !rejectingBookingId) onClose();
       }}
       width={520}
       padding={5}
@@ -51,14 +69,14 @@ export function DepositProofPreviewDialog({
       {deposit ? (
         <VStack
           gap={4}
-          className={isConfirming ? 'fx-busy' : undefined}
-          aria-busy={isConfirming || undefined}
+          className={isBusy ? 'fx-busy' : undefined}
+          aria-busy={isBusy || undefined}
         >
           <DialogHeader
             title="Comprobante de anticipo"
             subtitle={`${deposit.clientName} · ${deposit.bookingCode}`}
             onOpenChange={(open) => {
-              if (!open && !confirmingBookingId) onClose();
+              if (!open && !confirmingBookingId && !rejectingBookingId) onClose();
             }}
           />
 
@@ -92,7 +110,7 @@ export function DepositProofPreviewDialog({
             </HStack>
           </VStack>
 
-          {isDisplayableProofUrl(deposit.paymentProofUrl) ? (
+          {hasImageProof && deposit.paymentProofUrl ? (
             <VStack gap={2}>
               <AspectRatio ratio={4 / 3} fit="contain">
                 <img
@@ -107,6 +125,24 @@ export function DepositProofPreviewDialog({
                 size="sm"
                 icon={<ExternalLink size={14} aria-hidden="true" />}
                 href={deposit.paymentProofUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            </VStack>
+          ) : safeExternalUrl ? (
+            <VStack gap={2} className="ad-proof-note">
+              <Text weight="semibold" size="sm">
+                Enlace de comprobante externo
+              </Text>
+              <Text type="supporting" color="secondary">
+                Abre el enlace en una pestaña nueva para validar el pago antes de confirmar.
+              </Text>
+              <Button
+                label="Abrir enlace del recibo"
+                variant="secondary"
+                size="sm"
+                icon={<ExternalLink size={14} aria-hidden="true" />}
+                href={safeExternalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
               />
@@ -127,11 +163,28 @@ export function DepositProofPreviewDialog({
           )}
 
           <HStack justify="end" gap={2} wrap="wrap">
+            {onRejectDeposit &&
+            (deposit.proofDeliveryMethod !== 'none' || Boolean(deposit.paymentProofUrl)) ? (
+              <Button
+                type="button"
+                label={isRejecting ? 'Rechazando...' : 'Rechazar comprobante'}
+                variant="ghost"
+                size="sm"
+                isLoading={isRejecting}
+                isDisabled={isBusy}
+                onClick={async () => {
+                  const ok = await onRejectDeposit(deposit.bookingId, deposit.clientName);
+                  if (ok) {
+                    onClose();
+                  }
+                }}
+              />
+            ) : null}
             <Button
               label="Ir a Anticipos en Caja"
               variant="secondary"
               size="sm"
-              isDisabled={isConfirming}
+              isDisabled={isBusy}
               href="/admin/caja?tab=anticipos"
             />
             <Button
@@ -140,7 +193,7 @@ export function DepositProofPreviewDialog({
               variant="primary"
               size="sm"
               isLoading={isConfirming}
-              isDisabled={isConfirming}
+              isDisabled={isBusy}
               onClick={async () => {
                 const ok = await onConfirmDeposit(deposit.bookingId, deposit.clientName);
                 if (ok) {

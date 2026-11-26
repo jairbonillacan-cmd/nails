@@ -12,6 +12,7 @@ import type { ClientProfile, ServicePackage } from '@/lib/types';
 import type { MetricTileItem } from '@/components/ui';
 import {
   buildLoyaltyByClientId,
+  buildNoShowStatsByClient,
   buildReturningClients,
   buildVisitCountByClient,
   filterClientRows,
@@ -166,6 +167,7 @@ export function useClientasData(
 
   const currentMonth = data ? data.serverTodayKey.slice(5, 7) : '';
   const visitCountByClient = useMemo(() => buildVisitCountByClient(data), [data]);
+  const noShowStatsByClient = useMemo(() => buildNoShowStatsByClient(data), [data]);
   const loyaltyByClientId = useMemo(() => buildLoyaltyByClientId(data), [data]);
   const rows = useMemo(
     () => filterClientRows(data, query, onlyBirthdays, currentMonth),
@@ -255,6 +257,7 @@ export function useClientasData(
     loyaltyHighlightsCount,
     kpiItems,
     visitCountByClient,
+    noShowStatsByClient,
     loyaltyByClientId,
     rows,
     groupedByLetter,

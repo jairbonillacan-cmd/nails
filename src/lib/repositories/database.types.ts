@@ -358,12 +358,18 @@ export interface Database {
             | 'completed'
             | 'canceled'
             | 'no_show';
+          attendance_status?: 'pending' | 'confirmed' | 'rescheduled';
+          attendance_confirmed_at?: string | null;
+          reminder_24h_sent_at?: string | null;
           source: 'web' | 'whatsapp' | 'manual' | 'walk_in';
           client_notes: string;
           internal_notes: string;
           inspo_photo_url: string | null;
           payment_proof_url: string | null;
-          proof_delivery_method?: 'web_upload' | 'instagram_dm' | 'none';
+          proof_delivery_method?: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
+          proof_rejected_at?: string | null;
+          proof_rejection_reason?: string | null;
+          touchup_invited_at?: string | null;
           google_event_id: string | null;
           cancellation_reason: string | null;
           rescheduled_from_id: string | null;
@@ -573,6 +579,7 @@ export interface Database {
           priority_offer_token?: string | null;
           priority_offer_expires_at?: string | null;
           priority_offer_slot_start_at?: string | null;
+          priority_offer_staff_id?: string | null;
           created_at: string;
         };
         Insert: Pick<
@@ -812,6 +819,8 @@ export interface Database {
             | 'csv_exported'
             | 'past_booking_override'
             | 'deposit_approved'
+            | 'deposit_rejected'
+            | 'booking_rescheduled'
             | 'loyalty_redeemed'
             | 'media_retention_warned'
             | 'media_retention_purged';
@@ -897,6 +906,29 @@ export interface Database {
         > &
           Partial<Database['public']['Tables']['webhook_events']['Row']>;
         Update: Partial<Database['public']['Tables']['webhook_events']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      funnel_events: {
+        Row: {
+          id: string;
+          session_id: string;
+          event_type:
+            | 'page_view'
+            | 'booking_started'
+            | 'slot_held'
+            | 'details_completed'
+            | 'deposit_submitted'
+            | 'booking_confirmed';
+          service_slug: string | null;
+          staff_slug: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['funnel_events']['Row'],
+          'session_id' | 'event_type'
+        > &
+          Partial<Database['public']['Tables']['funnel_events']['Row']>;
+        Update: Partial<Database['public']['Tables']['funnel_events']['Row']>;
         Relationships: TableRelationship[];
       };
     };

@@ -540,6 +540,28 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(tsSchema.functions.has('increment_whatsapp_usage')).toBe(true);
     expect(sqlSchema.tables.get('salon_settings')?.has('retention_notice_email')).toBe(true);
     expect(sqlSchema.tables.get('salon_settings')?.has('whatsapp_monthly_quota')).toBe(true);
+
+    const migration0010 = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'supabase',
+        'migrations',
+        '0010_phase3_agenda_funnel_rls.sql',
+      ),
+      'utf-8',
+    );
+    expect(migration0010).toContain('public.funnel_events');
+    expect(migration0010).toContain('attendance_status');
+    expect(migration0010).toContain('proof_rejected_at');
+    expect(migration0010).toContain('touchup_invited_at');
+    expect(migration0010).toContain('priority_offer_staff_id');
+    expect(migration0010).toContain('WITH CHECK');
+    expect(migration0010).toContain('REVOKE ALL ON FUNCTION public.current_admin_role() FROM PUBLIC');
+    expect(migration0010).toContain('DROP POLICY IF EXISTS "public_read_salon_settings"');
+    expect(migration0010).toContain('DROP POLICY IF EXISTS "public_read_active_staff"');
+    expect(sqlSchema.tables.get('funnel_events')?.has('event_type')).toBe(true);
+    expect(sqlSchema.tables.get('bookings')?.has('attendance_status')).toBe(true);
+    expect(sqlSchema.tables.get('bookings')?.has('touchup_invited_at')).toBe(true);
   });
 
   it('keeps Database and SalonRepository type contracts compile-time valid', () => {

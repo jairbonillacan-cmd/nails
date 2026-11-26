@@ -1,5 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { Resend } from 'resend';
+import {
+  buildTouchUpBookingUrl,
+  computeSuggestedTouchUpDateKey,
+} from '../booking/recurrence';
 import { generateId } from '../clock';
 import { getRuntimeIntegrationStatus } from '../env';
 import {
@@ -69,6 +73,7 @@ export interface WhatsAppDispatchParams {
   triggerKey?: WhatsAppTemplateTriggerKey;
   templateName?: string;
   templateParameters?: readonly string[];
+  interactiveButtons?: ReadonlyArray<{ id: string; title: string }>;
   withinServiceWindow?: boolean;
   fallbackEmail?: {
     to: string;
@@ -102,8 +107,20 @@ function renderNotificationTemplate(
 ): string {
   const normalizedUrl = appUrl.replace(/\/+$/, '');
   const manageUrl = `${normalizedUrl}/cita/${booking.manageToken}`;
+  const confirmUrl = `${manageUrl}?action=confirm`;
+  const rescheduleUrl = `${manageUrl}?action=reschedule`;
   const bookingUrl = `${normalizedUrl}/reservar`;
   const tz = settings.timezone || 'America/Mexico_City';
+  const suggestedTouchUpDate = computeSuggestedTouchUpDateKey({
+    startAt: booking.endAt || booking.startAt,
+    daysAhead: 21,
+    timezone: tz,
+  });
+  const touchUpUrl = `${normalizedUrl}${buildTouchUpBookingUrl({
+    serviceSlug: booking.service.slug,
+    staffSlug: booking.staff.bookingSlug,
+    suggestedDateKey: suggestedTouchUpDate,
+  })}`;
   const addonsText =
     booking.addons.length > 0
       ? ` + ${booking.addons.map((a) => a.name).join(', ')}`
@@ -119,7 +136,10 @@ function renderNotificationTemplate(
     '{{time_label}}': formatTimeInTimezone(booking.startAt, tz, false),
     '{{address}}': settings.address,
     '{{manage_url}}': manageUrl,
+    '{{confirm_url}}': confirmUrl,
+    '{{reschedule_url}}': rescheduleUrl,
     '{{booking_url}}': bookingUrl,
+    '{{touchup_url}}': touchUpUrl,
   };
 
   let out = template;
@@ -189,6 +209,8 @@ export function renderBookingEmailHtml(params: {
   salonName: string;
   bodyText: string;
   manageUrl: string;
+  primaryCtaLabel?: string;
+  secondaryAction?: { label: string; href: string } | null;
   address: string;
   instagramHandle?: string;
   bookingCode?: string;
@@ -197,6 +219,16 @@ export function renderBookingEmailHtml(params: {
   hasCalendarAttachment?: boolean;
 }): string {
   const safeHref = escapeHtml(sanitizeEmailHref(params.manageUrl));
+  const safePrimaryCtaLabel = escapeHtml(
+    params.primaryCtaLabel?.trim() || 'Ver, agregar al calendario o reagendar',
+  );
+  const safeSecondaryHref = params.secondaryAction?.href
+    ? escapeHtml(sanitizeEmailHref(params.secondaryAction.href))
+    : '';
+  const secondaryCtaHtml =
+    safeSecondaryHref && safeSecondaryHref !== '#' && params.secondaryAction?.label
+      ? `<a href="${safeSecondaryHref}" style="display: inline-block; margin-left: 8px; margin-top: 8px; padding: 12px 20px; background: #FFFFFF; color: #8B1E2B; border: 1px solid #8B1E2B; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">${escapeHtml(params.secondaryAction.label)}</a>`
+      : '';
   const safeSalonName = escapeHtml(params.salonName);
   const safeAddress = escapeHtml(params.address);
   const safeInstagram = escapeHtml(params.instagramHandle?.trim() || '@laikona.nailsss');
@@ -244,7 +276,8 @@ export function renderBookingEmailHtml(params: {
     `      <p style="margin: 20px 0 0; font-size: 15px; line-height: 1.65; color: #241C1E;">${escapedBodyHtml}</p>`,
     `      ${speiBlockHtml}`,
     '      <div style="margin-top: 24px;">',
-    `        <a href="${safeHref}" style="display: inline-block; padding: 13px 22px; background: #8B1E2B; color: #FFFFFF; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Ver, agregar al calendario o reagendar</a>`,
+    `        <a href="${safeHref}" style="display: inline-block; padding: 13px 22px; background: #8B1E2B; color: #FFFFFF; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">${safePrimaryCtaLabel}</a>`,
+    `        ${secondaryCtaHtml}`,
     `        ${whatsappLinkHtml}`,
     '      </div>',
     `      ${calendarHintHtml}`,
@@ -342,6 +375,7 @@ export async function dispatchEmailNotification(params: {
   settings: SalonSettings;
   appUrl: string;
   situation?: EmailTemplateSituation;
+  touchUpUrl?: string;
   idempotencyKey?: string;
 }): Promise<NotificationDispatchResult> {
   const env = getRuntimeIntegrationStatus();
@@ -388,6 +422,7 @@ export async function dispatchEmailNotification(params: {
       appUrl: normalizedUrl,
       whatsappUrl,
       situation,
+      touchUpUrl: params.touchUpUrl,
     });
     const requestOptions = params.idempotencyKey
       ? { idempotencyKey: params.idempotencyKey }
@@ -428,6 +463,22 @@ export async function dispatchEmailNotification(params: {
             depositAmountLabel: formatCurrency(depositCents, params.settings.currency),
           }
         : null;
+      const htmlPrimaryUrl =
+        situation === 'reminder_24h'
+          ? `${manageUrl}?action=confirm`
+          : situation === 'touchup' && params.touchUpUrl
+            ? params.touchUpUrl
+            : manageUrl;
+      const htmlPrimaryLabel =
+        situation === 'reminder_24h'
+          ? 'Confirmo asistencia'
+          : situation === 'touchup'
+            ? 'Agendar mi retoque'
+            : undefined;
+      const htmlSecondaryAction =
+        situation === 'reminder_24h'
+          ? { label: 'Necesito reagendar', href: `${manageUrl}?action=reschedule` }
+          : null;
       result = await resend.emails.send(
         {
           from: fromEmail,
@@ -437,7 +488,9 @@ export async function dispatchEmailNotification(params: {
           html: renderBookingEmailHtml({
             salonName: params.settings.name,
             bodyText: params.bodyText,
-            manageUrl,
+            manageUrl: htmlPrimaryUrl,
+            primaryCtaLabel: htmlPrimaryLabel,
+            secondaryAction: htmlSecondaryAction,
             address: params.settings.address,
             instagramHandle: params.settings.instagramHandle,
             bookingCode: params.booking.bookingCode,
@@ -957,6 +1010,15 @@ export async function dispatchWhatsAppNotification(
 
     const fetcher = params.fetchImpl ?? globalThis.fetch;
     const cleanTo = params.toPhoneE164.replace(/\D/g, '');
+    const cleanButtons = (params.interactiveButtons ?? [])
+      .slice(0, 3)
+      .map((btn) => ({
+        type: 'reply' as const,
+        reply: {
+          id: btn.id.slice(0, 256),
+          title: btn.title.slice(0, 20),
+        },
+      }));
     const requestPayload =
       deliveryMode === 'template'
         ? buildWhatsAppTemplatePayload({
@@ -969,13 +1031,25 @@ export async function dispatchWhatsAppNotification(
                 ? params.templateParameters
                 : [params.bodyText],
           })
-        : {
-            messaging_product: 'whatsapp' as const,
-            recipient_type: 'individual' as const,
-            to: cleanTo,
-            type: 'text' as const,
-            text: { body: params.bodyText },
-          };
+        : cleanButtons.length > 0
+          ? {
+              messaging_product: 'whatsapp' as const,
+              recipient_type: 'individual' as const,
+              to: cleanTo,
+              type: 'interactive' as const,
+              interactive: {
+                type: 'button' as const,
+                body: { text: params.bodyText },
+                action: { buttons: cleanButtons },
+              },
+            }
+          : {
+              messaging_product: 'whatsapp' as const,
+              recipient_type: 'individual' as const,
+              to: cleanTo,
+              type: 'text' as const,
+              text: { body: params.bodyText },
+            };
 
     const res = await fetcher(
       `https://graph.facebook.com/${WHATSAPP_GRAPH_API_VERSION}/${encodeURIComponent(phoneId)}/messages`,
@@ -1332,4 +1406,86 @@ export async function buildAndSendImmediateNotifications(params: {
   }
 
   return created;
+}
+
+export async function dispatchDepositRejectedNotification(params: {
+  booking: BookingWithRelations;
+  settings: SalonSettings;
+  appUrl: string;
+  reason?: string | null;
+}): Promise<NotificationDispatchResult> {
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  const manageUrl = `${normalizedUrl}/cita/${params.booking.manageToken}`;
+  const reasonNote = params.reason?.trim()
+    ? ` Motivo: ${params.reason.trim()}.`
+    : '';
+  const bodyText = `Hola ${params.booking.client.fullName}, no pudimos validar el comprobante de tu anticipo para tu cita ${params.booking.bookingCode} (${params.booking.service.name}) en ${params.settings.name}.${reasonNote} Sube tu comprobante o pega el enlace aquí para confirmar tu lugar: ${manageUrl}`;
+  const subject = `Revisa tu comprobante de anticipo (${params.booking.bookingCode}) · ${params.settings.name}`;
+
+  return dispatchWhatsAppNotification({
+    toPhoneE164: params.booking.client.phoneE164,
+    bodyText,
+    withinServiceWindow: false,
+    settingsTimezone: params.settings.timezone,
+    fallbackEmail: params.booking.client.email
+      ? {
+          to: params.booking.client.email,
+          subject,
+          booking: params.booking,
+          settings: params.settings,
+          appUrl: normalizedUrl,
+          situation: 'pending_spei',
+          idempotencyKey: `deposit-rejected-${params.booking.id}-${Date.now()}`,
+        }
+      : undefined,
+  });
+}
+
+export async function dispatchTouchUpInviteNotification(params: {
+  booking: BookingWithRelations;
+  settings: SalonSettings;
+  appUrl: string;
+  touchUpUrl: string;
+}): Promise<{ whatsapp: NotificationDispatchResult; email: NotificationDispatchResult | null }> {
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  const fullTouchUpUrl = params.touchUpUrl.startsWith('http')
+    ? params.touchUpUrl
+    : `${normalizedUrl}${params.touchUpUrl.startsWith('/') ? '' : '/'}${params.touchUpUrl}`;
+  const bodyText = `Hola ${params.booking.client.fullName}, ya casi cumplen 3 semanas tus uñas de ${params.booking.service.name} con ${params.booking.staff.name}. Aparta tu retoque con fecha sugerida en un toque aquí: ${fullTouchUpUrl}`;
+  const subject = `¿Lista para tu retoque en ${params.settings.name}?`;
+
+  const whatsapp = await dispatchWhatsAppNotification({
+    toPhoneE164: params.booking.client.phoneE164,
+    bodyText,
+    withinServiceWindow: false,
+    settingsTimezone: params.settings.timezone,
+    fallbackEmail: params.booking.client.email
+      ? {
+          to: params.booking.client.email,
+          subject,
+          booking: params.booking,
+          settings: params.settings,
+          appUrl: normalizedUrl,
+          situation: 'touchup',
+          idempotencyKey: `touchup-wa-fb-${params.booking.id}`,
+        }
+      : undefined,
+  });
+
+  let email: NotificationDispatchResult | null = null;
+  if (params.booking.client.email) {
+    email = await dispatchEmailNotification({
+      to: params.booking.client.email,
+      subject,
+      bodyText,
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: normalizedUrl,
+      situation: 'touchup',
+      touchUpUrl: fullTouchUpUrl,
+      idempotencyKey: `touchup-email-${params.booking.id}`,
+    });
+  }
+
+  return { whatsapp, email };
 }

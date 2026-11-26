@@ -4,7 +4,11 @@ import {
   verifyMercadoPagoWebhookSignature,
 } from '@/lib/integrations/payments';
 import { logError, logWarn } from '@/lib/logger';
-import { confirmBookingDepositFromWebhook } from '@/lib/repositories/db';
+import {
+  claimWebhookEventIdempotent,
+  confirmBookingDepositFromWebhook,
+  getRepository,
+} from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +69,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'data.id faltante' }, { status: 400 });
   }
 
+  const snapshot = await getRepository().getSnapshot();
+  const alreadyPaid = (snapshot.bookingPayments ?? []).find(
+    (entry) =>
+      entry.provider === 'mercadopago' &&
+      entry.providerPaymentId === dataId &&
+      entry.status === 'approved',
+  );
+  if (alreadyPaid) {
+    return NextResponse.json({
+      ok: true,
+      idempotent: true,
+      bookingId: alreadyPaid.bookingId,
+    });
+  }
+
   const payment = await fetchMercadoPagoPayment({ paymentId: dataId });
   if (!payment) {
     logError('webhook_mercadopago_payment_lookup_failed', { dataId, requestId });
@@ -72,6 +91,21 @@ export async function POST(request: NextRequest) {
       { error: 'No se pudo verificar el estado del pago con Mercado Pago' },
       { status: 502 },
     );
+  }
+
+  if (requestId) {
+    const claimed = await claimWebhookEventIdempotent(
+      'mercadopago',
+      `${requestId}:${dataId}:${payment.status}`,
+    );
+    if (!claimed && payment.status !== 'approved') {
+      return NextResponse.json({
+        ok: true,
+        idempotent: true,
+        ignored: true,
+        status: payment.status,
+      });
+    }
   }
 
   if (payment.status !== 'approved') {

@@ -13,6 +13,7 @@ import { buildWhatsAppLink } from '@/lib/format';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { ClientProfile } from '@/lib/types';
 import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
+import type { ClientNoShowStats } from './clientasActions';
 import {
   formatInstagramDisplay,
   formatInstagramUrl,
@@ -28,6 +29,7 @@ interface ClientDirectoryTabProps {
   onOnlyBirthdaysChange: (next: boolean) => void;
   groupedByLetter: ReadonlyArray<readonly [string, ClientProfile[]]>;
   visitCountByClient: ReadonlyMap<string, number>;
+  noShowStatsByClient: ReadonlyMap<string, ClientNoShowStats>;
   loyaltyByClientId: ReadonlyMap<string, LoyaltySummary>;
   packagesByClientId: ReadonlyMap<string, ClientPackageRow[]>;
   noShowThreshold: number;
@@ -44,6 +46,7 @@ export function ClientDirectoryTab({
   onOnlyBirthdaysChange,
   groupedByLetter,
   visitCountByClient,
+  noShowStatsByClient,
   loyaltyByClientId,
   packagesByClientId,
   noShowThreshold,
@@ -120,6 +123,9 @@ export function ClientDirectoryTab({
               <VStack className="ad-row-list" gap={0}>
                 {clientsInGroup.map((c) => {
                   const visits = visitCountByClient.get(c.id) ?? 0;
+                  const noShowStats = noShowStatsByClient.get(c.id) ?? null;
+                  const effectiveNoShows = noShowStats?.noShowCount ?? c.noShowCount;
+                  const noShowRatePercent = noShowStats?.ratePercent ?? 0;
                   const loyalty = loyaltyByClientId.get(c.id) ?? null;
                   const clientActivePkgs = (packagesByClientId.get(c.id) ?? []).filter(
                     (pkg) =>
@@ -129,7 +135,7 @@ export function ClientDirectoryTab({
                     (sum, pkg) => sum + pkg.remainingSessions,
                     0,
                   );
-                  const isFlaggedNoShow = c.noShowCount >= noShowThreshold;
+                  const isFlaggedNoShow = effectiveNoShows >= noShowThreshold;
 
                   return (
                     <ActionRow
@@ -188,11 +194,11 @@ export function ClientDirectoryTab({
                               label={`${remainingPkgSessions} ses. paquete`}
                             />
                           ) : null}
-                          {c.noShowCount > 0 ? (
+                          {effectiveNoShows > 0 ? (
                             <StatusTag
                               tone={isFlaggedNoShow ? 'warning' : 'neutral'}
                               hasTabularNumbers
-                              label={`${c.noShowCount} ${c.noShowCount === 1 ? 'inasistencia' : 'inasistencias'}`}
+                              label={`${effectiveNoShows} ${effectiveNoShows === 1 ? 'inasistencia' : 'inasistencias'} · ${noShowRatePercent}%`}
                             />
                           ) : null}
                         </HStack>

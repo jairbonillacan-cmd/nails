@@ -342,6 +342,10 @@ describe('GET /api/client-portal/profile route security and client persistence',
       instagramHandle: '@sofia.ramirez.pue',
       birthday: '1997-11-29',
       isRegistered: true,
+      lastServiceSlug: expect.any(String),
+      lastServiceName: expect.any(String),
+      lastStaffSlug: expect.any(String),
+      lastStaffName: expect.any(String),
     });
   });
 
@@ -424,6 +428,10 @@ describe('GET /api/client-portal/profile route security and client persistence',
       instagramHandle: '@mariana.t',
       birthday: '1998-04-12',
       isRegistered: true,
+      lastServiceSlug: service.slug,
+      lastServiceName: service.name,
+      lastStaffSlug: expect.any(String),
+      lastStaffName: expect.any(String),
     });
   });
 

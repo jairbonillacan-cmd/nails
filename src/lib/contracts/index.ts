@@ -1,6 +1,7 @@
 export {
   AdminRoleSchema,
   AuditActionSchema,
+  BookingAttendanceStatusSchema,
   BookingLayoutViewSchema,
   BookingSourceSchema,
   BookingStatusSchema,
@@ -13,6 +14,7 @@ export {
   CouponKindSchema,
   CurrencySchema,
   DayOfWeekSchema,
+  FunnelEventTypeSchema,
   InventoryCategorySchema,
   InventoryMovementReasonSchema,
   NotificationChannelSchema,
@@ -31,11 +33,16 @@ export {
   WaitlistStatusSchema,
 } from './enums';
 
-export { isSafeInternalBookingMediaPath, TimeHHMMSchema } from './primitives';
+export {
+  isSafeExternalProofUrl,
+  isSafeInternalBookingMediaPath,
+  TimeHHMMSchema,
+} from './primitives';
 
 export {
   AdminCreateBookingSchema,
   AdminPatchBookingStatusSchema,
+  AdminRejectDepositSchema,
   AdminRescheduleBookingSchema,
   CheckoutSplitSchema,
   CreateSlotHoldSchema,
@@ -47,6 +54,8 @@ export {
   SubmitReviewSchema,
   ValidateCouponSchema,
 } from './bookings';
+
+export { RecordFunnelEventSchema } from './analytics';
 
 export {
   PostOverrideRangeSchema,

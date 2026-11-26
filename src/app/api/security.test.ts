@@ -3365,7 +3365,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(
         (dbAfterReplay.bookingPayments ?? []).filter((p) => p.bookingId === 'bk-1003'),
       ).toHaveLength(1);
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
 
     it('Google Calendar push webhook fails closed without GOOGLE_WEBHOOK_TOKEN, rejects bad tokens, and persists FreeBusy busy blocks', async () => {

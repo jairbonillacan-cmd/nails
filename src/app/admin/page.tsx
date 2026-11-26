@@ -43,6 +43,7 @@ export default function AdminOverviewPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
   const [period, setPeriod] = useState<DashboardPeriod>('7d');
   const [confirmingBookingId, setConfirmingBookingId] = useState<string | null>(null);
+  const [rejectingBookingId, setRejectingBookingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const savedNotice = useEphemeralMessage(3200);
 
@@ -151,6 +152,33 @@ export default function AdminOverviewPage() {
     }
   };
 
+  const handleRejectDeposit = async (bookingId: string, clientName: string): Promise<boolean> => {
+    if (rejectingBookingId === bookingId) return false;
+    setRejectingBookingId(bookingId);
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject_deposit', bookingId }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setErrorMessage(body?.error ?? 'No se pudo rechazar el comprobante.');
+        return false;
+      }
+      savedNotice.show(`Comprobante rechazado · Avisamos a ${clientName}`);
+      void refresh();
+      return true;
+    } catch {
+      setErrorMessage('Error de conexión al rechazar el comprobante.');
+      return false;
+    } finally {
+      setRejectingBookingId(null);
+    }
+  };
+
   const statusMeta = (
     <>
       {data.integration.mode === 'demo' ? (
@@ -236,8 +264,10 @@ export default function AdminOverviewPage() {
           data={data}
           metrics={metrics}
           confirmingBookingId={confirmingBookingId}
+          rejectingBookingId={rejectingBookingId}
           savedMessage={savedNotice.message}
           onConfirmDeposit={handleConfirmDeposit}
+          onRejectDeposit={handleRejectDeposit}
         />
       </VStack>
 

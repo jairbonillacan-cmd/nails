@@ -7,6 +7,13 @@ import {
   type ClientPackageRow,
 } from './clientasTypes';
 
+export interface ClientNoShowStats {
+  noShowCount: number;
+  completedCount: number;
+  evaluatedCount: number;
+  ratePercent: number;
+}
+
 export function buildVisitCountByClient(
   data: AdminOverviewPayload | null,
 ): Map<string, number> {
@@ -15,6 +22,36 @@ export function buildVisitCountByClient(
   for (const b of data.bookings) {
     if (b.status === 'canceled') continue;
     map.set(b.clientId, (map.get(b.clientId) ?? 0) + 1);
+  }
+  return map;
+}
+
+export function buildNoShowStatsByClient(
+  data: AdminOverviewPayload | null,
+): Map<string, ClientNoShowStats> {
+  const map = new Map<string, ClientNoShowStats>();
+  if (!data) return map;
+  const counts = new Map<string, { completed: number; noShow: number }>();
+  for (const b of data.bookings) {
+    if (b.status !== 'completed' && b.status !== 'no_show') continue;
+    const entry = counts.get(b.clientId) ?? { completed: 0, noShow: 0 };
+    if (b.status === 'completed') entry.completed += 1;
+    else entry.noShow += 1;
+    counts.set(b.clientId, entry);
+  }
+  for (const client of data.clients) {
+    const entry = counts.get(client.id) ?? { completed: 0, noShow: 0 };
+    const noShowCount = Math.max(client.noShowCount, entry.noShow);
+    const completedCount = entry.completed;
+    const evaluatedCount = completedCount + noShowCount;
+    const ratePercent =
+      evaluatedCount > 0 ? Math.round((noShowCount / evaluatedCount) * 100) : 0;
+    map.set(client.id, {
+      noShowCount,
+      completedCount,
+      evaluatedCount,
+      ratePercent,
+    });
   }
   return map;
 }

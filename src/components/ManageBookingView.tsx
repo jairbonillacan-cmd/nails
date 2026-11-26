@@ -5,8 +5,11 @@ import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { WifiOff } from 'lucide-react';
+import { CalendarClock, Check, WifiOff } from 'lucide-react';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { StatusTag } from '@/components/ui/StatusTag';
 import {
   formatDateLongInTimezone,
   formatDuration,
@@ -41,7 +44,7 @@ interface ManageBookingViewProps {
   whatsappUrl: string;
   manageUrl?: string;
   initialLoyaltySummary?: PublicLoyaltySummaryDTO | null;
-  initialAction?: 'reschedule' | 'cancel';
+  initialAction?: 'reschedule' | 'cancel' | 'confirm';
   renderedAtIso?: string;
 }
 
@@ -225,6 +228,65 @@ export function ManageBookingView({
               </>
             ) : (
               <>
+                {manage.canModify ? (
+                  <SurfaceCard
+                    id="ck-attendance-title"
+                    tone={booking.attendanceStatus === 'confirmed' ? 'subtle' : 'default'}
+                    padded
+                    headingLevel={2}
+                    title={
+                      booking.attendanceStatus === 'confirmed'
+                        ? 'Asistencia confirmada'
+                        : '¿Confirmas tu asistencia?'
+                    }
+                    subtitle={
+                      booking.attendanceStatus === 'confirmed'
+                        ? 'Ya avisamos a tu profesional. Te esperamos puntualmente.'
+                        : 'Con un toque confirmas tu lugar o eliges otra fecha.'
+                    }
+                    badge={
+                      booking.attendanceStatus === 'confirmed' ? (
+                        <StatusTag tone="success" label="Confirmada" showDot />
+                      ) : booking.attendanceStatus === 'rescheduled' ? (
+                        <StatusTag tone="info" label="Reagendada" showDot />
+                      ) : (
+                        <StatusTag tone="neutral" label="Por confirmar" />
+                      )
+                    }
+                    className="ck-panel fx-fade-up"
+                  >
+                    <HStack gap={2} wrap="wrap">
+                      {booking.attendanceStatus !== 'confirmed' ? (
+                        <Button
+                          type="button"
+                          label={
+                            manage.confirmingAttendance
+                              ? 'Confirmando...'
+                              : 'Confirmo asistencia'
+                          }
+                          variant="primary"
+                          size="md"
+                          icon={<Check size={15} aria-hidden="true" />}
+                          isLoading={manage.confirmingAttendance}
+                          isDisabled={manage.confirmingAttendance || manage.busy}
+                          onClick={() => void manage.handleConfirmAttendance()}
+                        />
+                      ) : null}
+                      {manage.reschedulePolicy.allowed ? (
+                        <Button
+                          type="button"
+                          label="Necesito reagendar"
+                          variant="secondary"
+                          size="md"
+                          icon={<CalendarClock size={15} aria-hidden="true" />}
+                          isDisabled={manage.confirmingAttendance || manage.busy}
+                          onClick={manage.openReschedule}
+                        />
+                      ) : null}
+                    </HStack>
+                  </SurfaceCard>
+                ) : null}
+
                 <CitaDepositSection
                   booking={displayBooking}
                   settings={settings}

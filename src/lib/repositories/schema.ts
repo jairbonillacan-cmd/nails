@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   AdminRoleSchema,
   AuditActionSchema,
+  BookingAttendanceStatusSchema,
   BookingLayoutViewSchema,
   BookingSourceSchema,
   BookingStatusSchema,
@@ -14,6 +15,7 @@ import {
   CouponKindSchema,
   CurrencySchema,
   DayOfWeekSchema,
+  FunnelEventTypeSchema,
   InventoryCategorySchema,
   InventoryMovementReasonSchema,
   LandingContentSchema,
@@ -282,6 +284,9 @@ const BookingSchema = z.object({
   depositAmountCents: z.number(),
   couponCode: z.string().nullable(),
   status: BookingStatusSchema,
+  attendanceStatus: BookingAttendanceStatusSchema.optional(),
+  attendanceConfirmedAt: z.string().nullable().optional(),
+  reminder24hSentAt: z.string().nullable().optional(),
   confirmedVia: z.enum(['manual', 'email', 'whatsapp', 'payment']).nullable().optional(),
   checkoutUrl: z.string().nullable().optional(),
   source: BookingSourceSchema,
@@ -290,6 +295,9 @@ const BookingSchema = z.object({
   inspoPhotoUrl: z.string().nullable(),
   paymentProofUrl: z.string().nullable(),
   proofDeliveryMethod: ProofDeliveryMethodSchema.optional(),
+  proofRejectedAt: z.string().nullable().optional(),
+  proofRejectionReason: z.string().nullable().optional(),
+  touchupInvitedAt: z.string().nullable().optional(),
   googleEventId: z.string().nullable(),
   cancellationReason: z.string().nullable(),
   rescheduledFromId: z.string().nullable(),
@@ -372,6 +380,7 @@ const WaitlistEntrySchema = z.object({
   priorityOfferToken: z.string().nullable().optional(),
   priorityOfferExpiresAt: z.string().nullable().optional(),
   priorityOfferSlotStartAt: z.string().nullable().optional(),
+  priorityOfferStaffId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 
@@ -606,6 +615,15 @@ const WebhookEventRecordSchema = z.object({
   receivedAt: z.string(),
 });
 
+const FunnelEventRecordSchema = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  eventType: FunnelEventTypeSchema,
+  serviceSlug: z.string().nullable(),
+  staffSlug: z.string().nullable(),
+  createdAt: z.string(),
+});
+
 export const DemoDatabaseSchema = z.object({
   settings: SalonSettingsSchema,
   staff: z.array(StaffMemberSchema),
@@ -643,6 +661,7 @@ export const DemoDatabaseSchema = z.object({
   whatsappTemplates: z.array(WhatsAppTemplateConfigSchema).default([]),
   whatsappMonthlyUsage: z.array(WhatsAppMonthlyUsageSchema).default([]),
   webhookEvents: z.array(WebhookEventRecordSchema).default([]),
+  funnelEvents: z.array(FunnelEventRecordSchema).default([]),
 });
 
 export function parseDemoDatabase(raw: unknown): DemoDatabase {

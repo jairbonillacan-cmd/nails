@@ -132,6 +132,14 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
       </HStack>
 
       <HStack align="center" justify="end" gap={3} wrap="wrap" className="ad-row-actions">
+        {!meta.isPast && booking.attendanceStatus === 'confirmed' ? (
+          <StatusTag label="Confirmó" tone="success" />
+        ) : !meta.isPast && booking.attendanceStatus === 'rescheduled' ? (
+          <StatusTag label="Reagendó" tone="info" />
+        ) : !meta.isPast && booking.reminder24hSentAt ? (
+          <StatusTag label="Sin respuesta" tone="neutral" />
+        ) : null}
+
         {isNextUp ? (
           <StatusTag label="Siguiente" tone="accent" showDot />
         ) : meta.customTag ? (

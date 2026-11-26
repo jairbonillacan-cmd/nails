@@ -1043,6 +1043,160 @@ async function testAdminPackagesAndCampaignsRbac() {
   assert.ok(Array.isArray(ownerCampaigns.json?.recentDispatches));
 }
 
+async function testPhase3EndToEndFlows(slots) {
+  const [slotA, slotB] = slots;
+  const suffix = crypto.randomInt(1000, 9999);
+  const phone = `+52222930${suffix}`;
+  const waitlistPhone = `+52222931${suffix}`;
+  const adminAuth = await resolveAdminDemoAuth();
+
+  const funnelRes = await fetchJson('/api/analytics/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: `e2e-fnl-${crypto.randomUUID()}`,
+      eventType: 'page_view',
+      serviceSlug: null,
+      staffSlug: null,
+    }),
+  });
+  assert.equal(funnelRes.status, 202, `POST /api/analytics/events falló: ${funnelRes.status}`);
+
+  const created = await fetchJson('/api/bookings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `e2e-p3-${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slotA.staffId,
+      startAt: slotA.startAt,
+      clientName: 'Clienta Fase Tres',
+      clientPhone: phone,
+      privacyConsentAccepted: true,
+    }),
+  });
+  assert.equal(created.status, 201, `Crear cita Fase 3 falló: ${created.status} ${created.text}`);
+  const bookingId = created.json?.booking?.id;
+  const manageToken = created.json?.booking?.manageToken;
+  assert.ok(bookingId && manageToken, 'Cita Fase 3 debe devolver id y manageToken');
+
+  try {
+    const rescheduled = await fetchJson(`/api/bookings/manage/${manageToken}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reschedule',
+        newStaffId: slotB.staffId,
+        newStartAt: slotB.startAt,
+      }),
+    });
+    assert.equal(rescheduled.status, 200, `Reagendar falló: ${rescheduled.status} ${rescheduled.text}`);
+    assert.equal(rescheduled.json?.booking?.attendanceStatus, 'rescheduled');
+
+    const proofLink = 'https://www.mercadopago.com.mx/activities/e2e-recibo-01';
+    const proofRes = await fetchJson(`/api/bookings/manage/${manageToken}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'upload_proof',
+        paymentProofUrl: proofLink,
+      }),
+    });
+    assert.equal(proofRes.status, 200, `Subir enlace comprobante falló: ${proofRes.status} ${proofRes.text}`);
+    assert.equal(proofRes.json?.booking?.proofDeliveryMethod, 'web_link');
+    assert.equal(proofRes.json?.booking?.paymentProofUrl, proofLink);
+
+    if (adminAuth.isDemoEnabled && adminAuth.ownerCookie) {
+      const rejectRes = await fetchJson('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: adminAuth.ownerCookie,
+        },
+        body: JSON.stringify({
+          action: 'reject_deposit',
+          bookingId,
+          reason: 'Prueba E2E rechazo',
+        }),
+      });
+      assert.equal(rejectRes.status, 200, `Rechazar anticipo falló: ${rejectRes.status} ${rejectRes.text}`);
+
+      const afterReject = await fetchJson(`/api/bookings/manage/${manageToken}`);
+      assert.equal(afterReject.status, 200);
+      assert.equal(afterReject.json?.booking?.paymentProofUrl, null);
+      assert.equal(afterReject.json?.booking?.proofRejectionReason, 'Prueba E2E rechazo');
+
+      const reupload = await fetchJson(`/api/bookings/manage/${manageToken}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upload_proof',
+          paymentProofUrl: 'https://www.banxico.org.mx/cep/e2e-recibo-02',
+        }),
+      });
+      assert.equal(reupload.status, 200);
+
+      const approveRes = await fetchJson('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: adminAuth.ownerCookie,
+        },
+        body: JSON.stringify({
+          bookingId,
+          status: 'confirmed',
+        }),
+      });
+      assert.equal(approveRes.status, 200, `Aprobar anticipo falló: ${approveRes.status}`);
+    }
+
+    const attendRes = await fetchJson(`/api/bookings/manage/${manageToken}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'confirm_attendance' }),
+    });
+    assert.equal(attendRes.status, 200, `Confirmar asistencia falló: ${attendRes.status}`);
+    assert.equal(attendRes.json?.booking?.attendanceStatus, 'confirmed');
+
+    const slotBDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Mexico_City',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(slotB.startAt));
+    const wlRes = await fetchJson('/api/waitlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serviceId: 'srv-rubber',
+        preferredStaffId: slotB.staffId,
+        desiredDate: slotBDate,
+        preferredWindow: 'any',
+        clientName: 'Clienta Espera E2E',
+        clientPhoneE164: waitlistPhone,
+      }),
+    });
+    assert.equal(wlRes.status, 201, `Registro lista de espera falló: ${wlRes.status}`);
+  } finally {
+    const cancelRes = await fetchJson(`/api/bookings/manage/${manageToken}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'cancel',
+        reason: 'Limpieza automática Fase 3 E2E',
+      }),
+    });
+    assert.equal(
+      cancelRes.status,
+      200,
+      `Cancelación Fase 3 falló: ${cancelRes.status} ${cancelRes.text}`,
+    );
+  }
+}
+
 async function main() {
   const startedAt = Date.now();
   const steps = [
@@ -1067,6 +1221,13 @@ async function main() {
     ['7. Client portal /mis-citas OTP flow, isolation & logout', testClientPortalOtpFlow],
     ['8. Executive reports (/api/admin/reports) RBAC & specialist scoping', testAdminReportsRbac],
     ['9. Session packages & retention campaigns RBAC + seeded cohorts', testAdminPackagesAndCampaignsRbac],
+    [
+      '10. Phase 3 lifecycle: reschedule, proof link, reject/approve deposit, attendance confirm, waitlist & funnel',
+      async () => {
+        const slots = await findFarFutureSlots(2);
+        await testPhase3EndToEndFlows(slots);
+      },
+    ],
   ];
 
   for (const [label, fn] of steps) {

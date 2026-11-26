@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { TextInput } from '@astryxdesign/core/TextInput';
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
 import { Info } from 'lucide-react';
 import { CopyableField } from '@/components/ui/CopyableField';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
+import { isSafeExternalProofUrl } from '@/lib/contracts';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import {
@@ -51,8 +53,13 @@ export function DepositCard({
   );
   const beneficiary = settings.depositBeneficiary || settings.depositAccountHolder;
   const cleanClabe = settings.depositClabe.replace(/\s+/g, '');
-  const activeMethod: 'web_upload' | 'none' =
-    proofDeliveryMethod === 'none' ? 'none' : 'web_upload';
+  const activeMethod: 'web_upload' | 'web_link' | 'none' =
+    proofDeliveryMethod === 'none'
+      ? 'none'
+      : proofDeliveryMethod === 'web_link'
+        ? 'web_link'
+        : 'web_upload';
+  const linkDraft = activeMethod === 'web_link' ? (proofDataUrl ?? '') : '';
 
   const processProofFile = async (file: File | null) => {
     if (!file) {
@@ -126,18 +133,30 @@ export function DepositCard({
           label="¿Ya hiciste la transferencia?"
           value={activeMethod}
           onChange={(val) => {
+            setUploadError(null);
             if (val === 'none') {
               void processProofFile(null);
               onChangeProofMethod('none');
               return;
             }
+            if (val === 'web_link') {
+              onChangeProofFile(null, null);
+              onChangeProofMethod('web_link');
+              return;
+            }
+            onChangeProofFile(null, null);
             onChangeProofMethod('web_upload');
           }}
         >
           <RadioListItem
             value="web_upload"
-            label="Sí, subo mi comprobante"
-            description="Una captura de tu app del banco."
+            label="Sí, subo captura"
+            description="Se ajusta sola desde tu teléfono."
+          />
+          <RadioListItem
+            value="web_link"
+            label="Sí, pego el enlace del recibo"
+            description="Enlace HTTPS de tu banco o Mercado Pago."
           />
           <RadioListItem
             value="none"
@@ -164,6 +183,29 @@ export function DepositCard({
             readyLabel="Comprobante listo"
             onSelectFile={(file) => void processProofFile(file)}
             onClear={() => void processProofFile(null)}
+          />
+        ) : activeMethod === 'web_link' ? (
+          <TextInput
+            label="Enlace del comprobante (HTTPS)"
+            type="url"
+            placeholder="https://..."
+            value={linkDraft}
+            isDisabled={isDisabled}
+            isOptional
+            status={
+              linkDraft.trim() && !isSafeExternalProofUrl(linkDraft)
+                ? {
+                    type: 'error',
+                    message:
+                      'Usa un enlace HTTPS de Mercado Pago, CEP Banxico, tu banco (BBVA, Nu, Santander, etc.) o Google Drive.',
+                  }
+                : undefined
+            }
+            description="Mercado Pago, CEP Banxico, banco o Google Drive (o súbelo después desde tu cita)."
+            onChange={(val) => {
+              const trimmed = val.trim();
+              onChangeProofFile(null, trimmed || null);
+            }}
           />
         ) : (
           <HStack gap={2} align="start" className="rb-card fx-fade-up" padding={3}>

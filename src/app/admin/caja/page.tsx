@@ -16,6 +16,7 @@ import {
   createCajaPackage,
   exportCajaCsv,
   recordCajaCashEntry,
+  rejectCajaDeposit,
   toggleCajaPackage,
 } from '@/components/admin/caja/cajaActions';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
@@ -86,6 +87,7 @@ export default function AdminCashPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
@@ -125,6 +127,27 @@ export default function AdminCashPage() {
       return true;
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  const handleRejectDeposit = async (
+    bookingId: string,
+    bookingCode: string,
+  ): Promise<boolean> => {
+    setRejectingId(bookingId);
+    setErrorMsg(null);
+    setMsg(null);
+    try {
+      const result = await rejectCajaDeposit(bookingId, bookingCode);
+      if (!result.ok) {
+        setErrorMsg(result.error ?? 'No se pudo rechazar el comprobante.');
+        return false;
+      }
+      setMsg(result.message ?? null);
+      void refresh();
+      return true;
+    } finally {
+      setRejectingId(null);
     }
   };
 
@@ -333,7 +356,9 @@ export default function AdminCashPage() {
           tz={tz}
           currency={currency}
           approvingId={approvingId}
+          rejectingId={rejectingId}
           onApproveDeposit={handleApproveDeposit}
+          onRejectDeposit={handleRejectDeposit}
         />
       ) : activeTab === 'commissions' ? (
         <CajaCommissionsTab

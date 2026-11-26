@@ -99,8 +99,18 @@ export function proofMethodMeta(method: PendingDepositRow['proofDeliveryMethod']
   color: 'blue' | 'purple' | 'yellow';
 } {
   if (method === 'web_upload') return { label: 'Foto subida', color: 'blue' };
+  if (method === 'web_link') return { label: 'Enlace de recibo', color: 'blue' };
   if (method === 'instagram_dm') return { label: 'Por Instagram', color: 'purple' };
   return { label: 'Sin comprobante aún', color: 'yellow' };
+}
+
+export function isImageProofHref(
+  url: string | null,
+  method?: PendingDepositRow['proofDeliveryMethod'],
+): url is string {
+  if (!url) return false;
+  if (method === 'web_link' || url.startsWith('https://')) return false;
+  return url.startsWith('/api/media/');
 }
 
 export function isSafeProofHref(url: string | null): url is string {

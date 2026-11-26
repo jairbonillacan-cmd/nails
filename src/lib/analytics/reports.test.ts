@@ -4,11 +4,16 @@ import type {
   Booking,
   BookingReview,
   ClientProfile,
+  FunnelEventRecord,
   PaymentSplit,
   Service,
   StaffMember,
 } from '../types';
-import { buildExecutiveReport, type ExecutiveReportInput } from './reports';
+import {
+  buildExecutiveReport,
+  buildFunnelSummary,
+  type ExecutiveReportInput,
+} from './reports';
 
 const TZ = 'America/Mexico_City';
 const NOW_MS = Date.UTC(2026, 4, 15, 20, 0, 0);
@@ -565,5 +570,94 @@ describe('buildExecutiveReport', () => {
     expect(report.heatmap.totalBookings).toBe(0);
     expect(report.serviceProfitability).toEqual([]);
     expect(report.cancellationReasons).toEqual([]);
+  });
+
+  it('computes unique-session booking funnel stages and respects period windows', () => {
+    const events: FunnelEventRecord[] = [
+      {
+        id: 'fe-1',
+        sessionId: 'sess-a',
+        eventType: 'page_view',
+        serviceSlug: null,
+        staffSlug: null,
+        createdAt: '2026-05-14T15:00:00.000Z',
+      },
+      {
+        id: 'fe-2',
+        sessionId: 'sess-a',
+        eventType: 'page_view',
+        serviceSlug: null,
+        staffSlug: null,
+        createdAt: '2026-05-14T15:01:00.000Z',
+      },
+      {
+        id: 'fe-3',
+        sessionId: 'sess-a',
+        eventType: 'booking_started',
+        serviceSlug: 'rubber',
+        staffSlug: null,
+        createdAt: '2026-05-14T15:02:00.000Z',
+      },
+      {
+        id: 'fe-4',
+        sessionId: 'sess-a',
+        eventType: 'slot_held',
+        serviceSlug: 'rubber',
+        staffSlug: 'karla',
+        createdAt: '2026-05-14T15:03:00.000Z',
+      },
+      {
+        id: 'fe-5',
+        sessionId: 'sess-a',
+        eventType: 'details_completed',
+        serviceSlug: 'rubber',
+        staffSlug: 'karla',
+        createdAt: '2026-05-14T15:04:00.000Z',
+      },
+      {
+        id: 'fe-6',
+        sessionId: 'sess-a',
+        eventType: 'booking_confirmed',
+        serviceSlug: 'rubber',
+        staffSlug: 'karla',
+        createdAt: '2026-05-14T15:05:00.000Z',
+      },
+      {
+        id: 'fe-7',
+        sessionId: 'sess-b',
+        eventType: 'page_view',
+        serviceSlug: null,
+        staffSlug: null,
+        createdAt: '2026-05-14T16:00:00.000Z',
+      },
+      {
+        id: 'fe-8',
+        sessionId: 'sess-b',
+        eventType: 'booking_started',
+        serviceSlug: 'rubber',
+        staffSlug: null,
+        createdAt: '2026-05-14T16:01:00.000Z',
+      },
+      {
+        id: 'fe-old',
+        sessionId: 'sess-old',
+        eventType: 'page_view',
+        serviceSlug: null,
+        staffSlug: null,
+        createdAt: '2026-03-01T15:00:00.000Z',
+      },
+    ];
+
+    const summary7d = buildFunnelSummary(events, '7d', NOW_MS, TZ);
+    expect(summary7d.totalSessions).toBe(2);
+    expect(summary7d.confirmedSessions).toBe(1);
+    expect(summary7d.overallConversionPercent).toBe(50);
+    expect(summary7d.stages.find((s) => s.eventType === 'page_view')?.sessionsCount).toBe(2);
+    expect(summary7d.stages.find((s) => s.eventType === 'slot_held')?.sessionsCount).toBe(1);
+    expect(summary7d.stages.find((s) => s.eventType === 'slot_held')?.stepConversionPercent).toBe(50);
+
+    const summaryAll = buildFunnelSummary(events, 'all', NOW_MS, TZ);
+    expect(summaryAll.totalSessions).toBe(3);
+    expect(summaryAll.overallConversionPercent).toBe(33);
   });
 });

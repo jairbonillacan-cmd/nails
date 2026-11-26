@@ -24,6 +24,7 @@ export interface ManageBookingPayload {
 
 export type ManagePatchRequest =
   | { action: 'upload_proof'; paymentProofUrl: string }
+  | { action: 'confirm_attendance' }
   | { action: 'reschedule'; newStartAt: string; newStaffId: string; reason?: string }
   | { action: 'cancel'; reason?: string };
 

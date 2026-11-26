@@ -63,7 +63,12 @@ export async function POST(request: NextRequest) {
       'proofs',
     );
     const proofDeliveryMethod =
-      parsed.proofDeliveryMethod ?? (paymentProofUrl ? 'web_upload' : 'none');
+      parsed.proofDeliveryMethod ??
+      (paymentProofUrl
+        ? paymentProofUrl.startsWith('https://')
+          ? 'web_link'
+          : 'web_upload'
+        : 'none');
 
     const booking = await createBookingWithExtras({
       ...parsed,
@@ -73,6 +78,7 @@ export async function POST(request: NextRequest) {
       clientEmail: parsed.clientEmail || null,
       sessionToken: effectiveSessionToken,
       holdId: parsed.holdId ?? null,
+      waitlistOfferToken: parsed.waitlistOfferToken ?? null,
       idempotencyKey,
       source: 'web',
       forceConfirmed: false,

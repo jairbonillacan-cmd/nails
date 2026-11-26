@@ -31,6 +31,7 @@ import {
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { BookingWithRelations, ClientProfile, ServicePackage } from '@/lib/types';
 import { ActionRow, BookingStatusTag, StatusTag, SurfaceCard } from '@/components/ui';
+import type { ClientNoShowStats } from './clientasActions';
 import {
   formatInstagramDisplay,
   formatInstagramUrl,
@@ -46,6 +47,7 @@ interface ClientProfileDialogProps {
   salonName: string;
   tz: string;
   noShowThreshold: number;
+  noShowStats: ClientNoShowStats | null;
   canManageClients: boolean;
   loyalty: LoyaltySummary | null;
   clientPackages: readonly ClientPackageRow[];
@@ -74,6 +76,7 @@ export function ClientProfileDialog({
   salonName,
   tz,
   noShowThreshold,
+  noShowStats,
   canManageClients,
   loyalty,
   clientPackages,
@@ -153,6 +156,13 @@ export function ClientProfileDialog({
                     hasTabularNumbers
                     label={`${nonCanceledCount} ${nonCanceledCount === 1 ? 'visita' : 'visitas'}`}
                   />
+                  {noShowStats && noShowStats.noShowCount > 0 ? (
+                    <StatusTag
+                      tone={noShowStats.noShowCount >= noShowThreshold ? 'warning' : 'neutral'}
+                      hasTabularNumbers
+                      label={`${noShowStats.ratePercent}% inasistencias`}
+                    />
+                  ) : null}
                 </HStack>
               </VStack>
             </HStack>
@@ -173,13 +183,16 @@ export function ClientProfileDialog({
 
           {editError ? <Banner status="error" role="alert" title={editError} /> : null}
 
-          {client.noShowCount >= noShowThreshold ? (
+          {(noShowStats?.noShowCount ?? client.noShowCount) >= noShowThreshold ? (
             <SurfaceCard tone="warning" padded>
               <HStack gap={2} align="center">
                 <AlertTriangle size={15} aria-hidden="true" />
                 <Text type="supporting" weight="semibold" hasTabularNumbers>
-                  {client.noShowCount} inasistencias registradas · Al agendar se le solicita
-                  anticipo para apartar su lugar.
+                  {noShowStats?.noShowCount ?? client.noShowCount} inasistencias registradas
+                  {noShowStats && noShowStats.evaluatedCount > 0
+                    ? ` (${noShowStats.ratePercent}% de inasistencias)`
+                    : ''}{' '}
+                  · Al agendar se le solicita anticipo para apartar su lugar.
                 </Text>
               </HStack>
             </SurfaceCard>

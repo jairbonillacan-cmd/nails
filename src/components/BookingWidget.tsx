@@ -9,10 +9,12 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Text } from '@astryxdesign/core/Text';
-import { X } from 'lucide-react';
+import { RotateCcw, X } from 'lucide-react';
 import { isAvailabilityRealtimeEvent, useBookingAvailability } from '@/lib/hooks/useBookingAvailability';
 import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
 import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
+import { useBookingFunnelTracker } from '@/lib/hooks/useBookingFunnelTracker';
+import { saveBookingMemory, useBookingMemory } from '@/lib/hooks/useBookingMemory';
 import { useBookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
 import { useBookingUrlSync } from '@/lib/hooks/useBookingUrlSync';
 import { useClientAccount } from '@/lib/hooks/useClientAccount';
@@ -96,15 +98,18 @@ export function BookingWidget(props: BookingWidgetProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isEmbed = searchParams.get('embed') === '1';
+  const waitlistOfferToken = searchParams.get('offer')?.trim() || null;
   const [flow, dispatch] = useReducer(bookingReducer, undefined, createInitialBookingFlowState);
   const timezone = settings.timezone || 'America/Mexico_City';
   const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
   const selection = useBookingSelectionState(props);
   const account = useClientAccount(props.initialClientProfile ?? null);
+  const bookingMemory = useBookingMemory();
   const clientAuthEnabled = isClientAuthMethodEnabled('whatsapp_otp');
   const [signInRequest, setSignInRequest] = useState<{ intent: ClientSignInIntent; phone: string } | null>(null);
   const [isStartPromptDismissed, setIsStartPromptDismissed] = useState(false);
+  const [isRepeatDismissed, setIsRepeatDismissed] = useState(false);
   const [justSignedInOnStart, setJustSignedInOnStart] = useState(false);
 
   const applyContactPatch = (patch: ClientContactPatch) => {
@@ -232,6 +237,25 @@ export function BookingWidget(props: BookingWidgetProps) {
     }, [flow.step, revalidateActive]),
   );
 
+  const selectedSlotStaffSlug = useMemo(() => {
+    const id = flow.selectedSlot?.staffId ?? (selection.isPinned ? selection.pinnedStaffId : null);
+    if (!id || id === 'any') return null;
+    const member = staff.find((item) => item.id === id);
+    return member ? (member.bookingSlug || member.id) : null;
+  }, [flow.selectedSlot?.staffId, selection.isPinned, selection.pinnedStaffId, staff]);
+
+  const funnel = useBookingFunnelTracker({
+    step: flow.step,
+    hasHeldSlot: Boolean(flow.selectedSlot),
+    hasProofAttached: Boolean(
+      selection.showsDeposit &&
+        selection.clientForm.proofDeliveryMethod !== 'none' &&
+        selection.clientForm.proofDataUrl,
+    ),
+    serviceSlug: selection.selectedService?.slug ?? null,
+    staffSlug: selectedSlotStaffSlug,
+  });
+
   const actions = useBookingFlowActions({
     flow,
     dispatch,
@@ -248,10 +272,52 @@ export function BookingWidget(props: BookingWidgetProps) {
     showsDeposit: selection.showsDeposit,
     client: selection.clientForm,
     signedInPhoneE164: account.profile?.phoneE164 ?? null,
+    waitlistOfferToken,
     todayKey: initialTodayKey,
     revalidateActive,
+    onBookingConfirmed: (summary) => {
+      saveBookingMemory(summary);
+      funnel.track('booking_confirmed', {
+        serviceSlug: summary.serviceSlug,
+        staffSlug: summary.staffSlug,
+      });
+    },
     navigateToManageUrl: (url) => router.push(url),
   });
+
+  const repeatCandidate = useMemo(() => {
+    if (initialServiceSlug || initialSlot || waitlistOfferToken) return null;
+    const sourceSlug = account.profile?.lastServiceSlug ?? bookingMemory?.serviceSlug ?? null;
+    if (!sourceSlug) return null;
+    const matchedService = services.find((srv) => srv.slug === sourceSlug) ?? null;
+    if (!matchedService) return null;
+    const sourceStaffSlug = account.profile?.lastServiceSlug
+      ? (account.profile.lastStaffSlug ?? null)
+      : (bookingMemory?.staffSlug ?? null);
+    const matchedStaff = sourceStaffSlug
+      ? (staff.find(
+          (member) => member.bookingSlug === sourceStaffSlug || member.id === sourceStaffSlug,
+        ) ?? null)
+      : null;
+    return { service: matchedService, staff: matchedStaff };
+  }, [account.profile, bookingMemory, initialServiceSlug, initialSlot, services, staff, waitlistOfferToken]);
+
+  const handleRepeatLastBooking = () => {
+    if (!repeatCandidate) return;
+    selection.setSelectedServiceId(repeatCandidate.service.id);
+    selection.setSelectedExtraServiceIds([]);
+    selection.setSelectedAddonIds([]);
+    selection.setPinnedStaffId(repeatCandidate.staff?.id ?? 'any');
+    actions.resetSelection();
+    prefetchBookingNextStep('service', false);
+    funnel.track('booking_started', {
+      serviceSlug: repeatCandidate.service.slug,
+      staffSlug: repeatCandidate.staff
+        ? (repeatCandidate.staff.bookingSlug || repeatCandidate.staff.id)
+        : null,
+    });
+    actions.goToStep('schedule');
+  };
 
   const handleStartFresh = () => {
     bookingDraft.resetDraft();
@@ -372,6 +438,47 @@ export function BookingWidget(props: BookingWidgetProps) {
             {isEmbed && handleBack ? (
               <HStack justify="start" className="rb-m">
                 <Button type="button" variant="ghost" size="md" label="Paso anterior" style={{ minHeight: '2.75rem' }} onClick={handleBack} />
+              </HStack>
+            ) : null}
+
+            {waitlistOfferToken ? (
+              <Banner
+                status="info"
+                title="Tu lugar prioritario de lista de espera está activo"
+                description="Tienes 30 minutos para elegir el horario liberado y confirmar tu cita antes de que pase al siguiente lugar."
+              />
+            ) : null}
+
+            {flow.step === 'service' && repeatCandidate && !isRepeatDismissed ? (
+              <HStack gap={3} align="center" className="rb-signin-card fx-sheet-in">
+                <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
+                  <RotateCcw size={18} aria-hidden="true" />
+                </VStack>
+                <VStack gap={0.5} className="rb-grow">
+                  <Text weight="semibold">Repetir tu última cita</Text>
+                  <Text type="supporting" color="secondary" textWrap="pretty">
+                    {repeatCandidate.service.name}
+                    {repeatCandidate.staff ? ` con ${repeatCandidate.staff.name}` : ''} · Ir directo a día y hora.
+                  </Text>
+                </VStack>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  label="Repetir"
+                  className="rb-signin-card-cta fx-press"
+                  onClick={handleRepeatLastBooking}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  isIconOnly
+                  label="Cerrar sugerencia"
+                  icon={<X size={16} aria-hidden="true" />}
+                  className="rb-signin-card-close"
+                  onClick={() => setIsRepeatDismissed(true)}
+                />
               </HStack>
             ) : null}
 

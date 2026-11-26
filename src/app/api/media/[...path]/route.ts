@@ -4,6 +4,7 @@ import { readClientPortalSession } from '@/lib/auth/client-portal-otp';
 import { normalizePhoneE164 } from '@/lib/format';
 import { logError } from '@/lib/logger';
 import { getMediaAccessOwner } from '@/lib/repositories/db';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 import {
   parseSafeMediaPath,
   readStoredMedia,
@@ -17,6 +18,24 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
 ) {
+  const rate = checkRateLimit({
+    bucket: 'public:media-read',
+    key: getRequestIp(request),
+    limit: 180,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { code: 'RATE_LIMITED', error: 'Demasiadas solicitudes de medios.' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rate.retryAfterSeconds),
+          'X-RateLimit-Remaining': '0',
+        },
+      },
+    );
+  }
   const url = new URL(request.url);
   const rawPathname = url.pathname;
   if (

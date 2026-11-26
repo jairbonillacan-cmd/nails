@@ -227,7 +227,11 @@ export default async function ReservarServicioPage({
         initialLayout={parseLayoutParam(query.layout)}
         initialSlot={query.slot?.trim() || undefined}
         initialInspoNote={query.inspo?.trim() || undefined}
-        initialClientProfile={await readSignedInClientProfile(db.clients)}
+        initialClientProfile={await readSignedInClientProfile(db.clients, {
+          bookings: db.bookings,
+          services: db.services,
+          staff: db.staff,
+        })}
       />
       {selectedService ? (
         <ServiceReviewsSection

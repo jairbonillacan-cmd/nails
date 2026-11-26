@@ -109,6 +109,7 @@ export function buildBookingTemplatePayload(params: {
   appUrl: string;
   whatsappUrl: string;
   situation?: EmailTemplateSituation;
+  touchUpUrl?: string;
 }): ResendTemplateDispatchPayload {
   const situation = resolveBookingEmailSituation(params);
   const baseUrl = normalizeBaseUrl(params.appUrl);
@@ -168,6 +169,8 @@ export function buildBookingTemplatePayload(params: {
         DATE_LABEL: clampVar(dateLabel, 'Mañana'),
         TIME_LABEL: clampVar(timeLabel, 'Horario confirmado'),
         MANAGE_URL: clampVar(manageUrl, `${baseUrl}/mis-citas`),
+        CONFIRM_URL: clampVar(`${manageUrl}?action=confirm`, manageUrl),
+        RESCHEDULE_URL: clampVar(`${manageUrl}?action=reschedule`, manageUrl),
         WHATSAPP_URL: safeWhatsappUrl,
         ...footer,
       },
@@ -235,7 +238,7 @@ export function buildBookingTemplatePayload(params: {
         CLIENT_NAME: clampVar(params.booking.client.fullName, 'Clienta'),
         SERVICE_NAME: clampVar(serviceLabel, 'Servicio'),
         STAFF_NAME: clampVar(params.booking.staff.name, 'Profesional'),
-        BOOKING_URL: clampVar(bookingUrl, `${baseUrl}/reservar`),
+        BOOKING_URL: clampVar(params.touchUpUrl || bookingUrl, `${baseUrl}/reservar`),
         WHATSAPP_URL: safeWhatsappUrl,
         ...footer,
       },
