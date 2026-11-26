@@ -61,7 +61,7 @@ export function LandingFooter({
         <HStack justify="between" align="end" wrap="wrap" gap={6} paddingBlockEnd={8} className="lk-reveal lk-rule-b">
           <VStack gap={3}>
             <img
-              src={customLogoUrl || LANDING_ASSETS.logoWhite}
+              src={customLogoUrl || LANDING_ASSETS.logoFullWhite}
               alt={salonName}
               width={440}
               height={186}

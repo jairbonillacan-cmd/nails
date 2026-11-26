@@ -1,4 +1,5 @@
 import '../booking.css';
+import { ViewTransition } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -9,6 +10,7 @@ const SERVICE_CARDS = [0, 1, 2, 3, 4, 5] as const;
 
 export default function ReservarLoading() {
   return (
+    <ViewTransition enter="lk-page-in" exit="lk-fade-out" default="none">
     <VStack
       className="lk-root rb-root"
       gap={0}
@@ -134,5 +136,6 @@ export default function ReservarLoading() {
         <VStack className="ad-skeleton" data-size="button" />
       </HStack>
     </VStack>
+    </ViewTransition>
   );
 }

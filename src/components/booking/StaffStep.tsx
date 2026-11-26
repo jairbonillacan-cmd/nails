@@ -46,7 +46,9 @@ export function StaffStep({
   const freeIds = new Set(slot.availableStaffIds);
   const isFree = (staffId: string) => freeIds.has(staffId) && !takenStaffIds.has(staffId);
   const isAnyPending = pendingStaffId === 'any';
-
+  const orderedStaff = eligibleStaff.toSorted(
+    (a, b) => Number(isFree(b.id)) - Number(isFree(a.id)),
+  );
   return (
     <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
@@ -107,7 +109,7 @@ export function StaffStep({
             </Text>
           </button>
         </li>
-        {eligibleStaff.map((member) => {
+        {orderedStaff.map((member) => {
           const free = isFree(member.id);
           const isOn = chosenStaffId === member.id;
           const isPending = pendingStaffId === member.id;

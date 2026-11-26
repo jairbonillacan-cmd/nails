@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { ViewTransition } from 'react';
 import { preload } from 'react-dom';
 import './landing.css';
 import { getRepository } from '@/lib/repositories/db';
@@ -95,6 +96,7 @@ export default async function HomePage() {
     .slice(0, 8);
 
   return (
+    <ViewTransition enter="lk-page-in" exit="lk-page-out" default="none">
     <LandingView
       initialSettings={publicSettings}
       categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
@@ -111,5 +113,6 @@ export default async function HomePage() {
       gallery={publicGallery}
       siteOrigin={siteOrigin}
     />
+    </ViewTransition>
   );
 }

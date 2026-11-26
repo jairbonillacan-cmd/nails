@@ -246,14 +246,12 @@ export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqIt
     settings?.minCancelHours ?? settings?.minRescheduleHours ?? 12,
   );
   const address = settings?.address?.trim() || DEFAULT_PUEBLA_ADDRESS;
-  const instagramHandle = normalizeHandle(settings?.instagramHandle);
-
   return [
     {
       id: 'faq-anticipo',
       question: '¿Cómo aparto mi cita?',
       answer: hasDeposit
-        ? `Escoges servicio, día y hora aquí en la página y dejas un anticipo de ${depositText} por transferencia SPEI. El comprobante lo puedes subir ahí mismo o mandarlo por DM a ${instagramHandle}. Ese anticipo se descuenta de tu total.`
+        ? `Escoges servicio, día y hora aquí en la página y dejas un anticipo de ${depositText} por transferencia SPEI. La captura de tu transferencia la subes ahí mismo o después desde el link de tu cita, sin tener que escribirnos. Ese anticipo se descuenta de tu total.`
         : 'Escoges servicio, día y hora aquí en la página y listo. Te llega la confirmación por WhatsApp.',
     },
     {

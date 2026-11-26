@@ -66,19 +66,11 @@ export function LandingCreations({
     galleryMode === 'custom_only' && mappedCustom.length > 0
       ? mappedCustom
       : [...mappedCustom, ...fallbackCreations];
-  const creations = isExpanded
-    ? allCreations
-    : allCreations.slice(0, GALLERY_INITIAL_COUNT);
+  const creations = allCreations;
   const canExpand = allCreations.length > GALLERY_INITIAL_COUNT;
 
   const toggleExpanded = () => {
-    setIsExpanded((value) => {
-      const next = !value;
-      if (!next && selectedIndex !== null && selectedIndex >= GALLERY_INITIAL_COUNT) {
-        setSelectedIndex(null);
-      }
-      return next;
-    });
+    setIsExpanded((value) => !value);
   };
 
   return (
@@ -124,10 +116,15 @@ export function LandingCreations({
         <ul className="lk-bento" aria-label="Sets de uñas">
           {creations.map((creation, index) => {
             const tile = galleryTileClass(index);
-            const motion = index >= GALLERY_INITIAL_COUNT ? 'fx-fade-up' : 'lk-pop';
+            const isExtra = index >= GALLERY_INITIAL_COUNT;
+            const motion = isExtra ? 'fx-fade-up' : 'lk-pop';
             const altText = `Set de uñas ${creation.title} (${creation.styleTag}) en LAIKONA NAILS Puebla`;
             return (
-              <li key={`${creation.src}-${index}`} className={tile ? `${tile} ${motion}` : motion}>
+              <li
+                key={`${creation.src}-${index}`}
+                className={tile ? `${tile} ${motion}` : motion}
+                data-extra={isExtra && !isExpanded ? 'true' : undefined}
+              >
                 <button
                   type="button"
                   className="lk-bento-btn"
@@ -179,7 +176,7 @@ export function LandingCreations({
               label={isExpanded ? 'Ver menos' : 'Ver más creaciones'}
               variant="secondary"
               size="lg"
-              className="lk-btn-light fx-press"
+              className="lk-btn-light lk-bento-more fx-press"
               aria-expanded={isExpanded}
               onClick={toggleExpanded}
             />

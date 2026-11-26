@@ -7,6 +7,7 @@ import {
   birthdayInputToIso,
   buildAvailabilityCacheKey,
   extractMxPhoneDigits,
+  fitWithinEdge,
   formatBirthdayInput,
   formatMxPhoneDisplay,
   isAcceptableClientEmail,
@@ -159,5 +160,28 @@ describe('buildAvailabilityCacheKey and media/date helpers', () => {
     expect(resolveEffectiveSelectedDate('2026-12-02', days)).toBe('2026-12-02');
     expect(resolveEffectiveSelectedDate('2026-12-03', days)).toBe('2026-12-03');
     expect(resolveEffectiveSelectedDate('2026-11-26', [])).toBe('2026-11-26');
+  });
+});
+
+describe('fitWithinEdge', () => {
+  it('never exceeds the max edge, keeps aspect ratio and never upscales', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 12_000 }),
+        fc.integer({ min: 1, max: 12_000 }),
+        fc.integer({ min: 64, max: 4_096 }),
+        (w, h, maxEdge) => {
+          const out = fitWithinEdge(w, h, maxEdge);
+          expect(out.width).toBeGreaterThanOrEqual(1);
+          expect(out.height).toBeGreaterThanOrEqual(1);
+          expect(Math.max(out.width, out.height)).toBeLessThanOrEqual(maxEdge);
+          expect(out.width).toBeLessThanOrEqual(w);
+          expect(out.height).toBeLessThanOrEqual(h);
+          const scale = Math.min(1, maxEdge / Math.max(w, h));
+          expect(Math.abs(out.width - Math.max(1, w * scale))).toBeLessThanOrEqual(1);
+          expect(Math.abs(out.height - Math.max(1, h * scale))).toBeLessThanOrEqual(1);
+        },
+      ),
+    );
   });
 });

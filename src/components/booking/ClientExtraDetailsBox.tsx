@@ -1,9 +1,11 @@
 'use client';
 
 import { VStack } from '@astryxdesign/core/VStack';
-import { Grid } from '@astryxdesign/core/Grid';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
+import { Collapsible } from '@astryxdesign/core/Collapsible';
+import { AtSign, Cake, Camera, Plus } from 'lucide-react';
 
 interface ClientExtraDetailsBoxProps {
   clientInstagram: string;
@@ -28,24 +30,43 @@ export function ClientExtraDetailsBox({
   onChangeClientEmail,
   onChangeClientBirthday,
 }: ClientExtraDetailsBoxProps) {
+  const hasAnyValue = Boolean(clientInstagram.trim() || clientEmail.trim() || clientBirthday.trim());
+  const hasError = Boolean(emailError || birthdayError);
+  const filledCount = [clientInstagram, clientEmail, clientBirthday].filter((v) => v.trim()).length;
+
   return (
-    <VStack as="fieldset" gap={3} className="rb-fieldset">
-      <legend className="rb-legend">Opcional</legend>
-      <Text type="supporting" color="secondary">
-        Puedes dejarlos en blanco.
-      </Text>
-      <Grid columns={{ minWidth: 220, max: 2 }} gap={3}>
+    <Collapsible
+      key={hasError ? 'extras-error' : 'extras'}
+      className="rb-extras"
+      defaultIsOpen={hasAnyValue || hasError}
+      trigger={
+        <HStack gap={3} align="center" className="rb-extras-trigger">
+          <VStack className="rb-extras-plus" align="center" justify="center" aria-hidden="true">
+            <Plus size={16} aria-hidden="true" />
+          </VStack>
+          <VStack gap={0} className="rb-grow">
+            <Text weight="semibold">Agrega más (opcional)</Text>
+            <Text type="supporting" color="secondary">
+              {filledCount > 0
+                ? `${filledCount} de 3 agregados`
+                : 'Instagram, correo y cumpleaños'}
+            </Text>
+          </VStack>
+        </HStack>
+      }
+    >
+      <VStack gap={4} paddingBlockStart={3} paddingBlockEnd={1}>
         <TextInput
           htmlName="clientInstagram"
           label="Instagram"
-          placeholder="@tu.usuario"
+          placeholder="tu.usuario"
           autoCapitalize="off"
           hasAutoCorrect={false}
-          description="Para etiquetarte cuando subamos tus uñas"
+          startIcon={<Camera size={16} aria-hidden="true" />}
+          description="Para etiquetarte cuando subamos tus uñas."
           value={clientInstagram}
           onChange={onChangeClientInstagram}
           isDisabled={isDisabled}
-          isOptional
         />
         <TextInput
           htmlName="clientEmail"
@@ -55,11 +76,11 @@ export function ClientExtraDetailsBox({
           autoComplete="email"
           autoCapitalize="off"
           hasAutoCorrect={false}
-          description="Te mandamos la cita para tu calendario"
+          startIcon={<AtSign size={16} aria-hidden="true" />}
+          description="Te mandamos la cita para agregarla a tu calendario."
           value={clientEmail}
           onChange={onChangeClientEmail}
           isDisabled={isDisabled}
-          isOptional
           status={emailError ? { type: 'error', message: emailError } : undefined}
           statusVariant="detached"
         />
@@ -69,15 +90,15 @@ export function ClientExtraDetailsBox({
           placeholder="DD/MM/AAAA"
           inputMode="numeric"
           autoComplete="bday"
-          description="En tu mes te llega un detalle de nuestra parte"
+          startIcon={<Cake size={16} aria-hidden="true" />}
+          description="En tu mes te llega un detalle de nuestra parte."
           value={clientBirthday}
           onChange={onChangeClientBirthday}
           isDisabled={isDisabled}
-          isOptional
           status={birthdayError ? { type: 'error', message: birthdayError } : undefined}
           statusVariant="detached"
         />
-      </Grid>
-    </VStack>
+      </VStack>
+    </Collapsible>
   );
 }

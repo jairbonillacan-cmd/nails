@@ -20,12 +20,14 @@ import {
   buildHomeStructuredData,
   buildSalonFaqs,
 } from '@/lib/seo/structured-data';
+import { useRevealOnScroll } from '@/lib/hooks/useRevealOnScroll';
 import { JsonLdScript } from './seo/JsonLdScript';
 import { useSalonAppearance } from './SalonThemeProvider';
 import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
 import { LandingNav } from './landing/LandingNav';
 import { LandingMenu } from './landing/LandingMenu';
 import { LandingFooter } from './landing/LandingFooter';
+import { LandingHeroSlides } from './landing/LandingHeroSlides';
 
 const LandingCreations = dynamic(() =>
   import('./landing/LandingCreations').then((mod) => mod.LandingCreations),
@@ -74,6 +76,7 @@ export function LandingView({
   gallery = [],
   siteOrigin,
 }: LandingViewProps) {
+  useRevealOnScroll('#lk-landing');
   const { settings: liveSettings } = useSalonAppearance();
   const settings = liveSettings ?? initialSettings;
   const landing = resolveLandingContent(settings);
@@ -113,7 +116,7 @@ export function LandingView({
       : null;
 
   return (
-    <VStack as="main" gap={0} className="lk-root">
+    <VStack as="main" gap={0} className="lk-root" id="lk-landing">
       <JsonLdScript id="jsonld-home" data={homeStructuredData} />
 
       {sections.showMarquee ? (
@@ -137,25 +140,12 @@ export function LandingView({
         sections={sections}
       />
 
-      <VStack as="section" id="inicio" aria-labelledby="hero-t" padding={3} paddingBlockEnd={0}>
+      <VStack as="section" id="inicio" aria-labelledby="hero-t" gap={0}>
         <VStack gap={6} justify="end" className="lk-hero">
-          <picture className="lk-hero-media" aria-hidden="true">
-            <source
-              media="(max-width: 47.5rem)"
-              srcSet={landing.heroImageMobileUrl}
-              width={720}
-              height={960}
-            />
-            <img
-              src={landing.heroImageDesktopUrl}
-              alt=""
-              width={1600}
-              height={900}
-              loading="eager"
-              fetchPriority="high"
-              decoding="sync"
-            />
-          </picture>
+          <LandingHeroSlides
+            desktopUrl={landing.heroImageDesktopUrl}
+            mobileUrl={landing.heroImageMobileUrl}
+          />
           <VStack className="lk-hero-scrim" aria-hidden="true" />
           <VStack gap={5} className="lk-hero-content">
             <Heading level={1} id="hero-t" color="inherit" className="lk-serif lk-h1 lk-intro">

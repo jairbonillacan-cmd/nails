@@ -190,9 +190,6 @@ export function BookingHero({
               decoding="async"
             />
           </VStack>
-          <Text color="inherit" className="rb-hero-note rb-d">
-            Los horarios que ves son los que de verdad están libres.
-          </Text>
         </HStack>
 
         <ol className="rb-stepper rb-d" aria-label="Pasos">

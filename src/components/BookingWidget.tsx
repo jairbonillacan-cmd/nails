@@ -7,6 +7,8 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
+import { Text } from '@astryxdesign/core/Text';
+import { UserRound, X } from 'lucide-react';
 import { isAvailabilityRealtimeEvent, useBookingAvailability } from '@/lib/hooks/useBookingAvailability';
 import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
 import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
@@ -373,23 +375,35 @@ export function BookingWidget(props: BookingWidgetProps) {
             ) : null}
 
             {flow.step === 'service' && clientAuthEnabled && !account.profile && !isStartPromptDismissed ? (
-              <Banner
-                status="info"
-                title="¿Ya reservaste antes?"
-                description="Inicia sesión y llenamos tus datos por ti."
-                endContent={
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    label="Iniciar sesión"
-                    onClick={() => openSignIn('signin', selection.clientForm.clientPhone)}
-                  />
-                }
-                isDismissable
-                dismissLabel="Ahora no"
-                onDismiss={() => setIsStartPromptDismissed(true)}
-              />
+              <HStack gap={3} align="center" className="rb-signin-card fx-sheet-in">
+                <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
+                  <UserRound size={20} aria-hidden="true" />
+                </VStack>
+                <VStack gap={0.5} className="rb-grow">
+                  <Text weight="semibold">¿Ya has venido?</Text>
+                  <Text type="supporting" color="secondary" textWrap="pretty">
+                    Entra con tu WhatsApp y llenamos tus datos.
+                  </Text>
+                </VStack>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  label="Entrar"
+                  className="rb-signin-card-cta fx-press"
+                  onClick={() => openSignIn('signin', selection.clientForm.clientPhone)}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  isIconOnly
+                  label="Ahora no"
+                  icon={<X size={16} aria-hidden="true" />}
+                  className="rb-signin-card-close"
+                  onClick={() => setIsStartPromptDismissed(true)}
+                />
+              </HStack>
             ) : null}
 
             {flow.step === 'service' && account.profile && justSignedInOnStart ? (
@@ -540,6 +554,7 @@ export function BookingWidget(props: BookingWidgetProps) {
         <ClientSignInDialog
           intent={signInRequest.intent}
           initialPhone={signInRequest.phone}
+          hasHeldSlot={Boolean(flow.holdExpiresAt)}
           onClose={() => setSignInRequest(null)}
           onVerified={handleSignInVerified}
         />

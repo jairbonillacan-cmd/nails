@@ -8,8 +8,8 @@ import { TextArea } from '@astryxdesign/core/TextArea';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import {
   formatFileSize,
+  prepareClientImageFile,
   readFileAsDataUrl,
-  validateClientImageFile,
 } from './bookingHelpers';
 
 interface DesignStepProps {
@@ -43,16 +43,17 @@ export function DesignStep({
       return;
     }
     setInspoError(null);
-    const validationError = await validateClientImageFile(file);
-    if (validationError) {
+    setInspoProgress(8);
+    const prepared = await prepareClientImageFile(file);
+    if (prepared.error) {
       setInspoProgress(null);
-      setInspoError(validationError);
+      setInspoError(prepared.error);
       return;
     }
     setInspoProgress(15);
     try {
-      const url = await readFileAsDataUrl(file, setInspoProgress);
-      onChangeInspoFile(file, url);
+      const url = await readFileAsDataUrl(prepared.file, setInspoProgress);
+      onChangeInspoFile(prepared.file, url);
     } catch {
       setInspoError('No pudimos abrir esa foto. Prueba con otra en PNG, JPG o WEBP.');
     } finally {
@@ -82,7 +83,7 @@ export function DesignStep({
           error={inspoError}
           isDisabled={false}
           isOptional
-          helperText="Una sola foto. Sirve una captura de Pinterest o Instagram (hasta 2.5 MB)."
+          helperText="Una sola foto. Sirve una captura de Pinterest o Instagram, o una foto de tu galería."
           placeholder="Sube la foto del diseño que te gustó"
           readyLabel="Foto lista"
           onSelectFile={(file) => void processInspoFile(file)}

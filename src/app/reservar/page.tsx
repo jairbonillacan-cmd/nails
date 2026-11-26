@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import '../booking.css';
+import { ViewTransition } from 'react';
 import { readSignedInClientProfile } from '@/lib/auth/client-portal-profile';
 import { getRepository } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
@@ -111,6 +112,7 @@ export default async function ReservarPage({
       : undefined;
 
   return (
+    <ViewTransition enter="lk-fade-in" exit="lk-page-out" default="none">
     <BookingWidget
       settings={toPublicSettingsDTO(db.settings)}
       categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
@@ -135,5 +137,6 @@ export default async function ReservarPage({
       emitBookingBreadcrumb
       initialClientProfile={await readSignedInClientProfile(db.clients)}
     />
+    </ViewTransition>
   );
 }

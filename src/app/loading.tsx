@@ -1,4 +1,5 @@
 import './landing.css';
+import { ViewTransition } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -8,6 +9,7 @@ const HERO_SERVICES = [0, 1, 2, 3] as const;
 
 export default function HomeLoading() {
   return (
+    <ViewTransition enter="lk-page-in" exit="lk-fade-out" default="none">
     <VStack
       className="lk-root"
       gap={0}
@@ -44,7 +46,7 @@ export default function HomeLoading() {
         </HStack>
       </VStack>
 
-      <VStack as="section" padding={3} paddingBlockEnd={0}>
+      <VStack as="section" gap={0}>
         <VStack className="lk-hero sk-landing-hero" justify="end" gap={6}>
           <VStack gap={4} className="lk-hero-content" maxWidth={540}>
             <HStack align="center">
@@ -114,5 +116,6 @@ export default function HomeLoading() {
         </VStack>
       </VStack>
     </VStack>
+    </ViewTransition>
   );
 }

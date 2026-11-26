@@ -4,38 +4,23 @@ import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
-import { Button } from '@astryxdesign/core/Button';
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
-import { Check, Copy, ExternalLink, Info, Upload } from 'lucide-react';
+import { Info, Link2 } from 'lucide-react';
 import { CopyableField } from '@/components/ui/CopyableField';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
-import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatCurrency } from '@/lib/format';
-import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
-import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
-import type { ServiceAddon } from '@/lib/types';
+import type { PublicSettingsDTO } from '@/lib/public-dto';
 import {
-  buildInstagramDmSummary,
   formatFileSize,
-  normalizeInstagramHandle,
+  prepareClientImageFile,
   readFileAsDataUrl,
-  resolveInstagramUrl,
-  validateClientImageFile,
   type ProofDeliveryMethod,
 } from './bookingHelpers';
 
 interface DepositCardProps {
   settings: PublicSettingsDTO;
   depositAmountCents: number;
-  primaryService: PublicServiceDTO | undefined;
-  extraServices: PublicServiceDTO[];
-  addons: ServiceAddon[];
-  selectedSlot: AvailableSlot | null;
-  timeFormat: '12h' | '24h';
-  totalDurationMinutes: number;
-  clientName: string;
-  clientInstagram: string;
   proofDeliveryMethod: ProofDeliveryMethod;
   proofFile: File | null;
   proofDataUrl: string | null;
@@ -48,14 +33,6 @@ interface DepositCardProps {
 export function DepositCard({
   settings,
   depositAmountCents,
-  primaryService,
-  extraServices,
-  addons,
-  selectedSlot,
-  timeFormat,
-  totalDurationMinutes,
-  clientName,
-  clientInstagram,
   proofDeliveryMethod,
   proofFile,
   proofDataUrl,
@@ -64,7 +41,6 @@ export function DepositCard({
   onChangeProofMethod,
   onChangeProofFile,
 }: DepositCardProps) {
-  const dmClipboard = useCopyToClipboard(2500);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -73,31 +49,9 @@ export function DepositCard({
     settings.currency,
   );
   const beneficiary = settings.depositBeneficiary || settings.depositAccountHolder;
-  const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
-  const instagramUrl = resolveInstagramUrl(settings);
   const cleanClabe = settings.depositClabe.replace(/\s+/g, '');
-  const activeMethod: 'web_upload' | 'instagram_dm' =
-    proofDeliveryMethod === 'instagram_dm' ? 'instagram_dm' : 'web_upload';
-
-  const handleCopyDmSummary = async () => {
-    const summary = buildInstagramDmSummary({
-      settings,
-      primaryService,
-      extraServices,
-      addons,
-      slot: selectedSlot,
-      timeFormat,
-      totalDurationMinutes,
-      depositAmountCents,
-      clientName,
-      clientInstagram,
-    });
-    await dmClipboard.copy(
-      summary,
-      'Resumen copiado para pegar en Instagram DM',
-      'No se pudo copiar automáticamente; envía tu captura por DM.',
-    );
-  };
+  const activeMethod: 'web_upload' | 'none' =
+    proofDeliveryMethod === 'none' ? 'none' : 'web_upload';
 
   const processProofFile = async (file: File | null) => {
     if (!file) {
@@ -107,16 +61,17 @@ export function DepositCard({
       return;
     }
     setUploadError(null);
-    const validationError = await validateClientImageFile(file);
-    if (validationError) {
+    setUploadProgress(8);
+    const prepared = await prepareClientImageFile(file);
+    if (prepared.error) {
       setUploadProgress(null);
-      setUploadError(validationError);
+      setUploadError(prepared.error);
       return;
     }
     setUploadProgress(15);
     try {
-      const url = await readFileAsDataUrl(file, setUploadProgress);
-      onChangeProofFile(file, url);
+      const url = await readFileAsDataUrl(prepared.file, setUploadProgress);
+      onChangeProofFile(prepared.file, url);
     } catch {
       setUploadError('No pudimos leer esta imagen. Intenta con otra captura PNG, JPG o WEBP.');
     } finally {
@@ -167,21 +122,26 @@ export function DepositCard({
         ) : null}
 
         <RadioList
-          label="¿Cómo nos mandas tu comprobante?"
+          label="¿Ya hiciste la transferencia?"
           value={activeMethod}
-          onChange={(val) =>
-            onChangeProofMethod(val === 'instagram_dm' ? 'instagram_dm' : 'web_upload')
-          }
+          onChange={(val) => {
+            if (val === 'none') {
+              void processProofFile(null);
+              onChangeProofMethod('none');
+              return;
+            }
+            onChangeProofMethod('web_upload');
+          }}
         >
           <RadioListItem
             value="web_upload"
-            label="Lo subo ahora"
-            description="Captura PNG, JPG o WEBP (máx. 2.5 MB)."
+            label="Sí, subo mi comprobante"
+            description="Una captura de tu app del banco."
           />
           <RadioListItem
-            value="instagram_dm"
-            label={`Lo mando por DM a ${instagramHandle}`}
-            description="Apartas ya y lo envías después."
+            value="none"
+            label="La hago después"
+            description="Apartas ya y lo subes desde el link de tu cita."
           />
         </RadioList>
 
@@ -198,64 +158,20 @@ export function DepositCard({
             error={uploadError}
             isDisabled={isDisabled}
             isOptional
-            helperText="PNG, JPG o WEBP · máximo 2.5 MB."
+            helperText="Sirve cualquier captura o foto; la ajustamos sola."
             placeholder="Elige o arrastra tu captura"
             readyLabel="Comprobante listo"
             onSelectFile={(file) => void processProofFile(file)}
             onClear={() => void processProofFile(null)}
           />
         ) : (
-          <SurfaceCard tone="default" padded className="rb-card">
-            <VStack gap={2}>
-              <HStack gap={1.5} align="center">
-                <Upload size={15} aria-hidden="true" />
-                <Text weight="medium">Envío por Instagram DM</Text>
-              </HStack>
-              <Text type="supporting" color="secondary">
-                Al confirmar tu cita apartaremos tu horario y podrás mandar tu comprobante a {instagramHandle}.
-              </Text>
-              <HStack gap={2} wrap="wrap">
-                <Button
-                  variant="secondary"
-                  size="md"
-                  className="fx-press"
-                  icon={<ExternalLink size={15} aria-hidden="true" />}
-                  label={`Abrir ${instagramHandle}`}
-                  href={instagramUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="md"
-                  className="fx-press"
-                  icon={
-                    dmClipboard.copied ? (
-                      <Check size={15} aria-hidden="true" className="fx-pop" />
-                    ) : (
-                      <Copy size={15} aria-hidden="true" />
-                    )
-                  }
-                  label={
-                    dmClipboard.copied
-                      ? 'Resumen copiado'
-                      : 'Copiar resumen para Instagram DM'
-                  }
-                  onClick={() => void handleCopyDmSummary()}
-                />
-              </HStack>
-              <Text
-                type="supporting"
-                color={dmClipboard.copied ? 'accent' : 'secondary'}
-                role="status"
-                aria-live="polite"
-                className={dmClipboard.feedback ? 'fx-fade-up' : 'rb-sr-only'}
-              >
-                {dmClipboard.feedback ?? ''}
-              </Text>
-            </VStack>
-          </SurfaceCard>
+          <HStack gap={2} align="start" className="rb-card fx-fade-up" padding={3}>
+            <Link2 size={15} aria-hidden="true" className="ck-icon lk-cereza-text" />
+            <Text type="supporting" color="secondary" textWrap="pretty">
+              Al terminar te damos el link de tu cita. Cuando hagas la transferencia, entras
+              ahí y subes la captura. No hace falta escribirnos.
+            </Text>
+          </HStack>
         )}
       </VStack>
     </SurfaceCard>

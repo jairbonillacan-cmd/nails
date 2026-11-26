@@ -110,14 +110,6 @@
   gap: 0.5rem;
 }
 
-.rb-hero-note {
-  max-width: 18rem;
-  font-size: 0.875rem;
-  opacity: 0.85;
-  text-align: end;
-  text-wrap: pretty;
-}
-
 .rb-step {
   width: 100%;
   display: flex;
@@ -814,4 +806,232 @@
   .rb-cal { padding: 0.75rem; }
   .rb-cal-grid { gap: 0.25rem; }
   .rb-embed .rb-panel { padding: 0.875rem 0.75rem 1.25rem; }
+}
+
+.rb-signin-card {
+  padding: 0.875rem 0.75rem 0.875rem 0.875rem;
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--lk-cereza) 6%, var(--color-background-surface));
+  border: 1px solid color-mix(in srgb, var(--lk-cereza) 18%, transparent);
+}
+
+.rb-signin-card-icon {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-full);
+  background: var(--lk-cereza);
+  color: var(--lk-blanco);
+}
+
+.rb-signin-card-cta {
+  flex: none !important;
+  min-width: max-content !important;
+}
+
+.rb-signin-card-close {
+  flex: none;
+  margin-inline-start: -0.25rem;
+}
+
+.rb-signin {
+  overflow: hidden;
+}
+
+.rb-signin-head {
+  position: relative;
+  padding: 1rem 1rem 1.5rem 1.5rem;
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--lk-blanco) 14%, transparent) 0%, transparent 55%),
+    var(--lk-cereza);
+  color: var(--lk-blanco);
+  --color-icon-primary: var(--lk-blanco);
+  --color-text-primary: var(--lk-blanco);
+}
+
+.rb-signin-logo {
+  display: block;
+  height: 1.5rem;
+  width: auto;
+}
+
+.rb-signin-step {
+  opacity: 0.78;
+  font-weight: 500;
+}
+
+.rb-signin-icon {
+  color: var(--lk-blanco) !important;
+}
+
+.rb-signin-icon:hover {
+  background: color-mix(in srgb, var(--lk-blanco) 14%, transparent) !important;
+}
+
+.rb-signin-icon:focus-visible {
+  outline: 2px solid var(--lk-blanco);
+  outline-offset: 2px;
+}
+
+.rb-signin-title {
+  font-size: clamp(1.75rem, 6vw, 2.1rem);
+  line-height: 1.05;
+}
+
+.rb-signin-sub {
+  opacity: 0.9;
+  max-width: 22rem;
+}
+
+.rb-signin-body {
+  padding: 1.5rem;
+}
+
+.rb-signin-note {
+  color: var(--color-text-secondary);
+}
+
+.rb-signin-note > svg {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--lk-cereza);
+}
+
+.rb-signin-code input {
+  text-align: center;
+  font-size: 1.5rem;
+  letter-spacing: 0.5em;
+  font-variant-numeric: tabular-nums;
+  padding-inline-start: 0.5em;
+}
+
+@media (max-width: 47.5rem) {
+  .rb-signin-card {
+    padding: 0.75rem 0.5rem 0.75rem 0.75rem;
+    gap: 0.625rem;
+  }
+
+  .rb-signin-card-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .rb-signin-body {
+    padding: 1.25rem;
+  }
+
+  .rb-signin-head {
+    padding: 0.875rem 0.75rem 1.25rem 1.25rem;
+  }
+}
+
+.rb-account-card {
+  padding: 1.125rem;
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--lk-cereza) 6%, var(--color-background-surface));
+  border: 1px solid color-mix(in srgb, var(--lk-cereza) 18%, transparent);
+}
+
+.rb-account-guest {
+  background:
+    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--lk-cereza) 10%, transparent) 0%, transparent 60%),
+    color-mix(in srgb, var(--lk-cereza) 4%, var(--color-background-surface));
+}
+
+.rb-account-avatar {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-full);
+  background: var(--lk-cereza);
+  color: var(--lk-blanco);
+  font-size: 1.125rem;
+}
+
+.rb-account-name {
+  font-size: 1.125rem;
+  line-height: 1.25;
+}
+
+.rb-account-check {
+  color: var(--lk-cereza);
+}
+
+.rb-account-inline {
+  padding: 0.25rem 0.25rem 0.25rem 0.875rem;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--lk-cereza) 5%, var(--color-background-surface));
+}
+
+.rb-details-recap {
+  padding: 0.75rem 1rem 0.75rem 0.75rem;
+  border-radius: 1.25rem;
+  background: var(--color-background-surface);
+  border: 1px solid var(--lk-linea, color-mix(in srgb, var(--lk-cereza) 14%, transparent));
+}
+
+.rb-details-recap-date {
+  flex: none;
+  width: 3.25rem;
+  height: 3.5rem;
+  border-radius: 0.875rem;
+  background: var(--lk-cereza);
+  color: var(--lk-blanco);
+  line-height: 1;
+}
+
+.rb-details-recap-month {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.rb-details-recap-day {
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+.rb-details-recap-icon {
+  flex: none;
+  color: var(--lk-cereza);
+}
+
+.rb-details-recap .astryx-text:first-letter {
+  text-transform: uppercase;
+}
+
+.rb-details-card {
+  padding: 1.25rem;
+  border-radius: 1.25rem;
+  background: var(--color-background-surface);
+  border: 1px solid var(--lk-linea, color-mix(in srgb, var(--lk-cereza) 14%, transparent));
+  box-shadow: 0 0.75rem 2rem -1.5rem color-mix(in srgb, var(--lk-tinta, black) 35%, transparent);
+}
+
+.rb-extras {
+  padding: 0.25rem 1rem;
+  border-radius: 1.25rem;
+  border: 1px dashed color-mix(in srgb, var(--lk-cereza) 30%, transparent);
+  background: color-mix(in srgb, var(--lk-cereza) 3%, var(--color-background-surface));
+}
+
+.rb-extras-trigger {
+  min-height: 3.5rem;
+  text-align: start;
+}
+
+.rb-extras-plus {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--lk-cereza) 12%, transparent);
+  color: var(--lk-cereza);
+}
+
+@media (max-width: 47.5rem) {
+  .rb-details-card {
+    padding: 1rem;
+  }
 }

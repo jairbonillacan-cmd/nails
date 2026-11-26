@@ -41,7 +41,8 @@ describe('structured-data pure SEO builders', () => {
 
     expect(customFaqs).toHaveLength(6);
     expect(customFaqs[0]?.answer).toContain('$350 MXN');
-    expect(customFaqs[0]?.answer).toContain('@laikona.puebla');
+    expect(customFaqs[0]?.answer).toContain('link de tu cita');
+    expect(customFaqs[0]?.answer).not.toContain('DM');
     expect(customFaqs[1]?.answer).toContain('24 horas');
     expect(customFaqs[3]?.answer).toContain('Av. Juárez 2100');
 

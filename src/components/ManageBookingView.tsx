@@ -228,7 +228,6 @@ export function ManageBookingView({
                 <CitaDepositSection
                   booking={displayBooking}
                   settings={settings}
-                  timezone={tz}
                   isUploading={manage.uploadingProof}
                   justUploadedMessage={manage.proofSavedMessage}
                   onUploadProof={manage.handleUploadProof}

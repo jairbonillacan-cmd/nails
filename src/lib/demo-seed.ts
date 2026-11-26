@@ -191,7 +191,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
       depositClabe: '7229 6901 3959 779869',
       depositAmountCents: 20000,
       depositInstructions:
-        'Aparta tu cita con $200 MXN por transferencia SPEI a Mercado Pago (CLABE 7229 6901 3959 779869 · Karla Patricia Carrillo Rodríguez). Sube tu comprobante aquí o envíalo por DM a @laikona.nailsss.',
+        'Aparta tu cita con $200 MXN por transferencia SPEI a Mercado Pago (CLABE 7229 6901 3959 779869 · Karla Patricia Carrillo Rodríguez). Sube tu comprobante aquí o después desde el link de tu cita.',
       currency: 'MXN',
 
       serviceMode: 'studio',

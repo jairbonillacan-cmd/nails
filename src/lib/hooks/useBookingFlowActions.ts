@@ -334,13 +334,10 @@ export function useBookingFlowActions({
 
     submitLockRef.current = true;
     dispatch({ type: 'START_SUBMIT' });
-    const effectiveProofMethod: ProofDeliveryMethod = !showsDeposit
-      ? 'none'
-      : client.proofDeliveryMethod === 'instagram_dm'
-        ? 'instagram_dm'
-        : client.proofDataUrl
-          ? 'web_upload'
-          : 'none';
+    const effectiveProofMethod: ProofDeliveryMethod =
+      showsDeposit && client.proofDeliveryMethod !== 'none' && client.proofDataUrl
+        ? 'web_upload'
+        : 'none';
 
     try {
       const result = await submitBookingRequest(idempotencyKeyRef.current, {

@@ -2,8 +2,9 @@ const SET = '/landing/sets';
 const ICON = '/landing/icons';
 
 export const LANDING_ASSETS = {
-  logoWhite: '/landing/logo-blanco.svg',
-  logoBlack: '/landing/logo-negro.svg',
+  logoWhite: '/landing/logo-simple-blanco.svg',
+  logoBlack: '/landing/logo-simple-negro.svg',
+  logoFullWhite: '/landing/logo-blanco.svg',
   cherriesWhite: '/landing/cerezas-blanco.svg',
   cherriesCereza: '/landing/cerezas-cereza.svg',
   cherriesPorcelain: '/landing/cerezas-porcelana.svg',

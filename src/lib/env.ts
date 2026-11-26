@@ -177,6 +177,25 @@ export function getWhatsAppTemplateNameOverrides(
   return overrides;
 }
 
+export function isPublicAppUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:') return false;
+    return !(
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      host === '0.0.0.0' ||
+      host === '[::1]' ||
+      host.startsWith('127.') ||
+      !host.includes('.')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function assertProductionEnvValid(
   raw: Record<string, string | undefined> = process.env,
   options?: ProductionEnvValidationOptions,
@@ -223,6 +242,11 @@ export function assertProductionEnvValid(
     if (missingCoreSecrets.length > 0) {
       errors.push(
         `Faltan secretos obligatorios en producción: ${missingCoreSecrets.join(', ')}.`,
+      );
+    }
+    if (!isPublicAppUrl(env.NEXT_PUBLIC_APP_URL)) {
+      errors.push(
+        'NEXT_PUBLIC_APP_URL debe ser el dominio público con https (ej. https://laikonanails.mx); con localhost los links de cita, QR, WhatsApp y correos quedan rotos.',
       );
     }
   }

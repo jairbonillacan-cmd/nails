@@ -3,6 +3,7 @@ import robots from '@/app/robots';
 import {
   EnvSchema,
   assertProductionEnvValid,
+  isPublicAppUrl,
   getConfiguredRetentionNoticeEmail,
   getConfiguredWhatsAppMonthlyQuota,
   getEnv,
@@ -19,6 +20,7 @@ const BASE_PROD_SECRETS = {
   ADMIN_SESSION_SECRET: 'admin-session-secret-prod-32bytes',
   CLIENT_SESSION_SECRET: 'client-session-secret-prod-32bytes',
   CRON_SECRET: 'cron-secret-prod-32bytes',
+  NEXT_PUBLIC_APP_URL: 'https://laikonanails.mx',
 };
 
 describe('Strict Environment Validation (M5 + Wave 6 Production Hardening)', () => {
@@ -174,6 +176,16 @@ describe('Strict Environment Validation (M5 + Wave 6 Production Hardening)', () 
         { requireCoreSecrets: false },
       ),
     ).toThrow(/secretos obligatorios/i);
+  });
+
+  it('rejects a missing or local NEXT_PUBLIC_APP_URL in production so client links never point to localhost', () => {
+    for (const bad of [undefined, 'http://localhost:3000', 'https://127.0.0.1', 'http://laikonanails.mx', 'https://nails.localhost']) {
+      expect(() =>
+        assertProductionEnvValid({ ...BASE_PROD_SECRETS, NEXT_PUBLIC_APP_URL: bad }),
+      ).toThrow(/NEXT_PUBLIC_APP_URL/);
+    }
+    expect(isPublicAppUrl('https://laikona.devand.net')).toBe(true);
+    expect(isPublicAppUrl('https://localhost')).toBe(false);
   });
 
   it('allows partial configs outside production and fails fast on partial integrations in production', () => {

@@ -221,13 +221,11 @@ export function computeStepNavigation(input: {
               ? 'Reverifica tu horario arriba'
               : input.isSubmittingBooking
                 ? 'Guardando tu reserva…'
-                : input.showsDeposit && input.proofDataUrl && input.proofDeliveryMethod !== 'instagram_dm'
+                : input.showsDeposit && input.proofDataUrl && input.proofDeliveryMethod !== 'none'
                   ? 'Comprobante listo para enviar'
-                  : input.showsDeposit && input.proofDeliveryMethod === 'instagram_dm'
-                    ? 'Envías tu anticipo por Instagram DM'
-                    : input.showsDeposit
-                      ? 'Después subes tu anticipo'
-                      : '';
+                  : input.showsDeposit
+                    ? 'Subes tu comprobante desde tu link'
+                    : '';
 
   return { completedSteps, backTarget, canContinue, nextLabel, nextHint };
 }

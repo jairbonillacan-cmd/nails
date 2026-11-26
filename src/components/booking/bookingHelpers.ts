@@ -370,7 +370,7 @@ export async function validateClientImageFile(file: File): Promise<string | null
     return 'El archivo está vacío. Elige una imagen PNG, JPG o WEBP.';
   }
   if (file.size > MAX_BOOKING_IMAGE_BYTES) {
-    return `La imagen pesa ${formatFileSize(file.size)} y supera el máximo de 2.5 MB. Comprímela o elige otra.`;
+    return `No pudimos achicar esta imagen (${formatFileSize(file.size)}); el máximo es 2.5 MB. Prueba con una captura de pantalla.`;
   }
   const declaredMime = file.type.trim().toLowerCase();
   if (declaredMime) {
@@ -391,6 +391,77 @@ export async function validateClientImageFile(file: File): Promise<string | null
     return null;
   }
   return null;
+}
+
+const UPLOAD_TARGET_BYTES = 1_800_000;
+const UPLOAD_MAX_EDGE_PX = 2048;
+const UPLOAD_JPEG_QUALITIES = [0.86, 0.78, 0.68, 0.58] as const;
+
+export function fitWithinEdge(
+  width: number,
+  height: number,
+  maxEdge: number,
+): { width: number; height: number } {
+  const safeW = Math.max(1, Math.round(width));
+  const safeH = Math.max(1, Math.round(height));
+  const longest = Math.max(safeW, safeH);
+  if (longest <= maxEdge) return { width: safeW, height: safeH };
+  const scale = maxEdge / longest;
+  return {
+    width: Math.max(1, Math.min(maxEdge, Math.round(safeW * scale))),
+    height: Math.max(1, Math.min(maxEdge, Math.round(safeH * scale))),
+  };
+}
+
+function canvasToJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+  });
+}
+
+async function shrinkImageFile(file: File): Promise<File> {
+  if (file.size <= UPLOAD_TARGET_BYTES) return file;
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file;
+  }
+  try {
+    let size = fitWithinEdge(bitmap.width, bitmap.height, UPLOAD_MAX_EDGE_PX);
+    const canvas = document.createElement('canvas');
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'foto';
+    for (let pass = 0; pass < 2; pass += 1) {
+      canvas.width = size.width;
+      canvas.height = size.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, size.width, size.height);
+      ctx.drawImage(bitmap, 0, 0, size.width, size.height);
+      for (const quality of UPLOAD_JPEG_QUALITIES) {
+        const blob = await canvasToJpeg(canvas, quality);
+        if (blob && blob.size <= UPLOAD_TARGET_BYTES) {
+          return new File([blob], `${baseName}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+        }
+      }
+      size = fitWithinEdge(size.width, size.height, Math.round(UPLOAD_MAX_EDGE_PX * 0.66));
+    }
+    return file;
+  } finally {
+    bitmap.close();
+  }
+}
+
+export async function prepareClientImageFile(
+  file: File,
+): Promise<{ file: File; error: string | null }> {
+  const ready = await shrinkImageFile(file);
+  return { file: ready, error: await validateClientImageFile(ready) };
 }
 
 export function readFileAsDataUrl(

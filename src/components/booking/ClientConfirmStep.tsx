@@ -12,7 +12,17 @@ import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Link } from '@astryxdesign/core/Link';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { LogOut, RefreshCw, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
+import {
+  BadgeCheck,
+  CalendarCheck,
+  LogOut,
+  MessageCircle,
+  PencilLine,
+  RefreshCw,
+  ShieldAlert,
+  UserCheck,
+  UserRound,
+} from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import type { ClientPortalProfile } from '@/lib/contracts';
@@ -171,6 +181,17 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
     .filter(Boolean)
     .join(' · ');
 
+  const recapDate = props.selectedSlot ? new Date(props.selectedSlot.startAt) : null;
+  const recapMonth = recapDate
+    ? new Intl.DateTimeFormat('es-MX', { month: 'short', timeZone: timezone }).format(recapDate).replace('.', '')
+    : '';
+  const recapDay = recapDate
+    ? new Intl.DateTimeFormat('es-MX', { day: 'numeric', timeZone: timezone }).format(recapDate)
+    : '';
+  const recapWeekday = recapDate
+    ? new Intl.DateTimeFormat('es-MX', { weekday: 'long', timeZone: timezone }).format(recapDate)
+    : '';
+
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     if (isDetails) {
       if (hasPhoneMismatch) {
@@ -215,12 +236,38 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           </Heading>
           <Text color="secondary">
             {isDetails
-              ? 'Tu nombre y tu WhatsApp. Ahí te mandamos la confirmación y tus recordatorios.'
+              ? 'Ya casi. Solo necesitamos saber quién viene.'
               : showDepositCard
                 ? 'Se descuenta de tu total el día de tu cita.'
                 : 'Si tienes un cupón, ponlo aquí. Luego acepta el aviso de privacidad y listo.'}
           </Text>
         </VStack>
+
+        {isDetails && props.selectedSlot ? (
+          <HStack gap={3} align="center" className="rb-details-recap rb-m fx-fade-up">
+            <VStack className="rb-details-recap-date" align="center" justify="center" gap={0}>
+              <Text type="supporting" color="inherit" className="rb-details-recap-month">
+                {recapMonth}
+              </Text>
+              <Text weight="semibold" color="inherit" className="rb-details-recap-day" hasTabularNumbers>
+                {recapDay}
+              </Text>
+            </VStack>
+            <VStack gap={0.5} className="rb-grow">
+              <Text weight="semibold" maxLines={1}>
+                {props.selectedService?.name ?? 'Tu cita'}
+                {props.selectedExtraServices.length > 0
+                  ? ` + ${props.selectedExtraServices.length}`
+                  : ''}
+              </Text>
+              <Text type="supporting" color="secondary" hasTabularNumbers>
+                {recapWeekday} · {formatTimeInTimezone(props.selectedSlot.startAt, timezone, props.timeFormat === '24h')}
+                {props.selectedSlot.staffName ? ` · con ${props.selectedSlot.staffName.split(/\s+/)[0]}` : ''}
+              </Text>
+            </VStack>
+            <CalendarCheck size={20} aria-hidden="true" className="rb-details-recap-icon" />
+          </HStack>
+        ) : null}
 
         {!isDetails && showFormBanner ? (
           <VStack className="fx-fade-up">
@@ -272,32 +319,44 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
         {isDetails ? (
         <>
         {profile ? (
-          <SurfaceCard
-            tone="accent"
-            padded
-            headingLevel={3}
-            title={
-              displayName
-                ? `Reservas como ${displayName} · ${displaySessionPhone}`
-                : `WhatsApp verificado · ${displaySessionPhone}`
-            }
-            subtitle={
-              !profile.isRegistered
-                ? 'Al terminar esta cita guardamos tus datos para la próxima.'
-                : showCompactSummary && savedDetailsLine
-                  ? savedDetailsLine
-                  : undefined
-            }
-            icon={<UserCheck size={18} aria-hidden="true" />}
-            className="fx-fade-up"
-          >
-            <HStack gap={2} wrap="wrap">
+          <VStack gap={3} className="rb-account-card fx-fade-up">
+            <HStack gap={3} align="center">
+              <VStack className="rb-account-avatar" align="center" justify="center" aria-hidden="true">
+                {displayName ? (
+                  <Text weight="semibold" color="inherit">
+                    {displayName.charAt(0).toUpperCase()}
+                  </Text>
+                ) : (
+                  <UserCheck size={20} aria-hidden="true" />
+                )}
+              </VStack>
+              <VStack gap={0.5} className="rb-grow">
+                <Heading level={3} className="rb-account-name">
+                  {displayName ? `Hola, ${displayName.split(/\s+/)[0]}` : 'WhatsApp verificado'}
+                </Heading>
+                <HStack gap={1.5} align="center" wrap="wrap">
+                  <BadgeCheck size={14} aria-hidden="true" className="rb-account-check" />
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {displaySessionPhone}
+                  </Text>
+                </HStack>
+              </VStack>
+            </HStack>
+            {!profile.isRegistered || (showCompactSummary && savedDetailsLine) ? (
+              <Text type="supporting" color="secondary" textWrap="pretty">
+                {!profile.isRegistered
+                  ? 'Al terminar esta cita guardamos tus datos para la próxima.'
+                  : savedDetailsLine}
+              </Text>
+            ) : null}
+            <HStack gap={2} wrap="wrap" className="rb-account-actions">
               {showCompactSummary ? (
                 <Button
                   type="button"
                   variant="secondary"
-                  size="md"
+                  size="sm"
                   label="Editar mis datos"
+                  icon={<PencilLine size={14} aria-hidden="true" />}
                   isDisabled={props.isSubmitting}
                   onClick={() => setDetailsView((prev) => ({ ...prev, isEditing: true }))}
                 />
@@ -305,67 +364,78 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
               <Button
                 type="button"
                 variant="ghost"
-                size="md"
+                size="sm"
                 label="No soy yo"
-                icon={<LogOut size={15} aria-hidden="true" />}
+                icon={<LogOut size={14} aria-hidden="true" />}
                 isLoading={props.account.isSigningOut}
                 isDisabled={props.isSubmitting}
                 onClick={props.account.onSignOut}
               />
             </HStack>
-          </SurfaceCard>
+          </VStack>
         ) : null}
 
         {showGuestChoice ? (
-          <SurfaceCard
-            tone="subtle"
-            padded
-            headingLevel={3}
-            title="¿Ya reservaste antes?"
-            subtitle="Entra con tu WhatsApp y llenamos tus datos. Sin contraseñas."
-            icon={<Sparkles size={18} aria-hidden="true" />}
-            className="fx-fade-up"
-          >
-            <HStack gap={2} wrap="wrap">
-              <Button
-                type="button"
-                variant="primary"
-                size="md"
-                label="Iniciar sesión"
-                className="fx-press"
-                onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                label="Registrarme"
-                onClick={() => props.account.onOpenSignIn('register', props.clientPhone)}
-              />
+          <VStack gap={4} className="rb-account-card rb-account-guest fx-fade-up">
+            <HStack gap={3} align="center">
+              <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
+                <UserRound size={20} aria-hidden="true" />
+              </VStack>
+              <VStack gap={0.5} className="rb-grow">
+                <Heading level={3} className="rb-account-name">
+                  ¿Ya has venido?
+                </Heading>
+                <Text type="supporting" color="secondary" textWrap="pretty">
+                  Entra con tu WhatsApp y llenamos todo por ti. Sin contraseñas.
+                </Text>
+              </VStack>
+            </HStack>
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              width="100%"
+              label="Entrar con mi WhatsApp"
+              icon={<MessageCircle size={18} aria-hidden="true" />}
+              className="fx-press"
+              onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
+            />
+            <HStack gap={1} justify="center" align="center" wrap="wrap">
               <Button
                 type="button"
                 variant="ghost"
-                size="md"
-                label="Continuar sin registro"
+                size="sm"
+                label="Es mi primera vez"
                 onClick={() => {
                   setDetailsView((prev) => ({ ...prev, isGuestChoiceOpen: false }));
                   nameInputRef.current?.focus();
                 }}
               />
+              <Text type="supporting" color="secondary" aria-hidden="true">
+                ·
+              </Text>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                label="Crear cuenta"
+                onClick={() => props.account.onOpenSignIn('register', props.clientPhone)}
+              />
             </HStack>
-          </SurfaceCard>
+          </VStack>
         ) : null}
 
         {!profile && props.account.isEnabled && !detailsView.isGuestChoiceOpen ? (
-          <HStack justify="between" align="center" gap={2} wrap="wrap">
+          <HStack justify="between" align="center" gap={2} wrap="wrap" className="rb-account-inline">
             <Text type="supporting" color="secondary">
-              ¿Prefieres entrar con tu cuenta?
+              ¿Ya has venido antes?
             </Text>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              label="Iniciar sesión"
+              label="Entrar con WhatsApp"
+              icon={<MessageCircle size={14} aria-hidden="true" />}
               onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
             />
           </HStack>
@@ -391,39 +461,39 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
 
         {!showCompactSummary ? (
         <>
-        <VStack as="fieldset" gap={3} className="rb-fieldset">
-          <legend className="rb-legend">Tus datos</legend>
+        <VStack as="fieldset" gap={4} className="rb-fieldset rb-details-card fx-fade-up">
+          <legend className="rb-sr-only">Tus datos</legend>
           <TextInput
             ref={nameInputRef}
             htmlName="clientName"
-            label="Nombre y apellido"
-            placeholder="Ej. Sofía Ramírez"
+            label="¿Cómo te llamas?"
+            placeholder="Nombre y apellido"
             autoComplete="name"
             autoCapitalize="words"
             enterKeyHint="next"
             size="lg"
+            startIcon={<UserRound size={18} aria-hidden="true" />}
             value={props.clientName}
             onChange={props.onChangeClientName}
             isDisabled={props.isSubmitting}
-            isRequired
             status={props.fieldErrors.name ? { type: 'error', message: props.fieldErrors.name } : undefined}
             statusVariant="detached"
           />
           <TextInput
             ref={phoneInputRef}
             htmlName="clientPhone"
-            label="WhatsApp"
+            label="Tu WhatsApp"
+            description="Ahí te llegan la confirmación y tus recordatorios."
             type="tel"
             inputMode="numeric"
             autoComplete="tel-national"
             enterKeyHint="done"
             size="lg"
-            placeholder="222 123 4567"
+            placeholder="10 dígitos"
             startIcon={<Text weight="semibold">+52</Text>}
             value={props.clientPhone}
             onChange={props.onChangeClientPhone}
             isDisabled={props.isSubmitting}
-            isRequired
             status={props.fieldErrors.phone ? { type: 'error', message: props.fieldErrors.phone } : undefined}
             statusVariant="detached"
           />
@@ -449,14 +519,6 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           <DepositCard
             settings={props.settings}
             depositAmountCents={props.depositAmountCents}
-            primaryService={props.selectedService}
-            extraServices={props.selectedExtraServices}
-            addons={props.activeSelectedAddons}
-            selectedSlot={props.selectedSlot}
-            timeFormat={props.timeFormat}
-            totalDurationMinutes={props.totalDurationMinutes}
-            clientName={props.clientName}
-            clientInstagram={props.clientInstagram}
             proofDeliveryMethod={props.proofDeliveryMethod}
             proofFile={props.proofFile}
             proofDataUrl={props.proofDataUrl}

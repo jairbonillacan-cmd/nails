@@ -5,7 +5,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Upload } from 'lucide-react';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
-import { readFileAsDataUrl } from '../booking/bookingHelpers';
+import { prepareClientImageFile, readFileAsDataUrl } from '../booking/bookingHelpers';
 import { formatFileSize, validateProofImageFile } from './types';
 
 interface CitaDepositProofUploadProps {
@@ -41,23 +41,27 @@ export function CitaDepositProofUpload({
       setProofDataUrl(null);
       return;
     }
-    const validationError = validateProofImageFile(selected);
+    setReadProgress(8);
+    const prepared = await prepareClientImageFile(selected);
+    const validationError = prepared.error ?? validateProofImageFile(prepared.file);
     if (validationError) {
+      setReadProgress(null);
       setProofFile(null);
       setProofDataUrl(null);
       setFileError(validationError);
       return;
     }
+    const ready = prepared.file;
     setReadProgress(15);
     try {
-      const dataUrl = await readFileAsDataUrl(selected, setReadProgress);
+      const dataUrl = await readFileAsDataUrl(ready, setReadProgress);
       if (!dataUrl.startsWith('data:image/')) {
         setProofFile(null);
         setProofDataUrl(null);
         setFileError('No pudimos validar esa imagen. Intenta con PNG, JPG o WEBP.');
         return;
       }
-      setProofFile(selected);
+      setProofFile(ready);
       setProofDataUrl(dataUrl);
     } catch {
       setProofFile(null);
@@ -103,7 +107,7 @@ export function CitaDepositProofUpload({
         progress={isUploading ? 80 : readProgress}
         error={fileError}
         isDisabled={isBusyUpload}
-        helperText="Captura PNG, JPG o WEBP hasta 2.5 MB."
+        helperText="Sirve cualquier captura o foto; la ajustamos sola."
         placeholder="Elige o arrastra tu captura"
         readyLabel="Lista para enviar"
         clearLabel="Quitar imagen"

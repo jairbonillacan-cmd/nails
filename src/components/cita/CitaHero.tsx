@@ -60,7 +60,7 @@ function getHeroCopy(
         subtitle: hasPaymentProof
           ? 'Comprobante recibido · En revisión por el estudio. Te avisamos por WhatsApp en cuanto quede confirmada.'
           : requiresDeposit
-            ? 'Envía tu anticipo por SPEI y sube tu comprobante aquí o mándalo por Instagram DM.'
+            ? 'Haz tu transferencia SPEI y sube aquí la captura. Te confirmamos por WhatsApp.'
             : 'El estudio está revisando tu solicitud y te confirmará por WhatsApp muy pronto.',
       };
     case 'completed':

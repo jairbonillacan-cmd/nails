@@ -8,7 +8,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Menu } from 'lucide-react';
 import { useHeroNavPhase } from '@/lib/hooks/useHeroScrollState';
 import type { ResolvedLandingSections } from '@/lib/landing-config';
-import { LANDING_ASSETS } from './landingContent';
+import { LaikonaLogoMark } from './LaikonaLogoMark';
 
 const LandingMobileMenuDialog = dynamic(
   () => import('./LandingMobileMenuDialog').then((mod) => mod.LandingMobileMenuDialog),
@@ -65,26 +65,7 @@ export function LandingNav({
               decoding="async"
             />
           ) : (
-            <>
-              <img
-                className="lk-logo lk-logo-light"
-                src={LANDING_ASSETS.logoWhite}
-                alt=""
-                width={180}
-                height={76}
-                loading="eager"
-                decoding="async"
-              />
-              <img
-                className="lk-logo lk-logo-dark"
-                src={LANDING_ASSETS.logoBlack}
-                alt=""
-                width={180}
-                height={76}
-                loading="eager"
-                decoding="async"
-              />
-            </>
+            <LaikonaLogoMark className="lk-logo-mark" />
           )}
         </a>
         <HStack
