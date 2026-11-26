@@ -1,16 +1,11 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import {
-  CalendarCheck,
-  MessageCircle,
-  RefreshCw,
-  Sparkles,
-  XCircle,
-} from 'lucide-react';
+import { RefreshCw, XCircle } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 
 interface CitaModifyCardProps {
@@ -76,7 +71,7 @@ export function CitaModifyCard({
               variant="primary"
               size="md"
               className="fx-press"
-              icon={<MessageCircle size={15} aria-hidden="true" />}
+              icon={<BrandIcon name="whatsapp" size={1.125} />}
               href={policyHelpWhatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
@@ -98,7 +93,7 @@ export function CitaModifyCard({
             variant="secondary"
             size="md"
             className="fx-press"
-            icon={<Sparkles size={15} aria-hidden="true" />}
+            icon={<BrandIcon name="servicio" size={1.125} />}
             href={touchUpUrl}
           />
           <Button
@@ -106,7 +101,7 @@ export function CitaModifyCard({
             variant="ghost"
             size="md"
             className="fx-press"
-            icon={<CalendarCheck size={15} aria-hidden="true" />}
+            icon={<BrandIcon name="calendario" size={1.125} />}
             href="/mis-citas"
           />
           {!isCancelLocked ? (

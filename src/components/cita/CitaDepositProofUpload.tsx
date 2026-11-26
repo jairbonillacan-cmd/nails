@@ -1,9 +1,9 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
-import { Upload } from 'lucide-react';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import { prepareClientImageFile, readFileAsDataUrl } from '../booking/bookingHelpers';
 import { formatFileSize, validateProofImageFile } from './types';
@@ -121,7 +121,7 @@ export function CitaDepositProofUpload({
         size="md"
         width="100%"
         className="fx-press"
-        icon={<Upload size={16} aria-hidden="true" />}
+        icon={<BrandIcon name="comprobante" size={1.25} />}
         label={isUploading ? 'Subiendo comprobante...' : submitLabel}
         isLoading={isUploading}
         isDisabled={!proofDataUrl || isBusyUpload}

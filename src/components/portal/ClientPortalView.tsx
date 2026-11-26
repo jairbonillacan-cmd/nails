@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useMemo, useState } from 'react';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -9,7 +10,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
-import { CalendarCheck, LogOut, RefreshCw, WifiOff } from 'lucide-react';
+import { LogOut, RefreshCw, WifiOff } from 'lucide-react';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui/FilterPillBar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -195,7 +196,7 @@ export function ClientPortalView({
                         variant="primary"
                         size="md"
                         className="fx-press"
-                        icon={<CalendarCheck size={16} aria-hidden="true" />}
+                        icon={<BrandIcon name="calendario" size={1.25} />}
                         href="/reservar"
                       />
                       <Button

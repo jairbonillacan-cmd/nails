@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import type React from 'react';
 import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -8,7 +9,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { CalendarCheck, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 
 interface PortalOtpGateProps {
@@ -403,7 +404,7 @@ export function PortalOtpGate({
             variant="ghost"
             size="md"
             className="fx-press"
-            icon={<CalendarCheck size={15} aria-hidden="true" />}
+            icon={<BrandIcon name="calendario" size={1.125} />}
             href="/reservar"
           />
         </HStack>

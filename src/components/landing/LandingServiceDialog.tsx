@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -7,7 +8,7 @@ import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog } from '@astryxdesign/core/Dialog';
-import { Camera, Clock, ShieldCheck, X } from 'lucide-react';
+import { ShieldCheck, X } from 'lucide-react';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import { formatServicePrice } from '../booking/bookingHelpers';
@@ -116,7 +117,7 @@ export function LandingServiceDialog({
             ) : null}
             <HStack justify="between" align="center" gap={3} wrap="wrap">
               <HStack gap={1.5} align="center">
-                <Clock size={15} aria-hidden="true" className="lk-service-meta-icon" />
+                <BrandIcon name="duracion" size={1.125} className="lk-service-meta-icon" />
                 <Text color="secondary">Duración aproximada</Text>
               </HStack>
               <Text weight="medium" hasTabularNumbers>
@@ -134,7 +135,7 @@ export function LandingServiceDialog({
             </HStack>
             {service.allowInspoPhoto ? (
               <HStack gap={1.5} align="center">
-                <Camera size={15} aria-hidden="true" className="lk-service-meta-icon" />
+                <BrandIcon name="foto-inspiracion" size={1.125} className="lk-service-meta-icon" />
                 <Text type="supporting" color="secondary" textWrap="pretty">
                   Puedes subir tu foto de inspiración al reservar.
                 </Text>

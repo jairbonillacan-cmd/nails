@@ -64,7 +64,7 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal, .lk-curtain) {
   --lk-sombra: color-mix(in srgb, var(--color-on-light) 30%, transparent);
 }
 
-html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.svg'], [src*='trazo-cereza']) {
+html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.svg'], [src*='trazo-cereza'], [src*='/iconos/cereza/']) {
   filter: grayscale(1) brightness(0.15);
 }
 
@@ -74,6 +74,19 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   font-family: 'DM Sans', 'DM Sans Fallback', var(--font-family-body);
   overflow-x: clip;
 }
+
+.lk-ic {
+  display: inline-block;
+  flex: none;
+  overflow: visible;
+}
+
+.lk-ic-l0 { stop-color: color-mix(in srgb, currentColor 62%, var(--color-on-dark)); }
+.lk-ic-l1 { stop-color: currentColor; }
+.lk-ic-l2 { stop-color: color-mix(in srgb, currentColor 72%, var(--color-on-light)); }
+.lk-ic-w0 { stop-color: currentColor; stop-opacity: 0.13; }
+.lk-ic-w1 { stop-color: currentColor; stop-opacity: 0.04; }
+.lk-ic-glint { stroke: color-mix(in srgb, currentColor 12%, var(--color-on-dark)); }
 
 .lk-light {
   position: absolute;

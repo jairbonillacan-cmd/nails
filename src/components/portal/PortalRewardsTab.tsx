@@ -1,9 +1,10 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
-import { Clock, Gift, Package } from 'lucide-react';
+import { Package } from 'lucide-react';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { PackageStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -32,7 +33,7 @@ export function PortalRewardsTab({
         <SurfaceCard
           headingLevel={3}
           title="Tarjeta de sellos"
-          icon={<Gift size={16} aria-hidden="true" className="lk-cereza-text" />}
+          icon={<BrandIcon name="cupon" size={1.25} className="lk-cereza-text" />}
           padded
           className="pt-card"
         >
@@ -97,7 +98,7 @@ export function PortalRewardsTab({
                     </Text>
                     {pkg.expiresAt ? (
                       <HStack gap={1} align="center">
-                        <Clock size={13} aria-hidden="true" />
+                        <BrandIcon name="duracion" size={1} />
                         <Text type="supporting" color="secondary" hasTabularNumbers>
                           Vence {formatDateShortInTimezone(pkg.expiresAt, timezone)}
                         </Text>

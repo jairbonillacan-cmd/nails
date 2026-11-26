@@ -1,11 +1,11 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { memo } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { Clock, Timer } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { formatHoldClock } from './BookingChrome';
@@ -69,7 +69,7 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
         {rows.map((row) => (
           <HStack as="li" key={row.key} gap={3} align="start">
             <Text color="inherit" weight="bold" className="rb-summary-mark" data-on={row.isDone ? 'true' : 'false'} aria-hidden="true">
-              {row.mark === 'clock' ? <Clock size={16} /> : row.mark}
+              {row.mark === 'clock' ? <BrandIcon name="horario" size={1.25} /> : row.mark}
             </Text>
             <VStack gap={0} className="rb-grow">
               <Text color="inherit" type="supporting" className="rb-summary-label">
@@ -123,7 +123,7 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
         <VStack gap={1.5} className="rb-summary-hold fx-fade-up" data-urgent={isUrgent ? 'true' : 'false'}>
           <HStack justify="between" align="center" gap={2}>
             <HStack gap={1.5} align="center">
-              <Timer size={14} aria-hidden="true" />
+              <BrandIcon name="duracion" size={1.125} />
               <Text color="inherit" type="supporting" weight={isUrgent ? 'bold' : 'normal'}>
                 {isUrgent ? '¡Último minuto de apartado!' : 'Te guardamos el horario'}
               </Text>

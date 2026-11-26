@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+<title id="title">Foto de inspiración</title>
+<defs><linearGradient id="lacquer" x1="18%" y1="2%" x2="81%" y2="95%"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".43" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E3D8D9"/></linearGradient><linearGradient id="wash" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".13"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".04"/></linearGradient></defs>
+<g stroke="#FFFFFF" stroke-linejoin="round" stroke-linecap="round" stroke-width="1.72" fill="none"><path d="M20.47 7.1H7.72a2.63 2.63 0 0 0-2.63 2.63v12.54a2.63 2.63 0 0 0 2.63 2.63h16.56a2.63 2.63 0 0 0 2.63-2.63V13.8" fill="url(#wash)" /><path d="m5.58 21.22 6.27-6.17 4.83 4.54 3.12-2.66 6.6 5.4" fill="none" stroke-width="1.47"/><circle cx="10.89" cy="11.99" r="1.08" fill="#FFFFFF" stroke="none"/><g transform="translate(25.51 7.63) scale(1.35)"><path d="M0-3.4C.45-1.12 1.12-.45 3.4 0 1.12.45.45 1.12 0 3.4-.45 1.12-1.12.45-3.4 0-1.12-.45-.45-1.12 0-3.4Z" fill="url(#lacquer)" stroke="none"/></g></g>
+</svg>

@@ -1,5 +1,7 @@
 const SET = '/landing/sets';
 const ICON = '/landing/icons';
+const BRAND_ICON = '/landing/iconos/cereza';
+const BRAND_ICON_LIGHT = '/landing/iconos/blanco';
 
 export const LANDING_ASSETS = {
   logoWhite: '/landing/logo-simple-blanco.svg',
@@ -11,11 +13,11 @@ export const LANDING_ASSETS = {
   strokeCereza: '/landing/trazo-cereza.svg',
   strokePorcelain: '/landing/trazo-porcelana.svg',
   curvePorcelain: '/landing/curva-k-porcelana.svg',
-  iconClock: `${ICON}/horario.svg`,
-  iconPin: `${ICON}/ubicacion.svg`,
-  iconMessage: `${ICON}/mensaje.svg`,
-  iconInstagram: `${ICON}/instagram.svg`,
-  iconInstagramLight: `${ICON}/instagram-marfil.svg`,
+  iconClock: `${BRAND_ICON}/horario.svg`,
+  iconPin: `${BRAND_ICON}/ubicacion.svg`,
+  iconMessage: `${BRAND_ICON}/contacto.svg`,
+  iconInstagram: `${BRAND_ICON}/instagram.svg`,
+  iconInstagramLight: `${BRAND_ICON_LIGHT}/instagram.svg`,
 } as const;
 
 export interface LandingCreation {
@@ -267,13 +269,13 @@ export function servicePhoto(slug: string, imageUrl: string | null): string {
 }
 
 const ADDON_ICON_RULES: ReadonlyArray<{ match: RegExp; icon: string }> = [
-  { match: /french|minimal/i, icon: `${ICON}/french.svg` },
-  { match: /3d|mano alzada|relieve|charm/i, icon: `${ICON}/relieve.svg` },
-  { match: /chrome|glazed|cat eye/i, icon: `${ICON}/cateye.svg` },
+  { match: /french|minimal/i, icon: `${BRAND_ICON}/french.svg` },
+  { match: /3d|mano alzada|relieve|charm/i, icon: `${BRAND_ICON}/nail-art-3d.svg` },
+  { match: /chrome|glazed|cat eye/i, icon: `${BRAND_ICON}/glazed-cateye.svg` },
 ];
 
 export function addonIcon(name: string): string {
-  return ADDON_ICON_RULES.find((rule) => rule.match.test(name))?.icon ?? `${ICON}/lima.svg`;
+  return ADDON_ICON_RULES.find((rule) => rule.match.test(name))?.icon ?? `${BRAND_ICON}/retiro-lima.svg`;
 }
 
 export const NAIL_SHAPES: ReadonlyArray<{ name: string; icon: string }> = [

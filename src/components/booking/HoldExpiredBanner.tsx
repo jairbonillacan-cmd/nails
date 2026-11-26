@@ -1,10 +1,10 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Clock } from 'lucide-react';
 
 interface HoldExpiredBannerProps {
   message: string | null;
@@ -21,7 +21,7 @@ export function HoldExpiredBanner({ message, isReholding, onRehold, onPickAnothe
         role="alert"
         title="Tu apartado temporal terminó"
         description={message || 'No perdiste nada de lo que escribiste. Revisa si tu horario sigue libre o escoge otro.'}
-        icon={<Clock size={18} aria-hidden="true" />}
+        icon={<BrandIcon name="duracion" size={1.375} />}
       >
         <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
           <Button

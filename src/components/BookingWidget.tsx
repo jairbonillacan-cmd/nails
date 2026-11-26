@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useCallback, useMemo, useReducer, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -8,7 +9,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Text } from '@astryxdesign/core/Text';
-import { UserRound, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { isAvailabilityRealtimeEvent, useBookingAvailability } from '@/lib/hooks/useBookingAvailability';
 import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
 import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
@@ -377,7 +378,7 @@ export function BookingWidget(props: BookingWidgetProps) {
             {flow.step === 'service' && clientAuthEnabled && !account.profile && !isStartPromptDismissed ? (
               <HStack gap={3} align="center" className="rb-signin-card fx-sheet-in">
                 <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
-                  <UserRound size={20} aria-hidden="true" />
+                  <BrandIcon name="iniciar-sesion" size={1.625} />
                 </VStack>
                 <VStack gap={0.5} className="rb-grow">
                   <Text weight="semibold">¿Ya has venido?</Text>

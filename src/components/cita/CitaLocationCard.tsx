@@ -1,10 +1,10 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { MapPin, MessageCircle } from 'lucide-react';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
@@ -76,7 +76,7 @@ export function CitaLocationCard({
               variant="primary"
               size="md"
               className="fx-press"
-              icon={<MapPin size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="como-llegar" size={1.25} />}
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
@@ -87,7 +87,7 @@ export function CitaLocationCard({
             variant="secondary"
             size="md"
             className="fx-press"
-            icon={<MessageCircle size={16} aria-hidden="true" />}
+            icon={<BrandIcon name="whatsapp" size={1.25} />}
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"

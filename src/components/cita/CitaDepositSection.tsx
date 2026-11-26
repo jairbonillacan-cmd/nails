@@ -1,11 +1,12 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Check, CheckCircle2, Clock, CreditCard, FileCheck2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { CopyableField } from '@/components/ui/CopyableField';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -51,7 +52,7 @@ export function CitaDepositSection({
         headingLevel={2}
         title="Tu solicitud está en revisión"
         subtitle="Siguiente paso · En revisión por el estudio"
-        icon={<Clock size={18} aria-hidden="true" className="lk-cereza-text" />}
+        icon={<BrandIcon name="pago-despues" size={1.375} className="lk-cereza-text" />}
         badge={<BookingStatusTag status={booking.status} size="sm" />}
         className="ck-panel rb-deposit fx-fade-up"
       >
@@ -81,7 +82,7 @@ export function CitaDepositSection({
         padded
         headingLevel={2}
         title="Comprobante recibido · En revisión por el estudio"
-        icon={<CheckCircle2 size={20} aria-hidden="true" className="lk-cereza-text fx-pop" />}
+        icon={<BrandIcon name="cita-confirmada" size={1.625} className="lk-cereza-text fx-pop" />}
         badge={<BookingStatusTag status={booking.status} hasPaymentProof size="sm" />}
         className="ck-panel rb-deposit fx-fade-up"
       >
@@ -108,7 +109,7 @@ export function CitaDepositSection({
             </VStack>
           ) : (
             <HStack gap={3} align="center" padding={3} className="rb-card">
-              <FileCheck2 size={20} aria-hidden="true" className="lk-cereza-text" />
+              <BrandIcon name="comprobante" size={1.625} className="lk-cereza-text" />
               <VStack gap={0.5} className="rb-grow" style={{ minWidth: 0 }}>
                 <Text weight="semibold">Comprobante adjunto registrado</Text>
                 <Text type="supporting" color="secondary" hasTabularNumbers>
@@ -148,7 +149,7 @@ export function CitaDepositSection({
       headingLevel={2}
       title={`Anticipo de ${displayAmount}`}
       subtitle="Siguiente paso · Confirma tu horario · Se descuenta de tu total"
-      icon={<Clock size={18} aria-hidden="true" className="lk-cereza-text" />}
+      icon={<BrandIcon name="pago-despues" size={1.375} className="lk-cereza-text" />}
       badge={<BookingStatusTag status={booking.status} size="sm" />}
       className="ck-panel rb-deposit fx-fade-up"
     >
@@ -164,7 +165,7 @@ export function CitaDepositSection({
               size="lg"
               width="100%"
               className="fx-press"
-              icon={<CreditCard size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="transferencia-spei" size={1.25} />}
               href={safeCheckoutUrl}
               target="_blank"
               rel="noopener noreferrer"

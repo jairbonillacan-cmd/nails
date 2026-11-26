@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
@@ -7,7 +8,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { ChevronLeft, CircleHelp, Timer } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import { BOOKING_STEPS, type BookingStep } from './bookingMachine';
@@ -90,7 +91,7 @@ export function BookingHeader({
               }
               data-urgent={holdRemainingSec <= 60 ? 'true' : 'false'}
             >
-              <Timer size={14} aria-hidden="true" />
+              <BrandIcon name="duracion" size={1.125} />
               {formatHoldClock(holdRemainingSec)}
             </p>
           ) : null}
@@ -104,7 +105,7 @@ export function BookingHeader({
               setIsHelpOpen(true);
             }}
           >
-            <CircleHelp size={20} aria-hidden="true" />
+            <BrandIcon name="ayuda" size={1.625} />
             <Text color="inherit" weight="semibold" className="rb-d">
               Ayuda
             </Text>
@@ -156,7 +157,7 @@ export function BookingHero({
                   }
                   data-urgent={holdRemainingSec <= 60 ? 'true' : 'false'}
                 >
-                  <Timer size={14} aria-hidden="true" />
+                  <BrandIcon name="duracion" size={1.125} />
                   {formatHoldClock(holdRemainingSec)}
                 </p>
               ) : null}

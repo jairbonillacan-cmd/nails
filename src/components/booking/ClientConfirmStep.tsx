@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import type React from 'react';
 import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -13,16 +14,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import {
-  BadgeCheck,
-  CalendarCheck,
-  LogOut,
-  MessageCircle,
-  PencilLine,
-  RefreshCw,
-  ShieldAlert,
-  UserCheck,
-  UserRound,
-} from 'lucide-react';
+  BadgeCheck, LogOut, PencilLine, RefreshCw, ShieldAlert, UserCheck } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import type { ClientPortalProfile } from '@/lib/contracts';
@@ -265,7 +257,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
                 {props.selectedSlot.staffName ? ` · con ${props.selectedSlot.staffName.split(/\s+/)[0]}` : ''}
               </Text>
             </VStack>
-            <CalendarCheck size={20} aria-hidden="true" className="rb-details-recap-icon" />
+            <BrandIcon name="calendario" size={1.625} className="rb-details-recap-icon" />
           </HStack>
         ) : null}
 
@@ -379,7 +371,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           <VStack gap={4} className="rb-account-card rb-account-guest fx-fade-up">
             <HStack gap={3} align="center">
               <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
-                <UserRound size={20} aria-hidden="true" />
+                <BrandIcon name="iniciar-sesion" size={1.625} />
               </VStack>
               <VStack gap={0.5} className="rb-grow">
                 <Heading level={3} className="rb-account-name">
@@ -396,7 +388,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
               size="lg"
               width="100%"
               label="Entrar con mi WhatsApp"
-              icon={<MessageCircle size={18} aria-hidden="true" />}
+              icon={<BrandIcon name="whatsapp" size={1.375} />}
               className="fx-press"
               onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
             />
@@ -435,7 +427,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
               variant="ghost"
               size="sm"
               label="Entrar con WhatsApp"
-              icon={<MessageCircle size={14} aria-hidden="true" />}
+              icon={<BrandIcon name="whatsapp" size={1.125} />}
               onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
             />
           </HStack>
@@ -472,7 +464,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
             autoCapitalize="words"
             enterKeyHint="next"
             size="lg"
-            startIcon={<UserRound size={18} aria-hidden="true" />}
+            startIcon={<BrandIcon name="iniciar-sesion" size={1.375} />}
             value={props.clientName}
             onChange={props.onChangeClientName}
             isDisabled={props.isSubmitting}

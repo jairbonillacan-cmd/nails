@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+<title id="title">Comprobante</title>
+<defs><linearGradient id="lacquer" x1="18%" y1="2%" x2="81%" y2="95%"><stop offset="0" stop-color="#D06D76"/><stop offset=".43" stop-color="#8B1E2B"/><stop offset="1" stop-color="#621623"/></linearGradient><linearGradient id="wash" x2="1" y2="1"><stop offset="0" stop-color="#D8878F" stop-opacity=".13"/><stop offset="1" stop-color="#D8878F" stop-opacity=".04"/></linearGradient></defs>
+<g stroke="#8B1E2B" stroke-linejoin="round" stroke-linecap="round" stroke-width="1.72" fill="none"><path d="M23.53 14.3V6.93a2.24 2.24 0 0 0-2.24-2.24H8.36a2.24 2.24 0 0 0-2.24 2.24V26.5l3.26-1.81 3.23 1.81 2.3-1.33" fill="url(#wash)" /><path d="M10.63 10.86h8.39m-8.39 4.03h5.56m-5.56 4.03h2.89" fill="none" stroke-width="1.53"/><circle cx="22.45" cy="22.25" r="5.48" fill="none"/><path d="M22.45 24.72V19.5m-2 1.9 2-1.9 2 1.9" fill="none" stroke-width="1.32"/></g>
+</svg>

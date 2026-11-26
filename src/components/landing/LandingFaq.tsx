@@ -1,11 +1,11 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { Button } from '@astryxdesign/core/Button';
 import { Collapsible, CollapsibleGroup } from '@astryxdesign/core/Collapsible';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { MessageCircle } from 'lucide-react';
 import { SALON_FAQS, type SalonFaqItem } from '@/lib/seo/structured-data';
 import { SectionHeading, WaveBottom, WaveTop } from './LandingParts';
 import { LANDING_ASSETS } from './landingContent';
@@ -78,7 +78,7 @@ export function LandingFaq({
             label="Escríbenos por WhatsApp"
             variant="secondary"
             size="md"
-            icon={<MessageCircle size={16} aria-hidden="true" />}
+            icon={<BrandIcon name="whatsapp" size={1.25} />}
             className="lk-btn-outline fx-press"
             href={whatsappUrl}
             target="_blank"

@@ -1,11 +1,12 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Check, Sparkles } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
 import type { PublicStaffDTO } from '@/lib/public-dto';
@@ -84,7 +85,7 @@ export function StaffStep({
             onClick={() => onPickStaff('any')}
           >
             <Text color="inherit" className="rb-artist-any" aria-hidden="true">
-              <Sparkles size={26} />
+              <BrandIcon name="cualquier-profesional" size={2} />
             </Text>
             <VStack gap={0} className="rb-grow">
               <Text weight="medium" className="lk-serif rb-artist-name">

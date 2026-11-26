@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -9,7 +10,6 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { TextArea } from '@astryxdesign/core/TextArea';
-import { MessageCircle } from 'lucide-react';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import { formatDateShortInTimezone } from '@/lib/format';
@@ -104,7 +104,7 @@ export function CitaRescheduleDialog({
                   label="Escribir por WhatsApp"
                   variant="primary"
                   className="fx-press"
-                  icon={<MessageCircle size={15} aria-hidden="true" />}
+                  icon={<BrandIcon name="whatsapp" size={1.125} />}
                   href={policyHelpWhatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -159,7 +159,7 @@ export function CitaRescheduleDialog({
                         variant="primary"
                         size="md"
                         className="fx-press"
-                        icon={<MessageCircle size={15} aria-hidden="true" />}
+                        icon={<BrandIcon name="whatsapp" size={1.125} />}
                         href={policyHelpWhatsappUrl}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -238,7 +238,7 @@ export function CitaRescheduleDialog({
                       variant="secondary"
                       size="md"
                       className="fx-press"
-                      icon={<MessageCircle size={15} aria-hidden="true" />}
+                      icon={<BrandIcon name="whatsapp" size={1.125} />}
                       href={policyHelpWhatsappUrl}
                       target="_blank"
                       rel="noopener noreferrer"

@@ -1,11 +1,12 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { AtSign, Cake, Camera, Plus } from 'lucide-react';
+import { Cake, Plus } from 'lucide-react';
 
 interface ClientExtraDetailsBoxProps {
   clientInstagram: string;
@@ -62,7 +63,7 @@ export function ClientExtraDetailsBox({
           placeholder="tu.usuario"
           autoCapitalize="off"
           hasAutoCorrect={false}
-          startIcon={<Camera size={16} aria-hidden="true" />}
+          startIcon={<BrandIcon name="instagram" size={1.25} />}
           description="Para etiquetarte cuando subamos tus uñas."
           value={clientInstagram}
           onChange={onChangeClientInstagram}
@@ -76,7 +77,7 @@ export function ClientExtraDetailsBox({
           autoComplete="email"
           autoCapitalize="off"
           hasAutoCorrect={false}
-          startIcon={<AtSign size={16} aria-hidden="true" />}
+          startIcon={<BrandIcon name="contacto" size={1.25} />}
           description="Te mandamos la cita para agregarla a tu calendario."
           value={clientEmail}
           onChange={onChangeClientEmail}

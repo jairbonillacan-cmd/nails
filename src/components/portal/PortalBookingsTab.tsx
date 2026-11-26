@@ -1,10 +1,11 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { ArrowRight, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowRight, RefreshCw } from 'lucide-react';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -58,7 +59,7 @@ export function PortalBookingsTab({
                   variant="primary"
                   size="md"
                   className="fx-press"
-                  icon={<Sparkles size={16} aria-hidden="true" />}
+                  icon={<BrandIcon name="servicio" size={1.25} />}
                   href="/reservar"
                 />
               ) : undefined
@@ -122,7 +123,7 @@ export function PortalBookingsTab({
                         variant="primary"
                         size="md"
                         className="fx-press"
-                        icon={<Sparkles size={14} aria-hidden="true" />}
+                        icon={<BrandIcon name="servicio" size={1.125} />}
                         href={item.touchUpUrl}
                       />
                       <Button

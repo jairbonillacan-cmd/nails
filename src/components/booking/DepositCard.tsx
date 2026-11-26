@@ -1,11 +1,12 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
-import { Info, Link2 } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { CopyableField } from '@/components/ui/CopyableField';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
@@ -166,7 +167,7 @@ export function DepositCard({
           />
         ) : (
           <HStack gap={2} align="start" className="rb-card fx-fade-up" padding={3}>
-            <Link2 size={15} aria-hidden="true" className="ck-icon lk-cereza-text" />
+            <BrandIcon name="pago-despues" size={1.125} className="ck-icon lk-cereza-text" />
             <Text type="supporting" color="secondary" textWrap="pretty">
               Al terminar te damos el link de tu cita. Cuando hagas la transferencia, entras
               ahí y subes la captura. No hace falta escribirnos.

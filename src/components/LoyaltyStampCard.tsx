@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Card } from '@astryxdesign/core/Card';
 import { Divider } from '@astryxdesign/core/Divider';
@@ -10,7 +11,7 @@ import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Text } from '@astryxdesign/core/Text';
 import { Token } from '@astryxdesign/core/Token';
 import { VStack } from '@astryxdesign/core/VStack';
-import { Check, Gift, Sparkles } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { PublicLoyaltySummaryDTO } from '@/lib/public-dto';
 
 interface LoyaltyStampCardProps {
@@ -39,7 +40,7 @@ export function LoyaltyStampCard({
         <HStack justify="between" align="start" wrap="wrap" gap={2} width="100%">
           <VStack gap={0.5} style={{ minWidth: 0 }}>
             <HStack gap={1.5} align="center">
-              <Sparkles size={15} aria-hidden="true" className="lk-cereza-text" />
+              <BrandIcon name="cereza-glow" size={1.125} className="lk-cereza-text" />
               <Text type="label" color="accent" weight="semibold">
                 Tarjeta digital · {studioName}
               </Text>
@@ -84,9 +85,9 @@ export function LoyaltyStampCard({
                   {isFilled ? (
                     <Check size={16} aria-hidden="true" className="lk-cereza-text" />
                   ) : isRewardSlot ? (
-                    <Gift size={16} aria-hidden="true" className="lk-cereza-text" />
+                    <BrandIcon name="cupon" size={1.25} className="lk-cereza-text" />
                   ) : (
-                    <Sparkles size={14} aria-hidden="true" />
+                    <BrandIcon name="cereza-glow" size={1.125} />
                   )}
                   <Text
                     type="label"
@@ -124,7 +125,7 @@ export function LoyaltyStampCard({
               label={`Premio: ${loyaltySummary.rewardLabel}`}
               size="md"
               color={loyaltySummary.isRewardReady ? 'green' : 'default'}
-              icon={<Gift size={14} aria-hidden="true" />}
+              icon={<BrandIcon name="cupon" size={1.125} />}
             />
             {loyaltySummary.redemptionsAvailable > 1 ? (
               <Token

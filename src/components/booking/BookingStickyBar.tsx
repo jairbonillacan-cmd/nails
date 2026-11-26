@@ -1,11 +1,12 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { BottomSheet } from '@astryxdesign/core/BottomSheet';
-import { ChevronUp, Timer } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
 import { formatDuration } from '@/lib/format';
 import { formatHoldClock } from './BookingChrome';
 import { BookingSummaryCard, type SummaryRow } from './BookingSummaryCard';
@@ -142,7 +143,7 @@ export function BookingStickyBar({
             {formatServicePrice(totalPriceCents, hasStartingPrice, currency)}
           </Text>
           <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint" hasTabularNumbers>
-            {summaryProps.holdRemainingSec > 0 ? <Timer size={12} aria-label="Tiempo de apartado" /> : null}
+            {summaryProps.holdRemainingSec > 0 ? <BrandIcon name="duracion" size={1} label="Tiempo de apartado" /> : null}
             {summaryProps.holdRemainingSec > 0
               ? `${formatHoldClock(summaryProps.holdRemainingSec)} · Resumen`
               : `${formatDuration(totalDurationMinutes)} · Ver resumen`}

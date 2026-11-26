@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import type React from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -9,7 +10,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Dialog } from '@astryxdesign/core/Dialog';
-import { ArrowLeft, MessageCircle, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, X } from 'lucide-react';
 import { useClientOtpFlow } from '@/lib/hooks/useClientOtpFlow';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import { formatMxPhoneDisplay } from './bookingHelpers';
@@ -160,7 +161,7 @@ export function ClientSignInDialog({
                   variant="primary"
                   size="lg"
                   width="100%"
-                  icon={<MessageCircle size={18} aria-hidden="true" />}
+                  icon={<BrandIcon name="whatsapp" size={1.375} />}
                   className="fx-press"
                   isLoading={otp.isBusy}
                   isDisabled={phoneDigits.length !== 10}

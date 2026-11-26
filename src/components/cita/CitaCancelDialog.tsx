@@ -1,5 +1,6 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -8,7 +9,6 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { TextArea } from '@astryxdesign/core/TextArea';
-import { MessageCircle } from 'lucide-react';
 import { ConfirmActionDialog } from '@/components/ui/ConfirmActionDialog';
 import { CANCELLATION_REASON_OPTIONS } from '@/lib/notifications/cascade';
 
@@ -95,7 +95,7 @@ export function CitaCancelDialog({
                     label="Escribir por WhatsApp"
                     variant="primary"
                     className="fx-press"
-                    icon={<MessageCircle size={15} aria-hidden="true" />}
+                    icon={<BrandIcon name="whatsapp" size={1.125} />}
                     href={policyHelpWhatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -123,7 +123,7 @@ export function CitaCancelDialog({
                           variant="primary"
                           size="md"
                           className="fx-press"
-                          icon={<MessageCircle size={15} aria-hidden="true" />}
+                          icon={<BrandIcon name="whatsapp" size={1.125} />}
                           href={policyHelpWhatsappUrl}
                           target="_blank"
                           rel="noopener noreferrer"

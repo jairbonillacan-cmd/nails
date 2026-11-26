@@ -1,20 +1,13 @@
 'use client';
 
+import { BrandIcon } from '@/components/brand/BrandIcon';
 import type React from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import {
-  CalendarCheck,
-  CalendarPlus,
-  CalendarX2,
-  CheckCircle2,
-  Download,
-  MessageCircle,
-  Sparkles,
-} from 'lucide-react';
+import { CalendarPlus, CalendarX2, Download } from 'lucide-react';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { formatCurrency } from '@/lib/format';
@@ -123,7 +116,7 @@ export function CitaActionsPanel({
                 variant="primary"
                 size="lg"
                 className="fx-press"
-                icon={<Sparkles size={16} aria-hidden="true" />}
+                icon={<BrandIcon name="servicio" size={1.25} />}
                 href="/reservar"
               />
               <Button
@@ -139,7 +132,7 @@ export function CitaActionsPanel({
                 variant="ghost"
                 size="lg"
                 className="fx-press"
-                icon={<CalendarCheck size={16} aria-hidden="true" />}
+                icon={<BrandIcon name="calendario" size={1.25} />}
                 href="/mis-citas"
               />
             </HStack>
@@ -169,7 +162,7 @@ export function CitaActionsPanel({
               variant="primary"
               size="lg"
               className="fx-press"
-              icon={<Sparkles size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="servicio" size={1.25} />}
               href="/reservar"
             />
             <Button
@@ -177,7 +170,7 @@ export function CitaActionsPanel({
               variant="secondary"
               size="lg"
               className="fx-press"
-              icon={<MessageCircle size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="whatsapp" size={1.25} />}
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
@@ -208,7 +201,7 @@ export function CitaActionsPanel({
               variant="primary"
               size="lg"
               className="fx-press"
-              icon={<Sparkles size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="servicio" size={1.25} />}
               href={touchUpUrl}
             />
             <Button
@@ -216,7 +209,7 @@ export function CitaActionsPanel({
               variant="secondary"
               size="lg"
               className="fx-press"
-              icon={<CalendarCheck size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="calendario" size={1.25} />}
               href="/mis-citas"
             />
           </HStack>
@@ -239,7 +232,7 @@ export function CitaActionsPanel({
               ? `Te esperamos con ${booking.staff.name}. Agrégala a tu calendario o ten los detalles a la mano en WhatsApp.`
               : 'Agrégala a tu calendario desde ahora o ten los detalles a la mano en WhatsApp.'
           }
-          icon={isConfirmed ? <CheckCircle2 size={20} aria-hidden="true" className="lk-cereza-text fx-pop" /> : undefined}
+          icon={isConfirmed ? <BrandIcon name="cita-confirmada" size={1.625} className="lk-cereza-text fx-pop" /> : undefined}
           padded
           className="ck-panel fx-fade-up"
         >
@@ -277,7 +270,7 @@ export function CitaActionsPanel({
               variant="primary"
               size="md"
               className="fx-press"
-              icon={<MessageCircle size={16} aria-hidden="true" />}
+              icon={<BrandIcon name="whatsapp" size={1.25} />}
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
