@@ -228,6 +228,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <VStack className="ad-main-wrap" gap={0}>
           <AdminTopBar
             data={data}
+            brandLogo={brandLogo}
             sidebarCollapsed={sidebarCollapsed}
             mobileMenuOpen={mobileMenuOpen}
             soundActive={soundActive}

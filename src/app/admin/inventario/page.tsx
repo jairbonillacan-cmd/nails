@@ -138,7 +138,7 @@ export default function AdminInventoryPage() {
         <SurfaceCard
           id="inventory-list-heading"
           title="Material y productos"
-          subtitle="Registra entradas, consumos del salón o ventas directas a Caja."
+          subtitle="Suma lo que compras y resta lo que usas o vendes."
           count={filteredInventory.length}
         >
           <HStack
@@ -236,7 +236,7 @@ export default function AdminInventoryPage() {
                       <HStack gap={1.5} wrap="wrap" align="center">
                         <Button
                           type="button"
-                          label="+1 Entrada"
+                          label="+1 Compré"
                           size="sm"
                           variant="secondary"
                           isLoading={activeReason === 'restock'}
@@ -247,7 +247,7 @@ export default function AdminInventoryPage() {
                         />
                         <Button
                           type="button"
-                          label="-1 Consumo"
+                          label="−1 Usé"
                           size="sm"
                           variant="ghost"
                           isLoading={activeReason === 'service_usage'}

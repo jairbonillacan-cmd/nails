@@ -216,7 +216,7 @@ export function BookingsFiltersBar({
             label="Por confirmar"
             endContent={
               pendingConfirmationsCount > 0 ? (
-                <Badge variant="warning" label={String(pendingConfirmationsCount)} />
+                <Badge variant="neutral" label={String(pendingConfirmationsCount)} />
               ) : undefined
             }
           />
@@ -227,7 +227,7 @@ export function BookingsFiltersBar({
             label="Lista de espera"
             endContent={
               waitlistCount > 0 ? (
-                <Badge variant="info" label={String(waitlistCount)} />
+                <Badge variant="neutral" label={String(waitlistCount)} />
               ) : undefined
             }
           />

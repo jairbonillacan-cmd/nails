@@ -261,6 +261,17 @@
   object-fit: contain;
 }
 
+.ad-topbar-logo {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
+  padding-inline-end: 0.25rem;
+}
+
+.ad-topbar-logo .ad-logo {
+  height: 1.375rem;
+}
+
 .ad-logo {
   display: block;
   width: auto;
@@ -703,9 +714,9 @@ dialog:has(.ad-drawer-body) * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-info);
-  background: var(--color-info-muted);
-  color: var(--color-on-info-muted);
+  border: 1px solid var(--ad-border);
+  background: var(--ad-surface-alt);
+  color: var(--color-text-secondary);
   border-radius: var(--radius-full);
   padding: 0.1875rem 0.625rem;
   min-block-size: 1.75rem;

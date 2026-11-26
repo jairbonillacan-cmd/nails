@@ -70,9 +70,6 @@ export function NewBookingClientStep({
           <Text weight="semibold" size="base">
             1. Clienta
           </Text>
-          <Text type="supporting" color="secondary">
-            Nombre y WhatsApp obligatorios
-          </Text>
         </HStack>
 
         <Grid columns={{ minWidth: 180, max: 3 }} gap={3}>

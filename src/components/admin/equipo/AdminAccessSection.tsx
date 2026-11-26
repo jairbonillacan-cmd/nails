@@ -28,9 +28,9 @@ import {
 import type { AdminRole, AdminUser, StaffMember } from '@/lib/types';
 
 const ROLE_META: Record<AdminRole, { label: string; tone: StatusTagTone }> = {
-  owner: { label: 'Dueña', tone: 'accent' },
+  owner: { label: 'Dueña', tone: 'neutral' },
   admin: { label: 'Recepción', tone: 'neutral' },
-  specialist: { label: 'Profesional', tone: 'success' },
+  specialist: { label: 'Profesional', tone: 'neutral' },
 };
 
 const ROLE_OPTIONS: Array<{ value: AdminRole; label: string }> = [

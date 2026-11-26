@@ -2,13 +2,12 @@
 
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Check } from 'lucide-react';
-import { StatusTag, SurfaceCard } from '@/components/ui';
+import { SurfaceCard } from '@/components/ui';
 
-export const WIZARD_STEPS = [
+const WIZARD_STEPS = [
   { id: 'salon', label: 'Tu salón', short: '1. Tu salón' },
   { id: 'spei', label: 'Anticipo SPEI', short: '2. Anticipo SPEI' },
   { id: 'shifts', label: 'Tus turnos', short: '3. Tus turnos' },
@@ -26,22 +25,9 @@ export function OnboardingProgressCard({
   maxReachedStep,
   onSelectStep,
 }: OnboardingProgressCardProps) {
-  const activeStepMeta = WIZARD_STEPS[stepIndex] ?? WIZARD_STEPS[0];
-
   return (
     <SurfaceCard padded>
       <VStack gap={3}>
-        <HStack justify="between" align="center" gap={2} wrap="wrap">
-          <Text weight="semibold" size="sm">
-            {activeStepMeta.label}
-          </Text>
-          <StatusTag
-            tone={stepIndex === 3 ? 'success' : 'accent'}
-            label={`Paso ${stepIndex + 1} de ${WIZARD_STEPS.length}`}
-            hasTabularNumbers
-          />
-        </HStack>
-
         <ProgressBar
           label="Avance de guía inicial"
           isLabelHidden

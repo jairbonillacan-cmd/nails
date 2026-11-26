@@ -34,7 +34,7 @@ export function InventoryLowStockAlert({
       padded
       icon={<AlertTriangle size={16} aria-hidden="true" />}
       title={`${lowStock.length} ${lowStock.length === 1 ? 'producto por acabarse' : 'productos por acabarse'}`}
-      subtitle="Toca «+1 Reponer» cuando compres más."
+      subtitle="Cuando compres más, toca «+1 Compré»."
       actions={
         <Button
           type="button"
@@ -76,7 +76,7 @@ export function InventoryLowStockAlert({
               actions={
                 <Button
                   type="button"
-                  label="+1 Reponer"
+                  label="+1 Compré"
                   variant="secondary"
                   size="sm"
                   isLoading={isBusy}

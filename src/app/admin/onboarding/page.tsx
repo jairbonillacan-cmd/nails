@@ -8,10 +8,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { LayoutDashboard } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { PageHeader, PageSkeleton } from '@/components/ui';
-import {
-  OnboardingProgressCard,
-  WIZARD_STEPS,
-} from '@/components/admin/onboarding/OnboardingProgressCard';
+import { OnboardingProgressCard } from '@/components/admin/onboarding/OnboardingProgressCard';
 import {
   buildStaffShiftSummaries,
   INITIAL_ONBOARDING_DEPOSIT,
@@ -175,7 +172,6 @@ export default function AdminOnboardingPage() {
   return (
     <VStack className="ad-page ad-wizard-shell">
       <PageHeader
-        eyebrow={`Paso ${stepIndex + 1} de ${WIZARD_STEPS.length}`}
         title="Guía inicial"
         subtitle="Cuatro pasos para dejar listo tu salón."
         actions={

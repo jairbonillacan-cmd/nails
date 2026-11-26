@@ -24,11 +24,11 @@ import {
   Wallet,
 } from 'lucide-react';
 import { roleCanAccess } from '@/lib/rbac';
-import { LANDING_ASSETS } from '../../landing/landingContent';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
 interface AdminTopBarProps {
   data: AdminOverviewPayload;
+  brandLogo: string;
   sidebarCollapsed: boolean;
   mobileMenuOpen: boolean;
   soundActive: boolean;
@@ -40,6 +40,7 @@ interface AdminTopBarProps {
 
 export function AdminTopBar({
   data,
+  brandLogo,
   sidebarCollapsed,
   mobileMenuOpen,
   soundActive,
@@ -149,15 +150,15 @@ export function AdminTopBar({
           <NextLink
             href="/admin"
             aria-label={`${data.settings.name}, inicio del panel`}
-            className="ad-brand-tile fx-press"
+            className="ad-topbar-logo fx-press"
           >
             <img
-              src={LANDING_ASSETS.cherriesWhite}
+              src={brandLogo}
               alt=""
-              width={16}
-              height={16}
+              width={88}
+              height={24}
               aria-hidden="true"
-              className="ad-brand-tile-mark"
+              className="ad-logo"
             />
           </NextLink>
         </HStack>

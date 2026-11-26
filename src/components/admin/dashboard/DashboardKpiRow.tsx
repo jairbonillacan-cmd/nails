@@ -57,7 +57,6 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
       label: periodMetrics.period === 'today' ? 'Ingresos hoy' : 'Ingresos',
       description: periodMetrics.periodLabel,
       value: revenueFallbackValue,
-      unitPrefix: currency,
       sparkline: revenueSeries,
       delta: formatDeltaBadge(periodMetrics.revenueDeltaPercent, periodMetrics.compareLabel),
       sub:
@@ -74,7 +73,7 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
       value: String(periodMetrics.bookingsCount),
       unitSuffix:
         periodMetrics.bookingsCount > 0
-          ? `/ ${periodMetrics.confirmedCount} conf.`
+          ? `· ${periodMetrics.confirmedCount} ${periodMetrics.confirmedCount === 1 ? 'confirmada' : 'confirmadas'}`
           : undefined,
       sparkline: bookingsSeries,
       delta: formatDeltaBadge(periodMetrics.bookingsDeltaPercent, periodMetrics.compareLabel),
@@ -97,16 +96,12 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
     {
       id: 'pending-deposits',
       label: 'Anticipos',
-      description: 'Comprobantes por validar',
-      value: String(pendingDepositsCount),
-      unitSuffix:
-        pendingDepositsCount > 0
-          ? `· ${formatCurrency(metrics.pendingDepositsTotalCents, currency)}`
-          : undefined,
+      description: 'Comprobantes por revisar',
+      value: formatCurrency(metrics.pendingDepositsTotalCents, currency),
       sub:
         pendingDepositsCount > 0
-          ? 'Listos para revisar y confirmar'
-          : 'Todo validado',
+          ? `${pendingDepositsCount} ${pendingDepositsCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`
+          : 'Todo revisado',
       tone: pendingDepositsCount > 0 ? 'accent' : 'success',
       interactive: true,
     },

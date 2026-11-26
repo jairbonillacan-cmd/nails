@@ -5,18 +5,9 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Switch } from '@astryxdesign/core/Switch';
-import {
-  Check,
-  Copy,
-  ExternalLink,
-  Lock,
-  Pencil,
-  Scissors,
-  Search,
-} from 'lucide-react';
+import { Check, Copy, Lock, Scissors, Search } from 'lucide-react';
 import {
   ActionRow,
   EmptyStateCard,
@@ -219,39 +210,22 @@ export function ServiceCatalogSection({
                   }
                   actions={
                     <HStack gap={2} align="center" wrap="wrap">
-                      <ButtonGroup label={`Acciones para ${srv.name}`} size="sm">
-                        <Button
-                          type="button"
-                          label={isSelectedRow ? 'Editando' : 'Editar'}
-                          variant={isSelectedRow ? 'primary' : 'secondary'}
-                          size="sm"
-                          icon={<Pencil size={13} aria-hidden="true" />}
-                          onClick={() => onSelectService(srv)}
-                        />
-                        <Button
-                          type="button"
-                          label={isCopiedRow ? 'Copiado' : 'Copiar link'}
-                          variant={isCopiedRow ? 'primary' : 'secondary'}
-                          size="sm"
-                          icon={
-                            isCopiedRow ? (
-                              <Check size={13} aria-hidden="true" className="fx-pop" />
-                            ) : (
-                              <Copy size={13} aria-hidden="true" />
-                            )
-                          }
-                          onClick={() => void copyServiceLink(srv.slug)}
-                        />
-                        <Button
-                          label="Ver"
-                          variant="ghost"
-                          size="sm"
-                          icon={<ExternalLink size={13} aria-hidden="true" />}
-                          href={`/reservar/${srv.slug}`}
-                        />
-                      </ButtonGroup>
+                      <Button
+                        type="button"
+                        label={isCopiedRow ? 'Copiado' : 'Copiar link'}
+                        variant="ghost"
+                        size="sm"
+                        icon={
+                          isCopiedRow ? (
+                            <Check size={13} aria-hidden="true" className="fx-pop" />
+                          ) : (
+                            <Copy size={13} aria-hidden="true" />
+                          )
+                        }
+                        onClick={() => void copyServiceLink(srv.slug)}
+                      />
                       <Switch
-                        label="Activo"
+                        label="Visible"
                         size="sm"
                         value={srv.isActive}
                         isLoading={togglingId === srv.id}
