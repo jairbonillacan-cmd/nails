@@ -33,7 +33,8 @@ interface DashboardAttentionCardProps {
   data: AdminOverviewPayload;
   metrics: DashboardMetrics;
   confirmingBookingId: string | null;
-  onConfirmDeposit: (bookingId: string, clientName: string) => Promise<void>;
+  savedMessage?: string | null;
+  onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
   maxVisible?: number;
 }
 
@@ -41,8 +42,15 @@ interface AttentionTask {
   id: string;
   tone: 'warning' | 'accent' | 'info' | 'neutral';
   icon: React.ReactNode;
+  thumbnail?: {
+    src: string;
+    alt: string;
+    ariaLabel: string;
+    onClick: () => void;
+  };
   title: string;
   subtitle: string;
+  isBusy?: boolean;
   secondary?: {
     label: string;
     href?: string;
@@ -68,6 +76,7 @@ export function DashboardAttentionCard({
   data,
   metrics,
   confirmingBookingId,
+  savedMessage,
   onConfirmDeposit,
   maxVisible = 5,
 }: DashboardAttentionCardProps) {
@@ -82,6 +91,9 @@ export function DashboardAttentionCard({
     const amountCents = dep.depositAmountCents || depositFallbackCents;
     const dateLabel = formatDateShortInTimezone(dep.startAt, tz);
     const timeLabel = formatTimeInTimezone(dep.startAt, tz, true);
+    const proofImageUrl = isDisplayableProofUrl(dep.paymentProofUrl)
+      ? dep.paymentProofUrl
+      : null;
     const isUploaded = dep.proofDeliveryMethod !== 'none' || Boolean(dep.paymentProofUrl);
     const isLoading = confirmingBookingId === dep.bookingId;
 
@@ -89,10 +101,19 @@ export function DashboardAttentionCard({
       id: `dep-${dep.bookingId}`,
       tone: 'warning',
       icon: <Wallet size={19} aria-hidden="true" />,
+      thumbnail: proofImageUrl
+        ? {
+            src: proofImageUrl,
+            alt: `Comprobante de anticipo de ${dep.clientName}`,
+            ariaLabel: `Ver comprobante de ${dep.clientName}`,
+            onClick: () => setPreviewDeposit(dep),
+          }
+        : undefined,
       title: isUploaded
         ? `${dep.clientName} subió su anticipo de ${formatCurrency(amountCents, currency)}`
         : `Anticipo pendiente de ${dep.clientName} · ${formatCurrency(amountCents, currency)}`,
       subtitle: `${dep.serviceName} · ${dateLabel} ${timeLabel} con ${dep.staffName} · ${dep.bookingCode}`,
+      isBusy: isLoading,
       secondary: isUploaded
         ? {
             label: 'Ver comprobante',
@@ -149,7 +170,7 @@ export function DashboardAttentionCard({
         href: '/admin/citas',
       },
       primary: {
-        label: 'Avisar',
+        label: 'Avisar por WhatsApp',
         href: waLink,
         isExternal: true,
       },
@@ -170,6 +191,30 @@ export function DashboardAttentionCard({
     });
   }
 
+  const whatsappUsage = data.whatsappUsage;
+  if (
+    whatsappUsage &&
+    (whatsappUsage.alertLevel === 'warning_80' || whatsappUsage.alertLevel === 'limit_100')
+  ) {
+    const remaining = Math.max(0, whatsappUsage.quotaLimit - whatsappUsage.sentCount);
+    const isAtLimit = whatsappUsage.alertLevel === 'limit_100';
+    allTasks.push({
+      id: 'whatsapp-quota-alert',
+      tone: 'warning',
+      icon: <MessageCircle size={19} aria-hidden="true" />,
+      title: isAtLimit
+        ? `Límite mensual de WhatsApp alcanzado (${whatsappUsage.sentCount} de ${whatsappUsage.quotaLimit})`
+        : `WhatsApp al ${whatsappUsage.percentUsed}% de tu límite del mes`,
+      subtitle: isAtLimit
+        ? 'Los avisos automáticos siguen saliendo por correo y enlace directo hasta el próximo mes.'
+        : `${whatsappUsage.sentCount} de ${whatsappUsage.quotaLimit} mensajes usados · Te quedan ${remaining} avisos automáticos este mes.`,
+      primary: {
+        label: 'Revisar en Conexiones',
+        href: '/admin/integraciones',
+      },
+    });
+  }
+
   const visibleTasks = allTasks.slice(0, maxVisible);
   const hiddenCount = Math.max(0, allTasks.length - visibleTasks.length);
 
@@ -185,7 +230,7 @@ export function DashboardAttentionCard({
         >
           <HStack gap={2} align="center">
             <Heading level={2} id="ad-att" className="lk-serif ad-h2">
-              Necesita tu atención
+              Pendientes de hoy
             </Heading>
             {allTasks.length > 0 ? (
               <Text
@@ -198,13 +243,26 @@ export function DashboardAttentionCard({
               </Text>
             ) : null}
           </HStack>
-          <Text type="supporting" color="secondary" className="ad-hide-s">
-            Lo resuelves aquí sin cambiar de pantalla
-          </Text>
+          <HStack gap={2} align="center" wrap="wrap">
+            {confirmingBookingId ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Confirmando...
+              </Text>
+            ) : savedMessage ? (
+              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                <Check size={12} aria-hidden="true" />
+                {savedMessage}
+              </Text>
+            ) : (
+              <Text type="supporting" color="secondary" className="ad-hide-s">
+                Resuélvelo aquí mismo en un toque
+              </Text>
+            )}
+          </HStack>
         </HStack>
 
         {visibleTasks.length === 0 ? (
-          <HStack className="ad-task ad-enter" align="center" gap={3}>
+          <HStack className="ad-task" align="center" gap={3}>
             <VStack
               className="ad-done-circle fx-pop"
               align="center"
@@ -216,23 +274,43 @@ export function DashboardAttentionCard({
             <VStack gap={0.5} className="rb-grow">
               <Text weight="semibold">Todo al día</Text>
               <Text type="supporting" color="secondary">
-                No hay anticipos, cobros ni avisos pendientes.
+                No tienes anticipos, cobros ni avisos pendientes.
               </Text>
             </VStack>
           </HStack>
         ) : (
-          <VStack gap={0} className="fx-stagger">
+          <VStack gap={0}>
             {visibleTasks.map((task) => (
-              <HStack key={task.id} className="ad-task" align="center" gap={3} wrap="wrap">
-                <VStack
-                  className="ad-task-icon"
-                  data-tone={task.tone}
-                  align="center"
-                  justify="center"
-                  aria-hidden="true"
-                >
-                  {task.icon}
-                </VStack>
+              <HStack
+                key={task.id}
+                className={task.isBusy ? 'ad-task fx-busy' : 'ad-task'}
+                aria-busy={task.isBusy || undefined}
+                align="center"
+                gap={3}
+                wrap="wrap"
+              >
+                {task.thumbnail ? (
+                  <button
+                    type="button"
+                    className="ad-proof-thumb"
+                    aria-label={task.thumbnail.ariaLabel}
+                    title="Toca para ampliar el comprobante"
+                    disabled={Boolean(task.isBusy)}
+                    onClick={task.thumbnail.onClick}
+                  >
+                    <img src={task.thumbnail.src} alt={task.thumbnail.alt} />
+                  </button>
+                ) : (
+                  <VStack
+                    className="ad-task-icon"
+                    data-tone={task.tone}
+                    align="center"
+                    justify="center"
+                    aria-hidden="true"
+                  >
+                    {task.icon}
+                  </VStack>
+                )}
                 <VStack gap={0.5} className="ad-task-body">
                   <Text weight="semibold" className="ad-task-title">
                     {task.title}
@@ -248,6 +326,7 @@ export function DashboardAttentionCard({
                       label={task.secondary.label}
                       variant="secondary"
                       size="sm"
+                      isDisabled={Boolean(task.isBusy)}
                       href={task.secondary.href}
                       onClick={task.secondary.onClick}
                     />
@@ -262,7 +341,8 @@ export function DashboardAttentionCard({
                         <MessageCircle size={14} aria-hidden="true" />
                       ) : undefined
                     }
-                    isDisabled={task.primary.isLoading}
+                    isLoading={Boolean(task.primary.isLoading)}
+                    isDisabled={Boolean(task.primary.isLoading)}
                     href={task.primary.href}
                     target={task.primary.isExternal ? '_blank' : undefined}
                     rel={task.primary.isExternal ? 'noopener noreferrer' : undefined}
@@ -287,25 +367,29 @@ export function DashboardAttentionCard({
       <Dialog
         isOpen={Boolean(previewDeposit)}
         onOpenChange={(open) => {
-          if (!open) setPreviewDeposit(null);
+          if (!open && !confirmingBookingId) setPreviewDeposit(null);
         }}
         width={520}
         padding={5}
       >
         {previewDeposit ? (
-          <VStack gap={4}>
+          <VStack
+            gap={4}
+            className={confirmingBookingId === previewDeposit.bookingId ? 'fx-busy' : undefined}
+            aria-busy={confirmingBookingId === previewDeposit.bookingId || undefined}
+          >
             <DialogHeader
               title="Comprobante de anticipo"
               subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
               onOpenChange={(open) => {
-                if (!open) setPreviewDeposit(null);
+                if (!open && !confirmingBookingId) setPreviewDeposit(null);
               }}
             />
 
             <VStack gap={2} className="ad-proof-meta">
               <HStack justify="between" align="center" gap={2} wrap="wrap">
                 <Text type="supporting" color="secondary">
-                  Servicio y especialista
+                  Servicio y manicurista
                 </Text>
                 <Text weight="semibold" size="sm">
                   {previewDeposit.serviceName} · {previewDeposit.staffName}
@@ -373,6 +457,7 @@ export function DashboardAttentionCard({
                 label="Ir a Anticipos en Caja"
                 variant="secondary"
                 size="sm"
+                isDisabled={confirmingBookingId === previewDeposit.bookingId}
                 href="/admin/caja?tab=anticipos"
               />
               <Button
@@ -384,11 +469,14 @@ export function DashboardAttentionCard({
                 }
                 variant="primary"
                 size="sm"
+                isLoading={confirmingBookingId === previewDeposit.bookingId}
                 isDisabled={confirmingBookingId === previewDeposit.bookingId}
                 onClick={async () => {
                   const target = previewDeposit;
-                  await onConfirmDeposit(target.bookingId, target.clientName);
-                  setPreviewDeposit(null);
+                  const ok = await onConfirmDeposit(target.bookingId, target.clientName);
+                  if (ok) {
+                    setPreviewDeposit(null);
+                  }
                 }}
               />
             </HStack>

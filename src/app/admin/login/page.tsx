@@ -23,12 +23,12 @@ const ROLE_META: Record<
 > = {
   owner: {
     label: 'Dueña',
-    hint: 'Acceso total al estudio, marca y auditoría',
+    hint: 'Todo el salón, mi página y conexiones',
     tone: 'accent',
   },
   admin: {
-    label: 'Admin / Recepción',
-    hint: 'Agenda, cobros, clientas e inventario',
+    label: 'Recepción',
+    hint: 'Agenda, cobros, clientas y productos',
     tone: 'info',
   },
   specialist: {
@@ -133,10 +133,10 @@ export default function AdminLoginPage() {
 
         <VStack gap={1}>
           <Heading level={1} className="ad-page-title">
-            Acceso al panel
+            Bienvenida al salón
           </Heading>
           <Text color="secondary" className="ad-page-sub">
-            Ingresa con tu correo de administradora, recepción o manicurista.
+            Entra con tu correo de dueña, recepción o manicurista para ver tu agenda del día.
           </Text>
         </VStack>
 
@@ -158,7 +158,7 @@ export default function AdminLoginPage() {
             ) : null}
 
             <TextInput
-              label="Correo electrónico"
+              label="Tu correo"
               type="email"
               value={email}
               onChange={setEmail}
@@ -168,7 +168,7 @@ export default function AdminLoginPage() {
 
             <Button
               type="submit"
-              label="Entrar al panel"
+              label="Entrar al salón"
               variant="primary"
               width="100%"
               isLoading={loadingEmail === email}
@@ -179,7 +179,7 @@ export default function AdminLoginPage() {
 
         {loadingDemoUsers ? (
           <VStack gap={3} aria-hidden="true">
-            <Divider label="Acceso rápido en Modo Demo" />
+            <Divider label="Entrar rápido (modo de prueba)" />
             <VStack className="ad-surface" gap={0}>
               <VStack className="ad-row-list" gap={0}>
                 {[0, 1, 2].map((idx) => (
@@ -202,7 +202,7 @@ export default function AdminLoginPage() {
           </VStack>
         ) : demoUsers.length > 0 ? (
           <VStack gap={3}>
-            <Divider label="Acceso rápido en Modo Demo" />
+            <Divider label="Entrar rápido (modo de prueba)" />
             <VStack className="ad-surface" gap={0}>
               <VStack className="ad-row-list fx-stagger" gap={0}>
                 {demoUsers.map((u) => {
@@ -253,7 +253,7 @@ export default function AdminLoginPage() {
                             </Text>
                           </HStack>
                           <Text type="supporting" color="secondary" maxLines={1}>
-                            {isSigning ? 'Iniciando sesión...' : meta.hint}
+                            {isSigning ? 'Entrando...' : meta.hint}
                           </Text>
                         </VStack>
                       </HStack>
@@ -270,7 +270,7 @@ export default function AdminLoginPage() {
           <NextLink href="/" className="ad-foot-link">
             <ArrowLeft size={14} aria-hidden="true" />
             <Text color="inherit" size="sm">
-              Volver a la página pública del salón
+              Volver a la página del salón
             </Text>
           </NextLink>
         </HStack>

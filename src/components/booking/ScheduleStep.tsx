@@ -9,7 +9,6 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Calendar, type ISODateString } from '@astryxdesign/core/Calendar';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import type { AvailableSlot, DayAvailabilitySummary, DayPeriod } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
@@ -27,8 +26,11 @@ interface ScheduleStepProps {
   selectedDaySummary: DayAvailabilitySummary | null;
   selectedSlot: AvailableSlot | null;
   pinnedStaffName: string | null;
+  pinnedStaffSchedule: string | null;
+  pendingSlotKey: string | null;
   isBusy: boolean;
   loadingAvail: boolean;
+  isRevalidating?: boolean;
   canAdvanceMonth: boolean;
   isViewingFutureWindow: boolean;
   onChangeLayoutView: (view: ScheduleLayout) => void;
@@ -38,6 +40,7 @@ interface ScheduleStepProps {
   onShowAllStaff: () => void;
   onRedirectStaff: (staffId: string) => void;
   onAdvanceMonth: () => void;
+  onPrefetchNextMonth?: () => void;
   onReturnToToday: () => void;
   onOpenWaitlist: () => void;
 }
@@ -50,7 +53,8 @@ const PERIOD_LABELS: ReadonlyArray<{ period: DayPeriod; label: string }> = [
 
 const STRIP_DAYS = 21;
 const SKELETON_DAY_KEYS = [0, 1, 2, 3, 4, 5, 6] as const;
-const SKELETON_SLOT_KEYS = [0, 1, 2, 3, 4, 5] as const;
+const SKELETON_GROUP_KEYS = [0, 1] as const;
+const SKELETON_SLOT_KEYS = [0, 1, 2] as const;
 
 const weekdayFormatter = new Intl.DateTimeFormat('es-MX', { weekday: 'short', timeZone: 'UTC' });
 const monthFormatter = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -76,8 +80,11 @@ export function ScheduleStep({
   selectedDaySummary,
   selectedSlot,
   pinnedStaffName,
+  pinnedStaffSchedule,
+  pendingSlotKey,
   isBusy,
   loadingAvail,
+  isRevalidating = false,
   canAdvanceMonth,
   isViewingFutureWindow,
   onChangeLayoutView,
@@ -87,6 +94,7 @@ export function ScheduleStep({
   onShowAllStaff,
   onRedirectStaff,
   onAdvanceMonth,
+  onPrefetchNextMonth,
   onReturnToToday,
   onOpenWaitlist,
 }: ScheduleStepProps) {
@@ -119,45 +127,51 @@ export function ScheduleStep({
     />
   );
 
-  const strip =
-    loadingAvail && stripDays.length === 0 ? (
-      <HStack gap={1} className="rb-scroll" data-fade="true" aria-hidden="true">
-        {SKELETON_DAY_KEYS.map((item) => (
-          <VStack key={item} className="rb-day-skeleton fx-shimmer" />
-        ))}
-      </HStack>
-    ) : (
-      <HStack gap={1} className="rb-scroll" data-fade="true" role="listbox" aria-label="Próximos días">
-        {stripDays.map((day) => {
-          const date = plainDate(day.date);
-          const isOn = day.date === selectedDate;
-          return (
-            <button
-              key={day.date}
-              type="button"
-              role="option"
-              className="rb-day fx-press fx-tabular"
-              aria-selected={isOn}
-              disabled={!day.hasSlots}
-              aria-label={`${formatDateLongInTimezone(`${day.date}T18:00:00Z`, timezone)}, ${
-                day.hasSlots ? `${day.slotCount} horarios` : 'sin lugares'
-              }`}
-              onClick={() => onSelectDate(day.date)}
-            >
-              <Text color="inherit" type="supporting" className="rb-day-wd">
-                {weekdayFormatter.format(date).replace('.', '')}
-              </Text>
-              <Text color="inherit" weight="bold" size="xl" hasTabularNumbers>
-                {date.getUTCDate()}
-              </Text>
-              <Text color="inherit" type="supporting" className="rb-day-count rb-d" hasTabularNumbers>
-                {day.hasSlots ? `${day.slotCount} libres` : 'sin lugar'}
-              </Text>
-            </button>
-          );
-        })}
-      </HStack>
-    );
+  const strip = loadingAvail ? (
+    <HStack
+      gap={1}
+      className="rb-scroll"
+      data-fade="true"
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando días disponibles"
+    >
+      {SKELETON_DAY_KEYS.map((item) => (
+        <VStack key={item} className="rb-day-skeleton fx-shimmer" aria-hidden="true" />
+      ))}
+    </HStack>
+  ) : (
+    <HStack gap={1} className="rb-scroll" data-fade="true" role="listbox" aria-label="Próximos días">
+      {stripDays.map((day) => {
+        const date = plainDate(day.date);
+        const isOn = day.date === selectedDate;
+        return (
+          <button
+            key={day.date}
+            type="button"
+            role="option"
+            className="rb-day fx-press fx-tabular"
+            aria-selected={isOn}
+            disabled={!day.hasSlots || isBusy}
+            aria-label={`${formatDateLongInTimezone(`${day.date}T18:00:00Z`, timezone)}, ${
+              day.hasSlots ? `${day.slotCount} horarios` : 'sin lugares'
+            }`}
+            onClick={() => onSelectDate(day.date)}
+          >
+            <Text color="inherit" type="supporting" className="rb-day-wd">
+              {weekdayFormatter.format(date).replace('.', '')}
+            </Text>
+            <Text color="inherit" weight="bold" size="xl" hasTabularNumbers>
+              {date.getUTCDate()}
+            </Text>
+            <Text color="inherit" type="supporting" className="rb-day-count rb-d" hasTabularNumbers>
+              {day.hasSlots ? `${day.slotCount} libres` : 'sin lugar'}
+            </Text>
+          </button>
+        );
+      })}
+    </HStack>
+  );
 
   return (
     <VStack gap={4} className="fx-step-in">
@@ -183,7 +197,7 @@ export function ScheduleStep({
           </SegmentedControl>
           <SegmentedControl
             label="Formato de hora"
-            size="sm"
+            size="md"
             value={timeFormat}
             onChange={(value) => onChangeTimeFormat(value === '24h' ? '24h' : '12h')}
           >
@@ -195,10 +209,24 @@ export function ScheduleStep({
 
       {pinnedStaffName ? (
         <HStack justify="between" align="center" gap={2} wrap="wrap" className="rb-note">
-          <Text>
-            Estás viendo solo los horarios de <Text weight="semibold">{pinnedStaffName}</Text>.
-          </Text>
-          <Button label="Ver todo el equipo" variant="secondary" size="md" className="fx-press" onClick={onShowAllStaff} />
+          <VStack gap={0} className="rb-grow">
+            <Text>
+              Estás viendo solo los horarios de <Text weight="semibold">{pinnedStaffName}</Text>.
+            </Text>
+            {pinnedStaffSchedule ? (
+              <Text type="supporting" color="secondary" hasTabularNumbers>
+                Turnos fijos · {pinnedStaffSchedule}
+              </Text>
+            ) : null}
+          </VStack>
+          <Button
+            label="Ver todo el equipo"
+            variant="secondary"
+            size="md"
+            className="fx-press"
+            isDisabled={loadingAvail || isBusy}
+            onClick={onShowAllStaff}
+          />
         </HStack>
       ) : null}
 
@@ -218,6 +246,7 @@ export function ScheduleStep({
                 variant="primary"
                 size="md"
                 className="fx-press"
+                isDisabled={loadingAvail || isBusy}
                 label={`Ver horarios de ${redirectStaffName}`}
                 onClick={() => onRedirectStaff(redirectStaffId)}
               />
@@ -233,59 +262,182 @@ export function ScheduleStep({
             Revisa el próximo mes o anótate en la lista de espera y te avisamos si se libera algo.
           </Text>
           <HStack gap={2} wrap="wrap">
-            {canAdvanceMonth ? <Button label="Ver próximo mes" variant="primary" className="fx-press" onClick={onAdvanceMonth} /> : null}
+            {canAdvanceMonth ? (
+              <Button
+                label="Ver próximo mes"
+                variant="primary"
+                className="fx-press"
+                onMouseEnter={onPrefetchNextMonth}
+                onFocus={onPrefetchNextMonth}
+                onClick={onAdvanceMonth}
+              />
+            ) : null}
             <Button label="Lista de espera" variant="secondary" className="fx-press" onClick={onOpenWaitlist} />
-            {isViewingFutureWindow ? <Button label="Volver a hoy" variant="ghost" className="fx-press" onClick={onReturnToToday} /> : null}
+            {isViewingFutureWindow ? (
+              <Button label="Volver a hoy" variant="ghost" className="fx-press" onClick={onReturnToToday} />
+            ) : null}
           </HStack>
         </VStack>
       ) : (
         <>
           <VStack gap={2} className="rb-m">
-            <HStack justify="between" align="center">
+            <HStack justify="between" align="center" gap={2} wrap="wrap">
               <Text weight="bold" display="block" className="rb-first-upper">
                 {monthLabel}
               </Text>
-              <Button
-                label={isMonthOpen ? 'Ocultar mes' : 'Ver mes'}
-                variant="secondary"
-                size="md"
-                className="fx-press"
-                aria-expanded={isMonthOpen}
-                onClick={() => setIsMonthOpen((open) => !open)}
-              />
+              <HStack gap={1.5} align="center" wrap="wrap">
+                {isViewingFutureWindow ? (
+                  <Button
+                    label="Mes actual"
+                    variant="ghost"
+                    size="md"
+                    style={{ minHeight: '2.75rem' }}
+                    className="fx-press"
+                    isDisabled={loadingAvail || isBusy}
+                    onClick={onReturnToToday}
+                  />
+                ) : null}
+                {canAdvanceMonth ? (
+                  <Button
+                    label="Próximo mes"
+                    variant="ghost"
+                    size="md"
+                    style={{ minHeight: '2.75rem' }}
+                    className="fx-press"
+                    isDisabled={loadingAvail || isBusy}
+                    onMouseEnter={onPrefetchNextMonth}
+                    onFocus={onPrefetchNextMonth}
+                    onClick={onAdvanceMonth}
+                  />
+                ) : null}
+                <Button
+                  label={isMonthOpen ? 'Ocultar mes' : 'Ver mes'}
+                  variant="secondary"
+                  size="md"
+                  style={{ minHeight: '2.75rem' }}
+                  className="fx-press"
+                  aria-expanded={isMonthOpen}
+                  isDisabled={loadingAvail || isBusy}
+                  onClick={() => setIsMonthOpen((open) => !open)}
+                />
+              </HStack>
             </HStack>
-            {isMonthOpen ? <VStack align="center">{calendar}</VStack> : strip}
+            {isMonthOpen ? (
+              <VStack
+                align="center"
+                className="fx-busy"
+                data-busy={loadingAvail ? 'true' : 'false'}
+                aria-busy={loadingAvail ? 'true' : 'false'}
+              >
+                {calendar}
+              </VStack>
+            ) : (
+              strip
+            )}
           </VStack>
 
           <HStack gap={6} align="start" className="rb-schedule">
             {layoutView === 'month' ? (
-              <VStack className="rb-d rb-calendar" gap={2}>
+              <VStack
+                className="rb-d rb-calendar fx-busy"
+                gap={2}
+                data-busy={loadingAvail ? 'true' : 'false'}
+                aria-busy={loadingAvail ? 'true' : 'false'}
+              >
                 {calendar}
                 <HStack gap={2} justify="center" wrap="wrap">
                   {isViewingFutureWindow ? (
-                    <Button label="Mes actual" variant="ghost" size="md" className="fx-press" onClick={onReturnToToday} />
+                    <Button
+                      label="Mes actual"
+                      variant="ghost"
+                      size="md"
+                      className="fx-press"
+                      isDisabled={loadingAvail || isBusy}
+                      onClick={onReturnToToday}
+                    />
                   ) : null}
                   {canAdvanceMonth ? (
-                    <Button label="Próximo mes" variant="ghost" size="md" className="fx-press" onClick={onAdvanceMonth} />
+                    <Button
+                      label="Próximo mes"
+                      variant="ghost"
+                      size="md"
+                      className="fx-press"
+                      isDisabled={loadingAvail || isBusy}
+                      onMouseEnter={onPrefetchNextMonth}
+                      onFocus={onPrefetchNextMonth}
+                      onClick={onAdvanceMonth}
+                    />
                   ) : null}
                 </HStack>
               </VStack>
             ) : null}
 
-            <VStack gap={3} className="rb-grow">
-              {layoutView === 'week' ? <VStack className="rb-d">{strip}</VStack> : null}
-              <Text weight="bold" display="block" className="rb-first-upper">
-                {formatDateLongInTimezone(`${selectedDate}T18:00:00Z`, timezone)}
-              </Text>
+            <VStack gap={3} className="rb-grow" aria-busy={loadingAvail ? 'true' : 'false'}>
+              {layoutView === 'week' ? (
+                <VStack gap={2} className="rb-d">
+                  <HStack justify="between" align="center" gap={2} wrap="wrap">
+                    <Text type="supporting" weight="semibold" color="secondary" className="rb-first-upper">
+                      {monthLabel}
+                    </Text>
+                    <HStack gap={1.5} align="center">
+                      {isViewingFutureWindow ? (
+                        <Button
+                          label="Mes actual"
+                          variant="ghost"
+                          size="md"
+                          className="fx-press"
+                          isDisabled={loadingAvail || isBusy}
+                          onClick={onReturnToToday}
+                        />
+                      ) : null}
+                      {canAdvanceMonth ? (
+                        <Button
+                          label="Próximo mes"
+                          variant="ghost"
+                          size="md"
+                          className="fx-press"
+                          isDisabled={loadingAvail || isBusy}
+                          onMouseEnter={onPrefetchNextMonth}
+                          onFocus={onPrefetchNextMonth}
+                          onClick={onAdvanceMonth}
+                        />
+                      ) : null}
+                    </HStack>
+                  </HStack>
+                  {strip}
+                </VStack>
+              ) : null}
+
+              <HStack justify="between" align="center" gap={2} wrap="wrap">
+                <Text weight="bold" display="block" className="rb-first-upper">
+                  {formatDateLongInTimezone(`${selectedDate}T18:00:00Z`, timezone)}
+                </Text>
+                {loadingAvail || isRevalidating ? (
+                  <Text
+                    type="supporting"
+                    className="fx-save-pill"
+                    data-state="saving"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {loadingAvail ? 'Buscando horarios…' : 'Actualizando horarios…'}
+                  </Text>
+                ) : null}
+              </HStack>
 
               {loadingAvail ? (
-                <VStack gap={3} aria-busy="true">
-                  <ProgressBar label="Buscando horarios libres" isIndeterminate />
-                  <VStack className="rb-skeleton-slots" aria-hidden="true">
-                    {SKELETON_SLOT_KEYS.map((item) => (
-                      <VStack key={item} className="rb-slot-skeleton fx-shimmer" />
-                    ))}
-                  </VStack>
+                <VStack gap={3} aria-busy="true" role="status" aria-label="Cargando horarios libres">
+                  <Text className="rb-sr-only">Buscando horarios libres…</Text>
+                  {SKELETON_GROUP_KEYS.map((group) => (
+                    <VStack key={group} gap={1.5} aria-hidden="true">
+                      <VStack className="sk-bar" data-size="xs" data-w="25" />
+                      <VStack className="rb-skeleton-slots">
+                        {SKELETON_SLOT_KEYS.map((item) => (
+                          <VStack key={item} className="rb-slot-skeleton fx-shimmer" />
+                        ))}
+                      </VStack>
+                    </VStack>
+                  ))}
                 </VStack>
               ) : slots.length > 0 ? (
                 <VStack key={selectedDate} gap={3} className="fx-step-in">
@@ -299,27 +451,39 @@ export function ScheduleStep({
                         </Text>
                         <ul className="rb-slots fx-stagger" aria-label={`Horarios de la ${label.toLowerCase()}`}>
                           {periodSlots.map((slot) => {
+                            const slotKey = `${slot.staffId}-${slot.startAt}`;
                             const time = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
+                            const isPending = pendingSlotKey === slotKey;
                             const isOn =
                               selectedSlot?.startAt === slot.startAt &&
                               (pinnedStaffName ? selectedSlot.staffId === slot.staffId : true);
                             const who = pinnedStaffName ? null : staffCountLabel(slot);
+                            const subLabel = isPending ? 'Apartando…' : who;
                             return (
-                              <li key={`${slot.staffId}-${slot.startAt}`}>
+                              <li key={slotKey}>
                                 <button
                                   type="button"
-                                  className="rb-slot fx-press fx-tabular"
-                                  aria-pressed={isOn}
+                                  className={
+                                    isPending
+                                      ? 'rb-slot fx-press fx-tabular fx-busy'
+                                      : 'rb-slot fx-press fx-tabular'
+                                  }
+                                  aria-pressed={isOn || isPending}
+                                  aria-busy={isPending ? 'true' : undefined}
                                   disabled={isBusy}
-                                  aria-label={`${time}${who ? `, ${who} libres` : ''}`}
+                                  aria-label={
+                                    isPending
+                                      ? `Apartando ${time}`
+                                      : `${time}${who ? `, ${who} libres` : ''}`
+                                  }
                                   onClick={() => onSelectSlot(slot)}
                                 >
                                   <Text color="inherit" weight="bold" hasTabularNumbers>
                                     {time}
                                   </Text>
-                                  {who ? (
+                                  {subLabel ? (
                                     <Text color="inherit" type="supporting" className="rb-slot-sub">
-                                      {who}
+                                      {subLabel}
                                     </Text>
                                   ) : null}
                                 </button>
@@ -350,12 +514,25 @@ export function ScheduleStep({
                       <Button
                         label={`Ir al ${shortDayFormatter.format(plainDate(nextOpenDay.date)).replace('.', '')}`}
                         variant="primary"
+                        className="fx-press"
                         onClick={() => onSelectDate(nextOpenDay.date)}
                       />
                     ) : canAdvanceMonth ? (
-                      <Button label="Ver próximo mes" variant="primary" onClick={onAdvanceMonth} />
+                      <Button
+                        label="Ver próximo mes"
+                        variant="primary"
+                        className="fx-press"
+                        onMouseEnter={onPrefetchNextMonth}
+                        onFocus={onPrefetchNextMonth}
+                        onClick={onAdvanceMonth}
+                      />
                     ) : null}
-                    <Button label="Lista de espera" variant="secondary" onClick={onOpenWaitlist} />
+                    <Button
+                      label="Lista de espera"
+                      variant="secondary"
+                      className="fx-press"
+                      onClick={onOpenWaitlist}
+                    />
                   </HStack>
                 </VStack>
               )}

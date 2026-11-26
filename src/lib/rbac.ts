@@ -9,6 +9,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
     'team',
     'clients',
     'cash',
+    'reports',
     'inventory',
     'coupons',
     'brand',
@@ -22,10 +23,11 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
     'team',
     'clients',
     'cash',
+    'reports',
     'inventory',
     'coupons',
   ]),
-  specialist: new Set(['overview', 'bookings', 'availability', 'cash']),
+  specialist: new Set(['overview', 'bookings', 'availability', 'cash', 'reports']),
 };
 
 export function roleCanAccess(role: AdminRole, section: string): boolean {

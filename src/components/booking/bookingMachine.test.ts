@@ -4,9 +4,11 @@ import { createInitialDemoDatabase } from '@/lib/demo-seed';
 import { toPublicServiceDTO, toPublicSettingsDTO } from '@/lib/public-dto';
 import {
   buildInstagramDmSummary,
+  formatFileSize,
   formatServicePrice,
   getStaffScheduleLabel,
   resolveDepositAmountCents,
+  validateClientImageFile,
 } from './bookingHelpers';
 import {
   bookingReducer,
@@ -40,10 +42,11 @@ const ALT_SLOT: AvailableSlot = {
 };
 
 describe('bookingMachine reducer', () => {
-  it('transitions browsing -> holding -> submitting -> confirmed', () => {
+  it('transitions browsing -> holding -> submitting -> confirmed and guards duplicate START_SUBMIT', () => {
     const initial = createInitialBookingFlowState();
     expect(initial.phase).toBe('browsing');
     expect(initial.step).toBe('service');
+    expect(initial.holdExpired).toBe(false);
 
     const held = bookingReducer(initial, {
       type: 'SELECT_SLOT_HOLD_ACQUIRED',
@@ -60,6 +63,9 @@ describe('bookingMachine reducer', () => {
     const submitting = bookingReducer(held, { type: 'START_SUBMIT' });
     expect(submitting.phase).toBe('submitting');
     expect(submitting.formError).toBeNull();
+
+    const duplicateStart = bookingReducer(submitting, { type: 'START_SUBMIT' });
+    expect(duplicateStart).toBe(submitting);
 
     const confirmed = bookingReducer(submitting, {
       type: 'SUBMIT_CONFIRMED',
@@ -98,10 +104,11 @@ describe('bookingMachine reducer', () => {
     });
     expect(recovered.phase).toBe('holding');
     expect(recovered.conflict).toBeNull();
+    expect(recovered.holdExpired).toBe(false);
     expect(recovered.selectedSlot?.staffId).toBe('staff-paty');
   });
 
-  it('returns to schedule and clears slot when hold expires', () => {
+  it('preserves details step and slot when hold expires on Step 4 so client data stays intact', () => {
     const held = bookingReducer(createInitialBookingFlowState(), {
       type: 'SELECT_SLOT_HOLD_ACQUIRED',
       slot: SAMPLE_SLOT,
@@ -115,9 +122,45 @@ describe('bookingMachine reducer', () => {
     });
 
     expect(expired.phase).toBe('conflict');
+    expect(expired.step).toBe('details');
+    expect(expired.selectedSlot?.startAt).toBe(SAMPLE_SLOT.startAt);
+    expect(expired.holdId).toBeNull();
+    expect(expired.holdExpiresAt).toBeNull();
+    expect(expired.holdExpired).toBe(true);
+    expect(expired.holdExpiredMessage).toBe('Tu apartado temporal expiró.');
+
+    const reheld = bookingReducer(expired, {
+      type: 'SELECT_SLOT_HOLD_ACQUIRED',
+      slot: SAMPLE_SLOT,
+      holdId: 'hold-999',
+      holdExpiresAt: 1_900_000_300_000,
+      nextStep: 'details',
+    });
+    expect(reheld.phase).toBe('holding');
+    expect(reheld.step).toBe('details');
+    expect(reheld.holdExpired).toBe(false);
+    expect(reheld.holdExpiredMessage).toBeNull();
+    expect(reheld.holdId).toBe('hold-999');
+  });
+
+  it('returns to schedule and clears slot when hold expires before Step 4', () => {
+    const heldOnStaff = bookingReducer(createInitialBookingFlowState(), {
+      type: 'SELECT_SLOT_HOLD_ACQUIRED',
+      slot: SAMPLE_SLOT,
+      holdId: 'hold-123',
+      holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'staff',
+    });
+    const expired = bookingReducer(heldOnStaff, {
+      type: 'HOLD_EXPIRED',
+      message: 'Tu apartado temporal expiró.',
+    });
+
+    expect(expired.phase).toBe('conflict');
     expect(expired.step).toBe('schedule');
     expect(expired.selectedSlot).toBeNull();
     expect(expired.holdId).toBeNull();
+    expect(expired.holdExpired).toBe(false);
 
     const dismissed = bookingReducer(expired, { type: 'DISMISS_CONFLICT' });
     expect(dismissed.phase).toBe('browsing');
@@ -247,7 +290,7 @@ describe('time-first staff assignment', () => {
 });
 
 describe('bookingHelpers', () => {
-  it('formats starting prices, staff shifts, deposit amount, and IG DM summary', () => {
+  it('formats starting prices, staff shifts (12h & 24h), deposit amount, and IG DM summary', () => {
     expect(formatServicePrice(35000, true, 'MXN')).toMatch(/^Desde \$350/);
     expect(formatServicePrice(15000, false, 'MXN')).toMatch(/^\$150/);
 
@@ -255,11 +298,17 @@ describe('bookingHelpers', () => {
       getStaffScheduleLabel({ id: 'staff-karla', bookingSlug: 'karla', name: 'Karla' }),
     ).toBe('Lun–Sáb · 10:00 · 1:30 · 4:30');
     expect(
+      getStaffScheduleLabel({ id: 'staff-karla', bookingSlug: 'karla', name: 'Karla' }, '24h'),
+    ).toBe('Lun–Sáb · 10:00 · 13:30 · 16:30');
+    expect(
       getStaffScheduleLabel({ id: 'staff-paty', bookingSlug: 'paty', name: 'Paty' }),
     ).toBe('Lun–Sáb · 10:00 · 1:30 · 4:30');
     expect(
       getStaffScheduleLabel({ id: 'staff-tere', bookingSlug: 'tere', name: 'Tere' }),
     ).toBe('Lun–Sáb · 2:00 · 4:00 · 6:00');
+    expect(
+      getStaffScheduleLabel({ id: 'staff-tere', bookingSlug: 'tere', name: 'Tere' }, '24h'),
+    ).toBe('Lun–Sáb · 14:00 · 16:00 · 18:00');
 
     const db = createInitialDemoDatabase();
     const settings = toPublicSettingsDTO(db.settings);
@@ -291,5 +340,31 @@ describe('bookingHelpers', () => {
     expect(summary).toContain(extra.name);
     expect(summary).toContain('Karla');
     expect(summary).toContain('@sofia.mx');
+  });
+
+  it('formats file sizes and validates image MIME, size, and binary signatures before submit', async () => {
+    expect(formatFileSize(512)).toBe('512 B');
+    expect(formatFileSize(145_000)).toBe('142 KB');
+    expect(formatFileSize(2_500_000)).toBe('2.4 MB');
+
+    const pngHeader = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+    const validPng = new File([pngHeader], 'comprobante.png', { type: 'image/png' });
+    expect(await validateClientImageFile(validPng)).toBeNull();
+
+    const jpegHeader = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    const validJpg = new File([jpegHeader], 'inspo.jpg', { type: 'image/jpeg' });
+    expect(await validateClientImageFile(validJpg)).toBeNull();
+
+    const emptyFile = new File([], 'vacio.png', { type: 'image/png' });
+    expect(await validateClientImageFile(emptyFile)).toContain('vacío');
+
+    const pdfFile = new File(['%PDF-1.4'], 'recibo.pdf', { type: 'application/pdf' });
+    expect(await validateClientImageFile(pdfFile)).toContain('PNG, JPG o WEBP');
+
+    const fakePng = new File(['not-a-real-image-header'], 'falso.png', { type: 'image/png' });
+    expect(await validateClientImageFile(fakePng)).toContain('válida');
+
+    const oversized = new File([new Uint8Array(2_600_000)], 'enorme.png', { type: 'image/png' });
+    expect(await validateClientImageFile(oversized)).toContain('2.5 MB');
   });
 });

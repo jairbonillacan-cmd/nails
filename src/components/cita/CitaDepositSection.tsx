@@ -9,8 +9,17 @@ import { Button } from '@astryxdesign/core/Button';
 import { FileInput } from '@astryxdesign/core/FileInput';
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { AspectRatio } from '@astryxdesign/core/AspectRatio';
-import { Check, CheckCircle2, Copy, CreditCard, ExternalLink, Upload } from 'lucide-react';
+import {
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  CreditCard,
+  ExternalLink,
+  FileCheck2,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import {
   formatCurrency,
   formatDateLongInTimezone,
@@ -26,8 +35,11 @@ import {
   resolveInstagramUrl,
 } from '../booking/bookingHelpers';
 import {
+  formatFileSize,
   isDisplayableMediaUrl,
+  MAX_PROOF_FILE_BYTES,
   resolveSafeHttpUrl,
+  validateProofImageFile,
   type PublicManageBooking,
 } from './types';
 
@@ -36,7 +48,25 @@ interface CitaDepositSectionProps {
   settings: PublicSettingsDTO;
   timezone: string;
   isUploading: boolean;
+  justUploadedMessage?: string | null;
   onUploadProof: (dataUrl: string) => Promise<boolean>;
+}
+
+function appendManageTokenToMediaUrl(
+  url: string | null | undefined,
+  manageToken: string,
+): string | null {
+  const trimmed = url?.trim() ?? '';
+  if (!trimmed) return null;
+  const cleanToken = manageToken.trim();
+  if (!trimmed.startsWith('/api/media/') || !cleanToken) {
+    return trimmed;
+  }
+  if (/(?:^|[?&])token=/.test(trimmed)) {
+    return trimmed;
+  }
+  const separator = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${separator}token=${encodeURIComponent(cleanToken)}`;
 }
 
 function buildBookingDmSummary(
@@ -73,11 +103,13 @@ export function CitaDepositSection({
   settings,
   timezone,
   isUploading,
+  justUploadedMessage = null,
   onUploadProof,
 }: CitaDepositSectionProps) {
-  const clabeFeedback = useEphemeralMessage(2500);
-  const dmFeedback = useEphemeralMessage(2500);
+  const clabeFeedback = useEphemeralMessage(2600);
+  const dmFeedback = useEphemeralMessage(2600);
   const lastCopyMsgRef = useRef('');
+  const submitLockRef = useRef(false);
   const [clabeCopyOk, setClabeCopyOk] = useState(false);
   const [dmCopyOk, setDmCopyOk] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState<'web_upload' | 'instagram_dm'>(
@@ -85,15 +117,37 @@ export function CitaDepositSection({
   );
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
+  const [isReadingFile, setIsReadingFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
 
   const isPendingDeposit =
     booking.status === 'pending_confirmation' || booking.status === 'pending_payment';
+  if (!isPendingDeposit) {
+    return null;
+  }
+
   const safeCheckoutUrl = resolveSafeHttpUrl(booking.checkoutUrl);
   const showSpei = hasConfiguredDeposit(settings, booking.depositAmountCents);
 
-  if (!isPendingDeposit || (!showSpei && !safeCheckoutUrl)) {
-    return null;
+  if (!showSpei && !safeCheckoutUrl) {
+    return (
+      <VStack as="section" className="ck-panel fx-fade-up" aria-labelledby="ck-deposit-title">
+        <VStack gap={3} padding={4} className="rb-deposit">
+          <HStack gap={2} align="center">
+            <Clock size={18} aria-hidden="true" className="lk-cereza-text" />
+            <Text type="label" color="accent" weight="semibold">
+              Siguiente paso · En revisión por el estudio
+            </Text>
+          </HStack>
+          <Heading level={2} id="ck-deposit-title" className="lk-serif rb-deposit-title">
+            Tu solicitud está en revisión
+          </Heading>
+          <Text type="supporting" textWrap="pretty">
+            Ya recibimos tu cita en {settings.name}. En breve confirmaremos tu horario y te avisaremos por WhatsApp.
+          </Text>
+        </VStack>
+      </VStack>
+    );
   }
 
   const effectiveDepositCents =
@@ -105,7 +159,12 @@ export function CitaDepositSection({
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const instagramUrl = resolveInstagramUrl(settings);
   const hasExistingProof = Boolean(booking.paymentProofUrl?.trim());
-  const canPreviewProof = isDisplayableMediaUrl(booking.paymentProofUrl);
+  const authorizedProofUrl = appendManageTokenToMediaUrl(
+    booking.paymentProofUrl,
+    booking.manageToken,
+  );
+  const canPreviewProof = isDisplayableMediaUrl(authorizedProofUrl);
+  const dmSummaryText = buildBookingDmSummary(booking, settings, timezone);
 
   const announce = (
     target: ReturnType<typeof useEphemeralMessage>,
@@ -133,15 +192,21 @@ export function CitaDepositSection({
   };
 
   const handleCopyDmSummary = async () => {
-    const summary = buildBookingDmSummary(booking, settings, timezone);
     try {
-      await navigator.clipboard.writeText(summary);
+      await navigator.clipboard.writeText(dmSummaryText);
       setDmCopyOk(true);
-      announce(dmFeedback, 'Resumen copiado para pegar en Instagram DM');
+      announce(dmFeedback, 'Mensaje copiado para pegar en Instagram DM');
     } catch {
       setDmCopyOk(false);
       announce(dmFeedback, 'No se pudo copiar automáticamente; envía tu captura por DM.');
     }
+  };
+
+  const handleClearProof = () => {
+    if (isUploading || isReadingFile) return;
+    setProofFile(null);
+    setProofDataUrl(null);
+    setFileError(null);
   };
 
   const handleSelectProofFile = async (files: File | File[] | null) => {
@@ -152,52 +217,123 @@ export function CitaDepositSection({
       setProofDataUrl(null);
       return;
     }
+    const validationError = validateProofImageFile(selected);
+    if (validationError) {
+      setProofFile(null);
+      setProofDataUrl(null);
+      setFileError(validationError);
+      return;
+    }
+    setIsReadingFile(true);
     try {
       const dataUrl = await readFileAsDataUrl(selected);
+      if (!dataUrl.startsWith('data:image/')) {
+        setProofFile(null);
+        setProofDataUrl(null);
+        setFileError('No pudimos validar esa imagen. Intenta con PNG, JPG o WEBP.');
+        return;
+      }
       setProofFile(selected);
       setProofDataUrl(dataUrl);
     } catch {
       setProofFile(null);
       setProofDataUrl(null);
       setFileError('No pudimos leer esa imagen. Intenta con PNG, JPG o WEBP.');
+    } finally {
+      setIsReadingFile(false);
     }
   };
 
   const handleSubmitProof = async () => {
-    if (!proofDataUrl) {
+    if (submitLockRef.current || isUploading || isReadingFile) return;
+    if (!proofDataUrl || !proofFile) {
       setFileError('Primero elige la captura de tu transferencia.');
       return;
     }
+    const validationError = validateProofImageFile(proofFile);
+    if (validationError) {
+      setFileError(validationError);
+      return;
+    }
+    submitLockRef.current = true;
     setFileError(null);
-    const ok = await onUploadProof(proofDataUrl);
-    if (ok) {
-      setProofFile(null);
-      setProofDataUrl(null);
+    try {
+      const ok = await onUploadProof(proofDataUrl);
+      if (ok) {
+        setProofFile(null);
+        setProofDataUrl(null);
+      }
+    } finally {
+      submitLockRef.current = false;
     }
   };
 
+  const isBusyUpload = isUploading || isReadingFile;
+
   const renderUploadBlock = (submitLabel: string) => (
-    <VStack gap={3}>
+    <VStack
+      gap={3}
+      className="fx-busy"
+      data-busy={isUploading ? 'true' : 'false'}
+      aria-busy={isBusyUpload}
+    >
       <FileInput
         label="Comprobante de transferencia"
         description="Captura PNG, JPG o WEBP hasta 2.5 MB."
         mode="dropzone"
         accept="image/png,image/jpeg,image/webp"
-        maxSize={2_500_000}
+        maxSize={MAX_PROOF_FILE_BYTES}
         value={proofFile}
+        isDisabled={isBusyUpload}
         status={fileError ? { type: 'error', message: fileError } : undefined}
         onChange={(f) => void handleSelectProofFile(f)}
       />
-      {proofDataUrl ? (
-        <AspectRatio ratio={16 / 9} fit="cover">
-          <img
-            src={proofDataUrl}
-            alt="Vista previa del comprobante seleccionado"
-            decoding="async"
-            className="ck-proof-img fx-fade-up"
-          />
-        </AspectRatio>
+
+      {isBusyUpload ? (
+        <VStack gap={1.5} role="status" aria-live="polite">
+          <HStack justify="between" align="center" gap={2}>
+            <Text type="supporting" color="accent" weight="semibold">
+              {isUploading ? 'Subiendo comprobante a tu cita...' : 'Procesando imagen...'}
+            </Text>
+          </HStack>
+          <VStack className="fx-upload-track" aria-hidden="true">
+            <VStack className="fx-upload-bar" data-indeterminate="true" />
+          </VStack>
+        </VStack>
       ) : null}
+
+      {proofDataUrl && proofFile ? (
+        <HStack gap={3} align="center" wrap="wrap" padding={3} className="rb-card fx-fade-up">
+          <VStack className="fx-upload-thumb">
+            <img
+              src={proofDataUrl}
+              alt="Vista previa del comprobante seleccionado"
+              decoding="async"
+            />
+          </VStack>
+          <VStack gap={1} className="rb-grow" style={{ minWidth: 0 }}>
+            <Text weight="semibold" style={{ overflowWrap: 'anywhere' }}>
+              {proofFile.name}
+            </Text>
+            <Text type="supporting" color="secondary" hasTabularNumbers>
+              {formatFileSize(proofFile.size)} · Lista para enviar
+            </Text>
+            <HStack>
+              <Button
+                type="button"
+                label="Quitar imagen"
+                variant="ghost"
+                size="md"
+                className="fx-press"
+                isDisabled={isBusyUpload}
+                icon={<Trash2 size={14} aria-hidden="true" />}
+                onClick={handleClearProof}
+              />
+            </HStack>
+          </VStack>
+        </HStack>
+      ) : null}
+
       <Button
         type="button"
         variant="primary"
@@ -205,9 +341,9 @@ export function CitaDepositSection({
         width="100%"
         className="fx-press"
         icon={<Upload size={16} aria-hidden="true" />}
-        label={submitLabel}
+        label={isUploading ? 'Subiendo comprobante...' : submitLabel}
         isLoading={isUploading}
-        isDisabled={!proofDataUrl}
+        isDisabled={!proofDataUrl || isBusyUpload}
         onClick={() => void handleSubmitProof()}
       />
     </VStack>
@@ -218,41 +354,62 @@ export function CitaDepositSection({
       <VStack as="section" className="ck-panel fx-fade-up" aria-labelledby="ck-deposit-title">
         <VStack gap={3} padding={4} className="rb-deposit">
           <HStack justify="between" align="center" wrap="wrap" gap={2}>
-            <HStack gap={2} align="center">
+            <HStack gap={2} align="center" style={{ minWidth: 0 }}>
               <CheckCircle2 size={20} aria-hidden="true" className="lk-cereza-text fx-pop" />
               <Heading level={2} id="ck-deposit-title" className="lk-serif rb-deposit-title">
-                Comprobante recibido
+                Comprobante recibido · En revisión por el estudio
               </Heading>
             </HStack>
-            <Text type="supporting" color="accent" weight="semibold">
-              En revisión
-            </Text>
+            {justUploadedMessage ? (
+              <HStack className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                <Check size={13} aria-hidden="true" />
+                <Text type="supporting" color="inherit" weight="semibold">
+                  {justUploadedMessage}
+                </Text>
+              </HStack>
+            ) : null}
           </HStack>
           <Text type="supporting" textWrap="pretty">
-            Ya recibimos tu comprobante de anticipo de {displayAmount}. El equipo lo valida y te confirma por WhatsApp.
+            Ya recibimos tu comprobante de anticipo de {displayAmount}. El equipo lo valida y te confirmamos por WhatsApp en cuanto quede aprobado.
           </Text>
-          {canPreviewProof && booking.paymentProofUrl ? (
-            <AspectRatio ratio={16 / 9} fit="cover">
+          {canPreviewProof && authorizedProofUrl ? (
+            <VStack className="fx-upload-thumb" data-size="lg">
               <img
-                src={booking.paymentProofUrl}
+                src={authorizedProofUrl}
                 alt="Comprobante de anticipo adjunto"
                 loading="lazy"
                 decoding="async"
-                className="ck-proof-img"
               />
-            </AspectRatio>
-          ) : null}
+            </VStack>
+          ) : (
+            <HStack gap={3} align="center" padding={3} className="rb-card">
+              <FileCheck2 size={20} aria-hidden="true" className="lk-cereza-text" />
+              <VStack gap={0.5} className="rb-grow" style={{ minWidth: 0 }}>
+                <Text weight="semibold">Comprobante adjunto registrado</Text>
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  Anticipo {displayAmount} · Código {booking.bookingCode}
+                </Text>
+              </VStack>
+            </HStack>
+          )}
           <Collapsible
+            key={booking.paymentProofUrl ?? 'existing-proof'}
             className="rb-fold"
             defaultIsOpen={false}
             trigger={
-              <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
-                <Text weight="semibold">¿Necesitas subir otro comprobante?</Text>
+              <HStack
+                justify="between"
+                align="center"
+                gap={2}
+                width="100%"
+                style={{ minHeight: '2.75rem' }}
+              >
+                <Text weight="semibold">Reemplazar comprobante</Text>
               </HStack>
             }
           >
             <VStack gap={3} className="rb-fold-body">
-              {renderUploadBlock('Actualizar comprobante')}
+              {renderUploadBlock('Reemplazar comprobante')}
             </VStack>
           </Collapsible>
         </VStack>
@@ -260,9 +417,19 @@ export function CitaDepositSection({
     );
   }
 
+  const isClabeCopied = Boolean(clabeFeedback.message && clabeCopyOk);
+  const isDmCopied = Boolean(dmFeedback.message && dmCopyOk);
+
   return (
     <VStack as="section" className="ck-panel fx-fade-up" aria-labelledby="ck-deposit-title">
       <VStack gap={3} padding={4} className="rb-deposit">
+        <HStack gap={1.5} align="center">
+          <Clock size={15} aria-hidden="true" className="lk-cereza-text" />
+          <Text type="label" color="accent" weight="semibold">
+            Siguiente paso · Confirma tu horario
+          </Text>
+        </HStack>
+
         <HStack justify="between" align="end" wrap="wrap" gap={1}>
           <Heading level={2} id="ck-deposit-title" className="lk-serif rb-deposit-title">
             Anticipo de {displayAmount}
@@ -272,7 +439,7 @@ export function CitaDepositSection({
           </Text>
         </HStack>
 
-        {booking.status === 'pending_payment' && safeCheckoutUrl ? (
+        {safeCheckoutUrl ? (
           <VStack gap={2}>
             <Text type="supporting" textWrap="pretty">
               Completa tu anticipo en línea para confirmar tu horario al instante.
@@ -293,32 +460,37 @@ export function CitaDepositSection({
 
         {showSpei && settings.depositClabe.trim() ? (
           <>
-            <Text type="supporting">
+            <Text type="supporting" textWrap="pretty">
               SPEI a {settings.depositBankName} · {beneficiary}
             </Text>
 
             <button
               type="button"
               className="rb-clabe fx-press"
-              data-copied={clabeFeedback.message && clabeCopyOk ? 'true' : 'false'}
+              data-copied={isClabeCopied ? 'true' : 'false'}
               aria-label={`Copiar CLABE ${settings.depositClabe}`}
               onClick={() => void handleCopyClabe()}
             >
-              <VStack gap={0} align="start">
+              <VStack gap={0} align="start" style={{ minWidth: 0 }}>
                 <Text type="supporting" color="secondary">
                   CLABE
                 </Text>
-                <Text type="code" weight="bold" hasTabularNumbers>
+                <Text
+                  type="code"
+                  weight="bold"
+                  hasTabularNumbers
+                  style={{ overflowWrap: 'anywhere' }}
+                >
                   {settings.depositClabe}
                 </Text>
               </VStack>
               <Text color="inherit" weight="semibold" className="rb-clabe-action">
-                {clabeFeedback.message && clabeCopyOk ? (
+                {isClabeCopied ? (
                   <Check size={14} aria-hidden="true" className="fx-pop" />
                 ) : (
                   <Copy size={14} aria-hidden="true" />
                 )}
-                {clabeFeedback.message && clabeCopyOk ? 'Copiada' : 'Copiar'}
+                {isClabeCopied ? 'CLABE copiada ✓' : 'Copiar CLABE'}
               </Text>
             </button>
             <Text
@@ -326,7 +498,7 @@ export function CitaDepositSection({
               color={clabeCopyOk ? 'accent' : 'secondary'}
               role="status"
               aria-live="polite"
-              className={clabeFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
+              className={clabeFeedback.message && !clabeCopyOk ? 'fx-fade-up' : 'rb-sr-only'}
             >
               {clabeFeedback.message ?? ''}
             </Text>
@@ -340,24 +512,50 @@ export function CitaDepositSection({
             >
               <RadioListItem
                 value="web_upload"
-                label="Lo subo aquí"
-                description="Sube tu captura PNG, JPG o WEBP directo a tu cita."
+                label="Subir comprobante aquí"
+                description="Adjunta tu captura PNG, JPG o WEBP directo a tu cita."
               />
               <RadioListItem
                 value="instagram_dm"
-                label={`Lo mando por DM a ${instagramHandle}`}
-                description="Copia tus datos y envía tu captura por Instagram."
+                label={`Enviar por DM a ${instagramHandle}`}
+                description="Copia el mensaje prellenado con tu código y mándalo por Instagram."
               />
             </RadioList>
 
             {deliveryMethod === 'web_upload' ? (
               renderUploadBlock('Subir comprobante')
             ) : (
-              <VStack gap={2} padding={3} className="rb-card fx-fade-up">
+              <VStack gap={3} padding={3} className="rb-card fx-fade-up">
                 <Text type="supporting" color="secondary" textWrap="pretty">
-                  Envía tu captura junto con el código {booking.bookingCode} a {instagramHandle} para validar tu anticipo.
+                  Copia el mensaje con tu código {booking.bookingCode} y envía la captura de tu transferencia a {instagramHandle}.
                 </Text>
-                <HStack gap={2} wrap="wrap">
+                <VStack gap={1} padding={3} className="rb-deposit">
+                  <Text type="supporting" color="secondary" weight="semibold">
+                    Mensaje listo para pegar en DM
+                  </Text>
+                  <Text
+                    type="supporting"
+                    style={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}
+                  >
+                    {dmSummaryText}
+                  </Text>
+                </VStack>
+                <HStack gap={2} wrap="wrap" align="center">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    className="fx-press"
+                    icon={
+                      isDmCopied ? (
+                        <Check size={15} aria-hidden="true" className="fx-pop" />
+                      ) : (
+                        <Copy size={15} aria-hidden="true" />
+                      )
+                    }
+                    label={isDmCopied ? 'Mensaje copiado ✓' : 'Copiar mensaje para DM'}
+                    onClick={() => void handleCopyDmSummary()}
+                  />
                   <Button
                     variant="secondary"
                     size="md"
@@ -368,35 +566,19 @@ export function CitaDepositSection({
                     target="_blank"
                     rel="noopener noreferrer"
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="md"
-                    className="fx-press"
-                    icon={
-                      dmFeedback.message && dmCopyOk ? (
-                        <Check size={15} aria-hidden="true" className="fx-pop" />
-                      ) : (
-                        <Copy size={15} aria-hidden="true" />
-                      )
-                    }
-                    label={
-                      dmFeedback.message && dmCopyOk
-                        ? 'Resumen copiado'
-                        : 'Copiar resumen para Instagram DM'
-                    }
-                    onClick={() => void handleCopyDmSummary()}
-                  />
+                  {dmFeedback.message ? (
+                    <HStack
+                      className="fx-save-pill"
+                      data-state={dmCopyOk ? 'saved' : 'error'}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <Text type="supporting" color="inherit" weight="semibold">
+                        {dmCopyOk ? 'Copiado al portapapeles ✓' : 'Copia manual requerida'}
+                      </Text>
+                    </HStack>
+                  ) : null}
                 </HStack>
-                <Text
-                  type="supporting"
-                  color={dmCopyOk ? 'accent' : 'secondary'}
-                  role="status"
-                  aria-live="polite"
-                  className={dmFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
-                >
-                  {dmFeedback.message ?? ''}
-                </Text>
               </VStack>
             )}
           </>

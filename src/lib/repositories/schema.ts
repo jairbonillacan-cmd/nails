@@ -25,6 +25,8 @@ const AuditActionSchema = z.enum([
   'past_booking_override',
   'deposit_approved',
   'loyalty_redeemed',
+  'media_retention_warned',
+  'media_retention_purged',
 ]);
 
 const LandingContentSchema = z.object({
@@ -85,9 +87,15 @@ const SalonSettingsSchema = z.object({
   maxActiveBookingsPerClient: z.number().int().positive().max(50).optional(),
   privacyPolicyVersion: z.string().optional(),
   optimizeContinuousSlots: z.boolean().optional(),
+  noShowDepositThreshold: z.number().int().min(0).max(20).optional(),
+  ownerPinHash: z.string().nullable().optional(),
+  ownerPinEnabled: z.boolean().optional(),
+  hasOwnerPin: z.boolean().optional(),
   landingContent: LandingContentSchema,
   whatsappBookingEnabled: z.boolean(),
   smsRemindersEnabled: z.boolean(),
+  retentionNoticeEmail: z.string().nullable().optional(),
+  whatsappMonthlyQuota: z.number().int().positive().optional(),
   metaPixelId: z.string().nullable(),
   ga4MeasurementId: z.string().nullable(),
   googleReviewUrl: z.string().nullable(),
@@ -298,6 +306,11 @@ const BookingSchema = z.object({
   googleEventId: z.string().nullable(),
   cancellationReason: z.string().nullable(),
   rescheduledFromId: z.string().nullable(),
+  recurrenceSeriesId: z.string().nullable().optional(),
+  recurrenceIndex: z.number().int().nonnegative().optional(),
+  recurrenceTotal: z.number().int().positive().optional(),
+  packageRedemptionId: z.string().nullable().optional(),
+  noShowPolicyEnforced: z.boolean().optional(),
   addons: z.array(BookingAddonSnapshotSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -540,6 +553,93 @@ const AuditLogEntrySchema = z.object({
   createdAt: z.string(),
 });
 
+const ServicePackageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  serviceId: z.string(),
+  totalSessions: z.number().int().positive(),
+  priceCents: z.number().int().nonnegative(),
+  validDays: z.number().int().positive().nullable(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+});
+
+const ClientPackageSchema = z.object({
+  id: z.string(),
+  clientId: z.string(),
+  packageId: z.string(),
+  packageName: z.string(),
+  serviceId: z.string(),
+  totalSessions: z.number().int().positive(),
+  usedSessions: z.number().int().nonnegative(),
+  purchasedAt: z.string(),
+  expiresAt: z.string().nullable(),
+  status: z.enum(['active', 'exhausted', 'expired', 'canceled']),
+  notes: z.string(),
+  redeemedBookingIds: z.array(z.string()).optional(),
+});
+
+const CampaignDispatchLogSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['birthday', 'reactivation']),
+  clientId: z.string(),
+  clientName: z.string(),
+  phoneE164: z.string(),
+  channel: z.literal('whatsapp'),
+  messagePreview: z.string(),
+  dispatchedBy: z.string(),
+  dispatchedAt: z.string(),
+});
+
+const MediaAssetRecordSchema = z.object({
+  id: z.string(),
+  storagePath: z.string(),
+  folder: z.enum(['proofs', 'inspo', 'gallery']),
+  bookingId: z.string().nullable(),
+  clientId: z.string().nullable(),
+  contentType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  retentionWarned30dAt: z.string().nullable(),
+  retentionWarned7dAt: z.string().nullable(),
+  purgedAt: z.string().nullable(),
+});
+
+const WhatsAppTemplateTriggerKeySchema = z.enum([
+  'booking_confirmed',
+  'reminder_24h',
+  'reminder_2h',
+  'booking_rescheduled',
+  'booking_canceled',
+  'waitlist_offer',
+]);
+
+const WhatsAppTemplateConfigSchema = z.object({
+  id: z.string(),
+  triggerKey: WhatsAppTemplateTriggerKeySchema,
+  templateName: z.string(),
+  category: z.enum(['UTILITY', 'MARKETING', 'AUTHENTICATION']),
+  languageCode: z.string(),
+  isActive: z.boolean(),
+  updatedAt: z.string(),
+});
+
+const WhatsAppMonthlyUsageSchema = z.object({
+  monthKey: z.string().regex(/^\d{4}-\d{2}$/),
+  sentCount: z.number().int().nonnegative(),
+  quotaLimit: z.number().int().positive(),
+  warned80At: z.string().nullable(),
+  warned100At: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
+const WebhookEventRecordSchema = z.object({
+  provider: z.string(),
+  eventId: z.string(),
+  receivedAt: z.string(),
+});
+
 export const DemoDatabaseSchema = z.object({
   settings: SalonSettingsSchema,
   staff: z.array(StaffMemberSchema),
@@ -570,6 +670,13 @@ export const DemoDatabaseSchema = z.object({
   consents: z.array(ConsentRecordSchema).default([]),
   auditLogs: z.array(AuditLogEntrySchema).default([]),
   bookingPayments: z.array(BookingPaymentSchema).default([]),
+  servicePackages: z.array(ServicePackageSchema).default([]),
+  clientPackages: z.array(ClientPackageSchema).default([]),
+  campaignDispatches: z.array(CampaignDispatchLogSchema).default([]),
+  mediaAssets: z.array(MediaAssetRecordSchema).default([]),
+  whatsappTemplates: z.array(WhatsAppTemplateConfigSchema).default([]),
+  whatsappMonthlyUsage: z.array(WhatsAppMonthlyUsageSchema).default([]),
+  webhookEvents: z.array(WebhookEventRecordSchema).default([]),
 });
 
 export function parseDemoDatabase(raw: unknown): DemoDatabase {

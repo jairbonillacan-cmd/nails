@@ -43,8 +43,8 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
   const targetUrl = `${baseOrigin}${relativePath}`;
   const qrLabel =
     target === 'links'
-      ? `Código QR Bio-Link Instagram de ${salonName}`
-      : `Código QR Agenda directa de ${salonName}`;
+      ? `Código QR de enlaces para Instagram de ${salonName}`
+      : `Código QR para agendar en ${salonName}`;
 
   const svgMarkup = useMemo(
     () => generateQrSvg(targetUrl, qrLabel),
@@ -72,7 +72,7 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
     const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
     triggerBlobDownload(blob, `${filePrefix}.svg`);
     setLastAction('svg');
-    feedback.show('SVG descargado listo para impresión.');
+    feedback.show('Archivo listo para imprimir descargado.');
   };
 
   const handleDownloadPng = () => {
@@ -83,23 +83,23 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
       canvas.height = 1024;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        feedback.show('No se pudo inicializar el lienzo PNG.');
+        feedback.show('No se pudo preparar la imagen.');
         return;
       }
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0, 1024, 1024);
       canvas.toBlob((blob) => {
         if (!blob) {
-          feedback.show('No se pudo exportar la imagen PNG.');
+          feedback.show('No se pudo descargar la imagen.');
           return;
         }
         triggerBlobDownload(blob, `${filePrefix}.png`);
         setLastAction('png');
-        feedback.show('PNG 1024x1024 descargado.');
+        feedback.show('Imagen de alta calidad descargada.');
       }, 'image/png');
     };
     img.onerror = () => {
-      feedback.show('No se pudo renderizar el QR para PNG.');
+      feedback.show('No se pudo generar la imagen del código QR.');
     };
     img.src = svgDataUri;
   };
@@ -108,7 +108,7 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
     try {
       await navigator.clipboard.writeText(targetUrl);
       setLastAction('copy');
-      feedback.show('Enlace copiado al portapapeles.');
+      feedback.show('Link de reservas copiado.');
     } catch {
       feedback.show(`Copia manualmente: ${targetUrl}`);
     }
@@ -122,25 +122,30 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
     <AdminConfigSection
       id="qr-share-heading"
       icon={<QrCode size={16} aria-hidden="true" />}
-      title="Código QR para mostrador"
-      subtitle="Descarga en SVG vectorial o PNG 1024×1024 para espejo, tarjetas o recepción."
-      badge={<AdminConfigChip label={relativePath} tone="accent" />}
+      title="Link de reservas y QR para el mostrador"
+      subtitle="Compártelo por Instagram o imprímelo para tu espejo, mesa o tarjetas."
+      badge={
+        <AdminConfigChip
+          label={target === 'links' ? 'Página de enlaces' : 'Agenda directa'}
+          tone="accent"
+        />
+      }
       footer={
         <Text type="supporting" color="secondary" role="status" aria-live="polite">
-          {feedback.message ?? 'Escaneable desde cámara iOS y Android sin apps externas.'}
+          {feedback.message ?? 'Se escanea con la cámara de cualquier celular, sin descargar apps.'}
         </Text>
       }
     >
       <VStack gap={4} className="ad-card-body" paddingBlockStart={4}>
         <SegmentedControl
-          label="Destino del código QR"
+          label="A dónde lleva el código QR"
           layout="fill"
           size="sm"
           value={target}
           onChange={(val) => setTarget(val === 'links' ? 'links' : 'reservar')}
         >
-          <SegmentedControlItem value="reservar" label="Agenda (/reservar)" />
-          <SegmentedControlItem value="links" label="Bio-Link (/links)" />
+          <SegmentedControlItem value="reservar" label="Agenda de citas" />
+          <SegmentedControlItem value="links" label="Links de Instagram" />
         </SegmentedControl>
 
         <VStack className="ad-subpanel" gap={3} align="center">
@@ -166,21 +171,21 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
         <HStack gap={2} wrap="wrap">
           <Button
             type="button"
-            label={isSvgActive ? 'SVG listo' : 'Descargar SVG'}
+            label={isCopyActive ? 'Link copiado' : 'Copiar link'}
             variant="primary"
             size="sm"
             icon={
-              isSvgActive ? (
+              isCopyActive ? (
                 <Check size={14} aria-hidden="true" className="fx-pop" />
               ) : (
-                <Download size={14} aria-hidden="true" />
+                <Copy size={14} aria-hidden="true" />
               )
             }
-            onClick={handleDownloadSvg}
+            onClick={() => void handleCopyUrl()}
           />
           <Button
             type="button"
-            label={isPngActive ? 'PNG listo' : 'Descargar PNG'}
+            label={isPngActive ? 'Imagen lista' : 'Descargar QR'}
             variant="secondary"
             size="sm"
             icon={
@@ -194,20 +199,20 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
           />
           <Button
             type="button"
-            label={isCopyActive ? 'Copiado' : 'Copiar enlace'}
-            variant={isCopyActive ? 'primary' : 'secondary'}
+            label={isSvgActive ? 'Archivo listo' : 'Para imprenta (SVG)'}
+            variant="secondary"
             size="sm"
             icon={
-              isCopyActive ? (
+              isSvgActive ? (
                 <Check size={14} aria-hidden="true" className="fx-pop" />
               ) : (
-                <Copy size={14} aria-hidden="true" />
+                <Download size={14} aria-hidden="true" />
               )
             }
-            onClick={() => void handleCopyUrl()}
+            onClick={handleDownloadSvg}
           />
           <Button
-            label="Abrir"
+            label="Abrir página"
             variant="ghost"
             size="sm"
             icon={<ExternalLink size={14} aria-hidden="true" />}

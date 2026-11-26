@@ -4,7 +4,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { Clock } from 'lucide-react';
+import { Clock, Timer } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { LANDING_ASSETS } from '../landing/landingContent';
@@ -31,6 +31,7 @@ interface BookingSummaryCardProps {
   codeBadge?: string | null;
   holdRemainingSec: number;
   holdTotalSec: number;
+  isHoldExpired?: boolean;
   headingId: string;
 }
 
@@ -45,9 +46,11 @@ export function BookingSummaryCard({
   codeBadge = null,
   holdRemainingSec,
   holdTotalSec,
+  isHoldExpired = false,
   headingId,
 }: BookingSummaryCardProps) {
   const holdPercent = holdTotalSec > 0 ? Math.min(100, (holdRemainingSec / holdTotalSec) * 100) : 0;
+  const isUrgent = holdRemainingSec > 0 && holdRemainingSec <= 60;
 
   return (
     <VStack gap={4} className="rb-summary">
@@ -126,16 +129,28 @@ export function BookingSummaryCard({
       </VStack>
 
       {holdRemainingSec > 0 ? (
-        <VStack gap={1.5} className="rb-summary-hold fx-fade-up">
-          <HStack justify="between">
-            <Text color="inherit" type="supporting">
-              Te guardamos el horario
-            </Text>
+        <VStack gap={1.5} className="rb-summary-hold fx-fade-up" data-urgent={isUrgent ? 'true' : 'false'}>
+          <HStack justify="between" align="center" gap={2}>
+            <HStack gap={1.5} align="center">
+              <Timer size={14} aria-hidden="true" />
+              <Text color="inherit" type="supporting" weight={isUrgent ? 'bold' : 'normal'}>
+                {isUrgent ? '¡Último minuto de apartado!' : 'Te guardamos el horario'}
+              </Text>
+            </HStack>
             <Text color="inherit" weight="bold" hasTabularNumbers>
               {formatHoldClock(holdRemainingSec)}
             </Text>
           </HStack>
           <progress className="rb-hold-bar" aria-label="Tiempo restante de apartado" max={100} value={holdPercent} />
+        </VStack>
+      ) : isHoldExpired ? (
+        <VStack gap={0.5} className="rb-summary-hold fx-fade-up">
+          <Text color="inherit" type="supporting" weight="bold">
+            Apartado expirado
+          </Text>
+          <Text color="inherit" type="supporting" className="rb-summary-sub">
+            Reverifica tu horario arriba; tus datos siguen guardados.
+          </Text>
         </VStack>
       ) : null}
     </VStack>

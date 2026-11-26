@@ -2,11 +2,14 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { createInitialDemoDatabase } from './demo-seed';
 import {
+  ClientPortalSnapshotDTOSchema,
+  PublicClientPackageDTOSchema,
   PublicLoyaltySummarySchema,
   PublicReviewDTOSchema,
   PublicServiceDTOSchema,
   PublicSettingsDTOSchema,
   PublicStaffDTOSchema,
+  toPublicClientPackageDTO,
   toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
@@ -103,6 +106,10 @@ describe('Public DTO schemas and mappers (S3)', () => {
       'soundAlertsEnabled',
       'lockPastBookings',
       'maxActiveBookingsPerClient',
+      'noShowDepositThreshold',
+      'ownerPinHash',
+      'ownerPinEnabled',
+      'hasOwnerPin',
     ]) {
       expect(privateKey in dto).toBe(false);
       expect(JSON.stringify(dto)).not.toContain(privateKey);
@@ -197,5 +204,29 @@ describe('Public DTO schemas and mappers (S3)', () => {
     );
     expect(summary.currentStamps).toBe(6);
     expect(summary.isNearReward).toBe(true);
+
+    const seededPkg = db.clientPackages?.[0];
+    if (!seededPkg) throw new Error('Expected seeded client package');
+    const pkgDto = toPublicClientPackageDTO(seededPkg, {
+      serviceName: 'Rubber',
+      remainingSessions: 3,
+      effectiveStatus: 'active',
+    });
+    expect(PublicClientPackageDTOSchema.safeParse(pkgDto).success).toBe(true);
+    expect('notes' in pkgDto).toBe(false);
+    expect('redeemedBookingIds' in pkgDto).toBe(false);
+
+    const portalParsed = ClientPortalSnapshotDTOSchema.parse({
+      phoneE164: '+522224123987',
+      clientId: 'client-sofia',
+      clientName: 'Sofía Ramírez',
+      bookings: [],
+      loyaltySummary: summary,
+      packages: [pkgDto],
+      internalNotes: 'should-be-stripped',
+      commissionPercent: 40,
+    });
+    expect('internalNotes' in portalParsed).toBe(false);
+    expect('commissionPercent' in portalParsed).toBe(false);
   });
 });

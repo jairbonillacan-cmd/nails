@@ -1,5 +1,6 @@
 import { syncBookingToGoogleCalendar } from '../integrations/google-calendar';
 import { buildAndSendImmediateNotifications } from '../integrations/notifications';
+import { logError } from '../logger';
 import {
   publishRealtimeEvent,
   type PublishableRealtimeEventType,
@@ -72,6 +73,10 @@ export async function dispatchOutboxEvent(
     publishRealtimeEvent(event.eventType, event.payload);
     return { ok: true };
   } catch (err) {
+    logError('outbox_dispatch_failed', {
+      eventType: event.type,
+      error: err,
+    });
     return {
       ok: false,
       error: err instanceof Error ? err.message : 'Outbox dispatch failed',

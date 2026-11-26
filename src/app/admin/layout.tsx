@@ -1,4 +1,5 @@
 import React, { Suspense } from 'react';
+import './admin.css';
 import { AdminProvider } from '@/components/admin/AdminProvider';
 import { AdminShell } from '@/components/admin/AdminShell';
 

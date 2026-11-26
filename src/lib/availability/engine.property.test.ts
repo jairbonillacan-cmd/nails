@@ -1058,4 +1058,131 @@ describe('Availability Engine Property-Based Invariants (fast-check)', () => {
       { numRuns: 100 },
     );
   });
+
+  it('Property 13 (DST Spring-Forward & Fall-Back): America/New_York transitions never emit nonexistent spring times, never overlap bookings, and keep strict UTC ordering across fixed & continuous schedules', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(
+          {
+            kind: 'spring' as const,
+            tz: 'America/New_York',
+            date: '2026-03-08',
+            nowIso: '2026-03-01T12:00:00.000Z',
+          },
+          {
+            kind: 'fall' as const,
+            tz: 'America/New_York',
+            date: '2026-11-01',
+            nowIso: '2026-10-25T12:00:00.000Z',
+          },
+          {
+            kind: 'spring' as const,
+            tz: 'America/New_York',
+            date: '2027-03-14',
+            nowIso: '2027-03-07T12:00:00.000Z',
+          },
+          {
+            kind: 'fall' as const,
+            tz: 'America/New_York',
+            date: '2027-11-07',
+            nowIso: '2027-10-31T12:00:00.000Z',
+          },
+        ),
+        fc.constantFrom(30, 60, 90),
+        fc.constantFrom<15 | 30 | 60>(15, 30, 60),
+        fc.boolean(),
+        fc.constantFrom('01:00', '03:00', '04:00', '09:00'),
+        (dstCase, duration, interval, useFixedTimes, busyStartHm) => {
+          const staffId = PRIMARY_STAFF_ID;
+          const fixedTimes = ['00:30', '01:00', '02:30', '03:30', '10:00'];
+          const rules: AvailabilityRule[] = [
+            {
+              id: 'r-ny-dst',
+              dayOfWeek: 0,
+              startTime: '00:00',
+              endTime: '14:00',
+              ...(useFixedTimes ? { fixedStartTimes: fixedTimes } : {}),
+            },
+          ];
+
+          const busyStartMs = zonedDateTimeToUtc(
+            dstCase.date,
+            busyStartHm,
+            dstCase.tz,
+          ).getTime();
+          const busyBooking: Booking = {
+            ...makeActiveBooking('ny-dst-bk', staffId, 60, 60, 0, 0),
+            startAt: new Date(busyStartMs).toISOString(),
+            endAt: new Date(busyStartMs + 60 * 60_000).toISOString(),
+            occupiedStartAt: new Date(busyStartMs).toISOString(),
+            occupiedEndAt: new Date(busyStartMs + 60 * 60_000).toISOString(),
+          };
+
+          const baseCtx = makeBaseContext(
+            duration,
+            0,
+            0,
+            interval,
+            rules,
+            [],
+            [busyBooking],
+          );
+          const ctx: AvailabilityContext = {
+            ...baseCtx,
+            now: new Date(dstCase.nowIso),
+            settings: {
+              ...baseCtx.settings,
+              timezone: dstCase.tz,
+              slotIntervalMinutes: interval,
+              minBookingNoticeMinutes: 0,
+              maxBookingDaysAhead: 60,
+            },
+          };
+
+          const slots = getAvailableSlotsForDate(ctx, dstCase.date, staffId);
+          const seenStartMs = new Set<number>();
+          let prevStartMs = -Infinity;
+
+          for (const slot of slots) {
+            const startMs = new Date(slot.startAt).getTime();
+            const endMs = new Date(slot.endAt).getTime();
+
+            expect(endMs - startMs).toBe(duration * 60_000);
+            expect(startMs).toBeGreaterThan(prevStartMs);
+            expect(seenStartMs.has(startMs)).toBe(false);
+            seenStartMs.add(startMs);
+            prevStartMs = startMs;
+
+            expect(
+              rangesOverlap(
+                startMs,
+                endMs,
+                busyStartMs,
+                busyStartMs + 60 * 60_000,
+              ),
+            ).toBe(false);
+
+            if (dstCase.kind === 'spring') {
+              expect(slot.localTime24 >= '02:00' && slot.localTime24 < '03:00').toBe(
+                false,
+              );
+            }
+
+            const check = assertSlotBookable(ctx, {
+              startAt: slot.startAt,
+              staffId,
+            });
+            expect(check.ok).toBe(true);
+          }
+
+          const diag = diagnoseDateSlots(ctx, dstCase.date, staffId);
+          const availableSet = new Set(slots.map((s) => s.localTime24));
+          for (const d of diag) {
+            expect(d.isAvailable).toBe(availableSet.has(d.time24));
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
 });

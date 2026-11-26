@@ -65,6 +65,10 @@ export default async function ManageBookingPage({
   const initialBooking = {
     ...booking,
     internalNotes: '',
+    client: {
+      ...booking.client,
+      notes: '',
+    },
     staff: toPublicStaffDTO(booking.staff),
     service: toPublicServiceDTO(booking.service),
     extraServices,
@@ -79,6 +83,7 @@ export default async function ManageBookingPage({
       manageUrl={manageUrl}
       initialLoyaltySummary={initialLoyaltySummary}
       initialAction={initialAction}
+      renderedAtIso={new Date().toISOString()}
     />
   );
 }

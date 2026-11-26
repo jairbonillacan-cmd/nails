@@ -72,6 +72,21 @@ function buildNailSalonJsonLd(input: {
       '@type': 'City',
       name: 'Puebla',
     },
+    openingHoursSpecification: [
+      {
+        '@type': 'OpeningHoursSpecification',
+        dayOfWeek: [
+          'Monday',
+          'Tuesday',
+          'Wednesday',
+          'Thursday',
+          'Friday',
+          'Saturday',
+        ],
+        opens: '10:00',
+        closes: '18:00',
+      },
+    ],
     sameAs,
     hasOfferCatalog: {
       '@type': 'OfferCatalog',

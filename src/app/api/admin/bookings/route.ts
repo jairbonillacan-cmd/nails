@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import {
   createBookingAtomic,
+  createRecurringBookingSeries,
   getBookingsWithRelations,
   getSnapshot,
   PolicyError,
@@ -11,6 +12,7 @@ import {
   sendManualBookingReminder,
   SlotConflictError,
   updateBookingStatus,
+  verifyStoredOwnerPin,
 } from '@/lib/repositories/db';
 
 export async function GET(request: NextRequest) {
@@ -49,7 +51,33 @@ const createAdminBookingSchema = z.object({
   couponCode: z.string().max(40).optional().nullable(),
   source: z.enum(['manual', 'walk_in']).default('manual'),
   forceConfirmed: z.boolean().default(true),
+  ownerPin: z.string().max(12).optional(),
+  recurrence: z
+    .object({
+      intervalWeeks: z.union([z.literal(2), z.literal(3), z.literal(4)]),
+      count: z.number().int().min(2).max(6),
+    })
+    .optional(),
 });
+
+function checkOwnerPinGate(
+  request: NextRequest,
+  bodyPin?: string,
+): NextResponse | null {
+  const providedPin = bodyPin ?? request.headers.get('x-owner-pin') ?? undefined;
+  const check = verifyStoredOwnerPin(providedPin);
+  if (!check.required || check.valid) return null;
+  const hasAttempt = Boolean(providedPin?.trim());
+  return NextResponse.json(
+    {
+      code: hasAttempt ? 'OWNER_PIN_INVALID' : 'OWNER_PIN_REQUIRED',
+      error: hasAttempt
+        ? 'El PIN de autorización de dueña es incorrecto.'
+        : 'Esta acción requiere el PIN de autorización de dueña.',
+    },
+    { status: 403 },
+  );
+}
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin', 'specialist'], request);
@@ -75,8 +103,27 @@ export async function POST(request: NextRequest) {
       effectiveStaffId = session.user.staffMemberId;
     }
 
-    const booking = await createBookingAtomic({
-      ...parsed,
+    if (typeof parsed.customPriceCents === 'number') {
+      const db = getSnapshot();
+      const baseService = db.services.find((s) => s.id === parsed.serviceId);
+      const extras = db.services.filter((s) => parsed.extraServiceIds.includes(s.id));
+      const addons = db.addons.filter(
+        (a) => parsed.addonIds.includes(a.id) && a.isActive,
+      );
+      const catalogSubtotal = baseService
+        ? baseService.priceCents +
+          extras.reduce((sum, s) => sum + s.priceCents, 0) +
+          addons.reduce((sum, a) => sum + a.extraPriceCents, 0)
+        : -1;
+      if (parsed.customPriceCents !== catalogSubtotal) {
+        const pinDenied = checkOwnerPinGate(request, parsed.ownerPin);
+        if (pinDenied) return pinDenied;
+      }
+    }
+
+    const { recurrence, ownerPin: _pin, ...bookingInput } = parsed;
+    const basePayload = {
+      ...bookingInput,
       staffId: effectiveStaffId,
       clientEmail: parsed.clientEmail || null,
       idempotencyKey: request.headers.get('Idempotency-Key'),
@@ -88,7 +135,25 @@ export async function POST(request: NextRequest) {
         role: session.user.role,
         fullName: session.user.fullName,
       },
-    });
+    };
+
+    if (recurrence) {
+      const series = await createRecurringBookingSeries({
+        ...basePayload,
+        recurrence,
+      });
+      return NextResponse.json(
+        {
+          booking: series.created[0],
+          bookings: series.created,
+          seriesId: series.seriesId,
+          skippedConflicts: series.skippedConflicts,
+        },
+        { status: 201 },
+      );
+    }
+
+    const booking = await createBookingAtomic(basePayload);
 
     return NextResponse.json({ booking }, { status: 201 });
   } catch (err) {
@@ -158,6 +223,7 @@ const checkoutSplitSchema = z.object({
     .optional(),
   markCompleted: z.boolean().default(true),
   redeemLoyaltyReward: z.boolean().optional(),
+  redeemClientPackageId: z.string().min(1).nullable().optional(),
 });
 
 const patchStatusSchema = z.object({
@@ -175,6 +241,7 @@ const patchStatusSchema = z.object({
   internalNotes: z.string().optional(),
   paymentMethod: z.enum(['cash', 'transfer', 'card', 'gift_card']).optional(),
   tipCents: z.number().int().nonnegative().optional(),
+  ownerPin: z.string().max(12).optional(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -279,6 +346,7 @@ export async function PATCH(request: NextRequest) {
         extraItem: checkoutReq.extraItem ?? null,
         markCompleted: checkoutReq.markCompleted,
         redeemLoyaltyReward: checkoutReq.redeemLoyaltyReward,
+        redeemClientPackageId: checkoutReq.redeemClientPackageId ?? null,
         actor,
       });
       return NextResponse.json(result);
@@ -299,6 +367,11 @@ export async function PATCH(request: NextRequest) {
           { status: 403 },
         );
       }
+    }
+
+    if (body.status === 'canceled') {
+      const pinDenied = checkOwnerPinGate(request, body.ownerPin);
+      if (pinDenied) return pinDenied;
     }
 
     const booking = await updateBookingStatus({

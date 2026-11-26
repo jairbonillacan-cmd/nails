@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { WhatsAppTemplateTriggerKey } from './types';
 
 const emptyToUndefined = (val: unknown): unknown => {
   if (typeof val === 'string' && val.trim() === '') {
@@ -17,6 +18,24 @@ const optionalUrl = z.preprocess(
   z.string().trim().url().optional(),
 );
 
+const optionalEmail = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().email().optional(),
+);
+
+const optionalPositiveInt = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().int().positive().max(100_000).optional(),
+);
+
+const optionalBooleanFlag = z.preprocess(
+  emptyToUndefined,
+  z.enum(['true', 'false', '1', '0']).optional(),
+);
+
+const RESEND_FROM_RE =
+  /^(?:[^<>\r\n]+<\s*[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+\s*>|[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+)$/;
+
 export const EnvSchema = z.object({
   NODE_ENV: z.preprocess(
     emptyToUndefined,
@@ -26,6 +45,12 @@ export const EnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
+  R2_ACCOUNT_ID: optionalString,
+  R2_ACCESS_KEY_ID: optionalString,
+  R2_SECRET_ACCESS_KEY: optionalString,
+  R2_BUCKET_NAME: optionalString,
+  R2_PUBLIC_BASE_URL: optionalUrl,
+  RETENTION_NOTICE_EMAIL: optionalEmail,
   ADMIN_SESSION_SECRET: optionalString,
   CLIENT_SESSION_SECRET: optionalString,
   CRON_SECRET: optionalString,
@@ -36,8 +61,18 @@ export const EnvSchema = z.object({
   RESEND_FROM_EMAIL: optionalString,
   WHATSAPP_ACCESS_TOKEN: optionalString,
   WHATSAPP_PHONE_NUMBER_ID: optionalString,
+  WHATSAPP_BUSINESS_ACCOUNT_ID: optionalString,
   WHATSAPP_APP_SECRET: optionalString,
   WHATSAPP_VERIFY_TOKEN: optionalString,
+  WHATSAPP_FLOW_ID: optionalString,
+  WHATSAPP_MONTHLY_QUOTA: optionalPositiveInt,
+  WHATSAPP_COEXISTENCE_ENABLED: optionalBooleanFlag,
+  WHATSAPP_TEMPLATE_BOOKING_CONFIRMED: optionalString,
+  WHATSAPP_TEMPLATE_REMINDER_24H: optionalString,
+  WHATSAPP_TEMPLATE_REMINDER_2H: optionalString,
+  WHATSAPP_TEMPLATE_BOOKING_RESCHEDULED: optionalString,
+  WHATSAPP_TEMPLATE_BOOKING_CANCELED: optionalString,
+  WHATSAPP_TEMPLATE_WAITLIST_OFFER: optionalString,
   TWILIO_ACCOUNT_SID: optionalString,
   TWILIO_AUTH_TOKEN: optionalString,
   TWILIO_FROM_NUMBER: optionalString,
@@ -51,9 +86,14 @@ export const EnvSchema = z.object({
 
 export type AppEnv = z.infer<typeof EnvSchema>;
 
+export interface ProductionEnvValidationOptions {
+  requireCoreSecrets?: boolean;
+}
+
 export interface RuntimeIntegrationStatus {
   mode: 'demo' | 'supabase';
   supabaseConfigured: boolean;
+  r2Configured: boolean;
   googleCalendarConfigured: boolean;
   resendConfigured: boolean;
   whatsappCloudConfigured: boolean;
@@ -73,8 +113,65 @@ export function getEnv(): AppEnv {
   return parseEnv(process.env);
 }
 
+export function isR2S3Configured(
+  raw: Record<string, string | undefined> = process.env,
+): boolean {
+  return Boolean(
+    raw.R2_ACCOUNT_ID?.trim() &&
+      raw.R2_ACCESS_KEY_ID?.trim() &&
+      raw.R2_SECRET_ACCESS_KEY?.trim() &&
+      raw.R2_BUCKET_NAME?.trim(),
+  );
+}
+
+export function isWhatsAppCoexistenceEnabled(
+  raw: Record<string, string | undefined> = process.env,
+): boolean {
+  const value = raw.WHATSAPP_COEXISTENCE_ENABLED?.trim().toLowerCase();
+  return value === 'true' || value === '1';
+}
+
+export function getConfiguredWhatsAppMonthlyQuota(
+  raw: Record<string, string | undefined> = process.env,
+): number | undefined {
+  const parsed = EnvSchema.shape.WHATSAPP_MONTHLY_QUOTA.safeParse(
+    raw.WHATSAPP_MONTHLY_QUOTA,
+  );
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function getConfiguredRetentionNoticeEmail(
+  raw: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const parsed = EnvSchema.shape.RETENTION_NOTICE_EMAIL.safeParse(
+    raw.RETENTION_NOTICE_EMAIL,
+  );
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function getWhatsAppTemplateNameOverrides(
+  raw: Record<string, string | undefined> = process.env,
+): Partial<Record<WhatsAppTemplateTriggerKey, string>> {
+  const overrides: Partial<Record<WhatsAppTemplateTriggerKey, string>> = {};
+  const entries: Array<[WhatsAppTemplateTriggerKey, string | undefined]> = [
+    ['booking_confirmed', raw.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED?.trim()],
+    ['reminder_24h', raw.WHATSAPP_TEMPLATE_REMINDER_24H?.trim()],
+    ['reminder_2h', raw.WHATSAPP_TEMPLATE_REMINDER_2H?.trim()],
+    ['booking_rescheduled', raw.WHATSAPP_TEMPLATE_BOOKING_RESCHEDULED?.trim()],
+    ['booking_canceled', raw.WHATSAPP_TEMPLATE_BOOKING_CANCELED?.trim()],
+    ['waitlist_offer', raw.WHATSAPP_TEMPLATE_WAITLIST_OFFER?.trim()],
+  ];
+  for (const [key, value] of entries) {
+    if (value) {
+      overrides[key] = value;
+    }
+  }
+  return overrides;
+}
+
 export function assertProductionEnvValid(
   raw: Record<string, string | undefined> = process.env,
+  options?: ProductionEnvValidationOptions,
 ): AppEnv {
   const env = parseEnv(raw);
   if (env.NODE_ENV !== 'production') {
@@ -93,6 +190,42 @@ export function assertProductionEnvValid(
     errors.push(
       'Configuración parcial de Supabase: se requieren NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY y SUPABASE_SERVICE_ROLE_KEY.',
     );
+  }
+
+  const r2Vars = [
+    env.R2_ACCOUNT_ID,
+    env.R2_ACCESS_KEY_ID,
+    env.R2_SECRET_ACCESS_KEY,
+    env.R2_BUCKET_NAME,
+  ];
+  const r2Count = r2Vars.filter(Boolean).length;
+  if (r2Count > 0 && r2Count < r2Vars.length) {
+    errors.push(
+      'Configuración parcial de Cloudflare R2: se requieren R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y R2_BUCKET_NAME.',
+    );
+  }
+
+  const requireCoreSecrets =
+    options?.requireCoreSecrets !== false || supabaseCount > 0 || r2Count > 0;
+  if (requireCoreSecrets) {
+    const missingCoreSecrets: string[] = [];
+    if (!env.ADMIN_SESSION_SECRET) missingCoreSecrets.push('ADMIN_SESSION_SECRET');
+    if (!env.CLIENT_SESSION_SECRET) missingCoreSecrets.push('CLIENT_SESSION_SECRET');
+    if (!env.CRON_SECRET) missingCoreSecrets.push('CRON_SECRET');
+    if (missingCoreSecrets.length > 0) {
+      errors.push(
+        `Faltan secretos obligatorios en producción: ${missingCoreSecrets.join(', ')}.`,
+      );
+    }
+  }
+
+  if (env.RESEND_API_KEY) {
+    const fromEmail = env.RESEND_FROM_EMAIL?.trim();
+    if (!fromEmail || !RESEND_FROM_RE.test(fromEmail)) {
+      errors.push(
+        'Configuración inválida de Resend: al definir RESEND_API_KEY debes configurar un RESEND_FROM_EMAIL válido (ej. Laikona Nails <citas@tudominio.mx>).',
+      );
+    }
   }
 
   if (Boolean(env.STRIPE_SECRET_KEY) !== Boolean(env.STRIPE_WEBHOOK_SECRET)) {
@@ -158,6 +291,10 @@ export function getRuntimeIntegrationStatus(
   const supabaseUrl = env?.NEXT_PUBLIC_SUPABASE_URL ?? raw.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnon = env?.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? raw.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabaseService = env?.SUPABASE_SERVICE_ROLE_KEY ?? raw.SUPABASE_SERVICE_ROLE_KEY;
+  const r2AccountId = env?.R2_ACCOUNT_ID ?? raw.R2_ACCOUNT_ID;
+  const r2AccessKeyId = env?.R2_ACCESS_KEY_ID ?? raw.R2_ACCESS_KEY_ID;
+  const r2SecretAccessKey = env?.R2_SECRET_ACCESS_KEY ?? raw.R2_SECRET_ACCESS_KEY;
+  const r2BucketName = env?.R2_BUCKET_NAME ?? raw.R2_BUCKET_NAME;
   const googleClientId = env?.GOOGLE_CLIENT_ID ?? raw.GOOGLE_CLIENT_ID;
   const googleClientSecret = env?.GOOGLE_CLIENT_SECRET ?? raw.GOOGLE_CLIENT_SECRET;
   const resendApiKey = env?.RESEND_API_KEY ?? raw.RESEND_API_KEY;
@@ -171,10 +308,14 @@ export function getRuntimeIntegrationStatus(
   const appUrl = env?.NEXT_PUBLIC_APP_URL ?? raw.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
   const supabaseConfigured = Boolean(supabaseUrl && supabaseAnon && supabaseService);
+  const r2Configured = Boolean(
+    r2AccountId && r2AccessKeyId && r2SecretAccessKey && r2BucketName,
+  );
 
   return {
     mode: supabaseConfigured ? 'supabase' : 'demo',
     supabaseConfigured,
+    r2Configured,
     googleCalendarConfigured: Boolean(googleClientId && googleClientSecret),
     resendConfigured: Boolean(resendApiKey),
     whatsappCloudConfigured: Boolean(whatsappToken && whatsappPhoneId),

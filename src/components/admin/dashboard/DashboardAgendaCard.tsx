@@ -7,6 +7,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Check, Plus } from 'lucide-react';
 import {
   buildWhatsAppLink,
   formatCurrency,
@@ -23,7 +24,8 @@ interface DashboardAgendaCardProps {
   data: AdminOverviewPayload;
   metrics: DashboardMetrics;
   confirmingBookingId: string | null;
-  onConfirmDeposit: (bookingId: string, clientName: string) => Promise<void>;
+  savedMessage?: string | null;
+  onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
 }
 
 interface AgendaRowMeta {
@@ -61,7 +63,7 @@ function getAgendaRowMeta(
   }
   if (booking.status === 'no_show') {
     return {
-      chipLabel: 'No asistió',
+      chipLabel: 'No llegó',
       chipTone: 'neutral',
       isPast: true,
       actionKind: null,
@@ -69,7 +71,7 @@ function getAgendaRowMeta(
   }
   if (booking.status === 'pending_confirmation' || booking.status === 'pending_payment') {
     return {
-      chipLabel: 'Anticipo por validar',
+      chipLabel: 'Anticipo por confirmar',
       chipTone: 'warning',
       isPast: false,
       actionKind: 'validate',
@@ -95,6 +97,7 @@ export function DashboardAgendaCard({
   data,
   metrics,
   confirmingBookingId,
+  savedMessage,
   onConfirmDeposit,
 }: DashboardAgendaCardProps) {
   const [day, setDay] = useState<DayKey>('hoy');
@@ -159,7 +162,7 @@ export function DashboardAgendaCard({
           day === 'manana' ? `Mañana: ${dayList.length} citas` : null,
           artistSummaryParts.join(' · '),
           pendingForDay > 0
-            ? `${pendingForDay} anticipo${pendingForDay === 1 ? '' : 's'} por validar`
+            ? `${pendingForDay} anticipo${pendingForDay === 1 ? '' : 's'} por confirmar`
             : null,
         ]
           .filter(Boolean)
@@ -179,9 +182,21 @@ export function DashboardAgendaCard({
   return (
     <VStack as="section" className="ad-card" aria-labelledby="ad-ag" gap={0}>
       <HStack justify="between" align="center" gap={3} wrap="wrap" className="ad-card-head">
-        <Heading level={2} id="ad-ag" className="lk-serif ad-h2">
-          Agenda
-        </Heading>
+        <HStack gap={2} align="center" wrap="wrap">
+          <Heading level={2} id="ad-ag" className="lk-serif ad-h2">
+            Agenda
+          </Heading>
+          {confirmingBookingId ? (
+            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+              Confirmando...
+            </Text>
+          ) : savedMessage ? (
+            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+              <Check size={12} aria-hidden="true" />
+              {savedMessage}
+            </Text>
+          ) : null}
+        </HStack>
 
         <HStack role="tablist" aria-label="Día de la agenda" className="ad-tablist" gap={1}>
           <button
@@ -214,7 +229,7 @@ export function DashboardAgendaCard({
       </HStack>
 
       {!isSpecialist && metrics.activeStaff.length > 1 ? (
-        <HStack gap={2} wrap="wrap" className="ad-filter-bar" aria-label="Filtrar por artista">
+        <HStack gap={2} wrap="wrap" className="ad-filter-bar" aria-label="Filtrar por manicurista">
           <button
             type="button"
             className="ad-pill ad-artist-pill fx-press"
@@ -232,6 +247,7 @@ export function DashboardAgendaCard({
           {metrics.activeStaff.map((member) => {
             const colorIdx = metrics.staffColorIndex.get(member.id) ?? 0;
             const isSelected = effectiveStaffId === member.id;
+            const memberCount = dayList.filter((booking) => booking.staffId === member.id).length;
             return (
               <button
                 key={member.id}
@@ -244,8 +260,9 @@ export function DashboardAgendaCard({
                 <Text className="ad-dot" data-idx={String(colorIdx)} aria-hidden="true">
                   {'\u200B'}
                 </Text>
-                <Text color="inherit" size="sm" weight="semibold">
+                <Text color="inherit" size="sm" weight="semibold" hasTabularNumbers>
                   {member.name.split(' ')[0]}
+                  {memberCount > 0 ? ` (${memberCount})` : ''}
                 </Text>
               </button>
             );
@@ -268,7 +285,7 @@ export function DashboardAgendaCard({
                 ? 'No tienes citas programadas para hoy.'
                 : effectiveStaffId === 'all'
                   ? 'No hay citas programadas para mañana.'
-                  : 'Sin citas para esta artista en este día.'}
+                  : 'Sin citas para esta manicurista en este día.'}
             </Text>
             <HStack gap={2} wrap="wrap">
               {day === 'hoy' &&
@@ -282,7 +299,13 @@ export function DashboardAgendaCard({
                   onClick={() => setDay('manana')}
                 />
               ) : null}
-              <Button label="Agendar cita" variant="ghost" size="sm" href="/admin/citas?new=1" />
+              <Button
+                label="Nueva cita"
+                variant="primary"
+                size="sm"
+                icon={<Plus size={14} aria-hidden="true" />}
+                href="/admin/citas?new=1"
+              />
             </HStack>
           </VStack>
         ) : (
@@ -297,11 +320,20 @@ export function DashboardAgendaCard({
                 `Hola ${booking.client.fullName}, te confirmamos tu cita de ${booking.service.name} en ${data.settings.name} a las ${startTimeLabel} con ${booking.staff.name}.`,
               );
               const isConfirming = confirmingBookingId === booking.id;
+              const isNextUp =
+                day === 'hoy' &&
+                nowInsertIndex === index &&
+                !meta.isPast &&
+                meta.chipTone === 'success';
 
               return (
                 <VStack key={booking.id} gap={0}>
                   {nowInsertIndex === index ? renderNowLine() : null}
-                  <article className="ad-row" data-past={meta.isPast ? 'true' : 'false'}>
+                  <article
+                    className={isConfirming ? 'ad-row fx-busy' : 'ad-row'}
+                    data-past={meta.isPast ? 'true' : 'false'}
+                    aria-busy={isConfirming || undefined}
+                  >
                     <VStack gap={0} className="ad-row-time">
                       <Text weight="bold" size="base" hasTabularNumbers>
                         {startTimeLabel}
@@ -338,10 +370,10 @@ export function DashboardAgendaCard({
                       <Text
                         color="inherit"
                         className="ad-chip"
-                        data-tone={meta.chipTone}
+                        data-tone={isNextUp ? 'accent' : meta.chipTone}
                         hasTabularNumbers
                       >
-                        {meta.chipLabel}
+                        {isNextUp ? 'Siguiente' : meta.chipLabel}
                       </Text>
 
                       {meta.actionKind === 'collect' ? (
@@ -356,9 +388,10 @@ export function DashboardAgendaCard({
                       {meta.actionKind === 'validate' ? (
                         <Button
                           type="button"
-                          label={isConfirming ? 'Validando...' : 'Validar'}
+                          label={isConfirming ? 'Confirmando...' : 'Confirmar'}
                           variant="secondary"
                           size="sm"
+                          isLoading={isConfirming}
                           isDisabled={isConfirming}
                           onClick={() => void onConfirmDeposit(booking.id, booking.client.fullName)}
                         />
@@ -388,9 +421,18 @@ export function DashboardAgendaCard({
         <Text type="supporting" color="secondary">
           {footerSummary}
         </Text>
-        <NextLink href="/admin/citas" className="ad-inline-link">
-          Abrir agenda completa →
-        </NextLink>
+        <HStack gap={3} align="center" wrap="wrap">
+          <Button
+            label="Nueva cita"
+            variant="secondary"
+            size="sm"
+            icon={<Plus size={14} aria-hidden="true" />}
+            href="/admin/citas?new=1"
+          />
+          <NextLink href="/admin/citas" className="ad-inline-link">
+            Abrir agenda completa →
+          </NextLink>
+        </HStack>
       </HStack>
     </VStack>
   );

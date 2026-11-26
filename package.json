@@ -5,8 +5,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:lan": "node scripts/dev-lan.mjs",
     "build": "next build",
     "start": "next start",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare deploy",
     "typecheck": "tsc --noEmit",
     "guardrails": "node scripts/check-guardrails.test.mjs && node scripts/check-guardrails.mjs && node scripts/check-seed-parity.mjs && oxlint --deny-warnings src",
     "deadcode": "knip",
@@ -28,6 +32,7 @@
     "@stylexjs/stylex": "^0.19.2",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.2",
+    "aws4fetch": "^1.0.20",
     "lucide-react": "^1.79.0",
     "next": "^16.4.6",
     "react": "^19.3.1",
@@ -37,6 +42,7 @@
   },
   "devDependencies": {
     "@astryxdesign/cli": "^0.7.17",
+    "@opennextjs/cloudflare": "^1.20.19",
     "@types/node": "^26.6.7",
     "@types/react": "^19.3.1",
     "@types/react-dom": "^19.3.0",
@@ -44,6 +50,7 @@
     "knip": "^6.48.0",
     "oxlint": "^1.95.0",
     "typescript": "^5.9.3",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.168.0"
   }
 }

@@ -25,9 +25,9 @@ export function ColorSwatchPicker({
   return (
     <VStack gap={2}>
       <Text type="label" color="secondary" weight="semibold">
-        Paletas editoriales preajustadas
+        Colores recomendados
       </Text>
-      <HStack gap={2} wrap="wrap" role="group" aria-label="Paletas de color de marca">
+      <HStack gap={2} wrap="wrap" role="group" aria-label="Colores recomendados para tu salón">
         {presets.map((preset) => {
           const isSelected =
             normalizedLight === preset.light.toLowerCase() &&

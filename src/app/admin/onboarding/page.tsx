@@ -14,7 +14,6 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
-import { SelectableCard } from '@astryxdesign/core/SelectableCard';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { List, ListItem } from '@astryxdesign/core/List';
@@ -28,6 +27,7 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  Copy,
   Globe,
   Home,
   LayoutDashboard,
@@ -65,56 +65,26 @@ interface OnboardingApiPayload {
   starterServices: Service[];
 }
 
-const BUSINESS_TYPE_OPTIONS = [
-  {
-    value: 'Salón de Manicure y Uñas',
-    description: 'Acrílico, Softgel, Rubber, gel semipermanente y PediSpa',
-  },
-  {
-    value: 'Salón de Belleza',
-    description: 'Servicios integrales de uñas, cabello y cuidado personal',
-  },
-  {
-    value: 'Centro de Estética',
-    description: 'Tratamientos faciales, pestañas, cejas y cabina estética',
-  },
-  {
-    value: 'Spa',
-    description: 'Rituales de bienestar, masajes, manicura y pedicura spa',
-  },
-  {
-    value: 'Peluquería',
-    description: 'Corte, colorimetría, peinado y tratamientos capilares',
-  },
-  {
-    value: 'Barbería',
-    description: 'Corte clásico, barba, perfilado y cuidado masculino',
-  },
-] as const;
-
 const TEAM_SIZE_OPTIONS = [
   'Solo yo',
   'Somos 2',
   '3 a 5',
-  '6 a 15',
-  '16 o más',
+  '6 o más',
 ] as const;
 
 const DURATION_PRESETS = [
-  { minutes: 30, label: '30 min' },
   { minutes: 45, label: '45 min' },
   { minutes: 60, label: '1 h' },
   { minutes: 90, label: '1 h 30 min' },
   { minutes: 120, label: '2 h' },
   { minutes: 150, label: '2 h 30 min' },
-  { minutes: 180, label: '3 h' },
 ] as const;
 
 const WIZARD_STEPS = [
-  { id: 'studio', label: 'Tu estudio', short: '1. Tu estudio' },
-  { id: 'location', label: 'Ubicación', short: '2. Ubicación' },
-  { id: 'service', label: 'Servicio estrella', short: '3. Servicio' },
-  { id: 'live', label: 'En vivo', short: '4. En vivo' },
+  { id: 'salon', label: 'Tu salón', short: '1. Tu salón' },
+  { id: 'spei', label: 'Anticipo SPEI', short: '2. Anticipo SPEI' },
+  { id: 'shifts', label: 'Tus turnos', short: '3. Tus turnos' },
+  { id: 'ready', label: '¡Lista para compartir!', short: '4. ¡Lista!' },
 ] as const;
 
 function parseServiceMode(value: string): ServiceMode {
@@ -127,6 +97,7 @@ export default function AdminOnboardingPage() {
   const { playBookingChime, requestBrowserNotifications, notificationPermission } =
     useBookingAlertSound();
   const feedback = useEphemeralMessage(4000);
+  const copyFeedback = useEphemeralMessage(2500);
 
   const [stepIndex, setStepIndex] = useState(0);
   const [maxReachedStep, setMaxReachedStep] = useState(0);
@@ -141,6 +112,13 @@ export default function AdminOnboardingPage() {
   const [serviceMode, setServiceMode] = useState<ServiceMode>('studio');
   const [address, setAddress] = useState('Puebla, México');
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(true);
+
+  const [depositEnabledDraft, setDepositEnabledDraft] = useState<boolean | null>(null);
+  const [depositAmountDraft, setDepositAmountDraft] = useState<number | null>(null);
+  const [depositBankDraft, setDepositBankDraft] = useState<string | null>(null);
+  const [depositHolderDraft, setDepositHolderDraft] = useState<string | null>(null);
+  const [depositClabeDraft, setDepositClabeDraft] = useState<string | null>(null);
+  const [instagramDraft, setInstagramDraft] = useState<string | null>(null);
 
   const [starterServices, setStarterServices] = useState<Service[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
@@ -207,7 +185,7 @@ export default function AdminOnboardingPage() {
 
   if (loading || !data) {
     return (
-      <VStack className="ad-page ad-wizard-shell" role="status" aria-label="Cargando asistente">
+      <VStack className="ad-page ad-wizard-shell" role="status" aria-label="Cargando guía inicial">
         <VStack gap={2} className="ad-page-head">
           <Text className="ad-skeleton" data-size="title" aria-hidden="true">
             {'\u200B'}
@@ -231,8 +209,8 @@ export default function AdminOnboardingPage() {
       <VStack className="ad-page ad-wizard-shell">
         <Banner
           status="warning"
-          title="Acceso exclusivo de Dueña (Owner)"
-          description="El asistente de configuración inicial del estudio solo puede ser editado por la cuenta de Dueña."
+          title="Solo disponible para la Dueña"
+          description="La guía inicial del salón solo puede ser editada desde la cuenta de Dueña."
           endContent={
             <Button label="Volver al inicio" variant="secondary" size="sm" href="/admin" />
           }
@@ -240,6 +218,15 @@ export default function AdminOnboardingPage() {
       </VStack>
     );
   }
+
+  const depositEnabled = depositEnabledDraft ?? data.settings.paymentMode !== 'none';
+  const depositAmountMxn =
+    depositAmountDraft ?? Math.round((data.settings.depositAmountCents ?? 20000) / 100);
+  const depositBank = depositBankDraft ?? data.settings.depositBankName;
+  const depositHolder =
+    depositHolderDraft ?? (data.settings.depositBeneficiary ?? data.settings.depositAccountHolder);
+  const depositClabe = depositClabeDraft ?? data.settings.depositClabe;
+  const instagramHandle = instagramDraft ?? data.settings.instagramHandle;
 
   const persistOnboarding = async (payload: {
     businessType?: string;
@@ -273,7 +260,39 @@ export default function AdminOnboardingPage() {
       await refresh();
       return true;
     } catch {
-      setErrorMessage('Error de conexión al guardar la configuración.');
+      setErrorMessage('Error de conexión al guardar.');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const persistSpeiStep = async (): Promise<boolean> => {
+    setSaving(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/admin/brand', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentMode: depositEnabled ? 'manual_transfer' : 'none',
+          depositAmountCents: Math.max(0, Math.round(depositAmountMxn * 100)),
+          depositBankName: depositBank.trim(),
+          depositBeneficiary: depositHolder.trim(),
+          depositAccountHolder: depositHolder.trim(),
+          depositClabe: depositClabe.trim(),
+          instagramHandle: instagramHandle.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setErrorMessage(body.error || 'No se pudieron guardar los datos del anticipo.');
+        return false;
+      }
+      await refresh();
+      return true;
+    } catch {
+      setErrorMessage('Error de conexión al guardar el anticipo.');
       return false;
     } finally {
       setSaving(false);
@@ -297,23 +316,22 @@ export default function AdminOnboardingPage() {
     if (stepIndex === 0) {
       const trimmedName = salonName.trim();
       if (trimmedName.length < 2) {
-        setErrorMessage('Ingresa al menos 2 caracteres para el nombre de tu negocio.');
+        setErrorMessage('Escribe al menos 2 letras para el nombre de tu salón.');
         return;
       }
       const ok = await persistOnboarding({
         businessType,
         teamSizeTier,
         salonName: trimmedName,
+        serviceMode,
+        address: address.trim(),
       });
       if (ok) advanceToStep(1);
       return;
     }
 
     if (stepIndex === 1) {
-      const ok = await persistOnboarding({
-        serviceMode,
-        address: address.trim(),
-      });
+      const ok = await persistSpeiStep();
       if (ok) advanceToStep(2);
       return;
     }
@@ -321,7 +339,7 @@ export default function AdminOnboardingPage() {
     if (stepIndex === 2) {
       const trimmedService = serviceName.trim();
       if (trimmedService.length < 2) {
-        setErrorMessage('Escribe el nombre de tu servicio principal (mínimo 2 caracteres).');
+        setErrorMessage('Escribe el nombre de tu servicio principal.');
         return;
       }
       const ok = await persistOnboarding({
@@ -357,13 +375,11 @@ export default function AdminOnboardingPage() {
     });
     setNotifDialogOpen(false);
     if (permission === 'granted') {
-      feedback.show('¡Notificaciones del navegador y sonido de agenda activados!');
+      feedback.show('Avisos y sonido de nuevas citas activados.');
     } else if (permission === 'denied') {
-      feedback.show(
-        'Sonido de agenda activado. Puedes habilitar avisos del navegador en los permisos del sitio.',
-      );
+      feedback.show('Sonido activado. Puedes activar las notificaciones desde tu navegador.');
     } else {
-      feedback.show('Sonido especial de nuevas citas activado.');
+      feedback.show('Sonido de nuevas citas activado.');
     }
   };
 
@@ -371,9 +387,23 @@ export default function AdminOnboardingPage() {
     const played = await playBookingChime();
     feedback.show(
       played
-        ? 'Sonido especial de nueva cita reproducido.'
-        : 'Tu navegador no permitió reproducir audio en este momento.',
+        ? 'Sonido de nueva cita reproducido.'
+        : 'Tu navegador bloqueó el audio por ahora.',
     );
+  };
+
+  const handleCopyBookingLink = async () => {
+    const base = (
+      data.integration.appUrl.trim() ||
+      (typeof window !== 'undefined' ? window.location.origin : '')
+    ).replace(/\/+$/, '');
+    const bookingUrl = `${base}/reservar`;
+    try {
+      await navigator.clipboard.writeText(bookingUrl);
+      copyFeedback.show('Link de citas copiado');
+    } catch {
+      copyFeedback.show(`Comparte ${bookingUrl}`);
+    }
   };
 
   const handleSelectStarterService = (srv: Service) => {
@@ -387,15 +417,27 @@ export default function AdminOnboardingPage() {
   const displaySalonName = salonName.trim() || data.settings.name;
   const activeStepMeta = WIZARD_STEPS[stepIndex] ?? WIZARD_STEPS[0];
 
+  const staffShiftSummaries = data.staff.filter((s) => s.isActive).map((st) => {
+    const sched = data.schedules.find((sc) => sc.staffId === st.id);
+    const fixedTimes = Array.from(
+      new Set((sched?.rules ?? []).flatMap((r) => r.fixedStartTimes ?? [])),
+    ).toSorted();
+    return {
+      id: st.id,
+      name: st.name,
+      summary: fixedTimes.length > 0 ? fixedTimes.join(' · ') : 'Horario abierto',
+    };
+  });
+
   return (
     <VStack className="ad-page ad-wizard-shell">
       <AdminConfigPageHeader
-        eyebrow={`Configuración inicial · Paso ${stepIndex + 1} de ${WIZARD_STEPS.length}`}
-        title="Configura tu estudio en minutos"
-        subtitle="Cuatro pasos breves para dejar lista tu identidad, ubicación, servicio estrella y página de reservas."
+        eyebrow={`En 2 minutos · Paso ${stepIndex + 1} de ${WIZARD_STEPS.length}`}
+        title="Guía inicial"
+        subtitle="Cuatro pasos cortitos para dejar listo tu salón y empezar a compartir tu link."
         actions={
           <Button
-            label="Salir al panel"
+            label="Ir al inicio"
             variant="ghost"
             size="sm"
             href="/admin"
@@ -416,19 +458,14 @@ export default function AdminOnboardingPage() {
           </HStack>
 
           <ProgressBar
-            label="Avance de configuración inicial"
+            label="Avance de guía inicial"
             isLabelHidden
             value={stepIndex + 1}
             max={WIZARD_STEPS.length}
             variant={stepIndex === 3 ? 'success' : 'accent'}
           />
 
-          <HStack
-            as="nav"
-            aria-label="Pasos de configuración inicial"
-            gap={1.5}
-            wrap="wrap"
-          >
+          <HStack as="nav" aria-label="Pasos de la guía inicial" gap={1.5} wrap="wrap">
             {WIZARD_STEPS.map((step, idx) => {
               const isCurrent = idx === stepIndex;
               const isCompleted = idx < stepIndex || stepIndex === 3;
@@ -478,7 +515,7 @@ export default function AdminOnboardingPage() {
 
       {!hydrated ? (
         <AdminConfigSection padded>
-          <VStack gap={3} role="status" aria-label="Cargando configuración actual">
+          <VStack gap={3} role="status" aria-label="Cargando datos del salón">
             <Text className="ad-skeleton" data-size="title" aria-hidden="true">
               {'\u200B'}
             </Text>
@@ -498,16 +535,15 @@ export default function AdminOnboardingPage() {
                 <VStack gap={4}>
                   <VStack gap={1}>
                     <Heading level={2} className="lk-serif ad-h2">
-                      Cuéntanos sobre tu estudio
+                      1. Cuéntanos de tu salón
                     </Heading>
                     <Text color="secondary">
-                      Define el nombre que verán tus clientas, el giro principal y el tamaño de tu equipo.
+                      Estos datos aparecen en tu página de reservas para que tus clientas te reconozcan al instante.
                     </Text>
                   </VStack>
 
                   <TextInput
-                    label="Nombre de tu negocio"
-                    description="Así aparecerá en tu página de reservas, WhatsApp y recordatorios."
+                    label="Nombre de tu salón"
                     value={salonName}
                     onChange={setSalonName}
                     isRequired
@@ -520,7 +556,7 @@ export default function AdminOnboardingPage() {
                     <HStack gap={1.5} align="center">
                       <Users size={15} aria-hidden="true" />
                       <Text type="label" weight="semibold">
-                        Tamaño del equipo
+                        ¿Cuántas personas atienden?
                       </Text>
                     </HStack>
                     <HStack gap={1.5} wrap="wrap" role="group" aria-label="Tamaño del equipo">
@@ -542,76 +578,12 @@ export default function AdminOnboardingPage() {
                     </HStack>
                   </VStack>
 
-                  <VStack gap={2}>
-                    <Text type="label" weight="semibold">
-                      Giro principal del estudio
-                    </Text>
-                    <Grid columns={{ minWidth: 200, max: 3 }} gap={3}>
-                      {BUSINESS_TYPE_OPTIONS.map((opt) => {
-                        const isSelected = businessType === opt.value;
-                        return (
-                          <SelectableCard
-                            key={opt.value}
-                            label={opt.value}
-                            isSelected={isSelected}
-                            onChange={() => setBusinessType(opt.value)}
-                            padding={4}
-                          >
-                            <VStack gap={1.5}>
-                              <HStack justify="between" align="center">
-                                <Store size={17} aria-hidden="true" />
-                                {isSelected ? (
-                                  <AdminConfigChip
-                                    tone="accent"
-                                    label="Elegido"
-                                    className="fx-pop"
-                                  />
-                                ) : null}
-                              </HStack>
-                              <Text weight="semibold" size="sm">
-                                {opt.value}
-                              </Text>
-                              <Text type="supporting" color="secondary">
-                                {opt.description}
-                              </Text>
-                            </VStack>
-                          </SelectableCard>
-                        );
-                      })}
-                    </Grid>
-                  </VStack>
-
-                  <VStack className="ad-subpanel" gap={1}>
-                    <Text type="label" color="secondary">
-                      Vista previa para tus clientas
-                    </Text>
-                    <Heading level={3} className="lk-serif ad-h3">
-                      {displaySalonName}
-                    </Heading>
-                    <Text type="supporting" color="secondary">
-                      {businessType} · Equipo: {teamSizeTier}
-                    </Text>
-                  </VStack>
-                </VStack>
-              ) : null}
-
-              {stepIndex === 1 ? (
-                <VStack gap={4}>
-                  <VStack gap={1}>
-                    <Heading level={2} className="lk-serif ad-h2">
-                      ¿Dónde te encuentran tus clientas?
-                    </Heading>
-                    <Text color="secondary">
-                      Define cómo atiendes tus citas y la dirección o zona visible en tu página pública.
-                    </Text>
-                  </VStack>
-
                   <VStack gap={1.5}>
                     <Text type="label" weight="semibold">
-                      Modalidad de atención
+                      ¿Dónde atiendes?
                     </Text>
                     <SegmentedControl
-                      label="Modalidad de atención"
+                      label="Dónde atiendes"
                       layout="fill"
                       value={serviceMode}
                       onChange={(val) => setServiceMode(parseServiceMode(val))}
@@ -628,7 +600,7 @@ export default function AdminOnboardingPage() {
                       />
                       <SegmentedControlItem
                         value="online"
-                        label="Solo en línea"
+                        label="En línea"
                         icon={<Globe size={15} aria-hidden="true" />}
                       />
                     </SegmentedControl>
@@ -637,44 +609,89 @@ export default function AdminOnboardingPage() {
                   <TextInput
                     label={
                       serviceMode === 'online'
-                        ? 'Zona horaria o referencia de atención'
+                        ? 'Ciudad o referencia'
                         : 'Dirección o colonia y ciudad'
                     }
-                    description="Puedes mostrar solo la colonia y compartir la ubicación exacta al confirmar el anticipo."
+                    description="Puedes poner solo tu colonia y compartir la dirección exacta al confirmar."
                     value={address}
                     onChange={setAddress}
                     autoComplete="street-address"
                     placeholder="Calle 25 Sur 1904, Col. Volcanes, Puebla"
                     startIcon={<MapPin size={16} aria-hidden="true" />}
                   />
+                </VStack>
+              ) : null}
 
-                  <HStack
-                    className="ad-subpanel"
-                    justify="between"
-                    align="center"
-                    gap={3}
-                    wrap="wrap"
-                  >
-                    <HStack gap={2} align="center" className="rb-grow">
-                      <Wallet size={17} aria-hidden="true" />
-                      <VStack gap={0.5} className="rb-grow">
+              {stepIndex === 1 ? (
+                <VStack gap={4}>
+                  <VStack gap={1}>
+                    <Heading level={2} className="lk-serif ad-h2">
+                      2. Configura tu anticipo SPEI
+                    </Heading>
+                    <Text color="secondary">
+                      Así evitas cancelaciones de último minuto y tus clientas copian tu CLABE en un toque.
+                    </Text>
+                  </VStack>
+
+                  <Switch
+                    label="Pedir anticipo para apartar cita"
+                    description="Las clientas suben su comprobante o te lo mandan por Instagram."
+                    value={depositEnabled}
+                    onChange={setDepositEnabledDraft}
+                  />
+
+                  {depositEnabled ? (
+                    <VStack gap={3}>
+                      <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+                        <NumberInput
+                          label="Monto de anticipo (MXN)"
+                          value={depositAmountMxn}
+                          min={0}
+                          step={50}
+                          isIntegerOnly
+                          onChange={setDepositAmountDraft}
+                        />
+                        <TextInput
+                          label="Banco"
+                          placeholder="Mercado Pago"
+                          value={depositBank}
+                          onChange={setDepositBankDraft}
+                        />
+                      </Grid>
+                      <TextInput
+                        label="Titular de la cuenta"
+                        placeholder="Karla Patricia Carrillo Rodríguez"
+                        value={depositHolder}
+                        onChange={setDepositHolderDraft}
+                      />
+                      <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+                        <TextInput
+                          label="Cuenta CLABE"
+                          placeholder="7229 6901 3959 779869"
+                          value={depositClabe}
+                          onChange={setDepositClabeDraft}
+                        />
+                        <TextInput
+                          label="Instagram para comprobantes"
+                          placeholder="@laikona.nailsss"
+                          value={instagramHandle}
+                          onChange={setInstagramDraft}
+                        />
+                      </Grid>
+                    </VStack>
+                  ) : (
+                    <VStack className="ad-subpanel" gap={1}>
+                      <HStack gap={2} align="center">
+                        <Wallet size={16} aria-hidden="true" />
                         <Text weight="semibold" size="sm">
-                          Anticipo SPEI y perfil de Instagram
+                          Sin anticipo por ahora
                         </Text>
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {formatCurrency(
-                            data.settings.depositAmountCents ?? 20000,
-                            data.settings.currency,
-                          )}{' '}
-                          · {data.settings.depositBankName || 'Mercado Pago'} ·{' '}
-                          {data.settings.instagramHandle || '@laikona.nailsss'}
-                        </Text>
-                      </VStack>
-                    </HStack>
-                    <NextLink href="/admin/marca" className="ad-inline-link">
-                      Ajustar en Marca →
-                    </NextLink>
-                  </HStack>
+                      </HStack>
+                      <Text type="supporting" color="secondary">
+                        Puedes activarlo después cuando quieras desde Mi página.
+                      </Text>
+                    </VStack>
+                  )}
                 </VStack>
               ) : null}
 
@@ -682,17 +699,45 @@ export default function AdminOnboardingPage() {
                 <VStack gap={4}>
                   <VStack gap={1}>
                     <Heading level={2} className="lk-serif ad-h2">
-                      Confirma tu servicio estrella
+                      3. Revisa tus turnos y tu servicio estrella
                     </Heading>
                     <Text color="secondary">
-                      Ajusta precio aproximado y duración; después podrás gestionar tu catálogo completo en Servicios.
+                      Confirma el servicio que más te piden y revisa los turnos fijos de tu equipo.
                     </Text>
                   </VStack>
+
+                  {staffShiftSummaries.length > 0 ? (
+                    <VStack className="ad-subpanel" gap={2}>
+                      <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                        <HStack gap={1.5} align="center">
+                          <Clock size={15} aria-hidden="true" />
+                          <Text weight="semibold" size="sm">
+                            Turnos activos del salón
+                          </Text>
+                        </HStack>
+                        <NextLink href="/admin/disponibilidad" className="ad-inline-link">
+                          Cambiar turnos →
+                        </NextLink>
+                      </HStack>
+                      <VStack gap={1}>
+                        {staffShiftSummaries.map((st) => (
+                          <HStack key={st.id} justify="between" align="center" gap={2} wrap="wrap">
+                            <Text size="sm" weight="medium">
+                              {st.name}
+                            </Text>
+                            <Text type="supporting" color="secondary" hasTabularNumbers>
+                              {st.summary}
+                            </Text>
+                          </HStack>
+                        ))}
+                      </VStack>
+                    </VStack>
+                  ) : null}
 
                   {starterServices.length > 1 ? (
                     <VStack gap={1.5}>
                       <Text type="label" color="secondary">
-                        Servicios en tu catálogo (elige uno para ajustar o crea uno nuevo)
+                        Elige tu servicio estrella para revisar su precio:
                       </Text>
                       <HStack gap={1.5} wrap="wrap">
                         {starterServices.map((srv) => {
@@ -710,28 +755,13 @@ export default function AdminOnboardingPage() {
                             </button>
                           );
                         })}
-                        <button
-                          type="button"
-                          className="ad-pill fx-press"
-                          data-on={selectedServiceId === null ? 'true' : 'false'}
-                          aria-pressed={selectedServiceId === null}
-                          onClick={() => {
-                            setSelectedServiceId(null);
-                            setServiceName('');
-                            setServicePriceMxn(350);
-                            setServiceDurationMinutes(120);
-                            setServiceIsStartingPrice(true);
-                          }}
-                        >
-                          + Nuevo servicio
-                        </button>
                       </HStack>
                     </VStack>
                   ) : null}
 
                   <Grid columns={{ minWidth: 200, max: 2 }} gap={4}>
                     <TextInput
-                      label="Nombre del servicio"
+                      label="Servicio estrella"
                       value={serviceName}
                       onChange={setServiceName}
                       isRequired
@@ -751,20 +781,17 @@ export default function AdminOnboardingPage() {
                   </Grid>
 
                   <Switch
-                    label="Precio desde"
-                    description='Mostrar "Desde $..." para servicios cuyo costo final depende del largo o diseño'
+                    label='Precio "Desde"'
+                    description='Muestra "Desde $..." si el total cambia según el largo o diseño.'
                     value={serviceIsStartingPrice}
                     onChange={setServiceIsStartingPrice}
                   />
 
                   <VStack gap={2}>
-                    <HStack gap={1.5} align="center">
-                      <Clock size={15} aria-hidden="true" />
-                      <Text type="label" weight="semibold">
-                        Duración aproximada ({formatDuration(serviceDurationMinutes)})
-                      </Text>
-                    </HStack>
-                    <HStack gap={1.5} wrap="wrap" role="group" aria-label="Duración aproximada">
+                    <Text type="label" weight="semibold">
+                      Duración ({formatDuration(serviceDurationMinutes)})
+                    </Text>
+                    <HStack gap={1.5} wrap="wrap" role="group" aria-label="Duración">
                       {DURATION_PRESETS.map((preset) => {
                         const isSelected = serviceDurationMinutes === preset.minutes;
                         return (
@@ -782,32 +809,6 @@ export default function AdminOnboardingPage() {
                       })}
                     </HStack>
                   </VStack>
-
-                  <HStack
-                    className="ad-subpanel"
-                    justify="between"
-                    align="center"
-                    wrap="wrap"
-                    gap={2}
-                  >
-                    <VStack gap={0.5}>
-                      <Text type="label" color="secondary">
-                        Así lo verán tus clientas
-                      </Text>
-                      <Text weight="semibold">{serviceName.trim() || 'Tu servicio'}</Text>
-                      <Text type="supporting" color="secondary">
-                        Duración aprox. {formatDuration(serviceDurationMinutes)}
-                      </Text>
-                    </VStack>
-                    <AdminConfigChip
-                      tone="accent"
-                      label={`${serviceIsStartingPrice ? 'Desde ' : ''}${formatCurrency(
-                        Math.max(0, Math.round(servicePriceMxn * 100)),
-                        data.settings.currency,
-                      )}`}
-                      hasTabularNumbers
-                    />
-                  </HStack>
                 </VStack>
               ) : null}
 
@@ -824,7 +825,7 @@ export default function AdminOnboardingPage() {
                 />
                 <Button
                   type="submit"
-                  label={stepIndex === 2 ? 'Finalizar y activar página' : 'Continuar'}
+                  label={stepIndex === 2 ? 'Terminar y dejar listo' : 'Siguiente'}
                   variant="primary"
                   isLoading={saving}
                   endContent={<ArrowRight size={16} aria-hidden="true" />}
@@ -838,16 +839,55 @@ export default function AdminOnboardingPage() {
           <VStack key="wizard-step-live" gap={5} className="fx-step-in">
             <VStack gap={2}>
               <HStack gap={2} align="center">
-                <StatusDot variant="success" label="En vivo" isPulsing />
-                <AdminConfigChip tone="success" label="En vivo" className="fx-pop" />
+                <StatusDot variant="success" label="Lista para compartir" isPulsing />
+                <AdminConfigChip tone="success" label="¡Todo listo!" className="fx-pop" />
               </HStack>
               <Heading level={2} className="lk-serif ad-h2">
-                ¡{displaySalonName} está en vivo!
+                ¡{displaySalonName} está lista para recibir citas!
               </Heading>
               <Text color="secondary">
-                Tu página de reservas, calendario por especialista y aviso de anticipo SPEI ya están listos para recibir citas.
+                Ya puedes pegar tu link en Instagram, enviarlo por WhatsApp o imprimir tu QR para el mostrador.
               </Text>
             </VStack>
+
+            <HStack
+              className="ad-subpanel"
+              justify="between"
+              align="center"
+              wrap="wrap"
+              gap={3}
+            >
+              <VStack gap={0.5} className="rb-grow">
+                <Text weight="semibold" size="sm">
+                  Tu link de citas
+                </Text>
+                <Text type="supporting" color="secondary">
+                  Compártelo en tu biografía de Instagram o por WhatsApp.
+                </Text>
+              </VStack>
+              <HStack gap={2} wrap="wrap">
+                <Button
+                  type="button"
+                  label={copyFeedback.message ? 'Link copiado' : 'Copiar link'}
+                  variant="primary"
+                  size="sm"
+                  icon={
+                    copyFeedback.message ? (
+                      <Check size={14} aria-hidden="true" className="fx-pop" />
+                    ) : (
+                      <Copy size={14} aria-hidden="true" />
+                    )
+                  }
+                  onClick={() => void handleCopyBookingLink()}
+                />
+                <Button
+                  label="Abrir mi agenda"
+                  variant="secondary"
+                  size="sm"
+                  href="/reservar"
+                />
+              </HStack>
+            </HStack>
 
             <VStack as="ul" className="ad-surface ad-row-list" gap={0}>
               <li className="ad-row-item">
@@ -855,10 +895,10 @@ export default function AdminOnboardingPage() {
                   <CheckCircle2 size={18} aria-hidden="true" />
                   <VStack gap={0.5} className="rb-grow">
                     <Text weight="semibold" size="sm">
-                      Estudio configurado
+                      Salón configurado
                     </Text>
                     <Text type="supporting" color="secondary">
-                      {displaySalonName} · {businessType} ({teamSizeTier})
+                      {displaySalonName} · {address || 'Puebla, México'}
                     </Text>
                   </VStack>
                 </HStack>
@@ -870,35 +910,34 @@ export default function AdminOnboardingPage() {
                   <CheckCircle2 size={18} aria-hidden="true" />
                   <VStack gap={0.5} className="rb-grow">
                     <Text weight="semibold" size="sm">
-                      Calendario y servicio estrella listos
-                    </Text>
-                    <Text type="supporting" color="secondary">
-                      Turnos fijos activos · Servicio destacado: {serviceName.trim() || 'Rubber'}
-                    </Text>
-                  </VStack>
-                </HStack>
-                <AdminConfigChip tone="success" label="Listo" />
-              </li>
-
-              <li className="ad-row-item">
-                <HStack gap={2} align="center" className="rb-grow">
-                  <CheckCircle2 size={18} aria-hidden="true" />
-                  <VStack gap={0.5} className="rb-grow">
-                    <Text weight="semibold" size="sm">
-                      Página de reservas activa
+                      Anticipo SPEI
                     </Text>
                     <Text type="supporting" color="secondary" hasTabularNumbers>
-                      Disponible 24/7 en /reservar con anticipo de{' '}
-                      {formatCurrency(
-                        data.settings.depositAmountCents ?? 20000,
-                        data.settings.currency,
-                      )}
+                      {depositEnabled
+                        ? `${formatCurrency(
+                            Math.round(depositAmountMxn * 100),
+                            data.settings.currency,
+                          )} · ${depositBank || 'Transferencia'}`
+                        : 'Sin anticipo obligatorio'}
                     </Text>
                   </VStack>
                 </HStack>
-                <NextLink href="/reservar" className="ad-inline-link">
-                  Ver /reservar →
-                </NextLink>
+                <AdminConfigChip tone="success" label="Listo" />
+              </li>
+
+              <li className="ad-row-item">
+                <HStack gap={2} align="center" className="rb-grow">
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <VStack gap={0.5} className="rb-grow">
+                    <Text weight="semibold" size="sm">
+                      Turnos y servicio estrella
+                    </Text>
+                    <Text type="supporting" color="secondary">
+                      {serviceName.trim() || 'Rubber'} · {formatDuration(serviceDurationMinutes)}
+                    </Text>
+                  </VStack>
+                </HStack>
+                <AdminConfigChip tone="success" label="Listo" />
               </li>
             </VStack>
 
@@ -913,18 +952,18 @@ export default function AdminOnboardingPage() {
                 <Bell size={18} aria-hidden="true" />
                 <VStack gap={0.5} className="rb-grow">
                   <Text weight="semibold" size="sm">
-                    Alertas y sonido de nuevas citas
+                    Sonido de nuevas citas
                   </Text>
                   <Text type="supporting" color="secondary">
                     {soundAlertsEnabled
-                      ? 'Sonido especial activo al recibir reservas.'
-                      : 'Sonido desactivado por ahora.'}{' '}
-                    Permiso del navegador:{' '}
+                      ? 'Te avisará con un sonido suave cuando llegue una reserva.'
+                      : 'Sonido en silencio por ahora.'}{' '}
+                    Notificaciones:{' '}
                     {notificationPermission === 'granted'
-                      ? 'concedido'
+                      ? 'activas'
                       : notificationPermission === 'denied'
-                        ? 'bloqueado'
-                        : 'pendiente'}
+                        ? 'bloqueadas'
+                        : 'pendientes'}
                     .
                   </Text>
                 </VStack>
@@ -940,7 +979,7 @@ export default function AdminOnboardingPage() {
                 />
                 <Button
                   type="button"
-                  label="Configurar avisos"
+                  label="Activar avisos"
                   variant="secondary"
                   size="sm"
                   icon={<Bell size={15} aria-hidden="true" />}
@@ -961,13 +1000,13 @@ export default function AdminOnboardingPage() {
               />
               <HStack gap={2} wrap="wrap">
                 <Button
-                  label="Ir al panel"
+                  label="Ir al inicio"
                   variant="secondary"
                   href="/admin"
                   icon={<LayoutDashboard size={16} aria-hidden="true" />}
                 />
                 <Button
-                  label="Crear tu primera cita"
+                  label="Agendar primera cita"
                   variant="primary"
                   href="/admin/citas?new=1"
                   icon={<CalendarPlus size={16} aria-hidden="true" />}
@@ -987,34 +1026,34 @@ export default function AdminOnboardingPage() {
       >
         <VStack gap={4}>
           <DialogHeader
-            title="Entérate al instante cuando te agenden"
-            subtitle="Recibe avisos inmediatos en tu panel mientras atiendes en mesa"
+            title="Entérate al instante cuando agenden"
+            subtitle="Recibe avisos suaves mientras trabajas en mesa"
             onOpenChange={setNotifDialogOpen}
           />
           <List hasDividers>
             <ListItem
-              label="Nuevas citas y cambios en agenda"
+              label="Nuevas citas y cambios"
               description={
                 <Text type="supporting" color="secondary">
-                  Aviso inmediato cuando una clienta reserva, reagenda o cancela.
+                  Aviso inmediato cuando una clienta reserva, cambia de hora o cancela.
                 </Text>
               }
               startContent={<CalendarPlus size={17} aria-hidden="true" />}
             />
             <ListItem
-              label="Anticipos recibidos por validar"
+              label="Anticipos listos para revisar"
               description={
                 <Text type="supporting" color="secondary">
-                  Identifica al instante transferencias SPEI y comprobantes enviados.
+                  Ve al instante cuando una clienta sube su comprobante SPEI.
                 </Text>
               }
               startContent={<Bell size={17} aria-hidden="true" />}
             />
             <ListItem
-              label="Sonido especial cuando reservan en tu página"
+              label="Timbre suave de nueva cita"
               description={
                 <Text type="supporting" color="secondary">
-                  Timbre suave de dos tonos reproducible desde el navegador, silenciable cuando quieras.
+                  Puedes silenciarlo cuando quieras desde el menú del salón.
                 </Text>
               }
               startContent={<Volume2 size={17} aria-hidden="true" />}
@@ -1023,13 +1062,13 @@ export default function AdminOnboardingPage() {
           <HStack justify="end" gap={2} wrap="wrap">
             <Button
               type="button"
-              label="Quizá después"
+              label="Ahora no"
               variant="secondary"
               onClick={() => setNotifDialogOpen(false)}
             />
             <Button
               type="button"
-              label="Activar notificaciones"
+              label="Activar avisos"
               variant="primary"
               icon={<Bell size={15} aria-hidden="true" />}
               isLoading={saving}

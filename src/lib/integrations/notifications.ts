@@ -1,8 +1,16 @@
+import { Buffer } from 'node:buffer';
 import { Resend } from 'resend';
 import { generateId } from '../clock';
 import { getRuntimeIntegrationStatus } from '../env';
-import { buildWhatsAppLink, formatDateLongInTimezone, formatTimeInTimezone } from '../format';
+import {
+  buildWhatsAppLink,
+  formatCurrency,
+  formatDateLongInTimezone,
+  formatDateShortInTimezone,
+  formatTimeInTimezone,
+} from '../format';
 import { generateBookingIcs } from '../ics';
+import { logError, logWarn } from '../logger';
 import { escapeHtml } from '../sanitize';
 import type {
   BookingWithRelations,
@@ -11,11 +19,67 @@ import type {
   SalonSettings,
   ScheduledNotification,
 } from '../types';
+import {
+  buildWhatsAppTemplatePayload,
+  evaluateWhatsAppQuota,
+  getOfficialWhatsAppTemplateSpec,
+  getWhatsAppMonthKey,
+  selectWhatsAppDeliveryMode,
+  WHATSAPP_GRAPH_API_VERSION,
+  type WhatsAppDeliveryMode,
+  type WhatsAppTemplateTriggerKey,
+} from './whatsapp-templates';
 
 export interface NotificationDispatchResult {
   status: 'sent' | 'failed';
   providerMessageId: string | null;
   errorMessage: string | null;
+  deliveryMode?: WhatsAppDeliveryMode;
+  fallbackWaMeUrl?: string;
+}
+
+export interface BookingEmailSpeiDetails {
+  bankName: string;
+  beneficiary: string;
+  clabe: string;
+  depositAmountLabel: string;
+}
+
+export interface RetentionWarningAsset {
+  id: string;
+  storagePath: string;
+  folder: 'proofs' | 'inspo' | 'gallery';
+  bookingId: string | null;
+  createdAt: string;
+  sizeBytes: number;
+}
+
+export interface WhatsAppDispatchParams {
+  toPhoneE164: string;
+  bodyText: string;
+  triggerKey?: WhatsAppTemplateTriggerKey;
+  templateName?: string;
+  templateParameters?: readonly string[];
+  withinServiceWindow?: boolean;
+  fallbackEmail?: {
+    to: string;
+    subject: string;
+    booking?: BookingWithRelations;
+    settings: SalonSettings;
+    appUrl: string;
+  };
+  settingsTimezone?: string;
+  monthKey?: string;
+  fetchImpl?: typeof fetch;
+}
+
+const HTTP_TIMEOUT_MS = 8_000;
+
+function createRequestSignal(timeoutMs = HTTP_TIMEOUT_MS): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  return undefined;
 }
 
 function renderNotificationTemplate(
@@ -24,8 +88,9 @@ function renderNotificationTemplate(
   settings: SalonSettings,
   appUrl: string,
 ): string {
-  const manageUrl = `${appUrl}/cita/${booking.manageToken}`;
-  const bookingUrl = `${appUrl}/reservar`;
+  const normalizedUrl = appUrl.replace(/\/+$/, '');
+  const manageUrl = `${normalizedUrl}/cita/${booking.manageToken}`;
+  const bookingUrl = `${normalizedUrl}/reservar`;
   const tz = settings.timezone || 'America/Mexico_City';
   const addonsText =
     booking.addons.length > 0
@@ -57,11 +122,12 @@ export function buildBookingWhatsAppFallbackUrl(
   settings: SalonSettings,
   appUrl: string,
 ): string {
+  const normalizedUrl = appUrl.replace(/\/+$/, '');
   const tz = settings.timezone || 'America/Mexico_City';
   const msg = `Hola ${settings.name}, acabo de agendar mi cita (${booking.bookingCode}) de ${booking.service.name} el ${formatDateLongInTimezone(
     booking.startAt,
     tz,
-  )} a las ${formatTimeInTimezone(booking.startAt, tz, false)}. Link de mi cita: ${appUrl}/cita/${booking.manageToken}`;
+  )} a las ${formatTimeInTimezone(booking.startAt, tz, false)}. Link de mi cita: ${normalizedUrl}/cita/${booking.manageToken}`;
   return buildWhatsAppLink(settings.whatsappNumber, msg);
 }
 
@@ -71,10 +137,30 @@ function sanitizeEmailHref(url: string): string {
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
       return parsed.toString();
     }
-  } catch {
+  } catch (err) {
+    logWarn('notification_invalid_email_href', { error: err });
     return '#';
   }
   return '#';
+}
+
+function formatByteSizeLabel(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function friendlyAssetFolderLabel(folder: RetentionWarningAsset['folder']): string {
+  if (folder === 'proofs') return 'Comprobante SPEI';
+  if (folder === 'inspo') return 'Foto de referencia';
+  return 'Galería';
+}
+
+function resolveFromAddress(salonName: string): string {
+  const safeFromName = salonName.replace(/[\r\n<>"]/g, '').trim() || 'Laikona Nails';
+  return process.env.RESEND_FROM_EMAIL?.trim() || `${safeFromName} <onboarding@resend.dev>`;
 }
 
 export function renderBookingEmailHtml(params: {
@@ -82,23 +168,146 @@ export function renderBookingEmailHtml(params: {
   bodyText: string;
   manageUrl: string;
   address: string;
+  instagramHandle?: string;
+  bookingCode?: string;
+  whatsappUrl?: string;
+  speiDetails?: BookingEmailSpeiDetails | null;
+  hasCalendarAttachment?: boolean;
 }): string {
-  const safeHref = sanitizeEmailHref(params.manageUrl);
+  const safeHref = escapeHtml(sanitizeEmailHref(params.manageUrl));
+  const safeSalonName = escapeHtml(params.salonName);
+  const safeAddress = escapeHtml(params.address);
+  const safeInstagram = escapeHtml(params.instagramHandle?.trim() || '@laikona.nailsss');
   const escapedBodyHtml = params.bodyText
     .split(/\r?\n/)
     .map((line) => escapeHtml(line))
     .join('<br/>');
 
+  const bookingCodeBadgeHtml = params.bookingCode?.trim()
+    ? `<p style="margin: 10px 0 0; display: inline-block; padding: 4px 12px; border-radius: 999px; background: #FCF5F6; border: 1px solid #EFE0E2; color: #8B1E2B; font-size: 12px; font-weight: 600; letter-spacing: 0.04em;">Cita ${escapeHtml(params.bookingCode.trim())}</p>`
+    : '';
+
+  const speiBlockHtml = params.speiDetails
+    ? [
+        '<div style="margin-top: 20px; padding: 16px 18px; background: #FCF5F6; border: 1px solid #EFE0E2; border-radius: 12px;">',
+        '  <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8B1E2B;">Anticipo por transferencia SPEI</p>',
+        `  <p style="margin: 0 0 4px; font-size: 14px; color: #241C1E;"><strong>Monto:</strong> ${escapeHtml(params.speiDetails.depositAmountLabel)}</p>`,
+        `  <p style="margin: 0 0 4px; font-size: 14px; color: #241C1E;"><strong>Banco:</strong> ${escapeHtml(params.speiDetails.bankName)} · <strong>Titular:</strong> ${escapeHtml(params.speiDetails.beneficiary)}</p>`,
+        `  <p style="margin: 0; font-size: 14px; color: #241C1E; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;"><strong>CLABE:</strong> ${escapeHtml(params.speiDetails.clabe)}</p>`,
+        '</div>',
+      ].join('\n')
+    : '';
+
+  const safeWhatsappHref = params.whatsappUrl
+    ? escapeHtml(sanitizeEmailHref(params.whatsappUrl))
+    : '';
+  const whatsappLinkHtml =
+    safeWhatsappHref && safeWhatsappHref !== '#'
+      ? `<p style="margin: 12px 0 0;"><a href="${safeWhatsappHref}" style="color: #8B1E2B; font-size: 14px; font-weight: 600; text-decoration: underline;">Escribir por WhatsApp al estudio</a></p>`
+      : '';
+
+  const calendarHintHtml =
+    params.hasCalendarAttachment !== false
+      ? '<p style="margin: 16px 0 0; font-size: 13px; color: #6C6063;">Adjuntamos tu invitación de calendario (.ics) para guardarla en Apple Calendar, Google Calendar u Outlook.</p>'
+      : '';
+
   return [
-    '<div style="font-family: \'DM Sans\', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #24211f;">',
-    `  <h2 style="font-family: Georgia, serif; margin-bottom: 8px;">${escapeHtml(params.salonName)}</h2>`,
-    '  <p style="line-height: 1.6;">' + escapedBodyHtml + '</p>',
-    '  <p style="margin-top: 20px;">',
-    `    <a href="${escapeHtml(safeHref)}" style="display:inline-block;padding:12px 20px;background:#9E5C64;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">`,
-    '      Ver, agregar al calendario o reagendar',
-    '    </a>',
-    '  </p>',
-    `  <p style="color:#6c6560;font-size:13px;margin-top:24px;">${escapeHtml(params.address)}</p>`,
+    '<div style="margin: 0; padding: 24px 12px; background: #FCF5F6; font-family: \'DM Sans\', -apple-system, BlinkMacSystemFont, \'Segoe UI\', Arial, sans-serif; color: #241C1E;">',
+    '  <div style="max-width: 580px; margin: 0 auto; background: #FFFFFF; border: 1px solid #EFE0E2; border-radius: 16px; overflow: hidden;">',
+    '    <div style="height: 4px; background: #8B1E2B;"></div>',
+    '    <div style="padding: 28px 26px 24px;">',
+    '      <p style="margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #8B1E2B;">LAIKONA NAILS BY KARLA · PUEBLA</p>',
+    `      <h2 style="font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif; font-size: 24px; line-height: 1.2; font-weight: 600; margin: 0; color: #241C1E;">${safeSalonName}</h2>`,
+    `      ${bookingCodeBadgeHtml}`,
+    `      <p style="margin: 20px 0 0; font-size: 15px; line-height: 1.65; color: #241C1E;">${escapedBodyHtml}</p>`,
+    `      ${speiBlockHtml}`,
+    '      <div style="margin-top: 24px;">',
+    `        <a href="${safeHref}" style="display: inline-block; padding: 13px 22px; background: #8B1E2B; color: #FFFFFF; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Ver, agregar al calendario o reagendar</a>`,
+    `        ${whatsappLinkHtml}`,
+    '      </div>',
+    `      ${calendarHintHtml}`,
+    '    </div>',
+    '    <div style="padding: 16px 26px; background: #FCF5F6; border-top: 1px solid #EFE0E2;">',
+    `      <p style="margin: 0; font-size: 13px; color: #6C6063;">${safeAddress}</p>`,
+    `      <p style="margin: 4px 0 0; font-size: 12px; color: #8B1E2B; font-weight: 600;">Instagram ${safeInstagram}</p>`,
+    '    </div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+}
+
+export function renderRetentionWarningEmailHtml(params: {
+  stage: '30d' | '7d';
+  assets: readonly RetentionWarningAsset[];
+  settings: SalonSettings;
+  appUrl: string;
+}): string {
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  const cajaHref = escapeHtml(sanitizeEmailHref(`${normalizedUrl}/admin/caja?tab=anticipos`));
+  const safeSalonName = escapeHtml(params.settings.name || 'Laikona Nails by Karla');
+  const safeAddress = escapeHtml(params.settings.address);
+  const safeInstagram = escapeHtml(params.settings.instagramHandle?.trim() || '@laikona.nailsss');
+  const tz = params.settings.timezone || 'America/Mexico_City';
+
+  const daysRemainingLabel = params.stage === '7d' ? '7 días' : '30 días';
+  const headingText =
+    params.stage === '7d'
+      ? 'Último aviso: respalda tus comprobantes en los próximos 7 días'
+      : 'Aviso preventivo: respalda tus comprobantes antes de la limpieza anual';
+  const introText =
+    params.stage === '7d'
+      ? `En 7 días se cumplirán 12 meses desde la carga de ${params.assets.length} archivo(s) de comprobantes o referencias y se eliminarán automáticamente del almacenamiento.`
+      : `Dentro de 30 días se cumplirán 12 meses desde la carga de ${params.assets.length} archivo(s) de comprobantes o referencias y se eliminarán automáticamente del almacenamiento.`;
+
+  const safeAssetsCount = Number(params.assets.length);
+  const safeProofsCount = Number(params.assets.filter((a) => a.folder === 'proofs').length);
+  const safeInspoCount = Number(params.assets.filter((a) => a.folder === 'inspo').length);
+  const totalBytes = params.assets.reduce((sum, a) => sum + Math.max(0, a.sizeBytes), 0);
+  const safeTotalSize = escapeHtml(formatByteSizeLabel(totalBytes));
+
+  const visibleAssets = params.assets.slice(0, 20);
+  const safeExtraCount = Number(Math.max(0, params.assets.length - visibleAssets.length));
+  const rowsHtml = visibleAssets
+    .map((asset) => {
+      const safePath = escapeHtml(asset.storagePath);
+      const safeFolder = escapeHtml(friendlyAssetFolderLabel(asset.folder));
+      const safeDate = escapeHtml(formatDateShortInTimezone(asset.createdAt, tz));
+      const safeSize = escapeHtml(formatByteSizeLabel(asset.sizeBytes));
+      return `<tr><td style="padding: 8px 10px; border-bottom: 1px solid #EFE0E2; font-size: 13px; color: #241C1E;">${safeFolder}</td><td style="padding: 8px 10px; border-bottom: 1px solid #EFE0E2; font-size: 12px; color: #6C6063; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">${safePath}</td><td style="padding: 8px 10px; border-bottom: 1px solid #EFE0E2; font-size: 13px; color: #241C1E;">${safeDate}</td><td style="padding: 8px 10px; border-bottom: 1px solid #EFE0E2; font-size: 13px; color: #6C6063; text-align: right;">${safeSize}</td></tr>`;
+    })
+    .join('\n');
+
+  const extraRowHtml =
+    safeExtraCount > 0
+      ? `<p style="margin: 10px 0 0; font-size: 13px; color: #6C6063;">Y ${safeExtraCount} archivo(s) adicional(es) en este lote.</p>`
+      : '';
+
+  return [
+    '<div style="margin: 0; padding: 24px 12px; background: #FCF5F6; font-family: \'DM Sans\', -apple-system, BlinkMacSystemFont, \'Segoe UI\', Arial, sans-serif; color: #241C1E;">',
+    '  <div style="max-width: 620px; margin: 0 auto; background: #FFFFFF; border: 1px solid #EFE0E2; border-radius: 16px; overflow: hidden;">',
+    '    <div style="height: 4px; background: #8B1E2B;"></div>',
+    '    <div style="padding: 28px 26px 24px;">',
+    `      <p style="margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #8B1E2B;">RESPALDO CONTABLE · ${escapeHtml(daysRemainingLabel.toUpperCase())}</p>`,
+    `      <h2 style="font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif; font-size: 24px; line-height: 1.25; font-weight: 600; margin: 0; color: #241C1E;">${escapeHtml(headingText)}</h2>`,
+    `      <p style="margin: 16px 0 0; font-size: 15px; line-height: 1.65; color: #241C1E;">${escapeHtml(introText)}</p>`,
+    '      <div style="margin-top: 18px; padding: 14px 16px; background: #FCF5F6; border: 1px solid #EFE0E2; border-radius: 12px;">',
+    `        <p style="margin: 0 0 6px; font-size: 14px; color: #241C1E;"><strong>Resumen del lote:</strong> ${safeAssetsCount} archivo(s) · ${safeProofsCount} comprobante(s) SPEI · ${safeInspoCount} foto(s) de referencia · ${safeTotalSize}</p>`,
+    '        <p style="margin: 0; font-size: 13px; color: #6C6063;">Tu historial de citas, pagos, reportes de caja y datos de clientas permanecen intactos; solo se depuran las imágenes mayores a 12 meses.</p>',
+    '      </div>',
+    '      <table style="width: 100%; border-collapse: collapse; margin-top: 18px;">',
+    '        <thead><tr><th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #EFE0E2; font-size: 12px; color: #6C6063;">Tipo</th><th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #EFE0E2; font-size: 12px; color: #6C6063;">Archivo</th><th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #EFE0E2; font-size: 12px; color: #6C6063;">Fecha</th><th style="text-align: right; padding: 8px 10px; border-bottom: 2px solid #EFE0E2; font-size: 12px; color: #6C6063;">Tamaño</th></tr></thead>',
+    `        <tbody>${rowsHtml}</tbody>`,
+    '      </table>',
+    `      ${extraRowHtml}`,
+    '      <div style="margin-top: 24px;">',
+    `        <a href="${cajaHref}" style="display: inline-block; padding: 13px 22px; background: #8B1E2B; color: #FFFFFF; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Abrir Caja y respaldar comprobantes</a>`,
+    '      </div>',
+    '    </div>',
+    '    <div style="padding: 16px 26px; background: #FCF5F6; border-top: 1px solid #EFE0E2;">',
+    `      <p style="margin: 0; font-size: 13px; color: #6C6063;">${safeSalonName} · ${safeAddress}</p>`,
+    `      <p style="margin: 4px 0 0; font-size: 12px; color: #8B1E2B; font-weight: 600;">Instagram ${safeInstagram}</p>`,
+    '    </div>',
+    '  </div>',
     '</div>',
   ].join('\n');
 }
@@ -112,7 +321,8 @@ export async function dispatchEmailNotification(params: {
   appUrl: string;
 }): Promise<NotificationDispatchResult> {
   const env = getRuntimeIntegrationStatus();
-  const manageUrl = `${params.appUrl}/cita/${params.booking.manageToken}`;
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  const manageUrl = `${normalizedUrl}/cita/${params.booking.manageToken}`;
 
   if (!env.resendConfigured || !process.env.RESEND_API_KEY) {
     return {
@@ -125,9 +335,25 @@ export async function dispatchEmailNotification(params: {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const icsContent = generateBookingIcs(params.booking, params.settings, manageUrl);
-    const safeFromName = params.settings.name.replace(/[\r\n<>"]/g, '').trim() || 'Nails';
-    const fromEmail =
-      process.env.RESEND_FROM_EMAIL || safeFromName + ' <onboarding@resend.dev>';
+    const fromEmail = resolveFromAddress(params.settings.name);
+    const isPendingDeposit =
+      (params.booking.status === 'pending_confirmation' ||
+        params.booking.status === 'pending_payment') &&
+      params.settings.paymentMode === 'manual_transfer' &&
+      Boolean(params.settings.depositClabe.trim());
+    const depositCents =
+      params.booking.depositAmountCents > 0
+        ? params.booking.depositAmountCents
+        : (params.settings.depositAmountCents ?? 20000);
+    const speiDetails: BookingEmailSpeiDetails | null = isPendingDeposit
+      ? {
+          bankName: params.settings.depositBankName || 'Mercado Pago',
+          beneficiary:
+            params.settings.depositBeneficiary || params.settings.depositAccountHolder,
+          clabe: params.settings.depositClabe,
+          depositAmountLabel: formatCurrency(depositCents, params.settings.currency),
+        }
+      : null;
 
     const result = await resend.emails.send({
       from: fromEmail,
@@ -138,6 +364,15 @@ export async function dispatchEmailNotification(params: {
         bodyText: params.bodyText,
         manageUrl,
         address: params.settings.address,
+        instagramHandle: params.settings.instagramHandle,
+        bookingCode: params.booking.bookingCode,
+        whatsappUrl: buildBookingWhatsAppFallbackUrl(
+          params.booking,
+          params.settings,
+          normalizedUrl,
+        ),
+        speiDetails,
+        hasCalendarAttachment: true,
       }),
       attachments: [
         {
@@ -148,6 +383,11 @@ export async function dispatchEmailNotification(params: {
     });
 
     if (result.error) {
+      logError('notification_email_provider_error', {
+        to: params.to,
+        bookingCode: params.booking.bookingCode,
+        error: result.error.message,
+      });
       return {
         status: 'failed',
         providerMessageId: null,
@@ -161,6 +401,11 @@ export async function dispatchEmailNotification(params: {
       errorMessage: null,
     };
   } catch (err) {
+    logError('notification_email_dispatch_exception', {
+      to: params.to,
+      bookingCode: params.booking.bookingCode,
+      error: err,
+    });
     return {
       status: 'failed',
       providerMessageId: null,
@@ -169,61 +414,400 @@ export async function dispatchEmailNotification(params: {
   }
 }
 
-export async function dispatchWhatsAppNotification(params: {
-  toPhoneE164: string;
-  bodyText: string;
+export async function dispatchRetentionWarningEmail(params: {
+  to: string;
+  stage: '30d' | '7d';
+  assets: readonly RetentionWarningAsset[];
+  settings: SalonSettings;
+  appUrl: string;
 }): Promise<NotificationDispatchResult> {
   const env = getRuntimeIntegrationStatus();
+  const subject =
+    params.stage === '7d'
+      ? `Último aviso (7 días): respalda ${params.assets.length} comprobante(s) en ${params.settings.name}`
+      : `Aviso preventivo (30 días): respalda ${params.assets.length} comprobante(s) en ${params.settings.name}`;
 
-  if (!env.whatsappCloudConfigured) {
+  if (!env.resendConfigured || !process.env.RESEND_API_KEY) {
     return {
       status: 'sent',
-      providerMessageId: `demo-wamid-${Date.now()}`,
+      providerMessageId: `demo-resend-retention-${params.stage}-${Date.now()}`,
       errorMessage: null,
     };
   }
 
   try {
-    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID!;
-    const token = process.env.WHATSAPP_ACCESS_TOKEN!;
-    const cleanTo = params.toPhoneE164.replace(/\D/g, '');
-
-    const res = await fetch(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: cleanTo,
-        type: 'text',
-        text: { body: params.bodyText },
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const result = await resend.emails.send({
+      from: resolveFromAddress(params.settings.name),
+      to: params.to,
+      subject,
+      html: renderRetentionWarningEmailHtml({
+        stage: params.stage,
+        assets: params.assets,
+        settings: params.settings,
+        appUrl: params.appUrl,
       }),
     });
 
-    const data = (await res.json()) as {
-      messages?: Array<{ id: string }>;
-      error?: { message: string };
-    };
-    if (!res.ok) {
+    if (result.error) {
+      logError('notification_retention_email_provider_error', {
+        to: params.to,
+        stage: params.stage,
+        assetsCount: params.assets.length,
+        error: result.error.message,
+      });
       return {
         status: 'failed',
         providerMessageId: null,
-        errorMessage: data.error?.message || `WhatsApp API HTTP ${res.status}`,
+        errorMessage: result.error.message,
       };
     }
 
     return {
       status: 'sent',
-      providerMessageId: data.messages?.[0]?.id ?? `wamid-${Date.now()}`,
+      providerMessageId: result.data?.id ?? `resend-retention-${Date.now()}`,
+      errorMessage: null,
+    };
+  } catch (err) {
+    logError('notification_retention_email_exception', {
+      to: params.to,
+      stage: params.stage,
+      assetsCount: params.assets.length,
+      error: err,
+    });
+    return {
+      status: 'failed',
+      providerMessageId: null,
+      errorMessage:
+        err instanceof Error ? err.message : 'Error enviando aviso de retención',
+    };
+  }
+}
+
+async function dispatchPlainFallbackEmail(params: {
+  to: string;
+  subject: string;
+  bodyText: string;
+  settings: SalonSettings;
+  appUrl: string;
+  booking?: BookingWithRelations;
+}): Promise<NotificationDispatchResult> {
+  if (params.booking) {
+    return dispatchEmailNotification({
+      to: params.to,
+      subject: params.subject,
+      bodyText: params.bodyText,
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: params.appUrl,
+    });
+  }
+
+  const env = getRuntimeIntegrationStatus();
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  if (!env.resendConfigured || !process.env.RESEND_API_KEY) {
+    return {
+      status: 'sent',
+      providerMessageId: `demo-resend-fallback-${Date.now()}`,
+      errorMessage: null,
+    };
+  }
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const result = await resend.emails.send({
+      from: resolveFromAddress(params.settings.name),
+      to: params.to,
+      subject: params.subject,
+      html: renderBookingEmailHtml({
+        salonName: params.settings.name,
+        bodyText: params.bodyText,
+        manageUrl: `${normalizedUrl}/mis-citas`,
+        address: params.settings.address,
+        instagramHandle: params.settings.instagramHandle,
+        hasCalendarAttachment: false,
+      }),
+    });
+    if (result.error) {
+      return {
+        status: 'failed',
+        providerMessageId: null,
+        errorMessage: result.error.message,
+      };
+    }
+    return {
+      status: 'sent',
+      providerMessageId: result.data?.id ?? `resend-fallback-${Date.now()}`,
       errorMessage: null,
     };
   } catch (err) {
     return {
       status: 'failed',
       providerMessageId: null,
+      errorMessage: err instanceof Error ? err.message : 'Error enviando correo de respaldo',
+    };
+  }
+}
+
+async function resolveWhatsAppTemplateAndQuota(params: {
+  triggerKey?: WhatsAppTemplateTriggerKey;
+  templateName?: string;
+  monthKey: string;
+}): Promise<{
+  hasTemplate: boolean;
+  resolvedTemplateName: string | undefined;
+  quotaAlertLevel: 'ok' | 'warning_80' | 'limit_100';
+  sentCount: number;
+  quotaLimit: number;
+}> {
+  let sentCount = 0;
+  let quotaLimit = 500;
+  let resolvedTemplateName = params.templateName?.trim() || undefined;
+  let hasTemplate = Boolean(resolvedTemplateName);
+
+  try {
+    const dbRepo = await import('../repositories/db');
+    const usage = await dbRepo.getWhatsAppMonthlyUsage(params.monthKey);
+    sentCount = usage.sentCount;
+    quotaLimit = usage.quotaLimit;
+
+    if (params.triggerKey && !resolvedTemplateName) {
+      const templates = await dbRepo.getWhatsAppTemplates();
+      const matched = templates.find((t) => t.triggerKey === params.triggerKey);
+      if (matched) {
+        if (matched.isActive) {
+          resolvedTemplateName = matched.templateName;
+          hasTemplate = true;
+        } else {
+          hasTemplate = false;
+        }
+      } else {
+        resolvedTemplateName = getOfficialWhatsAppTemplateSpec(
+          params.triggerKey,
+        ).defaultTemplateName;
+        hasTemplate = true;
+      }
+    }
+  } catch (err) {
+    logWarn('notification_whatsapp_repo_lookup_failed', { error: err });
+    if (params.triggerKey && !resolvedTemplateName) {
+      resolvedTemplateName = getOfficialWhatsAppTemplateSpec(
+        params.triggerKey,
+      ).defaultTemplateName;
+      hasTemplate = true;
+    }
+  }
+
+  const quota = evaluateWhatsAppQuota(sentCount, quotaLimit);
+  return {
+    hasTemplate,
+    resolvedTemplateName,
+    quotaAlertLevel: quota.alertLevel,
+    sentCount: quota.sentCount,
+    quotaLimit: quota.quotaLimit,
+  };
+}
+
+async function recordWhatsAppMonthlyUsageOnce(
+  monthKey: string,
+  providerMessageId: string,
+): Promise<void> {
+  try {
+    const dbRepo = await import('../repositories/db');
+    const claimed = await dbRepo.claimWebhookEventIdempotent(
+      'whatsapp_usage',
+      providerMessageId,
+    );
+    if (claimed) {
+      await dbRepo.incrementWhatsAppMonthlyUsage(monthKey, 1);
+    }
+  } catch (err) {
+    logWarn('notification_whatsapp_usage_record_failed', {
+      monthKey,
+      providerMessageId,
+      error: err,
+    });
+  }
+}
+
+export async function dispatchWhatsAppNotification(
+  params: WhatsAppDispatchParams,
+): Promise<NotificationDispatchResult> {
+  const env = getRuntimeIntegrationStatus();
+  const waMeUrl = buildWhatsAppLink(params.toPhoneE164, params.bodyText);
+  const monthKey =
+    params.monthKey ??
+    getWhatsAppMonthKey(new Date(), params.settingsTimezone || 'America/Mexico_City');
+
+  const resolved = await resolveWhatsAppTemplateAndQuota({
+    triggerKey: params.triggerKey,
+    templateName: params.templateName,
+    monthKey,
+  });
+
+  const deliveryMode = selectWhatsAppDeliveryMode({
+    hasTemplate: resolved.hasTemplate,
+    withinServiceWindow: Boolean(params.withinServiceWindow),
+    quotaAlertLevel: resolved.quotaAlertLevel,
+    whatsappCloudConfigured: env.whatsappCloudConfigured,
+  });
+
+  if (deliveryMode === 'fallback_email_wame') {
+    if (!env.whatsappCloudConfigured) {
+      if (params.fallbackEmail && env.resendConfigured) {
+        const emailFallback = await dispatchPlainFallbackEmail({
+          to: params.fallbackEmail.to,
+          subject: params.fallbackEmail.subject,
+          bodyText: params.bodyText,
+          booking: params.fallbackEmail.booking,
+          settings: params.fallbackEmail.settings,
+          appUrl: params.fallbackEmail.appUrl,
+        });
+        return {
+          ...emailFallback,
+          deliveryMode,
+          fallbackWaMeUrl: waMeUrl,
+        };
+      }
+      return {
+        status: 'sent',
+        providerMessageId: `demo-wamid-${Date.now()}`,
+        errorMessage: null,
+        deliveryMode,
+        fallbackWaMeUrl: waMeUrl,
+      };
+    }
+
+    logWarn('notification_whatsapp_degraded_to_fallback', {
+      phone: params.toPhoneE164,
+      monthKey,
+      sentCount: resolved.sentCount,
+      quotaLimit: resolved.quotaLimit,
+      quotaAlertLevel: resolved.quotaAlertLevel,
+      hasTemplate: resolved.hasTemplate,
+      withinServiceWindow: Boolean(params.withinServiceWindow),
+    });
+
+    if (params.fallbackEmail) {
+      const emailFallback = await dispatchPlainFallbackEmail({
+        to: params.fallbackEmail.to,
+        subject: params.fallbackEmail.subject,
+        bodyText: params.bodyText,
+        booking: params.fallbackEmail.booking,
+        settings: params.fallbackEmail.settings,
+        appUrl: params.fallbackEmail.appUrl,
+      });
+      return {
+        ...emailFallback,
+        deliveryMode,
+        fallbackWaMeUrl: waMeUrl,
+      };
+    }
+
+    return {
+      status: 'failed',
+      providerMessageId: null,
+      errorMessage:
+        resolved.quotaAlertLevel === 'limit_100'
+          ? 'Cuota mensual de WhatsApp alcanzada; usa el enlace directo wa.me o correo electrónico.'
+          : 'Fuera de la ventana de 24 h se requiere una plantilla oficial aprobada.',
+      deliveryMode,
+      fallbackWaMeUrl: waMeUrl,
+    };
+  }
+
+  try {
+    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+    const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+    if (!phoneId || !token) {
+      return {
+        status: 'sent',
+        providerMessageId: `demo-wamid-${Date.now()}`,
+        errorMessage: null,
+        deliveryMode: 'fallback_email_wame',
+        fallbackWaMeUrl: waMeUrl,
+      };
+    }
+
+    const fetcher = params.fetchImpl ?? globalThis.fetch;
+    const cleanTo = params.toPhoneE164.replace(/\D/g, '');
+    const requestPayload =
+      deliveryMode === 'template'
+        ? buildWhatsAppTemplatePayload({
+            triggerKey: params.triggerKey ?? 'booking_confirmed',
+            templateName: resolved.resolvedTemplateName,
+            languageCode: 'es_MX',
+            toPhoneDigits: cleanTo,
+            parameters:
+              params.templateParameters && params.templateParameters.length > 0
+                ? params.templateParameters
+                : [params.bodyText],
+          })
+        : {
+            messaging_product: 'whatsapp' as const,
+            recipient_type: 'individual' as const,
+            to: cleanTo,
+            type: 'text' as const,
+            text: { body: params.bodyText },
+          };
+
+    const res = await fetcher(
+      `https://graph.facebook.com/${WHATSAPP_GRAPH_API_VERSION}/${encodeURIComponent(phoneId)}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: createRequestSignal(),
+        body: JSON.stringify(requestPayload),
+      },
+    );
+
+    const data = (await res.json().catch(() => ({}))) as {
+      messages?: Array<{ id: string }>;
+      error?: { message: string };
+    };
+    if (!res.ok) {
+      logError('notification_whatsapp_provider_error', {
+        phone: params.toPhoneE164,
+        status: res.status,
+        deliveryMode,
+        error: data.error?.message,
+      });
+      return {
+        status: 'failed',
+        providerMessageId: null,
+        errorMessage: data.error?.message || `WhatsApp API HTTP ${res.status}`,
+        deliveryMode,
+        fallbackWaMeUrl: waMeUrl,
+      };
+    }
+
+    const providerMessageId = data.messages?.[0]?.id ?? `wamid-${Date.now()}`;
+    if (deliveryMode === 'template') {
+      await recordWhatsAppMonthlyUsageOnce(monthKey, providerMessageId);
+    }
+
+    return {
+      status: 'sent',
+      providerMessageId,
+      errorMessage: null,
+      deliveryMode,
+      fallbackWaMeUrl: waMeUrl,
+    };
+  } catch (err) {
+    logError('notification_whatsapp_dispatch_exception', {
+      phone: params.toPhoneE164,
+      deliveryMode,
+      error: err,
+    });
+    return {
+      status: 'failed',
+      providerMessageId: null,
       errorMessage: err instanceof Error ? err.message : 'Error enviando WhatsApp',
+      deliveryMode,
+      fallbackWaMeUrl: waMeUrl,
     };
   }
 }
@@ -262,12 +846,18 @@ export async function dispatchSmsNotification(params: {
           Authorization: `Basic ${auth}`,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
+        signal: createRequestSignal(),
         body: form.toString(),
       },
     );
 
     const data = (await res.json()) as { sid?: string; message?: string };
     if (!res.ok) {
+      logError('notification_sms_provider_error', {
+        phone: params.toPhoneE164,
+        status: res.status,
+        error: data.message,
+      });
       return {
         status: 'failed',
         providerMessageId: null,
@@ -281,12 +871,65 @@ export async function dispatchSmsNotification(params: {
       errorMessage: null,
     };
   } catch (err) {
+    logError('notification_sms_dispatch_exception', {
+      phone: params.toPhoneE164,
+      error: err,
+    });
     return {
       status: 'failed',
       providerMessageId: null,
       errorMessage: err instanceof Error ? err.message : 'Error enviando SMS',
     };
   }
+}
+
+function mapImmediateTriggerToWhatsAppTemplate(
+  trigger: 'booking_created' | 'booking_confirmed' | 'booking_canceled' | 'booking_rescheduled',
+): WhatsAppTemplateTriggerKey {
+  if (trigger === 'booking_canceled') return 'booking_canceled';
+  if (trigger === 'booking_rescheduled') return 'booking_rescheduled';
+  return 'booking_confirmed';
+}
+
+function buildBookingTemplateParameters(params: {
+  triggerKey: WhatsAppTemplateTriggerKey;
+  booking: BookingWithRelations;
+  settings: SalonSettings;
+  appUrl: string;
+}): string[] {
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  const manageUrl = `${normalizedUrl}/cita/${params.booking.manageToken}`;
+  const tz = params.settings.timezone || 'America/Mexico_City';
+  const dateLabel = formatDateLongInTimezone(params.booking.startAt, tz);
+  const timeLabel = formatTimeInTimezone(params.booking.startAt, tz, false);
+  const serviceName = params.booking.service.name;
+
+  if (params.triggerKey === 'booking_canceled') {
+    return [params.booking.client.fullName, serviceName, dateLabel];
+  }
+  if (params.triggerKey === 'booking_rescheduled') {
+    return [params.booking.client.fullName, serviceName, dateLabel, timeLabel, manageUrl];
+  }
+  if (params.triggerKey === 'reminder_2h') {
+    return [params.booking.client.fullName, timeLabel, params.settings.address];
+  }
+  if (params.triggerKey === 'reminder_24h') {
+    return [
+      params.booking.client.fullName,
+      serviceName,
+      timeLabel,
+      params.booking.staff.name,
+      manageUrl,
+    ];
+  }
+  return [
+    params.booking.client.fullName,
+    serviceName,
+    dateLabel,
+    timeLabel,
+    params.booking.staff.name,
+    manageUrl,
+  ];
 }
 
 export async function buildAndSendImmediateNotifications(params: {
@@ -337,9 +980,28 @@ export async function buildAndSendImmediateNotifications(params: {
           appUrl: env.appUrl,
         });
       } else if (channel === 'whatsapp') {
+        const triggerKey = mapImmediateTriggerToWhatsAppTemplate(params.trigger);
         res = await dispatchWhatsAppNotification({
           toPhoneE164: recipient,
           bodyText,
+          triggerKey,
+          templateParameters: buildBookingTemplateParameters({
+            triggerKey,
+            booking: params.booking,
+            settings: params.settings,
+            appUrl: env.appUrl,
+          }),
+          withinServiceWindow: false,
+          settingsTimezone: params.settings.timezone,
+          fallbackEmail: params.booking.client.email
+            ? {
+                to: params.booking.client.email,
+                subject,
+                booking: params.booking,
+                settings: params.settings,
+                appUrl: env.appUrl,
+              }
+            : undefined,
         });
       } else {
         res = await dispatchSmsNotification({

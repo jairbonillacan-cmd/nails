@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import type { BookingReview, SalonSettings, Service, StaffMember } from './types';
+import type {
+  BookingReview,
+  ClientPackage,
+  SalonSettings,
+  Service,
+  StaffMember,
+} from './types';
 
 export const PublicStaffDTOSchema = z.object({
   id: z.string(),
@@ -122,6 +128,91 @@ export const PublicLoyaltySummarySchema = z.object({
 });
 
 export type PublicLoyaltySummaryDTO = z.infer<typeof PublicLoyaltySummarySchema>;
+
+export const PublicClientPackageDTOSchema = z.object({
+  id: z.string(),
+  packageId: z.string(),
+  packageName: z.string(),
+  serviceId: z.string(),
+  serviceName: z.string(),
+  totalSessions: z.number().int().positive(),
+  usedSessions: z.number().int().nonnegative(),
+  remainingSessions: z.number().int().nonnegative(),
+  purchasedAt: z.string(),
+  expiresAt: z.string().nullable(),
+  status: z.enum(['active', 'exhausted', 'expired', 'canceled']),
+});
+
+export type PublicClientPackageDTO = z.infer<typeof PublicClientPackageDTOSchema>;
+
+const ClientPortalBookingDTOSchema = z.object({
+  id: z.string(),
+  bookingCode: z.string(),
+  manageToken: z.string(),
+  manageUrl: z.string(),
+  status: z.enum([
+    'pending_payment',
+    'pending_confirmation',
+    'confirmed',
+    'completed',
+    'canceled',
+    'no_show',
+  ]),
+  startAt: z.string(),
+  endAt: z.string(),
+  totalDurationMinutes: z.number(),
+  totalPriceCents: z.number(),
+  depositAmountCents: z.number(),
+  serviceId: z.string(),
+  serviceName: z.string(),
+  serviceSlug: z.string(),
+  staffId: z.string(),
+  staffName: z.string(),
+  staffBookingSlug: z.string(),
+  addons: z.array(
+    z.object({
+      name: z.string(),
+      extraPriceCents: z.number(),
+    }),
+  ),
+  touchUpUrl: z.string(),
+});
+
+export type ClientPortalBookingDTO = z.infer<typeof ClientPortalBookingDTOSchema>;
+
+export const ClientPortalSnapshotDTOSchema = z.object({
+  phoneE164: z.string(),
+  clientId: z.string().nullable(),
+  clientName: z.string().nullable(),
+  bookings: z.array(ClientPortalBookingDTOSchema),
+  loyaltySummary: PublicLoyaltySummarySchema.nullable(),
+  packages: z.array(PublicClientPackageDTOSchema),
+});
+
+export type ClientPortalSnapshotDTO = z.infer<typeof ClientPortalSnapshotDTOSchema>;
+
+export function toPublicClientPackageDTO(
+  pkg: ClientPackage,
+  params: {
+    serviceName: string;
+    remainingSessions: number;
+    effectiveStatus: ClientPackage['status'];
+  },
+): PublicClientPackageDTO {
+  return PublicClientPackageDTOSchema.parse({
+    id: pkg.id,
+    packageId: pkg.packageId,
+    packageName: pkg.packageName,
+    serviceId: pkg.serviceId,
+    serviceName: params.serviceName,
+    totalSessions: pkg.totalSessions,
+    usedSessions: pkg.usedSessions,
+    remainingSessions: params.remainingSessions,
+    purchasedAt: pkg.purchasedAt,
+    expiresAt: pkg.expiresAt,
+    status: params.effectiveStatus,
+  });
+}
 
 export function toPublicStaffDTO(staff: StaffMember): PublicStaffDTO {
   return PublicStaffDTOSchema.parse({

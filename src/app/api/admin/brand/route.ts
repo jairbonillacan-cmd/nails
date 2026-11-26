@@ -9,6 +9,7 @@ import {
   upsertGalleryItem,
   upsertLoyaltyProgram,
 } from '@/lib/repositories/db';
+import { hashOwnerPin, isValidOwnerPinFormat } from '@/lib/security/auth-pin';
 import type { SalonSettings } from '@/lib/types';
 
 const landingContentPatchSchema = z
@@ -89,6 +90,10 @@ const brandPatchSchema = z
     lockPastBookings: z.boolean(),
     maxActiveBookingsPerClient: z.number().int().min(1).max(20),
     privacyPolicyVersion: z.string().trim().min(1).max(40),
+    noShowDepositThreshold: z.number().int().min(0).max(10),
+    ownerPinEnabled: z.boolean(),
+    ownerPin: z.string().trim().min(4).max(6),
+    clearOwnerPin: z.boolean(),
 
     landingContent: landingContentPatchSchema,
     loyaltyProgram: loyaltyProgramPatchSchema,
@@ -127,8 +132,33 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const parsed = brandPatchSchema.parse(await request.json());
-    const { landingContent, loyaltyProgram, ...rest } = parsed;
+    const {
+      landingContent,
+      loyaltyProgram,
+      ownerPin,
+      clearOwnerPin,
+      ...rest
+    } = parsed;
     const patch: Partial<SalonSettings> = { ...rest };
+
+    if (clearOwnerPin) {
+      patch.ownerPinHash = null;
+      patch.ownerPinEnabled = false;
+    } else if (ownerPin !== undefined) {
+      if (!isValidOwnerPinFormat(ownerPin)) {
+        return NextResponse.json(
+          {
+            code: 'INVALID_OWNER_PIN',
+            error: 'El PIN de dueña debe tener entre 4 y 6 dígitos numéricos.',
+          },
+          { status: 400 },
+        );
+      }
+      patch.ownerPinHash = hashOwnerPin(ownerPin);
+      if (patch.ownerPinEnabled === undefined) {
+        patch.ownerPinEnabled = true;
+      }
+    }
 
     if (parsed.instagramHandle !== undefined) {
       patch.instagramHandle = parsed.instagramHandle.trim()

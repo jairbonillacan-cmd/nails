@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { getRuntimeIntegrationStatus } from '../env';
+import { logWarn } from '../logger';
 import type { PaymentMode } from '../types';
 
 export interface CheckoutSessionResult {
@@ -89,9 +90,18 @@ export async function fetchMercadoPagoPayment(params: {
       },
     },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    logWarn('mercadopago_fetch_payment_failed', {
+      paymentId: params.paymentId,
+      status: res.status,
+    });
+    return null;
+  }
 
-  const payload = (await res.json().catch(() => null)) as {
+  const payload = (await res.json().catch((err) => {
+    logWarn('mercadopago_fetch_payment_json_failed', { error: err });
+    return null;
+  })) as {
     id?: string | number;
     status?: string;
     transaction_amount?: number;
@@ -186,7 +196,13 @@ export async function createDepositCheckoutSession(params: {
     });
 
     if (res.ok) {
-      const json = (await res.json().catch(() => null)) as {
+      const json = (await res.json().catch((err) => {
+        logWarn('mercadopago_preference_json_failed', {
+          bookingCode: params.bookingCode,
+          error: err,
+        });
+        return null;
+      })) as {
         id?: string;
         init_point?: string;
         sandbox_init_point?: string;
@@ -202,6 +218,14 @@ export async function createDepositCheckoutSession(params: {
             'Completa tu anticipo en Mercado Pago para confirmar tu cita automáticamente.',
         };
       }
+      logWarn('mercadopago_preference_missing_url', {
+        bookingCode: params.bookingCode,
+      });
+    } else {
+      logWarn('mercadopago_preference_http_error', {
+        bookingCode: params.bookingCode,
+        status: res.status,
+      });
     }
 
     return {

@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "laikona-nails",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    {
+      "binding": "SALON_MEDIA_BUCKET",
+      "bucket_name": "laikona-nails-media",
+      "preview_bucket_name": "laikona-nails-media-preview"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *", "0 9 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Custom domain route (uncomment once DNS is proxied on Cloudflare with SSL/TLS Full (Strict)):
+  // "routes": [
+  //   {
+  //     "pattern": "laikonanails.com",
+  //     "custom_domain": true
+  //   },
+  //   {
+  //     "pattern": "www.laikonanails.com",
+  //     "custom_domain": true
+  //   }
+  // ]
+}

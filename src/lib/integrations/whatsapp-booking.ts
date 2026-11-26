@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import crypto from 'node:crypto';
 import {
   createBookingAtomic,
@@ -8,6 +9,25 @@ import {
 import { formatDateLongInTimezone, formatTimeInTimezone, getDateKeyInTimezone } from '../format';
 import { getRuntimeIntegrationStatus } from '../env';
 
+const META_HEX_64_RE = /^[0-9a-fA-F]{64}$/;
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function constantTimeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
+  }
+  return diff === 0;
+}
+
 export function verifyMetaWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
@@ -16,7 +36,7 @@ export function verifyMetaWebhookSignature(
   if (!secret) return false;
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
   const providedHex = signatureHeader.slice('sha256='.length);
-  if (!/^[0-9a-fA-F]{64}$/.test(providedHex)) return false;
+  if (!META_HEX_64_RE.test(providedHex)) return false;
   const expectedBuf = crypto
     .createHmac('sha256', secret)
     .update(rawBody, 'utf8')
@@ -24,6 +44,35 @@ export function verifyMetaWebhookSignature(
   const providedBuf = Buffer.from(providedHex.toLowerCase(), 'hex');
   if (providedBuf.length !== expectedBuf.length) return false;
   return crypto.timingSafeEqual(providedBuf, expectedBuf);
+}
+
+export async function verifyMetaWebhookSignatureAsync(
+  rawBody: string,
+  signatureHeader: string | null,
+): Promise<boolean> {
+  const secret = process.env.WHATSAPP_APP_SECRET?.trim();
+  if (!secret) return false;
+  if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
+  const providedHex = signatureHeader.slice('sha256='.length);
+  if (!META_HEX_64_RE.test(providedHex)) return false;
+
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    return verifyMetaWebhookSignature(rawBody, signatureHeader);
+  }
+
+  const encoder = new TextEncoder();
+  const key = await subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signatureBuffer = await subtle.sign('HMAC', key, encoder.encode(rawBody));
+  const expectedBytes = new Uint8Array(signatureBuffer);
+  const providedBytes = hexToBytes(providedHex.toLowerCase());
+  return constantTimeEqualBytes(expectedBytes, providedBytes);
 }
 
 export interface WhatsAppBookingActionInput {

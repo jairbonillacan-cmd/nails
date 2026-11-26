@@ -20,28 +20,42 @@ interface LandingReviewsProps {
 }
 
 export function LandingReviews({ reviews, summary, reviewUrl }: LandingReviewsProps) {
-  const average = summary.average.toFixed(1).replace('.', ',');
+  const average = summary.average.toFixed(1);
   return (
-    <VStack as="section" aria-labelledby="resenas-t" className="lk-section">
-      <VStack gap={8} className="lk-wrap">
+    <VStack as="section" id="resenas" aria-labelledby="resenas-t" className="lk-section">
+      <VStack gap={6} className="lk-wrap">
         <SectionHeading
           id="resenas-t"
           title="De tu idea a tus uñas"
-          subtitle="Lo que dicen quienes ya salieron con su set."
+          subtitle="Opiniones verificadas de clientas que ya salieron con su set."
           tone="cereza"
         />
         <HStack gap={6} align="center" wrap="wrap" className="lk-reveal">
           <VStack gap={1} align="center" style={{ flex: '1 1 13rem', minWidth: 0, textAlign: 'center' }}>
-            <Text weight="bold" size="xl">EXCELENTE</Text>
-            <VStack className="lk-cereza-text">
-              <Text size="3xl" color="inherit" aria-label={`${average} de 5 estrellas`}>★★★★★</Text>
-            </VStack>
-            <Text hasTabularNumbers>
-              {average} · <Text weight="bold" hasTabularNumbers>{summary.count} {summary.count === 1 ? 'reseña' : 'reseñas'}</Text> en Google
-            </Text>
-            <Link href={reviewUrl} isExternalLink>
-              Escribir una reseña
-            </Link>
+            {summary.count > 0 ? (
+              <>
+                <Text weight="bold" size="xl">EXCELENTE</Text>
+                <VStack className="lk-cereza-text">
+                  <Text size="3xl" color="inherit" aria-label={`${average} de 5 estrellas`}>★★★★★</Text>
+                </VStack>
+                <Text hasTabularNumbers>
+                  {average} ·{' '}
+                  <Text weight="bold" hasTabularNumbers>
+                    {summary.count} {summary.count === 1 ? 'reseña' : 'reseñas'}
+                  </Text>{' '}
+                  en Google
+                </Text>
+              </>
+            ) : (
+              <Text color="secondary" textWrap="pretty">
+                Comparte tu experiencia después de tu cita.
+              </Text>
+            )}
+            {reviewUrl ? (
+              <Link href={reviewUrl} isExternalLink>
+                Escribir una reseña
+              </Link>
+            ) : null}
           </VStack>
           {reviews.length > 0 ? (
             <VStack style={{ flex: '999 1 28rem', minWidth: 0, maxWidth: '100%' }}>
@@ -50,7 +64,7 @@ export function LandingReviews({ reviews, summary, reviewUrl }: LandingReviewsPr
                   <VStack
                     key={review.id}
                     gap={3}
-                    padding={6}
+                    padding={5}
                     className="lk-card lk-review fx-card-lift"
                     style={{ width: 'min(20rem, 78vw)' }}
                   >

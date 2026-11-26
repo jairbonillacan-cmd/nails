@@ -9,6 +9,7 @@ import { LANDING_ASSETS } from './landingContent';
 interface LandingFooterProps {
   salonName: string;
   address: string;
+  mapsUrl: string;
   instagramUrl: string;
   whatsappUrl: string;
   year: string;
@@ -21,7 +22,14 @@ const EXPLORE_LINKS = [
   { label: 'Visítanos', href: '#visitanos' },
 ] as const;
 
-export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, year }: LandingFooterProps) {
+export function LandingFooter({
+  salonName,
+  address,
+  mapsUrl,
+  instagramUrl,
+  whatsappUrl,
+  year,
+}: LandingFooterProps) {
   return (
     <VStack as="footer" className="lk-cereza">
       <WaveTop />
@@ -29,8 +37,8 @@ export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, y
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesPorcelain}
         alt=""
-        width={480}
-        height={480}
+        width={488}
+        height={572}
         loading="lazy"
         decoding="async"
         style={{ right: '-4%', bottom: '-10%', width: '34%', opacity: 0.08 }}
@@ -51,7 +59,7 @@ export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, y
               src={LANDING_ASSETS.curvePorcelain}
               alt=""
               width={200}
-              height={40}
+              height={55}
               loading="lazy"
               decoding="async"
               style={{ width: '12.5rem', height: 'auto', opacity: 0.6 }}
@@ -82,12 +90,15 @@ export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, y
           </VStack>
           <VStack gap={1}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Dirección</Text>
-            <Text color="inherit">{address}</Text>
+            <Text color="inherit" textWrap="pretty">{address}</Text>
+            <a className="lk-footer-link" href={mapsUrl} target="_blank" rel="noopener noreferrer">
+              Google Maps →
+            </a>
           </VStack>
           <VStack gap={1}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Horario</Text>
             <Text color="inherit">Lunes a sábado</Text>
-            <Text color="inherit">10:00 a 6:00 · Solo con cita</Text>
+            <Text color="inherit" hasTabularNumbers>10:00 a 6:00 · Solo con cita</Text>
           </VStack>
           <VStack gap={0}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Síguenos</Text>
@@ -111,6 +122,7 @@ export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, y
         <HStack justify="between" wrap="wrap" gap={3} paddingBlockStart={5} className="lk-rule lk-soft">
           <Text type="supporting" color="inherit">© {year} {salonName}</Text>
           <HStack gap={5} wrap="wrap">
+            <NextLink className="lk-footer-link" href="/mis-citas">Mis citas</NextLink>
             <NextLink className="lk-footer-link" href="/aviso-de-privacidad">Aviso de privacidad</NextLink>
             <NextLink className="lk-footer-link" href="/links">Links</NextLink>
           </HStack>

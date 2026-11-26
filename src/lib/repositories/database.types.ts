@@ -69,6 +69,8 @@ export interface Database {
           landing_content: Json;
           whatsapp_booking_enabled: boolean;
           sms_reminders_enabled: boolean;
+          retention_notice_email?: string | null;
+          whatsapp_monthly_quota?: number;
           meta_pixel_id: string | null;
           ga4_measurement_id: string | null;
           google_review_url: string | null;
@@ -809,7 +811,9 @@ export interface Database {
             | 'csv_exported'
             | 'past_booking_override'
             | 'deposit_approved'
-            | 'loyalty_redeemed';
+            | 'loyalty_redeemed'
+            | 'media_retention_warned'
+            | 'media_retention_purged';
           entity_type: string;
           entity_id: string;
           metadata: Json;
@@ -821,6 +825,77 @@ export interface Database {
         > &
           Partial<Database['public']['Tables']['audit_logs']['Row']>;
         Update: Partial<Database['public']['Tables']['audit_logs']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      media_assets: {
+        Row: {
+          id: string;
+          storage_path: string;
+          folder: 'proofs' | 'inspo' | 'gallery';
+          booking_id: string | null;
+          client_id: string | null;
+          content_type: string;
+          size_bytes: number;
+          created_at: string;
+          retention_warned_30d_at: string | null;
+          retention_warned_7d_at: string | null;
+          purged_at: string | null;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['media_assets']['Row'],
+          'storage_path' | 'folder' | 'content_type' | 'size_bytes'
+        > &
+          Partial<Database['public']['Tables']['media_assets']['Row']>;
+        Update: Partial<Database['public']['Tables']['media_assets']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      whatsapp_templates: {
+        Row: {
+          id: string;
+          trigger_key: string;
+          template_name: string;
+          category: 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
+          language_code: string;
+          is_active: boolean;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['whatsapp_templates']['Row'],
+          'trigger_key' | 'template_name'
+        > &
+          Partial<Database['public']['Tables']['whatsapp_templates']['Row']>;
+        Update: Partial<Database['public']['Tables']['whatsapp_templates']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      whatsapp_monthly_usage: {
+        Row: {
+          month_key: string;
+          sent_count: number;
+          quota_limit: number;
+          warned_80_at: string | null;
+          warned_100_at: string | null;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['whatsapp_monthly_usage']['Row'],
+          'month_key'
+        > &
+          Partial<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
+        Update: Partial<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      webhook_events: {
+        Row: {
+          provider: string;
+          event_id: string;
+          received_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['webhook_events']['Row'],
+          'provider' | 'event_id'
+        > &
+          Partial<Database['public']['Tables']['webhook_events']['Row']>;
+        Update: Partial<Database['public']['Tables']['webhook_events']['Row']>;
         Relationships: TableRelationship[];
       };
     };
@@ -881,6 +956,21 @@ export interface Database {
       purge_expired_slot_holds: {
         Args: Record<string, never>;
         Returns: number;
+      };
+      increment_whatsapp_usage: {
+        Args: {
+          p_month_key: string;
+          p_quota_limit?: number;
+          p_increment?: number;
+        };
+        Returns: Array<{
+          month_key: string;
+          sent_count: number;
+          quota_limit: number;
+          warned_80_at: string | null;
+          warned_100_at: string | null;
+          updated_at: string;
+        }>;
       };
     };
     Enums: Record<string, never>;

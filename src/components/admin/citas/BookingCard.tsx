@@ -10,14 +10,11 @@ import { Link } from '@astryxdesign/core/Link';
 import { Divider } from '@astryxdesign/core/Divider';
 import {
   AtSign,
-  Ban,
-  Bell,
   CalendarClock,
   Check,
   DollarSign,
   MessageCircle,
   UserRound,
-  UserX,
 } from 'lucide-react';
 import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import type {
@@ -40,10 +37,10 @@ export const BOOKING_STATUS_BADGE: Record<
 > = {
   confirmed: { label: 'Confirmada', variant: 'success' },
   pending_confirmation: { label: 'Por confirmar', variant: 'warning' },
-  pending_payment: { label: 'Anticipo pendiente', variant: 'warning' },
+  pending_payment: { label: 'Falta anticipo', variant: 'warning' },
   completed: { label: 'Completada', variant: 'info' },
   canceled: { label: 'Cancelada', variant: 'error' },
-  no_show: { label: 'No asistió', variant: 'error' },
+  no_show: { label: 'No llegó', variant: 'error' },
 };
 
 const IG_SAFE_RE = /^[a-zA-Z0-9._]{1,30}$/;
@@ -55,17 +52,22 @@ export function buildInstagramProfileUrl(handle?: string | null): string | null 
   return `https://www.instagram.com/${cleaned}/`;
 }
 
+export function isDisplayableProofImage(url: string | null): url is string {
+  if (!url) return false;
+  return url.startsWith('/api/media/') || url.startsWith('https://');
+}
+
 export function getProofBadgeMeta(
   booking: BookingWithRelations,
 ): { label: string; color: 'green' | 'orange' | 'purple' | 'gray' } | null {
   if (booking.proofDeliveryMethod === 'web_upload' || booking.paymentProofUrl) {
-    return { label: 'Comprobante en web', color: 'green' };
+    return { label: 'Comprobante subido', color: 'green' };
   }
   if (booking.proofDeliveryMethod === 'instagram_dm') {
-    return { label: 'Comprobante por IG DM', color: 'purple' };
+    return { label: 'Comprobante por Instagram', color: 'purple' };
   }
   if (booking.depositAmountCents > 0) {
-    return { label: 'Sin comprobante aún', color: 'orange' };
+    return { label: 'Falta comprobante', color: 'orange' };
   }
   return null;
 }
@@ -77,12 +79,11 @@ interface BookingCardProps {
   salonName: string;
   currency: 'MXN' | 'USD';
   timezone: string;
-  isReminding: boolean;
+  busyStatus?: BookingStatus | null;
   isRequestingReschedule?: boolean;
   onSelectBooking?: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
-  onSendReminder: (bookingId: string) => void;
   onRequestReschedule?: (bookingId: string) => void;
 }
 
@@ -93,14 +94,14 @@ export function BookingCard({
   salonName,
   currency,
   timezone,
-  isReminding,
+  busyStatus = null,
   isRequestingReschedule = false,
   onSelectBooking,
   onUpdateStatus,
   onOpenCheckout,
-  onSendReminder,
   onRequestReschedule,
 }: BookingCardProps) {
+  const isBusy = Boolean(busyStatus);
   const meta = BOOKING_STATUS_BADGE[b.status];
   const extraServiceNames = (b.extraServiceIds ?? [])
     .map((id) => allServices.find((s) => s.id === id)?.name)
@@ -108,12 +109,12 @@ export function BookingCard({
   const igHandle = b.clientInstagram ?? b.client.instagramHandle ?? null;
   const igUrl = buildInstagramProfileUrl(igHandle);
   const proofMeta = getProofBadgeMeta(b);
+  const hasDisplayableProof = isDisplayableProofImage(b.paymentProofUrl);
   const bookingSplits = paymentSplits.filter((s) => s.bookingId === b.id);
   const paymentSummary = computeBookingPaymentSummary(b.totalPriceCents, bookingSplits);
-  const canRemind =
-    b.status === 'confirmed' ||
-    b.status === 'pending_confirmation' ||
-    b.status === 'pending_payment';
+  const isPending =
+    b.status === 'pending_confirmation' || b.status === 'pending_payment';
+  const canReschedule = isPending || b.status === 'confirmed';
   const canCollect =
     b.status === 'confirmed' ||
     (b.status === 'completed' && paymentSummary.isUncollected);
@@ -127,14 +128,47 @@ export function BookingCard({
   );
 
   return (
-    <VStack as="article" className="ad-surface fx-card-lift" data-padded="true" gap={3}>
-      <HStack justify="between" align="start" wrap="wrap" gap={2}>
+    <VStack
+      as="article"
+      className={isBusy ? 'ad-surface fx-card-lift fx-busy' : 'ad-surface fx-card-lift'}
+      data-padded="true"
+      aria-busy={isBusy || undefined}
+      gap={3}
+    >
+      <HStack justify="between" align="start" wrap="wrap" gap={3}>
         <VStack gap={1} className="rb-grow">
           <HStack gap={2} align="center" wrap="wrap">
-            <Text weight="semibold" size="lg">
-              {b.client.fullName}
-            </Text>
+            {onSelectBooking ? (
+              <button
+                type="button"
+                className="ad-inline-link fx-press"
+                disabled={isBusy}
+                onClick={() => onSelectBooking(b)}
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  padding: 0,
+                  font: 'inherit',
+                  textAlign: 'start',
+                  cursor: 'pointer',
+                  color: 'var(--color-text-primary)',
+                }}
+              >
+                <Text weight="semibold" size="lg">
+                  {b.client.fullName}
+                </Text>
+              </button>
+            ) : (
+              <Text weight="semibold" size="lg">
+                {b.client.fullName}
+              </Text>
+            )}
             <Badge variant={meta.variant} label={meta.label} />
+            {isBusy ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Actualizando...
+              </Text>
+            ) : null}
             {b.status !== 'canceled' && b.status !== 'no_show' ? (
               <Text
                 color="inherit"
@@ -144,7 +178,7 @@ export function BookingCard({
               >
                 {paymentSummary.isFullyPaid
                   ? 'Pagado'
-                  : `Saldo ${formatCurrency(paymentSummary.remainingCents, currency)}`}
+                  : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`}
               </Text>
             ) : null}
             <Token size="sm" label={b.bookingCode} />
@@ -155,10 +189,10 @@ export function BookingCard({
                 b.source === 'whatsapp'
                   ? 'WhatsApp'
                   : b.source === 'walk_in'
-                    ? 'Walk-in'
+                    ? 'Llegó sin cita'
                     : b.source === 'manual'
-                      ? 'Manual'
-                      : 'Web'
+                      ? 'En salón'
+                      : 'En línea'
               }
             />
           </HStack>
@@ -175,7 +209,7 @@ export function BookingCard({
             {formatDateShortInTimezone(b.startAt, timezone)} ·{' '}
             {formatTimeInTimezone(b.startAt, timezone, true)} –{' '}
             {formatTimeInTimezone(b.endAt, timezone, true)} (
-            {formatDuration(b.totalDurationMinutes)}) · Especialista: {b.staff.name}
+            {formatDuration(b.totalDurationMinutes)}) · Manicurista: {b.staff.name}
           </Text>
 
           <HStack gap={2} align="center" wrap="wrap">
@@ -201,7 +235,7 @@ export function BookingCard({
 
           {b.clientNotes ? (
             <Text type="supporting" color="secondary">
-              Nota clienta: {b.clientNotes}
+              Nota de la clienta: {b.clientNotes}
             </Text>
           ) : null}
           {b.internalNotes ? (
@@ -211,89 +245,58 @@ export function BookingCard({
           ) : null}
         </VStack>
 
-        <VStack align="end" gap={0.5}>
-          <Text className="lk-serif ad-h2 fx-tabular" hasTabularNumbers>
-            {formatCurrency(b.totalPriceCents, currency)}
-          </Text>
-          <Text type="supporting" color="secondary" hasTabularNumbers>
-            {b.client.phoneE164}
-          </Text>
-        </VStack>
+        <HStack gap={3} align="center">
+          {hasDisplayableProof && b.paymentProofUrl && onSelectBooking ? (
+            <button
+              type="button"
+              className="ad-proof-thumb"
+              aria-label={`Ver comprobante de ${b.client.fullName}`}
+              onClick={() => onSelectBooking(b)}
+            >
+              <img
+                src={b.paymentProofUrl}
+                alt={`Comprobante de anticipo de ${b.client.fullName}`}
+              />
+            </button>
+          ) : null}
+          <VStack align="end" gap={0.5}>
+            <Text className="lk-serif ad-h2 fx-tabular" hasTabularNumbers>
+              {formatCurrency(b.totalPriceCents, currency)}
+            </Text>
+            <Text type="supporting" color="secondary" hasTabularNumbers>
+              {b.client.phoneE164}
+            </Text>
+          </VStack>
+        </HStack>
       </HStack>
 
       <Divider />
 
       <HStack gap={2} wrap="wrap" justify="between" align="center">
         <HStack gap={1.5} wrap="wrap">
-          {b.status === 'pending_confirmation' || b.status === 'pending_payment' ? (
+          {isPending ? (
             <Button
-              label="Confirmar"
+              type="button"
+              label={busyStatus === 'confirmed' ? 'Confirmando...' : 'Confirmar'}
               variant="primary"
               size="sm"
               icon={<Check size={14} />}
+              isLoading={busyStatus === 'confirmed'}
+              isDisabled={isBusy}
               onClick={() => onUpdateStatus(b.id, 'confirmed')}
             />
           ) : null}
           {canCollect ? (
             <Button
+              type="button"
               label="Cobrar"
               variant="primary"
               size="sm"
               icon={<DollarSign size={14} aria-hidden="true" />}
+              isDisabled={isBusy}
               onClick={() => onOpenCheckout(b)}
             />
           ) : null}
-          {onSelectBooking ? (
-            <Button
-              label="Gestionar"
-              variant="secondary"
-              size="sm"
-              onClick={() => onSelectBooking(b)}
-            />
-          ) : null}
-          {canRemind ? (
-            <Button
-              label="Enviar recordatorio"
-              variant="secondary"
-              size="sm"
-              icon={<Bell size={14} />}
-              isLoading={isReminding}
-              onClick={() => onSendReminder(b.id)}
-            />
-          ) : null}
-          {canRemind && onRequestReschedule ? (
-            <Button
-              label="Solicitar reprogramación"
-              variant="secondary"
-              size="sm"
-              icon={<CalendarClock size={14} />}
-              isLoading={isRequestingReschedule}
-              onClick={() => onRequestReschedule(b.id)}
-            />
-          ) : null}
-          {b.status === 'confirmed' ? (
-            <Button
-              label="No asistió"
-              variant="secondary"
-              size="sm"
-              icon={<UserX size={14} />}
-              onClick={() => onUpdateStatus(b.id, 'no_show')}
-            />
-          ) : null}
-          {b.status !== 'canceled' &&
-          b.status !== 'completed' &&
-          b.status !== 'no_show' ? (
-            <Button
-              label="Cancelar"
-              variant="ghost"
-              size="sm"
-              icon={<Ban size={14} />}
-              onClick={() => onUpdateStatus(b.id, 'canceled')}
-            />
-          ) : null}
-        </HStack>
-
-        <HStack gap={1.5} wrap="wrap">
           <Button
             label="WhatsApp"
             variant="secondary"
@@ -303,18 +306,37 @@ export function BookingCard({
             target="_blank"
             rel="noopener noreferrer"
           />
+          {onSelectBooking ? (
+            <Button
+              type="button"
+              label="Ver opciones"
+              variant="secondary"
+              size="sm"
+              isDisabled={isBusy}
+              onClick={() => onSelectBooking(b)}
+            />
+          ) : null}
+        </HStack>
+
+        <HStack gap={1.5} wrap="wrap">
+          {canReschedule && onRequestReschedule ? (
+            <Button
+              type="button"
+              label={isRequestingReschedule ? 'Generando...' : 'Reagendar'}
+              variant="ghost"
+              size="sm"
+              icon={<CalendarClock size={14} />}
+              isLoading={isRequestingReschedule}
+              isDisabled={isBusy || isRequestingReschedule}
+              onClick={() => onRequestReschedule(b.id)}
+            />
+          ) : null}
           <Button
-            label="Ver ficha"
+            label="Ver clienta"
             variant="ghost"
             size="sm"
             icon={<UserRound size={14} />}
             href={`/admin/clientas?q=${encodeURIComponent(b.client.phoneE164)}`}
-          />
-          <Button
-            label="Link clienta"
-            variant="ghost"
-            size="sm"
-            href={`/cita/${b.manageToken}`}
           />
         </HStack>
       </HStack>

@@ -1,5 +1,8 @@
 node_modules/
 .next/
+.next-preview/
+.open-next/
+.wrangler/
 out/
 .env
 .env.local

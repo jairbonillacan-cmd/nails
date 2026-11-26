@@ -1,4 +1,4 @@
-import type { AvailableSlot } from '@/lib/availability/engine';
+import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import {
   formatCurrency,
   formatDateLongInTimezone,
@@ -13,8 +13,125 @@ import type { ServiceAddon } from '@/lib/types';
 
 export type ProofDeliveryMethod = 'web_upload' | 'instagram_dm' | 'none';
 
+export interface AvailabilityCacheKeyInput {
+  serviceId: string;
+  extraServiceIds: readonly string[];
+  addonIds: readonly string[];
+  staffId: string;
+  windowStartDate: string;
+}
+
+export interface ClientFieldErrors {
+  name: string | null;
+  phone: string | null;
+}
+
 const DEFAULT_INSTAGRAM_HANDLE = '@laikona.nailsss';
 const DEFAULT_INSTAGRAM_URL = 'https://www.instagram.com/laikona.nailsss/';
+const MAX_BOOKING_IMAGE_BYTES = 2_500_000;
+const ALLOWED_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const ALLOWED_IMAGE_EXT_RE = /\.(png|jpe?g|webp)$/i;
+const LOCAL_RASTER_IMAGE_RE = /^\/(?:landing|brand)\/.+\.(?:webp|jpe?g|png|avif)$/i;
+
+export function normalizeUniqueSortedIds(
+  ids: readonly string[],
+  excludeId?: string,
+): string[] {
+  const cleanedExclude = excludeId?.trim() ?? '';
+  const unique = new Set<string>();
+  for (const raw of ids) {
+    const trimmed = raw.trim();
+    if (trimmed && trimmed !== cleanedExclude) {
+      unique.add(trimmed);
+    }
+  }
+  return Array.from(unique).toSorted((a, b) => a.localeCompare(b));
+}
+
+export function buildAvailabilityCacheKey(
+  input: AvailabilityCacheKeyInput,
+): string {
+  const serviceId = input.serviceId.trim();
+  const extraKey = normalizeUniqueSortedIds(input.extraServiceIds, serviceId).join(',');
+  const addonKey = normalizeUniqueSortedIds(input.addonIds).join(',');
+  const staffId = input.staffId.trim() || 'any';
+  const windowStartDate = input.windowStartDate.trim();
+  return `${serviceId}|${extraKey}|${addonKey}|${staffId}|${windowStartDate}`;
+}
+
+function stripMxCountryPrefix(digits: string): string {
+  if (digits.length === 13 && digits.startsWith('521')) {
+    return digits.slice(3);
+  }
+  if (digits.length === 12 && digits.startsWith('52')) {
+    return digits.slice(2);
+  }
+  return digits;
+}
+
+export function extractMxPhoneDigits(raw: string): string {
+  return stripMxCountryPrefix(raw.replace(/\D/g, '')).slice(0, 10);
+}
+
+export function formatMxPhoneDisplay(raw: string): string {
+  const digits = extractMxPhoneDigits(raw);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  }
+  return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 10)}`;
+}
+
+export function isValidMxPhone(raw: string): boolean {
+  return stripMxCountryPrefix(raw.replace(/\D/g, '')).length === 10;
+}
+
+export function validateClientBookingFields(
+  name: string,
+  phone: string,
+): ClientFieldErrors {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return {
+    name: words.length >= 2 ? null : 'Escribe tu nombre y apellido.',
+    phone: isValidMxPhone(phone) ? null : 'Tu WhatsApp debe tener 10 dígitos.',
+  };
+}
+
+export function isOptimizableLocalRasterImage(src: string): boolean {
+  const trimmed = src.trim();
+  if (!trimmed) return false;
+  if (
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('/api/media/') ||
+    trimmed.toLowerCase().endsWith('.svg')
+  ) {
+    return false;
+  }
+  return LOCAL_RASTER_IMAGE_RE.test(trimmed);
+}
+
+export function resolveEffectiveSelectedDate(
+  selectedDate: string,
+  days: readonly DayAvailabilitySummary[],
+): string {
+  if (days.length === 0) return selectedDate;
+  const currentDay = days.find((d) => d.date === selectedDate);
+  if (
+    currentDay &&
+    (currentDay.hasSlots || currentDay.publicNote || currentDay.redirectStaffId)
+  ) {
+    return selectedDate;
+  }
+  return days.find((d) => d.hasSlots)?.date ?? days[0]?.date ?? selectedDate;
+}
+
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
 
 export function formatServicePrice(
   priceCents: number,
@@ -27,16 +144,23 @@ export function formatServicePrice(
 
 export function getStaffScheduleLabel(
   staff: Pick<PublicStaffDTO, 'id' | 'bookingSlug' | 'name'>,
+  timeFormat: '12h' | '24h' = '12h',
 ): string | null {
   const key = (staff.bookingSlug || staff.name).trim().toLowerCase();
   if (key === 'karla' || staff.id === 'staff-karla') {
-    return 'Lun–Sáb · 10:00 · 1:30 · 4:30';
+    return timeFormat === '24h'
+      ? 'Lun–Sáb · 10:00 · 13:30 · 16:30'
+      : 'Lun–Sáb · 10:00 · 1:30 · 4:30';
   }
   if (key === 'paty' || staff.id === 'staff-paty') {
-    return 'Lun–Sáb · 10:00 · 1:30 · 4:30';
+    return timeFormat === '24h'
+      ? 'Lun–Sáb · 10:00 · 13:30 · 16:30'
+      : 'Lun–Sáb · 10:00 · 1:30 · 4:30';
   }
   if (key === 'tere' || staff.id === 'staff-tere') {
-    return 'Lun–Sáb · 2:00 · 4:00 · 6:00';
+    return timeFormat === '24h'
+      ? 'Lun–Sáb · 14:00 · 16:00 · 18:00'
+      : 'Lun–Sáb · 2:00 · 4:00 · 6:00';
   }
   return null;
 }
@@ -133,10 +257,101 @@ export function buildInstagramDmSummary(input: {
   return lines.join('\n');
 }
 
-export function readFileAsDataUrl(file: File): Promise<string> {
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${Math.max(0, Math.round(bytes))} B`;
+  }
+  if (bytes < 1_048_576) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
+function detectImageSignature(
+  bytes: Uint8Array,
+): 'image/png' | 'image/jpeg' | 'image/webp' | null {
+  if (
+    bytes.byteLength >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+  if (
+    bytes.byteLength >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff
+  ) {
+    return 'image/jpeg';
+  }
+  if (
+    bytes.byteLength >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+export async function validateClientImageFile(file: File): Promise<string | null> {
+  if (file.size <= 0) {
+    return 'El archivo está vacío. Elige una imagen PNG, JPG o WEBP.';
+  }
+  if (file.size > MAX_BOOKING_IMAGE_BYTES) {
+    return `La imagen pesa ${formatFileSize(file.size)} y supera el máximo de 2.5 MB. Comprímela o elige otra.`;
+  }
+  const declaredMime = file.type.trim().toLowerCase();
+  if (declaredMime) {
+    if (!ALLOWED_IMAGE_MIMES.has(declaredMime)) {
+      return 'Formato no compatible. Sube únicamente una imagen PNG, JPG o WEBP.';
+    }
+  } else if (!ALLOWED_IMAGE_EXT_RE.test(file.name)) {
+    return 'Formato no compatible. Sube únicamente una imagen PNG, JPG o WEBP.';
+  }
+
+  try {
+    const headerBuffer = await file.slice(0, 12).arrayBuffer();
+    const detected = detectImageSignature(new Uint8Array(headerBuffer));
+    if (!detected) {
+      return 'El archivo no parece ser una imagen PNG, JPG o WEBP válida.';
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function readFileAsDataUrl(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
+    onProgress?.(12);
+    reader.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        const pct = Math.min(95, Math.max(15, Math.round((event.loaded / event.total) * 100)));
+        onProgress?.(pct);
+      }
+    };
+    reader.onload = () => {
+      onProgress?.(100);
+      resolve(String(reader.result || ''));
+    };
     reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
     reader.readAsDataURL(file);
   });

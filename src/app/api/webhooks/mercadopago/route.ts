@@ -3,6 +3,7 @@ import {
   fetchMercadoPagoPayment,
   verifyMercadoPagoWebhookSignature,
 } from '@/lib/integrations/payments';
+import { logError, logWarn } from '@/lib/logger';
 import { confirmBookingDepositFromWebhook } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) {
+    logError('webhook_mercadopago_missing_secret');
     return NextResponse.json(
       { error: 'MERCADOPAGO_WEBHOOK_SECRET no configurado' },
       { status: 503 },
@@ -24,7 +26,8 @@ export async function POST(request: NextRequest) {
   };
   try {
     body = (await request.json()) as typeof body;
-  } catch {
+  } catch (err) {
+    logWarn('webhook_mercadopago_invalid_json', { error: err });
     return NextResponse.json({ error: 'Payload JSON inválido' }, { status: 400 });
   }
 
@@ -50,6 +53,7 @@ export async function POST(request: NextRequest) {
       secret: webhookSecret,
     })
   ) {
+    logWarn('webhook_mercadopago_invalid_signature', { requestId, dataId });
     return NextResponse.json(
       { error: 'Firma de webhook de Mercado Pago inválida' },
       { status: 401 },
@@ -57,11 +61,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (!dataId) {
+    logWarn('webhook_mercadopago_missing_data_id', { requestId });
     return NextResponse.json({ error: 'data.id faltante' }, { status: 400 });
   }
 
   const payment = await fetchMercadoPagoPayment({ paymentId: dataId });
   if (!payment) {
+    logError('webhook_mercadopago_payment_lookup_failed', { dataId, requestId });
     return NextResponse.json(
       { error: 'No se pudo verificar el estado del pago con Mercado Pago' },
       { status: 502 },

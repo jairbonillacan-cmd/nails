@@ -9,6 +9,7 @@ import {
   updateWaitlistStatus,
   updateWorkflow,
   upsertCoupon,
+  verifyStoredOwnerPin,
 } from '@/lib/repositories/db';
 import { serializeCsv } from '@/lib/sanitize';
 
@@ -24,6 +25,21 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   if (searchParams.get('export') === 'csv') {
+    const providedPin = request.headers.get('x-owner-pin') ?? undefined;
+    const pinCheck = verifyStoredOwnerPin(providedPin);
+    if (pinCheck.required && !pinCheck.valid) {
+      const hasAttempt = Boolean(providedPin?.trim());
+      return NextResponse.json(
+        {
+          code: hasAttempt ? 'OWNER_PIN_INVALID' : 'OWNER_PIN_REQUIRED',
+          error: hasAttempt
+            ? 'El PIN de autorización de dueña es incorrecto.'
+            : 'Exportar el reporte CSV requiere el PIN de autorización de dueña.',
+        },
+        { status: 403 },
+      );
+    }
+
     const db = getSnapshot();
     const headers = [
       'Fecha',

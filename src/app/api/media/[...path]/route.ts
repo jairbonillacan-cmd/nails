@@ -1,119 +1,27 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
+import { constantTimeEqual, requireAdmin } from '@/lib/auth/admin-session';
+import { readClientPortalSession } from '@/lib/auth/client-portal-otp';
+import { normalizePhoneE164 } from '@/lib/format';
+import { logError } from '@/lib/logger';
+import { getMediaAccessOwner } from '@/lib/repositories/db';
 import {
-  detectImageMimeFromMagicBytes,
-  type AllowedMediaMime,
-  type MediaFolder,
+  parseSafeMediaPath,
+  readStoredMedia,
+  verifyMediaSignature,
 } from '@/lib/storage/media';
+import type { MediaAccessOwner } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
-
-const DEFAULT_UPLOADS_DIR = path.join(process.cwd(), '.nails-demo-uploads');
-const SAFE_FILENAME_RE = /^[a-zA-Z0-9_-]+\.(png|jpg|webp)$/;
-const EXT_TO_MIME: Record<string, AllowedMediaMime> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  webp: 'image/webp',
-};
-
-function isAllowedFolder(value: string): value is MediaFolder {
-  return value === 'inspo' || value === 'proofs';
-}
-
-function readContainedFile(
-  folderDir: string,
-  targetPath: string,
-): { status: 200; bytes: Buffer } | { status: 403 | 404 } {
-  if (!targetPath.startsWith(folderDir + path.sep)) {
-    return { status: 403 };
-  }
-
-  let folderStat: fs.Stats;
-  let fileStat: fs.Stats;
-  try {
-    folderStat = fs.lstatSync(folderDir);
-    fileStat = fs.lstatSync(targetPath);
-  } catch {
-    return { status: 404 };
-  }
-
-  if (!folderStat.isDirectory() || folderStat.isSymbolicLink()) {
-    return { status: 403 };
-  }
-  if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
-    return { status: 403 };
-  }
-
-  const realFolder = fs.realpathSync(folderDir);
-  const realFile = fs.realpathSync(targetPath);
-  if (!realFile.startsWith(realFolder + path.sep)) {
-    return { status: 403 };
-  }
-
-  return { status: 200, bytes: fs.readFileSync(realFile) };
-}
-
-function readSafeDemoMediaBytes(
-  folder: MediaFolder,
-  fileName: string,
-): { status: 200; bytes: Buffer } | { status: 403 | 404 } {
-  if (process.env.NODE_ENV === 'test') {
-    const customDir = process.env.NAILS_DEMO_UPLOADS_DIR?.trim();
-    if (customDir) {
-      const resolvedRoot = path.resolve(customDir);
-      const folderDir = path.resolve(resolvedRoot, folder);
-      if (!folderDir.startsWith(resolvedRoot + path.sep)) {
-        return { status: 403 };
-      }
-      return readContainedFile(folderDir, path.resolve(folderDir, fileName));
-    }
-  }
-
-  const resolvedRoot = path.resolve(DEFAULT_UPLOADS_DIR);
-  const folderDir = path.resolve(resolvedRoot, folder);
-  if (!folderDir.startsWith(resolvedRoot + path.sep)) {
-    return { status: 403 };
-  }
-  const targetPath = path.resolve(folderDir, fileName);
-  if (!targetPath.startsWith(folderDir + path.sep)) {
-    return { status: 403 };
-  }
-
-  let folderStat: fs.Stats;
-  let fileStat: fs.Stats;
-  try {
-    folderStat = fs.lstatSync(folderDir);
-    fileStat = fs.lstatSync(targetPath);
-  } catch {
-    return { status: 404 };
-  }
-  if (
-    !folderStat.isDirectory() ||
-    folderStat.isSymbolicLink() ||
-    !fileStat.isFile() ||
-    fileStat.isSymbolicLink()
-  ) {
-    return { status: 403 };
-  }
-
-  const realFolder = fs.realpathSync(folderDir);
-  const realFile = fs.realpathSync(targetPath);
-  if (!realFile.startsWith(realFolder + path.sep)) {
-    return { status: 403 };
-  }
-
-  return { status: 200, bytes: fs.readFileSync(realFile) };
-}
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
 ) {
-  const rawPathname = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const rawPathname = url.pathname;
   if (
     rawPathname.includes('..') ||
+    rawPathname.includes('\\') ||
     rawPathname.toLowerCase().includes('%2e') ||
     rawPathname.toLowerCase().includes('%5c') ||
     rawPathname.includes('\0')
@@ -128,42 +36,118 @@ export async function GET(
 
   const folder = segments[0] ?? '';
   const fileName = segments[1] ?? '';
-
-  if (
-    !isAllowedFolder(folder) ||
-    !SAFE_FILENAME_RE.test(fileName) ||
-    path.isAbsolute(fileName)
-  ) {
+  const parsed = parseSafeMediaPath(`${folder}/${fileName}`);
+  if (!parsed) {
     return NextResponse.json({ error: 'Archivo no permitido.' }, { status: 400 });
   }
 
-  const ext = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase();
-  const expectedMime = EXT_TO_MIME[ext];
-  if (!expectedMime) {
-    return NextResponse.json({ error: 'Extensión no permitida.' }, { status: 400 });
+  const storagePath = parsed.storagePath;
+  let ownerLoaded = false;
+  let ownerRecord: MediaAccessOwner | null = null;
+  async function loadOwner(): Promise<MediaAccessOwner | null> {
+    if (!ownerLoaded) {
+      ownerLoaded = true;
+      ownerRecord = await getMediaAccessOwner(storagePath);
+    }
+    return ownerRecord;
   }
 
-  const readResult = readSafeDemoMediaBytes(folder, fileName);
-  if (readResult.status !== 200) {
+  let authorized = false;
+  let forbiddenAttempt = false;
+
+  const adminSession = await requireAdmin(undefined, request);
+  if (adminSession) {
+    if (adminSession.user.role === 'owner' || adminSession.user.role === 'admin') {
+      authorized = true;
+    } else {
+      const owner = await loadOwner();
+      if (
+        owner?.staffId &&
+        adminSession.user.staffMemberId &&
+        owner.staffId === adminSession.user.staffMemberId
+      ) {
+        authorized = true;
+      } else {
+        forbiddenAttempt = true;
+      }
+    }
+  }
+
+  if (!authorized) {
+    const expParam = url.searchParams.get('exp');
+    const sigParam = url.searchParams.get('sig');
+    if (expParam !== null && sigParam !== null) {
+      if (verifyMediaSignature(storagePath, expParam, sigParam)) {
+        authorized = true;
+      }
+    }
+  }
+
+  if (!authorized) {
+    const tokenParam = url.searchParams.get('token')?.trim() ?? '';
+    if (tokenParam.length > 0) {
+      const owner = await loadOwner();
+      if (owner?.manageToken && constantTimeEqual(tokenParam, owner.manageToken)) {
+        authorized = true;
+      } else {
+        forbiddenAttempt = true;
+      }
+    }
+  }
+
+  if (!authorized) {
+    const portalSession = await readClientPortalSession(request);
+    if (portalSession) {
+      const owner = await loadOwner();
+      if (
+        owner?.clientPhoneE164 &&
+        constantTimeEqual(
+          normalizePhoneE164(portalSession.phoneE164),
+          normalizePhoneE164(owner.clientPhoneE164),
+        )
+      ) {
+        authorized = true;
+      } else {
+        forbiddenAttempt = true;
+      }
+    }
+  }
+
+  if (!authorized) {
+    if (forbiddenAttempt) {
+      return NextResponse.json({ error: 'Acceso denegado.' }, { status: 403 });
+    }
+    return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
+  }
+
+  try {
+    const readResult = await readStoredMedia(storagePath);
+    if (readResult.status !== 200) {
+      const errorMessage =
+        readResult.status === 404
+          ? 'Archivo no encontrado.'
+          : readResult.status === 403
+            ? 'Acceso denegado.'
+            : 'Contenido de imagen inválido.';
+      return NextResponse.json({ error: errorMessage }, { status: readResult.status });
+    }
+
+    return new NextResponse(new Uint8Array(readResult.bytes), {
+      status: 200,
+      headers: {
+        'Content-Type': readResult.contentType,
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': `inline; filename="${parsed.fileName}"`,
+        'Cache-Control': 'private, max-age=300, no-store',
+        Vary: 'Cookie',
+      },
+    });
+  } catch (err) {
+    logError('media_route_read_failed', { storagePath, error: err });
     return NextResponse.json(
-      { error: readResult.status === 403 ? 'Acceso denegado.' : 'Archivo no encontrado.' },
-      { status: readResult.status },
+      { error: 'Error al obtener la imagen.' },
+      { status: 500 },
     );
   }
-
-  const detectedMime = detectImageMimeFromMagicBytes(readResult.bytes);
-  if (!detectedMime || detectedMime !== expectedMime) {
-    return NextResponse.json({ error: 'Contenido de imagen inválido.' }, { status: 400 });
-  }
-
-  return new NextResponse(new Uint8Array(readResult.bytes), {
-    status: 200,
-    headers: {
-      'Content-Type': detectedMime,
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'; sandbox",
-      'Content-Disposition': `inline; filename="${fileName}"`,
-      'Cache-Control': 'private, max-age=3600',
-    },
-  });
 }

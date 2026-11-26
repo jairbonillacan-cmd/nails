@@ -1,25 +1,53 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import type { PublicServiceDTO } from '@/lib/public-dto';
 import { SectionHeading, WaveBottom, WaveTop } from './LandingParts';
 import {
   GALLERY_INITIAL_COUNT,
   LANDING_ASSETS,
-  LANDING_GALLERY,
+  LANDING_CREATIONS,
   galleryTileClass,
+  galleryTileSizes,
 } from './landingContent';
+
+const LandingCreationLightbox = dynamic(
+  () => import('./LandingCreationLightbox').then((mod) => mod.LandingCreationLightbox),
+  { ssr: false },
+);
 
 interface LandingCreationsProps {
   instagramUrl: string;
   instagramHandle: string;
+  services: PublicServiceDTO[];
 }
 
-export function LandingCreations({ instagramUrl, instagramHandle }: LandingCreationsProps) {
+export function LandingCreations({
+  instagramUrl,
+  instagramHandle,
+  services,
+}: LandingCreationsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const photos = isExpanded ? LANDING_GALLERY : LANDING_GALLERY.slice(0, GALLERY_INITIAL_COUNT);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const creations = isExpanded
+    ? LANDING_CREATIONS
+    : LANDING_CREATIONS.slice(0, GALLERY_INITIAL_COUNT);
+
+  const toggleExpanded = () => {
+    setIsExpanded((value) => {
+      const next = !value;
+      if (!next && selectedIndex !== null && selectedIndex >= GALLERY_INITIAL_COUNT) {
+        setSelectedIndex(null);
+      }
+      return next;
+    });
+  };
 
   return (
     <VStack as="section" id="galeria" aria-labelledby="creaciones-t" className="lk-cereza">
@@ -28,8 +56,8 @@ export function LandingCreations({ instagramUrl, instagramHandle }: LandingCreat
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesWhite}
         alt=""
-        width={760}
-        height={760}
+        width={488}
+        height={572}
         loading="lazy"
         decoding="async"
         style={{ right: '-8%', top: '3%', width: '52%' }}
@@ -38,33 +66,61 @@ export function LandingCreations({ instagramUrl, instagramHandle }: LandingCreat
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesWhite}
         alt=""
-        width={560}
-        height={560}
+        width={366}
+        height={429}
         loading="lazy"
         decoding="async"
         style={{ left: '-10%', top: '48%', width: '38%', opacity: 0.05 }}
       />
-      <VStack gap={8} className="lk-wrap" paddingBlockStart={6} paddingBlockEnd={10} style={{ position: 'relative' }}>
+      <VStack
+        gap={6}
+        className="lk-wrap"
+        paddingBlockStart={6}
+        paddingBlockEnd={10}
+        style={{ position: 'relative' }}
+      >
         <SectionHeading
           id="creaciones-t"
           title="Algunas de nuestras creaciones"
-          subtitle="Del french minimal al 3D con charms."
+          subtitle="Del french minimal al 3D con charms. Toca cualquier set para apartarlo."
           tone="light"
         />
         <ul className="lk-bento" aria-label="Sets de uñas">
-          {photos.map((src, index) => {
+          {creations.map((creation, index) => {
             const tile = galleryTileClass(index);
             const motion = index >= GALLERY_INITIAL_COUNT ? 'fx-fade-up' : 'lk-pop';
             return (
-              <li key={src} className={tile ? `${tile} ${motion}` : motion}>
-                <img
-                  src={src}
-                  alt={`Set de uñas ${index + 1} hecho en Laikona`}
-                  width={600}
-                  height={750}
-                  loading="lazy"
-                  decoding="async"
-                />
+              <li key={creation.src} className={tile ? `${tile} ${motion}` : motion}>
+                <button
+                  type="button"
+                  className="lk-bento-btn"
+                  aria-haspopup="dialog"
+                  aria-label={`Ver diseño ${creation.title} — Quiero este diseño`}
+                  onClick={() => setSelectedIndex(index)}
+                >
+                  <Image
+                    src={creation.src}
+                    alt={`Set ${creation.title} hecho en Laikona`}
+                    width={creation.width}
+                    height={creation.height}
+                    sizes={galleryTileSizes(index)}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <HStack
+                    className="lk-bento-cap"
+                    wrap="wrap"
+                    aria-hidden="true"
+                    style={{ boxSizing: 'border-box' }}
+                  >
+                    <Text type="supporting" weight="semibold" color="inherit" maxLines={1}>
+                      {creation.title}
+                    </Text>
+                    <Text className="lk-bento-pill" color="accent">
+                      Quiero este diseño
+                    </Text>
+                  </HStack>
+                </button>
               </li>
             );
           })}
@@ -76,7 +132,7 @@ export function LandingCreations({ instagramUrl, instagramHandle }: LandingCreat
             size="lg"
             className="lk-btn-light fx-press"
             aria-expanded={isExpanded}
-            onClick={() => setIsExpanded((value) => !value)}
+            onClick={toggleExpanded}
           />
           <Button
             label={instagramHandle}
@@ -100,6 +156,15 @@ export function LandingCreations({ instagramUrl, instagramHandle }: LandingCreat
         </HStack>
       </VStack>
       <WaveBottom />
+
+      {selectedIndex !== null ? (
+        <LandingCreationLightbox
+          creations={creations}
+          activeIndex={selectedIndex}
+          services={services}
+          onChangeIndex={setSelectedIndex}
+        />
+      ) : null}
     </VStack>
   );
 }

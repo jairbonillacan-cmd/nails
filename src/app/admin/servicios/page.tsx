@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -43,6 +44,10 @@ import {
   AdminConfigSkeleton,
   type AdminConfigKpiItem,
 } from '@/components/admin/config/AdminConfigPrimitives';
+import {
+  isOptimizableLocalRasterImage,
+  servicePhoto,
+} from '@/components/landing/landingContent';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import type { Service, ServiceAddon } from '@/lib/types';
@@ -79,17 +84,68 @@ function buildNewServiceDraft(
   };
 }
 
+function ServiceThumbnail({
+  slug,
+  imageUrl,
+  size = 'row',
+}: {
+  slug: string;
+  imageUrl: string | null;
+  size?: 'row' | 'preview';
+}) {
+  const src = servicePhoto(slug, imageUrl);
+  const usesOptimized = isOptimizableLocalRasterImage(src);
+  const dim = size === 'preview' ? '4.5rem' : '3.75rem';
+  const style: React.CSSProperties = {
+    width: dim,
+    height: dim,
+    aspectRatio: '1 / 1',
+    borderRadius: 'var(--radius-md)',
+    objectFit: 'cover',
+    flexShrink: 0,
+    display: 'block',
+  };
+
+  if (usesOptimized) {
+    return (
+      <Image
+        src={src}
+        alt=""
+        width={160}
+        height={160}
+        sizes={dim}
+        loading="lazy"
+        decoding="async"
+        style={style}
+      />
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      width={160}
+      height={160}
+      loading="lazy"
+      decoding="async"
+      style={style}
+    />
+  );
+}
+
 export default function AdminServicesPage() {
   const { data, loading, refresh } = useAdminData();
   const [section, setSection] = useState('services');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [editing, setEditing] = useState<Partial<Service> | null>(null);
-  const [bufferEnabledOverride, setBufferEnabledOverride] = useState<boolean | null>(null);
+  const [cleanupEnabledOverride, setCleanupEnabledOverride] = useState<boolean | null>(null);
   const [savingService, setSavingService] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const copyFeedback = useEphemeralMessage(2400);
+  const saveNotice = useEphemeralMessage(3200);
   const [savedMsg, setSavedMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(
     null,
   );
@@ -111,7 +167,7 @@ export default function AdminServicesPage() {
   }, [data]);
 
   if (loading || !data) {
-    return <AdminConfigSkeleton kpiCount={4} withSplit />;
+    return <AdminConfigSkeleton kpiCount={3} withSplit />;
   }
 
   const currency = data.settings.currency;
@@ -123,9 +179,9 @@ export default function AdminServicesPage() {
     ? (data.services.find((s) => s.id === activeDraft.id) ?? null)
     : null;
 
-  const hasBuffer =
-    bufferEnabledOverride !== null
-      ? bufferEnabledOverride
+  const hasCleanupTime =
+    cleanupEnabledOverride !== null
+      ? cleanupEnabledOverride
       : (activeDraft.bufferBeforeMinutes ?? 0) > 0 ||
         (activeDraft.bufferAfterMinutes ?? 0) > 0;
 
@@ -160,23 +216,20 @@ export default function AdminServicesPage() {
       id: 'active-services',
       label: 'Servicios activos',
       value: String(activeServicesCount),
-      sub: `de ${data.services.length} en catálogo`,
-    },
-    {
-      id: 'vip-services',
-      label: 'Enlaces VIP',
-      value: String(privateServicesCount),
-      sub: privateServicesCount > 0 ? 'Ocultos de la portada' : 'Todos son públicos',
+      sub:
+        privateServicesCount > 0
+          ? `de ${data.services.length} · ${privateServicesCount} con link privado`
+          : `de ${data.services.length} en tu menú`,
     },
     {
       id: 'active-addons',
-      label: 'Extras activos',
+      label: 'Extras y diseños',
       value: String(activeAddonsCount),
-      sub: `de ${data.addons.length} add-ons`,
+      sub: `de ${data.addons.length} disponibles`,
     },
     {
       id: 'base-deposit',
-      label: 'Anticipo base',
+      label: 'Anticipo del salón',
       value: formatCurrency(defaultDepositCents, currency),
       sub: data.settings.depositBankName || 'Transferencia SPEI',
     },
@@ -205,7 +258,7 @@ export default function AdminServicesPage() {
   const startEditingService = (srv: Service) => {
     setSection('services');
     setEditing({ ...srv });
-    setBufferEnabledOverride(
+    setCleanupEnabledOverride(
       srv.bufferBeforeMinutes > 0 || srv.bufferAfterMinutes > 0,
     );
   };
@@ -213,7 +266,7 @@ export default function AdminServicesPage() {
   const startNewService = () => {
     setSection('services');
     setEditing(buildNewServiceDraft(defaultDepositCents, data.categories[0]?.id ?? null));
-    setBufferEnabledOverride(false);
+    setCleanupEnabledOverride(false);
   };
 
   const startEditingAddon = (addon: ServiceAddon) => {
@@ -234,33 +287,38 @@ export default function AdminServicesPage() {
 
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isServiceDirty) return;
+    if (!isServiceDirty || savingService) return;
     setSavingService(true);
+    setSavedMsg(null);
+    const wasEditing = Boolean(activeDraft.id);
+    const normalizedPayload = {
+      ...activeDraft,
+      name: trimmedName,
+      description: (activeDraft.description ?? '').trim(),
+      bufferBeforeMinutes: hasCleanupTime ? (activeDraft.bufferBeforeMinutes ?? 0) : 0,
+      bufferAfterMinutes: hasCleanupTime ? (activeDraft.bufferAfterMinutes ?? 0) : 0,
+      isPrivate: Boolean(activeDraft.isPrivate),
+    };
     try {
       const res = await fetch('/api/admin/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           kind: 'service',
-          data: {
-            ...activeDraft,
-            name: trimmedName,
-            bufferBeforeMinutes: hasBuffer ? (activeDraft.bufferBeforeMinutes ?? 0) : 0,
-            bufferAfterMinutes: hasBuffer ? (activeDraft.bufferAfterMinutes ?? 0) : 0,
-            isPrivate: Boolean(activeDraft.isPrivate),
-          },
+          data: normalizedPayload,
         }),
       });
       if (res.ok) {
-        setSavedMsg({
-          status: 'success',
-          text: activeDraft.isPrivate
-            ? 'Servicio VIP guardado (accesible solo mediante su enlace directo).'
-            : 'Servicio guardado y publicado en tu agenda.',
-        });
-        setEditing(null);
-        setBufferEnabledOverride(null);
         await refresh();
+        if (wasEditing) {
+          setEditing(normalizedPayload);
+        } else {
+          setEditing(null);
+          setCleanupEnabledOverride(null);
+        }
+        saveNotice.show(
+          activeDraft.isPrivate ? 'Servicio privado guardado' : 'Servicio guardado',
+        );
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setSavedMsg({
@@ -279,7 +337,9 @@ export default function AdminServicesPage() {
   };
 
   const handleToggleServiceActive = async (srv: Service, checked: boolean) => {
+    if (togglingId) return;
     setTogglingId(srv.id);
+    setSavedMsg(null);
     try {
       const res = await fetch('/api/admin/services', {
         method: 'POST',
@@ -290,13 +350,8 @@ export default function AdminServicesPage() {
         }),
       });
       if (res.ok) {
-        setSavedMsg({
-          status: 'success',
-          text: checked
-            ? `${srv.name} activado en el catálogo.`
-            : `${srv.name} pausado temporalmente.`,
-        });
         await refresh();
+        saveNotice.show(checked ? `${srv.name} activado` : `${srv.name} pausado`);
       } else {
         setSavedMsg({
           status: 'error',
@@ -310,8 +365,9 @@ export default function AdminServicesPage() {
 
   const handleSaveAddon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (addonName.trim().length < 2) return;
+    if (addonName.trim().length < 2 || savingAddon) return;
     setSavingAddon(true);
+    setSavedMsg(null);
     try {
       const existingAddon = editingAddonId
         ? data.addons.find((item) => item.id === editingAddonId)
@@ -333,14 +389,9 @@ export default function AdminServicesPage() {
       });
       if (res.ok) {
         const wasEditing = Boolean(editingAddonId);
-        resetAddonForm();
-        setSavedMsg({
-          status: 'success',
-          text: wasEditing
-            ? 'Extra actualizado correctamente.'
-            : 'Extra agregado al flujo de reservas.',
-        });
         await refresh();
+        resetAddonForm();
+        saveNotice.show(wasEditing ? 'Extra guardado' : 'Extra agregado');
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setSavedMsg({
@@ -354,7 +405,9 @@ export default function AdminServicesPage() {
   };
 
   const handleToggleAddonActive = async (addon: ServiceAddon, checked: boolean) => {
+    if (togglingId) return;
     setTogglingId(addon.id);
+    setSavedMsg(null);
     try {
       const res = await fetch('/api/admin/services', {
         method: 'POST',
@@ -366,6 +419,7 @@ export default function AdminServicesPage() {
       });
       if (res.ok) {
         await refresh();
+        saveNotice.show(checked ? `${addon.name} activado` : `${addon.name} pausado`);
       } else {
         setSavedMsg({
           status: 'error',
@@ -400,14 +454,34 @@ export default function AdminServicesPage() {
     ? (categoryNameById.get(activeDraft.categoryId) ?? null)
     : null;
 
+  const hasCustomAdvancedValues =
+    hasCleanupTime ||
+    Boolean(activeDraft.isPrivate) ||
+    Boolean((activeDraft.description ?? '').trim()) ||
+    !activeDraft.depositRequired ||
+    (activeDraft.depositAmountCents ?? defaultDepositCents) !== defaultDepositCents;
+
   return (
     <VStack className="ad-page">
       <AdminConfigPageHeader
-        eyebrow="Catálogo del estudio"
-        title="Servicios y extras"
-        subtitle="Cada servicio genera su enlace directo en /reservar/[slug], con soporte para precios aproximados, anticipo SPEI y enlaces privados VIP."
+        eyebrow="Tu catálogo"
+        title="Servicios"
+        subtitle="Edita tus precios, duraciones y extras tal como los ven tus clientas al agendar."
+        meta={
+          savingService || savingAddon || togglingId ? (
+            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+              Guardando...
+            </Text>
+          ) : saveNotice.message ? (
+            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+              <Check size={12} aria-hidden="true" />
+              {saveNotice.message}
+            </Text>
+          ) : null
+        }
         actions={
           <Button
+            type="button"
             label="Nuevo servicio"
             variant="primary"
             size="md"
@@ -417,7 +491,7 @@ export default function AdminServicesPage() {
         }
       />
 
-      <AdminConfigKpiStrip ariaLabel="Resumen de catálogo" items={kpiItems} cols={4} />
+      <AdminConfigKpiStrip ariaLabel="Resumen de servicios" items={kpiItems} cols={3} />
 
       {savedMsg ? (
         <Banner
@@ -441,7 +515,7 @@ export default function AdminServicesPage() {
 
       <TabList value={section} onChange={setSection} hasDivider>
         <Tab value="services" label={`Servicios (${data.services.length})`} />
-        <Tab value="addons" label={`Extras / Add-ons (${data.addons.length})`} />
+        <Tab value="addons" label={`Extras / Diseños (${data.addons.length})`} />
       </TabList>
 
       {section === 'services' ? (
@@ -449,7 +523,7 @@ export default function AdminServicesPage() {
           <AdminConfigSection
             id="services-catalog-heading"
             title="Menú de servicios"
-            subtitle="Selecciona un servicio para editarlo o comparte su link directo."
+            subtitle="Toca un servicio para editarlo o copia su link directo para enviarlo por mensaje."
             badge={
               <AdminConfigChip
                 label={String(filteredServices.length)}
@@ -490,7 +564,7 @@ export default function AdminServicesPage() {
                     onClick={() => setCategoryFilter('vip')}
                   >
                     <Lock size={12} aria-hidden="true" />
-                    VIP ({privateServicesCount})
+                    Solo link ({privateServicesCount})
                   </button>
                 ) : null}
               </HStack>
@@ -512,11 +586,11 @@ export default function AdminServicesPage() {
               <AdminConfigEmpty
                 icon={<Scissors size={22} aria-hidden="true" />}
                 title="No encontramos servicios con ese filtro"
-                description="Prueba otra categoría, limpia la búsqueda o crea un nuevo servicio para tu catálogo."
+                description="Prueba otra categoría, borra la búsqueda o crea un servicio nuevo."
                 action={
                   <Button
                     type="button"
-                    label="Limpiar filtros"
+                    label="Ver todos"
                     variant="secondary"
                     size="sm"
                     onClick={() => {
@@ -534,45 +608,55 @@ export default function AdminServicesPage() {
                     : null;
                   const isSelectedRow = activeDraft.id === srv.id;
                   const isCopiedRow = copiedSlug === srv.slug && Boolean(copyFeedback.message);
+                  const cleanupMinutes = srv.bufferBeforeMinutes + srv.bufferAfterMinutes;
 
                   return (
                     <li
                       key={srv.id}
-                      className="ad-list-row"
+                      className={togglingId === srv.id ? 'ad-list-row fx-busy' : 'ad-list-row'}
                       data-selected={isSelectedRow ? 'true' : undefined}
                       data-muted={!srv.isActive ? 'true' : undefined}
+                      aria-busy={togglingId === srv.id || undefined}
                     >
                       <VStack gap={2} width="100%">
-                        <HStack justify="between" align="start" gap={3} wrap="wrap">
-                          <VStack gap={0.5} className="rb-grow">
-                            <HStack gap={1.5} align="center" wrap="wrap">
-                              <Text weight="semibold" size="base">
-                                {srv.name}
-                              </Text>
-                              {srv.isPrivate ? (
-                                <AdminConfigChip
-                                  label="Oculto (VIP)"
-                                  tone="accent"
-                                  icon={<Lock size={11} aria-hidden="true" />}
-                                />
-                              ) : null}
-                              {!srv.isActive ? (
-                                <AdminConfigChip label="Inactivo" tone="neutral" />
-                              ) : null}
-                            </HStack>
-                            <HStack gap={1.5} wrap="wrap" align="center">
-                              <Text type="code" color="secondary">
-                                /reservar/{srv.slug}
-                              </Text>
-                              {categoryName ? (
-                                <Text type="supporting" color="secondary">
-                                  · {categoryName}
+                        <HStack justify="between" align="center" gap={3} wrap="wrap">
+                          <HStack gap={3} align="center" className="rb-grow">
+                            <ServiceThumbnail slug={srv.slug} imageUrl={srv.imageUrl} />
+                            <VStack gap={0.5} className="rb-grow">
+                              <HStack gap={1.5} align="center" wrap="wrap">
+                                <Text weight="semibold" size="base">
+                                  {srv.name}
                                 </Text>
-                              ) : null}
-                            </HStack>
-                          </VStack>
+                                {srv.isPrivate ? (
+                                  <AdminConfigChip
+                                    label="Solo link privado"
+                                    tone="accent"
+                                    icon={<Lock size={11} aria-hidden="true" />}
+                                  />
+                                ) : null}
+                                {!srv.isActive ? (
+                                  <AdminConfigChip label="Pausado" tone="neutral" />
+                                ) : null}
+                              </HStack>
+                              <HStack gap={1.5} wrap="wrap" align="center">
+                                <Text type="supporting" color="secondary" hasTabularNumbers>
+                                  {formatDuration(srv.durationMinutes)}
+                                </Text>
+                                {categoryName ? (
+                                  <Text type="supporting" color="secondary">
+                                    · {categoryName}
+                                  </Text>
+                                ) : null}
+                                {cleanupMinutes > 0 ? (
+                                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                                    · +{cleanupMinutes} min limpieza
+                                  </Text>
+                                ) : null}
+                              </HStack>
+                            </VStack>
+                          </HStack>
 
-                          <Text weight="bold" className="fx-tabular" hasTabularNumbers>
+                          <Text weight="bold" size="base" className="fx-tabular" hasTabularNumbers>
                             {formatServicePriceLabel(
                               srv.priceCents,
                               srv.isStartingPrice,
@@ -581,37 +665,15 @@ export default function AdminServicesPage() {
                           </Text>
                         </HStack>
 
-                        <HStack gap={1.5} wrap="wrap">
-                          <AdminConfigChip
-                            tone="neutral"
-                            icon={<Clock size={11} aria-hidden="true" />}
-                            label={
-                              srv.bufferAfterMinutes > 0 || srv.bufferBeforeMinutes > 0
-                                ? `${formatDuration(srv.durationMinutes)} (+${srv.bufferBeforeMinutes + srv.bufferAfterMinutes}m buffer)`
-                                : formatDuration(srv.durationMinutes)
-                            }
-                            hasTabularNumbers
-                          />
-                          {srv.depositRequired ? (
-                            <AdminConfigChip
-                              tone="warning"
-                              label={`Anticipo ${formatCurrency(srv.depositAmountCents, currency)}`}
-                              hasTabularNumbers
-                            />
-                          ) : null}
-                          {srv.allowInspoPhoto ? (
-                            <AdminConfigChip tone="neutral" label="Admite inspo" />
-                          ) : null}
-                        </HStack>
-
                         <HStack justify="between" align="center" wrap="wrap" gap={2}>
                           <ButtonGroup label={`Acciones para ${srv.name}`} size="sm">
                             <Button
-                              label="Abrir"
-                              variant="secondary"
+                              type="button"
+                              label={isSelectedRow ? 'Editando' : 'Editar'}
+                              variant={isSelectedRow ? 'primary' : 'secondary'}
                               size="sm"
-                              icon={<ExternalLink size={13} aria-hidden="true" />}
-                              href={`/reservar/${srv.slug}`}
+                              icon={<Pencil size={13} aria-hidden="true" />}
+                              onClick={() => startEditingService(srv)}
                             />
                             <Button
                               type="button"
@@ -628,12 +690,11 @@ export default function AdminServicesPage() {
                               onClick={() => void copyServiceLink(srv.slug)}
                             />
                             <Button
-                              type="button"
-                              label={isSelectedRow ? 'Editando' : 'Editar'}
-                              variant={isSelectedRow ? 'primary' : 'secondary'}
+                              label="Ver"
+                              variant="ghost"
                               size="sm"
-                              icon={<Pencil size={13} aria-hidden="true" />}
-                              onClick={() => startEditingService(srv)}
+                              icon={<ExternalLink size={13} aria-hidden="true" />}
+                              href={`/reservar/${srv.slug}`}
                             />
                           </ButtonGroup>
 
@@ -655,237 +716,39 @@ export default function AdminServicesPage() {
 
           <VStack gap={4}>
             <AdminConfigSection
-              id="service-editor-heading"
-              title={activeDraft.id ? 'Editar servicio' : 'Crear servicio'}
-              subtitle={
-                activeDraft.id
-                  ? 'Los cambios se reflejan de inmediato en la vista previa.'
-                  : 'Define nombre, precio, duración y visibilidad pública o VIP.'
-              }
-              actions={
-                <HStack gap={2} align="center">
-                  {isServiceDirty ? (
-                    <AdminConfigChip label="Sin guardar" tone="warning" className="fx-pop" />
-                  ) : null}
-                  {activeDraft.id ? (
-                    <Button
-                      type="button"
-                      label="Cancelar"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditing(null);
-                        setBufferEnabledOverride(null);
-                      }}
-                    />
-                  ) : null}
-                </HStack>
-              }
-            >
-              <form onSubmit={handleSaveService}>
-                <VStack gap={3} padding={5}>
-                  <TextInput
-                    label="Nombre del servicio"
-                    placeholder="Ej. Rubber / Set Novia VIP"
-                    value={activeDraft.name || ''}
-                    onChange={(v) => setEditing({ ...activeDraft, name: v })}
-                    isRequired
-                  />
-
-                  <Selector
-                    label="Categoría"
-                    value={activeDraft.categoryId ?? ''}
-                    onChange={(v) => setEditing({ ...activeDraft, categoryId: v || null })}
-                    options={categoryOptions}
-                  />
-
-                  <TextArea
-                    label="Descripción"
-                    placeholder="Describe técnica, duración o qué incluye para evitar dudas por DM."
-                    value={activeDraft.description || ''}
-                    onChange={(v) => setEditing({ ...activeDraft, description: v })}
-                    rows={2}
-                  />
-
-                  <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
-                    <NumberInput
-                      label="Duración (min)"
-                      value={activeDraft.durationMinutes ?? 60}
-                      min={15}
-                      max={480}
-                      isIntegerOnly
-                      onChange={(v) => setEditing({ ...activeDraft, durationMinutes: v })}
-                    />
-                    <NumberInput
-                      label="Precio (MXN)"
-                      value={(activeDraft.priceCents ?? 0) / 100}
-                      min={0}
-                      onChange={(v) =>
-                        setEditing({ ...activeDraft, priceCents: Math.round(v * 100) })
-                      }
-                    />
-                  </Grid>
-
-                  <Switch
-                    label="Mostrar como precio aproximado ('Desde $...')"
-                    value={Boolean(activeDraft.isStartingPrice)}
-                    onChange={(v) => setEditing({ ...activeDraft, isStartingPrice: v })}
-                  />
-
-                  <Divider />
-
-                  <VStack gap={2}>
-                    <Text type="label" color="secondary" weight="semibold">
-                      Anticipo y visibilidad
-                    </Text>
-
-                    <VStack gap={2}>
-                      <Switch
-                        label="Requiere anticipo SPEI"
-                        description="Pide comprobante web o envío por Instagram DM al reservar."
-                        value={Boolean(activeDraft.depositRequired)}
-                        onChange={(v) => setEditing({ ...activeDraft, depositRequired: v })}
-                      />
-                      {activeDraft.depositRequired ? (
-                        <NumberInput
-                          label="Monto de anticipo (MXN)"
-                          value={(activeDraft.depositAmountCents ?? defaultDepositCents) / 100}
-                          min={0}
-                          onChange={(v) =>
-                            setEditing({
-                              ...activeDraft,
-                              depositAmountCents: Math.round(v * 100),
-                            })
-                          }
-                        />
-                      ) : null}
-                    </VStack>
-
-                    <Switch
-                      label="Servicio privado / VIP (solo link directo)"
-                      description="Se oculta de la portada, /reservar y /links; solo se agenda compartiendo /reservar/[slug]."
-                      value={Boolean(activeDraft.isPrivate)}
-                      onChange={(v) => setEditing({ ...activeDraft, isPrivate: v })}
-                    />
-                  </VStack>
-
-                  <Divider />
-
-                  <Collapsible
-                    defaultIsOpen={hasBuffer}
-                    trigger={
-                      <HStack gap={2} align="center">
-                        <SlidersHorizontal size={14} aria-hidden="true" />
-                        <Text weight="semibold" size="sm">
-                          Opciones avanzadas (buffers, inspo y confirmación)
-                        </Text>
-                      </HStack>
-                    }
-                  >
-                    <VStack gap={3} paddingBlockStart={3}>
-                      <Switch
-                        label="Tiempo de preparación / limpieza (buffers)"
-                        description="Bloquea minutos extra antes o después de la cita automáticamente."
-                        value={hasBuffer}
-                        onChange={(checked) => {
-                          setBufferEnabledOverride(checked);
-                          if (!checked) {
-                            setEditing({
-                              ...activeDraft,
-                              bufferBeforeMinutes: 0,
-                              bufferAfterMinutes: 0,
-                            });
-                          } else if (
-                            (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
-                            (activeDraft.bufferAfterMinutes ?? 0) === 0
-                          ) {
-                            setEditing({
-                              ...activeDraft,
-                              bufferAfterMinutes: 15,
-                            });
-                          }
-                        }}
-                      />
-                      {hasBuffer ? (
-                        <Grid columns={{ minWidth: 140, max: 2 }} gap={2}>
-                          <NumberInput
-                            label="Buffer antes (min)"
-                            value={activeDraft.bufferBeforeMinutes ?? 0}
-                            min={0}
-                            max={120}
-                            isIntegerOnly
-                            onChange={(v) =>
-                              setEditing({ ...activeDraft, bufferBeforeMinutes: v })
-                            }
-                          />
-                          <NumberInput
-                            label="Buffer después (min)"
-                            value={activeDraft.bufferAfterMinutes ?? 0}
-                            min={0}
-                            max={120}
-                            isIntegerOnly
-                            onChange={(v) =>
-                              setEditing({ ...activeDraft, bufferAfterMinutes: v })
-                            }
-                          />
-                        </Grid>
-                      ) : null}
-
-                      <Switch
-                        label="Permitir foto de inspiración (inspo)"
-                        value={Boolean(activeDraft.allowInspoPhoto)}
-                        onChange={(v) => setEditing({ ...activeDraft, allowInspoPhoto: v })}
-                      />
-
-                      <Switch
-                        label="Requiere confirmación manual del salón"
-                        value={Boolean(activeDraft.requiresConfirmation)}
-                        onChange={(v) =>
-                          setEditing({ ...activeDraft, requiresConfirmation: v })
-                        }
-                      />
-                    </VStack>
-                  </Collapsible>
-
-                  <Button
-                    type="submit"
-                    label="Guardar servicio"
-                    variant="primary"
-                    icon={<Save size={15} aria-hidden="true" />}
-                    width="100%"
-                    isLoading={savingService}
-                    isDisabled={!isServiceDirty}
-                  />
-                </VStack>
-              </form>
-            </AdminConfigSection>
-
-            <AdminConfigSection
+              id="service-preview-heading"
               tone="subtle"
               padded
               title="Vista previa en vivo"
-              subtitle="Así aparece esta tarjeta para tu clienta en /reservar."
+              subtitle="Así lo verá tu clienta al elegir su servicio."
               badge={<StatusDot variant="success" label="Vista previa activa" isPulsing />}
             >
-              <VStack className="ad-surface fx-card-lift" data-padded="true" gap={2}>
-                <HStack justify="between" align="start" gap={2}>
-                  <VStack gap={0.5} className="rb-grow">
-                    {previewCategoryName ? (
-                      <Text type="supporting" color="accent" weight="semibold" size="sm">
-                        {previewCategoryName}
+              <VStack gap={2} paddingBlockStart={2}>
+                <HStack justify="between" align="start" gap={3}>
+                  <HStack gap={3} align="center" className="rb-grow">
+                    <ServiceThumbnail
+                      slug={activeDraft.slug || 'rubber'}
+                      imageUrl={activeDraft.imageUrl ?? null}
+                      size="preview"
+                    />
+                    <VStack gap={0.5} className="rb-grow">
+                      {previewCategoryName ? (
+                        <Text type="supporting" color="accent" weight="semibold" size="sm">
+                          {previewCategoryName}
+                        </Text>
+                      ) : null}
+                      <Heading level={3} className="lk-serif ad-h3">
+                        {activeDraft.name || 'Nombre del servicio'}
+                      </Heading>
+                      <Text weight="bold" size="base" className="fx-tabular" hasTabularNumbers>
+                        {formatServicePriceLabel(
+                          activeDraft.priceCents ?? 0,
+                          activeDraft.isStartingPrice,
+                          currency,
+                        )}
                       </Text>
-                    ) : null}
-                    <Heading level={3} className="lk-serif ad-h3">
-                      {activeDraft.name || 'Nombre del servicio'}
-                    </Heading>
-                  </VStack>
-                  <Text weight="bold" size="lg" className="fx-tabular" hasTabularNumbers>
-                    {formatServicePriceLabel(
-                      activeDraft.priceCents ?? 0,
-                      activeDraft.isStartingPrice,
-                      currency,
-                    )}
-                  </Text>
+                    </VStack>
+                  </HStack>
                 </HStack>
 
                 <HStack gap={1.5} wrap="wrap">
@@ -904,24 +767,254 @@ export default function AdminServicesPage() {
                       )}`}
                     />
                   ) : null}
-                  {activeDraft.allowInspoPhoto ? (
-                    <Token size="sm" color="pink" label="Admite foto inspo" />
-                  ) : null}
                   {activeDraft.isPrivate ? (
                     <Token
                       size="sm"
                       color="purple"
                       icon={<Lock size={12} aria-hidden="true" />}
-                      label="Oculto (VIP)"
+                      label="Solo link privado"
                     />
                   ) : null}
                 </HStack>
 
-                <Text type="supporting" color="secondary">
-                  {activeDraft.description ||
-                    'Aquí aparecerá la descripción de tu técnica para evitar dudas por mensaje.'}
-                </Text>
+                {activeDraft.description ? (
+                  <Text type="supporting" color="secondary">
+                    {activeDraft.description}
+                  </Text>
+                ) : null}
               </VStack>
+            </AdminConfigSection>
+
+            <AdminConfigSection
+              id="service-editor-heading"
+              title={activeDraft.id ? 'Editar servicio' : 'Crear servicio'}
+              subtitle="Lo esencial primero: nombre, precio, duración y categoría."
+              actions={
+                <HStack gap={2} align="center" wrap="wrap">
+                  {savingService ? (
+                    <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                      Guardando...
+                    </Text>
+                  ) : isServiceDirty ? (
+                    <AdminConfigChip label="Sin guardar" tone="warning" className="fx-pop" />
+                  ) : saveNotice.message ? (
+                    <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                      <Check size={12} aria-hidden="true" />
+                      {saveNotice.message}
+                    </Text>
+                  ) : null}
+                  {activeDraft.id ? (
+                    <Button
+                      type="button"
+                      label="Nuevo"
+                      variant="ghost"
+                      size="sm"
+                      isDisabled={savingService}
+                      onClick={() => {
+                        setEditing(null);
+                        setCleanupEnabledOverride(null);
+                      }}
+                    />
+                  ) : null}
+                </HStack>
+              }
+            >
+              <form onSubmit={handleSaveService}>
+                <VStack
+                  gap={3}
+                  padding={5}
+                  className={savingService ? 'fx-busy' : undefined}
+                  aria-busy={savingService || undefined}
+                >
+                  <TextInput
+                    label="Nombre"
+                    placeholder="Ej. Rubber / Uñas acrílicas"
+                    value={activeDraft.name || ''}
+                    onChange={(v) => setEditing({ ...activeDraft, name: v })}
+                    isRequired
+                  />
+
+                  <VStack gap={2}>
+                    <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
+                      <NumberInput
+                        label="Precio (MXN)"
+                        value={(activeDraft.priceCents ?? 0) / 100}
+                        min={0}
+                        onChange={(v) =>
+                          setEditing({ ...activeDraft, priceCents: Math.round(v * 100) })
+                        }
+                      />
+                      <NumberInput
+                        label="Duración (min)"
+                        value={activeDraft.durationMinutes ?? 60}
+                        min={15}
+                        max={480}
+                        isIntegerOnly
+                        onChange={(v) => setEditing({ ...activeDraft, durationMinutes: v })}
+                      />
+                    </Grid>
+                    <Switch
+                      label='Precio "Desde"'
+                      description='Muestra "Desde $..." si el precio varía por largo o diseño.'
+                      size="sm"
+                      value={Boolean(activeDraft.isStartingPrice)}
+                      onChange={(v) => setEditing({ ...activeDraft, isStartingPrice: v })}
+                    />
+                  </VStack>
+
+                  <Selector
+                    label="Categoría"
+                    value={activeDraft.categoryId ?? ''}
+                    onChange={(v) => setEditing({ ...activeDraft, categoryId: v || null })}
+                    options={categoryOptions}
+                  />
+
+                  <Divider />
+
+                  <Collapsible
+                    className="ad-disclosure"
+                    defaultIsOpen={false}
+                    trigger={
+                      <HStack justify="between" align="center" gap={2} width="100%">
+                        <HStack gap={2} align="center">
+                          <SlidersHorizontal size={14} aria-hidden="true" />
+                          <Text weight="semibold" size="sm">
+                            Más opciones
+                          </Text>
+                        </HStack>
+                        <Text type="supporting" color="secondary">
+                          {hasCustomAdvancedValues ? 'Personalizado' : 'Limpieza, anticipo, VIP'}
+                        </Text>
+                      </HStack>
+                    }
+                  >
+                    <VStack gap={3} paddingBlockStart={3}>
+                      <TextArea
+                        label="Descripción"
+                        placeholder="Cuenta qué incluye la técnica para ahorrar preguntas por mensaje."
+                        value={activeDraft.description || ''}
+                        onChange={(v) => setEditing({ ...activeDraft, description: v })}
+                        rows={2}
+                      />
+
+                      <Divider />
+
+                      <VStack gap={2}>
+                        <Switch
+                          label="Tiempo de limpieza entre citas"
+                          description="Bloquea minutos extra antes o después de este servicio para limpiar tu mesa."
+                          value={hasCleanupTime}
+                          onChange={(checked) => {
+                            setCleanupEnabledOverride(checked);
+                            if (!checked) {
+                              setEditing({
+                                ...activeDraft,
+                                bufferBeforeMinutes: 0,
+                                bufferAfterMinutes: 0,
+                              });
+                            } else if (
+                              (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
+                              (activeDraft.bufferAfterMinutes ?? 0) === 0
+                            ) {
+                              setEditing({
+                                ...activeDraft,
+                                bufferAfterMinutes: 15,
+                              });
+                            }
+                          }}
+                        />
+                        {hasCleanupTime ? (
+                          <Grid columns={{ minWidth: 140, max: 2 }} gap={2}>
+                            <NumberInput
+                              label="Antes de la cita (min)"
+                              value={activeDraft.bufferBeforeMinutes ?? 0}
+                              min={0}
+                              max={120}
+                              isIntegerOnly
+                              onChange={(v) =>
+                                setEditing({ ...activeDraft, bufferBeforeMinutes: v })
+                              }
+                            />
+                            <NumberInput
+                              label="Después de la cita (min)"
+                              value={activeDraft.bufferAfterMinutes ?? 0}
+                              min={0}
+                              max={120}
+                              isIntegerOnly
+                              onChange={(v) =>
+                                setEditing({ ...activeDraft, bufferAfterMinutes: v })
+                              }
+                            />
+                          </Grid>
+                        ) : null}
+                      </VStack>
+
+                      <Divider />
+
+                      <VStack gap={2}>
+                        <Switch
+                          label="Anticipo distinto"
+                          description="Pide un monto específico de anticipo para este servicio."
+                          value={Boolean(activeDraft.depositRequired)}
+                          onChange={(v) => setEditing({ ...activeDraft, depositRequired: v })}
+                        />
+                        {activeDraft.depositRequired ? (
+                          <NumberInput
+                            label="Monto de anticipo (MXN)"
+                            value={(activeDraft.depositAmountCents ?? defaultDepositCents) / 100}
+                            min={0}
+                            onChange={(v) =>
+                              setEditing({
+                                ...activeDraft,
+                                depositAmountCents: Math.round(v * 100),
+                              })
+                            }
+                          />
+                        ) : null}
+                      </VStack>
+
+                      <Divider />
+
+                      <Switch
+                        label="Solo con link privado"
+                        description="No se ve en tu página pública; solo pueden reservar quienes tengan su link."
+                        value={Boolean(activeDraft.isPrivate)}
+                        onChange={(v) => setEditing({ ...activeDraft, isPrivate: v })}
+                      />
+
+                      <Switch
+                        label="Permitir foto de inspiración"
+                        value={Boolean(activeDraft.allowInspoPhoto)}
+                        onChange={(v) => setEditing({ ...activeDraft, allowInspoPhoto: v })}
+                      />
+
+                      <Switch
+                        label="Confirmar manualmente antes de aprobar"
+                        value={Boolean(activeDraft.requiresConfirmation)}
+                        onChange={(v) =>
+                          setEditing({ ...activeDraft, requiresConfirmation: v })
+                        }
+                      />
+                    </VStack>
+                  </Collapsible>
+
+                  <Button
+                    type="submit"
+                    label={
+                      savingService
+                        ? 'Guardando...'
+                        : activeDraft.id
+                          ? 'Guardar servicio'
+                          : 'Crear servicio'
+                    }
+                    variant="primary"
+                    icon={<Save size={15} aria-hidden="true" />}
+                    width="100%"
+                    isLoading={savingService}
+                    isDisabled={!isServiceDirty || savingService}
+                  />
+                </VStack>
+              </form>
             </AdminConfigSection>
           </VStack>
         </VStack>
@@ -929,8 +1022,8 @@ export default function AdminServicesPage() {
         <VStack key="tab-addons" className="ad-split fx-step-in" gap={5}>
           <AdminConfigSection
             id="addons-catalog-heading"
-            title="Extras y arte en uña"
-            subtitle="Se suman en duración y precio al elegir un servicio."
+            title="Extras y diseños"
+            subtitle="Se suman en tiempo y precio cuando tu clienta los agrega a su cita."
             badge={
               <AdminConfigChip
                 label={String(data.addons.length)}
@@ -942,8 +1035,8 @@ export default function AdminServicesPage() {
             {data.addons.length === 0 ? (
               <AdminConfigEmpty
                 icon={<Sparkles size={22} aria-hidden="true" />}
-                title="Aún no tienes extras registrados"
-                description="Agrega opciones como retiro, nail art, franceses o efecto aura para aumentar el ticket promedio."
+                title="Aún no tienes extras"
+                description="Agrega opciones como retiro, french, efecto chrome o piedrería."
               />
             ) : (
               <VStack as="ul" className="ad-row-list" gap={0}>
@@ -952,9 +1045,10 @@ export default function AdminServicesPage() {
                   return (
                     <li
                       key={addon.id}
-                      className="ad-list-row"
+                      className={togglingId === addon.id ? 'ad-list-row fx-busy' : 'ad-list-row'}
                       data-selected={isEditingThis ? 'true' : undefined}
                       data-muted={!addon.isActive ? 'true' : undefined}
+                      aria-busy={togglingId === addon.id || undefined}
                     >
                       <VStack gap={0.5} className="rb-grow">
                         <HStack gap={2} align="center" wrap="wrap">
@@ -999,8 +1093,8 @@ export default function AdminServicesPage() {
 
           <AdminConfigSection
             id="addon-editor-heading"
-            title={editingAddonId ? 'Editar extra' : 'Agregar extra / add-on'}
-            subtitle="Disponible como complemento en el flujo de reservas."
+            title={editingAddonId ? 'Editar extra' : 'Agregar extra o diseño'}
+            subtitle="Aparecerá como opción adicional al reservar."
             actions={
               editingAddonId ? (
                 <Button
@@ -1014,23 +1108,28 @@ export default function AdminServicesPage() {
             }
           >
             <form onSubmit={handleSaveAddon}>
-              <VStack gap={3} padding={5}>
+              <VStack
+                gap={3}
+                padding={5}
+                className={savingAddon ? 'fx-busy' : undefined}
+                aria-busy={savingAddon || undefined}
+              >
                 <TextInput
-                  label="Nombre del extra"
+                  label="Nombre"
                   placeholder="Ej. Efecto Aura / Piedrería"
                   value={addonName}
                   onChange={setAddonName}
                   isRequired
                 />
                 <TextInput
-                  label="Descripción breve"
-                  placeholder="Qué incluye o en qué uñas aplica"
+                  label="Detalle breve"
+                  placeholder="Qué incluye o en cuántas uñas aplica"
                   value={addonDesc}
                   onChange={setAddonDesc}
                 />
                 <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
                   <NumberInput
-                    label="Minutos adicionales"
+                    label="Tiempo extra (min)"
                     value={addonMin}
                     min={0}
                     max={240}
@@ -1047,7 +1146,13 @@ export default function AdminServicesPage() {
                 <Divider />
                 <Button
                   type="submit"
-                  label={editingAddonId ? 'Guardar cambios' : 'Guardar extra'}
+                  label={
+                    savingAddon
+                      ? 'Guardando...'
+                      : editingAddonId
+                        ? 'Guardar cambios'
+                        : 'Agregar extra'
+                  }
                   variant="primary"
                   icon={<Save size={15} aria-hidden="true" />}
                   width="100%"

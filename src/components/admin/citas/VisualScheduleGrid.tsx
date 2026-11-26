@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -14,7 +14,6 @@ import { Divider } from '@astryxdesign/core/Divider';
 import {
   AtSign,
   Ban,
-  Bell,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -101,54 +100,54 @@ function doesBlockOverlapHour(block: RecurringBlock, hour: number): boolean {
 }
 
 interface VisualScheduleGridProps {
+  rangeMode: 'day' | 'week';
   dateKey: string;
   todayKey: string;
   timezone: string;
   staff: StaffMember[];
+  allStaffColorIndex: ReadonlyMap<string, number>;
   schedules: AvailabilitySchedule[];
   recurringBlocks?: RecurringBlock[];
   paymentSplits?: PaymentSplit[];
   bookings: BookingWithRelations[];
   allServices: Service[];
-  remindingBookingId: string | null;
+  busyBookingId?: string | null;
+  busyStatus?: BookingStatus | null;
   onChangeDate: (nextDateKey: string) => void;
-  onOpenNewForStaff: (staffId: string) => void;
+  onJumpToDay: (nextDateKey: string) => void;
+  onOpenNewForStaff: (staffId: string, preferredDateKey?: string) => void;
   onSelectBooking: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
-  onSendReminder: (bookingId: string) => void;
 }
 
 export function VisualScheduleGrid({
+  rangeMode,
   dateKey,
   todayKey,
   timezone,
   staff,
+  allStaffColorIndex,
   schedules,
   recurringBlocks = [],
   paymentSplits = [],
   bookings,
   allServices,
-  remindingBookingId,
+  busyBookingId = null,
+  busyStatus = null,
   onChangeDate,
+  onJumpToDay,
   onOpenNewForStaff,
   onSelectBooking,
   onUpdateStatus,
   onOpenCheckout,
-  onSendReminder,
 }: VisualScheduleGridProps) {
+  const [showQuietHours, setShowQuietHours] = useState(false);
+
   const activeStaff = useMemo(
     () => staff.filter((s) => s.isActive).toSorted((a, b) => a.displayOrder - b.displayOrder),
     [staff],
   );
-
-  const staffColorIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    activeStaff.forEach((st, idx) => {
-      map.set(st.id, idx % 4);
-    });
-    return map;
-  }, [activeStaff]);
 
   const dayBookings = useMemo(
     () =>
@@ -157,6 +156,22 @@ export function VisualScheduleGrid({
         .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [bookings, dateKey, timezone],
   );
+
+  const weekDays = useMemo(() => {
+    const tomorrowKey = shiftDateKey(todayKey, 1);
+    return Array.from({ length: 7 }, (_, idx) => {
+      const key = shiftDateKey(todayKey, idx);
+      const dayItems = bookings
+        .filter((b) => getDateKeyInTimezone(new Date(b.startAt), timezone) === key)
+        .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+      const prefix = key === todayKey ? 'Hoy · ' : key === tomorrowKey ? 'Mañana · ' : '';
+      return {
+        dateKey: key,
+        label: `${prefix}${formatDateShortInTimezone(`${key}T18:00:00Z`, timezone)}`,
+        items: dayItems,
+      };
+    });
+  }, [bookings, todayKey, timezone]);
 
   const dow = getDayOfWeekFromDateKey(dateKey);
 
@@ -186,12 +201,178 @@ export function VisualScheduleGrid({
     return map;
   }, [activeStaff, schedules, dow]);
 
+  if (rangeMode === 'week') {
+    return (
+      <Grid
+        key={`week-${todayKey}`}
+        className="fx-step-in"
+        columns={{ minWidth: 280, max: 3 }}
+        gap={4}
+        align="start"
+      >
+        {weekDays.map((day) => (
+          <VStack key={day.dateKey} className="ad-surface" gap={0}>
+            <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+              <VStack gap={0.5} className="rb-grow">
+                <Heading level={3} className="lk-serif ad-h3">
+                  {day.label}
+                </Heading>
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  {day.items.length === 0
+                    ? 'Sin citas todavía'
+                    : `${day.items.length} ${day.items.length === 1 ? 'cita' : 'citas'}`}
+                </Text>
+              </VStack>
+              <Button
+                type="button"
+                label="Ver día"
+                size="sm"
+                variant="ghost"
+                onClick={() => onJumpToDay(day.dateKey)}
+              />
+            </HStack>
+
+            {day.items.length === 0 ? (
+              <HStack className="ad-empty-agenda" justify="between" align="center" gap={2}>
+                <Text type="supporting" color="secondary">
+                  Día libre
+                </Text>
+                <Button
+                  type="button"
+                  label="Agendar"
+                  size="sm"
+                  variant="secondary"
+                  icon={<Plus size={13} />}
+                  onClick={() =>
+                    onOpenNewForStaff(
+                      activeStaff.length === 1 ? (activeStaff[0]?.id ?? 'any') : 'any',
+                      day.dateKey,
+                    )
+                  }
+                />
+              </HStack>
+            ) : (
+              <VStack className="ad-row-list" gap={0}>
+                {day.items.map((b) => {
+                  const statusMeta = BOOKING_STATUS_BADGE[b.status];
+                  const isBusyRow = busyBookingId === b.id;
+                  const colorIdx = allStaffColorIndex.get(b.staffId) ?? 0;
+                  const paymentSummary = computeBookingPaymentSummary(
+                    b.totalPriceCents,
+                    paymentSplits.filter((s) => s.bookingId === b.id),
+                  );
+                  const isPending =
+                    b.status === 'pending_confirmation' || b.status === 'pending_payment';
+                  const canCollect =
+                    b.status === 'confirmed' ||
+                    (b.status === 'completed' && paymentSummary.isUncollected);
+
+                  return (
+                    <VStack
+                      key={b.id}
+                      className={isBusyRow ? 'ad-row-item fx-busy' : 'ad-row-item'}
+                      aria-busy={isBusyRow || undefined}
+                      gap={2}
+                      align="stretch"
+                    >
+                      <HStack justify="between" align="center" gap={2} width="100%">
+                        <HStack gap={1.5} align="center">
+                          <Text
+                            className="ad-dot"
+                            data-idx={String(colorIdx)}
+                            aria-hidden="true"
+                          >
+                            {'\u200B'}
+                          </Text>
+                          <Text weight="bold" size="sm" hasTabularNumbers>
+                            {formatTimeInTimezone(b.startAt, timezone, true)}
+                          </Text>
+                        </HStack>
+                        <Badge variant={statusMeta.variant} label={statusMeta.label} />
+                      </HStack>
+
+                      <VStack gap={0.5} width="100%" align="start">
+                        <button
+                          type="button"
+                          className="ad-inline-link fx-press"
+                          disabled={isBusyRow}
+                          onClick={() => onSelectBooking(b)}
+                          style={{
+                            border: 0,
+                            background: 'transparent',
+                            padding: 0,
+                            font: 'inherit',
+                            textAlign: 'start',
+                            cursor: 'pointer',
+                            color: 'var(--color-text-primary)',
+                          }}
+                        >
+                          <Text weight="semibold">{b.client.fullName}</Text>
+                        </button>
+                        <Text type="supporting" color="secondary">
+                          {b.service.name} · con {b.staff.name}
+                        </Text>
+                      </VStack>
+
+                      <HStack gap={1.5} wrap="wrap" width="100%">
+                        {isPending ? (
+                          <Button
+                            type="button"
+                            label={
+                              isBusyRow && busyStatus === 'confirmed'
+                                ? 'Confirmando...'
+                                : 'Confirmar'
+                            }
+                            size="sm"
+                            variant="primary"
+                            icon={<Check size={13} />}
+                            isLoading={isBusyRow && busyStatus === 'confirmed'}
+                            isDisabled={isBusyRow}
+                            onClick={() => onUpdateStatus(b.id, 'confirmed')}
+                          />
+                        ) : canCollect ? (
+                          <Button
+                            type="button"
+                            label="Cobrar"
+                            size="sm"
+                            variant="primary"
+                            icon={<DollarSign size={13} aria-hidden="true" />}
+                            isDisabled={isBusyRow}
+                            onClick={() => onOpenCheckout(b)}
+                          />
+                        ) : null}
+                        <Button
+                          type="button"
+                          label="Ver opciones"
+                          size="sm"
+                          variant="secondary"
+                          isDisabled={isBusyRow}
+                          onClick={() => onSelectBooking(b)}
+                        />
+                      </HStack>
+                    </VStack>
+                  );
+                })}
+              </VStack>
+            )}
+          </VStack>
+        ))}
+      </Grid>
+    );
+  }
+
   const formattedDate = formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone);
-  const tomorrowKey = shiftDateKey(todayKey, 1);
 
   return (
     <VStack gap={4} key={dateKey} className="fx-step-in">
-      <HStack className="ad-surface" data-padded="true" justify="between" align="center" wrap="wrap" gap={3}>
+      <HStack
+        className="ad-surface"
+        data-padded="true"
+        justify="between"
+        align="center"
+        wrap="wrap"
+        gap={3}
+      >
         <HStack gap={2} align="center" wrap="wrap">
           <Button
             label="Día anterior"
@@ -212,27 +393,18 @@ export function VisualScheduleGrid({
             icon={<ChevronRight size={15} />}
             onClick={() => onChangeDate(shiftDateKey(dateKey, 1))}
           />
-          <button
-            type="button"
-            className="ad-pill fx-press"
-            data-on={dateKey === todayKey ? 'true' : 'false'}
-            aria-pressed={dateKey === todayKey}
-            onClick={() => onChangeDate(todayKey)}
-          >
-            Hoy
-          </button>
-          <button
-            type="button"
-            className="ad-pill fx-press"
-            data-on={dateKey === tomorrowKey ? 'true' : 'false'}
-            aria-pressed={dateKey === tomorrowKey}
-            onClick={() => onChangeDate(tomorrowKey)}
-          >
-            Mañana
-          </button>
         </HStack>
 
-        <HStack gap={2} align="center">
+        <HStack gap={2} align="center" wrap="wrap">
+          <button
+            type="button"
+            className="ad-pill fx-press"
+            data-on={showQuietHours ? 'true' : 'false'}
+            aria-pressed={showQuietHours}
+            onClick={() => setShowQuietHours((prev) => !prev)}
+          >
+            {showQuietHours ? 'Ocultar horas vacías' : 'Ver todas las horas'}
+          </button>
           <Text
             color="inherit"
             className="ad-chip"
@@ -253,7 +425,7 @@ export function VisualScheduleGrid({
           const staffDayCount = dayBookings.filter((b) => b.staffId === st.id).length;
           const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
           const staffDayBlocks = activeBlocksByStaff.get(st.id) ?? [];
-          const colorIdx = staffColorIndex.get(st.id) ?? 0;
+          const colorIdx = allStaffColorIndex.get(st.id) ?? 0;
           return (
             <VStack
               key={st.id}
@@ -271,14 +443,17 @@ export function VisualScheduleGrid({
                     <Heading level={3} className="lk-serif ad-h3">
                       {st.name}
                     </Heading>
-                    <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                    <Text
+                      color="inherit"
+                      className="ad-chip"
+                      data-tone="neutral"
+                      hasTabularNumbers
+                    >
                       {staffDayCount}
                     </Text>
                   </HStack>
                   <Text type="supporting" color="secondary" hasTabularNumbers>
-                    {fixedTimes.length > 0
-                      ? `Turnos: ${fixedTimes.join(' · ')}`
-                      : st.roleTitle}
+                    {fixedTimes.length > 0 ? `Turnos: ${fixedTimes.join(' · ')}` : st.roleTitle}
                   </Text>
                 </VStack>
                 <Button
@@ -287,7 +462,7 @@ export function VisualScheduleGrid({
                   size="sm"
                   variant="secondary"
                   icon={<Plus size={14} />}
-                  onClick={() => onOpenNewForStaff(st.id)}
+                  onClick={() => onOpenNewForStaff(st.id, dateKey)}
                 />
               </HStack>
               {staffDayBlocks.length > 0 ? (
@@ -326,6 +501,10 @@ export function VisualScheduleGrid({
             const isQuietHour =
               bookingsAtHour.length === 0 && !hasFixedAtHour && !hasBlockAtHour;
 
+            if (isQuietHour && !showQuietHours) {
+              return null;
+            }
+
             return (
               <VStack
                 key={hour}
@@ -344,12 +523,12 @@ export function VisualScheduleGrid({
                   <HStack gap={1.5} wrap="wrap">
                     {hasFixedAtHour ? (
                       <Text color="inherit" className="ad-chip" data-tone="neutral">
-                        Turno fijo
+                        Turno
                       </Text>
                     ) : null}
                     {hasBlockAtHour ? (
                       <Text color="inherit" className="ad-chip" data-tone="warning">
-                        Bloqueo recurrente
+                        Horario bloqueado
                       </Text>
                     ) : null}
                   </HStack>
@@ -366,10 +545,10 @@ export function VisualScheduleGrid({
                     const staffFixedInHour = (fixedTimesByStaff.get(st.id) ?? []).filter(
                       (t) => Number(t.slice(0, 2)) === hour,
                     );
-                    const cellBlocks = (activeBlocksByStaff.get(st.id) ?? []).filter(
-                      (blk) => doesBlockOverlapHour(blk, hour),
+                    const cellBlocks = (activeBlocksByStaff.get(st.id) ?? []).filter((blk) =>
+                      doesBlockOverlapHour(blk, hour),
                     );
-                    const colorIdx = staffColorIndex.get(st.id) ?? 0;
+                    const colorIdx = allStaffColorIndex.get(st.id) ?? 0;
 
                     if (cellBookings.length === 0) {
                       return (
@@ -403,7 +582,7 @@ export function VisualScheduleGrid({
                                 label="Agendar"
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => onOpenNewForStaff(st.id)}
+                                onClick={() => onOpenNewForStaff(st.id, dateKey)}
                               />
                             ) : null}
                           </HStack>
@@ -444,20 +623,25 @@ export function VisualScheduleGrid({
                             b.totalPriceCents,
                             paymentSplits.filter((s) => s.bookingId === b.id),
                           );
-                          const canRemind =
-                            b.status === 'confirmed' ||
+                          const isPending =
                             b.status === 'pending_confirmation' ||
                             b.status === 'pending_payment';
                           const canCollect =
                             b.status === 'confirmed' ||
                             (b.status === 'completed' && paymentSummary.isUncollected);
+                          const isBusyCard = busyBookingId === b.id;
 
                           return (
                             <VStack
                               key={b.id}
                               as="article"
-                              className="ad-surface fx-card-lift"
+                              className={
+                                isBusyCard
+                                  ? 'ad-surface fx-card-lift fx-busy'
+                                  : 'ad-surface fx-card-lift'
+                              }
                               data-padded="true"
+                              aria-busy={isBusyCard || undefined}
                               gap={2}
                             >
                               <HStack justify="between" align="center" gap={1.5} wrap="wrap">
@@ -474,16 +658,14 @@ export function VisualScheduleGrid({
                                     {formatTimeInTimezone(b.endAt, timezone, true)}
                                   </Text>
                                 </HStack>
-                                <Badge
-                                  variant={statusMeta.variant}
-                                  label={statusMeta.label}
-                                />
+                                <Badge variant={statusMeta.variant} label={statusMeta.label} />
                               </HStack>
 
                               <VStack gap={0.5} align="start">
                                 <button
                                   type="button"
                                   className="ad-inline-link fx-press"
+                                  disabled={isBusyCard}
                                   onClick={() => onSelectBooking(b)}
                                   style={{
                                     border: 0,
@@ -502,10 +684,8 @@ export function VisualScheduleGrid({
 
                                 <Text type="supporting" color="secondary">
                                   {b.service.name}
-                                  {extraNames.length > 0
-                                    ? ` + ${extraNames.join(' + ')}`
-                                    : ''}{' '}
-                                  · {st.name}
+                                  {extraNames.length > 0 ? ` + ${extraNames.join(' + ')}` : ''} ·{' '}
+                                  {st.name}
                                 </Text>
                               </VStack>
 
@@ -529,7 +709,7 @@ export function VisualScheduleGrid({
                                 b.status !== 'no_show' &&
                                 paymentSummary.isUncollected ? (
                                   <Text color="inherit" className="ad-chip" data-tone="warning">
-                                    Por cobrar
+                                    Falta cobrar
                                   </Text>
                                 ) : null}
                               </HStack>
@@ -537,41 +717,41 @@ export function VisualScheduleGrid({
                               <Divider />
 
                               <HStack gap={1.5} wrap="wrap">
-                                <Button
-                                  label="Gestionar"
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => onSelectBooking(b)}
-                                />
-                                {b.status === 'pending_confirmation' ||
-                                b.status === 'pending_payment' ? (
+                                {isPending ? (
                                   <Button
-                                    label="Confirmar"
+                                    type="button"
+                                    label={
+                                      isBusyCard && busyStatus === 'confirmed'
+                                        ? 'Confirmando...'
+                                        : 'Confirmar'
+                                    }
                                     size="sm"
                                     variant="primary"
                                     icon={<Check size={13} />}
+                                    isLoading={isBusyCard && busyStatus === 'confirmed'}
+                                    isDisabled={isBusyCard}
                                     onClick={() => onUpdateStatus(b.id, 'confirmed')}
                                   />
                                 ) : null}
                                 {canCollect ? (
                                   <Button
+                                    type="button"
                                     label="Cobrar"
                                     size="sm"
                                     variant="primary"
                                     icon={<DollarSign size={13} aria-hidden="true" />}
+                                    isDisabled={isBusyCard}
                                     onClick={() => onOpenCheckout(b)}
                                   />
                                 ) : null}
-                                {canRemind ? (
-                                  <Button
-                                    label="Recordatorio"
-                                    size="sm"
-                                    variant="secondary"
-                                    icon={<Bell size={13} />}
-                                    isLoading={remindingBookingId === b.id}
-                                    onClick={() => onSendReminder(b.id)}
-                                  />
-                                ) : null}
+                                <Button
+                                  type="button"
+                                  label="Ver opciones"
+                                  size="sm"
+                                  variant="secondary"
+                                  isDisabled={isBusyCard}
+                                  onClick={() => onSelectBooking(b)}
+                                />
                               </HStack>
                             </VStack>
                           );

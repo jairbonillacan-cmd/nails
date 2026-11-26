@@ -15,6 +15,7 @@ interface CitaHeroProps {
   bookingCode: string;
   salonName: string;
   hasPaymentProof: boolean;
+  requiresDeposit?: boolean;
 }
 
 interface HeroCopy {
@@ -28,6 +29,7 @@ function getHeroCopy(
   status: BookingStatus,
   salonName: string,
   hasPaymentProof: boolean,
+  requiresDeposit: boolean,
 ): HeroCopy {
   switch (status) {
     case 'confirmed':
@@ -35,32 +37,38 @@ function getHeroCopy(
         title: 'Cita confirmada',
         statusLabel: 'Confirmada',
         tone: 'success',
-        subtitle: `Tu lugar en ${salonName} está confirmado. Aquí tienes los detalles de tu visita.`,
+        subtitle: `Todo listo para tu cita en ${salonName}. Aquí tienes tus accesos rápidos y detalles.`,
       };
     case 'pending_payment':
       return {
         title: '¡Tu cita está apartada!',
-        statusLabel: 'Anticipo pendiente',
+        statusLabel: hasPaymentProof ? 'Comprobante en revisión' : 'Anticipo pendiente',
         tone: 'warning',
         subtitle: hasPaymentProof
-          ? 'Recibimos tu comprobante y lo estamos validando.'
-          : 'Envía tu anticipo para confirmar tu horario.',
+          ? 'Comprobante recibido · En revisión por el estudio. Te avisamos por WhatsApp al confirmar.'
+          : 'Completa tu anticipo en línea o por SPEI para confirmar tu horario.',
       };
     case 'pending_confirmation':
       return {
         title: '¡Tu cita está apartada!',
-        statusLabel: hasPaymentProof ? 'Comprobante en revisión' : 'Pendiente de confirmación',
+        statusLabel: hasPaymentProof
+          ? 'Comprobante en revisión'
+          : requiresDeposit
+            ? 'Anticipo pendiente'
+            : 'Pendiente de confirmación',
         tone: 'warning',
         subtitle: hasPaymentProof
-          ? 'Ya tenemos tu comprobante. Te avisamos por WhatsApp en cuanto quede confirmada.'
-          : 'Sube tu comprobante de anticipo aquí o mándalo por Instagram para confirmarla.',
+          ? 'Comprobante recibido · En revisión por el estudio. Te avisamos por WhatsApp en cuanto quede confirmada.'
+          : requiresDeposit
+            ? 'Envía tu anticipo por SPEI y sube tu comprobante aquí o mándalo por Instagram DM.'
+            : 'El estudio está revisando tu solicitud y te confirmará por WhatsApp muy pronto.',
       };
     case 'completed':
       return {
         title: '¡Gracias por visitarnos!',
         statusLabel: 'Completada',
         tone: 'info',
-        subtitle: `Esperamos que hayas amado tu set en ${salonName}. Cuéntanos cómo te fue.`,
+        subtitle: `Esperamos que hayas amado tu set en ${salonName}. Cuéntanos cómo te fue y agenda tu próximo retoque.`,
       };
     case 'canceled':
       return {
@@ -74,7 +82,7 @@ function getHeroCopy(
         title: 'Cita registrada como inasistencia',
         statusLabel: 'No asistió',
         tone: 'error',
-        subtitle: 'Si necesitas reagendar una nueva visita, puedes reservar en línea.',
+        subtitle: 'Cuando estés lista para volver, puedes agendar una nueva cita en línea.',
       };
   }
 }
@@ -84,8 +92,9 @@ export function CitaHero({
   bookingCode,
   salonName,
   hasPaymentProof,
+  requiresDeposit = true,
 }: CitaHeroProps) {
-  const copy = getHeroCopy(status, salonName, hasPaymentProof);
+  const copy = getHeroCopy(status, salonName, hasPaymentProof, requiresDeposit);
   const copyFeedback = useEphemeralMessage(2400);
   const [copyOk, setCopyOk] = useState(false);
   const lastAnnouncementRef = useRef('');
@@ -111,6 +120,8 @@ export function CitaHero({
     }
   };
 
+  const isCopiedActive = Boolean(copyFeedback.message && copyOk);
+
   return (
     <VStack as="section" className="rb-hero ck-hero" aria-labelledby="ck-title">
       <img
@@ -135,8 +146,13 @@ export function CitaHero({
             <Text color="inherit" weight="bold" hasTabularNumbers>
               {bookingCode}
             </Text>
-            {copyFeedback.message && copyOk ? (
-              <Check size={14} aria-hidden="true" className="fx-pop" />
+            {isCopiedActive ? (
+              <>
+                <Check size={14} aria-hidden="true" className="fx-pop" />
+                <Text color="inherit" type="supporting" weight="semibold">
+                  Copiado
+                </Text>
+              </>
             ) : (
               <Copy size={14} aria-hidden="true" />
             )}
@@ -146,7 +162,7 @@ export function CitaHero({
             type="supporting"
             role="status"
             aria-live="polite"
-            className="ck-hero-status"
+            className={copyFeedback.message && !copyOk ? 'ck-hero-status' : 'rb-sr-only'}
           >
             {copyFeedback.message ?? ''}
           </Text>

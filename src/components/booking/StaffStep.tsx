@@ -1,15 +1,19 @@
 'use client';
 
+import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Check, Sparkles } from 'lucide-react';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
 import type { PublicStaffDTO } from '@/lib/public-dto';
 import { staffAvatar } from '../landing/landingContent';
+import {
+  getStaffScheduleLabel,
+  isOptimizableLocalRasterImage,
+} from './bookingHelpers';
 
 interface StaffStepProps {
   timezone: string;
@@ -18,6 +22,7 @@ interface StaffStepProps {
   eligibleStaff: PublicStaffDTO[];
   allStaff: PublicStaffDTO[];
   chosenStaffId: string;
+  pendingStaffId: string | null;
   takenStaffIds: ReadonlySet<string>;
   isBusy: boolean;
   errorMessage: string | null;
@@ -31,6 +36,7 @@ export function StaffStep({
   eligibleStaff,
   allStaff,
   chosenStaffId,
+  pendingStaffId,
   takenStaffIds,
   isBusy,
   errorMessage,
@@ -39,6 +45,7 @@ export function StaffStep({
   const time = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
   const freeIds = new Set(slot.availableStaffIds);
   const isFree = (staffId: string) => freeIds.has(staffId) && !takenStaffIds.has(staffId);
+  const isAnyPending = pendingStaffId === 'any';
 
   return (
     <VStack gap={5} className="fx-step-in">
@@ -55,10 +62,6 @@ export function StaffStep({
         </Text>
       </VStack>
 
-      {isBusy ? (
-        <ProgressBar label="Actualizando tu apartado con la artista elegida" isIndeterminate />
-      ) : null}
-
       {errorMessage ? (
         <VStack className="fx-fade-up">
           <Banner status="warning" title="Esa artista ya no está libre" description={errorMessage} />
@@ -69,8 +72,13 @@ export function StaffStep({
         <li>
           <button
             type="button"
-            className="rb-opt rb-artist fx-card-lift fx-press"
+            className={
+              isAnyPending
+                ? 'rb-opt rb-artist fx-card-lift fx-press fx-busy'
+                : 'rb-opt rb-artist fx-card-lift fx-press'
+            }
             aria-pressed={chosenStaffId === 'any'}
+            aria-busy={isAnyPending ? 'true' : undefined}
             disabled={isBusy}
             onClick={() => onPickStaff('any')}
           >
@@ -85,10 +93,15 @@ export function StaffStep({
                 La opción más rápida
               </Text>
               <Text type="supporting" color="secondary">
-                Te asignamos a quien esté libre
+                {isAnyPending ? 'Confirmando tu lugar…' : 'Te asignamos a quien esté libre'}
               </Text>
             </VStack>
-            <Text color="inherit" className="rb-check rb-check-round" data-on={chosenStaffId === 'any' ? 'true' : 'false'} aria-hidden="true">
+            <Text
+              color="inherit"
+              className="rb-check rb-check-round"
+              data-on={chosenStaffId === 'any' ? 'true' : 'false'}
+              aria-hidden="true"
+            >
               <Check size={16} />
             </Text>
           </button>
@@ -96,25 +109,48 @@ export function StaffStep({
         {eligibleStaff.map((member) => {
           const free = isFree(member.id);
           const isOn = chosenStaffId === member.id;
+          const isPending = pendingStaffId === member.id;
           const index = allStaff.findIndex((item) => item.id === member.id);
+          const shiftLabel = getStaffScheduleLabel(member, timeFormat);
           return (
             <li key={member.id}>
               <button
                 type="button"
-                className="rb-opt rb-artist fx-card-lift fx-press"
-                aria-pressed={isOn}
+                className={
+                  isPending
+                    ? 'rb-opt rb-artist fx-card-lift fx-press fx-busy'
+                    : 'rb-opt rb-artist fx-card-lift fx-press'
+                }
+                aria-pressed={isOn || isPending}
+                aria-busy={isPending ? 'true' : undefined}
                 disabled={!free || isBusy}
                 onClick={() => onPickStaff(member.id)}
               >
-                <img
-                  className="rb-artist-photo"
-                  src={staffAvatar(member.avatarUrl, Math.max(0, index))}
-                  alt=""
-                  width={68}
-                  height={68}
-                  loading="lazy"
-                  decoding="async"
-                />
+                {(() => {
+                  const avatarSrc = staffAvatar(member.avatarUrl, Math.max(0, index));
+                  return isOptimizableLocalRasterImage(avatarSrc) ? (
+                    <Image
+                      className="rb-artist-photo"
+                      src={avatarSrc}
+                      alt=""
+                      width={68}
+                      height={68}
+                      sizes="4.25rem"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <img
+                      className="rb-artist-photo"
+                      src={avatarSrc}
+                      alt=""
+                      width={68}
+                      height={68}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  );
+                })()}
                 <VStack gap={0} className="rb-grow">
                   <Text weight="medium" className="lk-serif rb-artist-name">
                     {member.name}
@@ -123,10 +159,24 @@ export function StaffStep({
                     {member.roleTitle}
                   </Text>
                   <Text type="supporting" color="secondary">
-                    {free ? 'Libre a esa hora' : 'Ocupada a esa hora'}
+                    {isPending
+                      ? 'Apartando horario…'
+                      : free
+                        ? 'Libre a esa hora'
+                        : 'Ocupada a esa hora'}
                   </Text>
+                  {shiftLabel ? (
+                    <Text type="supporting" color="secondary" hasTabularNumbers>
+                      {shiftLabel}
+                    </Text>
+                  ) : null}
                 </VStack>
-                <Text color="inherit" className="rb-check rb-check-round" data-on={isOn ? 'true' : 'false'} aria-hidden="true">
+                <Text
+                  color="inherit"
+                  className="rb-check rb-check-round"
+                  data-on={isOn || isPending ? 'true' : 'false'}
+                  aria-hidden="true"
+                >
                   <Check size={16} />
                 </Text>
               </button>

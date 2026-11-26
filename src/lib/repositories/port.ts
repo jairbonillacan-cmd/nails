@@ -25,6 +25,9 @@ import type {
   InventoryItem,
   LoyaltyProgram,
   LoyaltyStamp,
+  MediaAccessOwner,
+  MediaAssetFolder,
+  MediaAssetRecord,
   NotificationWorkflow,
   PaymentMethod,
   PaymentSplit,
@@ -37,6 +40,8 @@ import type {
   SlotHold,
   StaffMember,
   WaitlistEntry,
+  WhatsAppMonthlyUsageSummary,
+  WhatsAppTemplateConfig,
 } from '../types';
 
 type OutboxEventStatus = 'pending' | 'processing' | 'processed' | 'failed';
@@ -255,6 +260,21 @@ export interface AdjustInventoryInput {
   createdBy?: string;
 }
 
+export interface RegisterMediaAssetInput {
+  storagePath: string;
+  folder: MediaAssetFolder;
+  bookingId?: string | null;
+  clientId?: string | null;
+  contentType: string;
+  sizeBytes: number;
+  createdAt?: string;
+}
+
+export interface CleanupExpiredSlotHoldsResult {
+  cleanedCount: number;
+  dbAlive: boolean;
+}
+
 export interface SalonRepository {
   getSnapshot(): Promise<Readonly<DemoDatabase>>;
   getPublicBootstrap(): Promise<PublicBootstrapData>;
@@ -356,4 +376,22 @@ export interface SalonRepository {
   awardLoyaltyStamp?(params: AwardLoyaltyStampInput): Promise<LoyaltyStamp>;
   recordConsent?(params: RecordConsentInput): Promise<ConsentRecord>;
   writeAuditLog?(params: WriteAuditLogInput): Promise<AuditLogEntry>;
+
+  registerMediaAsset(input: RegisterMediaAssetInput): Promise<MediaAssetRecord>;
+  getMediaAccessOwner(storagePath: string): Promise<MediaAccessOwner | null>;
+  listMediaAssetsForRetention(): Promise<MediaAssetRecord[]>;
+  markMediaRetentionWarned(
+    id: string,
+    stage: '30d' | '7d',
+    atIso?: string,
+  ): Promise<MediaAssetRecord | null>;
+  markMediaAssetPurged(id: string, atIso?: string): Promise<MediaAssetRecord | null>;
+  getWhatsAppTemplates(): Promise<WhatsAppTemplateConfig[]>;
+  getWhatsAppMonthlyUsage(monthKey?: string): Promise<WhatsAppMonthlyUsageSummary>;
+  incrementWhatsAppMonthlyUsage(
+    monthKey?: string,
+    count?: number,
+  ): Promise<WhatsAppMonthlyUsageSummary>;
+  claimWebhookEventIdempotent(provider: string, eventId: string): Promise<boolean>;
+  cleanupExpiredSlotHolds(nowMs?: number): Promise<CleanupExpiredSlotHoldsResult>;
 }

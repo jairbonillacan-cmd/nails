@@ -1,6 +1,29 @@
+import { Buffer } from 'node:buffer';
 import crypto from 'node:crypto';
 import { getRuntimeIntegrationStatus } from '../env';
+import { logWarn } from '../logger';
 import type { BookingWithRelations, CalendarConnection, SalonSettings } from '../types';
+
+const GOOGLE_HTTP_TIMEOUT_MS = 8_000;
+
+function createRequestSignal(timeoutMs = GOOGLE_HTTP_TIMEOUT_MS): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  return undefined;
+}
+
+function resolveGoogleOAuthRedirectUri(appUrl: string): string {
+  const normalizedBase = appUrl.trim().replace(/\/+$/, '');
+  return `${normalizedBase}/api/integrations/google/callback`;
+}
+
+function createChannelUuid(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return crypto.randomUUID();
+}
 
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
@@ -68,7 +91,7 @@ export function buildGoogleOAuthUrl(staffId: string): string | null {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   if (!clientId) return null;
 
-  const redirectUri = `${env.appUrl}/api/integrations/google/callback`;
+  const redirectUri = resolveGoogleOAuthRedirectUri(env.appUrl);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -98,13 +121,14 @@ export async function exchangeGoogleOAuthCode(params: {
   }
 
   const env = getRuntimeIntegrationStatus();
-  const redirectUri = params.redirectUri ?? `${env.appUrl}/api/integrations/google/callback`;
+  const redirectUri =
+    params.redirectUri?.trim() || resolveGoogleOAuthRedirectUri(env.appUrl);
   const fetcher = params.fetchImpl ?? globalThis.fetch;
 
   const tokenRes = await fetcher('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    signal: AbortSignal.timeout(8_000),
+    signal: createRequestSignal(),
     body: new URLSearchParams({
       code: params.code,
       client_id: clientId,
@@ -139,6 +163,7 @@ export async function exchangeGoogleOAuthCode(params: {
       'https://www.googleapis.com/oauth2/v2/userinfo',
       {
         headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+        signal: createRequestSignal(),
       },
     );
     if (profileRes.ok) {
@@ -147,7 +172,8 @@ export async function exchangeGoogleOAuthCode(params: {
         accountEmail = profileJson.email.trim();
       }
     }
-  } catch {
+  } catch (err) {
+    logWarn('google_oauth_userinfo_failed', { error: err });
     accountEmail = null;
   }
 
@@ -173,6 +199,7 @@ async function refreshGoogleAccessToken(params: {
   const res = await fetcher('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    signal: createRequestSignal(),
     body: new URLSearchParams({
       refresh_token: params.refreshToken,
       client_id: clientId,
@@ -277,13 +304,20 @@ export async function syncBookingToGoogleCalendar(params: {
 
   if (params.action === 'delete') {
     if (params.booking.googleEventId) {
-      await fetcher(
+      const deleteRes = await fetcher(
         `${baseUrl}/${encodeURIComponent(params.booking.googleEventId)}`,
         {
           method: 'DELETE',
           headers,
+          signal: createRequestSignal(),
         },
       );
+      if (!deleteRes.ok && deleteRes.status !== 404 && deleteRes.status !== 410) {
+        logWarn('google_calendar_event_delete_failed', {
+          status: deleteRes.status,
+          bookingCode: params.booking.bookingCode,
+        });
+      }
     }
     return {
       googleEventId: null,
@@ -315,10 +349,16 @@ export async function syncBookingToGoogleCalendar(params: {
   const res = await fetcher(targetUrl, {
     method: isUpdate ? 'PATCH' : 'POST',
     headers,
+    signal: createRequestSignal(),
     body: JSON.stringify(eventBody),
   });
 
   if (!res.ok) {
+    logWarn('google_calendar_event_sync_failed', {
+      action: params.action,
+      status: res.status,
+      bookingCode: params.booking.bookingCode,
+    });
     return {
       googleEventId: params.booking.googleEventId,
       synced: false,
@@ -327,7 +367,10 @@ export async function syncBookingToGoogleCalendar(params: {
     };
   }
 
-  const createdJson = (await res.json().catch(() => null)) as { id?: string } | null;
+  const createdJson = (await res.json().catch((err) => {
+    logWarn('google_calendar_event_json_parse_failed', { error: err });
+    return null;
+  })) as { id?: string } | null;
   return {
     googleEventId:
       createdJson?.id ??
@@ -381,6 +424,7 @@ export async function fetchGoogleFreeBusy(params: {
       Authorization: `Bearer ${resolved.accessToken}`,
       'Content-Type': 'application/json',
     },
+    signal: createRequestSignal(),
     body: JSON.stringify({
       timeMin,
       timeMax,
@@ -389,6 +433,10 @@ export async function fetchGoogleFreeBusy(params: {
   });
 
   if (!res.ok) {
+    logWarn('google_calendar_freebusy_failed', {
+      staffId: params.connection.staffId,
+      status: res.status,
+    });
     return {
       busyBlocks: params.connection.externalBusyBlocks ?? [],
       synced: false,
@@ -397,7 +445,10 @@ export async function fetchGoogleFreeBusy(params: {
     };
   }
 
-  const json = (await res.json().catch(() => null)) as {
+  const json = (await res.json().catch((err) => {
+    logWarn('google_calendar_freebusy_json_parse_failed', { error: err });
+    return null;
+  })) as {
     calendars?: Record<
       string,
       { busy?: Array<{ start?: string; end?: string }> }
@@ -445,7 +496,7 @@ export async function registerGoogleCalendarWatch(params: {
   const resolved = await resolveConnectionAccessToken(params.connection, fetcher);
   if (!resolved) return null;
 
-  const channelId = params.channelId ?? `nails-gcal-${crypto.randomUUID()}`;
+  const channelId = params.channelId ?? `nails-gcal-${createChannelUuid()}`;
   const calendarId = encodeURIComponent(
     params.connection.destinationCalendarId || 'primary',
   );
@@ -457,17 +508,27 @@ export async function registerGoogleCalendarWatch(params: {
         Authorization: `Bearer ${resolved.accessToken}`,
         'Content-Type': 'application/json',
       },
+      signal: createRequestSignal(),
       body: JSON.stringify({
         id: channelId,
         type: 'web_hook',
-        address: params.webhookUrl,
+        address: params.webhookUrl.trim(),
         token: params.webhookToken,
       }),
     },
   );
 
-  if (!res.ok) return null;
-  const json = (await res.json().catch(() => null)) as {
+  if (!res.ok) {
+    logWarn('google_calendar_watch_failed', {
+      staffId: params.connection.staffId,
+      status: res.status,
+    });
+    return null;
+  }
+  const json = (await res.json().catch((err) => {
+    logWarn('google_calendar_watch_json_parse_failed', { error: err });
+    return null;
+  })) as {
     id?: string;
     resourceId?: string;
     expiration?: string;

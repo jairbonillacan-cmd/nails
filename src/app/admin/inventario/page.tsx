@@ -33,11 +33,40 @@ import type { InventoryItem } from '@/lib/types';
 
 type InventoryFilter = 'all' | 'low' | 'retail' | 'cabin';
 
+function applyDeltaMap(
+  prev: Record<string, number>,
+  itemId: string,
+  delta: number,
+): Record<string, number> {
+  const nextVal = (prev[itemId] ?? 0) + delta;
+  const next: Record<string, number> = {};
+  for (const [key, value] of Object.entries(prev)) {
+    if (key !== itemId) {
+      next[key] = value;
+    }
+  }
+  if (nextVal !== 0) {
+    next[itemId] = nextVal;
+  }
+  return next;
+}
+
+function removeKey(prev: Record<string, string>, keyToRemove: string): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(prev)) {
+    if (key !== keyToRemove) {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
 export default function AdminInventoryPage() {
   const { data, loading, refresh } = useAdminData();
   const [filterMode, setFilterMode] = useState<InventoryFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [busyByItem, setBusyByItem] = useState<Record<string, string>>({});
+  const [optimisticDeltas, setOptimisticDeltas] = useState<Record<string, number>>({});
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
 
   const [name, setName] = useState('');
@@ -56,11 +85,20 @@ export default function AdminInventoryPage() {
   }
 
   const currency = data.settings.currency;
-  const lowStock = data.inventory.filter(
+  const effectiveInventory = data.inventory.map((item) => {
+    const pendingDelta = optimisticDeltas[item.id] ?? 0;
+    if (pendingDelta === 0) return item;
+    return {
+      ...item,
+      stockQuantity: Math.max(0, item.stockQuantity + pendingDelta),
+    };
+  });
+
+  const lowStock = effectiveInventory.filter(
     (i) => i.isActive && i.stockQuantity <= i.minStockAlert,
   );
-  const retailCount = data.inventory.filter((i) => i.isActive && i.isForRetail).length;
-  const totalCostCents = data.inventory.reduce(
+  const retailCount = effectiveInventory.filter((i) => i.isActive && i.isForRetail).length;
+  const totalCostCents = effectiveInventory.reduce(
     (sum, item) => sum + item.costCents * Math.max(0, item.stockQuantity),
     0,
   );
@@ -68,33 +106,33 @@ export default function AdminInventoryPage() {
   const kpiItems: AdminConfigKpiItem[] = [
     {
       id: 'inv-total',
-      label: 'Total insumos',
-      value: String(data.inventory.length),
-      sub: `${data.inventory.filter((i) => i.isActive).length} activos`,
+      label: 'Productos',
+      value: String(effectiveInventory.length),
+      sub: `${effectiveInventory.filter((i) => i.isActive).length} activos`,
     },
     {
       id: 'inv-low',
-      label: 'Stock bajo',
+      label: 'Por acabarse',
       value: String(lowStock.length),
-      sub: lowStock.length > 0 ? 'Requieren reposición' : 'Niveles saludables',
+      sub: lowStock.length > 0 ? 'Falta resurtir' : 'Todo completo',
       tone: lowStock.length > 0 ? 'warning' : 'success',
     },
     {
       id: 'inv-retail',
-      label: 'Reventa',
+      label: 'Para venta',
       value: String(retailCount),
-      sub: 'Suman directo a Caja',
+      sub: 'Se cobran en Caja',
     },
     {
       id: 'inv-value',
-      label: 'Valor en stock',
+      label: 'Valor invertido',
       value: formatCurrency(totalCostCents, currency),
-      sub: 'A costo unitario',
+      sub: 'A precio de compra',
     },
   ];
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  const filteredInventory = data.inventory.filter((item) => {
+  const filteredInventory = effectiveInventory.filter((item) => {
     if (filterMode === 'low' && !(item.isActive && item.stockQuantity <= item.minStockAlert)) {
       return false;
     }
@@ -114,8 +152,8 @@ export default function AdminInventoryPage() {
     reason: 'restock' | 'service_usage' | 'retail_sale',
     notes: string,
   ) => {
-    const actionKey = `${itemId}:${reason}`;
-    setBusyAction(actionKey);
+    setBusyByItem((prev) => ({ ...prev, [itemId]: reason }));
+    setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, delta));
     try {
       const res = await fetch('/api/admin/operations', {
         method: 'POST',
@@ -130,19 +168,26 @@ export default function AdminInventoryPage() {
           status: 'success',
           text:
             reason === 'retail_sale'
-              ? 'Venta registrada en Caja y descontada de inventario.'
+              ? 'Venta registrada en Caja y descontada del inventario.'
               : reason === 'restock'
-                ? 'Entrada (+1) registrada en inventario.'
-                : 'Consumo interno (-1) descontado del stock.',
+                ? 'Entrada (+1) sumada al inventario.'
+                : 'Consumo (-1) descontado del inventario.',
         });
         await refresh();
+        setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, -delta));
       } else {
-        setMsg({ status: 'error', text: 'No se pudo registrar el movimiento.' });
+        setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, -delta));
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({
+          status: 'error',
+          text: errJson?.error || 'No se pudo actualizar el inventario.',
+        });
       }
     } catch {
-      setMsg({ status: 'error', text: 'Error de conexión al actualizar stock.' });
+      setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, -delta));
+      setMsg({ status: 'error', text: 'No se pudo conectar para actualizar las existencias.' });
     } finally {
-      setBusyAction(null);
+      setBusyByItem((prev) => removeKey(prev, itemId));
     }
   };
 
@@ -151,7 +196,7 @@ export default function AdminInventoryPage() {
     if (name.trim().length < 2) return;
     setCreating(true);
     try {
-      const generatedSku = sku.trim() || `SKU-${String(Date.now()).slice(-4)}`;
+      const generatedCode = sku.trim() || `PROD-${String(Date.now()).slice(-4)}`;
       const res = await fetch('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -159,7 +204,7 @@ export default function AdminInventoryPage() {
           kind: 'inventory',
           data: {
             newItem: {
-              sku: generatedSku,
+              sku: generatedCode,
               name: name.trim(),
               category,
               unit: unit.trim() || 'pieza',
@@ -176,13 +221,13 @@ export default function AdminInventoryPage() {
       if (res.ok) {
         setName('');
         setSku('');
-        setMsg({ status: 'success', text: 'Producto/insumo agregado al inventario.' });
+        setMsg({ status: 'success', text: 'Producto agregado a tu inventario.' });
         await refresh();
       } else {
         setMsg({ status: 'error', text: 'No se pudo guardar el producto.' });
       }
     } catch {
-      setMsg({ status: 'error', text: 'Error de conexión al guardar el producto.' });
+      setMsg({ status: 'error', text: 'No se pudo conectar para guardar el producto.' });
     } finally {
       setCreating(false);
     }
@@ -191,9 +236,9 @@ export default function AdminInventoryPage() {
   return (
     <VStack className="ad-page">
       <AdminConfigPageHeader
-        eyebrow="Catálogo e insumos"
-        title="Inventario e insumos"
-        subtitle="Controla geles, acrílicos, tips y productos de reventa con alertas de stock mínimo y descuento instantáneo a cabina o Caja."
+        eyebrow="Tu salón"
+        title="Inventario"
+        subtitle="Lleva el control de geles, acrílicos, tips y productos de venta con avisos cuando algo esté por acabarse."
       />
 
       <AdminConfigKpiStrip ariaLabel="Resumen de inventario" items={kpiItems} cols={4} />
@@ -203,12 +248,12 @@ export default function AdminInventoryPage() {
           tone="warning"
           padded
           icon={<AlertTriangle size={16} aria-hidden="true" />}
-          title={`${lowStock.length} insumo${lowStock.length === 1 ? '' : 's'} por debajo del mínimo`}
-          subtitle="Repón en 1 toque o filtra la lista para revisar existencias críticas."
+          title={`${lowStock.length} ${lowStock.length === 1 ? 'producto por acabarse' : 'productos por acabarse'}`}
+          subtitle="Repón en un toque o filtra la lista para ver qué falta comprar."
           actions={
             <Button
               type="button"
-              label={filterMode === 'low' ? 'Ver todo el inventario' : 'Ver solo stock bajo'}
+              label={filterMode === 'low' ? 'Ver todo' : 'Ver solo por acabarse'}
               variant="secondary"
               size="sm"
               onClick={() => setFilterMode((prev) => (prev === 'low' ? 'all' : 'low'))}
@@ -217,7 +262,8 @@ export default function AdminInventoryPage() {
         >
           <VStack gap={2} width="100%">
             {lowStock.map((item) => {
-              const isBusy = busyAction === `${item.id}:restock`;
+              const isBusy = busyByItem[item.id] === 'restock';
+              const pendingDelta = optimisticDeltas[item.id] ?? 0;
               return (
                 <HStack
                   key={item.id}
@@ -236,6 +282,14 @@ export default function AdminInventoryPage() {
                       label={`${item.stockQuantity} ${item.unit}`}
                       hasTabularNumbers
                     />
+                    {pendingDelta !== 0 ? (
+                      <AdminConfigChip
+                        tone={pendingDelta > 0 ? 'success' : 'warning'}
+                        label={pendingDelta > 0 ? `+${pendingDelta}` : String(pendingDelta)}
+                        className="fx-pop"
+                        hasTabularNumbers
+                      />
+                    ) : null}
                   </HStack>
                   <VStack style={{ flexShrink: 0 }}>
                     <Button
@@ -244,6 +298,7 @@ export default function AdminInventoryPage() {
                       variant="secondary"
                       size="sm"
                       isLoading={isBusy}
+                      isDisabled={Boolean(busyByItem[item.id])}
                       onClick={() =>
                         void adjust(item.id, 1, 'restock', 'Reposición rápida desde alerta')
                       }
@@ -269,8 +324,8 @@ export default function AdminInventoryPage() {
       <VStack className="ad-split" gap={5}>
         <AdminConfigSection
           id="inventory-list-heading"
-          title="Existencias y movimientos"
-          subtitle="Registra entradas, consumos de cabina o ventas directas a Caja."
+          title="Material y productos"
+          subtitle="Registra entradas, consumos del salón o ventas directas a Caja."
           badge={
             <AdminConfigChip
               label={String(filteredInventory.length)}
@@ -297,7 +352,7 @@ export default function AdminInventoryPage() {
                 aria-pressed={filterMode === 'low'}
                 onClick={() => setFilterMode('low')}
               >
-                Stock bajo ({lowStock.length})
+                Por acabarse ({lowStock.length})
               </button>
               <button
                 type="button"
@@ -306,7 +361,7 @@ export default function AdminInventoryPage() {
                 aria-pressed={filterMode === 'retail'}
                 onClick={() => setFilterMode('retail')}
               >
-                Reventa ({retailCount})
+                Para venta ({retailCount})
               </button>
               <button
                 type="button"
@@ -315,16 +370,16 @@ export default function AdminInventoryPage() {
                 aria-pressed={filterMode === 'cabin'}
                 onClick={() => setFilterMode('cabin')}
               >
-                Cabina
+                Uso en salón
               </button>
             </HStack>
 
-            <VStack maxWidth={220} width="100%">
+            <VStack width="min(14rem, 100%)">
               <TextInput
-                label="Buscar insumo"
+                label="Buscar producto"
                 isLabelHidden
                 size="sm"
-                placeholder="Buscar SKU o producto..."
+                placeholder="Buscar producto o categoría..."
                 value={searchQuery}
                 onChange={setSearchQuery}
                 startIcon={<Search size={14} aria-hidden="true" />}
@@ -336,7 +391,7 @@ export default function AdminInventoryPage() {
             <AdminConfigEmpty
               icon={<Package size={22} aria-hidden="true" />}
               title="Sin productos en este filtro"
-              description="Ajusta la búsqueda o agrega un nuevo insumo desde el panel derecho."
+              description="Cambia el filtro o agrega un producto nuevo desde el panel derecho."
               action={
                 filterMode !== 'all' || searchQuery ? (
                   <Button
@@ -356,7 +411,9 @@ export default function AdminInventoryPage() {
             <VStack as="ul" className="ad-row-list" gap={0}>
               {filteredInventory.map((item) => {
                 const isLow = item.stockQuantity <= item.minStockAlert;
-                const isRowBusy = busyAction?.startsWith(`${item.id}:`) ?? false;
+                const activeReason = busyByItem[item.id] ?? null;
+                const isRowBusy = activeReason !== null;
+                const pendingDelta = optimisticDeltas[item.id] ?? 0;
 
                 return (
                   <li key={item.id} className="ad-row-item">
@@ -368,16 +425,24 @@ export default function AdminInventoryPage() {
                           label={`${item.stockQuantity} ${item.unit}`}
                           hasTabularNumbers
                         />
+                        {pendingDelta !== 0 ? (
+                          <AdminConfigChip
+                            tone={pendingDelta > 0 ? 'success' : 'warning'}
+                            label={pendingDelta > 0 ? `+${pendingDelta}` : String(pendingDelta)}
+                            className="fx-pop"
+                            hasTabularNumbers
+                          />
+                        ) : null}
                         {item.isForRetail ? (
                           <AdminConfigChip
                             tone="accent"
-                            label={`Reventa ${formatCurrency(item.retailPriceCents, currency)}`}
+                            label={`Venta ${formatCurrency(item.retailPriceCents, currency)}`}
                             hasTabularNumbers
                           />
                         ) : null}
                       </HStack>
                       <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {item.sku} · {item.category} · Mín. {item.minStockAlert} · Costo{' '}
+                        {item.category} · Mín. {item.minStockAlert} · Compra{' '}
                         {formatCurrency(item.costCents, currency)}
                       </Text>
                     </VStack>
@@ -388,10 +453,10 @@ export default function AdminInventoryPage() {
                         label="+1 Entrada"
                         size="sm"
                         variant="secondary"
-                        isLoading={busyAction === `${item.id}:restock`}
+                        isLoading={activeReason === 'restock'}
                         isDisabled={isRowBusy}
                         onClick={() =>
-                          void adjust(item.id, 1, 'restock', 'Reposición de stock')
+                          void adjust(item.id, 1, 'restock', 'Reposición de material')
                         }
                       />
                       <Button
@@ -399,25 +464,25 @@ export default function AdminInventoryPage() {
                         label="-1 Consumo"
                         size="sm"
                         variant="ghost"
-                        isLoading={busyAction === `${item.id}:service_usage`}
+                        isLoading={activeReason === 'service_usage'}
                         isDisabled={isRowBusy || item.stockQuantity <= 0}
                         onClick={() =>
                           void adjust(
                             item.id,
                             -1,
                             'service_usage',
-                            'Consumo interno de cabina',
+                            'Consumo interno del salón',
                           )
                         }
                       />
                       {item.isForRetail ? (
                         <Button
                           type="button"
-                          label="Vender (Caja)"
+                          label="Vender"
                           size="sm"
                           variant="primary"
                           icon={<ShoppingBag size={13} aria-hidden="true" />}
-                          isLoading={busyAction === `${item.id}:retail_sale`}
+                          isLoading={activeReason === 'retail_sale'}
                           isDisabled={isRowBusy || item.stockQuantity <= 0}
                           onClick={() =>
                             void adjust(
@@ -440,8 +505,8 @@ export default function AdminInventoryPage() {
         <AdminConfigSection
           id="inventory-create-heading"
           icon={<PackagePlus size={16} aria-hidden="true" />}
-          title="Agregar insumo / producto"
-          subtitle="Define alerta mínima y si estará disponible para reventa."
+          title="Agregar producto"
+          subtitle="Define cuándo avisarte y si también se vende a tus clientas."
         >
           <form onSubmit={createItem}>
             <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
@@ -453,7 +518,13 @@ export default function AdminInventoryPage() {
                 isRequired
               />
               <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
-                <TextInput label="SKU" value={sku} onChange={setSku} isOptional />
+                <TextInput
+                  label="Código"
+                  placeholder="Ej. GEL-01"
+                  value={sku}
+                  onChange={setSku}
+                  isOptional
+                />
                 <Selector
                   label="Categoría"
                   value={category}
@@ -461,22 +532,22 @@ export default function AdminInventoryPage() {
                   options={[
                     { value: 'Gel / Esmalte', label: 'Gel / Esmalte' },
                     { value: 'Acrílico', label: 'Acrílico' },
-                    { value: 'Insumo', label: 'Insumo' },
+                    { value: 'Insumo', label: 'Material de salón' },
                     { value: 'Decoración', label: 'Decoración' },
-                    { value: 'Reventa', label: 'Reventa' },
+                    { value: 'Reventa', label: 'Para venta' },
                   ]}
                 />
               </Grid>
               <Grid columns={{ minWidth: 96, max: 3 }} gap={2}>
                 <NumberInput
-                  label="Stock"
+                  label="Cantidad"
                   value={stock}
                   min={0}
                   isIntegerOnly
                   onChange={setStock}
                 />
                 <NumberInput
-                  label="Alerta mín."
+                  label="Avisar en"
                   value={minAlert}
                   min={0}
                   isIntegerOnly
@@ -485,13 +556,13 @@ export default function AdminInventoryPage() {
                 <TextInput label="Unidad" value={unit} onChange={setUnit} />
               </Grid>
               <NumberInput
-                label="Costo unitario (MXN)"
+                label="Precio de compra (MXN)"
                 value={costMxn}
                 min={0}
                 onChange={setCostMxn}
               />
               <Switch
-                label="Disponible para venta al público (suma directo a Caja)"
+                label="También se vende a clientas (se suma directo a Caja)"
                 value={isForRetail}
                 onChange={setIsForRetail}
               />

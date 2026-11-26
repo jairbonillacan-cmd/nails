@@ -1,13 +1,29 @@
+import { NextResponse } from 'next/server';
 import {
+  PUBLIC_SLOTS_CHANNEL,
   subscribeRealtime,
   toPublicRealtimeEvent,
   type PublicRealtimeEvent,
 } from '@/lib/realtime';
+import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
 
 export async function GET() {
+  if (isSupabaseEnabled()) {
+    return NextResponse.json(
+      {
+        mode: 'supabase',
+        channel: PUBLIC_SLOTS_CHANNEL,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      },
+    );
+  }
+
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;

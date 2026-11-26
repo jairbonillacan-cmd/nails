@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { defaultThemeSlug } from '@/astryx-themes';
@@ -8,6 +9,8 @@ import {
   DEFAULT_BRAND_ACCENT_LIGHT,
 } from '@/lib/theme-presets';
 import { SalonThemeProvider } from '@/components/SalonThemeProvider';
+import { PwaOfflineBootstrap } from '@/components/PwaOfflineBootstrap';
+import { RouteProgressBar } from '@/components/RouteProgressBar';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,7 +104,11 @@ export default function RootLayout({
       </head>
       <body>
         <SalonThemeProvider initialSettings={publicSettings}>
+          <Suspense fallback={null}>
+            <RouteProgressBar />
+          </Suspense>
           {children}
+          <PwaOfflineBootstrap />
         </SalonThemeProvider>
       </body>
     </html>

@@ -186,6 +186,15 @@ export default function LinksPage() {
                   href="/reservar"
                 />
                 <Button
+                  label="Mis citas y sellos"
+                  variant="secondary"
+                  size="lg"
+                  width="100%"
+                  className="fx-press"
+                  icon={<Clock size={18} aria-hidden="true" />}
+                  href="/mis-citas"
+                />
+                <Button
                   label="Ver catálogo y precios"
                   variant="secondary"
                   size="lg"

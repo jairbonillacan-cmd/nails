@@ -75,7 +75,11 @@ export function BookingHeader({
               className="rb-timer fx-tabular fx-pop"
               role="timer"
               aria-live="off"
-              aria-label="Tiempo restante de apartado"
+              aria-label={
+                holdRemainingSec <= 60
+                  ? 'Menos de un minuto restante de apartado'
+                  : 'Tiempo restante de apartado'
+              }
               data-urgent={holdRemainingSec <= 60 ? 'true' : 'false'}
             >
               <Timer size={14} aria-hidden="true" />
@@ -112,10 +116,53 @@ interface BookingHeroProps {
   step: BookingStep;
   completedSteps: ReadonlySet<BookingStep>;
   onGoToStep: (step: BookingStep) => void;
+  isCompact?: boolean;
+  holdRemainingSec?: number;
 }
 
-export function BookingHero({ step, completedSteps, onGoToStep }: BookingHeroProps) {
+export function BookingHero({
+  step,
+  completedSteps,
+  onGoToStep,
+  isCompact = false,
+  holdRemainingSec = 0,
+}: BookingHeroProps) {
   const stepIndex = BOOKING_STEPS.indexOf(step);
+
+  if (isCompact) {
+    return (
+      <VStack as="section" className="rb-hero" aria-labelledby="rb-title">
+        <VStack gap={2} className="rb-wrap rb-hero-inner">
+          <HStack justify="between" align="center" wrap="wrap" gap={2}>
+            <Heading level={1} id="rb-title" color="inherit" className="lk-serif rb-hero-title">
+              Reserva tu cita
+            </Heading>
+            <HStack align="center" gap={2}>
+              {holdRemainingSec > 0 ? (
+                <p
+                  className="rb-timer fx-tabular fx-pop"
+                  role="timer"
+                  aria-live="off"
+                  aria-label={
+                    holdRemainingSec <= 60
+                      ? 'Menos de un minuto restante de apartado'
+                      : 'Tiempo restante de apartado'
+                  }
+                  data-urgent={holdRemainingSec <= 60 ? 'true' : 'false'}
+                >
+                  <Timer size={14} aria-hidden="true" />
+                  {formatHoldClock(holdRemainingSec)}
+                </p>
+              ) : null}
+              <Text color="inherit" type="supporting" weight="semibold">
+                Paso {stepIndex + 1} de {BOOKING_STEPS.length} · {STEP_LABELS[step]}
+              </Text>
+            </HStack>
+          </HStack>
+        </VStack>
+      </VStack>
+    );
+  }
 
   return (
     <VStack as="section" className="rb-hero" aria-labelledby="rb-title">

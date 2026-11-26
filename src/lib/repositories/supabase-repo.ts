@@ -14,6 +14,11 @@ import {
   transitionBookingStatus,
 } from '../booking/state-machine';
 import { generateBookingCode, systemClock, type Clock } from '../clock';
+import { createDefaultWhatsAppTemplates } from '../demo-seed';
+import {
+  getConfiguredWhatsAppMonthlyQuota,
+  getWhatsAppTemplateNameOverrides,
+} from '../env';
 import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
 import {
   toPublicServiceDTO,
@@ -46,6 +51,9 @@ import type {
   InventoryMovement,
   LoyaltyProgram,
   LoyaltyStamp,
+  MediaAccessOwner,
+  MediaAssetFolder,
+  MediaAssetRecord,
   NotificationChannel,
   NotificationWorkflow,
   PaymentSplit,
@@ -58,6 +66,11 @@ import type {
   SlotHold,
   StaffMember,
   WaitlistEntry,
+  WhatsAppMonthlyUsage,
+  WhatsAppMonthlyUsageSummary,
+  WhatsAppQuotaAlertLevel,
+  WhatsAppTemplateConfig,
+  WhatsAppTemplateTriggerKey,
 } from '../types';
 import type { Database } from './database.types';
 import { createSupabaseAdminClient } from './supabase-client';
@@ -66,6 +79,7 @@ import {
   SlotConflictError,
   type AdjustInventoryInput,
   type AwardLoyaltyStampInput,
+  type CleanupExpiredSlotHoldsResult,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
   type ManageClientBookingInput,
@@ -77,6 +91,7 @@ import {
   type QueryAvailabilityOutput,
   type RecordConsentInput,
   type RecordPaymentSplitsInput,
+  type RegisterMediaAssetInput,
   type SalonRepository,
   type SlotHoldResult,
   type SubmitReviewInput,
@@ -221,6 +236,12 @@ function mapSettingsRow(row: Tables['salon_settings']['Row']): SalonSettings {
     landingContent: mapLandingContent(row.landing_content),
     whatsappBookingEnabled: row.whatsapp_booking_enabled,
     smsRemindersEnabled: row.sms_reminders_enabled,
+    ...(row.retention_notice_email !== undefined
+      ? { retentionNoticeEmail: row.retention_notice_email }
+      : {}),
+    ...(typeof row.whatsapp_monthly_quota === 'number'
+      ? { whatsappMonthlyQuota: row.whatsapp_monthly_quota }
+      : {}),
     metaPixelId: row.meta_pixel_id,
     ga4MeasurementId: row.ga4_measurement_id,
     googleReviewUrl: row.google_review_url,
@@ -817,6 +838,111 @@ function mapAuditLogRow(row: Tables['audit_logs']['Row']): AuditLogEntry {
   };
 }
 
+const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+
+const VALID_WHATSAPP_TRIGGERS = new Set<WhatsAppTemplateTriggerKey>([
+  'booking_confirmed',
+  'reminder_24h',
+  'reminder_2h',
+  'booking_rescheduled',
+  'booking_canceled',
+  'waitlist_offer',
+]);
+
+function isWhatsAppTriggerKey(value: string): value is WhatsAppTemplateTriggerKey {
+  return VALID_WHATSAPP_TRIGGERS.has(value as WhatsAppTemplateTriggerKey);
+}
+
+function normalizeMediaStoragePath(raw: string): string {
+  const withoutQuery = raw.trim().split(/[?#]/)[0] ?? '';
+  return withoutQuery.replace(/^\/+/, '').replace(/^api\/media\/+/, '');
+}
+
+function inferMediaFolder(storagePath: string): MediaAssetFolder | null {
+  if (storagePath.startsWith('proofs/')) return 'proofs';
+  if (storagePath.startsWith('inspo/')) return 'inspo';
+  if (storagePath.startsWith('gallery/')) return 'gallery';
+  return null;
+}
+
+function inferContentTypeFromPath(storagePath: string): string {
+  const lower = storagePath.toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/png';
+}
+
+function mapMediaAssetRow(row: Tables['media_assets']['Row']): MediaAssetRecord {
+  return {
+    id: row.id,
+    storagePath: row.storage_path,
+    folder: row.folder,
+    bookingId: row.booking_id,
+    clientId: row.client_id,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes,
+    createdAt: row.created_at,
+    retentionWarned30dAt: row.retention_warned_30d_at,
+    retentionWarned7dAt: row.retention_warned_7d_at,
+    purgedAt: row.purged_at,
+  };
+}
+
+function mapWhatsAppTemplateRow(
+  row: Tables['whatsapp_templates']['Row'],
+): WhatsAppTemplateConfig | null {
+  if (!isWhatsAppTriggerKey(row.trigger_key)) return null;
+  return {
+    id: row.id,
+    triggerKey: row.trigger_key,
+    templateName: row.template_name,
+    category: row.category,
+    languageCode: row.language_code,
+    isActive: row.is_active,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapWhatsAppMonthlyUsageRow(
+  row: Tables['whatsapp_monthly_usage']['Row'],
+): WhatsAppMonthlyUsage {
+  return {
+    monthKey: row.month_key,
+    sentCount: row.sent_count,
+    quotaLimit: row.quota_limit,
+    warned80At: row.warned_80_at,
+    warned100At: row.warned_100_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function buildWhatsAppUsageSummary(usage: {
+  monthKey: string;
+  sentCount: number;
+  quotaLimit: number;
+  warned80At: string | null;
+  warned100At: string | null;
+}): WhatsAppMonthlyUsageSummary {
+  const quotaLimit = Math.max(1, Math.floor(usage.quotaLimit));
+  const sentCount = Math.max(0, Math.floor(usage.sentCount));
+  const percentUsed = Math.round((sentCount / quotaLimit) * 100);
+  const alertLevel: WhatsAppQuotaAlertLevel =
+    sentCount >= quotaLimit
+      ? 'limit_100'
+      : sentCount * 100 >= quotaLimit * 80
+        ? 'warning_80'
+        : 'ok';
+  return {
+    monthKey: usage.monthKey,
+    sentCount,
+    quotaLimit,
+    percentUsed,
+    alertLevel,
+    warned80At: usage.warned80At,
+    warned100At: usage.warned100At,
+  };
+}
+
 function normalizeOptionalInstagram(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
   const trimmed = raw.trim();
@@ -1276,6 +1402,9 @@ export function createSupabaseRepository(
       consentsRes,
       auditLogsRes,
       bookingPaymentsRes,
+      mediaAssetsRes,
+      whatsappTemplatesRes,
+      whatsappMonthlyUsageRes,
     ] = await Promise.all([
       supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
       supabase.from('staff_members').select('*'),
@@ -1309,6 +1438,9 @@ export function createSupabaseRepository(
       supabase.from('consents').select('*'),
       supabase.from('audit_logs').select('*'),
       supabase.from('booking_payments').select('*'),
+      supabase.from('media_assets').select('*'),
+      supabase.from('whatsapp_templates').select('*'),
+      supabase.from('whatsapp_monthly_usage').select('*'),
     ]);
 
     if (!settingsRes.data) {
@@ -1349,7 +1481,108 @@ export function createSupabaseRepository(
       consents: (consentsRes.data ?? []).map(mapConsentRow),
       auditLogs: (auditLogsRes.data ?? []).map(mapAuditLogRow),
       bookingPayments: (bookingPaymentsRes.data ?? []).map(mapBookingPaymentRow),
+      mediaAssets: (mediaAssetsRes.data ?? []).map(mapMediaAssetRow),
+      whatsappTemplates: (whatsappTemplatesRes.data ?? [])
+        .map(mapWhatsAppTemplateRow)
+        .filter((tpl): tpl is WhatsAppTemplateConfig => tpl !== null),
+      whatsappMonthlyUsage: (whatsappMonthlyUsageRes.data ?? []).map(
+        mapWhatsAppMonthlyUsageRow,
+      ),
     };
+  }
+
+  async function registerMediaAssetInternal(
+    input: RegisterMediaAssetInput,
+  ): Promise<MediaAssetRecord> {
+    const supabase = getClient();
+    const storagePath = normalizeMediaStoragePath(input.storagePath);
+    if (!storagePath) {
+      throw new PolicyError('INVALID_MEDIA_URL', 'Ruta de archivo inválida.');
+    }
+    const existingRes = await supabase
+      .from('media_assets')
+      .select('*')
+      .eq('storage_path', storagePath)
+      .maybeSingle();
+
+    if (existingRes.data) {
+      const patch: Tables['media_assets']['Update'] = {};
+      if (input.bookingId !== undefined && input.bookingId !== null) {
+        patch.booking_id = input.bookingId;
+      }
+      if (input.clientId !== undefined && input.clientId !== null) {
+        patch.client_id = input.clientId;
+      }
+      if (input.contentType) {
+        patch.content_type = input.contentType;
+      }
+      if (input.sizeBytes > 0) {
+        patch.size_bytes = Math.floor(input.sizeBytes);
+      }
+      if (Object.keys(patch).length === 0) {
+        return mapMediaAssetRow(existingRes.data);
+      }
+      const updated = await supabase
+        .from('media_assets')
+        .update(patch)
+        .eq('id', existingRes.data.id)
+        .select('*')
+        .single();
+      if (updated.error || !updated.data) {
+        throw new PolicyError(
+          'MEDIA_ASSET_UPDATE_FAILED',
+          updated.error?.message ?? 'No se pudo actualizar el registro de archivo.',
+        );
+      }
+      return mapMediaAssetRow(updated.data);
+    }
+
+    const inserted = await supabase
+      .from('media_assets')
+      .insert({
+        storage_path: storagePath,
+        folder: input.folder,
+        booking_id: input.bookingId ?? null,
+        client_id: input.clientId ?? null,
+        content_type: input.contentType,
+        size_bytes: Math.max(0, Math.floor(input.sizeBytes)),
+        ...(input.createdAt ? { created_at: input.createdAt } : {}),
+      })
+      .select('*')
+      .single();
+
+    if (inserted.error || !inserted.data) {
+      throw new PolicyError(
+        'MEDIA_ASSET_REGISTER_FAILED',
+        inserted.error?.message ?? 'No se pudo registrar el archivo.',
+      );
+    }
+    return mapMediaAssetRow(inserted.data);
+  }
+
+  async function resolveQuotaAndMonth(
+    monthKey?: string,
+  ): Promise<{ targetMonthKey: string; quotaLimit: number }> {
+    const supabase = getClient();
+    const settingsRes = await supabase
+      .from('salon_settings')
+      .select('timezone, whatsapp_monthly_quota')
+      .eq('id', 'default')
+      .maybeSingle();
+    const tz = settingsRes.data?.timezone || 'America/Mexico_City';
+    const trimmed = monthKey?.trim();
+    const targetMonthKey =
+      trimmed && MONTH_KEY_RE.test(trimmed)
+        ? trimmed
+        : getDateKeyInTimezone(clock.now(), tz).slice(0, 7);
+    const envQuota = getConfiguredWhatsAppMonthlyQuota();
+    const dbQuota =
+      typeof settingsRes.data?.whatsapp_monthly_quota === 'number' &&
+      settingsRes.data.whatsapp_monthly_quota >= 1
+        ? Math.floor(settingsRes.data.whatsapp_monthly_quota)
+        : 500;
+    const quotaLimit = envQuota !== undefined && envQuota >= 1 ? envQuota : dbQuota;
+    return { targetMonthKey, quotaLimit };
   }
 
   async function persistScheduledNotifications(
@@ -1784,6 +2017,57 @@ export function createSupabaseRepository(
       const totalPriceCents = Math.max(0, subtotalCents - discountCents);
       const depositAmountCents = service.depositRequired ? service.depositAmountCents : 0;
 
+      const uploadedMedia: Array<{
+        storagePath: string;
+        folder: 'inspo' | 'proofs';
+        contentType: string;
+        sizeBytes: number;
+      }> = [];
+
+      let persistedInspoPhotoUrl = params.inspoPhotoUrl?.trim() || null;
+      if (persistedInspoPhotoUrl?.toLowerCase().startsWith('data:')) {
+        try {
+          const stored = await storeMediaUpload({
+            dataUrl: persistedInspoPhotoUrl,
+            folder: 'inspo',
+          });
+          persistedInspoPhotoUrl = `/api/media/${stored.storagePath}`;
+          uploadedMedia.push({
+            storagePath: stored.storagePath,
+            folder: 'inspo',
+            contentType: stored.contentType,
+            sizeBytes: stored.sizeBytes,
+          });
+        } catch (err) {
+          if (err instanceof MediaValidationError) {
+            throw new PolicyError(err.code, err.message);
+          }
+          throw err;
+        }
+      }
+
+      let persistedPaymentProofUrl = params.paymentProofUrl?.trim() || null;
+      if (persistedPaymentProofUrl?.toLowerCase().startsWith('data:')) {
+        try {
+          const stored = await storeMediaUpload({
+            dataUrl: persistedPaymentProofUrl,
+            folder: 'proofs',
+          });
+          persistedPaymentProofUrl = `/api/media/${stored.storagePath}`;
+          uploadedMedia.push({
+            storagePath: stored.storagePath,
+            folder: 'proofs',
+            contentType: stored.contentType,
+            sizeBytes: stored.sizeBytes,
+          });
+        } catch (err) {
+          if (err instanceof MediaValidationError) {
+            throw new PolicyError(err.code, err.message);
+          }
+          throw err;
+        }
+      }
+
       const { data: createdBookingId, error: rpcError } = await supabase.rpc(
         'create_booking_atomic',
         {
@@ -1807,8 +2091,8 @@ export function createSupabaseRepository(
           p_status: status,
           p_source: params.source ?? 'web',
           p_client_notes: params.clientNotes?.trim() || '',
-          p_inspo_photo_url: params.inspoPhotoUrl || null,
-          p_payment_proof_url: params.paymentProofUrl || null,
+          p_inspo_photo_url: persistedInspoPhotoUrl,
+          p_payment_proof_url: persistedPaymentProofUrl,
           p_hold_id: params.holdId ?? null,
           p_session_token: params.sessionToken ?? null,
           p_addons: addons.map((addon) => ({
@@ -1830,6 +2114,35 @@ export function createSupabaseRepository(
         }
         const pgErr = extractPgErrorCode(rpcError);
         throw new PolicyError(pgErr.code || 'BOOKING_FAILED', pgErr.message);
+      }
+
+      const mediaToLink: Array<{
+        url: string | null;
+        folder: 'inspo' | 'proofs';
+      }> = [
+        { url: persistedInspoPhotoUrl, folder: 'inspo' },
+        { url: persistedPaymentProofUrl, folder: 'proofs' },
+      ];
+      for (const item of mediaToLink) {
+        if (!item.url) continue;
+        if (
+          !item.url.startsWith('/api/media/') &&
+          !item.url.startsWith('proofs/') &&
+          !item.url.startsWith('inspo/')
+        ) {
+          continue;
+        }
+        const storagePath = normalizeMediaStoragePath(item.url);
+        if (!storagePath || !inferMediaFolder(storagePath)) continue;
+        const uploadedMeta = uploadedMedia.find((u) => u.storagePath === storagePath);
+        await registerMediaAssetInternal({
+          storagePath,
+          folder: item.folder,
+          bookingId: createdBookingId,
+          clientId,
+          contentType: uploadedMeta?.contentType ?? inferContentTypeFromPath(storagePath),
+          sizeBytes: uploadedMeta?.sizeBytes ?? 0,
+        });
       }
 
       const extraBookingPatch: Tables['bookings']['Update'] = {};
@@ -2093,10 +2406,20 @@ export function createSupabaseRepository(
           );
         }
         let persistedProofUrl = rawProof;
+        let uploadedProofMeta: {
+          storagePath: string;
+          contentType: string;
+          sizeBytes: number;
+        } | null = null;
         if (rawProof.toLowerCase().startsWith('data:')) {
           try {
             const stored = await storeMediaUpload({ dataUrl: rawProof, folder: 'proofs' });
-            persistedProofUrl = stored.signedUrl ?? stored.storagePath;
+            persistedProofUrl = `/api/media/${stored.storagePath}`;
+            uploadedProofMeta = {
+              storagePath: stored.storagePath,
+              contentType: stored.contentType,
+              sizeBytes: stored.sizeBytes,
+            };
           } catch (err) {
             if (err instanceof MediaValidationError) {
               throw new PolicyError(err.code, err.message);
@@ -2122,6 +2445,25 @@ export function createSupabaseRepository(
           .eq('id', booking.id);
         if (proofError) {
           throw new Error(`No se pudo guardar el comprobante: ${proofError.message}`);
+        }
+        if (
+          uploadedProofMeta ||
+          persistedProofUrl.startsWith('/api/media/') ||
+          persistedProofUrl.startsWith('proofs/')
+        ) {
+          const storagePath =
+            uploadedProofMeta?.storagePath ?? normalizeMediaStoragePath(persistedProofUrl);
+          if (storagePath && inferMediaFolder(storagePath)) {
+            await registerMediaAssetInternal({
+              storagePath,
+              folder: 'proofs',
+              bookingId: booking.id,
+              clientId: booking.clientId,
+              contentType:
+                uploadedProofMeta?.contentType ?? inferContentTypeFromPath(storagePath),
+              sizeBytes: uploadedProofMeta?.sizeBytes ?? 0,
+            });
+          }
         }
         const hydrated = await getBookingByIdHydrated(booking.id);
         await dispatchOutboxEvent({
@@ -2515,6 +2857,12 @@ export function createSupabaseRepository(
       }
       if (patch.smsRemindersEnabled !== undefined) {
         dbPatch.sms_reminders_enabled = patch.smsRemindersEnabled;
+      }
+      if (patch.retentionNoticeEmail !== undefined) {
+        dbPatch.retention_notice_email = patch.retentionNoticeEmail;
+      }
+      if (patch.whatsappMonthlyQuota !== undefined) {
+        dbPatch.whatsapp_monthly_quota = patch.whatsappMonthlyQuota;
       }
       if (patch.metaPixelId !== undefined) dbPatch.meta_pixel_id = patch.metaPixelId;
       if (patch.ga4MeasurementId !== undefined) {
@@ -3469,6 +3817,377 @@ export function createSupabaseRepository(
         );
       }
       return mapAuditLogRow(data);
+    },
+
+    registerMediaAsset: registerMediaAssetInternal,
+
+    async getMediaAccessOwner(rawStoragePath: string): Promise<MediaAccessOwner | null> {
+      const supabase = getClient();
+      const storagePath = normalizeMediaStoragePath(rawStoragePath);
+      if (!storagePath) return null;
+
+      const mediaRes = await supabase
+        .from('media_assets')
+        .select('*')
+        .eq('storage_path', storagePath)
+        .maybeSingle();
+
+      if (mediaRes.data) {
+        const asset = mediaRes.data;
+        let bookingRow: {
+          id: string;
+          staff_id: string;
+          client_id: string;
+          manage_token: string;
+        } | null = null;
+
+        if (asset.booking_id) {
+          const bookingRes = await supabase
+            .from('bookings')
+            .select('id, staff_id, client_id, manage_token')
+            .eq('id', asset.booking_id)
+            .maybeSingle();
+          bookingRow = bookingRes.data ?? null;
+        }
+
+        const effectiveClientId = asset.client_id ?? bookingRow?.client_id ?? null;
+        let clientPhoneE164: string | null = null;
+        if (effectiveClientId) {
+          const clientRes = await supabase
+            .from('clients')
+            .select('phone_e164')
+            .eq('id', effectiveClientId)
+            .maybeSingle();
+          clientPhoneE164 = clientRes.data?.phone_e164 ?? null;
+        }
+
+        return {
+          storagePath,
+          folder: asset.folder,
+          bookingId: bookingRow?.id ?? asset.booking_id,
+          staffId: bookingRow?.staff_id ?? null,
+          manageToken: bookingRow?.manage_token ?? null,
+          clientPhoneE164,
+        };
+      }
+
+      const apiMediaPath = `/api/media/${storagePath}`;
+      const [proofMatch, inspoMatch] = await Promise.all([
+        supabase
+          .from('bookings')
+          .select('id, staff_id, client_id, manage_token')
+          .in('payment_proof_url', [storagePath, apiMediaPath])
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('bookings')
+          .select('id, staff_id, client_id, manage_token')
+          .in('inspo_photo_url', [storagePath, apiMediaPath])
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      const booking = proofMatch.data ?? inspoMatch.data ?? null;
+      if (!booking) return null;
+
+      const clientRes = await supabase
+        .from('clients')
+        .select('phone_e164')
+        .eq('id', booking.client_id)
+        .maybeSingle();
+
+      const folder: MediaAssetFolder =
+        inferMediaFolder(storagePath) ?? (inspoMatch.data ? 'inspo' : 'proofs');
+
+      return {
+        storagePath,
+        folder,
+        bookingId: booking.id,
+        staffId: booking.staff_id,
+        manageToken: booking.manage_token,
+        clientPhoneE164: clientRes.data?.phone_e164 ?? null,
+      };
+    },
+
+    async listMediaAssetsForRetention(): Promise<MediaAssetRecord[]> {
+      const supabase = getClient();
+      const { data, error } = await supabase
+        .from('media_assets')
+        .select('*')
+        .is('purged_at', null)
+        .order('created_at', { ascending: true });
+      if (error || !data) {
+        return [];
+      }
+      return data.map(mapMediaAssetRow);
+    },
+
+    async markMediaRetentionWarned(
+      id: string,
+      stage: '30d' | '7d',
+      atIso = clock.now().toISOString(),
+    ): Promise<MediaAssetRecord | null> {
+      const supabase = getClient();
+      const existingRes = await supabase
+        .from('media_assets')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (!existingRes.data || existingRes.data.purged_at !== null) {
+        return null;
+      }
+
+      const existing = existingRes.data;
+      if (stage === '30d' && existing.retention_warned_30d_at !== null) {
+        return mapMediaAssetRow(existing);
+      }
+      if (stage === '7d' && existing.retention_warned_7d_at !== null) {
+        return mapMediaAssetRow(existing);
+      }
+
+      const updatePatch: Tables['media_assets']['Update'] =
+        stage === '30d'
+          ? { retention_warned_30d_at: atIso }
+          : { retention_warned_7d_at: atIso };
+
+      const colToGuard =
+        stage === '30d' ? 'retention_warned_30d_at' : 'retention_warned_7d_at';
+
+      const updated = await supabase
+        .from('media_assets')
+        .update(updatePatch)
+        .eq('id', id)
+        .is(colToGuard, null)
+        .is('purged_at', null)
+        .select('*')
+        .maybeSingle();
+
+      if (!updated.data) {
+        const refreshed = await supabase
+          .from('media_assets')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+        return refreshed.data ? mapMediaAssetRow(refreshed.data) : null;
+      }
+
+      await supabase.from('audit_logs').insert({
+        actor_id: 'system-retention-cron',
+        actor_email: 'cron@laikonanails.mx',
+        actor_role: 'owner',
+        action: 'media_retention_warned',
+        entity_type: 'media_asset',
+        entity_id: updated.data.id,
+        metadata: {
+          stage,
+          storagePath: updated.data.storage_path,
+          folder: updated.data.folder,
+          bookingId: updated.data.booking_id,
+        },
+      });
+
+      return mapMediaAssetRow(updated.data);
+    },
+
+    async markMediaAssetPurged(
+      id: string,
+      atIso = clock.now().toISOString(),
+    ): Promise<MediaAssetRecord | null> {
+      const supabase = getClient();
+      const existingRes = await supabase
+        .from('media_assets')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (!existingRes.data) {
+        return null;
+      }
+      if (existingRes.data.purged_at !== null) {
+        return mapMediaAssetRow(existingRes.data);
+      }
+
+      const updated = await supabase
+        .from('media_assets')
+        .update({ purged_at: atIso })
+        .eq('id', id)
+        .is('purged_at', null)
+        .select('*')
+        .maybeSingle();
+
+      if (!updated.data) {
+        const refreshed = await supabase
+          .from('media_assets')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+        return refreshed.data ? mapMediaAssetRow(refreshed.data) : null;
+      }
+
+      const asset = updated.data;
+      const apiMediaPath = `/api/media/${asset.storage_path}`;
+
+      if (asset.booking_id) {
+        const bookingPatch: Tables['bookings']['Update'] = {
+          updated_at: atIso,
+        };
+        if (asset.folder === 'proofs') {
+          bookingPatch.payment_proof_url = null;
+        } else if (asset.folder === 'inspo') {
+          bookingPatch.inspo_photo_url = null;
+        }
+        if (
+          bookingPatch.payment_proof_url === null ||
+          bookingPatch.inspo_photo_url === null
+        ) {
+          await supabase
+            .from('bookings')
+            .update(bookingPatch)
+            .eq('id', asset.booking_id);
+        }
+      }
+
+      if (asset.folder === 'proofs') {
+        await supabase
+          .from('bookings')
+          .update({ payment_proof_url: null, updated_at: atIso })
+          .in('payment_proof_url', [asset.storage_path, apiMediaPath]);
+      } else if (asset.folder === 'inspo') {
+        await supabase
+          .from('bookings')
+          .update({ inspo_photo_url: null, updated_at: atIso })
+          .in('inspo_photo_url', [asset.storage_path, apiMediaPath]);
+      }
+
+      await supabase.from('audit_logs').insert({
+        actor_id: 'system-retention-cron',
+        actor_email: 'cron@laikonanails.mx',
+        actor_role: 'owner',
+        action: 'media_retention_purged',
+        entity_type: 'media_asset',
+        entity_id: asset.id,
+        metadata: {
+          storagePath: asset.storage_path,
+          folder: asset.folder,
+          bookingId: asset.booking_id,
+        },
+      });
+
+      return mapMediaAssetRow(asset);
+    },
+
+    async getWhatsAppTemplates(): Promise<WhatsAppTemplateConfig[]> {
+      const supabase = getClient();
+      const { data } = await supabase.from('whatsapp_templates').select('*');
+      const mapped = (data ?? [])
+        .map(mapWhatsAppTemplateRow)
+        .filter((tpl): tpl is WhatsAppTemplateConfig => tpl !== null);
+      const base =
+        mapped.length > 0
+          ? mapped
+          : createDefaultWhatsAppTemplates(clock.now().toISOString());
+      const overrides = getWhatsAppTemplateNameOverrides();
+      return base.map((tpl) => ({
+        ...tpl,
+        templateName: overrides[tpl.triggerKey] ?? tpl.templateName,
+      }));
+    },
+
+    async getWhatsAppMonthlyUsage(
+      monthKey?: string,
+    ): Promise<WhatsAppMonthlyUsageSummary> {
+      const supabase = getClient();
+      const { targetMonthKey, quotaLimit } = await resolveQuotaAndMonth(monthKey);
+      const { data } = await supabase
+        .from('whatsapp_monthly_usage')
+        .select('*')
+        .eq('month_key', targetMonthKey)
+        .maybeSingle();
+
+      return buildWhatsAppUsageSummary({
+        monthKey: targetMonthKey,
+        sentCount: data?.sent_count ?? 0,
+        quotaLimit: data?.quota_limit ?? quotaLimit,
+        warned80At: data?.warned_80_at ?? null,
+        warned100At: data?.warned_100_at ?? null,
+      });
+    },
+
+    async incrementWhatsAppMonthlyUsage(
+      monthKey?: string,
+      count = 1,
+    ): Promise<WhatsAppMonthlyUsageSummary> {
+      const supabase = getClient();
+      const { targetMonthKey, quotaLimit } = await resolveQuotaAndMonth(monthKey);
+      const increment = Math.max(0, Math.floor(count));
+
+      const { data, error } = await supabase.rpc('increment_whatsapp_usage', {
+        p_month_key: targetMonthKey,
+        p_quota_limit: quotaLimit,
+        p_increment: increment,
+      });
+      if (error) {
+        throw new PolicyError(
+          'WHATSAPP_USAGE_INCREMENT_FAILED',
+          error.message || 'No se pudo actualizar el contador mensual de WhatsApp.',
+        );
+      }
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) {
+        return buildWhatsAppUsageSummary({
+          monthKey: targetMonthKey,
+          sentCount: increment,
+          quotaLimit,
+          warned80At: null,
+          warned100At: null,
+        });
+      }
+
+      return buildWhatsAppUsageSummary({
+        monthKey: row.month_key,
+        sentCount: row.sent_count,
+        quotaLimit: row.quota_limit,
+        warned80At: row.warned_80_at,
+        warned100At: row.warned_100_at,
+      });
+    },
+
+    async claimWebhookEventIdempotent(
+      provider: string,
+      eventId: string,
+    ): Promise<boolean> {
+      const cleanProvider = provider.trim().toLowerCase();
+      const cleanEventId = eventId.trim();
+      if (!cleanProvider || !cleanEventId) return false;
+
+      const supabase = getClient();
+      const { error } = await supabase.from('webhook_events').insert({
+        provider: cleanProvider,
+        event_id: cleanEventId,
+      });
+
+      if (!error) return true;
+      if (error.code === '23505') return false;
+
+      throw new PolicyError(
+        'WEBHOOK_EVENT_CLAIM_FAILED',
+        error.message || 'No se pudo registrar el evento de webhook.',
+      );
+    },
+
+    async cleanupExpiredSlotHolds(): Promise<CleanupExpiredSlotHoldsResult> {
+      const supabase = getClient();
+      const { data, error } = await supabase.rpc('purge_expired_slot_holds');
+      if (error) {
+        return {
+          cleanedCount: 0,
+          dbAlive: false,
+        };
+      }
+      return {
+        cleanedCount: typeof data === 'number' ? data : 0,
+        dbAlive: true,
+      };
     },
   };
 }

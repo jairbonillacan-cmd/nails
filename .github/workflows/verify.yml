@@ -16,6 +16,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,7 +33,7 @@ jobs:
       - name: Run full verification gate
         run: npm run verify
 
-      - name: Run E2E smoke & concurrency suite against built server
+      - name: Run E2E smoke, portal, RBAC & concurrency suite against built server
         env:
           E2E_BASE_URL: http://127.0.0.1:3000
         run: |

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -22,14 +23,16 @@ import {
   Archive,
   CalendarOff,
   CalendarPlus,
+  Check,
   Clock,
+  Coffee,
   Copy,
   Pause,
   Play,
   Plus,
   RotateCcw,
   Save,
-  Sparkles,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
@@ -42,8 +45,19 @@ import {
   AdminConfigSkeleton,
   type AdminConfigKpiItem,
 } from '@/components/admin/config/AdminConfigPrimitives';
-import { VisualTroubleshooter } from '@/components/admin/disponibilidad/VisualTroubleshooter';
+import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type { AvailabilityRule, DateOverride, RecurringBlock } from '@/lib/types';
+
+const VisualTroubleshooter = dynamic(
+  () =>
+    import('@/components/admin/disponibilidad/VisualTroubleshooter').then(
+      (mod) => mod.VisualTroubleshooter,
+    ),
+  {
+    ssr: false,
+    loading: () => <AdminConfigSkeleton kpiCount={0} withSplit={false} />,
+  },
+);
 
 const DAYS: Array<{ dow: 0 | 1 | 2 | 3 | 4 | 5 | 6; label: string; short: string }> = [
   { dow: 1, label: 'Lunes', short: 'Lun' },
@@ -68,8 +82,8 @@ const WEEKDAY_SHORT_BY_DOW: Record<number, string> = {
 function formatRecurringSummary(block: RecurringBlock): string {
   const freqLabel =
     block.frequency === 'weekly'
-      ? `Semanal (${block.weekdays.map((d) => WEEKDAY_SHORT_BY_DOW[d] ?? String(d)).join(', ')})`
-      : `Mensual (día ${block.dayOfMonth ?? 1})`;
+      ? `Cada semana (${block.weekdays.map((d) => WEEKDAY_SHORT_BY_DOW[d] ?? String(d)).join(', ')})`
+      : `Cada mes (día ${block.dayOfMonth ?? 1})`;
   const untilSuffix = block.untilDate ? ` · Hasta ${block.untilDate}` : '';
   return `${freqLabel} · ${block.startTime} – ${block.endTime}${untilSuffix}`;
 }
@@ -126,6 +140,7 @@ export default function AdminAvailabilityPage() {
   const [savingOptimize, setSavingOptimize] = useState(false);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
+  const saveNotice = useEphemeralMessage(3200);
 
   const [ovrMode, setOvrMode] = useState<'single' | 'range'>('single');
   const [ovrDateInput, setOvrDateInput] = useState<string | null>(null);
@@ -150,7 +165,7 @@ export default function AdminAvailabilityPage() {
   const [savingRecurring, setSavingRecurring] = useState(false);
 
   if (loading || !data) {
-    return <AdminConfigSkeleton kpiCount={4} withSplit={false} />;
+    return <AdminConfigSkeleton kpiCount={3} withSplit={false} />;
   }
 
   const isOwner = data.session.user.role === 'owner';
@@ -175,7 +190,7 @@ export default function AdminAvailabilityPage() {
   const optimizeContinuousSlots = data.settings.optimizeContinuousSlots ?? false;
 
   const redirectStaffOptions = [
-    { value: '', label: 'Sin redirección' },
+    { value: '', label: 'Sin sugerir compañera' },
     ...data.staff
       .filter((s) => s.isActive && s.id !== staffId)
       .map((s) => ({ value: s.id, label: `Sugerir a ${s.name}` })),
@@ -191,44 +206,34 @@ export default function AdminAvailabilityPage() {
 
   const staffRecurringBlocks = data.recurringBlocks.filter((b) => b.staffId === staffId);
   const activeRecurringCount = staffRecurringBlocks.filter((b) => b.isActive).length;
+  const totalBreaksBadge = activeRecurringCount + activeOverrides.length;
 
   const activeDaysSet = new Set(rules.map((r) => r.dayOfWeek));
-  const fixedDaysCount = DAYS.filter(({ dow }) =>
-    rules.some((r) => r.dayOfWeek === dow && (r.fixedStartTimes?.length ?? 0) > 0),
-  ).length;
-  const modeSummary =
-    activeDaysSet.size === 0
-      ? 'Sin días'
-      : fixedDaysCount === activeDaysSet.size
-        ? 'Turnos fijos'
-        : fixedDaysCount === 0
-          ? 'Continuo'
-          : 'Mixto';
 
   const kpiItems: AdminConfigKpiItem[] = [
     {
       id: 'work-days',
-      label: 'Días laborales',
-      value: `${activeDaysSet.size}/7`,
-      sub: activeStaffMember?.name ?? 'Especialista',
-    },
-    {
-      id: 'schedule-mode',
-      label: 'Modalidad',
-      value: modeSummary,
-      sub: data.settings.timezone,
+      label: 'Días que trabaja',
+      value: `${activeDaysSet.size} de 7`,
+      sub: activeStaffMember?.name ?? 'Manicurista',
     },
     {
       id: 'recurring-count',
-      label: 'Bloqueos activos',
+      label: 'Descansos fijos',
       value: String(activeRecurringCount),
-      sub: `${staffRecurringBlocks.length} registrados`,
+      sub:
+        activeRecurringCount === 1
+          ? '1 descanso activo'
+          : `${activeRecurringCount} descansos activos`,
     },
     {
       id: 'upcoming-overrides',
-      label: 'Excepciones',
+      label: 'Vacaciones y cierres',
       value: String(activeOverrides.length),
-      sub: `${archivedOverrides.length} archivadas`,
+      sub:
+        activeOverrides.length === 1
+          ? '1 fecha próxima'
+          : `${activeOverrides.length} fechas próximas`,
     },
   ];
 
@@ -387,13 +392,14 @@ export default function AdminAvailabilityPage() {
     });
     setMsg({
       status: 'success',
-      text: 'Horario copiado de lunes a viernes. Recuerda guardar cambios.',
+      text: 'Horario copiado de lunes a viernes. Pulsa Guardar horario para aplicar.',
     });
   };
 
   const saveWeekly = async () => {
-    if (!isScheduleDirty) return;
+    if (!isScheduleDirty || savingWeekly) return;
     setSavingWeekly(true);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/availability', {
         method: 'PUT',
@@ -401,29 +407,32 @@ export default function AdminAvailabilityPage() {
         body: JSON.stringify({ staffId, rules }),
       });
       if (res.ok) {
-        setRulesDraft(null);
-        setMsg({
-          status: 'success',
-          text: 'Horarios semanales guardados y sincronizados con la agenda pública.',
-        });
         await refresh();
+        setRulesDraft(null);
+        saveNotice.show('Horario guardado');
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
           text:
             errJson?.error ||
-            'Revisa que los horarios fijos estén dentro de la ventana laboral.',
+            'Revisa que cada hora fija esté dentro del horario de apertura y cierre.',
         });
       }
+    } catch {
+      setMsg({
+        status: 'error',
+        text: 'Error de conexión al guardar el horario.',
+      });
     } finally {
       setSavingWeekly(false);
     }
   };
 
   const handleToggleOptimizeContinuous = async (nextVal: boolean) => {
-    if (!isOwner) return;
+    if (!isOwner || savingOptimize) return;
     setSavingOptimize(true);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/brand', {
         method: 'PATCH',
@@ -431,18 +440,15 @@ export default function AdminAvailabilityPage() {
         body: JSON.stringify({ optimizeContinuousSlots: nextVal }),
       });
       if (res.ok) {
-        setMsg({
-          status: 'success',
-          text: nextVal
-            ? 'Franjas optimizadas activadas para días en modo Rango continuo (los turnos fijos no cambian).'
-            : 'Franjas optimizadas desactivadas.',
-        });
         await refresh();
+        saveNotice.show(
+          nextVal ? 'Ajuste automático activado' : 'Ajuste automático desactivado',
+        );
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo actualizar la preferencia de franjas.',
+          text: errJson?.error || 'No se pudo actualizar esta opción.',
         });
       }
     } finally {
@@ -450,10 +456,11 @@ export default function AdminAvailabilityPage() {
     }
   };
 
-  const addOverride = async (e: React.FormEvent) => {
+  const addClosedDate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ovrDate) return;
+    if (!ovrDate || savingOverride) return;
     setSavingOverride(true);
+    setMsg(null);
     try {
       const cleanPublicNote = ovrPublicNote.trim();
       const cleanRedirect = ovrRedirectStaffId.trim() || null;
@@ -490,43 +497,42 @@ export default function AdminAvailabilityPage() {
       });
       if (res.ok) {
         const json = (await res.json()) as { overrides?: DateOverride[] };
+        await refresh();
         setOvrReason('');
         setOvrPublicNote('');
         setOvrRedirectStaffId('');
-        setMsg({
-          status: 'success',
-          text:
-            ovrMode === 'range'
-              ? `Rango guardado (${json.overrides?.length ?? 1} día(s) del ${ovrDate} al ${ovrEndDate}).`
-              : `Excepción guardada para ${ovrDate}.`,
-        });
-        await refresh();
+        saveNotice.show(
+          ovrMode === 'range'
+            ? `Fechas guardadas (${json.overrides?.length ?? 1} días)`
+            : `Fecha guardada (${ovrDate})`,
+        );
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo guardar la excepción.',
+          text: errJson?.error || 'No se pudo guardar la fecha.',
         });
       }
+    } catch {
+      setMsg({ status: 'error', text: 'Error de conexión al guardar la fecha.' });
     } finally {
       setSavingOverride(false);
     }
   };
 
   const handleDeleteOverride = async (override: DateOverride) => {
+    if (busyItemId) return;
     setBusyItemId(override.id);
+    setMsg(null);
     try {
       const res = await fetch(`/api/admin/availability?id=${encodeURIComponent(override.id)}`, {
         method: 'DELETE',
       });
       if (res.ok) {
-        setMsg({
-          status: 'success',
-          text: `Excepción del ${override.overrideDate} eliminada.`,
-        });
         await refresh();
+        saveNotice.show(`Fecha ${override.overrideDate} eliminada`);
       } else {
-        setMsg({ status: 'error', text: 'No se pudo eliminar la excepción.' });
+        setMsg({ status: 'error', text: 'No se pudo eliminar esa fecha.' });
       }
     } finally {
       setBusyItemId(null);
@@ -534,7 +540,9 @@ export default function AdminAvailabilityPage() {
   };
 
   const handlePreloadMxHolidays = async () => {
+    if (preloadingHolidays) return;
     setPreloadingHolidays(true);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/availability', {
         method: 'POST',
@@ -543,7 +551,7 @@ export default function AdminAvailabilityPage() {
           kind: 'preload_mx_holidays',
           year: Number(holidayYear) || 2026,
           staffId,
-          publicNote: 'Cerrado por día festivo oficial en México',
+          publicNote: 'Cerrado por día festivo en México',
         }),
       });
       if (res.ok) {
@@ -554,16 +562,17 @@ export default function AdminAvailabilityPage() {
         };
         const createdCount = json.created?.length ?? 0;
         const skippedCount = json.skippedDates?.length ?? 0;
+        await refresh();
         setMsg({
           status: 'success',
-          text: `Festivos oficiales MX ${json.year ?? holidayYear}: ${createdCount} agregado(s), ${skippedCount} ya existente(s) omitido(s).`,
+          text: `Festivos de México ${json.year ?? holidayYear}: ${createdCount} día(s) marcados como cerrados${skippedCount > 0 ? ` (${skippedCount} ya estaban marcados)` : ''}.`,
         });
-        await refresh();
+        saveNotice.show(`Festivos ${json.year ?? holidayYear} marcados`);
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudieron precargar los festivos oficiales.',
+          text: errJson?.error || 'No se pudieron marcar los días festivos.',
         });
       }
     } finally {
@@ -580,24 +589,25 @@ export default function AdminAvailabilityPage() {
     });
   };
 
-  const createRecurringBlock = async (e: React.FormEvent) => {
+  const createRecurringBreak = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!staffId) return;
+    if (!staffId || savingRecurring) return;
     if (recFrequency === 'weekly' && recWeekdays.length === 0) {
       setMsg({
         status: 'error',
-        text: 'Selecciona al menos un día de la semana para el bloqueo recurrente.',
+        text: 'Elige al menos un día de la semana para este descanso.',
       });
       return;
     }
     if (recStartTime >= recEndTime) {
       setMsg({
         status: 'error',
-        text: 'La hora de inicio debe ser menor a la hora de fin.',
+        text: 'La hora de inicio debe ser antes que la hora de fin.',
       });
       return;
     }
     setSavingRecurring(true);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/availability', {
         method: 'POST',
@@ -605,7 +615,7 @@ export default function AdminAvailabilityPage() {
         body: JSON.stringify({
           kind: 'recurring_block',
           staffId,
-          reason: recReason.trim() || 'Bloqueo recurrente',
+          reason: recReason.trim() || 'Descanso fijo',
           frequency: recFrequency,
           weekdays: recFrequency === 'weekly' ? recWeekdays : [],
           dayOfMonth:
@@ -619,27 +629,28 @@ export default function AdminAvailabilityPage() {
         }),
       });
       if (res.ok) {
+        await refresh();
         setRecReason('');
         setRecUntilDate('');
-        setMsg({
-          status: 'success',
-          text: 'Bloqueo recurrente guardado y aplicado a la disponibilidad.',
-        });
-        await refresh();
+        saveNotice.show('Descanso fijo guardado');
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo crear el bloqueo recurrente.',
+          text: errJson?.error || 'No se pudo guardar el descanso fijo.',
         });
       }
+    } catch {
+      setMsg({ status: 'error', text: 'Error de conexión al guardar el descanso.' });
     } finally {
       setSavingRecurring(false);
     }
   };
 
   const handleToggleRecurringBlock = async (block: RecurringBlock) => {
+    if (busyItemId) return;
     setBusyItemId(block.id);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/availability', {
         method: 'POST',
@@ -651,18 +662,13 @@ export default function AdminAvailabilityPage() {
         }),
       });
       if (res.ok) {
-        setMsg({
-          status: 'success',
-          text: block.isActive
-            ? `Bloqueo "${block.reason}" pausado.`
-            : `Bloqueo "${block.reason}" reactivado.`,
-        });
         await refresh();
+        saveNotice.show(block.isActive ? 'Descanso pausado' : 'Descanso reactivado');
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo actualizar el bloqueo recurrente.',
+          text: errJson?.error || 'No se pudo actualizar este descanso.',
         });
       }
     } finally {
@@ -671,23 +677,22 @@ export default function AdminAvailabilityPage() {
   };
 
   const handleDeleteRecurringBlock = async (block: RecurringBlock) => {
+    if (busyItemId) return;
     setBusyItemId(block.id);
+    setMsg(null);
     try {
       const res = await fetch(
         `/api/admin/availability?blockId=${encodeURIComponent(block.id)}`,
         { method: 'DELETE' },
       );
       if (res.ok) {
-        setMsg({
-          status: 'success',
-          text: `Bloqueo "${block.reason}" eliminado.`,
-        });
         await refresh();
+        saveNotice.show('Descanso eliminado');
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo eliminar el bloqueo recurrente.',
+          text: errJson?.error || 'No se pudo eliminar este descanso.',
         });
       }
     } finally {
@@ -695,14 +700,18 @@ export default function AdminAvailabilityPage() {
     }
   };
 
-  const renderOverrideRow = (o: DateOverride) => {
+  const renderClosedDateRow = (o: DateOverride) => {
     const redirectStaff = o.redirectStaffId
       ? data.staff.find((s) => s.id === o.redirectStaffId)
       : null;
     const isBusy = busyItemId === o.id;
 
     return (
-      <li key={o.id} className="ad-row-item">
+      <li
+        key={o.id}
+        className={isBusy ? 'ad-row-item fx-busy' : 'ad-row-item'}
+        aria-busy={isBusy || undefined}
+      >
         <VStack gap={1} className="rb-grow">
           <HStack gap={2} align="center" wrap="wrap">
             <Text weight="semibold" className="fx-tabular" hasTabularNumbers>
@@ -720,38 +729,58 @@ export default function AdminAvailabilityPage() {
           {o.publicNote || redirectStaff ? (
             <HStack gap={1.5} wrap="wrap">
               {o.publicNote ? (
-                <AdminConfigChip tone="neutral" label={`Nota: ${o.publicNote}`} />
+                <AdminConfigChip tone="neutral" label={`Aviso: ${o.publicNote}`} />
               ) : null}
               {redirectStaff ? (
-                <AdminConfigChip tone="success" label={`Redirige a ${redirectStaff.name}`} />
+                <AdminConfigChip tone="success" label={`Sugiere a ${redirectStaff.name}`} />
               ) : null}
             </HStack>
           ) : null}
         </VStack>
         <Button
           type="button"
-          label="Eliminar"
+          label={isBusy ? 'Quitando...' : 'Quitar'}
           variant="ghost"
           size="sm"
           icon={<Trash2 size={14} aria-hidden="true" />}
           isLoading={isBusy}
-          isDisabled={isBusy}
+          isDisabled={isBusy || Boolean(busyItemId)}
           onClick={() => void handleDeleteOverride(o)}
         />
       </li>
     );
   };
 
+  const isAnyBusy =
+    savingWeekly ||
+    savingOptimize ||
+    savingOverride ||
+    savingRecurring ||
+    preloadingHolidays ||
+    Boolean(busyItemId);
+
   return (
     <VStack className="ad-page">
       <AdminConfigPageHeader
-        eyebrow="Equipo y horarios"
-        title="Disponibilidad y horarios"
-        subtitle="Configura turnos fijos (10:00 · 13:30 · 16:30), bloqueos recurrentes, vacaciones, festivos oficiales MX y diagnóstico en vivo."
+        eyebrow="Agenda del equipo"
+        title="Horarios"
+        subtitle="Elige los turnos fijos de cada manicurista, sus descansos y días cerrados."
+        meta={
+          isAnyBusy ? (
+            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+              Guardando...
+            </Text>
+          ) : saveNotice.message ? (
+            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+              <Check size={12} aria-hidden="true" />
+              {saveNotice.message}
+            </Text>
+          ) : null
+        }
         actions={
           !isSpecialistOnly ? (
             data.staff.length <= 5 ? (
-              <HStack gap={1.5} wrap="wrap" role="group" aria-label="Elegir especialista">
+              <HStack gap={1.5} wrap="wrap" role="group" aria-label="Elegir manicurista">
                 {data.staff.map((st, idx) => {
                   const isSelected = st.id === staffId;
                   return (
@@ -761,6 +790,7 @@ export default function AdminAvailabilityPage() {
                       className="ad-pill ad-artist-pill fx-press"
                       data-on={isSelected ? 'true' : 'false'}
                       aria-pressed={isSelected}
+                      disabled={savingWeekly}
                       onClick={() => handleSelectStaff(st.id)}
                     >
                       <Text className="ad-dot" data-idx={String(idx % 4)} aria-hidden="true">
@@ -775,8 +805,9 @@ export default function AdminAvailabilityPage() {
               </HStack>
             ) : (
               <Selector
-                label="Especialista"
+                label="Manicurista"
                 value={staffId}
+                isDisabled={savingWeekly}
                 onChange={(v) => v && handleSelectStaff(v)}
                 options={data.staff.map((s) => ({ value: s.id, label: s.name }))}
               />
@@ -785,11 +816,7 @@ export default function AdminAvailabilityPage() {
         }
       />
 
-      <AdminConfigKpiStrip
-        ariaLabel="Resumen de disponibilidad"
-        items={kpiItems}
-        cols={4}
-      />
+      <AdminConfigKpiStrip ariaLabel="Resumen de horarios" items={kpiItems} cols={3} />
 
       {msg ? (
         <Banner
@@ -802,40 +829,35 @@ export default function AdminAvailabilityPage() {
       ) : null}
 
       <TabList value={tab} onChange={setTab} hasDivider>
-        <Tab value="weekly" label="Horario semanal" />
+        <Tab value="weekly" label="Turnos de la semana" />
         <Tab
-          value="recurring"
-          label="Bloqueos recurrentes"
+          value="breaks"
+          label="Descansos y vacaciones"
           endContent={
-            activeRecurringCount > 0 ? (
-              <Badge variant="warning" label={String(activeRecurringCount)} />
+            totalBreaksBadge > 0 ? (
+              <Badge variant="neutral" label={String(totalBreaksBadge)} />
             ) : undefined
           }
         />
-        <Tab
-          value="overrides"
-          label="Excepciones y festivos"
-          endContent={
-            activeOverrides.length > 0 ? (
-              <Badge variant="neutral" label={String(activeOverrides.length)} />
-            ) : undefined
-          }
-        />
-        <Tab value="troubleshoot" label="Diagnóstico visual" />
+        <Tab value="help" label="¿Por qué no sale una hora?" />
       </TabList>
 
       {tab === 'weekly' ? (
         <VStack key="tab-weekly" gap={4} className="fx-step-in">
           <AdminConfigSection
             id="weekly-schedule-heading"
-            title={`Horario semanal · ${activeStaffMember?.name ?? 'Especialista'}`}
-            subtitle={`Zona horaria ${data.settings.timezone}. Elige por día entre Turnos fijos o Rango continuo.`}
+            title={`Turnos de ${activeStaffMember?.name ?? 'la manicurista'}`}
+            subtitle="Activa los días que trabaja y agrega o quita las horas exactas de sus turnos."
             actions={
               <HStack gap={2} align="center" wrap="wrap">
-                {isScheduleDirty ? (
+                {savingWeekly ? (
+                  <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                    Guardando...
+                  </Text>
+                ) : isScheduleDirty ? (
                   <>
                     <AdminConfigChip
-                      label="Cambios sin guardar"
+                      label="Sin guardar"
                       tone="warning"
                       className="fx-pop"
                     />
@@ -845,13 +867,19 @@ export default function AdminAvailabilityPage() {
                       variant="ghost"
                       size="sm"
                       icon={<RotateCcw size={14} aria-hidden="true" />}
+                      isDisabled={savingWeekly}
                       onClick={() => setRulesDraft(null)}
                     />
                   </>
+                ) : saveNotice.message ? (
+                  <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                    <Check size={12} aria-hidden="true" />
+                    {saveNotice.message}
+                  </Text>
                 ) : null}
                 <Button
                   type="button"
-                  label="Guardar horario"
+                  label={savingWeekly ? 'Guardando...' : 'Guardar horario'}
                   variant="primary"
                   size="sm"
                   icon={<Save size={15} aria-hidden="true" />}
@@ -862,7 +890,12 @@ export default function AdminAvailabilityPage() {
               </HStack>
             }
           >
-            <VStack as="ul" className="ad-row-list" gap={0}>
+            <VStack
+              as="ul"
+              className={savingWeekly ? 'ad-row-list fx-busy' : 'ad-row-list'}
+              aria-busy={savingWeekly || undefined}
+              gap={0}
+            >
               {DAYS.map(({ dow, label }) => {
                 const dayRules = rules.filter((r) => r.dayOfWeek === dow);
                 const enabled = dayRules.length > 0;
@@ -887,7 +920,7 @@ export default function AdminAvailabilityPage() {
                         {enabled ? (
                           <HStack gap={2} align="center" wrap="wrap">
                             <SegmentedControl
-                              label={`Modo de horarios ${label}`}
+                              label={`Tipo de horario para ${label}`}
                               size="sm"
                               value={isFixedMode ? 'fixed' : 'continuous'}
                               onChange={(val) =>
@@ -895,7 +928,7 @@ export default function AdminAvailabilityPage() {
                               }
                             >
                               <SegmentedControlItem value="fixed" label="Turnos fijos" />
-                              <SegmentedControlItem value="continuous" label="Rango continuo" />
+                              <SegmentedControlItem value="continuous" label="Horario libre" />
                             </SegmentedControl>
                             <Button
                               type="button"
@@ -907,7 +940,7 @@ export default function AdminAvailabilityPage() {
                             />
                           </HStack>
                         ) : (
-                          <AdminConfigChip label="No laborable" tone="neutral" />
+                          <AdminConfigChip label="Descanso" tone="neutral" />
                         )}
                       </HStack>
 
@@ -930,50 +963,6 @@ export default function AdminAvailabilityPage() {
 
                             return (
                               <VStack key={rule.id} gap={2}>
-                                <HStack gap={2} align="center" wrap="wrap">
-                                  <Text type="supporting" color="secondary" size="sm">
-                                    Ventana:
-                                  </Text>
-                                  <Selector
-                                    label={`Inicio ${label}`}
-                                    isLabelHidden
-                                    size="sm"
-                                    value={rule.startTime}
-                                    onChange={(val) =>
-                                      val && updateRuleBoundary(rule.id, 'startTime', val)
-                                    }
-                                    options={TIME_OPTIONS}
-                                  />
-                                  <Text color="secondary" size="sm">
-                                    a
-                                  </Text>
-                                  <Selector
-                                    label={`Fin ${label}`}
-                                    isLabelHidden
-                                    size="sm"
-                                    value={rule.endTime}
-                                    onChange={(val) =>
-                                      val && updateRuleBoundary(rule.id, 'endTime', val)
-                                    }
-                                    options={TIME_OPTIONS}
-                                  />
-                                  {!isFixedMode ? (
-                                    <Button
-                                      type="button"
-                                      label="Quitar tramo"
-                                      isIconOnly
-                                      size="sm"
-                                      variant="ghost"
-                                      icon={<Trash2 size={14} aria-hidden="true" />}
-                                      onClick={() =>
-                                        updateRules((prev) =>
-                                          prev.filter((r) => r.id !== rule.id),
-                                        )
-                                      }
-                                    />
-                                  ) : null}
-                                </HStack>
-
                                 {isFixedMode ? (
                                   <VStack gap={2}>
                                     <HStack gap={1.5} align="center" wrap="wrap">
@@ -988,36 +977,107 @@ export default function AdminAvailabilityPage() {
                                       ))}
                                     </HStack>
 
-                                    {windowOptions.length > 0 ? (
-                                      <HStack gap={2} align="center" wrap="wrap">
+                                    <HStack gap={2} align="center" wrap="wrap">
+                                      {windowOptions.length > 0 ? (
+                                        <>
+                                          <Selector
+                                            label={`Elegir hora para ${label}`}
+                                            isLabelHidden
+                                            size="sm"
+                                            value={pendingFixed}
+                                            onChange={(val) =>
+                                              val &&
+                                              setNewFixedByRule((prev) => ({
+                                                ...prev,
+                                                [rule.id]: val,
+                                              }))
+                                            }
+                                            options={windowOptions}
+                                          />
+                                          <Button
+                                            type="button"
+                                            label="+ Agregar hora"
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() =>
+                                              addFixedStartTime(rule.id, pendingFixed)
+                                            }
+                                          />
+                                        </>
+                                      ) : null}
+                                      <HStack gap={1.5} align="center" wrap="wrap">
+                                        <Text type="supporting" color="secondary" size="sm">
+                                          Jornada:
+                                        </Text>
                                         <Selector
-                                          label={`Nuevo turno fijo ${label}`}
+                                          label={`Apertura ${label}`}
                                           isLabelHidden
                                           size="sm"
-                                          value={pendingFixed}
+                                          value={rule.startTime}
                                           onChange={(val) =>
-                                            val &&
-                                            setNewFixedByRule((prev) => ({
-                                              ...prev,
-                                              [rule.id]: val,
-                                            }))
+                                            val && updateRuleBoundary(rule.id, 'startTime', val)
                                           }
-                                          options={windowOptions}
+                                          options={TIME_OPTIONS}
                                         />
-                                        <Button
-                                          type="button"
-                                          label="Agregar turno fijo"
+                                        <Text color="secondary" size="sm">
+                                          a
+                                        </Text>
+                                        <Selector
+                                          label={`Cierre ${label}`}
+                                          isLabelHidden
                                           size="sm"
-                                          variant="secondary"
-                                          icon={<Plus size={13} aria-hidden="true" />}
-                                          onClick={() =>
-                                            addFixedStartTime(rule.id, pendingFixed)
+                                          value={rule.endTime}
+                                          onChange={(val) =>
+                                            val && updateRuleBoundary(rule.id, 'endTime', val)
                                           }
+                                          options={TIME_OPTIONS}
                                         />
                                       </HStack>
-                                    ) : null}
+                                    </HStack>
                                   </VStack>
-                                ) : null}
+                                ) : (
+                                  <HStack gap={2} align="center" wrap="wrap">
+                                    <Text type="supporting" color="secondary" size="sm">
+                                      De
+                                    </Text>
+                                    <Selector
+                                      label={`Inicio ${label}`}
+                                      isLabelHidden
+                                      size="sm"
+                                      value={rule.startTime}
+                                      onChange={(val) =>
+                                        val && updateRuleBoundary(rule.id, 'startTime', val)
+                                      }
+                                      options={TIME_OPTIONS}
+                                    />
+                                    <Text color="secondary" size="sm">
+                                      a
+                                    </Text>
+                                    <Selector
+                                      label={`Fin ${label}`}
+                                      isLabelHidden
+                                      size="sm"
+                                      value={rule.endTime}
+                                      onChange={(val) =>
+                                        val && updateRuleBoundary(rule.id, 'endTime', val)
+                                      }
+                                      options={TIME_OPTIONS}
+                                    />
+                                    <Button
+                                      type="button"
+                                      label="Quitar tramo"
+                                      isIconOnly
+                                      size="sm"
+                                      variant="ghost"
+                                      icon={<Trash2 size={14} aria-hidden="true" />}
+                                      onClick={() =>
+                                        updateRules((prev) =>
+                                          prev.filter((r) => r.id !== rule.id),
+                                        )
+                                      }
+                                    />
+                                  </HStack>
+                                )}
                               </VStack>
                             );
                           })}
@@ -1026,7 +1086,7 @@ export default function AdminAvailabilityPage() {
                             <HStack gap={1.5}>
                               <Button
                                 type="button"
-                                label="Agregar turno"
+                                label="+ Agregar otro tramo"
                                 size="sm"
                                 variant="secondary"
                                 icon={<Plus size={13} aria-hidden="true" />}
@@ -1043,22 +1103,30 @@ export default function AdminAvailabilityPage() {
             </VStack>
           </AdminConfigSection>
 
-          <AdminConfigSection tone="subtle" padded>
-            <HStack justify="between" align="center" wrap="wrap" gap={3}>
+          <Collapsible
+            className="ad-disclosure"
+            defaultIsOpen={false}
+            trigger={
+              <HStack gap={2} align="center">
+                <SlidersHorizontal size={14} aria-hidden="true" />
+                <Text weight="semibold" size="sm">
+                  Opciones avanzadas de horario
+                </Text>
+              </HStack>
+            }
+          >
+            <HStack justify="between" align="center" wrap="wrap" gap={3} paddingBlockStart={3}>
               <VStack gap={0.5} className="rb-grow">
-                <HStack gap={1.5} align="center">
-                  <Sparkles size={15} aria-hidden="true" />
-                  <Text weight="semibold">
-                    Franjas optimizadas (solo en modo Rango continuo)
-                  </Text>
-                </HStack>
+                <Text weight="semibold" size="sm">
+                  Aprovechar huecos en horario libre
+                </Text>
                 <Text type="supporting" color="secondary">
-                  Ancla horarios al fin real de citas existentes para eliminar huecos muertos; nunca modifica turnos fijos como los de Karla, Paty y Tere.
+                  Cuando un día está en Horario libre, acomoda el siguiente espacio justo al terminar la cita anterior. Nunca cambia tus turnos fijos.
                 </Text>
               </VStack>
               {isOwner ? (
                 <Switch
-                  label="Activar franjas optimizadas"
+                  label="Aprovechar huecos en horario libre"
                   isLabelHidden
                   value={optimizeContinuousSlots}
                   isLoading={savingOptimize}
@@ -1071,7 +1139,7 @@ export default function AdminAvailabilityPage() {
                 />
               )}
             </HStack>
-          </AdminConfigSection>
+          </Collapsible>
 
           {isScheduleDirty ? (
             <HStack
@@ -1086,7 +1154,7 @@ export default function AdminAvailabilityPage() {
               <HStack gap={2} align="center">
                 <AdminConfigChip label="Sin guardar" tone="warning" />
                 <Text size="sm" weight="medium">
-                  Tienes cambios pendientes en el horario de {activeStaffMember?.name ?? 'esta especialista'}.
+                  Tienes cambios sin guardar en el horario de {activeStaffMember?.name ?? 'esta manicurista'}.
                 </Text>
               </HStack>
               <HStack gap={2} align="center" wrap="wrap">
@@ -1096,201 +1164,38 @@ export default function AdminAvailabilityPage() {
                   variant="ghost"
                   size="sm"
                   icon={<RotateCcw size={14} aria-hidden="true" />}
+                  isDisabled={savingWeekly}
                   onClick={() => setRulesDraft(null)}
                 />
                 <Button
                   type="button"
-                  label="Guardar horario"
+                  label={savingWeekly ? 'Guardando...' : 'Guardar horario'}
                   variant="primary"
                   size="sm"
                   icon={<Save size={15} aria-hidden="true" />}
                   isLoading={savingWeekly}
+                  isDisabled={savingWeekly}
                   onClick={() => void saveWeekly()}
                 />
               </HStack>
             </HStack>
           ) : null}
         </VStack>
-      ) : tab === 'recurring' ? (
-        <VStack key="tab-recurring" className="ad-split fx-step-in" gap={5}>
+      ) : tab === 'breaks' ? (
+        <VStack key="tab-breaks" gap={5} className="fx-step-in">
           <AdminConfigSection
-            id="recurring-list-heading"
-            title="Bloqueos recurrentes"
-            subtitle={`Aplicados a ${activeStaffMember?.name ?? 'esta especialista'}.`}
-            badge={
-              <AdminConfigChip
-                label={String(staffRecurringBlocks.length)}
-                tone="neutral"
-                hasTabularNumbers
-              />
-            }
+            tone="accent"
+            padded
+            className={preloadingHolidays ? 'fx-busy' : undefined}
           >
-            {staffRecurringBlocks.length === 0 ? (
-              <AdminConfigEmpty
-                icon={<Clock size={22} aria-hidden="true" />}
-                title="Sin bloqueos recurrentes"
-                description="Crea un bloqueo semanal o mensual para comida, esterilización de instrumental o cursos."
-              />
-            ) : (
-              <VStack as="ul" className="ad-row-list" gap={0}>
-                {staffRecurringBlocks.map((block) => {
-                  const isBusy = busyItemId === block.id;
-                  return (
-                    <li
-                      key={block.id}
-                      className="ad-row-item"
-                      data-muted={!block.isActive ? 'true' : undefined}
-                    >
-                      <VStack gap={1} className="rb-grow">
-                        <HStack gap={2} align="center" wrap="wrap">
-                          <Text weight="semibold">{block.reason}</Text>
-                          <AdminConfigChip
-                            tone={block.isActive ? 'success' : 'neutral'}
-                            label={block.isActive ? 'Activo' : 'Pausado'}
-                          />
-                        </HStack>
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {formatRecurringSummary(block)}
-                        </Text>
-                      </VStack>
-
-                      <HStack gap={1.5} align="center">
-                        <Button
-                          type="button"
-                          label={block.isActive ? 'Pausar' : 'Reanudar'}
-                          variant="secondary"
-                          size="sm"
-                          icon={
-                            block.isActive ? (
-                              <Pause size={13} aria-hidden="true" />
-                            ) : (
-                              <Play size={13} aria-hidden="true" />
-                            )
-                          }
-                          isDisabled={isBusy}
-                          onClick={() => void handleToggleRecurringBlock(block)}
-                        />
-                        <Button
-                          type="button"
-                          label="Eliminar"
-                          isIconOnly
-                          variant="ghost"
-                          size="sm"
-                          icon={<Trash2 size={14} aria-hidden="true" />}
-                          isDisabled={isBusy}
-                          onClick={() => void handleDeleteRecurringBlock(block)}
-                        />
-                      </HStack>
-                    </li>
-                  );
-                })}
-              </VStack>
-            )}
-          </AdminConfigSection>
-
-          <AdminConfigSection
-            id="recurring-create-heading"
-            title="Crear bloqueo recurrente"
-            subtitle="Reserva pausas periódicas sin agregar fechas una por una."
-          >
-            <form onSubmit={createRecurringBlock}>
-              <VStack gap={3} padding={5}>
-                <SegmentedControl
-                  label="Frecuencia del bloqueo"
-                  size="sm"
-                  layout="fill"
-                  value={recFrequency}
-                  onChange={(val) => setRecFrequency(val as 'weekly' | 'monthly')}
-                >
-                  <SegmentedControlItem value="weekly" label="Semanal" />
-                  <SegmentedControlItem value="monthly" label="Mensual" />
-                </SegmentedControl>
-
-                {recFrequency === 'weekly' ? (
-                  <VStack gap={1.5}>
-                    <Text type="label" weight="semibold">
-                      Días de la semana
-                    </Text>
-                    <Grid columns={{ minWidth: 80, max: 4 }} gap={1.5}>
-                      {DAYS.map(({ dow, short }) => (
-                        <CheckboxInput
-                          key={dow}
-                          size="sm"
-                          label={short}
-                          value={recWeekdays.includes(dow)}
-                          onChange={(checked) => toggleRecWeekday(dow, checked)}
-                        />
-                      ))}
-                    </Grid>
-                  </VStack>
-                ) : (
-                  <NumberInput
-                    label="Día del mes (1–31)"
-                    value={recDayOfMonth}
-                    min={1}
-                    max={31}
-                    isIntegerOnly
-                    onChange={(val) => setRecDayOfMonth(val || 1)}
-                  />
-                )}
-
-                <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
-                  <Selector
-                    label="Hora inicio"
-                    value={recStartTime}
-                    onChange={(v) => v && setRecStartTime(v)}
-                    options={FIXED_TIME_OPTIONS}
-                  />
-                  <Selector
-                    label="Hora fin"
-                    value={recEndTime}
-                    onChange={(v) => v && setRecEndTime(v)}
-                    options={FIXED_TIME_OPTIONS}
-                  />
-                </Grid>
-
-                <TextInput
-                  label="Motivo del bloqueo"
-                  placeholder="Ej. Comida y esterilización de instrumental"
-                  value={recReason}
-                  onChange={setRecReason}
-                  isRequired
-                />
-
-                <TextInput
-                  label="Repetir hasta (opcional, YYYY-MM-DD)"
-                  placeholder="Sin límite si se deja vacío"
-                  value={recUntilDate}
-                  autoCapitalize="none"
-                  hasAutoCorrect={false}
-                  hasSpellCheck={false}
-                  onChange={setRecUntilDate}
-                />
-
-                <Button
-                  type="submit"
-                  label="Crear bloqueo recurrente"
-                  variant="primary"
-                  width="100%"
-                  icon={<Plus size={14} aria-hidden="true" />}
-                  isLoading={savingRecurring}
-                  isDisabled={savingRecurring}
-                />
-              </VStack>
-            </form>
-          </AdminConfigSection>
-        </VStack>
-      ) : tab === 'overrides' ? (
-        <VStack key="tab-overrides" gap={4} className="fx-step-in">
-          <AdminConfigSection tone="accent" padded>
             <HStack justify="between" align="center" wrap="wrap" gap={3}>
               <VStack gap={0.5} className="rb-grow">
                 <HStack gap={1.5} align="center">
                   <CalendarPlus size={16} aria-hidden="true" />
-                  <Text weight="semibold">Días festivos oficiales de México (LFT)</Text>
+                  <Text weight="semibold">Días festivos de México</Text>
                 </HStack>
                 <Text type="supporting" color="secondary">
-                  Carga en 1 clic Año Nuevo, Constitución, Benito Juárez, 1 de Mayo, 16 de Septiembre, Revolución y Navidad sin sobrescribir tus excepciones previas.
+                  Marca automáticamente como cerrados Año Nuevo, 1 de Mayo, 16 de Septiembre, Navidad y demás festivos oficiales para {activeStaffMember?.name ?? 'esta manicurista'}.
                 </Text>
               </VStack>
               <HStack gap={2} align="center" wrap="wrap">
@@ -1299,16 +1204,22 @@ export default function AdminAvailabilityPage() {
                   isLabelHidden
                   size="sm"
                   value={holidayYear}
+                  isDisabled={preloadingHolidays}
                   onChange={(v) => v && setHolidayYear(v)}
                   options={HOLIDAY_YEAR_OPTIONS}
                 />
                 <Button
                   type="button"
-                  label="Cargar días festivos oficiales MX"
+                  label={
+                    preloadingHolidays
+                      ? 'Marcando festivos...'
+                      : 'Marcar festivos de México'
+                  }
                   variant="primary"
                   size="sm"
                   icon={<CalendarPlus size={14} aria-hidden="true" />}
                   isLoading={preloadingHolidays}
+                  isDisabled={preloadingHolidays}
                   onClick={() => void handlePreloadMxHolidays()}
                 />
               </HStack>
@@ -1318,9 +1229,10 @@ export default function AdminAvailabilityPage() {
           <VStack className="ad-split" gap={5}>
             <VStack gap={4}>
               <AdminConfigSection
-                id="active-overrides-heading"
-                title="Excepciones activas y próximas"
-                subtitle="Vacaciones, permisos o días con horario especial."
+                id="active-vacations-heading"
+                icon={<CalendarOff size={16} aria-hidden="true" />}
+                title="Vacaciones y días cerrados"
+                subtitle={`Fechas especiales o vacaciones de ${activeStaffMember?.name ?? 'esta manicurista'}.`}
                 badge={
                   <AdminConfigChip
                     label={String(activeOverrides.length)}
@@ -1332,25 +1244,25 @@ export default function AdminAvailabilityPage() {
                 {activeOverrides.length === 0 ? (
                   <AdminConfigEmpty
                     icon={<CalendarOff size={22} aria-hidden="true" />}
-                    title="Sin excepciones próximas"
-                    description="Cuando agregues vacaciones, horarios especiales o festivos MX aparecerán aquí."
+                    title="Sin vacaciones ni cierres próximos"
+                    description="Cuando marques un día cerrado, vacaciones o festivos aparecerán aquí."
                   />
                 ) : (
                   <VStack as="ul" className="ad-row-list" gap={0}>
-                    {activeOverrides.map(renderOverrideRow)}
+                    {activeOverrides.map(renderClosedDateRow)}
                   </VStack>
                 )}
               </AdminConfigSection>
 
-              <AdminConfigSection tone="subtle" padded>
+              {archivedOverrides.length > 0 ? (
                 <Collapsible
+                  className="ad-disclosure"
                   defaultIsOpen={false}
-                  isDisabled={archivedOverrides.length === 0}
                   trigger={
                     <HStack gap={2} align="center">
                       <Archive size={15} aria-hidden="true" />
                       <Text weight="semibold" size="sm">
-                        Archivadas (fechas pasadas)
+                        Fechas pasadas
                       </Text>
                       <AdminConfigChip
                         label={String(archivedOverrides.length)}
@@ -1360,36 +1272,39 @@ export default function AdminAvailabilityPage() {
                     </HStack>
                   }
                 >
-                  {archivedOverrides.length > 0 ? (
-                    <VStack as="ul" className="ad-row-list" gap={0} paddingBlockStart={3}>
-                      {archivedOverrides.map(renderOverrideRow)}
-                    </VStack>
-                  ) : null}
+                  <VStack as="ul" className="ad-row-list" gap={0} paddingBlockStart={3}>
+                    {archivedOverrides.map(renderClosedDateRow)}
+                  </VStack>
                 </Collapsible>
-              </AdminConfigSection>
+              ) : null}
             </VStack>
 
             <AdminConfigSection
-              id="create-override-heading"
-              title="Agregar excepción o vacaciones"
-              subtitle="Bloquea un día, un rango multi-día o define horario especial."
+              id="create-vacation-heading"
+              title="Agregar vacaciones o día cerrado"
+              subtitle="Cierra un día completo, varios días seguidos o pon un horario distinto."
             >
-              <form onSubmit={addOverride}>
-                <VStack gap={3} padding={5}>
+              <form onSubmit={addClosedDate}>
+                <VStack
+                  gap={3}
+                  padding={5}
+                  className={savingOverride ? 'fx-busy' : undefined}
+                  aria-busy={savingOverride || undefined}
+                >
                   <SegmentedControl
-                    label="Tipo de rango de fecha"
+                    label="Cuántos días quieres cambiar"
                     size="sm"
                     layout="fill"
                     value={ovrMode}
                     onChange={(val) => setOvrMode(val === 'range' ? 'range' : 'single')}
                   >
-                    <SegmentedControlItem value="single" label="Fecha única" />
-                    <SegmentedControlItem value="range" label="Rango de fechas" />
+                    <SegmentedControlItem value="single" label="Un día" />
+                    <SegmentedControlItem value="range" label="Varios días" />
                   </SegmentedControl>
 
                   {ovrMode === 'single' ? (
                     <TextInput
-                      label="Fecha (YYYY-MM-DD)"
+                      label="Fecha (AAAA-MM-DD)"
                       value={ovrDate}
                       onChange={setOvrDateInput}
                       isRequired
@@ -1397,15 +1312,15 @@ export default function AdminAvailabilityPage() {
                   ) : (
                     <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
                       <TextInput
-                        label="Fecha inicial"
-                        placeholder="YYYY-MM-DD"
+                        label="Desde"
+                        placeholder="AAAA-MM-DD"
                         value={ovrDate}
                         onChange={setOvrDateInput}
                         isRequired
                       />
                       <TextInput
-                        label="Fecha final"
-                        placeholder="YYYY-MM-DD"
+                        label="Hasta"
+                        placeholder="AAAA-MM-DD"
                         value={ovrEndDate}
                         onChange={setOvrEndDateInput}
                         isRequired
@@ -1414,20 +1329,20 @@ export default function AdminAvailabilityPage() {
                   )}
 
                   <Switch
-                    label="Día cerrado / sin disponibilidad todo el día"
+                    label="Cerrado todo el día"
                     value={ovrClosed}
                     onChange={setOvrClosed}
                   />
                   {!ovrClosed ? (
                     <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
                       <Selector
-                        label="Hora inicio"
+                        label="Abre a las"
                         value={ovrStart}
                         onChange={(v) => v && setOvrStart(v)}
                         options={TIME_OPTIONS}
                       />
                       <Selector
-                        label="Hora fin"
+                        label="Cierra a las"
                         value={ovrEnd}
                         onChange={(v) => v && setOvrEnd(v)}
                         options={TIME_OPTIONS}
@@ -1436,8 +1351,8 @@ export default function AdminAvailabilityPage() {
                   ) : null}
 
                   <TextInput
-                    label="Motivo interno (privado)"
-                    placeholder="Ej. Vacaciones, curso técnico, asunto personal"
+                    label="Motivo (solo para ti)"
+                    placeholder="Ej. Vacaciones, curso o asunto personal"
                     value={ovrReason}
                     onChange={setOvrReason}
                   />
@@ -1445,24 +1360,25 @@ export default function AdminAvailabilityPage() {
                   <Divider />
 
                   <Collapsible
+                    className="ad-disclosure"
                     defaultIsOpen={Boolean(ovrPublicNote || ovrRedirectStaffId)}
                     trigger={
                       <Text weight="semibold" size="sm">
-                        Aviso público y redirección OOO (opcional)
+                        Aviso para tus clientas (opcional)
                       </Text>
                     }
                   >
                     <VStack gap={3} paddingBlockStart={3}>
                       <TextInput
-                        label="Nota pública visible en /reservar"
-                        description="Si se deja vacía, las clientas nunca verán el motivo interno."
-                        placeholder="Ej. En capacitación técnica — te atiende Paty"
+                        label="Mensaje visible en la agenda"
+                        description="Si lo dejas vacío, tus clientas nunca verán el motivo privado."
+                        placeholder="Ej. Estaré en curso — puedes agendar con Paty"
                         value={ovrPublicNote}
                         onChange={setOvrPublicNote}
                         isOptional
                       />
                       <Selector
-                        label="Redirigir a compañera disponible"
+                        label="Sugerir a otra manicurista"
                         value={ovrRedirectStaffId}
                         onChange={(v) => setOvrRedirectStaffId(v ?? '')}
                         options={redirectStaffOptions}
@@ -1472,11 +1388,203 @@ export default function AdminAvailabilityPage() {
 
                   <Button
                     type="submit"
-                    label={ovrMode === 'range' ? 'Guardar rango de fechas' : 'Guardar excepción'}
+                    label={
+                      savingOverride
+                        ? 'Guardando...'
+                        : ovrMode === 'range'
+                          ? 'Guardar vacaciones'
+                          : 'Guardar fecha'
+                    }
                     variant="primary"
                     width="100%"
                     icon={<Save size={15} aria-hidden="true" />}
                     isLoading={savingOverride}
+                    isDisabled={savingOverride}
+                  />
+                </VStack>
+              </form>
+            </AdminConfigSection>
+          </VStack>
+
+          <Divider />
+
+          <VStack className="ad-split" gap={5}>
+            <AdminConfigSection
+              id="recurring-breaks-heading"
+              icon={<Coffee size={16} aria-hidden="true" />}
+              title="Descansos fijos"
+              subtitle={`Horarios que se repiten cada semana o cada mes para ${activeStaffMember?.name ?? 'esta manicurista'}.`}
+              badge={
+                <AdminConfigChip
+                  label={String(staffRecurringBlocks.length)}
+                  tone="neutral"
+                  hasTabularNumbers
+                />
+              }
+            >
+              {staffRecurringBlocks.length === 0 ? (
+                <AdminConfigEmpty
+                  icon={<Coffee size={22} aria-hidden="true" />}
+                  title="Sin descansos fijos"
+                  description="Agrega aquí tu hora de comida, esterilización o clases para que nadie reserve encima."
+                />
+              ) : (
+                <VStack as="ul" className="ad-row-list" gap={0}>
+                  {staffRecurringBlocks.map((block) => {
+                    const isBusy = busyItemId === block.id;
+                    return (
+                      <li
+                        key={block.id}
+                        className={isBusy ? 'ad-row-item fx-busy' : 'ad-row-item'}
+                        data-muted={!block.isActive ? 'true' : undefined}
+                        aria-busy={isBusy || undefined}
+                      >
+                        <VStack gap={1} className="rb-grow">
+                          <HStack gap={2} align="center" wrap="wrap">
+                            <Text weight="semibold">{block.reason}</Text>
+                            <AdminConfigChip
+                              tone={block.isActive ? 'success' : 'neutral'}
+                              label={block.isActive ? 'Activo' : 'Pausado'}
+                            />
+                          </HStack>
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {formatRecurringSummary(block)}
+                          </Text>
+                        </VStack>
+
+                        <HStack gap={1.5} align="center">
+                          <Button
+                            type="button"
+                            label={
+                              isBusy
+                                ? 'Guardando...'
+                                : block.isActive
+                                  ? 'Pausar'
+                                  : 'Activar'
+                            }
+                            variant="secondary"
+                            size="sm"
+                            icon={
+                              block.isActive ? (
+                                <Pause size={13} aria-hidden="true" />
+                              ) : (
+                                <Play size={13} aria-hidden="true" />
+                              )
+                            }
+                            isLoading={isBusy}
+                            isDisabled={isBusy || Boolean(busyItemId)}
+                            onClick={() => void handleToggleRecurringBlock(block)}
+                          />
+                          <Button
+                            type="button"
+                            label="Quitar"
+                            isIconOnly
+                            variant="ghost"
+                            size="sm"
+                            icon={<Trash2 size={14} aria-hidden="true" />}
+                            isDisabled={isBusy || Boolean(busyItemId)}
+                            onClick={() => void handleDeleteRecurringBlock(block)}
+                          />
+                        </HStack>
+                      </li>
+                    );
+                  })}
+                </VStack>
+              )}
+            </AdminConfigSection>
+
+            <AdminConfigSection
+              id="create-recurring-break-heading"
+              title="Agregar descanso fijo"
+              subtitle="Ideal para tu hora de comida o limpieza semanal sin bloquear día por día."
+            >
+              <form onSubmit={createRecurringBreak}>
+                <VStack
+                  gap={3}
+                  padding={5}
+                  className={savingRecurring ? 'fx-busy' : undefined}
+                  aria-busy={savingRecurring || undefined}
+                >
+                  <SegmentedControl
+                    label="Con qué frecuencia se repite"
+                    size="sm"
+                    layout="fill"
+                    value={recFrequency}
+                    onChange={(val) => setRecFrequency(val as 'weekly' | 'monthly')}
+                  >
+                    <SegmentedControlItem value="weekly" label="Cada semana" />
+                    <SegmentedControlItem value="monthly" label="Cada mes" />
+                  </SegmentedControl>
+
+                  {recFrequency === 'weekly' ? (
+                    <VStack gap={1.5}>
+                      <Text type="label" weight="semibold">
+                        Días de la semana
+                      </Text>
+                      <Grid columns={{ minWidth: 80, max: 4 }} gap={1.5}>
+                        {DAYS.map(({ dow, short }) => (
+                          <CheckboxInput
+                            key={dow}
+                            size="sm"
+                            label={short}
+                            value={recWeekdays.includes(dow)}
+                            onChange={(checked) => toggleRecWeekday(dow, checked)}
+                          />
+                        ))}
+                      </Grid>
+                    </VStack>
+                  ) : (
+                    <NumberInput
+                      label="Día del mes (1 al 31)"
+                      value={recDayOfMonth}
+                      min={1}
+                      max={31}
+                      isIntegerOnly
+                      onChange={(val) => setRecDayOfMonth(val || 1)}
+                    />
+                  )}
+
+                  <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
+                    <Selector
+                      label="Desde"
+                      value={recStartTime}
+                      onChange={(v) => v && setRecStartTime(v)}
+                      options={FIXED_TIME_OPTIONS}
+                    />
+                    <Selector
+                      label="Hasta"
+                      value={recEndTime}
+                      onChange={(v) => v && setRecEndTime(v)}
+                      options={FIXED_TIME_OPTIONS}
+                    />
+                  </Grid>
+
+                  <TextInput
+                    label="Nombre del descanso"
+                    placeholder="Ej. Comida y limpieza de herramienta"
+                    value={recReason}
+                    onChange={setRecReason}
+                    isRequired
+                  />
+
+                  <TextInput
+                    label="Termina el (opcional, AAAA-MM-DD)"
+                    placeholder="Déjalo vacío para que siempre se repita"
+                    value={recUntilDate}
+                    autoCapitalize="none"
+                    hasAutoCorrect={false}
+                    hasSpellCheck={false}
+                    onChange={setRecUntilDate}
+                  />
+
+                  <Button
+                    type="submit"
+                    label={savingRecurring ? 'Guardando...' : 'Agregar descanso fijo'}
+                    variant="primary"
+                    width="100%"
+                    icon={<Plus size={14} aria-hidden="true" />}
+                    isLoading={savingRecurring}
+                    isDisabled={savingRecurring}
                   />
                 </VStack>
               </form>
@@ -1484,7 +1592,7 @@ export default function AdminAvailabilityPage() {
           </VStack>
         </VStack>
       ) : (
-        <VStack key="tab-troubleshoot" className="fx-step-in" gap={0}>
+        <VStack key="tab-help" className="fx-step-in" gap={0}>
           <VisualTroubleshooter
             staffId={staffId}
             staffMembers={data.staff}

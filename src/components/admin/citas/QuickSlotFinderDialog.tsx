@@ -11,6 +11,7 @@ import { Token } from '@astryxdesign/core/Token';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Selector } from '@astryxdesign/core/Selector';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
+import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -154,10 +155,7 @@ export function QuickSlotFinderDialog({
   });
 
   const groupedSlots = useMemo(() => {
-    const byDate = new Map<
-      string,
-      Record<DayPeriod, AvailableSlot[]>
-    >();
+    const byDate = new Map<string, Record<DayPeriod, AvailableSlot[]>>();
     for (const slot of slots) {
       const dateKey = getDateKeyInTimezone(new Date(slot.startAt), timezone);
       const bucket = byDate.get(dateKey) ?? {
@@ -184,19 +182,19 @@ export function QuickSlotFinderDialog({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       purpose="info"
-      width={660}
+      width={640}
       padding={5}
     >
       <DialogHeader
-        title="Búsqueda rápida de hora"
-        subtitle="Encuentra los primeros huecos reales respetando turnos fijos, citas activas y bloqueos recurrentes."
+        title="Buscar hora libre"
+        subtitle="Encuentra los primeros espacios disponibles respetando turnos, citas y descansos."
         onOpenChange={onOpenChange}
       />
 
       <VStack gap={4} paddingBlockStart={4} className="fx-sheet-in">
         <Grid columns={{ minWidth: 220, max: 2 }} gap={3}>
           <Selector
-            label="Servicio principal"
+            label="Servicio"
             value={effectiveServiceId}
             onChange={(val) => {
               if (val) {
@@ -211,41 +209,55 @@ export function QuickSlotFinderDialog({
           />
 
           <Selector
-            label="Especialista"
+            label="Manicurista"
             value={effectiveStaffId}
             isDisabled={Boolean(lockedStaffId)}
             onChange={(val) => {
               if (!lockedStaffId) setStaffId(val || 'any');
             }}
             options={[
-              { value: 'any', label: 'Sin preferencia (primera libre)' },
+              { value: 'any', label: 'Cualquier manicurista' },
               ...activeStaff.map((s) => ({ value: s.id, label: s.name })),
             ]}
           />
         </Grid>
 
-        <VStack gap={1.5}>
-          <Text type="label" weight="semibold">
-            Servicios adicionales (opcional)
-          </Text>
-          <Grid columns={{ minWidth: 180, max: 2 }} gap={1.5}>
-            {activeServices
-              .filter((s) => s.id !== effectiveServiceId)
-              .map((srv) => (
-                <CheckboxInput
-                  key={srv.id}
-                  size="sm"
-                  label={`${srv.name} (+${formatDuration(srv.durationMinutes)})`}
-                  value={cleanExtras.includes(srv.id)}
-                  onChange={(checked) => handleToggleExtra(srv.id, checked)}
-                />
-              ))}
-          </Grid>
-        </VStack>
+        <Collapsible
+          className="ad-disclosure"
+          defaultIsOpen={cleanExtras.length > 0}
+          trigger={
+            <HStack gap={2} align="center">
+              <Text weight="semibold" size="sm">
+                Agregar otro servicio en la misma visita (opcional)
+              </Text>
+              {cleanExtras.length > 0 ? (
+                <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
+                  +{cleanExtras.length}
+                </Text>
+              ) : null}
+            </HStack>
+          }
+        >
+          <VStack paddingBlockStart={2}>
+            <Grid columns={{ minWidth: 180, max: 2 }} gap={1.5}>
+              {activeServices
+                .filter((s) => s.id !== effectiveServiceId)
+                .map((srv) => (
+                  <CheckboxInput
+                    key={srv.id}
+                    size="sm"
+                    label={`${srv.name} (+${formatDuration(srv.durationMinutes)})`}
+                    value={cleanExtras.includes(srv.id)}
+                    onChange={(checked) => handleToggleExtra(srv.id, checked)}
+                  />
+                ))}
+            </Grid>
+          </VStack>
+        </Collapsible>
 
         <HStack justify="between" align="center" wrap="wrap" gap={2}>
           <SegmentedControl
-            label="Horizonte de búsqueda"
+            label="Buscar en los próximos"
             size="sm"
             value={daysWindow}
             onChange={(val) => setDaysWindow(val as '7' | '14' | '30')}
@@ -271,9 +283,7 @@ export function QuickSlotFinderDialog({
           ) : null}
         </HStack>
 
-        {errorText ? (
-          <Banner status="error" role="alert" title={errorText} />
-        ) : null}
+        {errorText ? <Banner status="error" role="alert" title={errorText} /> : null}
 
         {loading ? (
           <VStack
@@ -284,8 +294,13 @@ export function QuickSlotFinderDialog({
             role="status"
             aria-busy="true"
           >
-            <Text className="rb-sr-only">Buscando los horarios libres más cercanos...</Text>
-            <VStack className="ad-skeleton" data-size="line" data-width="short" aria-hidden="true" />
+            <Text className="rb-sr-only">Buscando horarios libres...</Text>
+            <VStack
+              className="ad-skeleton"
+              data-size="line"
+              data-width="short"
+              aria-hidden="true"
+            />
             <VStack className="rb-skeleton-slots" gap={0} aria-hidden="true">
               <VStack className="ad-skeleton" data-size="slot" />
               <VStack className="ad-skeleton" data-size="slot" />
@@ -299,8 +314,8 @@ export function QuickSlotFinderDialog({
           <VStack className="ad-empty" gap={2}>
             <EmptyState
               isCompact
-              title="Sin horarios libres en este rango"
-              description="Prueba ampliando el horizonte a 30 días o eligiendo Sin preferencia de especialista."
+              title="No hay horarios libres en estos días"
+              description="Prueba buscando en los próximos 30 días o eligiendo cualquier manicurista."
             />
           </VStack>
         ) : (
@@ -314,7 +329,12 @@ export function QuickSlotFinderDialog({
                     <Heading level={4} className="lk-serif ad-h3">
                       {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)}
                     </Heading>
-                    <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
+                    <Text
+                      color="inherit"
+                      className="ad-chip"
+                      data-tone="accent"
+                      hasTabularNumbers
+                    >
                       {totalInDay} {totalInDay === 1 ? 'horario' : 'horarios'}
                     </Text>
                   </HStack>

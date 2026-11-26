@@ -1,5 +1,8 @@
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
-import type { ProofDeliveryMethod } from './bookingHelpers';
+import {
+  normalizeUniqueSortedIds,
+  type ProofDeliveryMethod,
+} from './bookingHelpers';
 
 export interface AppliedCouponState {
   code: string;
@@ -15,22 +18,32 @@ export interface ActiveBookingSummary {
   manageUrl: string;
 }
 
-export async function fetchAvailabilityDays(input: {
+export interface AvailabilityWindowQuery {
   serviceId: string;
-  extraServiceKey: string;
-  addonKey: string;
+  extraServiceIds: readonly string[];
+  addonIds: readonly string[];
   staffId: string;
   startDate: string;
-  signal?: AbortSignal;
-}): Promise<DayAvailabilitySummary[] | null> {
+  days?: number;
+}
+
+export async function fetchAvailabilityWindow(
+  input: AvailabilityWindowQuery & { signal?: AbortSignal },
+): Promise<DayAvailabilitySummary[] | null> {
+  if (input.signal?.aborted) return null;
+  const sortedExtras = normalizeUniqueSortedIds(
+    input.extraServiceIds,
+    input.serviceId,
+  );
+  const sortedAddons = normalizeUniqueSortedIds(input.addonIds);
   const qs = new URLSearchParams({
     serviceId: input.serviceId,
-    addonIds: input.addonKey,
+    addonIds: sortedAddons.join(','),
     startDate: input.startDate,
-    days: '35',
+    days: String(input.days ?? 35),
   });
-  if (input.extraServiceKey) {
-    qs.set('extraServiceIds', input.extraServiceKey);
+  if (sortedExtras.length > 0) {
+    qs.set('extraServiceIds', sortedExtras.join(','));
   }
   if (input.staffId && input.staffId !== 'any') {
     qs.set('staffId', input.staffId);
@@ -39,8 +52,9 @@ export async function fetchAvailabilityDays(input: {
     cache: 'no-store',
     signal: input.signal,
   });
-  if (input.signal?.aborted) return null;
+  if (input.signal?.aborted || !res.ok) return null;
   const json = (await res.json()) as { days?: DayAvailabilitySummary[] };
+  if (input.signal?.aborted) return null;
   return Array.isArray(json.days) ? json.days : null;
 }
 

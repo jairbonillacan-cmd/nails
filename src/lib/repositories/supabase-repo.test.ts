@@ -65,6 +65,10 @@ function buildMockSupabase(options: {
   waitlistRows?: Array<Database['public']['Tables']['waitlist_entries']['Row']>;
   bookingPaymentsRows?: Array<Database['public']['Tables']['booking_payments']['Row']>;
   calendarConnectionsRows?: Array<Database['public']['Tables']['calendar_connections']['Row']>;
+  mediaAssetsRows?: Array<Database['public']['Tables']['media_assets']['Row']>;
+  whatsappTemplatesRows?: Array<Database['public']['Tables']['whatsapp_templates']['Row']>;
+  whatsappUsageRows?: Array<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
+  webhookInsertStatus?: number;
 } = {}) {
   const requests: RecordedRequest[] = [];
   const bookingsRows = options.bookingsRows ?? [];
@@ -82,6 +86,10 @@ function buildMockSupabase(options: {
   const waitlistRows = options.waitlistRows ?? [];
   const bookingPaymentsRows = options.bookingPaymentsRows ?? [];
   const calendarConnectionsRows = options.calendarConnectionsRows ?? [];
+  const mediaAssetsRows = options.mediaAssetsRows ?? [];
+  const whatsappTemplatesRows = options.whatsappTemplatesRows ?? [];
+  const whatsappUsageRows = options.whatsappUsageRows ?? [];
+  const seenWebhookKeys = new Set<string>();
 
   const settingsRow: Database['public']['Tables']['salon_settings']['Row'] = {
     id: 'default',
@@ -245,6 +253,35 @@ function buildMockSupabase(options: {
       }
       if (rpcName === 'purge_expired_slot_holds') {
         return jsonResponse(1, 200);
+      }
+      if (rpcName === 'increment_whatsapp_usage') {
+        const body = (rawBody ?? {}) as {
+          p_month_key?: string;
+          p_quota_limit?: number;
+          p_increment?: number;
+        };
+        const monthKey = body.p_month_key ?? '2026-12';
+        const quota = body.p_quota_limit ?? 500;
+        const inc = body.p_increment ?? 1;
+        const existing = whatsappUsageRows.find((u) => u.month_key === monthKey);
+        const sentCount = (existing?.sent_count ?? 0) + inc;
+        const nowIso = '2026-12-01T13:00:00.000Z';
+        const nextRow: Database['public']['Tables']['whatsapp_monthly_usage']['Row'] = {
+          month_key: monthKey,
+          sent_count: sentCount,
+          quota_limit: quota,
+          warned_80_at:
+            existing?.warned_80_at ?? (sentCount * 100 >= quota * 80 ? nowIso : null),
+          warned_100_at:
+            existing?.warned_100_at ?? (sentCount >= quota ? nowIso : null),
+          updated_at: nowIso,
+        };
+        if (existing) {
+          Object.assign(existing, nextRow);
+        } else {
+          whatsappUsageRows.push(nextRow);
+        }
+        return jsonResponse([nextRow], 200);
       }
       return jsonResponse(BOOKING_ID, 200);
     }
@@ -539,6 +576,75 @@ function buildMockSupabase(options: {
         return jsonResponse(wantsSingleObject ? patched : [patched]);
       }
       return jsonResponse(outboxRows);
+    }
+
+    if (table === 'media_assets') {
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const body = rawBody as Record<string, unknown>;
+        const created: Database['public']['Tables']['media_assets']['Row'] = {
+          id: '99999999-9999-4999-8999-999999999999',
+          storage_path: String(body.storage_path ?? 'proofs/test.png'),
+          folder: (body.folder as 'proofs' | 'inspo' | 'gallery') ?? 'proofs',
+          booking_id: (body.booking_id as string | null) ?? null,
+          client_id: (body.client_id as string | null) ?? null,
+          content_type: String(body.content_type ?? 'image/png'),
+          size_bytes: Number(body.size_bytes ?? 0),
+          created_at: String(body.created_at ?? '2026-12-01T13:00:00.000Z'),
+          retention_warned_30d_at: null,
+          retention_warned_7d_at: null,
+          purged_at: null,
+        };
+        mediaAssetsRows.push(created);
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+        const target = mediaAssetsRows.find((r) => r.id === idFilter);
+        if (!target) return jsonResponse(wantsSingleObject ? null : []);
+        const merged = { ...target, ...(rawBody as Record<string, unknown>) };
+        Object.assign(target, merged);
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      const spFilter = url.searchParams.get('storage_path')?.replace(/^eq\./, '');
+      const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+      const purgedFilter = url.searchParams.get('purged_at');
+      let filtered = [...mediaAssetsRows];
+      if (spFilter) filtered = filtered.filter((r) => r.storage_path === spFilter);
+      if (idFilter) filtered = filtered.filter((r) => r.id === idFilter);
+      if (purgedFilter === 'is.null') filtered = filtered.filter((r) => r.purged_at === null);
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
+    if (table === 'whatsapp_templates') {
+      return jsonResponse(whatsappTemplatesRows);
+    }
+    if (table === 'whatsapp_monthly_usage') {
+      const monthFilter = url.searchParams.get('month_key')?.replace(/^eq\./, '');
+      const filtered = monthFilter
+        ? whatsappUsageRows.filter((u) => u.month_key === monthFilter)
+        : whatsappUsageRows;
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
+    if (table === 'webhook_events') {
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const body = rawBody as { provider?: string; event_id?: string };
+        const key = `${body.provider ?? ''}:${body.event_id ?? ''}`;
+        if (options.webhookInsertStatus === 409 || seenWebhookKeys.has(key)) {
+          return jsonResponse(
+            { code: '23505', message: 'duplicate key value violates unique constraint' },
+            409,
+          );
+        }
+        seenWebhookKeys.add(key);
+        return jsonResponse(
+          {
+            provider: body.provider ?? '',
+            event_id: body.event_id ?? '',
+            received_at: '2026-12-01T13:00:00.000Z',
+          },
+          201,
+        );
+      }
+      return jsonResponse([]);
     }
 
     return jsonResponse([]);
@@ -1755,6 +1861,176 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
       refresh_token_encrypted: 'v1:new-refresh',
       watch_channel_id: 'chan-2',
       watch_resource_id: 'res-2',
+    });
+  });
+
+  it('Wave 6 (0008): handles media assets retention/purge, WhatsApp templates & atomic usage RPC, webhook dedup, and keep-alive slot hold cleanup', async () => {
+    const bookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-W60001',
+      manage_token: 'tok-w6-media',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: '2026-12-01T16:00:00.000Z',
+      end_at: '2026-12-01T17:00:00.000Z',
+      occupied_start_at: '2026-12-01T16:00:00.000Z',
+      occupied_end_at: '2026-12-01T17:15:00.000Z',
+      occupied_range: '[2026-12-01T16:00:00.000Z,2026-12-01T17:15:00.000Z)',
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 20000,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: '/api/media/proofs/recibo-w6.png',
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2025-11-01T10:00:00.000Z',
+      updated_at: '2025-11-01T10:00:00.000Z',
+    };
+
+    const { client, requests } = buildMockSupabase({
+      bookingsRows: [bookingRow],
+      settingsOverrides: {
+        retention_notice_email: 'contabilidad@laikonanails.mx',
+        whatsapp_monthly_quota: 500,
+      },
+      whatsappTemplatesRows: [
+        {
+          id: 'tpl-1',
+          trigger_key: 'booking_confirmed',
+          template_name: 'laikona_cita_confirmada',
+          category: 'UTILITY',
+          language_code: 'es_MX',
+          is_active: true,
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+    });
+
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'wave6-0008');
+    const repo = createSupabaseRepository(clock, client);
+
+    const registered = await repo.registerMediaAsset({
+      storagePath: '/api/media/proofs/recibo-w6.png',
+      folder: 'proofs',
+      bookingId: BOOKING_ID,
+      clientId: CLIENT_ID,
+      contentType: 'image/png',
+      sizeBytes: 12345,
+      createdAt: '2025-11-01T10:00:00.000Z',
+    });
+    expect(registered.storagePath).toBe('proofs/recibo-w6.png');
+
+    const owner = await repo.getMediaAccessOwner('proofs/recibo-w6.png');
+    expect(owner).toEqual({
+      storagePath: 'proofs/recibo-w6.png',
+      folder: 'proofs',
+      bookingId: BOOKING_ID,
+      staffId: STAFF_ID,
+      manageToken: 'tok-w6-media',
+      clientPhoneE164: '+525511223344',
+    });
+
+    const retentionAssets = await repo.listMediaAssetsForRetention();
+    expect(retentionAssets).toHaveLength(1);
+
+    const warned = await repo.markMediaRetentionWarned(
+      registered.id,
+      '30d',
+      '2026-11-01T09:00:00.000Z',
+    );
+    expect(warned?.retentionWarned30dAt).toBe('2026-11-01T09:00:00.000Z');
+    const warnAuditCount = requests.filter(
+      (r) =>
+        r.method === 'POST' &&
+        r.path === '/rest/v1/audit_logs' &&
+        (r.body as Record<string, unknown>)?.action === 'media_retention_warned',
+    ).length;
+    expect(warnAuditCount).toBe(1);
+
+    await repo.markMediaRetentionWarned(registered.id, '30d', '2026-11-02T09:00:00.000Z');
+    const warnAuditCountAfterRepeat = requests.filter(
+      (r) =>
+        r.method === 'POST' &&
+        r.path === '/rest/v1/audit_logs' &&
+        (r.body as Record<string, unknown>)?.action === 'media_retention_warned',
+    ).length;
+    expect(warnAuditCountAfterRepeat).toBe(1);
+
+    const purged = await repo.markMediaAssetPurged(
+      registered.id,
+      '2026-12-01T09:00:00.000Z',
+    );
+    expect(purged?.purgedAt).toBe('2026-12-01T09:00:00.000Z');
+    expect(
+      requests.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === '/rest/v1/bookings' &&
+          (r.body as Record<string, unknown>)?.payment_proof_url === null,
+      ),
+    ).toBe(true);
+    expect(
+      requests.some((r) => r.method === 'DELETE' && r.path === '/rest/v1/bookings'),
+    ).toBe(false);
+
+    const templates = await repo.getWhatsAppTemplates();
+    expect(templates).toHaveLength(1);
+    expect(templates[0]?.templateName).toBe('laikona_cita_confirmada');
+
+    const usageBefore = await repo.getWhatsAppMonthlyUsage('2026-12');
+    expect(usageBefore).toMatchObject({
+      monthKey: '2026-12',
+      sentCount: 0,
+      quotaLimit: 500,
+      alertLevel: 'ok',
+    });
+
+    const usageAfter400 = await repo.incrementWhatsAppMonthlyUsage('2026-12', 400);
+    expect(usageAfter400).toMatchObject({
+      monthKey: '2026-12',
+      sentCount: 400,
+      quotaLimit: 500,
+      percentUsed: 80,
+      alertLevel: 'warning_80',
+    });
+
+    const usageAfter500 = await repo.incrementWhatsAppMonthlyUsage('2026-12', 100);
+    expect(usageAfter500).toMatchObject({
+      monthKey: '2026-12',
+      sentCount: 500,
+      quotaLimit: 500,
+      percentUsed: 100,
+      alertLevel: 'limit_100',
+    });
+
+    expect(await repo.claimWebhookEventIdempotent('whatsapp', 'evt-1')).toBe(true);
+    expect(await repo.claimWebhookEventIdempotent('whatsapp', 'evt-1')).toBe(false);
+
+    const cleanupOk = await repo.cleanupExpiredSlotHolds();
+    expect(cleanupOk).toEqual({ cleanedCount: 1, dbAlive: true });
+
+    const failingMock = buildMockSupabase({
+      rpcHandlers: {
+        purge_expired_slot_holds: () => ({
+          status: 503,
+          data: { message: 'database unavailable' },
+        }),
+      },
+    });
+    const failingRepo = createSupabaseRepository(clock, failingMock.client);
+    expect(await failingRepo.cleanupExpiredSlotHolds()).toEqual({
+      cleanedCount: 0,
+      dbAlive: false,
     });
   });
 });

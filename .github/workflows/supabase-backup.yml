@@ -1,0 +1,115 @@
+name: Supabase Daily Backup to Cloudflare R2
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-daily-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Dump PostgreSQL and upload to R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Validate required secrets
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          for var_name in SUPABASE_DB_URL R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET_NAME; do
+            if [ -z "${!var_name:-}" ]; then
+              echo "::error::Missing required repository secret: ${var_name}"
+              exit 1
+            fi
+          done
+
+      - name: Install PostgreSQL 17 client tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_dump --version
+
+      - name: Dump Supabase PostgreSQL database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          BACKUP_DATE="$(date -u +%Y-%m-%d)"
+          echo "BACKUP_DATE=${BACKUP_DATE}" >> "$GITHUB_ENV"
+          pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges | gzip -9 > backup.sql.gz
+          test -s backup.sql.gz
+          gzip -t backup.sql.gz
+          ls -lh backup.sql.gz
+
+      - name: Upload backup to Cloudflare R2 and enforce 30-day retention
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          trap 'rm -f backup.sql.gz' EXIT
+          ENDPOINT_URL="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          OBJECT_KEY="backups/db/${BACKUP_DATE}.sql.gz"
+
+          aws s3 cp backup.sql.gz "s3://${R2_BUCKET_NAME}/${OBJECT_KEY}" \
+            --endpoint-url "$ENDPOINT_URL" \
+            --content-type "application/gzip" \
+            --no-progress
+
+          echo "Uploaded s3://${R2_BUCKET_NAME}/${OBJECT_KEY}"
+
+          CUTOFF_DATE="$(date -u -d '30 days ago' +%Y-%m-%d)"
+          echo "Applying 30-day retention (deleting backups strictly older than ${CUTOFF_DATE})"
+
+          EXISTING_KEYS="$(aws s3api list-objects-v2 \
+            --endpoint-url "$ENDPOINT_URL" \
+            --bucket "$R2_BUCKET_NAME" \
+            --prefix "backups/db/" \
+            --query 'Contents[].Key' \
+            --output text || true)"
+
+          if [ -z "$EXISTING_KEYS" ] || [ "$EXISTING_KEYS" = "None" ]; then
+            echo "No backup objects found for rotation check."
+            exit 0
+          fi
+
+          DELETED_COUNT=0
+          for key in $EXISTING_KEYS; do
+            if [[ "$key" =~ ^backups/db/([0-9]{4}-[0-9]{2}-[0-9]{2})\.sql\.gz$ ]]; then
+              file_date="${BASH_REMATCH[1]}"
+              if [[ "$file_date" < "$CUTOFF_DATE" ]]; then
+                aws s3api delete-object \
+                  --endpoint-url "$ENDPOINT_URL" \
+                  --bucket "$R2_BUCKET_NAME" \
+                  --key "$key"
+                echo "Deleted expired backup: ${key}"
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+              fi
+            fi
+          done
+
+          echo "Rotation complete. Deleted ${DELETED_COUNT} expired backup(s)."

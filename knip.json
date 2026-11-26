@@ -1,10 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "ignore": [
+    "public/sw.js",
     "src/astryx-themes.ts",
     "src/themes/**",
     "themes/**",
-    "docs/audits/**"
+    "docs/audits/**",
+    "open-next.config.ts"
   ],
   "ignoreDependencies": [
     "@fontsource/dm-sans",

@@ -23,7 +23,9 @@ export type AuditAction =
   | 'csv_exported'
   | 'past_booking_override'
   | 'deposit_approved'
-  | 'loyalty_redeemed';
+  | 'loyalty_redeemed'
+  | 'media_retention_warned'
+  | 'media_retention_purged';
 
 interface LandingContent {
   heroEyebrow: string;
@@ -87,11 +89,17 @@ export interface SalonSettings {
   maxActiveBookingsPerClient?: number;
   privacyPolicyVersion?: string;
   optimizeContinuousSlots?: boolean;
+  noShowDepositThreshold?: number;
+  ownerPinHash?: string | null;
+  ownerPinEnabled?: boolean;
+  hasOwnerPin?: boolean;
 
   landingContent: LandingContent;
 
   whatsappBookingEnabled: boolean;
   smsRemindersEnabled: boolean;
+  retentionNoticeEmail?: string | null;
+  whatsappMonthlyQuota?: number;
 
   metaPixelId: string | null;
   ga4MeasurementId: string | null;
@@ -277,6 +285,11 @@ export interface Booking {
   googleEventId: string | null;
   cancellationReason: string | null;
   rescheduledFromId: string | null;
+  recurrenceSeriesId?: string | null;
+  recurrenceIndex?: number;
+  recurrenceTotal?: number;
+  packageRedemptionId?: string | null;
+  noShowPolicyEnforced?: boolean;
   addons: BookingAddonSnapshot[];
   createdAt: string;
   updatedAt: string;
@@ -508,6 +521,117 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export interface ServicePackage {
+  id: string;
+  name: string;
+  description: string;
+  serviceId: string;
+  totalSessions: number;
+  priceCents: number;
+  validDays: number | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ClientPackage {
+  id: string;
+  clientId: string;
+  packageId: string;
+  packageName: string;
+  serviceId: string;
+  totalSessions: number;
+  usedSessions: number;
+  purchasedAt: string;
+  expiresAt: string | null;
+  status: 'active' | 'exhausted' | 'expired' | 'canceled';
+  notes: string;
+  redeemedBookingIds?: string[];
+}
+
+export interface CampaignDispatchLog {
+  id: string;
+  kind: 'birthday' | 'reactivation';
+  clientId: string;
+  clientName: string;
+  phoneE164: string;
+  channel: 'whatsapp';
+  messagePreview: string;
+  dispatchedBy: string;
+  dispatchedAt: string;
+}
+
+export type MediaAssetFolder = 'proofs' | 'inspo' | 'gallery';
+
+export interface MediaAssetRecord {
+  id: string;
+  storagePath: string;
+  folder: MediaAssetFolder;
+  bookingId: string | null;
+  clientId: string | null;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+  retentionWarned30dAt: string | null;
+  retentionWarned7dAt: string | null;
+  purgedAt: string | null;
+}
+
+export interface MediaAccessOwner {
+  storagePath: string;
+  folder: MediaAssetFolder;
+  bookingId: string | null;
+  staffId: string | null;
+  manageToken: string | null;
+  clientPhoneE164: string | null;
+}
+
+export type WhatsAppTemplateTriggerKey =
+  | 'booking_confirmed'
+  | 'reminder_24h'
+  | 'reminder_2h'
+  | 'booking_rescheduled'
+  | 'booking_canceled'
+  | 'waitlist_offer';
+
+type WhatsAppTemplateCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
+
+export interface WhatsAppTemplateConfig {
+  id: string;
+  triggerKey: WhatsAppTemplateTriggerKey;
+  templateName: string;
+  category: WhatsAppTemplateCategory;
+  languageCode: string;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export type WhatsAppQuotaAlertLevel = 'ok' | 'warning_80' | 'limit_100';
+
+export interface WhatsAppMonthlyUsage {
+  monthKey: string;
+  sentCount: number;
+  quotaLimit: number;
+  warned80At: string | null;
+  warned100At: string | null;
+  updatedAt: string;
+}
+
+export interface WhatsAppMonthlyUsageSummary {
+  monthKey: string;
+  sentCount: number;
+  quotaLimit: number;
+  percentUsed: number;
+  alertLevel: WhatsAppQuotaAlertLevel;
+  warned80At: string | null;
+  warned100At: string | null;
+}
+
+export interface WebhookEventRecord {
+  provider: string;
+  eventId: string;
+  receivedAt: string;
+}
+
 export interface DemoDatabase {
   settings: SalonSettings;
   staff: StaffMember[];
@@ -538,4 +662,11 @@ export interface DemoDatabase {
   consents?: ConsentRecord[];
   auditLogs?: AuditLogEntry[];
   bookingPayments?: BookingPayment[];
+  servicePackages?: ServicePackage[];
+  clientPackages?: ClientPackage[];
+  campaignDispatches?: CampaignDispatchLog[];
+  mediaAssets?: MediaAssetRecord[];
+  whatsappTemplates?: WhatsAppTemplateConfig[];
+  whatsappMonthlyUsage?: WhatsAppMonthlyUsage[];
+  webhookEvents?: WebhookEventRecord[];
 }

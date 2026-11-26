@@ -29,6 +29,8 @@ import type {
   ServiceCategory,
   StaffMember,
   WaitlistEntry,
+  WhatsAppMonthlyUsageSummary,
+  WhatsAppTemplateConfig,
 } from '@/lib/types';
 import type { PublicLoyaltySummaryDTO } from '@/lib/public-dto';
 import type { RuntimeIntegrationStatus } from '@/lib/env';
@@ -142,6 +144,8 @@ export interface AdminOverviewPayload {
   inventory: InventoryItem[];
   inventoryMovements: InventoryMovement[];
   cashEntries: CashRegisterEntry[];
+  whatsappUsage?: WhatsAppMonthlyUsageSummary;
+  whatsappTemplates?: WhatsAppTemplateConfig[];
 }
 
 interface AdminContextValue {

@@ -249,6 +249,10 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(parsed.recurringBlocks?.length).toBe(1);
     expect(parsed.consents?.length).toBeGreaterThanOrEqual(2);
     expect(parsed.auditLogs?.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.settings.noShowDepositThreshold).toBe(2);
+    expect(parsed.servicePackages?.length).toBe(2);
+    expect(parsed.clientPackages?.length).toBe(1);
+    expect(parsed.clientPackages?.[0]?.clientId).toBe('client-sofia');
     expect(parsed.schedules[0]?.rules[0]?.fixedStartTimes).toEqual([
       '10:00',
       '13:30',
@@ -262,6 +266,13 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(parsed.bookings.length).toBe(seeded.bookings.length);
     expect(parsed.bookings[0]?.proofDeliveryMethod).toBe('web_upload');
     expect(parsed.bookings[0]?.clientInstagram).toBe('@sofia.ramirez.pue');
+    expect(parsed.settings.retentionNoticeEmail).toBe('hola@laikonanails.mx');
+    expect(parsed.settings.whatsappMonthlyQuota).toBe(500);
+    expect(parsed.mediaAssets?.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.whatsappTemplates?.length).toBe(6);
+    expect(parsed.whatsappTemplates?.every((t) => t.category === 'UTILITY' && t.languageCode === 'es_MX')).toBe(true);
+    expect(parsed.whatsappMonthlyUsage?.length).toBe(1);
+    expect(parsed.webhookEvents).toEqual([]);
 
     const {
       city: _city,
@@ -277,6 +288,12 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
       lockPastBookings: _lpb,
       maxActiveBookingsPerClient: _maxAct,
       privacyPolicyVersion: _ppv,
+      noShowDepositThreshold: _nsdt,
+      ownerPinHash: _oph,
+      ownerPinEnabled: _ope,
+      hasOwnerPin: _hop,
+      retentionNoticeEmail: _rne,
+      whatsappMonthlyQuota: _wmq,
       ...legacySettings
     } = seeded.settings;
 
@@ -288,6 +305,13 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
       couponRedemptions: _cr,
       consents: _cn,
       auditLogs: _al,
+      servicePackages: _spkgs,
+      clientPackages: _cpkgs,
+      campaignDispatches: _cdisp,
+      mediaAssets: _ma,
+      whatsappTemplates: _wt,
+      whatsappMonthlyUsage: _wmu,
+      webhookEvents: _we,
       ...legacyRoot
     } = seeded;
 
@@ -319,6 +343,13 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(parsedLegacy.couponRedemptions).toEqual([]);
     expect(parsedLegacy.consents).toEqual([]);
     expect(parsedLegacy.auditLogs).toEqual([]);
+    expect(parsedLegacy.servicePackages).toEqual([]);
+    expect(parsedLegacy.clientPackages).toEqual([]);
+    expect(parsedLegacy.campaignDispatches).toEqual([]);
+    expect(parsedLegacy.mediaAssets).toEqual([]);
+    expect(parsedLegacy.whatsappTemplates).toEqual([]);
+    expect(parsedLegacy.whatsappMonthlyUsage).toEqual([]);
+    expect(parsedLegacy.webhookEvents).toEqual([]);
 
     expect(DemoDatabaseSchema.safeParse(null).success).toBe(false);
     expect(DemoDatabaseSchema.safeParse({}).success).toBe(false);
@@ -488,6 +519,27 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(migration0003).toContain('COUPON_EXPIRED');
     expect(migration0003).toContain('COUPON_MIN_SUBTOTAL');
     expect(migration0003).toContain('REVOKE ALL ON FUNCTION public.create_booking_atomic');
+
+    const migration0008 = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'supabase',
+        'migrations',
+        '0008_production_r2_whatsapp_retention.sql',
+      ),
+      'utf-8',
+    );
+    expect(migration0008).toContain('public.media_assets');
+    expect(migration0008).toContain('public.whatsapp_templates');
+    expect(migration0008).toContain('public.whatsapp_monthly_usage');
+    expect(migration0008).toContain('public.webhook_events');
+    expect(migration0008).toContain('public.increment_whatsapp_usage');
+    expect(migration0008).toContain("SET search_path = ''");
+    expect(migration0008).toContain('media_retention_warned');
+    expect(migration0008).toContain('media_retention_purged');
+    expect(tsSchema.functions.has('increment_whatsapp_usage')).toBe(true);
+    expect(sqlSchema.tables.get('salon_settings')?.has('retention_notice_email')).toBe(true);
+    expect(sqlSchema.tables.get('salon_settings')?.has('whatsapp_monthly_quota')).toBe(true);
   });
 
   it('keeps Database and SalonRepository type contracts compile-time valid', () => {
@@ -507,9 +559,19 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
       'dequeueOutboxEvents',
       'ackOutboxEvent',
       'failOutboxEvent',
+      'registerMediaAsset',
+      'getMediaAccessOwner',
+      'listMediaAssetsForRetention',
+      'markMediaRetentionWarned',
+      'markMediaAssetPurged',
+      'getWhatsAppTemplates',
+      'getWhatsAppMonthlyUsage',
+      'incrementWhatsAppMonthlyUsage',
+      'claimWebhookEventIdempotent',
+      'cleanupExpiredSlotHolds',
     ];
 
     expect(sampleArgKey).toBe('p_hold_id');
-    expect(requiredPortMethods).toHaveLength(11);
+    expect(requiredPortMethods).toHaveLength(21);
   });
 });

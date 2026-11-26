@@ -1,4 +1,4 @@
--- Seed inicial para LAIKONA NAILS BY KARLA (ejecutar después de 0001..0005)
+-- Seed inicial para LAIKONA NAILS BY KARLA (ejecutar después de 0001..0008)
 -- Alineado con src/lib/demo-seed.ts (verificado por scripts/check-seed-parity.mjs)
 
 INSERT INTO public.salon_settings (
@@ -49,6 +49,8 @@ INSERT INTO public.salon_settings (
   landing_content,
   whatsapp_booking_enabled,
   sms_reminders_enabled,
+  retention_notice_email,
+  whatsapp_monthly_quota,
   google_review_url,
   default_commission_percent
 )
@@ -106,6 +108,8 @@ VALUES (
   }'::jsonb,
   true,
   false,
+  'hola@laikonanails.mx',
+  500,
   'https://g.page/r/laikona-nails-puebla/review',
   35.00
 )
@@ -708,3 +712,74 @@ VALUES
     true
   )
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.whatsapp_templates (
+  id,
+  trigger_key,
+  template_name,
+  category,
+  language_code,
+  is_active
+)
+VALUES
+  (
+    '10000000-0000-4000-8000-000000001201',
+    'booking_confirmed',
+    'laikona_cita_confirmada',
+    'UTILITY',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001202',
+    'reminder_24h',
+    'laikona_recordatorio_24h',
+    'UTILITY',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001203',
+    'reminder_2h',
+    'laikona_recordatorio_2h',
+    'UTILITY',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001204',
+    'booking_rescheduled',
+    'laikona_cita_reagendada',
+    'UTILITY',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001205',
+    'booking_canceled',
+    'laikona_cita_cancelada',
+    'UTILITY',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001206',
+    'waitlist_offer',
+    'laikona_lista_espera',
+    'UTILITY',
+    'es_MX',
+    true
+  )
+ON CONFLICT (trigger_key) DO NOTHING;
+
+INSERT INTO public.whatsapp_monthly_usage (
+  month_key,
+  sent_count,
+  quota_limit
+)
+VALUES (
+  to_char(now() AT TIME ZONE 'America/Mexico_City', 'YYYY-MM'),
+  0,
+  500
+)
+ON CONFLICT (month_key) DO NOTHING;

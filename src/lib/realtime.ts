@@ -44,7 +44,7 @@ interface RealtimeBroadcastErrorRecord {
 
 type Listener = (event: PublicRealtimeEvent) => void;
 
-const PUBLIC_SLOTS_CHANNEL = 'salon:public-slots';
+export const PUBLIC_SLOTS_CHANNEL = 'salon:public-slots';
 const ISO_DATE_PREFIX_RE = /^(\d{4}-\d{2}-\d{2})/;
 
 declare global {

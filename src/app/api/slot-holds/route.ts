@@ -4,12 +4,14 @@ import {
   getOrCreateClientSession,
   readClientSessionToken,
 } from '@/lib/auth/client-session';
+import { logError } from '@/lib/logger';
 import {
   createOrRefreshSlotHoldWithExtras,
   getRepository,
   PolicyError,
   SlotConflictError,
 } from '@/lib/repositories/db';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 const holdSchema = z.object({
   serviceId: z.string().min(1),
@@ -21,6 +23,28 @@ const holdSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const rate = checkRateLimit({
+    bucket: 'public:slot-holds',
+    key: getRequestIp(request),
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      {
+        code: 'RATE_LIMITED',
+        error: 'Demasiados apartados de horario en poco tiempo. Espera unos segundos e intenta de nuevo.',
+      },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rate.retryAfterSeconds),
+          'X-RateLimit-Remaining': '0',
+        },
+      },
+    );
+  }
+
   try {
     const body = holdSchema.parse(await request.json());
     const clientSession = await getOrCreateClientSession(request);
@@ -42,7 +66,10 @@ export async function POST(request: NextRequest) {
       expiresAt: hold.expiresAt,
       createdAt: hold.createdAt,
     };
-    const response = NextResponse.json({ hold: publicHold, holdId: hold.holdId });
+    const response = NextResponse.json(
+      { hold: publicHold, holdId: hold.holdId },
+      { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
     if (clientSession.setCookieHeader) {
       response.headers.append('Set-Cookie', clientSession.setCookieHeader);
     }
@@ -55,19 +82,26 @@ export async function POST(request: NextRequest) {
           error: err.message,
           suggestedSlots: err.suggestedSlots,
         },
-        { status: 409 },
+        { status: 409, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
       );
     }
     if (err instanceof PolicyError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Datos inválidos para apartar horario' },
-        { status: 400 },
+        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
       );
     }
-    return NextResponse.json({ error: 'No se pudo apartar el horario' }, { status: 500 });
+    logError('slot_hold_create_failed', { error: err });
+    return NextResponse.json(
+      { error: 'No se pudo apartar el horario' },
+      { status: 500, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
   }
 }
 

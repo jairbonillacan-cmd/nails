@@ -23,6 +23,8 @@ interface BookingFlowState {
   selectedSlot: AvailableSlot | null;
   holdId: string | null;
   holdExpiresAt: number | null;
+  holdExpired: boolean;
+  holdExpiredMessage: string | null;
   conflict: BookingConflictState | null;
   formError: string | null;
   formErrorCode: string | null;
@@ -103,6 +105,8 @@ export function createInitialBookingFlowState(): BookingFlowState {
     selectedSlot: null,
     holdId: null,
     holdExpiresAt: null,
+    holdExpired: false,
+    holdExpiredMessage: null,
     conflict: null,
     formError: null,
     formErrorCode: null,
@@ -127,6 +131,8 @@ export function bookingReducer(
         selectedSlot: action.slot,
         holdId: action.holdId,
         holdExpiresAt: action.holdExpiresAt,
+        holdExpired: false,
+        holdExpiredMessage: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
@@ -142,6 +148,8 @@ export function bookingReducer(
         selectedSlot: action.slot,
         holdId: action.holdId ?? state.holdId,
         holdExpiresAt: action.holdExpiresAt ?? state.holdExpiresAt,
+        holdExpired: false,
+        holdExpiredMessage: null,
         conflict: null,
       };
 
@@ -159,6 +167,8 @@ export function bookingReducer(
         selectedSlot: action.returnToSchedule ? null : state.selectedSlot,
         holdId: null,
         holdExpiresAt: null,
+        holdExpired: false,
+        holdExpiredMessage: null,
         conflict: {
           message: action.message,
           suggestions: action.suggestions,
@@ -169,6 +179,19 @@ export function bookingReducer(
       };
 
     case 'HOLD_EXPIRED':
+      if (state.step === 'details' && state.selectedSlot) {
+        return {
+          ...state,
+          phase: 'conflict',
+          step: 'details',
+          selectedSlot: state.selectedSlot,
+          holdId: null,
+          holdExpiresAt: null,
+          holdExpired: true,
+          holdExpiredMessage: action.message,
+          conflict: null,
+        };
+      }
       return {
         ...state,
         phase: 'conflict',
@@ -176,6 +199,8 @@ export function bookingReducer(
         selectedSlot: null,
         holdId: null,
         holdExpiresAt: null,
+        holdExpired: false,
+        holdExpiredMessage: null,
         conflict: {
           message: action.message,
           suggestions: [],
@@ -213,6 +238,9 @@ export function bookingReducer(
       };
 
     case 'START_SUBMIT':
+      if (state.phase === 'submitting' || state.phase === 'confirmed') {
+        return state;
+      }
       return {
         ...state,
         phase: 'submitting',
@@ -240,6 +268,8 @@ export function bookingReducer(
       return {
         ...state,
         phase: 'confirmed',
+        holdExpired: false,
+        holdExpiredMessage: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
@@ -256,6 +286,9 @@ export function bookingReducer(
         selectedSlot: null,
         holdId: null,
         holdExpiresAt: null,
+        holdExpired: false,
+        holdExpiredMessage: null,
+        conflict: null,
         formError: null,
         formErrorCode: null,
         activeBookings: [],
@@ -269,6 +302,8 @@ export function bookingReducer(
         selectedSlot: null,
         holdId: null,
         holdExpiresAt: null,
+        holdExpired: false,
+        holdExpiredMessage: null,
         conflict: null,
         formError: null,
         formErrorCode: null,

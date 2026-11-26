@@ -1517,7 +1517,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         );
         expect(validRes.status).toBe(201);
         const validJson = (await validRes.json()) as {
-          booking: { id: string; inspoPhotoUrl: string | null };
+          booking: { id: string; manageToken: string; inspoPhotoUrl: string | null };
         };
         expect(validJson.booking.inspoPhotoUrl).toMatch(
           /^\/api\/media\/inspo\/[0-9a-f-]+\.png$/i,
@@ -1530,8 +1530,16 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         const mediaSegments = (validJson.booking.inspoPhotoUrl ?? '')
           .replace(/^\/api\/media\//, '')
           .split('/');
-        const streamRes = await getMediaFile(
+        const unauthStreamRes = await getMediaFile(
           makeRequest(`http://localhost:3000${validJson.booking.inspoPhotoUrl ?? ''}`),
+          { params: Promise.resolve({ path: mediaSegments }) },
+        );
+        expect(unauthStreamRes.status).toBe(401);
+
+        const streamRes = await getMediaFile(
+          makeRequest(
+            `http://localhost:3000${validJson.booking.inspoPhotoUrl ?? ''}?token=${encodeURIComponent(validJson.booking.manageToken)}`,
+          ),
           { params: Promise.resolve({ path: mediaSegments }) },
         );
         expect(streamRes.status).toBe(200);

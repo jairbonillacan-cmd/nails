@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -11,7 +12,7 @@ import { formatCurrency, formatDuration } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import type { ServiceAddon, ServiceCategory } from '@/lib/types';
 import { addonIcon, servicePhoto } from '../landing/landingContent';
-import { formatServicePrice } from './bookingHelpers';
+import { formatServicePrice, isOptimizableLocalRasterImage } from './bookingHelpers';
 
 interface ServiceStepProps {
   currency: PublicSettingsDTO['currency'];
@@ -22,6 +23,7 @@ interface ServiceStepProps {
   compatibleAddons: ServiceAddon[];
   selectedAddonIds: string[];
   onSelectService: (serviceId: string) => void;
+  onPrefetchService?: (serviceId: string) => void;
   onToggleExtraService: (serviceId: string, checked: boolean) => void;
   onToggleAddon: (addonId: string, checked: boolean) => void;
 }
@@ -37,6 +39,7 @@ export function ServiceStep({
   compatibleAddons,
   selectedAddonIds,
   onSelectService,
+  onPrefetchService,
   onToggleExtraService,
   onToggleAddon,
 }: ServiceStepProps) {
@@ -83,26 +86,42 @@ export function ServiceStep({
       ) : null}
 
       <ul key={activeTab} className="rb-services fx-step-in fx-stagger" aria-label="Servicios">
-        {visibleServices.map((service, index) => {
+        {visibleServices.map((service) => {
           const isSelected = service.id === selectedService?.id;
+          const photoSrc = servicePhoto(service.slug, service.imageUrl);
+          const usesOptimizedImage = isOptimizableLocalRasterImage(photoSrc);
           return (
             <li key={service.id}>
               <button
                 type="button"
                 className="rb-opt rb-service fx-card-lift fx-press"
                 aria-pressed={isSelected}
+                onMouseEnter={() => onPrefetchService?.(service.id)}
+                onFocus={() => onPrefetchService?.(service.id)}
                 onClick={() => onSelectService(service.id)}
               >
-                <img
-                  className="rb-service-img"
-                  src={servicePhoto(service.slug, service.imageUrl)}
-                  alt=""
-                  width={240}
-                  height={180}
-                  loading={index < 3 ? 'eager' : 'lazy'}
-                  fetchPriority={index < 3 ? 'high' : undefined}
-                  decoding="async"
-                />
+                {usesOptimizedImage ? (
+                  <Image
+                    className="rb-service-img"
+                    src={photoSrc}
+                    alt=""
+                    width={320}
+                    height={240}
+                    sizes="(max-width: 47.5rem) 5.5rem, 16rem"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <img
+                    className="rb-service-img"
+                    src={photoSrc}
+                    alt=""
+                    width={320}
+                    height={240}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                )}
                 <VStack gap={0} className="rb-service-body">
                   <Text weight="medium" className="lk-serif rb-service-name">
                     {service.name}
@@ -156,8 +175,15 @@ export function ServiceStep({
                       decoding="async"
                     />
                     <Text className="rb-grow">{addon.name}</Text>
-                    <Text type="supporting" color="secondary" hasTabularNumbers>
-                      +{formatCurrency(addon.extraPriceCents, currency)}
+                    <Text
+                      type="supporting"
+                      color="secondary"
+                      hasTabularNumbers
+                      style={{ flexShrink: 0 }}
+                    >
+                      {addon.extraMinutes > 0
+                        ? `+${formatDuration(addon.extraMinutes)} · +${formatCurrency(addon.extraPriceCents, currency)}`
+                        : `+${formatCurrency(addon.extraPriceCents, currency)}`}
                     </Text>
                   </button>
                 </li>

@@ -13,7 +13,7 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Calendar, type ISODateString } from '@astryxdesign/core/Calendar';
-import { Clock, RefreshCw, Search } from 'lucide-react';
+import { Clock, HelpCircle, RefreshCw } from 'lucide-react';
 import {
   AdminConfigChip,
   AdminConfigEmpty,
@@ -33,7 +33,7 @@ interface VisualTroubleshooterProps {
   onSelectStaff: (nextStaffId: string) => void;
 }
 
-type DiagnosisFilter = 'all' | 'available' | 'blocked';
+type AvailabilityFilter = 'all' | 'available' | 'blocked';
 
 function addDaysToYmd(baseYmd: string, offsetDays: number): string {
   const [y = 2026, m = 1, d = 1] = baseYmd.split('-').map(Number);
@@ -49,20 +49,76 @@ function getPeriodBucket(time24: string): 'morning' | 'afternoon' | 'evening' {
   return 'evening';
 }
 
+function explainSlotInPlainSpanish(slot: SlotDiagnosis): string {
+  if (slot.isAvailable) {
+    return 'Esta hora está libre y tus clientas sí la pueden ver y reservar.';
+  }
+  const raw = slot.reason.trim();
+  if (/^Bloqueo recurrente:/i.test(raw)) {
+    const detail = raw.replace(/^Bloqueo recurrente:\s*/i, '').trim();
+    return detail
+      ? `Tienes un descanso fijo programado a esta hora (${detail}).`
+      : 'Tienes un descanso fijo programado a esta hora.';
+  }
+  if (/^Bloqueo recurrente$/i.test(raw)) {
+    return 'Tienes un descanso fijo programado a esta hora.';
+  }
+  if (/^Día bloqueado por excepción/i.test(raw)) {
+    const match = /\(([^)]+)\)/.exec(raw);
+    const note = match?.[1]?.trim();
+    return note && note !== 'Sin motivo'
+      ? `Este día está marcado como cerrado (${note}).`
+      : 'Este día está marcado como cerrado en vacaciones y días cerrados.';
+  }
+  if (/cambio de horario/i.test(raw)) {
+    return 'Esta hora no existe ese día por el cambio de horario.';
+  }
+  if (/sin horario laboral configurado/i.test(raw)) {
+    return `${slot.staffName} no tiene turno activado este día de la semana.`;
+  }
+  if (/Fuera de horario laboral/i.test(raw)) {
+    return 'El servicio se pasa de la hora de cierre o queda fuera del horario de ese día.';
+  }
+  if (/Fuera de los horarios fijos/i.test(raw)) {
+    return 'No es uno de los turnos fijos que elegiste para este día.';
+  }
+  if (/cuadrícula de intervalos/i.test(raw)) {
+    return 'Esta hora no coincide con los espacios configurados para citas.';
+  }
+  if (/Menor al aviso mínimo/i.test(raw)) {
+    return 'Falta muy poco tiempo para esta hora y ya cerró el límite para reservar.';
+  }
+  if (/Excede el límite máximo/i.test(raw)) {
+    return 'Esa fecha está muy lejos; todavía no se abre la agenda para ese día.';
+  }
+  if (/^Ocupado por cita/i.test(raw)) {
+    return `${raw.replace(/^Ocupado por cita/i, 'Ya hay una cita agendada')}.`;
+  }
+  if (/Apartado temporalmente/i.test(raw)) {
+    return 'Otra clienta está reservando este horario justo ahora.';
+  }
+  if (/Google Calendar/i.test(raw)) {
+    return 'Aparece un compromiso ocupado en Google Calendar a esta hora.';
+  }
+  if (/Especialista inactiva/i.test(raw)) {
+    return `${slot.staffName} está pausada o no tiene asignado este servicio en Equipo.`;
+  }
+  return raw || 'Esta hora no está disponible por ahora.';
+}
+
 export function VisualTroubleshooter({
   staffId,
   staffMembers,
   services,
   isSpecialistOnly,
   todayKey,
-  timezone,
   onSelectStaff,
 }: VisualTroubleshooterProps) {
-  const [diagDate, setDiagDate] = useState<string>(todayKey);
+  const [selectedDate, setSelectedDate] = useState<string>(todayKey);
   const [serviceIdInput, setServiceIdInput] = useState<string | null>(null);
-  const [filterMode, setFilterMode] = useState<DiagnosisFilter>('all');
+  const [filterMode, setFilterMode] = useState<AvailabilityFilter>('all');
   const [inspectedTime, setInspectedTime] = useState<string | null>(null);
-  const [diagnostics, setDiagnostics] = useState<SlotDiagnosis[]>([]);
+  const [slotChecks, setSlotChecks] = useState<SlotDiagnosis[]>([]);
   const [loading, setLoading] = useState(false);
   const [reloadCounter, setReloadCounter] = useState(0);
 
@@ -70,17 +126,17 @@ export function VisualTroubleshooter({
   const selectedStaff = staffMembers.find((s) => s.id === staffId);
   const selectedService = services.find((s) => s.id === serviceId);
 
-  const fetchDiagnosis = useCallback(
+  const fetchSlotChecks = useCallback(
     async (signal: AbortSignal) => {
-      if (!diagDate || !serviceId || !staffId) {
-        setDiagnostics([]);
+      if (!selectedDate || !serviceId || !staffId) {
+        setSlotChecks([]);
         return;
       }
       setLoading(true);
       try {
         const qs = new URLSearchParams({
           mode: 'diagnose',
-          date: diagDate,
+          date: selectedDate,
           serviceId,
           staffId,
         });
@@ -90,17 +146,17 @@ export function VisualTroubleshooter({
         });
         if (signal.aborted) return;
         if (!res.ok) {
-          setDiagnostics([]);
+          setSlotChecks([]);
           return;
         }
         const json = (await res.json()) as {
           diagnosis?: SlotDiagnosis[];
           diagnostics?: SlotDiagnosis[];
         };
-        setDiagnostics(json.diagnosis ?? json.diagnostics ?? []);
+        setSlotChecks(json.diagnosis ?? json.diagnostics ?? []);
       } catch {
         if (!signal.aborted) {
-          setDiagnostics([]);
+          setSlotChecks([]);
         }
       } finally {
         if (!signal.aborted) {
@@ -108,18 +164,18 @@ export function VisualTroubleshooter({
         }
       }
     },
-    [diagDate, serviceId, staffId],
+    [selectedDate, serviceId, staffId],
   );
 
   useExternalSync(
-    `troubleshoot:${staffId}:${serviceId}:${diagDate}:${reloadCounter}`,
-    fetchDiagnosis,
+    `slot-help:${staffId}:${serviceId}:${selectedDate}:${reloadCounter}`,
+    fetchSlotChecks,
   );
 
-  const availableCount = diagnostics.filter((d) => d.isAvailable).length;
-  const blockedCount = diagnostics.length - availableCount;
+  const availableCount = slotChecks.filter((d) => d.isAvailable).length;
+  const busyCount = slotChecks.length - availableCount;
 
-  const visibleSlots = diagnostics.filter((d) => {
+  const visibleSlots = slotChecks.filter((d) => {
     if (filterMode === 'available') return d.isAvailable;
     if (filterMode === 'blocked') return !d.isAvailable;
     return true;
@@ -144,59 +200,71 @@ export function VisualTroubleshooter({
   ].filter((g) => g.items.length > 0);
 
   const inspectedSlot =
-    diagnostics.find((d) => d.time24 === inspectedTime) ??
-    diagnostics.find((d) => !d.isAvailable) ??
-    diagnostics[0] ??
+    slotChecks.find((d) => d.time24 === inspectedTime) ??
+    slotChecks.find((d) => !d.isAvailable) ??
+    slotChecks[0] ??
     null;
 
   const quickDates = [
     { label: 'Hoy', date: todayKey },
     { label: 'Mañana', date: addDaysToYmd(todayKey, 1) },
-    { label: '+3 días', date: addDaysToYmd(todayKey, 3) },
-    { label: '+7 días', date: addDaysToYmd(todayKey, 7) },
+    { label: 'En 3 días', date: addDaysToYmd(todayKey, 3) },
+    { label: 'En 1 semana', date: addDaysToYmd(todayKey, 7) },
   ];
 
   const handleSelectDate = (nextDate: string) => {
-    setDiagDate(nextDate);
+    setSelectedDate(nextDate);
     setInspectedTime(null);
   };
 
   return (
     <VStack className="ad-split" gap={5}>
       <AdminConfigSection
-        id="troubleshooter-results-heading"
-        title={`${diagDate} · ${selectedStaff?.name ?? 'Especialista'}`}
-        subtitle={selectedService?.name ?? 'Servicio seleccionado'}
+        id="slot-help-results-heading"
+        title={`${selectedDate} · ${selectedStaff?.name ?? 'Manicurista'}`}
+        subtitle={
+          selectedService
+            ? `Viendo horarios para ${selectedService.name}. Toca cualquier hora para ver el motivo.`
+            : 'Toca cualquier hora para ver si sale libre u ocupada.'
+        }
         actions={
-          <Button
-            type="button"
-            label="Actualizar"
-            variant="secondary"
-            size="sm"
-            icon={<RefreshCw size={14} aria-hidden="true" />}
-            isLoading={loading}
-            onClick={() => setReloadCounter((prev) => prev + 1)}
-          />
+          <HStack gap={2} align="center" wrap="wrap">
+            {loading ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Revisando...
+              </Text>
+            ) : null}
+            <Button
+              type="button"
+              label={loading ? 'Revisando...' : 'Volver a revisar'}
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw size={14} aria-hidden="true" />}
+              isLoading={loading}
+              isDisabled={loading}
+              onClick={() => setReloadCounter((prev) => prev + 1)}
+            />
+          </HStack>
         }
       >
         <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={2}>
           <HStack gap={3} align="center" wrap="wrap">
             <HStack gap={1.5} align="center">
-              <StatusDot variant="success" label="Disponibles" />
+              <StatusDot variant="success" label="Libres" />
               <Text type="label" className="fx-tabular" hasTabularNumbers>
                 {availableCount} libres
               </Text>
             </HStack>
             <HStack gap={1.5} align="center">
-              <StatusDot variant="error" label="Bloqueados" />
+              <StatusDot variant="error" label="No disponibles" />
               <Text type="label" className="fx-tabular" hasTabularNumbers>
-                {blockedCount} bloqueados
+                {busyCount} ocupadas o cerradas
               </Text>
             </HStack>
           </HStack>
 
           <SegmentedControl
-            label="Filtrar horarios diagnosticados"
+            label="Filtrar horas del día"
             size="sm"
             value={filterMode}
             onChange={(val) => {
@@ -205,16 +273,21 @@ export function VisualTroubleshooter({
               }
             }}
           >
-            <SegmentedControlItem value="all" label="Todos" />
+            <SegmentedControlItem value="all" label="Todas" />
             <SegmentedControlItem value="available" label="Libres" />
-            <SegmentedControlItem value="blocked" label="Bloqueados" />
+            <SegmentedControlItem value="blocked" label="No salen" />
           </SegmentedControl>
         </HStack>
 
-        <VStack gap={4} padding={5}>
+        <VStack
+          gap={4}
+          padding={5}
+          className={loading && slotChecks.length > 0 ? 'fx-busy' : undefined}
+          aria-busy={loading || undefined}
+        >
           {inspectedSlot ? (
             <VStack
-              className="ad-surface fx-fade-up"
+              className="ad-surface"
               data-tone={inspectedSlot.isAvailable ? 'subtle' : 'warning'}
               data-padded="true"
               gap={1.5}
@@ -225,7 +298,7 @@ export function VisualTroubleshooter({
                 <HStack gap={2} align="center" wrap="wrap">
                   <StatusDot
                     variant={inspectedSlot.isAvailable ? 'success' : 'error'}
-                    label={inspectedSlot.isAvailable ? 'Disponible' : 'Bloqueado'}
+                    label={inspectedSlot.isAvailable ? 'Disponible' : 'No disponible'}
                   />
                   <Text weight="bold" className="fx-tabular" hasTabularNumbers>
                     {inspectedSlot.time24} hrs
@@ -234,22 +307,22 @@ export function VisualTroubleshooter({
                 </HStack>
                 <AdminConfigChip
                   tone={inspectedSlot.isAvailable ? 'success' : 'warning'}
-                  label={inspectedSlot.isAvailable ? 'Disponible' : 'Bloqueado'}
+                  label={inspectedSlot.isAvailable ? 'Sí sale libre' : 'No aparece libre'}
                 />
               </HStack>
               <Text type="supporting" weight="medium">
-                Motivo exacto: {inspectedSlot.reason}
+                {explainSlotInPlainSpanish(inspectedSlot)}
               </Text>
             </VStack>
           ) : null}
 
           <Divider />
 
-          {loading ? (
+          {loading && slotChecks.length === 0 ? (
             <VStack
               className="rb-skeleton-slots"
               role="status"
-              aria-label="Calculando diagnóstico de horarios"
+              aria-label="Revisando horarios del día"
               gap={2}
             >
               {Array.from({ length: 8 }, (_, idx) => (
@@ -261,8 +334,8 @@ export function VisualTroubleshooter({
           ) : groups.length === 0 ? (
             <AdminConfigEmpty
               icon={<Clock size={22} aria-hidden="true" />}
-              title="No hay horarios en este filtro"
-              description="Cambia a Todos o elige otra fecha en el calendario para inspeccionar la disponibilidad."
+              title="No hay horas con este filtro"
+              description="Elige Todas o toca otro día en el calendario para revisar qué pasa en cada hora."
             />
           ) : (
             <VStack gap={4}>
@@ -286,7 +359,7 @@ export function VisualTroubleshooter({
                       return (
                         <ClickableCard
                           key={slot.time24}
-                          label={`${slot.time24} hrs — ${slot.isAvailable ? 'Disponible' : 'Bloqueado'}: ${slot.reason}`}
+                          label={`${slot.time24} hrs — ${explainSlotInPlainSpanish(slot)}`}
                           padding={2}
                           variant={isInspected ? 'muted' : 'default'}
                           elevation={isInspected ? 'low' : 'none'}
@@ -296,7 +369,7 @@ export function VisualTroubleshooter({
                             <HStack gap={1.5} align="center">
                               <StatusDot
                                 variant={slot.isAvailable ? 'success' : 'error'}
-                                label={slot.isAvailable ? 'Disponible' : 'Bloqueado'}
+                                label={slot.isAvailable ? 'Libre' : 'No disponible'}
                               />
                               <Text
                                 weight="semibold"
@@ -307,7 +380,7 @@ export function VisualTroubleshooter({
                               </Text>
                             </HStack>
                             {isInspected ? (
-                              <AdminConfigChip label="Ver" tone="accent" />
+                              <AdminConfigChip label="Viendo" tone="accent" />
                             ) : null}
                           </HStack>
                         </ClickableCard>
@@ -322,10 +395,10 @@ export function VisualTroubleshooter({
       </AdminConfigSection>
 
       <AdminConfigSection
-        id="troubleshooter-picker-heading"
-        icon={<Search size={16} aria-hidden="true" />}
-        title="Selector de diagnóstico"
-        subtitle={`Inspecciona por qué cada horario está libre o bloqueado (${timezone}).`}
+        id="slot-help-picker-heading"
+        icon={<HelpCircle size={16} aria-hidden="true" />}
+        title="¿Qué día quieres revisar?"
+        subtitle="Elige un servicio y una fecha para ver en segundos por qué una hora aparece libre o no."
         padded
       >
         <VStack gap={4}>
@@ -343,7 +416,7 @@ export function VisualTroubleshooter({
             />
             {!isSpecialistOnly ? (
               <Selector
-                label="Especialista"
+                label="Manicurista"
                 value={staffId}
                 onChange={(v) => {
                   if (v) {
@@ -358,7 +431,7 @@ export function VisualTroubleshooter({
 
           <HStack gap={1.5} wrap="wrap" role="group" aria-label="Fechas rápidas">
             {quickDates.map((item) => {
-              const isSelected = diagDate === item.date;
+              const isSelected = selectedDate === item.date;
               return (
                 <button
                   key={item.label}
@@ -378,7 +451,7 @@ export function VisualTroubleshooter({
             <Calendar
               mode="single"
               weekStartsOn="mon"
-              value={diagDate as ISODateString}
+              value={selectedDate as ISODateString}
               onChange={(val) => {
                 if (typeof val === 'string') {
                   handleSelectDate(val);

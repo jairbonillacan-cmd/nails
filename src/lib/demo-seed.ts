@@ -1,5 +1,66 @@
-import type { DemoDatabase } from './types';
+import type { DemoDatabase, WhatsAppTemplateConfig } from './types';
 import { getDateKeyInTimezone } from './format';
+
+export function createDefaultWhatsAppTemplates(
+  updatedAt = new Date().toISOString(),
+): WhatsAppTemplateConfig[] {
+  return [
+    {
+      id: 'watpl-booking-confirmed',
+      triggerKey: 'booking_confirmed',
+      templateName: 'laikona_cita_confirmada',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-reminder-24h',
+      triggerKey: 'reminder_24h',
+      templateName: 'laikona_recordatorio_24h',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-reminder-2h',
+      triggerKey: 'reminder_2h',
+      templateName: 'laikona_recordatorio_2h',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-booking-rescheduled',
+      triggerKey: 'booking_rescheduled',
+      templateName: 'laikona_cita_reagendada',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-booking-canceled',
+      triggerKey: 'booking_canceled',
+      templateName: 'laikona_cita_cancelada',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-waitlist-offer',
+      triggerKey: 'waitlist_offer',
+      templateName: 'laikona_lista_espera',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+  ];
+}
 
 function isoAtOffset(daysFromToday: number, hourLocal: number, minuteLocal = 0): string {
   const now = new Date();
@@ -15,6 +76,11 @@ function dateKeyAtOffset(daysFromToday: number): string {
   const [y = 2026, m = 1, d = 1] = baseKey.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + daysFromToday, 12, 0, 0));
   return dt.toISOString().slice(0, 10);
+}
+
+function upcomingBirthdayAtOffset(birthYear: number, daysFromToday: number): string {
+  const key = dateKeyAtOffset(daysFromToday);
+  return `${birthYear}-${key.slice(5)}`;
 }
 
 export function createInitialDemoDatabase(): DemoDatabase {
@@ -60,6 +126,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
   const client2 = 'client-mariana';
   const client3 = 'client-andrea';
   const client4 = 'client-paula';
+  const client5 = 'client-valeria';
 
   const booking1Start = isoAtOffset(1, 10, 0);
   const booking1End = isoAtOffset(1, 12, 15);
@@ -75,6 +142,8 @@ export function createInitialDemoDatabase(): DemoDatabase {
   const bookingPastAcrilicasEnd = isoAtOffset(-2, 16, 0);
   const bookingPastPediStart = isoAtOffset(-5, 16, 0);
   const bookingPastPediEnd = isoAtOffset(-5, 17, 30);
+  const bookingLapsedStart = isoAtOffset(-52, 13, 30);
+  const bookingLapsedEnd = isoAtOffset(-52, 15, 30);
 
   return {
     settings: {
@@ -134,6 +203,10 @@ export function createInitialDemoDatabase(): DemoDatabase {
       maxActiveBookingsPerClient: 3,
       privacyPolicyVersion: '2026-11',
       optimizeContinuousSlots: false,
+      noShowDepositThreshold: 2,
+      ownerPinEnabled: false,
+      hasOwnerPin: false,
+      ownerPinHash: null,
 
       landingContent: {
         heroEyebrow: 'Laikona Nails by Karla · Puebla',
@@ -147,6 +220,8 @@ export function createInitialDemoDatabase(): DemoDatabase {
 
       whatsappBookingEnabled: true,
       smsRemindersEnabled: false,
+      retentionNoticeEmail: 'hola@laikonanails.mx',
+      whatsappMonthlyQuota: 500,
 
       metaPixelId: null,
       ga4MeasurementId: null,
@@ -718,7 +793,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
         phoneE164: '+522224123987',
         email: 'sofia.ramirez@ejemplo.mx',
         instagramHandle: '@sofia.ramirez.pue',
-        birthday: '1997-11-28',
+        birthday: upcomingBirthdayAtOffset(1997, 3),
         notes: 'Prefiere almendra corta, tono milky nude o french delicado. Cutícula sensible.',
         noShowCount: 0,
         createdAt: nowIso,
@@ -759,6 +834,18 @@ export function createInitialDemoDatabase(): DemoDatabase {
         noShowCount: 0,
         createdAt: nowIso,
         updatedAt: nowIso,
+      },
+      {
+        id: client5,
+        fullName: 'Valeria Mendoza',
+        phoneE164: '+522227711223',
+        email: 'valeria.mendoza@ejemplo.mx',
+        instagramHandle: '@valeriamendoza.pue',
+        birthday: '1996-05-19',
+        notes: 'Prefiere Softgel natural; registra 2 inasistencias previas.',
+        noShowCount: 2,
+        createdAt: bookingLapsedStart,
+        updatedAt: bookingLapsedEnd,
       },
     ],
 
@@ -1009,6 +1096,40 @@ export function createInitialDemoDatabase(): DemoDatabase {
         addons: [],
         createdAt: bookingPastPediStart,
         updatedAt: bookingPastPediEnd,
+      },
+      {
+        id: 'bk-1007',
+        bookingCode: 'NL-1021',
+        manageToken: 'demo-token-valeria-1021',
+        idempotencyKey: 'seed-bk-1007',
+        serviceId: srvSoftgel,
+        extraServiceIds: [],
+        staffId: staffPaty,
+        clientId: client5,
+        clientInstagram: '@valeriamendoza.pue',
+        startAt: bookingLapsedStart,
+        endAt: bookingLapsedEnd,
+        occupiedStartAt: bookingLapsedStart,
+        occupiedEndAt: bookingLapsedEnd,
+        totalDurationMinutes: 120,
+        subtotalCents: 45000,
+        discountCents: 0,
+        totalPriceCents: 45000,
+        depositAmountCents: 20000,
+        couponCode: null,
+        status: 'completed',
+        source: 'web',
+        clientNotes: 'Softgel almendra natural.',
+        internalNotes: 'Última visita registrada hace 52 días.',
+        inspoPhotoUrl: null,
+        paymentProofUrl: null,
+        proofDeliveryMethod: 'web_upload',
+        googleEventId: null,
+        cancellationReason: null,
+        rescheduledFromId: null,
+        addons: [],
+        createdAt: bookingLapsedStart,
+        updatedAt: bookingLapsedEnd,
       },
     ],
 
@@ -1369,6 +1490,16 @@ export function createInitialDemoDatabase(): DemoDatabase {
         reference: 'TERM-1037',
         createdAt: bookingPastPediEnd,
       },
+      {
+        id: 'ps-5',
+        bookingId: 'bk-1007',
+        method: 'card',
+        amountCents: 45000,
+        tipCents: 0,
+        tipStaffId: null,
+        reference: 'TERM-1021',
+        createdAt: bookingLapsedEnd,
+      },
     ],
 
     recurringBlocks: [
@@ -1515,5 +1646,82 @@ export function createInitialDemoDatabase(): DemoDatabase {
         createdAt: nowIso,
       },
     ],
+
+    servicePackages: [
+      {
+        id: 'pkg-rubber-4',
+        name: 'Paquete 4 sesiones Rubber',
+        description:
+          'Ahorra $200 MXN al prepagar 4 sesiones de nivelación Rubber con vigencia de 6 meses.',
+        serviceId: srvRubber,
+        totalSessions: 4,
+        priceCents: 120000,
+        validDays: 180,
+        isActive: true,
+        createdAt: nowIso,
+      },
+      {
+        id: 'pkg-gel-5',
+        name: 'Paquete 5 sesiones Gel Manos',
+        description:
+          '5 visitas de Gel Semipermanente manos con precio preferencial válido por 6 meses.',
+        serviceId: srvGelManos,
+        totalSessions: 5,
+        priceCents: 65000,
+        validDays: 180,
+        isActive: true,
+        createdAt: nowIso,
+      },
+    ],
+
+    clientPackages: [
+      {
+        id: 'cpkg-sofia-1',
+        clientId: client1,
+        packageId: 'pkg-rubber-4',
+        packageName: 'Paquete 4 sesiones Rubber',
+        serviceId: srvRubber,
+        totalSessions: 4,
+        usedSessions: 1,
+        purchasedAt: bookingPastRubberStart,
+        expiresAt: isoAtOffset(150, 23, 59),
+        status: 'active',
+        notes: 'Primera sesión aplicada en cita NL-1035.',
+        redeemedBookingIds: ['bk-1004'],
+      },
+    ],
+
+    campaignDispatches: [],
+
+    mediaAssets: [
+      {
+        id: 'med-demo-1003',
+        storagePath: 'proofs/demo-spei-nl-1044.png',
+        folder: 'proofs',
+        bookingId: 'bk-1003',
+        clientId: client3,
+        contentType: 'image/png',
+        sizeBytes: 184320,
+        createdAt: nowIso,
+        retentionWarned30dAt: null,
+        retentionWarned7dAt: null,
+        purgedAt: null,
+      },
+    ],
+
+    whatsappTemplates: createDefaultWhatsAppTemplates(nowIso),
+
+    whatsappMonthlyUsage: [
+      {
+        monthKey: getDateKeyInTimezone(new Date(), 'America/Mexico_City').slice(0, 7),
+        sentCount: 18,
+        quotaLimit: 500,
+        warned80At: null,
+        warned100At: null,
+        updatedAt: nowIso,
+      },
+    ],
+
+    webhookEvents: [],
   };
 }

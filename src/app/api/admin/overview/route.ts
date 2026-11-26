@@ -3,11 +3,14 @@ import { requireAdmin } from '@/lib/auth/admin-session';
 import { isActiveBookingStatus } from '@/lib/booking/state-machine';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getDateKeyInTimezone } from '@/lib/format';
+import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
 import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import {
   getBookingsWithRelations,
   getNearRewardClients,
   getSnapshot,
+  getWhatsAppMonthlyUsage,
+  getWhatsAppTemplates,
 } from '@/lib/repositories/db';
 import type { PaymentSplit } from '@/lib/types';
 
@@ -295,6 +298,12 @@ export async function GET(request: NextRequest) {
   const recentAuditLogs =
     session.user.role === 'owner' ? (db.auditLogs ?? []).slice(0, 50) : [];
 
+  const whatsappMonthKey = getWhatsAppMonthKey(now, tz);
+  const [whatsappUsage, whatsappTemplates] = await Promise.all([
+    getWhatsAppMonthlyUsage(whatsappMonthKey),
+    getWhatsAppTemplates(),
+  ]);
+
   return NextResponse.json({
     session,
     integration,
@@ -346,5 +355,7 @@ export async function GET(request: NextRequest) {
     inventory: db.inventory,
     inventoryMovements: db.inventoryMovements.slice(0, 40),
     cashEntries,
+    whatsappUsage,
+    whatsappTemplates,
   });
 }

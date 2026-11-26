@@ -1,13 +1,20 @@
 'use client';
 
 import type React from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
+import { WifiOff } from 'lucide-react';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
+import { checkManagePolicyWindow } from '@/lib/availability/policy';
+import {
+  buildTouchUpBookingUrl,
+  computeSuggestedTouchUpDateKey,
+} from '@/lib/booking/recurrence';
 import type { PublicLoyaltySummaryDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import {
   CANCELLATION_REASON_OPTIONS,
@@ -19,16 +26,44 @@ import {
   formatTimeInTimezone,
   getDateKeyInTimezone,
 } from '@/lib/format';
+import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { useServiceWorker } from '@/lib/hooks/useServiceWorker';
 import { BookingHeader } from './booking/BookingChrome';
+import { hasConfiguredDeposit } from './booking/bookingHelpers';
 import { BookingSummaryCard, type SummaryRow } from './booking/BookingSummaryCard';
 import { LoyaltyStampCard } from './LoyaltyStampCard';
 import { CitaHero } from './cita/CitaHero';
 import { CitaDepositSection } from './cita/CitaDepositSection';
 import { CitaActionsPanel } from './cita/CitaActionsPanel';
-import { CitaDialogs } from './cita/CitaDialogs';
 import { CitaReviewCard } from './cita/CitaReviewCard';
-import type { CalendarAddLinks, PublicManageBooking } from './cita/types';
+import {
+  buildPolicyHelpWhatsAppUrl,
+  type CalendarAddLinks,
+  type PublicManageBooking,
+} from './cita/types';
+
+const CitaDialogs = dynamic(
+  () => import('./cita/CitaDialogs').then((mod) => mod.CitaDialogs),
+  { ssr: false },
+);
+
+function appendManageTokenToMediaUrl(
+  url: string | null,
+  manageToken: string,
+): string | null {
+  const trimmed = url?.trim() ?? '';
+  if (!trimmed) return null;
+  const cleanToken = manageToken.trim();
+  if (!trimmed.startsWith('/api/media/') || !cleanToken) {
+    return url;
+  }
+  if (/(?:^|[?&])token=/.test(trimmed)) {
+    return trimmed;
+  }
+  const separator = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${separator}token=${encodeURIComponent(cleanToken)}`;
+}
 
 interface ManageBookingViewProps {
   initialBooking: PublicManageBooking;
@@ -38,6 +73,7 @@ interface ManageBookingViewProps {
   manageUrl?: string;
   initialLoyaltySummary?: PublicLoyaltySummaryDTO | null;
   initialAction?: 'reschedule' | 'cancel';
+  renderedAtIso?: string;
 }
 
 export function ManageBookingView({
@@ -48,6 +84,7 @@ export function ManageBookingView({
   manageUrl: initialManageUrl,
   initialLoyaltySummary = null,
   initialAction,
+  renderedAtIso,
 }: ManageBookingViewProps) {
   const [booking, setBooking] = useState<PublicManageBooking>(initialBooking);
   const [calendarLinks, setCalendarLinks] = useState<CalendarAddLinks>(initialCalendarLinks);
@@ -57,8 +94,23 @@ export function ManageBookingView({
   );
   const [loyaltySummary, setLoyaltySummary] =
     useState<PublicLoyaltySummaryDTO | null>(initialLoyaltySummary);
+  const [nowMs, setNowMs] = useState<number>(() => {
+    const parsed = renderedAtIso ? new Date(renderedAtIso).getTime() : Number.NaN;
+    if (!Number.isNaN(parsed)) return parsed;
+    const updated = new Date(initialBooking.updatedAt).getTime();
+    return Number.isNaN(updated) ? 0 : updated;
+  });
+
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionErrorCode, setActionErrorCode] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [conflictSlots, setConflictSlots] = useState<AvailableSlot[]>([]);
+  const [submittingSlotStartAt, setSubmittingSlotStartAt] = useState<string | null>(null);
+
+  const actionLockRef = useRef(false);
+  const proofLockRef = useRef(false);
+  const proofSavedFeedback = useEphemeralMessage(4200);
 
   const initialCanModify = !['canceled', 'completed', 'no_show'].includes(
     initialBooking.status,
@@ -88,9 +140,42 @@ export function ManageBookingView({
     initialBooking.review?.comment ?? '',
   );
   const [reviewSaved, setReviewSaved] = useState(Boolean(initialBooking.review));
+  const [hasExistingReview, setHasExistingReview] = useState(Boolean(initialBooking.review));
 
+  const { isOffline } = useServiceWorker({ register: false });
   const tz = settings.timezone || 'America/Mexico_City';
   const canModify = !['canceled', 'completed', 'no_show'].includes(booking.status);
+
+  const reschedulePolicy = checkManagePolicyWindow({
+    startAtIso: booking.startAt,
+    nowMs,
+    minHours: settings.minRescheduleHours,
+    action: 'reschedule',
+  });
+  const cancelPolicy = checkManagePolicyWindow({
+    startAtIso: booking.startAt,
+    nowMs,
+    minHours: settings.minCancelHours,
+    action: 'cancel',
+  });
+
+  const policyHelpWhatsappUrl = buildPolicyHelpWhatsAppUrl({
+    booking,
+    settings,
+    minHours: Math.max(settings.minCancelHours, settings.minRescheduleHours),
+    fallbackUrl: whatsappUrl,
+  });
+
+  const suggestedTouchUpDate = computeSuggestedTouchUpDateKey({
+    startAt: booking.startAt,
+    daysAhead: 21,
+    timezone: tz,
+  });
+  const touchUpUrl = buildTouchUpBookingUrl({
+    serviceSlug: booking.service.slug,
+    staffSlug: booking.staff.bookingSlug,
+    suggestedDateKey: suggestedTouchUpDate,
+  });
 
   const handleSelectCancelChip = (option: string) => {
     setCancelReasonChoice(option);
@@ -116,6 +201,7 @@ export function ManageBookingView({
 
   const syncManageState = useCallback(
     async (signal: AbortSignal) => {
+      setNowMs(Date.now());
       try {
         const res = await fetch(
           `/api/bookings/manage/${encodeURIComponent(initialBooking.manageToken)}`,
@@ -193,28 +279,51 @@ export function ManageBookingView({
 
   const syncRescheduleSlots = useCallback(
     async (signal: AbortSignal) => {
-      if (!rescheduleOpen || !canModify) return;
+      if (!rescheduleOpen || !canModify || !reschedulePolicy.allowed) {
+        setLoadingSlots(false);
+        return;
+      }
       await loadRescheduleSlots(signal);
     },
-    [canModify, loadRescheduleSlots, rescheduleOpen],
+    [canModify, loadRescheduleSlots, rescheduleOpen, reschedulePolicy.allowed],
   );
 
   useExternalSync(
-    rescheduleOpen && canModify
+    rescheduleOpen && canModify && reschedulePolicy.allowed
       ? `reschedule:${booking.id}:${booking.serviceId}:${extraServiceIdsKey}:${addonIdsKey}:${booking.staffId}`
       : 'reschedule:closed',
     syncRescheduleSlots,
   );
 
   const openReschedule = () => {
+    const freshNow = Date.now();
+    setNowMs(freshNow);
     setActionError(null);
-    setLoadingSlots(true);
+    setActionErrorCode(null);
+    setConflictSlots([]);
+    const allowedNow = checkManagePolicyWindow({
+      startAtIso: booking.startAt,
+      nowMs: freshNow,
+      minHours: settings.minRescheduleHours,
+      action: 'reschedule',
+    }).allowed;
+    setLoadingSlots(allowedNow);
     setRescheduleOpen(true);
   };
 
+  const openCancel = () => {
+    setNowMs(Date.now());
+    setActionError(null);
+    setActionErrorCode(null);
+    setCancelOpen(true);
+  };
+
   const handleUploadProof = async (dataUrl: string): Promise<boolean> => {
+    if (proofLockRef.current || uploadingProof) return false;
+    proofLockRef.current = true;
     setUploadingProof(true);
     setActionError(null);
+    setActionErrorCode(null);
     try {
       const res = await fetch(
         `/api/bookings/manage/${encodeURIComponent(booking.manageToken)}`,
@@ -231,6 +340,7 @@ export function ManageBookingView({
         booking?: PublicManageBooking;
         calendarLinks?: CalendarAddLinks;
         whatsappUrl?: string;
+        manageUrl?: string;
         error?: string;
       };
       if (!res.ok) {
@@ -240,6 +350,8 @@ export function ManageBookingView({
       if (data.booking) setBooking(data.booking);
       if (data.calendarLinks) setCalendarLinks(data.calendarLinks);
       if (data.whatsappUrl) setWhatsappUrl(data.whatsappUrl);
+      if (data.manageUrl) setManageUrl(data.manageUrl);
+      proofSavedFeedback.show('Comprobante guardado ✓');
       setActionSuccess('¡Listo! Recibimos tu comprobante de anticipo. En breve te confirmamos.');
       return true;
     } catch {
@@ -247,12 +359,17 @@ export function ManageBookingView({
       return false;
     } finally {
       setUploadingProof(false);
+      proofLockRef.current = false;
     }
   };
 
   const handleConfirmReschedule = async (slot: AvailableSlot) => {
+    if (actionLockRef.current || busy) return;
+    actionLockRef.current = true;
     setBusy(true);
+    setSubmittingSlotStartAt(slot.startAt);
     setActionError(null);
+    setActionErrorCode(null);
     try {
       const res = await fetch(
         `/api/bookings/manage/${encodeURIComponent(booking.manageToken)}`,
@@ -271,25 +388,58 @@ export function ManageBookingView({
         booking?: PublicManageBooking;
         calendarLinks?: CalendarAddLinks;
         whatsappUrl?: string;
+        manageUrl?: string;
+        code?: string;
         error?: string;
+        suggestedSlots?: AvailableSlot[];
       };
       if (!res.ok) {
+        if (res.status === 409 || data.code === 'SLOT_TAKEN') {
+          setActionErrorCode('SLOT_TAKEN');
+          setActionError(
+            data.error ||
+              'Ese horario acaba de ocuparse. Elige una de las alternativas cercanas disponibles.',
+          );
+          setConflictSlots(
+            Array.isArray(data.suggestedSlots) ? data.suggestedSlots.slice(0, 4) : [],
+          );
+          void loadRescheduleSlots();
+          return;
+        }
+        if (data.code === 'POLICY_WINDOW') {
+          setNowMs(Date.now());
+          setActionErrorCode('POLICY_WINDOW');
+        }
         setActionError(data.error || 'No se pudo reagendar.');
         return;
       }
       if (data.booking) setBooking(data.booking);
       if (data.calendarLinks) setCalendarLinks(data.calendarLinks);
       if (data.whatsappUrl) setWhatsappUrl(data.whatsappUrl);
+      if (data.manageUrl) setManageUrl(data.manageUrl);
+      setNowMs(Date.now());
+      setConflictSlots([]);
+      setRescheduleReasonChoice(null);
+      setRescheduleReason('');
       setRescheduleOpen(false);
-      setActionSuccess('¡Tu cita fue reagendada y tu calendario actualizado!');
+      setActionSuccess(
+        '¡Listo! Tu cita fue reagendada y tus enlaces de calendario y WhatsApp se actualizaron.',
+      );
+    } catch {
+      setActionError('Error de conexión al reagendar. Intenta nuevamente.');
     } finally {
       setBusy(false);
+      setSubmittingSlotStartAt(null);
+      actionLockRef.current = false;
     }
   };
 
   const handleConfirmCancel = async () => {
+    if (actionLockRef.current || busy) return;
+    actionLockRef.current = true;
     setBusy(true);
     setActionError(null);
+    setActionErrorCode(null);
     try {
       const res = await fetch(
         `/api/bookings/manage/${encodeURIComponent(booking.manageToken)}`,
@@ -298,7 +448,7 @@ export function ManageBookingView({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'cancel',
-            reason: cancelReason,
+            reason: cancelReason.trim() || undefined,
           }),
         },
       );
@@ -306,25 +456,44 @@ export function ManageBookingView({
         booking?: PublicManageBooking;
         calendarLinks?: CalendarAddLinks;
         whatsappUrl?: string;
+        manageUrl?: string;
+        code?: string;
         error?: string;
       };
       if (!res.ok) {
+        if (data.code === 'POLICY_WINDOW') {
+          setNowMs(Date.now());
+          setActionErrorCode('POLICY_WINDOW');
+        }
         setActionError(data.error || 'No se pudo cancelar la cita.');
         return;
       }
       if (data.booking) setBooking(data.booking);
       if (data.calendarLinks) setCalendarLinks(data.calendarLinks);
       if (data.whatsappUrl) setWhatsappUrl(data.whatsappUrl);
+      if (data.manageUrl) setManageUrl(data.manageUrl);
       setCancelOpen(false);
-      setActionSuccess('Cita cancelada correctamente. El espacio se liberó al instante.');
+      setCancelReasonChoice(null);
+      setCancelReason('');
+      setActionSuccess(
+        booking.couponCode
+          ? `Cita cancelada correctamente. El horario quedó libre y tu código ${booking.couponCode} fue liberado.`
+          : 'Cita cancelada correctamente. El espacio se liberó al instante.',
+      );
+    } catch {
+      setActionError('Error de conexión al cancelar la cita. Intenta nuevamente.');
     } finally {
       setBusy(false);
+      actionLockRef.current = false;
     }
   };
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (actionLockRef.current || busy) return;
+    actionLockRef.current = true;
     setBusy(true);
+    setReviewError(null);
     try {
       const res = await fetch(
         `/api/bookings/manage/${encodeURIComponent(booking.manageToken)}`,
@@ -334,11 +503,18 @@ export function ManageBookingView({
           body: JSON.stringify({ rating, comment: reviewComment }),
         },
       );
-      if (res.ok) {
-        setReviewSaved(true);
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setReviewError(data.error || 'No se pudo guardar tu calificación. Intenta de nuevo.');
+        return;
       }
+      setReviewSaved(true);
+      setHasExistingReview(true);
+    } catch {
+      setReviewError('Error de conexión al guardar tu calificación. Intenta de nuevo.');
     } finally {
       setBusy(false);
+      actionLockRef.current = false;
     }
   };
 
@@ -349,12 +525,15 @@ export function ManageBookingView({
     booking.service.isStartingPrice || extraServices.some((srv) => srv.isStartingPrice),
   );
   const hasPaymentProof = Boolean(booking.paymentProofUrl?.trim());
+  const requiresDeposit = hasConfiguredDeposit(settings, booking.depositAmountCents);
   const depositSummaryLabel =
-    booking.status === 'confirmed' || booking.status === 'completed'
-      ? 'Anticipo verificado'
-      : hasPaymentProof
-        ? 'Anticipo en revisión'
-        : 'Anticipo para apartar';
+    booking.status === 'canceled'
+      ? 'Anticipo (cita cancelada)'
+      : booking.status === 'confirmed' || booking.status === 'completed'
+        ? 'Anticipo verificado'
+        : hasPaymentProof
+          ? 'Anticipo en revisión'
+          : 'Anticipo para apartar';
 
   const summaryRows: SummaryRow[] = [
     {
@@ -391,6 +570,22 @@ export function ManageBookingView({
     },
   ];
 
+  const loyaltyCardElement = loyaltySummary ? (
+    <LoyaltyStampCard loyaltySummary={loyaltySummary} studioName={settings.name} />
+  ) : null;
+
+  const displayBooking: PublicManageBooking = {
+    ...booking,
+    paymentProofUrl: appendManageTokenToMediaUrl(
+      booking.paymentProofUrl,
+      booking.manageToken,
+    ),
+    inspoPhotoUrl: appendManageTokenToMediaUrl(
+      booking.inspoPhotoUrl,
+      booking.manageToken,
+    ),
+  };
+
   const year = settings.updatedAt.slice(0, 4);
 
   return (
@@ -402,9 +597,35 @@ export function ManageBookingView({
         bookingCode={booking.bookingCode}
         salonName={settings.name}
         hasPaymentProof={hasPaymentProof}
+        requiresDeposit={requiresDeposit}
       />
 
       <VStack as="main" gap={4} className="rb-wrap rb-main ck-wrap">
+        {isOffline ? (
+          <HStack
+            role="status"
+            aria-live="polite"
+            align="center"
+            gap={2}
+            className="pt-offline-pill"
+            data-inline="true"
+          >
+            <WifiOff size={15} aria-hidden="true" />
+            <Text type="supporting" color="inherit" weight="semibold">
+              Sin conexión · Mostrando copia guardada de tu cita
+            </Text>
+          </HStack>
+        ) : null}
+        {booking.noShowPolicyEnforced &&
+        (booking.status === 'pending_confirmation' || booking.status === 'pending_payment') ? (
+          <VStack className="fx-fade-up">
+            <Banner
+              status="info"
+              title="Anticipo requerido por política de puntualidad"
+              description="Para asegurar tu horario y cuidar la agenda de tu artista, se solicitó anticipo automático en esta cita."
+            />
+          </VStack>
+        ) : null}
         {actionSuccess ? (
           <VStack className="fx-fade-up">
             <Banner
@@ -422,7 +643,10 @@ export function ManageBookingView({
               title="Aviso sobre tu cita"
               description={actionError}
               isDismissable
-              onDismiss={() => setActionError(null)}
+              onDismiss={() => {
+                setActionError(null);
+                setActionErrorCode(null);
+              }}
             />
           </VStack>
         ) : null}
@@ -437,61 +661,63 @@ export function ManageBookingView({
                   rating={rating}
                   reviewComment={reviewComment}
                   reviewSaved={reviewSaved}
+                  hasExistingReview={hasExistingReview}
+                  errorMessage={reviewError}
                   busy={busy}
                   onChangeRating={setRating}
                   onChangeComment={setReviewComment}
+                  onEditReview={() => {
+                    setReviewError(null);
+                    setReviewSaved(false);
+                  }}
+                  onCancelEdit={() => {
+                    setReviewError(null);
+                    setReviewSaved(true);
+                  }}
                   onSubmit={(e) => void handleSubmitReview(e)}
                 />
-                {loyaltySummary ? (
-                  <LoyaltyStampCard
-                    loyaltySummary={loyaltySummary}
-                    studioName={settings.name}
-                  />
-                ) : null}
+                {loyaltyCardElement}
                 <CitaActionsPanel
-                  booking={booking}
+                  booking={displayBooking}
                   settings={settings}
                   calendarLinks={calendarLinks}
                   whatsappUrl={whatsappUrl}
+                  policyHelpWhatsappUrl={policyHelpWhatsappUrl}
                   manageUrl={manageUrl}
+                  touchUpUrl={touchUpUrl}
                   canModify={canModify}
+                  rescheduleWindowAllowed={reschedulePolicy.allowed}
+                  cancelWindowAllowed={cancelPolicy.allowed}
                   onOpenReschedule={openReschedule}
-                  onOpenCancel={() => {
-                    setActionError(null);
-                    setCancelOpen(true);
-                  }}
+                  onOpenCancel={openCancel}
                 />
               </>
             ) : (
               <>
                 <CitaDepositSection
-                  booking={booking}
+                  booking={displayBooking}
                   settings={settings}
                   timezone={tz}
                   isUploading={uploadingProof}
+                  justUploadedMessage={proofSavedFeedback.message}
                   onUploadProof={handleUploadProof}
                 />
 
                 <CitaActionsPanel
-                  booking={booking}
+                  booking={displayBooking}
                   settings={settings}
                   calendarLinks={calendarLinks}
                   whatsappUrl={whatsappUrl}
+                  policyHelpWhatsappUrl={policyHelpWhatsappUrl}
                   manageUrl={manageUrl}
+                  touchUpUrl={touchUpUrl}
                   canModify={canModify}
+                  rescheduleWindowAllowed={reschedulePolicy.allowed}
+                  cancelWindowAllowed={cancelPolicy.allowed}
+                  loyaltySlot={loyaltyCardElement}
                   onOpenReschedule={openReschedule}
-                  onOpenCancel={() => {
-                    setActionError(null);
-                    setCancelOpen(true);
-                  }}
+                  onOpenCancel={openCancel}
                 />
-
-                {loyaltySummary ? (
-                  <LoyaltyStampCard
-                    loyaltySummary={loyaltySummary}
-                    studioName={settings.name}
-                  />
-                ) : null}
               </>
             )}
           </VStack>
@@ -523,6 +749,9 @@ export function ManageBookingView({
             <NextLink className="ck-footer-link" href="/">
               Inicio
             </NextLink>
+            <NextLink className="ck-footer-link" href="/mis-citas">
+              Mis citas
+            </NextLink>
             <NextLink className="ck-footer-link" href="/reservar">
               Agendar otra cita
             </NextLink>
@@ -533,34 +762,51 @@ export function ManageBookingView({
         </HStack>
       </VStack>
 
-      <CitaDialogs
-        timezone={tz}
-        minCancelHours={settings.minCancelHours}
-        busy={busy}
-        errorMessage={actionError}
-        rescheduleOpen={rescheduleOpen}
-        rescheduleReasonChoice={rescheduleReasonChoice}
-        rescheduleReason={rescheduleReason}
-        rescheduleDays={rescheduleDays}
-        loadingSlots={loadingSlots}
-        cancelOpen={cancelOpen}
-        cancelReasonChoice={cancelReasonChoice}
-        cancelReason={cancelReason}
-        onRescheduleOpenChange={(open) => {
-          if (!open) setActionError(null);
-          setRescheduleOpen(open);
-        }}
-        onSelectRescheduleChip={handleSelectRescheduleChip}
-        onChangeRescheduleReason={setRescheduleReason}
-        onConfirmReschedule={(slot) => void handleConfirmReschedule(slot)}
-        onCancelOpenChange={(open) => {
-          if (!open) setActionError(null);
-          setCancelOpen(open);
-        }}
-        onSelectCancelChip={handleSelectCancelChip}
-        onChangeCancelReason={setCancelReason}
-        onConfirmCancel={() => void handleConfirmCancel()}
-      />
+      {rescheduleOpen || cancelOpen ? (
+        <CitaDialogs
+          timezone={tz}
+          minCancelHours={settings.minCancelHours}
+          minRescheduleHours={settings.minRescheduleHours}
+          rescheduleWindowAllowed={reschedulePolicy.allowed}
+          cancelWindowAllowed={cancelPolicy.allowed}
+          policyHelpWhatsappUrl={policyHelpWhatsappUrl}
+          couponCode={booking.couponCode}
+          busy={busy}
+          submittingSlotStartAt={submittingSlotStartAt}
+          errorMessage={actionError}
+          errorCode={actionErrorCode}
+          conflictSlots={conflictSlots}
+          rescheduleOpen={rescheduleOpen}
+          rescheduleReasonChoice={rescheduleReasonChoice}
+          rescheduleReason={rescheduleReason}
+          rescheduleDays={rescheduleDays}
+          loadingSlots={loadingSlots}
+          cancelOpen={cancelOpen}
+          cancelReasonChoice={cancelReasonChoice}
+          cancelReason={cancelReason}
+          onRescheduleOpenChange={(open) => {
+            if (!open) {
+              setActionError(null);
+              setActionErrorCode(null);
+              setConflictSlots([]);
+            }
+            setRescheduleOpen(open);
+          }}
+          onSelectRescheduleChip={handleSelectRescheduleChip}
+          onChangeRescheduleReason={setRescheduleReason}
+          onConfirmReschedule={(slot) => void handleConfirmReschedule(slot)}
+          onCancelOpenChange={(open) => {
+            if (!open) {
+              setActionError(null);
+              setActionErrorCode(null);
+            }
+            setCancelOpen(open);
+          }}
+          onSelectCancelChip={handleSelectCancelChip}
+          onChangeCancelReason={setCancelReason}
+          onConfirmCancel={() => void handleConfirmCancel()}
+        />
+      ) : null}
     </VStack>
   );
 }

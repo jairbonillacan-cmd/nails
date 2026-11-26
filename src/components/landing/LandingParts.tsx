@@ -30,7 +30,7 @@ export function SectionHeading({
   const stroke = tone === 'light' ? LANDING_ASSETS.strokePorcelain : LANDING_ASSETS.strokeCereza;
   return (
     <VStack
-      gap={3}
+      gap={2}
       align={isCentered ? 'center' : 'start'}
       className={TONE_CLASS[tone]}
       style={{ textAlign: isCentered ? 'center' : 'start' }}
@@ -49,10 +49,10 @@ export function SectionHeading({
         src={stroke}
         alt=""
         width={460}
-        height={40}
+        height={79}
         loading="lazy"
         decoding="async"
-        style={{ width: isCentered ? 'min(30rem, 78%)' : 'min(18rem, 70%)', height: 'auto' }}
+        style={{ width: isCentered ? 'min(28rem, 76%)' : 'min(17rem, 68%)', height: 'auto' }}
       />
       {subtitle ? (
         <VStack className={tone === 'light' ? 'lk-reveal-2 lk-soft' : 'lk-reveal-2'}>

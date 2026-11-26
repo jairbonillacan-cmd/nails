@@ -34,6 +34,7 @@ import {
   AdminConfigSkeleton,
   type AdminConfigKpiItem,
 } from '@/components/admin/config/AdminConfigPrimitives';
+import { staffAvatar } from '@/components/landing/landingContent';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type { AdminRole, AdminUser, StaffMember } from '@/lib/types';
 
@@ -41,10 +42,15 @@ const ROLE_META: Record<
   AdminRole,
   { label: string; tone: 'accent' | 'neutral' | 'success' }
 > = {
-  owner: { label: 'Dueña (Owner)', tone: 'accent' },
-  admin: { label: 'Admin / Recepción', tone: 'neutral' },
+  owner: { label: 'Dueña', tone: 'accent' },
+  admin: { label: 'Recepción', tone: 'neutral' },
   specialist: { label: 'Manicurista', tone: 'success' },
 };
+
+function cleanAccessDisplayName(fullName: string): string {
+  const stripped = fullName.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return stripped || fullName.trim();
+}
 
 export default function AdminTeamPage() {
   const { data, loading, refresh } = useAdminData();
@@ -52,10 +58,11 @@ export default function AdminTeamPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const copyFeedback = useEphemeralMessage(2400);
+  const saveNotice = useEphemeralMessage(3200);
 
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [sName, setSName] = useState('');
-  const [sRoleTitle, setSRoleTitle] = useState('Nail Artist');
+  const [sRoleTitle, setSRoleTitle] = useState('Manicurista');
   const [sBio, setSBio] = useState('');
   const [sCommission, setSCommission] = useState(35);
   const [sServiceIds, setSServiceIds] = useState<string[] | null>(null);
@@ -83,22 +90,22 @@ export default function AdminTeamPage() {
       id: 'active-staff',
       label: 'Manicuristas activas',
       value: String(activeStaffCount),
-      sub: `de ${data.staff.length} en el estudio`,
+      sub: `de ${data.staff.length} en tu salón`,
     },
     {
       id: 'web-mode',
-      label: 'Selección en web',
+      label: 'Al reservar',
       value: activeStaffCount <= 1 ? 'Directa' : 'Por artista',
       sub:
         activeStaffCount <= 1
-          ? 'Modo 1 especialista (automático)'
+          ? 'Se asigna en automático'
           : 'Clienta elige o "Me da igual"',
     },
     {
-      id: 'admin-users',
-      label: 'Accesos al panel',
+      id: 'panel-access',
+      label: 'Personas con acceso',
       value: String(activeAdminCount),
-      sub: `${data.adminUsers.length} cuentas RBAC sin costo extra`,
+      sub: `de ${data.adminUsers.length} cuentas activas`,
     },
   ];
 
@@ -114,7 +121,7 @@ export default function AdminTeamPage() {
   const resetStaffForm = () => {
     setEditingStaffId(null);
     setSName('');
-    setSRoleTitle('Nail Artist');
+    setSRoleTitle('Manicurista');
     setSBio('');
     setSCommission(data.settings.defaultCommissionPercent || 35);
     setSServiceIds(null);
@@ -132,7 +139,7 @@ export default function AdminTeamPage() {
 
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (sName.trim().length < 2) return;
+    if (sName.trim().length < 2 || savingStaff) return;
     setSavingStaff(true);
     setMsg(null);
     try {
@@ -147,7 +154,7 @@ export default function AdminTeamPage() {
           data: {
             ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
             name: sName.trim(),
-            roleTitle: sRoleTitle.trim() || 'Nail Artist',
+            roleTitle: sRoleTitle.trim() || 'Manicurista',
             bio: sBio.trim(),
             commissionPercent: sCommission,
             serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
@@ -156,30 +163,27 @@ export default function AdminTeamPage() {
       });
       if (res.ok) {
         const wasEditing = Boolean(editingStaffId);
-        resetStaffForm();
-        setMsg({
-          status: 'success',
-          text: wasEditing
-            ? 'Datos de la especialista actualizados.'
-            : 'Especialista agregada con horario base listo.',
-        });
         await refresh();
+        resetStaffForm();
+        saveNotice.show(wasEditing ? 'Cambios guardados' : 'Manicurista agregada');
       } else {
         const err = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: err?.error || 'No se pudo guardar la especialista.',
+          text: err?.error || 'No se pudo guardar a la manicurista.',
         });
       }
     } catch {
-      setMsg({ status: 'error', text: 'Error de conexión al guardar la especialista.' });
+      setMsg({ status: 'error', text: 'Error de conexión al guardar los cambios.' });
     } finally {
       setSavingStaff(false);
     }
   };
 
   const handleToggleStaffActive = async (st: StaffMember, checked: boolean) => {
+    if (busyId) return;
     setBusyId(st.id);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/team', {
         method: 'POST',
@@ -190,13 +194,8 @@ export default function AdminTeamPage() {
         }),
       });
       if (res.ok) {
-        setMsg({
-          status: 'success',
-          text: checked
-            ? `${st.name} activada para recibir citas.`
-            : `${st.name} pausada en la agenda pública.`,
-        });
         await refresh();
+        saveNotice.show(checked ? `${st.name} activada` : `${st.name} pausada`);
       } else {
         setMsg({ status: 'error', text: 'No se pudo actualizar el estado.' });
       }
@@ -210,7 +209,7 @@ export default function AdminTeamPage() {
     try {
       await navigator.clipboard.writeText(url);
       setCopiedSlug(slug);
-      copyFeedback.show(`Enlace directo de ${name} copiado.`);
+      copyFeedback.show(`Link directo de ${name} copiado.`);
     } catch {
       setMsg({
         status: 'error',
@@ -219,9 +218,9 @@ export default function AdminTeamPage() {
     }
   };
 
-  const handleAddAdmin = async (e: React.FormEvent) => {
+  const handleAddAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!aEmail.trim() || !aName.trim()) return;
+    if (!aEmail.trim() || !aName.trim() || savingAdmin) return;
     setSavingAdmin(true);
     setMsg(null);
     try {
@@ -243,29 +242,27 @@ export default function AdminTeamPage() {
       if (!res.ok) {
         setMsg({
           status: 'error',
-          text: json?.error || 'No se pudo agregar el usuario.',
+          text: json?.error || 'No se pudo agregar a esta persona.',
         });
         return;
       }
+      await refresh();
       setAName('');
       setAEmail('');
       setARole('admin');
       setAStaffId('none');
-      setMsg({
-        status: 'success',
-        text: 'Usuario agregado. Ya puede entrar al panel con su rol asignado.',
-      });
-      await refresh();
+      saveNotice.show('Acceso creado');
     } catch {
-      setMsg({ status: 'error', text: 'Error de conexión al invitar usuario.' });
+      setMsg({ status: 'error', text: 'Error de conexión al crear el acceso.' });
     } finally {
       setSavingAdmin(false);
     }
   };
 
-  const handleToggleAdminActive = async (user: AdminUser, checked: boolean) => {
-    if (!isOwner || user.id === data.session.user.id) return;
+  const handleToggleAccessActive = async (user: AdminUser, checked: boolean) => {
+    if (!isOwner || user.id === data.session.user.id || busyId) return;
     setBusyId(user.id);
+    setMsg(null);
     try {
       const res = await fetch('/api/admin/team', {
         method: 'POST',
@@ -283,30 +280,42 @@ export default function AdminTeamPage() {
         }),
       });
       if (res.ok) {
-        setMsg({
-          status: 'success',
-          text: checked
-            ? `Acceso reactivado para ${user.fullName}.`
-            : `Acceso pausado para ${user.fullName}.`,
-        });
         await refresh();
+        const displayName = cleanAccessDisplayName(user.fullName);
+        saveNotice.show(
+          checked ? `Acceso reactivado · ${displayName}` : `Acceso pausado · ${displayName}`,
+        );
       } else {
-        setMsg({ status: 'error', text: 'No se pudo actualizar el acceso del usuario.' });
+        setMsg({ status: 'error', text: 'No se pudo actualizar el acceso.' });
       }
     } finally {
       setBusyId(null);
     }
   };
 
+  const isAnyBusy = savingStaff || savingAdmin || Boolean(busyId);
+
   return (
     <VStack className="ad-page">
       <AdminConfigPageHeader
-        eyebrow="Equipo y permisos"
-        title="Equipo y accesos"
-        subtitle="Agrega manicuristas con % de comisión y servicios asignados, y administra usuarios del panel con roles diferenciados (Dueña, Admin/Recepción y Manicurista)."
+        eyebrow="Tu equipo"
+        title="Equipo"
+        subtitle="Administra a tus manicuristas, sus comisiones y quién puede entrar al panel del salón."
+        meta={
+          isAnyBusy ? (
+            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+              Guardando...
+            </Text>
+          ) : saveNotice.message ? (
+            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+              <Check size={12} aria-hidden="true" />
+              {saveNotice.message}
+            </Text>
+          ) : null
+        }
       />
 
-      <AdminConfigKpiStrip ariaLabel="Resumen de equipo" items={kpiItems} cols={3} />
+      <AdminConfigKpiStrip ariaLabel="Resumen del equipo" items={kpiItems} cols={3} />
 
       {msg ? (
         <Banner
@@ -332,8 +341,8 @@ export default function AdminTeamPage() {
         <VStack gap={4}>
           <AdminConfigSection
             id="team-staff-heading"
-            title="Manicuristas"
-            subtitle="Cada especialista tiene su enlace directo de reserva y % de comisión."
+            title="Manicuristas del salón"
+            subtitle="Cada una tiene su link propio de citas y porcentaje de comisión."
             badge={
               <AdminConfigChip
                 label={String(data.staff.length)}
@@ -345,25 +354,31 @@ export default function AdminTeamPage() {
             {data.staff.length === 0 ? (
               <AdminConfigEmpty
                 icon={<Users size={22} aria-hidden="true" />}
-                title="Aún no hay especialistas"
-                description="Registra a tu primera manicurista para habilitar horarios y reservas en línea."
+                title="Aún no hay manicuristas"
+                description="Agrega a tu primera manicurista para abrir horarios y recibir citas."
               />
             ) : (
               <VStack as="ul" className="ad-row-list" gap={0}>
-                {data.staff.map((st) => {
+                {data.staff.map((st, idx) => {
                   const isEditingThis = editingStaffId === st.id;
                   const isCopied = copiedSlug === st.bookingSlug && Boolean(copyFeedback.message);
+                  const isRowBusy = busyId === st.id;
                   return (
                     <li
                       key={st.id}
-                      className="ad-list-row"
+                      className={isRowBusy ? 'ad-list-row fx-busy' : 'ad-list-row'}
                       data-selected={isEditingThis ? 'true' : undefined}
                       data-muted={!st.isActive ? 'true' : undefined}
+                      aria-busy={isRowBusy || undefined}
                     >
                       <VStack gap={2} width="100%">
                         <HStack justify="between" align="center" gap={3} wrap="wrap">
                           <HStack gap={2} align="center" className="rb-grow">
-                            <Avatar name={st.name} size="md" />
+                            <Avatar
+                              name={st.name}
+                              src={staffAvatar(st.avatarUrl, idx)}
+                              size="md"
+                            />
                             <VStack gap={0.5} className="rb-grow">
                               <HStack gap={1.5} align="center" wrap="wrap">
                                 <Text weight="semibold">{st.name}</Text>
@@ -378,8 +393,9 @@ export default function AdminTeamPage() {
                                   hasTabularNumbers
                                 />
                               </HStack>
-                              <Text type="supporting" color="secondary">
-                                {st.roleTitle} · /reservar?staff={st.bookingSlug}
+                              <Text type="supporting" color="secondary" maxLines={1}>
+                                {st.roleTitle}
+                                {st.bio ? ` · ${st.bio}` : ''}
                               </Text>
                             </VStack>
                           </HStack>
@@ -389,7 +405,7 @@ export default function AdminTeamPage() {
                             isLabelHidden
                             size="sm"
                             value={st.isActive}
-                            isLoading={busyId === st.id}
+                            isLoading={isRowBusy}
                             onChange={(checked) => void handleToggleStaffActive(st, checked)}
                           />
                         </HStack>
@@ -397,7 +413,7 @@ export default function AdminTeamPage() {
                         <HStack gap={1.5} wrap="wrap">
                           <Button
                             type="button"
-                            label={isCopied ? 'Enlace copiado' : 'Copiar enlace'}
+                            label={isCopied ? 'Link copiado' : 'Copiar link'}
                             variant={isCopied ? 'primary' : 'secondary'}
                             size="sm"
                             icon={
@@ -415,6 +431,7 @@ export default function AdminTeamPage() {
                             variant={isEditingThis ? 'primary' : 'ghost'}
                             size="sm"
                             icon={<Pencil size={13} aria-hidden="true" />}
+                            isDisabled={savingStaff}
                             onClick={() => startEditingStaff(st)}
                           />
                         </HStack>
@@ -428,8 +445,8 @@ export default function AdminTeamPage() {
 
           <AdminConfigSection
             id="team-add-staff-heading"
-            title={editingStaffId ? 'Editar especialista' : 'Agregar nueva manicurista'}
-            subtitle="Configura puesto, comisión y los servicios que realiza."
+            title={editingStaffId ? 'Editar manicurista' : 'Agregar manicurista'}
+            subtitle="Define su nombre, comisión y los servicios que realiza."
             actions={
               editingStaffId ? (
                 <Button
@@ -437,13 +454,19 @@ export default function AdminTeamPage() {
                   label="Cancelar"
                   variant="ghost"
                   size="sm"
+                  isDisabled={savingStaff}
                   onClick={resetStaffForm}
                 />
               ) : null
             }
           >
             <form onSubmit={handleSaveStaff}>
-              <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
+              <VStack
+                gap={3}
+                className={savingStaff ? 'ad-card-body fx-busy' : 'ad-card-body'}
+                paddingBlockStart={4}
+                aria-busy={savingStaff || undefined}
+              >
                 <TextInput
                   label="Nombre"
                   placeholder="Ej. Fernanda Ruiz"
@@ -453,7 +476,7 @@ export default function AdminTeamPage() {
                 />
                 <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
                   <TextInput
-                    label="Especialidad / Puesto"
+                    label="Especialidad"
                     value={sRoleTitle}
                     onChange={setSRoleTitle}
                   />
@@ -467,21 +490,23 @@ export default function AdminTeamPage() {
                   />
                 </Grid>
                 <TextInput
-                  label="Bio corta"
-                  placeholder="Especialista en gelish y diseños minimalistas"
+                  label="Presentación breve"
+                  placeholder="Especialista en Rubber y diseños minimalistas"
                   value={sBio}
                   onChange={setSBio}
+                  isOptional
                 />
 
                 {data.services.length > 0 ? (
                   <>
                     <Divider />
                     <Collapsible
+                      className="ad-disclosure"
                       defaultIsOpen={Boolean(editingStaffId)}
                       trigger={
                         <HStack gap={2} align="center">
                           <Text weight="semibold" size="sm">
-                            Servicios asignados
+                            Servicios que realiza
                           </Text>
                           <AdminConfigChip
                             tone="neutral"
@@ -491,28 +516,32 @@ export default function AdminTeamPage() {
                         </HStack>
                       }
                     >
-                      <Grid
-                        columns={{ minWidth: 150, max: 2 }}
-                        gap={1.5}
-                        xstyle={undefined}
-                      >
-                        {data.services.map((srv) => (
-                          <CheckboxInput
-                            key={srv.id}
-                            size="sm"
-                            label={srv.name}
-                            value={effectiveServiceIds.includes(srv.id)}
-                            onChange={(checked) => toggleStaffService(srv.id, checked)}
-                          />
-                        ))}
-                      </Grid>
+                      <VStack paddingBlockStart={2}>
+                        <Grid columns={{ minWidth: 150, max: 2 }} gap={1.5}>
+                          {data.services.map((srv) => (
+                            <CheckboxInput
+                              key={srv.id}
+                              size="sm"
+                              label={srv.name}
+                              value={effectiveServiceIds.includes(srv.id)}
+                              onChange={(checked) => toggleStaffService(srv.id, checked)}
+                            />
+                          ))}
+                        </Grid>
+                      </VStack>
                     </Collapsible>
                   </>
                 ) : null}
 
                 <Button
                   type="submit"
-                  label={editingStaffId ? 'Guardar cambios' : 'Agregar especialista'}
+                  label={
+                    savingStaff
+                      ? 'Guardando...'
+                      : editingStaffId
+                        ? 'Guardar cambios'
+                        : 'Agregar manicurista'
+                  }
                   variant="primary"
                   icon={
                     editingStaffId ? (
@@ -532,10 +561,10 @@ export default function AdminTeamPage() {
 
         <VStack gap={4}>
           <AdminConfigSection
-            id="team-admins-heading"
+            id="team-access-heading"
             icon={<Shield size={16} aria-hidden="true" />}
-            title="Usuarios del panel admin"
-            subtitle="Permisos RBAC desacoplados: Dueña, Admin/Recepción y Manicurista."
+            title="Accesos al panel"
+            subtitle="Elige qué puede ver y hacer cada persona: Dueña, Recepción o Manicurista."
             badge={
               <AdminConfigChip
                 label={String(data.adminUsers.length)}
@@ -547,20 +576,23 @@ export default function AdminTeamPage() {
             <VStack as="ul" className="ad-row-list" gap={0}>
               {data.adminUsers.map((u) => {
                 const roleMeta = ROLE_META[u.role];
+                const displayName = cleanAccessDisplayName(u.fullName);
                 const isSelf = u.id === data.session.user.id;
                 const linkedStaff = u.staffMemberId ? staffNameById.get(u.staffMemberId) : null;
+                const isRowBusy = busyId === u.id;
 
                 return (
                   <li
                     key={u.id}
-                    className="ad-row-item"
+                    className={isRowBusy ? 'ad-row-item fx-busy' : 'ad-row-item'}
                     data-muted={!u.isActive ? 'true' : undefined}
+                    aria-busy={isRowBusy || undefined}
                   >
                     <HStack gap={2} align="center" className="rb-grow">
-                      <Avatar name={u.fullName} size="sm" />
+                      <Avatar name={displayName} size="sm" />
                       <VStack gap={0.5} className="rb-grow">
                         <HStack gap={1.5} align="center" wrap="wrap">
-                          <Text weight="semibold">{u.fullName}</Text>
+                          <Text weight="semibold">{displayName}</Text>
                           {isSelf ? <AdminConfigChip label="Tú" tone="accent" /> : null}
                           {!u.isActive ? (
                             <AdminConfigChip label="Pausado" tone="neutral" />
@@ -568,7 +600,7 @@ export default function AdminTeamPage() {
                         </HStack>
                         <Text type="supporting" color="secondary">
                           {u.email}
-                          {linkedStaff ? ` · Vinculada a ${linkedStaff}` : ''}
+                          {linkedStaff ? ` · Agenda de ${linkedStaff}` : ''}
                         </Text>
                       </VStack>
                     </HStack>
@@ -577,12 +609,12 @@ export default function AdminTeamPage() {
                       <AdminConfigChip label={roleMeta.label} tone={roleMeta.tone} />
                       {isOwner && !isSelf ? (
                         <Switch
-                          label={`Acceso de ${u.fullName}`}
+                          label={`Acceso de ${displayName}`}
                           isLabelHidden
                           size="sm"
                           value={u.isActive}
-                          isLoading={busyId === u.id}
-                          onChange={(checked) => void handleToggleAdminActive(u, checked)}
+                          isLoading={isRowBusy}
+                          onChange={(checked) => void handleToggleAccessActive(u, checked)}
                         />
                       ) : null}
                     </HStack>
@@ -593,72 +625,95 @@ export default function AdminTeamPage() {
           </AdminConfigSection>
 
           <AdminConfigSection
-            id="team-invite-admin-heading"
-            title="Invitar / Agregar administrador"
-            subtitle="Otorga acceso seguro con permisos limitados a su rol."
+            id="team-invite-heading"
+            title="Dar acceso a alguien del equipo"
+            subtitle="Crea un acceso separado para recepción o para que cada manicurista vea solo su agenda."
           >
             {isOwner ? (
-              <form onSubmit={handleAddAdmin}>
-                <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-                  <TextInput
-                    label="Nombre completo"
-                    placeholder="Ej. Recepción Turno Tarde"
-                    value={aName}
-                    onChange={setAName}
-                    isRequired
-                  />
-                  <TextInput
-                    label="Correo de acceso"
-                    type="email"
-                    placeholder="equipo@nails.studio"
-                    value={aEmail}
-                    onChange={setAEmail}
-                    isRequired
-                  />
-                  <Selector
-                    label="Rol y permisos"
-                    value={aRole}
-                    onChange={(v) => v && setARole(v as AdminRole)}
-                    options={[
-                      { value: 'owner', label: 'Dueña (Control total + marca + integraciones)' },
-                      {
-                        value: 'admin',
-                        label: 'Admin / Recepción (Citas, caja, servicios, clientas)',
-                      },
-                      {
-                        value: 'specialist',
-                        label: 'Manicurista (Solo su agenda, horarios y comisiones)',
-                      },
-                    ]}
-                  />
-                  {aRole === 'specialist' ? (
-                    <Selector
-                      label="Vincular con manicurista"
-                      value={aStaffId}
-                      onChange={(v) => v && setAStaffId(v)}
-                      options={[
-                        { value: 'none', label: 'Sin vincular' },
-                        ...data.staff.map((s) => ({ value: s.id, label: s.name })),
-                      ]}
-                    />
-                  ) : null}
-                  <Button
-                    type="submit"
-                    label="Agregar usuario al panel"
-                    variant="primary"
-                    icon={<UserPlus size={15} aria-hidden="true" />}
-                    width="100%"
-                    isLoading={savingAdmin}
-                    isDisabled={!aName.trim() || !aEmail.trim() || savingAdmin}
-                  />
-                </VStack>
-              </form>
+              <VStack className="ad-card-body" paddingBlockStart={4}>
+                <Collapsible
+                  className="ad-disclosure"
+                  defaultIsOpen={false}
+                  trigger={
+                    <HStack gap={2} align="center">
+                      <UserPlus size={14} aria-hidden="true" />
+                      <Text weight="semibold" size="sm">
+                        Agregar persona al panel
+                      </Text>
+                    </HStack>
+                  }
+                >
+                  <form onSubmit={handleAddAccess}>
+                    <VStack
+                      gap={3}
+                      paddingBlockStart={3}
+                      className={savingAdmin ? 'fx-busy' : undefined}
+                      aria-busy={savingAdmin || undefined}
+                    >
+                      <TextInput
+                        label="Nombre completo"
+                        placeholder="Ej. Recepción Turno Tarde"
+                        value={aName}
+                        onChange={setAName}
+                        isRequired
+                      />
+                      <TextInput
+                        label="Correo para entrar"
+                        type="email"
+                        placeholder="equipo@nails.studio"
+                        value={aEmail}
+                        onChange={setAEmail}
+                        isRequired
+                      />
+                      <Selector
+                        label="Tipo de permiso"
+                        value={aRole}
+                        onChange={(v) => v && setARole(v as AdminRole)}
+                        options={[
+                          {
+                            value: 'owner',
+                            label: 'Dueña (Todo el salón, mi página y conexiones)',
+                          },
+                          {
+                            value: 'admin',
+                            label: 'Recepción (Citas, cobros, servicios y clientas)',
+                          },
+                          {
+                            value: 'specialist',
+                            label: 'Manicurista (Solo su agenda, horarios y comisiones)',
+                          },
+                        ]}
+                      />
+                      {aRole === 'specialist' ? (
+                        <Selector
+                          label="Conectar con manicurista"
+                          value={aStaffId}
+                          onChange={(v) => v && setAStaffId(v)}
+                          options={[
+                            { value: 'none', label: 'Sin conectar' },
+                            ...data.staff.map((s) => ({ value: s.id, label: s.name })),
+                          ]}
+                        />
+                      ) : null}
+                      <Button
+                        type="submit"
+                        label={savingAdmin ? 'Agregando...' : 'Crear acceso'}
+                        variant="primary"
+                        icon={<UserPlus size={15} aria-hidden="true" />}
+                        width="100%"
+                        isLoading={savingAdmin}
+                        isDisabled={!aName.trim() || !aEmail.trim() || savingAdmin}
+                      />
+                    </VStack>
+                  </form>
+                </Collapsible>
+              </VStack>
             ) : (
               <VStack className="ad-card-body" paddingBlockStart={4}>
                 <Banner
                   status="info"
-                  title="Permiso de Dueña requerido"
-                  description="Solo el rol Dueña (Owner) puede invitar nuevos administradores o modificar permisos."
+                  title="Solo disponible para la Dueña"
+                  description="Únicamente la Dueña puede agregar cuentas nuevas o cambiar permisos del panel."
                 />
               </VStack>
             )}

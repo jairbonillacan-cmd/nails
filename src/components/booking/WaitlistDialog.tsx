@@ -1,13 +1,20 @@
 'use client';
 
 import type React from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
+import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { normalizePhoneE164 } from '@/lib/format';
+import {
+  formatMxPhoneDisplay,
+  isValidMxPhone,
+  prefersReducedMotion,
+} from './bookingHelpers';
 
 interface WaitlistDialogProps {
   isOpen: boolean;
@@ -15,6 +22,20 @@ interface WaitlistDialogProps {
   selectedStaffId: string;
   selectedDate: string;
   onOpenChange: (open: boolean) => void;
+}
+
+function focusWaitlistField(
+  primary: HTMLInputElement | null,
+  form: HTMLFormElement,
+  fallbackSelector: string,
+): void {
+  const target = primary ?? form.querySelector<HTMLElement>(fallbackSelector);
+  if (!target) return;
+  target.scrollIntoView({
+    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    block: 'center',
+  });
+  target.focus({ preventScroll: true });
 }
 
 export function WaitlistDialog({
@@ -30,22 +51,33 @@ export function WaitlistDialog({
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setSent(false);
       setErrorMsg(null);
+      submitLockRef.current = false;
     }
     onOpenChange(next);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!serviceId || submitting) return;
-    if (!name.trim() || phone.replace(/\D/g, '').length < 10) {
+    if (!serviceId || submitting || submitLockRef.current) return;
+    if (!name.trim()) {
       setErrorMsg('Escribe tu nombre y un WhatsApp de 10 dígitos.');
+      focusWaitlistField(nameInputRef.current, e.currentTarget, 'input[name="waitlistName"]');
       return;
     }
+    if (!isValidMxPhone(phone)) {
+      setErrorMsg('Escribe tu nombre y un WhatsApp de 10 dígitos.');
+      focusWaitlistField(phoneInputRef.current, e.currentTarget, 'input[name="waitlistPhone"]');
+      return;
+    }
+    submitLockRef.current = true;
     setSubmitting(true);
     setErrorMsg(null);
     try {
@@ -58,7 +90,7 @@ export function WaitlistDialog({
           desiredDate: selectedDate,
           preferredWindow: windowPref,
           clientName: name.trim(),
-          clientPhoneE164: phone.trim(),
+          clientPhoneE164: normalizePhoneE164(phone),
           notes: 'Solicitado desde agenda web',
         }),
       });
@@ -71,6 +103,7 @@ export function WaitlistDialog({
     } catch {
       setErrorMsg('Error de conexión. Intenta nuevamente.');
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -100,6 +133,7 @@ export function WaitlistDialog({
             <Button
               label="Cerrar"
               variant="primary"
+              size="lg"
               width="100%"
               className="fx-press"
               onClick={() => handleOpenChange(false)}
@@ -107,32 +141,49 @@ export function WaitlistDialog({
           </VStack>
         ) : (
           <form onSubmit={handleSubmit} noValidate>
-            <VStack gap={3} paddingBlockStart={4}>
+            <VStack
+              gap={3}
+              paddingBlockStart={4}
+              className="fx-busy"
+              data-busy={submitting ? 'true' : 'false'}
+              aria-busy={submitting ? 'true' : 'false'}
+            >
               {errorMsg ? (
                 <Banner status="error" title="Revisa tus datos" description={errorMsg} />
               ) : null}
               <TextInput
+                ref={nameInputRef}
+                htmlName="waitlistName"
                 label="Tu nombre"
                 placeholder="Ej. Sofía Ramírez"
                 autoComplete="name"
+                autoCapitalize="words"
+                size="lg"
                 value={name}
                 onChange={setName}
                 isRequired
               />
               <TextInput
+                ref={phoneInputRef}
+                htmlName="waitlistPhone"
                 label="Tu WhatsApp"
                 type="tel"
                 inputMode="numeric"
                 autoComplete="tel-national"
                 placeholder="222 123 4567"
+                startIcon={<Text weight="semibold">+52</Text>}
+                size="lg"
                 value={phone}
-                onChange={setPhone}
+                onChange={(val) => setPhone(formatMxPhoneDisplay(val))}
                 isRequired
               />
               <SegmentedControl
                 label="Horario preferido"
+                size="md"
                 value={windowPref}
-                onChange={(v) => setWindowPref(v as 'morning' | 'afternoon' | 'any')}
+                onChange={(v) =>
+                  setWindowPref(v === 'morning' || v === 'afternoon' ? v : 'any')
+                }
               >
                 <SegmentedControlItem value="morning" label="Mañana" />
                 <SegmentedControlItem value="afternoon" label="Tarde" />
@@ -140,10 +191,12 @@ export function WaitlistDialog({
               </SegmentedControl>
               <Button
                 type="submit"
-                label="Anotarme en lista de espera"
+                label={submitting ? 'Anotando…' : 'Anotarme en lista de espera'}
                 variant="primary"
+                size="lg"
                 width="100%"
                 className="fx-press"
+                isDisabled={submitting}
                 isLoading={submitting}
               />
             </VStack>

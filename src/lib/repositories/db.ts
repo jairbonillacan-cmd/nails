@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { createInitialDemoDatabase } from '../demo-seed';
+import {
+  createDefaultWhatsAppTemplates,
+  createInitialDemoDatabase,
+} from '../demo-seed';
 import {
   assertSlotBookable,
   computeServiceTotals,
@@ -33,6 +36,23 @@ import {
   type BookingTransitionEffect,
 } from '../booking/state-machine';
 import {
+  DEFAULT_NO_SHOW_DEPOSIT_THRESHOLD,
+  evaluateClientNoShowPolicy,
+  type NoShowPolicyEvaluation,
+} from '../booking/no-show-policy';
+import {
+  buildTouchUpBookingUrl,
+  computeSuggestedTouchUpDateKey,
+  generateRecurrenceDates,
+  type RecurrenceIntervalWeeks,
+} from '../booking/recurrence';
+import {
+  canRedeemPackageSession,
+  computeClientPackageBalance,
+} from '../loyalty/packages';
+import { verifyOwnerPin } from '../security/auth-pin';
+import { logError, logWarn } from '../logger';
+import {
   selectNextWaitlistCandidate,
   shouldSkipWhatsappCascade,
   WAITLIST_OFFER_TTL_MINUTES,
@@ -44,7 +64,12 @@ import {
   systemClock,
   type Clock,
 } from '../clock';
-import { assertProductionEnvValid, getRuntimeIntegrationStatus } from '../env';
+import {
+  assertProductionEnvValid,
+  getConfiguredWhatsAppMonthlyQuota,
+  getRuntimeIntegrationStatus,
+  getWhatsAppTemplateNameOverrides,
+} from '../env';
 import {
   buildWhatsAppLink,
   formatDateLongInTimezone,
@@ -58,10 +83,14 @@ import {
   dispatchWhatsAppNotification,
 } from '../integrations/notifications';
 import {
+  ClientPortalSnapshotDTOSchema,
   PublicLoyaltySummarySchema,
+  toPublicClientPackageDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type ClientPortalBookingDTO,
+  type ClientPortalSnapshotDTO,
   type PublicLoyaltySummaryDTO,
 } from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
@@ -73,11 +102,13 @@ import { createSupabaseRepository } from './supabase-repo';
 import {
   PolicyError,
   SlotConflictError,
+  type CleanupExpiredSlotHoldsResult,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
   type OutboxEventRecord,
   type PublicBootstrapData,
   type QueryAvailabilityInput,
+  type RegisterMediaAssetInput,
   type SalonRepository,
   type SlotHoldResult,
 } from './port';
@@ -113,7 +144,9 @@ import type {
   BookingStatus,
   BookingWithRelations,
   CalendarConnection,
+  CampaignDispatchLog,
   CashRegisterEntry,
+  ClientPackage,
   ClientProfile,
   ConsentRecord,
   Coupon,
@@ -124,6 +157,9 @@ import type {
   InventoryItem,
   LoyaltyProgram,
   LoyaltyStamp,
+  MediaAccessOwner,
+  MediaAssetFolder,
+  MediaAssetRecord,
   NotificationWorkflow,
   PaymentMethod,
   PaymentSplit,
@@ -133,9 +169,15 @@ import type {
   ScheduledNotification,
   Service,
   ServiceAddon,
+  ServicePackage,
   SlotHold,
   StaffMember,
   WaitlistEntry,
+  WebhookEventRecord,
+  WhatsAppMonthlyUsage,
+  WhatsAppMonthlyUsageSummary,
+  WhatsAppQuotaAlertLevel,
+  WhatsAppTemplateConfig,
 } from '../types';
 
 const DEFAULT_DEMO_DB_PATH = path.join(process.cwd(), '.nails-demo-db.json');
@@ -180,6 +222,31 @@ declare global {
   var nailsDemoOutbox: OutboxEventRecord[] | undefined;
 }
 
+function applySafeSettingsShape(
+  rawSettings: SalonSettings,
+  overridePinHash?: string | null,
+): SalonSettings {
+  const effectiveHash =
+    overridePinHash !== undefined
+      ? overridePinHash
+      : (rawSettings.ownerPinHash ?? null);
+  const { ownerPinHash: _ignoredHash, ...publicSafeRest } = rawSettings;
+  const safe: SalonSettings = {
+    ...publicSafeRest,
+    noShowDepositThreshold:
+      rawSettings.noShowDepositThreshold ?? DEFAULT_NO_SHOW_DEPOSIT_THRESHOLD,
+    ownerPinEnabled: Boolean(rawSettings.ownerPinEnabled && effectiveHash),
+    hasOwnerPin: Boolean(effectiveHash),
+  };
+  Object.defineProperty(safe, 'ownerPinHash', {
+    value: effectiveHash,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  return safe;
+}
+
 function readDbFromDisk(): DemoDatabase {
   const testDbPath = getActiveTestDbPath();
   const cacheKey = testDbPath ?? DEFAULT_DEMO_DB_PATH;
@@ -197,17 +264,20 @@ function readDbFromDisk(): DemoDatabase {
     const raw = readRawDemoDb(testDbPath);
     if (raw !== null) {
       const parsed = parseDemoDatabase(JSON.parse(raw) as unknown);
+      parsed.settings = applySafeSettingsShape(parsed.settings);
       globalThis.nailsDbCache = parsed;
       globalThis.nailsDbCachePath = cacheKey;
       globalThis.nailsDbPersistedToDisk = true;
       return parsed;
     }
-  } catch {
+  } catch (err) {
+    logWarn('demo_db_read_failed', { error: err });
     globalThis.nailsDbCache = undefined;
     globalThis.nailsDbCachePath = undefined;
     globalThis.nailsDbPersistedToDisk = undefined;
   }
   const seeded = createInitialDemoDatabase();
+  seeded.settings = applySafeSettingsShape(seeded.settings);
   globalThis.nailsDbCache = seeded;
   globalThis.nailsDbCachePath = cacheKey;
   writeDbToDisk(seeded);
@@ -220,15 +290,26 @@ function writeDbToDisk(db: DemoDatabase): void {
   globalThis.nailsDbCache = db;
   globalThis.nailsDbCachePath = cacheKey;
   try {
-    writeRawDemoDb(testDbPath, JSON.stringify(db, null, 2));
+    const diskPayload = {
+      ...db,
+      settings: {
+        ...db.settings,
+        ownerPinHash: db.settings.ownerPinHash ?? null,
+      },
+    };
+    writeRawDemoDb(testDbPath, JSON.stringify(diskPayload, null, 2));
     globalThis.nailsDbPersistedToDisk = true;
-  } catch {
+  } catch (err) {
+    logError('demo_db_write_failed', { error: err });
     globalThis.nailsDbPersistedToDisk = false;
     return;
   }
 }
 
-async function withWriteLock<T>(fn: (db: DemoDatabase) => Promise<T> | T): Promise<T> {
+async function withWriteLock<T>(
+  fn: (db: DemoDatabase) => Promise<T> | T,
+  options?: { skipPruneHolds?: boolean },
+): Promise<T> {
   const prev = globalThis.nailsWriteMutex ?? Promise.resolve();
   let release!: () => void;
   const next = new Promise<void>((resolve) => {
@@ -239,7 +320,9 @@ async function withWriteLock<T>(fn: (db: DemoDatabase) => Promise<T> | T): Promi
 
   try {
     const db = readDbFromDisk();
-    pruneExpiredHolds(db);
+    if (!options?.skipPruneHolds) {
+      pruneExpiredHolds(db);
+    }
     const result = await fn(db);
     writeDbToDisk(db);
     return result;
@@ -403,6 +486,13 @@ interface Phase3Collections {
   consents: ConsentRecord[];
   auditLogs: AuditLogEntry[];
   bookingPayments: BookingPayment[];
+  servicePackages: ServicePackage[];
+  clientPackages: ClientPackage[];
+  campaignDispatches: CampaignDispatchLog[];
+  mediaAssets: MediaAssetRecord[];
+  whatsappTemplates: WhatsAppTemplateConfig[];
+  whatsappMonthlyUsage: WhatsAppMonthlyUsage[];
+  webhookEvents: WebhookEventRecord[];
 }
 
 function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
@@ -414,6 +504,13 @@ function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
   if (!db.consents) db.consents = [];
   if (!db.auditLogs) db.auditLogs = [];
   if (!db.bookingPayments) db.bookingPayments = [];
+  if (!db.servicePackages) db.servicePackages = [];
+  if (!db.clientPackages) db.clientPackages = [];
+  if (!db.campaignDispatches) db.campaignDispatches = [];
+  if (!db.mediaAssets) db.mediaAssets = [];
+  if (!db.whatsappTemplates) db.whatsappTemplates = [];
+  if (!db.whatsappMonthlyUsage) db.whatsappMonthlyUsage = [];
+  if (!db.webhookEvents) db.webhookEvents = [];
   return {
     paymentSplits: db.paymentSplits,
     recurringBlocks: db.recurringBlocks,
@@ -423,7 +520,134 @@ function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
     consents: db.consents,
     auditLogs: db.auditLogs,
     bookingPayments: db.bookingPayments,
+    servicePackages: db.servicePackages,
+    clientPackages: db.clientPackages,
+    campaignDispatches: db.campaignDispatches,
+    mediaAssets: db.mediaAssets,
+    whatsappTemplates: db.whatsappTemplates,
+    whatsappMonthlyUsage: db.whatsappMonthlyUsage,
+    webhookEvents: db.webhookEvents,
   };
+}
+
+const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+
+function normalizeMediaStoragePath(raw: string): string {
+  const withoutQuery = raw.trim().split(/[?#]/)[0] ?? '';
+  return withoutQuery.replace(/^\/+/, '').replace(/^api\/media\/+/, '');
+}
+
+function inferMediaFolder(storagePath: string): MediaAssetFolder | null {
+  if (storagePath.startsWith('proofs/')) return 'proofs';
+  if (storagePath.startsWith('inspo/')) return 'inspo';
+  if (storagePath.startsWith('gallery/')) return 'gallery';
+  return null;
+}
+
+function inferContentTypeFromPath(storagePath: string): string {
+  const lower = storagePath.toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/png';
+}
+
+function resolveCurrentMonthKey(timezone: string, now = new Date()): string {
+  return getDateKeyInTimezone(now, timezone || 'America/Mexico_City').slice(0, 7);
+}
+
+function resolveEffectiveMonthKey(
+  timezone: string,
+  monthKey?: string,
+  now = new Date(),
+): string {
+  const trimmed = monthKey?.trim();
+  if (trimmed && MONTH_KEY_RE.test(trimmed)) {
+    return trimmed;
+  }
+  return resolveCurrentMonthKey(timezone, now);
+}
+
+function resolveWhatsAppQuotaLimit(settings: SalonSettings): number {
+  const envQuota = getConfiguredWhatsAppMonthlyQuota();
+  if (envQuota !== undefined && envQuota >= 1) {
+    return envQuota;
+  }
+  if (
+    typeof settings.whatsappMonthlyQuota === 'number' &&
+    Number.isFinite(settings.whatsappMonthlyQuota) &&
+    settings.whatsappMonthlyQuota >= 1
+  ) {
+    return Math.floor(settings.whatsappMonthlyQuota);
+  }
+  return 500;
+}
+
+function buildWhatsAppUsageSummary(usage: {
+  monthKey: string;
+  sentCount: number;
+  quotaLimit: number;
+  warned80At: string | null;
+  warned100At: string | null;
+}): WhatsAppMonthlyUsageSummary {
+  const quotaLimit = Math.max(1, Math.floor(usage.quotaLimit));
+  const sentCount = Math.max(0, Math.floor(usage.sentCount));
+  const percentUsed = Math.round((sentCount / quotaLimit) * 100);
+  const alertLevel: WhatsAppQuotaAlertLevel =
+    sentCount >= quotaLimit
+      ? 'limit_100'
+      : sentCount * 100 >= quotaLimit * 80
+        ? 'warning_80'
+        : 'ok';
+  return {
+    monthKey: usage.monthKey,
+    sentCount,
+    quotaLimit,
+    percentUsed,
+    alertLevel,
+    warned80At: usage.warned80At,
+    warned100At: usage.warned100At,
+  };
+}
+
+function linkMediaAssetToBookingInLock(
+  db: DemoDatabase,
+  mediaUrl: string | null | undefined,
+  folder: 'inspo' | 'proofs',
+  bookingId: string,
+  clientId: string,
+  nowIso: string,
+): void {
+  if (!mediaUrl) return;
+  const trimmed = mediaUrl.trim();
+  if (
+    !trimmed.startsWith('/api/media/') &&
+    !trimmed.startsWith('proofs/') &&
+    !trimmed.startsWith('inspo/')
+  ) {
+    return;
+  }
+  const storagePath = normalizeMediaStoragePath(trimmed);
+  if (!storagePath || !inferMediaFolder(storagePath)) return;
+  const cols = ensurePhase3Collections(db);
+  const existing = cols.mediaAssets.find((a) => a.storagePath === storagePath);
+  if (existing) {
+    existing.bookingId = bookingId;
+    existing.clientId = clientId;
+    return;
+  }
+  cols.mediaAssets.push({
+    id: generateId('med'),
+    storagePath,
+    folder,
+    bookingId,
+    clientId,
+    contentType: inferContentTypeFromPath(storagePath),
+    sizeBytes: 0,
+    createdAt: nowIso,
+    retentionWarned30dAt: null,
+    retentionWarned7dAt: null,
+    purgedAt: null,
+  });
 }
 
 function appendAuditLog(
@@ -702,6 +926,9 @@ interface ExtendedCreateBookingAtomicInput extends CreateBookingAtomicInput {
   privacyConsentAccepted?: boolean;
   marketingOptIn?: boolean;
   enforceMaxActiveBookings?: boolean;
+  recurrenceSeriesId?: string | null;
+  recurrenceIndex?: number;
+  recurrenceTotal?: number;
   actor?: AuditActor;
 }
 
@@ -1170,15 +1397,21 @@ async function dispatchPostCommitOutbox(
 export async function persistBookingMediaField(
   value: string | null | undefined,
   folder: 'inspo' | 'proofs',
+  context?: { bookingId?: string | null; clientId?: string | null },
 ): Promise<string | null> {
   const trimmed = value?.trim();
   if (!trimmed) return null;
   if (trimmed.toLowerCase().startsWith('data:')) {
     try {
       const stored = await storeMediaUpload({ dataUrl: trimmed, folder });
-      if (isSupabaseEnabled()) {
-        return stored.signedUrl ?? stored.storagePath;
-      }
+      await registerMediaAsset({
+        storagePath: stored.storagePath,
+        folder,
+        bookingId: context?.bookingId ?? null,
+        clientId: context?.clientId ?? null,
+        contentType: stored.contentType,
+        sizeBytes: stored.sizeBytes,
+      });
       return `/api/media/${stored.storagePath}`;
     } catch (err) {
       if (err instanceof MediaValidationError) {
@@ -1465,23 +1698,43 @@ export async function createBookingAtomic(
       service.requiresConfirmation || extraServices.some((s) => s.requiresConfirmation);
     const anyDepositRequired =
       service.depositRequired || extraServices.some((s) => s.depositRequired);
-    const depositAmountCents = anyDepositRequired
+    const configuredDepositCents = Math.max(
+      service.depositAmountCents,
+      ...extraServices.map((s) => s.depositAmountCents),
+      db.settings.depositAmountCents ?? 0,
+    );
+    const noShowPolicy = evaluateClientNoShowPolicy({
+      noShowCount: client.noShowCount,
+      threshold: db.settings.noShowDepositThreshold,
+      baseDepositAmountCents: configuredDepositCents,
+    });
+    const effectiveDepositRequired =
+      anyDepositRequired || noShowPolicy.requiresMandatoryDeposit;
+    const depositAmountCents = effectiveDepositRequired
       ? Math.max(
-          service.depositRequired ? service.depositAmountCents : 0,
-          ...extraServices.map((s) => (s.depositRequired ? s.depositAmountCents : 0)),
-          db.settings.depositAmountCents ?? 0,
+          anyDepositRequired
+            ? Math.max(
+                service.depositRequired ? service.depositAmountCents : 0,
+                ...extraServices.map((s) =>
+                  s.depositRequired ? s.depositAmountCents : 0,
+                ),
+                db.settings.depositAmountCents ?? 0,
+              )
+            : 0,
+          noShowPolicy.requiresMandatoryDeposit ? noShowPolicy.depositAmountCents : 0,
         )
       : 0;
 
     const needsOnlinePayment =
       !params.forceConfirmed &&
-      anyDepositRequired &&
+      effectiveDepositRequired &&
       (db.settings.paymentMode === 'mercadopago' || db.settings.paymentMode === 'stripe');
     const needsManualConfirm =
       !params.forceConfirmed &&
       !needsOnlinePayment &&
       (anyRequiresConfirmation ||
-        (anyDepositRequired && db.settings.paymentMode === 'manual_transfer'));
+        (effectiveDepositRequired && db.settings.paymentMode === 'manual_transfer') ||
+        noShowPolicy.requiresMandatoryDeposit);
 
     const status: BookingStatus = needsOnlinePayment
       ? 'pending_payment'
@@ -1527,6 +1780,16 @@ export async function createBookingAtomic(
       googleEventId: null,
       cancellationReason: null,
       rescheduledFromId: null,
+      ...(params.recurrenceSeriesId
+        ? { recurrenceSeriesId: params.recurrenceSeriesId }
+        : {}),
+      ...(typeof params.recurrenceIndex === 'number'
+        ? { recurrenceIndex: params.recurrenceIndex }
+        : {}),
+      ...(typeof params.recurrenceTotal === 'number'
+        ? { recurrenceTotal: params.recurrenceTotal }
+        : {}),
+      ...(noShowPolicy.requiresMandatoryDeposit ? { noShowPolicyEnforced: true } : {}),
       addons: addons.map((a) => ({
         addonId: a.id,
         name: a.name,
@@ -1538,6 +1801,23 @@ export async function createBookingAtomic(
     };
 
     db.bookings.push(booking);
+
+    linkMediaAssetToBookingInLock(
+      db,
+      storedInspoPhotoUrl,
+      'inspo',
+      booking.id,
+      client.id,
+      nowIso,
+    );
+    linkMediaAssetToBookingInLock(
+      db,
+      storedPaymentProofUrl,
+      'proofs',
+      booking.id,
+      client.id,
+      nowIso,
+    );
 
     if (appliedCoupon) {
       cols.couponRedemptions.unshift({
@@ -1959,12 +2239,14 @@ export async function recordBookingCheckoutAtomic(params: {
   extraItem?: { inventoryItemId: string; quantity: number } | null;
   markCompleted?: boolean;
   redeemLoyaltyReward?: boolean;
+  redeemClientPackageId?: string | null;
   actor: AuditActor;
 }): Promise<{
   booking: BookingWithRelations;
   splits: PaymentSplit[];
   summary: BookingPaymentSummary;
   stampAwarded: LoyaltyStamp | null;
+  redeemedPackage?: ClientPackage | null;
 }> {
   const committed = await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
@@ -2001,7 +2283,39 @@ export async function recordBookingCheckoutAtomic(params: {
       );
     }
 
-    const effectiveTotalCents = booking.totalPriceCents + extraRetailTotalCents;
+    let clientPackageForRedemption: ClientPackage | null = null;
+    if (params.redeemClientPackageId) {
+      const candidatePkg = cols.clientPackages.find(
+        (p) =>
+          p.id === params.redeemClientPackageId && p.clientId === booking.clientId,
+      );
+      if (!candidatePkg) {
+        throw new PolicyError(
+          'PACKAGE_NOT_FOUND',
+          'Paquete de sesiones no encontrado para esta clienta.',
+        );
+      }
+      const alreadyRedeemedForBooking = (candidatePkg.redeemedBookingIds ?? []).includes(
+        booking.id,
+      );
+      if (alreadyRedeemedForBooking) {
+        throw new PolicyError(
+          'PACKAGE_ALREADY_REDEEMED',
+          'Esta cita ya descontó una sesión de este paquete.',
+        );
+      }
+      if (!canRedeemPackageSession(candidatePkg)) {
+        throw new PolicyError(
+          'PACKAGE_NOT_REDEEMABLE',
+          'Este paquete no tiene sesiones disponibles o ya expiró.',
+        );
+      }
+      clientPackageForRedemption = candidatePkg;
+    }
+
+    const effectiveTotalCents = clientPackageForRedemption
+      ? extraRetailTotalCents
+      : booking.totalPriceCents + extraRetailTotalCents;
     const validation = validatePaymentSplits(params.splits, effectiveTotalCents);
     if (!validation.ok) {
       throw new PolicyError(validation.code, validation.message);
@@ -2059,6 +2373,11 @@ export async function recordBookingCheckoutAtomic(params: {
       });
     }
 
+    if (clientPackageForRedemption) {
+      booking.discountCents += booking.totalPriceCents;
+      booking.totalPriceCents = extraRetailTotalCents;
+    }
+
     if (extraInventoryItem && params.extraItem) {
       extraInventoryItem.stockQuantity = Math.max(
         0,
@@ -2108,6 +2427,10 @@ export async function recordBookingCheckoutAtomic(params: {
       };
       cols.paymentSplits.push(splitRecord);
       createdSplits.push(splitRecord);
+
+      if (splitRecord.amountCents === 0 && splitRecord.tipCents === 0) {
+        continue;
+      }
 
       const serviceStaffMember = db.staff.find((st) => st.id === booking.staffId);
       const commissionPct =
@@ -2178,6 +2501,20 @@ export async function recordBookingCheckoutAtomic(params: {
       });
     }
 
+    let redeemedPackage: ClientPackage | null = null;
+    if (clientPackageForRedemption) {
+      clientPackageForRedemption.usedSessions += 1;
+      clientPackageForRedemption.redeemedBookingIds = [
+        ...(clientPackageForRedemption.redeemedBookingIds ?? []),
+        booking.id,
+      ];
+      if (clientPackageForRedemption.usedSessions >= clientPackageForRedemption.totalSessions) {
+        clientPackageForRedemption.status = 'exhausted';
+      }
+      booking.packageRedemptionId = clientPackageForRedemption.id;
+      redeemedPackage = { ...clientPackageForRedemption };
+    }
+
     let outboxEvents: OutboxEventInput[] = [];
     if (completionTransition && completionTransition.ok) {
       booking.status = completionTransition.nextStatus;
@@ -2218,6 +2555,7 @@ export async function recordBookingCheckoutAtomic(params: {
       createdSplits,
       summary,
       stampAwarded,
+      redeemedPackage,
       outboxEvents,
     };
   });
@@ -2228,6 +2566,7 @@ export async function recordBookingCheckoutAtomic(params: {
     splits: committed.createdSplits,
     summary: committed.summary,
     stampAwarded: committed.stampAwarded,
+    ...(committed.redeemedPackage ? { redeemedPackage: committed.redeemedPackage } : {}),
   };
 }
 
@@ -2257,6 +2596,14 @@ export async function manageClientBookingAction(params: {
       booking.paymentProofUrl = storedProofUrl;
       booking.proofDeliveryMethod = 'web_upload';
       booking.updatedAt = new Date().toISOString();
+      linkMediaAssetToBookingInLock(
+        db,
+        storedProofUrl,
+        'proofs',
+        booking.id,
+        booking.clientId,
+        booking.updatedAt,
+      );
       const hydrated = hydrateBooking(db, booking);
       const outboxEvents: OutboxEventInput[] = [
         {
@@ -2628,7 +2975,10 @@ export async function updateSalonSettings(
   },
 ): Promise<SalonSettings> {
   return withWriteLock((db) => {
-    db.settings = {
+    const existingHash = db.settings.ownerPinHash ?? null;
+    const nextHash =
+      patch.ownerPinHash !== undefined ? patch.ownerPinHash : existingHash;
+    const merged: SalonSettings = {
       ...db.settings,
       ...patch,
       landingContent: patch.landingContent
@@ -2636,9 +2986,434 @@ export async function updateSalonSettings(
         : db.settings.landingContent,
       updatedAt: new Date().toISOString(),
     };
+    db.settings = applySafeSettingsShape(merged, nextHash);
     publishRealtimeEvent('settings_updated');
     return db.settings;
   });
+}
+
+export function verifyStoredOwnerPin(pin: string | null | undefined): {
+  required: boolean;
+  valid: boolean;
+} {
+  const db = readDbFromDisk();
+  const storedHash = db.settings.ownerPinHash ?? null;
+  const required = Boolean(db.settings.ownerPinEnabled && storedHash);
+  if (!required) {
+    return { required: false, valid: true };
+  }
+  if (!pin || !pin.trim()) {
+    return { required: true, valid: false };
+  }
+  return {
+    required: true,
+    valid: verifyOwnerPin(pin, storedHash),
+  };
+}
+
+export function getClientNoShowPolicyStatus(phone: string): NoShowPolicyEvaluation {
+  const db = getSnapshot();
+  const normalized = normalizePhoneE164(phone);
+  const client = normalized
+    ? db.clients.find((c) => c.phoneE164 === normalized)
+    : undefined;
+  return evaluateClientNoShowPolicy({
+    noShowCount: client?.noShowCount ?? 0,
+    threshold: db.settings.noShowDepositThreshold,
+    baseDepositAmountCents: db.settings.depositAmountCents ?? 20_000,
+  });
+}
+
+export async function createRecurringBookingSeries(
+  params: ExtendedCreateBookingAtomicInput & {
+    recurrence: { intervalWeeks: RecurrenceIntervalWeeks; count: number };
+  },
+): Promise<{
+  seriesId: string;
+  created: BookingWithRelations[];
+  skippedConflicts: Array<{
+    index: number;
+    startAt: string;
+    dateKey: string;
+    reason: string;
+    code: string;
+  }>;
+}> {
+  const db = getSnapshot();
+  const tz = db.settings.timezone || 'America/Mexico_City';
+  let occurrences: ReturnType<typeof generateRecurrenceDates>;
+  try {
+    occurrences = generateRecurrenceDates({
+      startAt: params.startAt,
+      intervalWeeks: params.recurrence.intervalWeeks,
+      count: params.recurrence.count,
+      timezone: tz,
+    });
+  } catch (err) {
+    throw new PolicyError(
+      'INVALID_RECURRENCE',
+      err instanceof Error ? err.message : 'Configuración de recurrencia inválida.',
+    );
+  }
+
+  const seriesId = generateId('ser');
+  const created: BookingWithRelations[] = [];
+  const skippedConflicts: Array<{
+    index: number;
+    startAt: string;
+    dateKey: string;
+    reason: string;
+    code: string;
+  }> = [];
+
+  for (const occ of occurrences) {
+    try {
+      const booking = await createBookingAtomic({
+        ...params,
+        startAt: occ.startAt,
+        idempotencyKey: params.idempotencyKey
+          ? `${params.idempotencyKey}:occ-${occ.index}`
+          : null,
+        recurrenceSeriesId: seriesId,
+        recurrenceIndex: occ.index + 1,
+        recurrenceTotal: occurrences.length,
+      });
+      created.push(booking);
+    } catch (err) {
+      if (occ.index === 0) {
+        throw err;
+      }
+      if (err instanceof SlotConflictError || err instanceof PolicyError) {
+        skippedConflicts.push({
+          index: occ.index + 1,
+          startAt: occ.startAt,
+          dateKey: occ.dateKey,
+          reason: err.message,
+          code: err.code,
+        });
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  return {
+    seriesId,
+    created,
+    skippedConflicts,
+  };
+}
+
+export function getClientPortalSnapshotByPhone(
+  phoneE164: string,
+): ClientPortalSnapshotDTO {
+  const db = getSnapshot();
+  const normalized = normalizePhoneE164(phoneE164);
+  const client = normalized
+    ? db.clients.find((c) => c.phoneE164 === normalized)
+    : undefined;
+
+  if (!client) {
+    return ClientPortalSnapshotDTOSchema.parse({
+      phoneE164: normalized,
+      clientId: null,
+      clientName: null,
+      bookings: [],
+      loyaltySummary: null,
+      packages: [],
+    });
+  }
+
+  const tz = db.settings.timezone || 'America/Mexico_City';
+  const serviceById = new Map(db.services.map((s) => [s.id, s]));
+  const staffById = new Map(db.staff.map((st) => [st.id, st]));
+
+  const portalBookings: ClientPortalBookingDTO[] = db.bookings
+    .filter((b) => b.clientId === client.id)
+    .toSorted((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
+    .map((b) => {
+      const svc = serviceById.get(b.serviceId);
+      const st = staffById.get(b.staffId);
+      const serviceSlug = svc?.slug ?? '';
+      const staffBookingSlug = st?.bookingSlug ?? '';
+      const suggestedDateKey = computeSuggestedTouchUpDateKey({
+        startAt: b.startAt,
+        daysAhead: 21,
+        timezone: tz,
+      });
+      return {
+        id: b.id,
+        bookingCode: b.bookingCode,
+        manageToken: b.manageToken,
+        manageUrl: `/cita/${b.manageToken}`,
+        status: b.status,
+        startAt: b.startAt,
+        endAt: b.endAt,
+        totalDurationMinutes: b.totalDurationMinutes,
+        totalPriceCents: b.totalPriceCents,
+        depositAmountCents: b.depositAmountCents,
+        serviceId: b.serviceId,
+        serviceName: svc?.name ?? 'Servicio',
+        serviceSlug,
+        staffId: b.staffId,
+        staffName: st?.name ?? 'Especialista',
+        staffBookingSlug,
+        addons: b.addons.map((a) => ({
+          name: a.name,
+          extraPriceCents: a.extraPriceCents,
+        })),
+        touchUpUrl: buildTouchUpBookingUrl({
+          serviceSlug,
+          staffSlug: staffBookingSlug,
+          suggestedDateKey,
+        }),
+      };
+    });
+
+  const nowMs = Date.now();
+  const packages = (db.clientPackages ?? [])
+    .filter((p) => p.clientId === client.id)
+    .toSorted(
+      (a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime(),
+    )
+    .map((p) => {
+      const balance = computeClientPackageBalance(p, nowMs);
+      return toPublicClientPackageDTO(p, {
+        serviceName: serviceById.get(p.serviceId)?.name ?? 'Servicio',
+        remainingSessions: balance.remainingSessions,
+        effectiveStatus: balance.effectiveStatus,
+      });
+    });
+
+  return ClientPortalSnapshotDTOSchema.parse({
+    phoneE164: client.phoneE164,
+    clientId: client.id,
+    clientName: client.fullName,
+    bookings: portalBookings,
+    loyaltySummary: getClientLoyaltySummary(client.id),
+    packages,
+  });
+}
+
+export function listServicePackages(): ServicePackage[] {
+  const db = getSnapshot();
+  return [...(db.servicePackages ?? [])];
+}
+
+export async function upsertServicePackage(input: {
+  id?: string;
+  name: string;
+  description?: string;
+  serviceId: string;
+  totalSessions: number;
+  priceCents: number;
+  validDays: number | null;
+  isActive?: boolean;
+}): Promise<ServicePackage> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const service = db.services.find((s) => s.id === input.serviceId);
+    if (!service) {
+      throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado para este paquete.');
+    }
+    const existing = input.id
+      ? cols.servicePackages.find((p) => p.id === input.id)
+      : null;
+    if (existing) {
+      existing.name = input.name.trim();
+      existing.description = input.description?.trim() ?? existing.description;
+      existing.serviceId = input.serviceId;
+      existing.totalSessions = input.totalSessions;
+      existing.priceCents = input.priceCents;
+      existing.validDays = input.validDays;
+      if (input.isActive !== undefined) existing.isActive = input.isActive;
+      publishRealtimeEvent('settings_updated');
+      return { ...existing };
+    }
+    const created: ServicePackage = {
+      id: generateId('pkg'),
+      name: input.name.trim(),
+      description: input.description?.trim() ?? '',
+      serviceId: input.serviceId,
+      totalSessions: input.totalSessions,
+      priceCents: input.priceCents,
+      validDays: input.validDays,
+      isActive: input.isActive ?? true,
+      createdAt: new Date().toISOString(),
+    };
+    cols.servicePackages.unshift(created);
+    publishRealtimeEvent('settings_updated');
+    return { ...created };
+  });
+}
+
+export async function toggleServicePackage(
+  packageId: string,
+  isActive: boolean,
+): Promise<ServicePackage> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const target = cols.servicePackages.find((p) => p.id === packageId);
+    if (!target) {
+      throw new PolicyError('PACKAGE_NOT_FOUND', 'Paquete no encontrado.');
+    }
+    target.isActive = isActive;
+    publishRealtimeEvent('settings_updated');
+    return { ...target };
+  });
+}
+
+export function listClientPackages(clientId?: string): Array<
+  ClientPackage & {
+    clientName: string;
+    serviceName: string;
+    remainingSessions: number;
+    isExpired: boolean;
+  }
+> {
+  const db = getSnapshot();
+  const nowMs = Date.now();
+  const clientById = new Map(db.clients.map((c) => [c.id, c]));
+  const serviceById = new Map(db.services.map((s) => [s.id, s]));
+
+  return (db.clientPackages ?? [])
+    .filter((p) => (clientId ? p.clientId === clientId : true))
+    .toSorted(
+      (a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime(),
+    )
+    .map((p) => {
+      const balance = computeClientPackageBalance(p, nowMs);
+      return {
+        ...p,
+        status: balance.effectiveStatus,
+        clientName: clientById.get(p.clientId)?.fullName ?? 'Clienta',
+        serviceName: serviceById.get(p.serviceId)?.name ?? 'Servicio',
+        remainingSessions: balance.remainingSessions,
+        isExpired: balance.isExpired,
+      };
+    });
+}
+
+export async function assignClientPackage(params: {
+  clientId: string;
+  packageId: string;
+  notes?: string;
+}): Promise<ClientPackage> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const client = db.clients.find((c) => c.id === params.clientId);
+    if (!client) {
+      throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+    }
+    const pkgDef = cols.servicePackages.find(
+      (p) => p.id === params.packageId && p.isActive,
+    );
+    if (!pkgDef) {
+      throw new PolicyError(
+        'PACKAGE_NOT_FOUND',
+        'Paquete no encontrado o inactivo.',
+      );
+    }
+    const now = new Date();
+    const expiresAt =
+      pkgDef.validDays !== null
+        ? new Date(now.getTime() + pkgDef.validDays * 86_400_000).toISOString()
+        : null;
+    const assigned: ClientPackage = {
+      id: generateId('cpkg'),
+      clientId: client.id,
+      packageId: pkgDef.id,
+      packageName: pkgDef.name,
+      serviceId: pkgDef.serviceId,
+      totalSessions: pkgDef.totalSessions,
+      usedSessions: 0,
+      purchasedAt: now.toISOString(),
+      expiresAt,
+      status: 'active',
+      notes: params.notes?.trim() ?? '',
+      redeemedBookingIds: [],
+    };
+    cols.clientPackages.unshift(assigned);
+    publishRealtimeEvent('settings_updated');
+    return { ...assigned };
+  });
+}
+
+export async function redeemClientPackageSession(params: {
+  clientPackageId: string;
+  bookingId?: string | null;
+}): Promise<ClientPackage> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const pkg = cols.clientPackages.find((p) => p.id === params.clientPackageId);
+    if (!pkg) {
+      throw new PolicyError('PACKAGE_NOT_FOUND', 'Paquete de clienta no encontrado.');
+    }
+    const bookingId = params.bookingId?.trim() || null;
+    if (bookingId && (pkg.redeemedBookingIds ?? []).includes(bookingId)) {
+      throw new PolicyError(
+        'PACKAGE_ALREADY_REDEEMED',
+        'Esta cita ya descontó una sesión de este paquete.',
+      );
+    }
+    if (!canRedeemPackageSession(pkg)) {
+      throw new PolicyError(
+        'PACKAGE_NOT_REDEEMABLE',
+        'Este paquete ya no tiene sesiones disponibles o expiró.',
+      );
+    }
+    pkg.usedSessions += 1;
+    if (bookingId) {
+      pkg.redeemedBookingIds = [...(pkg.redeemedBookingIds ?? []), bookingId];
+      const booking = db.bookings.find((b) => b.id === bookingId);
+      if (booking) {
+        booking.packageRedemptionId = pkg.id;
+      }
+    }
+    if (pkg.usedSessions >= pkg.totalSessions) {
+      pkg.status = 'exhausted';
+    }
+    publishRealtimeEvent('settings_updated');
+    return { ...pkg };
+  });
+}
+
+export async function cancelClientPackage(
+  clientPackageId: string,
+): Promise<ClientPackage> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const pkg = cols.clientPackages.find((p) => p.id === clientPackageId);
+    if (!pkg) {
+      throw new PolicyError('PACKAGE_NOT_FOUND', 'Paquete de clienta no encontrado.');
+    }
+    pkg.status = 'canceled';
+    publishRealtimeEvent('settings_updated');
+    return { ...pkg };
+  });
+}
+
+export async function logCampaignDispatch(
+  params: Omit<CampaignDispatchLog, 'id' | 'dispatchedAt'>,
+): Promise<CampaignDispatchLog> {
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const entry: CampaignDispatchLog = {
+      ...params,
+      id: generateId('cmp'),
+      dispatchedAt: new Date().toISOString(),
+    };
+    cols.campaignDispatches.unshift(entry);
+    if (cols.campaignDispatches.length > 200) {
+      cols.campaignDispatches.length = 200;
+    }
+    return { ...entry };
+  });
+}
+
+export function listCampaignDispatches(limit = 50): CampaignDispatchLog[] {
+  const db = getSnapshot();
+  return (db.campaignDispatches ?? []).slice(0, Math.max(1, Math.min(limit, 200)));
 }
 
 export async function saveOnboardingSetup(params: {
@@ -2659,21 +3434,25 @@ export async function saveOnboardingSetup(params: {
 }): Promise<{ settings: SalonSettings; starterService: Service | null }> {
   return withWriteLock((db) => {
     const nowIso = new Date().toISOString();
-    db.settings = {
-      ...db.settings,
-      ...(params.salonName?.trim() ? { name: params.salonName.trim() } : {}),
-      ...(params.businessType !== undefined ? { businessType: params.businessType } : {}),
-      ...(params.teamSizeTier !== undefined ? { teamSizeTier: params.teamSizeTier } : {}),
-      ...(params.serviceMode !== undefined ? { serviceMode: params.serviceMode } : {}),
-      ...(params.address !== undefined ? { address: params.address } : {}),
-      ...(params.soundAlertsEnabled !== undefined
-        ? { soundAlertsEnabled: params.soundAlertsEnabled }
-        : {}),
-      ...(params.onboardingCompleted !== undefined
-        ? { onboardingCompleted: params.onboardingCompleted }
-        : {}),
-      updatedAt: nowIso,
-    };
+    const existingHash = db.settings.ownerPinHash ?? null;
+    db.settings = applySafeSettingsShape(
+      {
+        ...db.settings,
+        ...(params.salonName?.trim() ? { name: params.salonName.trim() } : {}),
+        ...(params.businessType !== undefined ? { businessType: params.businessType } : {}),
+        ...(params.teamSizeTier !== undefined ? { teamSizeTier: params.teamSizeTier } : {}),
+        ...(params.serviceMode !== undefined ? { serviceMode: params.serviceMode } : {}),
+        ...(params.address !== undefined ? { address: params.address } : {}),
+        ...(params.soundAlertsEnabled !== undefined
+          ? { soundAlertsEnabled: params.soundAlertsEnabled }
+          : {}),
+        ...(params.onboardingCompleted !== undefined
+          ? { onboardingCompleted: params.onboardingCompleted }
+          : {}),
+        updatedAt: nowIso,
+      },
+      existingHash,
+    );
 
     let starterService: Service | null = null;
     if (params.starterService) {
@@ -3757,6 +4536,353 @@ function getNextQuickSlots(serviceId: string, staffId?: string | null) {
   return found;
 }
 
+export async function registerMediaAsset(
+  input: RegisterMediaAssetInput,
+): Promise<MediaAssetRecord> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().registerMediaAsset(input);
+  }
+  const storagePath = normalizeMediaStoragePath(input.storagePath);
+  if (!storagePath) {
+    throw new PolicyError('INVALID_MEDIA_URL', 'Ruta de archivo inválida.');
+  }
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const existing = cols.mediaAssets.find((a) => a.storagePath === storagePath);
+    if (existing) {
+      if (input.bookingId !== undefined && input.bookingId !== null) {
+        existing.bookingId = input.bookingId;
+      }
+      if (input.clientId !== undefined && input.clientId !== null) {
+        existing.clientId = input.clientId;
+      }
+      if (input.contentType) {
+        existing.contentType = input.contentType;
+      }
+      if (input.sizeBytes > 0) {
+        existing.sizeBytes = input.sizeBytes;
+      }
+      return { ...existing };
+    }
+    const created: MediaAssetRecord = {
+      id: generateId('med'),
+      storagePath,
+      folder: input.folder,
+      bookingId: input.bookingId ?? null,
+      clientId: input.clientId ?? null,
+      contentType: input.contentType,
+      sizeBytes: Math.max(0, Math.floor(input.sizeBytes)),
+      createdAt: input.createdAt ?? new Date().toISOString(),
+      retentionWarned30dAt: null,
+      retentionWarned7dAt: null,
+      purgedAt: null,
+    };
+    cols.mediaAssets.push(created);
+    return { ...created };
+  });
+}
+
+export async function getMediaAccessOwner(
+  rawStoragePath: string,
+): Promise<MediaAccessOwner | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getMediaAccessOwner(rawStoragePath);
+  }
+  const storagePath = normalizeMediaStoragePath(rawStoragePath);
+  if (!storagePath) return null;
+  const db = getSnapshot();
+  const mediaRecord = (db.mediaAssets ?? []).find((a) => a.storagePath === storagePath);
+
+  if (mediaRecord) {
+    const booking = mediaRecord.bookingId
+      ? db.bookings.find((b) => b.id === mediaRecord.bookingId) ?? null
+      : db.bookings.find(
+          (b) =>
+            (b.paymentProofUrl &&
+              normalizeMediaStoragePath(b.paymentProofUrl) === storagePath) ||
+            (b.inspoPhotoUrl &&
+              normalizeMediaStoragePath(b.inspoPhotoUrl) === storagePath),
+        ) ?? null;
+    const clientId = mediaRecord.clientId ?? booking?.clientId ?? null;
+    const client = clientId ? db.clients.find((c) => c.id === clientId) ?? null : null;
+    return {
+      storagePath,
+      folder: mediaRecord.folder,
+      bookingId: booking?.id ?? mediaRecord.bookingId ?? null,
+      staffId: booking?.staffId ?? null,
+      manageToken: booking?.manageToken ?? null,
+      clientPhoneE164: client?.phoneE164 ?? null,
+    };
+  }
+
+  const booking = db.bookings.find(
+    (b) =>
+      (b.paymentProofUrl &&
+        normalizeMediaStoragePath(b.paymentProofUrl) === storagePath) ||
+      (b.inspoPhotoUrl &&
+        normalizeMediaStoragePath(b.inspoPhotoUrl) === storagePath),
+  );
+  if (!booking) return null;
+
+  const folder: MediaAssetFolder =
+    inferMediaFolder(storagePath) ??
+    (booking.inspoPhotoUrl &&
+    normalizeMediaStoragePath(booking.inspoPhotoUrl) === storagePath
+      ? 'inspo'
+      : 'proofs');
+  const client = db.clients.find((c) => c.id === booking.clientId) ?? null;
+  return {
+    storagePath,
+    folder,
+    bookingId: booking.id,
+    staffId: booking.staffId,
+    manageToken: booking.manageToken,
+    clientPhoneE164: client?.phoneE164 ?? null,
+  };
+}
+
+export async function listMediaAssetsForRetention(): Promise<MediaAssetRecord[]> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().listMediaAssetsForRetention();
+  }
+  const db = getSnapshot();
+  return (db.mediaAssets ?? [])
+    .filter((a) => a.purgedAt === null)
+    .map((a) => ({ ...a }))
+    .toSorted(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+}
+
+export async function markMediaRetentionWarned(
+  id: string,
+  stage: '30d' | '7d',
+  atIso = new Date().toISOString(),
+): Promise<MediaAssetRecord | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().markMediaRetentionWarned(id, stage, atIso);
+  }
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const asset = cols.mediaAssets.find((a) => a.id === id);
+    if (!asset || asset.purgedAt !== null) return null;
+
+    if (stage === '30d') {
+      if (asset.retentionWarned30dAt !== null) {
+        return { ...asset };
+      }
+      asset.retentionWarned30dAt = atIso;
+    } else {
+      if (asset.retentionWarned7dAt !== null) {
+        return { ...asset };
+      }
+      asset.retentionWarned7dAt = atIso;
+    }
+
+    appendAuditLog(db, {
+      actor: {
+        id: 'system-retention-cron',
+        email: 'cron@laikonanails.mx',
+        role: 'owner',
+      },
+      action: 'media_retention_warned',
+      entityType: 'media_asset',
+      entityId: asset.id,
+      metadata: {
+        stage,
+        storagePath: asset.storagePath,
+        folder: asset.folder,
+        bookingId: asset.bookingId,
+      },
+    });
+    return { ...asset };
+  });
+}
+
+export async function markMediaAssetPurged(
+  id: string,
+  atIso = new Date().toISOString(),
+): Promise<MediaAssetRecord | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().markMediaAssetPurged(id, atIso);
+  }
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const asset = cols.mediaAssets.find((a) => a.id === id);
+    if (!asset) return null;
+    if (asset.purgedAt !== null) {
+      return { ...asset };
+    }
+
+    asset.purgedAt = atIso;
+    const normalizedPath = normalizeMediaStoragePath(asset.storagePath);
+
+    for (const booking of db.bookings) {
+      const matchesBooking = asset.bookingId !== null && booking.id === asset.bookingId;
+      const matchesProof =
+        Boolean(booking.paymentProofUrl) &&
+        normalizeMediaStoragePath(booking.paymentProofUrl ?? '') === normalizedPath;
+      const matchesInspo =
+        Boolean(booking.inspoPhotoUrl) &&
+        normalizeMediaStoragePath(booking.inspoPhotoUrl ?? '') === normalizedPath;
+
+      if (matchesProof || (matchesBooking && asset.folder === 'proofs')) {
+        booking.paymentProofUrl = null;
+        booking.updatedAt = atIso;
+      }
+      if (matchesInspo || (matchesBooking && asset.folder === 'inspo')) {
+        booking.inspoPhotoUrl = null;
+        booking.updatedAt = atIso;
+      }
+    }
+
+    appendAuditLog(db, {
+      actor: {
+        id: 'system-retention-cron',
+        email: 'cron@laikonanails.mx',
+        role: 'owner',
+      },
+      action: 'media_retention_purged',
+      entityType: 'media_asset',
+      entityId: asset.id,
+      metadata: {
+        storagePath: asset.storagePath,
+        folder: asset.folder,
+        bookingId: asset.bookingId,
+      },
+    });
+    return { ...asset };
+  });
+}
+
+export async function getWhatsAppTemplates(): Promise<WhatsAppTemplateConfig[]> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getWhatsAppTemplates();
+  }
+  const db = getSnapshot();
+  const base =
+    db.whatsappTemplates && db.whatsappTemplates.length > 0
+      ? db.whatsappTemplates
+      : createDefaultWhatsAppTemplates();
+  const overrides = getWhatsAppTemplateNameOverrides();
+  return base.map((tpl) => ({
+    ...tpl,
+    templateName: overrides[tpl.triggerKey] ?? tpl.templateName,
+  }));
+}
+
+export async function getWhatsAppMonthlyUsage(
+  monthKey?: string,
+): Promise<WhatsAppMonthlyUsageSummary> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getWhatsAppMonthlyUsage(monthKey);
+  }
+  const db = getSnapshot();
+  const targetMonthKey = resolveEffectiveMonthKey(db.settings.timezone, monthKey);
+  const quotaLimit = resolveWhatsAppQuotaLimit(db.settings);
+  const existing = (db.whatsappMonthlyUsage ?? []).find(
+    (u) => u.monthKey === targetMonthKey,
+  );
+  return buildWhatsAppUsageSummary({
+    monthKey: targetMonthKey,
+    sentCount: existing?.sentCount ?? 0,
+    quotaLimit: existing?.quotaLimit ?? quotaLimit,
+    warned80At: existing?.warned80At ?? null,
+    warned100At: existing?.warned100At ?? null,
+  });
+}
+
+export async function incrementWhatsAppMonthlyUsage(
+  monthKey?: string,
+  count = 1,
+): Promise<WhatsAppMonthlyUsageSummary> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().incrementWhatsAppMonthlyUsage(monthKey, count);
+  }
+  const increment = Math.max(0, Math.floor(count));
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const targetMonthKey = resolveEffectiveMonthKey(db.settings.timezone, monthKey, now);
+    const quotaLimit = resolveWhatsAppQuotaLimit(db.settings);
+    let record = cols.whatsappMonthlyUsage.find((u) => u.monthKey === targetMonthKey);
+    if (!record) {
+      record = {
+        monthKey: targetMonthKey,
+        sentCount: 0,
+        quotaLimit,
+        warned80At: null,
+        warned100At: null,
+        updatedAt: nowIso,
+      };
+      cols.whatsappMonthlyUsage.push(record);
+    }
+    record.sentCount += increment;
+    record.quotaLimit = quotaLimit;
+    if (record.warned80At === null && record.sentCount * 100 >= quotaLimit * 80) {
+      record.warned80At = nowIso;
+    }
+    if (record.warned100At === null && record.sentCount >= quotaLimit) {
+      record.warned100At = nowIso;
+    }
+    record.updatedAt = nowIso;
+    return buildWhatsAppUsageSummary(record);
+  });
+}
+
+export async function claimWebhookEventIdempotent(
+  provider: string,
+  eventId: string,
+): Promise<boolean> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().claimWebhookEventIdempotent(provider, eventId);
+  }
+  const cleanProvider = provider.trim().toLowerCase();
+  const cleanEventId = eventId.trim();
+  if (!cleanProvider || !cleanEventId) return false;
+
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const exists = cols.webhookEvents.some(
+      (e) => e.provider === cleanProvider && e.eventId === cleanEventId,
+    );
+    if (exists) {
+      return false;
+    }
+    cols.webhookEvents.push({
+      provider: cleanProvider,
+      eventId: cleanEventId,
+      receivedAt: new Date().toISOString(),
+    });
+    if (cols.webhookEvents.length > 2000) {
+      cols.webhookEvents.splice(0, cols.webhookEvents.length - 2000);
+    }
+    return true;
+  });
+}
+
+export async function cleanupExpiredSlotHolds(
+  nowMs = Date.now(),
+): Promise<CleanupExpiredSlotHoldsResult> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().cleanupExpiredSlotHolds(nowMs);
+  }
+  return withWriteLock(
+    (db) => {
+      const before = db.slotHolds.length;
+      db.slotHolds = db.slotHolds.filter(
+        (h) => new Date(h.expiresAt).getTime() > nowMs,
+      );
+      return {
+        cleanedCount: Math.max(0, before - db.slotHolds.length),
+        dbAlive: true,
+      };
+    },
+    { skipPruneHolds: true },
+  );
+}
+
 function getDemoOutboxStore(): OutboxEventRecord[] {
   if (!globalThis.nailsDemoOutbox) {
     globalThis.nailsDemoOutbox = [];
@@ -3957,11 +5083,24 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
         }),
       );
     },
+    registerMediaAsset,
+    getMediaAccessOwner,
+    listMediaAssetsForRetention,
+    markMediaRetentionWarned,
+    markMediaAssetPurged,
+    getWhatsAppTemplates,
+    getWhatsAppMonthlyUsage,
+    incrementWhatsAppMonthlyUsage,
+    claimWebhookEventIdempotent,
+    cleanupExpiredSlotHolds,
   };
 }
 
 export function getRepository(clock: Clock = systemClock): SalonRepository {
-  assertProductionEnvValid();
+  assertProductionEnvValid(process.env, {
+    requireCoreSecrets:
+      isSupabaseEnabled() || Boolean(process.env.R2_ACCOUNT_ID?.trim()),
+  });
   if (isSupabaseEnabled()) {
     return createSupabaseRepository(clock);
   }
