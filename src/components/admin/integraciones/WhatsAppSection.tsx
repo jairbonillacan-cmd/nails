@@ -182,6 +182,7 @@ export function WhatsAppSection({
           {whatsappUsage.alertLevel === 'warning_80' ? (
             <Banner
               status="warning"
+              role="status"
               title={`Ya usaste el ${whatsappUsage.percentUsed}% de tus mensajes de WhatsApp de este mes`}
               description={`Te quedan ${whatsappRemaining} avisos automáticos. Si llegas a ${whatsappUsage.quotaLimit}, las confirmaciones seguirán llegando por correo y podrás abrir WhatsApp en un toque.`}
             />
@@ -190,6 +191,7 @@ export function WhatsAppSection({
           {whatsappUsage.alertLevel === 'limit_100' ? (
             <Banner
               status="warning"
+              role="status"
               title={`Alcanzaste los ${whatsappUsage.quotaLimit} mensajes automáticos de este mes`}
               description="Para evitar cobros inesperados, los avisos siguen llegando por correo electrónico y con enlace directo a WhatsApp hasta el inicio del próximo mes."
             />
@@ -351,8 +353,8 @@ export function WhatsAppSection({
                   return (
                     <li key={tpl.id}>
                       <ActionRow
-                        title={meta?.title ?? tpl.templateName}
-                        subtitle={`${meta?.subtitle ?? 'Aviso automático oficial'} · ${tpl.templateName}`}
+                        title={meta?.title ?? 'Aviso automático de WhatsApp'}
+                        subtitle={meta?.subtitle ?? 'Mensaje oficial aprobado para avisos de citas.'}
                         isMuted={!tpl.isActive}
                         status={
                           <StatusTag

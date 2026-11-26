@@ -49,6 +49,12 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lk-cereza) 18%, transparent);
 }
 
+.pt-otp-grid input:focus-visible {
+  outline: 2px solid var(--lk-cereza);
+  outline-offset: 2px;
+  border-color: var(--lk-cereza);
+}
+
 .pt-booking-row {
   display: flex;
   flex-wrap: wrap;
@@ -116,6 +122,10 @@
 }
 
 @media (max-width: 47.5rem) {
+  .pt-shell .rb-wrap.rb-main {
+    padding: 1rem 1rem 2rem;
+  }
+
   .pt-card {
     padding: 1.25rem;
     border-radius: 1.25rem;
@@ -126,6 +136,7 @@
   }
 
   .pt-otp-grid input {
+    min-height: 3rem;
     height: 3rem;
     font-size: 1.25rem;
   }

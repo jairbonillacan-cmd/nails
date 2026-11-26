@@ -79,7 +79,7 @@ export function AdvancedPoliciesSection({
             <SlidersHorizontal size={15} aria-hidden="true" />
             <VStack gap={0}>
               <Text weight="semibold" size="base">
-                Reglas del salón y opciones avanzadas
+                Reglas del salón y más opciones
               </Text>
               <Text type="supporting" color="secondary">
                 Política si no llegan, límite de citas, PIN de dueña, otra web e historial de cambios.
@@ -126,13 +126,13 @@ export function AdvancedPoliciesSection({
               />
               <Grid columns={{ minWidth: 110, max: 3 }} gap={2}>
                 <NumberInput
-                  label="Anticipación mín. (min)"
+                  label="Anticipación mínima (min)"
                   value={draft.minBookingNoticeMinutes}
                   min={0}
                   onChange={(v) => onUpdateDraft({ minBookingNoticeMinutes: v })}
                 />
                 <NumberInput
-                  label="Cancelar antes (hrs)"
+                  label="Avisar cambios antes (hrs)"
                   value={draft.minCancelHours}
                   min={0}
                   onChange={(v) => onUpdateDraft({ minCancelHours: v })}

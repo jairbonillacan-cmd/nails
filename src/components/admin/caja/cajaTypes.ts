@@ -99,7 +99,7 @@ export function proofMethodMeta(method: PendingDepositRow['proofDeliveryMethod']
   color: 'blue' | 'purple' | 'yellow';
 } {
   if (method === 'web_upload') return { label: 'Foto subida', color: 'blue' };
-  if (method === 'instagram_dm') return { label: 'Instagram DM', color: 'purple' };
+  if (method === 'instagram_dm') return { label: 'Por Instagram', color: 'purple' };
   return { label: 'Sin comprobante aún', color: 'yellow' };
 }
 

@@ -124,8 +124,9 @@ export function VisualScheduleGrid({
     return (
       <EmptyStateCard
         title="Sin manicuristas activas en la agenda"
-        description="Activa al menos una especialista en Equipo para visualizar los bloques horarios."
+        description="Activa al menos una manicurista en Equipo para ver los horarios del día."
         icon={<CalendarDays size={22} aria-hidden="true" />}
+        actions={<Button label="Ir a Equipo" variant="secondary" size="sm" href="/admin/equipo" />}
       />
     );
   }

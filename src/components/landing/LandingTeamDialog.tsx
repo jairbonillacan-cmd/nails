@@ -59,6 +59,7 @@ export function LandingTeamDialog({
       onOpenChange={(isOpen) => {
         if (!isOpen) onClose();
       }}
+      aria-labelledby="lk-team-dialog-title"
       width="min(42.5rem, 94vw)"
       maxHeight="88dvh"
       padding={0}
@@ -97,7 +98,7 @@ export function LandingTeamDialog({
               />
             )}
             <VStack gap={0.5} style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <Heading level={2} className="lk-serif" style={{ fontSize: '1.85rem' }}>
+              <Heading level={2} id="lk-team-dialog-title" className="lk-serif" style={{ fontSize: '1.85rem' }}>
                 {member.name}
               </Heading>
               <Text type="supporting" color="secondary">
@@ -108,7 +109,7 @@ export function LandingTeamDialog({
               label="Cerrar"
               variant="ghost"
               size="md"
-              className="fx-press"
+              className="lk-icon-touch fx-press"
               isIconOnly
               icon={<X size={18} aria-hidden="true" />}
               onClick={onClose}

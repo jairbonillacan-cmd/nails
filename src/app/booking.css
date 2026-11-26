@@ -171,6 +171,7 @@
 
 .rb-pill {
   min-height: 2.75rem;
+  min-width: 2.75rem;
   padding: 0 1.125rem;
   border-radius: var(--radius-full);
   border: 1.5px solid var(--lk-linea);
@@ -222,9 +223,13 @@
 .rb-pill:focus-visible,
 .rb-slot:focus-visible,
 .rb-day:focus-visible,
-.rb-step:focus-visible,
 .rb-bottom-summary:focus-visible {
   outline: 2px solid var(--lk-cereza);
+  outline-offset: 2px;
+}
+
+.rb-step:focus-visible {
+  outline: 2px solid var(--lk-blanco);
   outline-offset: 2px;
 }
 
@@ -274,7 +279,7 @@
 
 .rb-service:hover:not(:disabled),
 .rb-artist:hover:not(:disabled) {
-  transform: translateY(-2px);
+  transform: translate3d(0, -0.125rem, 0);
   box-shadow: 0 1rem 1.875rem -1.375rem var(--lk-sombra);
 }
 
@@ -528,6 +533,7 @@
   flex-direction: column;
   align-items: flex-start;
   min-height: 3rem;
+  min-width: 2.75rem;
   padding: 0 0.25rem;
   border: 0;
   background: transparent;
@@ -551,6 +557,7 @@
 
 .rb-cta {
   min-width: 9.5rem;
+  min-height: 2.75rem;
 }
 
 .rb-skeleton-services {
@@ -624,6 +631,7 @@
   .rb-slot,
   .rb-pill,
   .rb-day,
+  .rb-step,
   .rb-timer,
   .rb-progress::-webkit-progress-value {
     transition: none !important;
@@ -631,7 +639,9 @@
 
   .rb-pill:active,
   .rb-day:active,
-  .rb-slot:active {
+  .rb-slot:active,
+  .rb-service:hover,
+  .rb-artist:hover {
     transform: none !important;
   }
 }

@@ -244,11 +244,11 @@ export function EmbedGeneratorCard({
         </VStack>
 
         <CopyableField
-          label="Código HTML para tu sitio web"
+          label="Código para tu página web"
           value={websiteCode}
           copyLabel="Copiar código"
           copiedLabel="Código copiado"
-          feedbackMessage="Código copiado. Pégalo en tu sitio web."
+          feedbackMessage="Código copiado. Pégalo en tu página web."
           layout="stacked"
           monospace
           endExtra={
@@ -292,7 +292,7 @@ export function EmbedGeneratorCard({
                     ? `Horarios de ${selectedStaff.name}`
                     : 'Horarios en tiempo real de todo el equipo'}
                 </Text>
-                <CopyableField value={compactBookingUrl} copyLabel="Copiar URL" copiedLabel="Copiada" monospace />
+                <CopyableField value={compactBookingUrl} copyLabel="Copiar enlace" copiedLabel="Copiado" monospace />
               </VStack>
               <HStack gap={2} wrap="wrap" justify="end">
                 <Button type="button" label="Cerrar" variant="ghost" size="sm" onClick={() => setPreviewOpen(false)} />

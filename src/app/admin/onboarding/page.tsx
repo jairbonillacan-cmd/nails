@@ -119,6 +119,7 @@ export default function AdminOnboardingPage() {
       <VStack className="ad-page ad-wizard-shell">
         <Banner
           status="warning"
+          role="status"
           title="Solo disponible para la Dueña"
           description="La guía inicial del salón solo puede ser editada desde la cuenta de Dueña."
           endContent={<Button label="Volver al inicio" variant="secondary" size="sm" href="/admin" />}
@@ -189,7 +190,7 @@ export default function AdminOnboardingPage() {
       permission === 'granted'
         ? 'Avisos y sonido de nuevas citas activados.'
         : permission === 'denied'
-          ? 'Sonido activado. Puedes activar las notificaciones desde tu navegador.'
+          ? 'Sonido activado. Si quieres avisos en pantalla, actívalos en los permisos de tu celular o computadora.'
           : 'Sonido de nuevas citas activado.',
     );
   };
@@ -292,7 +293,7 @@ export default function AdminOnboardingPage() {
               feedback.show(
                 played
                   ? 'Sonido de nueva cita reproducido.'
-                  : 'Tu navegador bloqueó el audio por ahora.',
+                  : 'Tu dispositivo silenció el audio por ahora. Sube el volumen o intenta de nuevo.',
               ),
             )
           }

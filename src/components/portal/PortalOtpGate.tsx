@@ -202,6 +202,7 @@ export function PortalOtpGate({
           {errorMessage ? (
             <Banner
               status="error"
+              role="alert"
               title="No pudimos verificar"
               description={errorMessage}
               isDismissable
@@ -212,6 +213,7 @@ export function PortalOtpGate({
           {infoMessage ? (
             <Banner
               status="info"
+              role="status"
               title={infoMessage}
               isDismissable
               onDismiss={onDismissInfo}

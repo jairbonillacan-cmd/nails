@@ -127,6 +127,7 @@ export function WaitlistDialog({
           <VStack gap={4} paddingBlockStart={4} className="fx-pop">
             <Banner
               status="success"
+              role="status"
               title="¡Te anotamos en la lista de espera!"
               description="En cuanto se libere un espacio compatible te escribiremos de inmediato."
             />
@@ -149,7 +150,7 @@ export function WaitlistDialog({
               aria-busy={submitting ? 'true' : 'false'}
             >
               {errorMsg ? (
-                <Banner status="error" title="Revisa tus datos" description={errorMsg} />
+                <Banner status="error" role="alert" title="Revisa tus datos" description={errorMsg} />
               ) : null}
               <TextInput
                 ref={nameInputRef}

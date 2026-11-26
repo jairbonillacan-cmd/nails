@@ -295,6 +295,7 @@ export default function AdminBookingsPage() {
           busyStatus={actions.busyAction?.status ?? null}
           requestingRescheduleId={actions.requestingRescheduleId}
           onSelectRangeWeek={() => ws.handleSelectRange('week')}
+          onClearSearch={() => ws.setSearch('')}
           onOpenNewBooking={() => ws.openManualModal()}
           onSelectBooking={(bk) => ws.setPopoverBookingId(bk.id)}
           onUpdateStatus={(id, status) => void actions.updateStatus(id, status)}

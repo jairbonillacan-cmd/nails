@@ -64,7 +64,7 @@ export function StaffStep({
 
       {errorMessage ? (
         <VStack className="fx-fade-up">
-          <Banner status="warning" title="Esa artista ya no está libre" description={errorMessage} />
+          <Banner status="warning" role="alert" title="Esa artista ya no está libre" description={errorMessage} />
         </VStack>
       ) : null}
 

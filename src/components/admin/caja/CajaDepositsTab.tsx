@@ -253,7 +253,7 @@ export function CajaDepositsTab({
               <VStack gap={1.5} className="ad-proof-note">
                 <Text weight="semibold" size="sm">
                   {previewDeposit.proofDeliveryMethod === 'instagram_dm'
-                    ? 'Enviado por Instagram DM'
+                    ? 'Enviado por mensaje de Instagram'
                     : 'Comprobante aún pendiente'}
                 </Text>
                 <Text type="supporting" color="secondary">

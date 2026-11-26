@@ -260,12 +260,19 @@ export default function AdminCashPage() {
       />
 
       {msg ? (
-        <Banner status="success" title={msg} isDismissable onDismiss={() => setMsg(null)} />
+        <Banner
+          status="success"
+          role="status"
+          title={msg}
+          isDismissable
+          onDismiss={() => setMsg(null)}
+        />
       ) : null}
 
       {errorMsg ? (
         <Banner
           status="error"
+          role="alert"
           title={errorMsg}
           isDismissable
           onDismiss={() => setErrorMsg(null)}

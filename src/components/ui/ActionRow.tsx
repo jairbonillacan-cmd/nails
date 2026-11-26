@@ -112,7 +112,7 @@ export function ActionRow({
         </HStack>
       )}
       {status || actions ? (
-        <HStack gap={2} align="center" wrap="wrap" style={{ flex: '0 0 auto' }}>
+        <HStack gap={2} align="center" wrap="wrap" style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '100%' }}>
           {status}
           {actions}
         </HStack>

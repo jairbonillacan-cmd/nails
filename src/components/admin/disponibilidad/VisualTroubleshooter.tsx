@@ -234,6 +234,17 @@ export function VisualTroubleshooter({
               icon={<Clock size={22} aria-hidden="true" />}
               title="No hay horas con este filtro"
               description="Elige Todas o toca otro día en el calendario para revisar qué pasa en cada hora."
+              actions={
+                filterMode !== 'all' ? (
+                  <Button
+                    type="button"
+                    label="Ver todas las horas"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setFilterMode('all')}
+                  />
+                ) : undefined
+              }
             />
           ) : (
             <VStack gap={4}>

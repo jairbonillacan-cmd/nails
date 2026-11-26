@@ -167,7 +167,7 @@ export default function AdminOverviewPage() {
                 hasHoverIndication={false}
               >
                 <button type="button" className="ad-demo-chip fx-press">
-                  Modo demo
+                  Modo de prueba
                 </button>
               </Tooltip>
             ) : null}

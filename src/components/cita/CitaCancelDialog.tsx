@@ -108,6 +108,7 @@ export function CitaCancelDialog({
                   <VStack gap={2} className="fx-fade-up">
                     <Banner
                       status={isPolicyError ? 'warning' : 'error'}
+                      role="alert"
                       title={
                         isPolicyError
                           ? `Faltan menos de ${minCancelHours} h; escríbenos por WhatsApp para ayudarte`

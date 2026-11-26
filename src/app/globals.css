@@ -197,12 +197,20 @@ body {
 }
 
 .rb-ghost:focus-visible,
+.rb-logo-link:focus-visible,
 .ck-footer-link:focus-visible {
   outline: 2px solid var(--lk-cereza);
   outline-offset: 2px;
 }
 
 .rb-logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding-inline: 0.25rem;
+  border-radius: 0.625rem;
   line-height: 0;
 }
 
@@ -452,6 +460,8 @@ body {
   display: inline-flex;
   align-items: center;
   min-block-size: 2.75rem;
+  min-inline-size: 2.75rem;
+  padding-inline: 0.25rem;
   color: var(--lk-tinta);
   text-decoration: none;
   font-size: 0.875rem;
@@ -842,11 +852,42 @@ body {
   .ck-hero { padding: 1.75rem 0 2rem; }
   .ck-panel { padding: 1.25rem; border-radius: 1.375rem; }
   .ck-panel .fx-press { min-height: 2.75rem; min-block-size: 2.75rem; }
-  .ck-footer-link { min-height: 2.75rem; }
+  .ck-footer-link { min-height: 2.75rem; min-width: 2.75rem; }
   .lk-boundary-card { padding: 1.5rem 1.25rem; border-radius: 1.25rem; }
   .rb-header-bar .sk-bar[data-size='pill'] { width: 2.75rem; height: 2.75rem; }
   .sk-bar[data-size='xl'] { height: 2.5rem; }
   .sk-bar[data-size='thumb'] { width: 4.75rem; height: 4.75rem; }
+}
+
+@media (max-width: 47.5rem), (pointer: coarse) {
+  .lk-root .astryx-button,
+  .lk-portal .astryx-button,
+  .lk-root .astryx-icon-button,
+  .lk-portal .astryx-icon-button,
+  .lk-root .astryx-collapsible-trigger,
+  .lk-portal .astryx-collapsible-trigger,
+  .lk-root .astryx-tab,
+  .lk-portal .astryx-tab,
+  .lk-root .astryx-toggle-button,
+  .lk-portal .astryx-toggle-button,
+  .lk-root .astryx-segmented-control-item,
+  .lk-portal .astryx-segmented-control-item {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .lk-root .astryx-segmented-control,
+  .lk-portal .astryx-segmented-control {
+    height: auto;
+  }
+
+  .lk-root .astryx-link,
+  .lk-portal .astryx-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -857,6 +898,8 @@ body {
   .fx-sheet-in,
   .fx-save-pill {
     animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   .fx-shimmer::after,

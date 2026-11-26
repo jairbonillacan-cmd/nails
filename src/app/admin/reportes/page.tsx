@@ -173,6 +173,7 @@ export default function AdminReportsPage() {
       {errorMsg ? (
         <Banner
           status="error"
+          role="alert"
           title={errorMsg}
           endContent={
             <Button

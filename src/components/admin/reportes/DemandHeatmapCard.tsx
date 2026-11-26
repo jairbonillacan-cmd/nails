@@ -4,6 +4,7 @@ import React from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
 import { Flame, Sparkles } from 'lucide-react';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
@@ -51,6 +52,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
             isCompact
             title="Todavía no hay citas en estas fechas"
             description="Cuando tengas citas confirmadas o completadas, aquí verás los días y horarios con más movimiento."
+            actions={<Button label="Ir a agenda" variant="secondary" size="sm" href="/admin/citas" />}
           />
         </VStack>
       ) : (

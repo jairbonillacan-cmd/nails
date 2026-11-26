@@ -17,7 +17,7 @@ export function buildWhatsAppCopyTemplates(
       id: 'confirm-deposit',
       title: `Confirmar cita con anticipo (${depositLabel})`,
       tag: 'Anticipo',
-      body: `¡Hola {{clienta}}! Recibimos tu solicitud en ${s.name} para {{servicio}} el {{fecha}} a las {{hora}}. Para apartar tu lugar envía tu anticipo de ${depositLabel} por transferencia SPEI a ${bank} · Titular: ${holder} · CLABE: ${clabe}. Mándanos tu comprobante por aquí o por DM a ${ig} para confirmar tu cita.`,
+      body: `¡Hola {{clienta}}! Recibimos tu solicitud en ${s.name} para {{servicio}} el {{fecha}} a las {{hora}}. Para apartar tu lugar envía tu anticipo de ${depositLabel} por transferencia SPEI a ${bank} · Titular: ${holder} · CLABE: ${clabe}. Mándanos tu comprobante por aquí o por mensaje en Instagram a ${ig} para confirmar tu cita.`,
     },
     {
       id: 'reminder-24h',
@@ -66,7 +66,7 @@ export function buildIntegrationKpis(params: {
       id: 'gcal',
       label: 'Google Calendar',
       value: `${connectedCalendarsCount} / ${totalStaffCount}`,
-      sub: connectedCalendarsCount > 0 ? 'Calendarios sincronizados' : 'Conecta a tu equipo',
+      sub: connectedCalendarsCount > 0 ? 'Calendarios conectados' : 'Conecta a tu equipo',
       tone: connectedCalendarsCount > 0 ? 'success' : 'default',
     },
     {

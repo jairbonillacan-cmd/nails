@@ -24,6 +24,12 @@ async function fetchText(path, init) {
   return { status: res.status, headers: res.headers, text };
 }
 
+async function fetchBinary(path, init) {
+  const res = await fetch(`${BASE_URL}${path}`, init);
+  const buffer = await res.arrayBuffer();
+  return { status: res.status, headers: res.headers, byteLength: buffer.byteLength };
+}
+
 async function fetchJson(path, init) {
   const res = await fetch(`${BASE_URL}${path}`, init);
   const text = await res.text();
@@ -145,10 +151,39 @@ async function testPublicRoutesAndSeo() {
   assert.equal(landing.status, 200);
   assert.ok(landing.text.includes('LAIKONA NAILS'), 'Landing debe renderizar LAIKONA NAILS');
   assert.ok(landing.text.includes('NailSalon'), 'Landing debe incluir JSON-LD NailSalon');
+  assert.ok(landing.text.includes('BeautySalon'), 'Landing debe incluir JSON-LD BeautySalon');
+  assert.ok(landing.text.includes('FAQPage'), 'Landing debe incluir JSON-LD FAQPage');
   assert.equal(
     landing.text.includes('commissionPercent'),
     false,
     'Landing no debe exponer commissionPercent',
+  );
+
+  const rootOg = await fetchBinary('/opengraph-image');
+  assert.equal(
+    rootOg.status,
+    200,
+    `GET /opengraph-image debe responder 200, recibido ${rootOg.status}`,
+  );
+  assert.ok(
+    (rootOg.headers.get('content-type') || '').toLowerCase().includes('image/png'),
+    `GET /opengraph-image debe devolver image/png, recibido: ${rootOg.headers.get('content-type')}`,
+  );
+  assert.ok(rootOg.byteLength > 0, 'GET /opengraph-image debe devolver contenido PNG');
+
+  const serviceOg = await fetchBinary('/reservar/rubber/opengraph-image');
+  assert.equal(
+    serviceOg.status,
+    200,
+    `GET /reservar/rubber/opengraph-image debe responder 200, recibido ${serviceOg.status}`,
+  );
+  assert.ok(
+    (serviceOg.headers.get('content-type') || '').toLowerCase().includes('image/png'),
+    `GET /reservar/rubber/opengraph-image debe devolver image/png, recibido: ${serviceOg.headers.get('content-type')}`,
+  );
+  assert.ok(
+    serviceOg.byteLength > 0,
+    'GET /reservar/rubber/opengraph-image debe devolver contenido PNG',
   );
 
   const links = await fetchText('/links');
@@ -166,22 +201,71 @@ async function testPublicRoutesAndSeo() {
   assert.equal(sitemap.status, 200);
   assert.ok(sitemap.text.includes('/reservar/rubber'));
   assert.ok(sitemap.text.includes('/links'));
+  assert.equal(
+    sitemap.text.includes('http://localhost:3000'),
+    false,
+    '/sitemap.xml nunca debe contener http://localhost:3000',
+  );
 
   const robots = await fetchText('/robots.txt');
   assert.equal(robots.status, 200);
   assert.ok(robots.text.includes('/admin/'));
+  assert.equal(
+    robots.text.includes('http://localhost:3000'),
+    false,
+    '/robots.txt nunca debe contener http://localhost:3000',
+  );
 
   const servicePage = await fetchText('/reservar/rubber');
   assert.equal(servicePage.status, 200);
+  assert.ok(
+    servicePage.text.includes('"@type":"Service"'),
+    '/reservar/rubber debe incluir JSON-LD Service',
+  );
+  assert.ok(
+    servicePage.text.includes('"@type":"BreadcrumbList"'),
+    '/reservar/rubber debe incluir JSON-LD BreadcrumbList',
+  );
   assert.equal(servicePage.text.includes('commissionPercent'), false);
 
   const managePage = await fetchText('/cita/demo-token-sofia-1042');
   assert.equal(managePage.status, 200);
   assert.ok(managePage.text.includes('Tarjeta de Sellos LAIKONA'));
+  assert.ok(
+    managePage.text.toLowerCase().includes('noindex'),
+    '/cita/[token] debe incluir robots noindex',
+  );
   assert.equal(managePage.text.includes('commissionPercent'), false);
+
+  const misCitasSeo = await fetchText('/mis-citas');
+  assert.equal(misCitasSeo.status, 200);
+  assert.ok(
+    misCitasSeo.text.toLowerCase().includes('noindex'),
+    '/mis-citas debe incluir robots noindex',
+  );
+
+  const adminLoginSeo = await fetchText('/admin/login');
+  assert.equal(adminLoginSeo.status, 200);
+  assert.ok(
+    adminLoginSeo.text.toLowerCase().includes('noindex'),
+    '/admin/login debe incluir robots noindex',
+  );
 
   const manageReschedule = await fetchText('/cita/demo-token-sofia-1042?action=reschedule');
   assert.equal(manageReschedule.status, 200);
+
+  const seededManageApi = await fetchJson('/api/bookings/manage/demo-token-sofia-1042');
+  assert.equal(seededManageApi.status, 200);
+  assert.equal(
+    seededManageApi.json?.booking?.client?.notes ?? '',
+    '',
+    'GET /api/bookings/manage/[token] (sembrada) debe devolver client.notes vacío (SEC-05)',
+  );
+  assert.equal(
+    seededManageApi.json?.booking?.internalNotes ?? '',
+    '',
+    'GET /api/bookings/manage/[token] (sembrada) no debe exponer internalNotes privadas',
+  );
 
   const bootstrap = await fetchJson('/api/public/bootstrap');
   assert.equal(bootstrap.status, 200);
@@ -243,12 +327,54 @@ async function testHappyPathConsentSpeiAndIcs(slot) {
   const booking = created.json?.booking;
   assert.ok(booking?.manageToken, 'Debe retornar manageToken');
   assert.equal(booking.depositAmountCents, 20000);
+  const rawCreated = JSON.stringify(created.json);
+  assert.equal(
+    rawCreated.includes('commissionPercent'),
+    false,
+    'POST /api/bookings nunca debe exponer commissionPercent (SEC-01)',
+  );
+  assert.equal(
+    rawCreated.includes('ownerPinHash'),
+    false,
+    'POST /api/bookings nunca debe exponer ownerPinHash (SEC-01)',
+  );
+  assert.equal(
+    booking.internalNotes ?? '',
+    '',
+    'POST /api/bookings nunca debe exponer internalNotes privadas (SEC-01)',
+  );
+  assert.equal(
+    booking.client?.notes ?? '',
+    '',
+    'POST /api/bookings nunca debe exponer client.notes privadas (SEC-01)',
+  );
 
   try {
     const manageRes = await fetchJson(`/api/bookings/manage/${booking.manageToken}`);
     assert.equal(manageRes.status, 200);
     assert.equal(manageRes.json?.booking?.id, booking.id);
     assert.ok(manageRes.json?.loyaltySummary, 'Debe retornar loyaltySummary');
+    const rawManage = JSON.stringify(manageRes.json);
+    assert.equal(
+      rawManage.includes('commissionPercent'),
+      false,
+      'GET /api/bookings/manage/[token] nunca debe exponer commissionPercent',
+    );
+    assert.equal(
+      rawManage.includes('ownerPinHash'),
+      false,
+      'GET /api/bookings/manage/[token] nunca debe exponer ownerPinHash',
+    );
+    assert.equal(
+      manageRes.json?.booking?.internalNotes ?? '',
+      '',
+      'GET /api/bookings/manage/[token] no debe exponer internalNotes privadas',
+    );
+    assert.equal(
+      manageRes.json?.booking?.client?.notes ?? '',
+      '',
+      'GET /api/bookings/manage/[token] debe devolver client.notes vacío (SEC-05)',
+    );
 
     const icsRes = await fetchText(`/api/bookings/manage/${booking.manageToken}/ics`);
     assert.equal(icsRes.status, 200);
@@ -363,6 +489,20 @@ async function testAdminRbacAndSpecialistIsolation() {
   const unauthArco = await fetchJson('/api/admin/clients?exportClientId=client-sofia');
   assert.equal(unauthArco.status, 401);
 
+  const unauthTeam = await fetchJson('/api/admin/team', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'staff',
+      data: { name: 'Intento No Autorizado' },
+    }),
+  });
+  assert.equal(
+    unauthTeam.status,
+    401,
+    `POST /api/admin/team sin sesión debe responder 401 (SEC-02), recibido ${unauthTeam.status}`,
+  );
+
   const adminAuth = await resolveAdminDemoAuth();
 
   if (!adminAuth.isDemoEnabled) {
@@ -388,7 +528,7 @@ async function testAdminRbacAndSpecialistIsolation() {
       `En producción sin Supabase, POST /api/admin/session (owner) debe fallar cerrado con 503, recibido ${blockedOwnerLogin.status}: ${blockedOwnerLogin.text}`,
     );
     console.log(
-      '  (modo producción fail-closed detectado: 401 en admin/ARCO y 503 en login demo verificados)',
+      '  (modo producción fail-closed detectado: 401 en admin/ARCO/team y 503 en login demo verificados)',
     );
     return;
   }
@@ -401,6 +541,22 @@ async function testAdminRbacAndSpecialistIsolation() {
   assert.equal(specOverview.status, 200);
   assert.equal(specOverview.json?.session?.user?.role, 'specialist');
   assert.deepEqual(specOverview.json?.recentAuditLogs, []);
+  const rawSpecOverview = JSON.stringify(specOverview.json);
+  assert.equal(
+    rawSpecOverview.includes('ownerPinHash'),
+    false,
+    'Overview specialist nunca debe exponer ownerPinHash (SEC-03)',
+  );
+  assert.equal(
+    rawSpecOverview.includes('accessTokenEncrypted'),
+    false,
+    'Overview specialist nunca debe exponer accessTokenEncrypted (SEC-03)',
+  );
+  assert.equal(
+    rawSpecOverview.includes('refreshTokenEncrypted'),
+    false,
+    'Overview specialist nunca debe exponer refreshTokenEncrypted (SEC-03)',
+  );
   const specStaffId = specOverview.json?.session?.user?.staffMemberId;
   for (const bk of specOverview.json?.bookings ?? []) {
     assert.equal(
@@ -432,10 +588,21 @@ async function testAdminRbacAndSpecialistIsolation() {
   assert.ok(Array.isArray(ownerOverview.json?.uncollectedBookings));
   assert.ok(Array.isArray(ownerOverview.json?.nearRewardClients));
   assert.ok(Array.isArray(ownerOverview.json?.recentAuditLogs));
+  const rawOwnerOverview = JSON.stringify(ownerOverview.json);
   assert.equal(
-    JSON.stringify(ownerOverview.json).includes('ownerPinHash'),
+    rawOwnerOverview.includes('ownerPinHash'),
     false,
-    'Overview admin nunca debe exponer ownerPinHash',
+    'Overview admin nunca debe exponer ownerPinHash (SEC-03)',
+  );
+  assert.equal(
+    rawOwnerOverview.includes('accessTokenEncrypted'),
+    false,
+    'Overview admin nunca debe exponer accessTokenEncrypted (SEC-03)',
+  );
+  assert.equal(
+    rawOwnerOverview.includes('refreshTokenEncrypted'),
+    false,
+    'Overview admin nunca debe exponer refreshTokenEncrypted (SEC-03)',
   );
 
   const inactive = await fetchJson('/api/admin/clients?inactiveDays=21', {

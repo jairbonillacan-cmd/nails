@@ -3,6 +3,7 @@
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Table } from '@astryxdesign/core/Table';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import { formatCurrency, formatDuration } from '@/lib/format';
@@ -36,6 +37,9 @@ export function SpecialistOccupancyCard({
             isCompact
             title="Sin manicuristas con actividad"
             description="Configura turnos en Horarios para ver la ocupación de tu equipo."
+            actions={
+              <Button label="Configurar horarios" variant="secondary" size="sm" href="/admin/disponibilidad" />
+            }
           />
         </VStack>
       ) : (

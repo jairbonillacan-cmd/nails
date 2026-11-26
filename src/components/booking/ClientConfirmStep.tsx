@@ -159,6 +159,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           <VStack className="fx-fade-up">
             <Banner
               status="warning"
+              role="alert"
               title="Tu apartado temporal terminó"
               description={
                 props.holdExpiredMessage ||
@@ -195,6 +196,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           <VStack className="fx-fade-up">
             <Banner
               status="error"
+              role="alert"
               title={resolveErrorTitle(props.formErrorCode)}
               description={props.formError ?? ''}
               icon={<ShieldAlert size={18} aria-hidden="true" />}

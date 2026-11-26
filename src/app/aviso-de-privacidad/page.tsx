@@ -270,7 +270,8 @@ export default function AvisoDePrivacidadPage() {
                 promocionales.
               </Text>
               <Text as="p" type="supporting" color="secondary" textWrap="pretty">
-                Para ejercer tus derechos ARCO envía una solicitud indicando tu nombre
+                Para ejercer tus derechos ARCO envía una solicitud a{' '}
+                {settings.contactEmail} o por WhatsApp indicando tu nombre
                 completo, teléfono registrado en tu cita, el derecho que deseas
                 ejercer y el medio para recibir respuesta. Conforme al artículo 32 de
                 la LFPDPPP responderemos en un plazo máximo de 20 días hábiles y, de
@@ -279,9 +280,10 @@ export default function AvisoDePrivacidadPage() {
               </Text>
               <HStack gap={2} wrap="wrap">
                 <Button
-                  label={`Escribir a ${settings.contactEmail}`}
+                  label="Solicitar por correo"
+                  aria-label={`Solicitar derechos ARCO por correo a ${settings.contactEmail}`}
                   variant="primary"
-                  size="md"
+                  size="lg"
                   className="fx-press"
                   icon={<Mail size={16} aria-hidden="true" />}
                   href={mailtoArco}
@@ -289,7 +291,7 @@ export default function AvisoDePrivacidadPage() {
                 <Button
                   label="Solicitar por WhatsApp"
                   variant="secondary"
-                  size="md"
+                  size="lg"
                   className="fx-press"
                   icon={<MessageCircle size={16} aria-hidden="true" />}
                   href={whatsappArcoUrl}
@@ -333,7 +335,7 @@ export default function AvisoDePrivacidadPage() {
               <Button
                 label="Volver a reservar cita"
                 variant="primary"
-                size="md"
+                size="lg"
                 className="fx-press"
                 icon={<CalendarCheck size={16} aria-hidden="true" />}
                 href="/reservar"
@@ -341,14 +343,14 @@ export default function AvisoDePrivacidadPage() {
               <Button
                 label="Enlaces rápidos"
                 variant="secondary"
-                size="md"
+                size="lg"
                 className="fx-press"
                 href="/links"
               />
               <Button
                 label="Ir al inicio"
                 variant="ghost"
-                size="md"
+                size="lg"
                 className="fx-press"
                 icon={<ArrowLeft size={16} aria-hidden="true" />}
                 href="/"

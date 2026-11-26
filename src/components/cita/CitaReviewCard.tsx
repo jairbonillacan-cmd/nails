@@ -59,6 +59,7 @@ export function CitaReviewCard({
         <VStack gap={3} className="fx-pop">
           <Banner
             status="success"
+            role="status"
             title="¡Gracias por calificarnos!"
             description={`Registramos tu calificación de ${rating}/5 estrellas.`}
           />
@@ -115,6 +116,7 @@ export function CitaReviewCard({
               <VStack className="fx-fade-up">
                 <Banner
                   status="error"
+                  role="alert"
                   title="No se pudo guardar tu calificación"
                   description={errorMessage}
                 />

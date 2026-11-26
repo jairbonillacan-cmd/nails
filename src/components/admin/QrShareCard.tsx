@@ -185,7 +185,7 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
           />
           <Button
             type="button"
-            label={isSvgActive ? 'Archivo listo' : 'Para imprenta (SVG)'}
+            label={isSvgActive ? 'Archivo listo' : 'Para imprenta (alta definición)'}
             variant="secondary"
             size="sm"
             icon={

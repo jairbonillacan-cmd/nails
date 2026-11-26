@@ -82,7 +82,7 @@ export function ClientExtraDetailsBox({
         <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
           <Text weight="semibold">Detalles para tu artista</Text>
           <Text type="supporting" color="secondary">
-            {inspoFile ? 'Con foto de inspo' : 'Opcional'}
+            {inspoFile ? 'Con foto de inspo' : clientNotes.trim() ? 'Referencia guardada' : 'Opcional'}
           </Text>
         </HStack>
       }

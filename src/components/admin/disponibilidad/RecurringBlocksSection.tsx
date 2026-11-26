@@ -325,8 +325,8 @@ export function RecurringBlocksSection({
             />
 
             <TextInput
-              label="Termina el (opcional, AAAA-MM-DD)"
-              placeholder="Déjalo vacío para que siempre se repita"
+              label="Termina el (opcional)"
+              placeholder="Ej. 2026-12-31 · vacío = siempre"
               value={recUntilDate}
               autoCapitalize="none"
               hasAutoCorrect={false}

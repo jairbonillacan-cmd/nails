@@ -35,6 +35,7 @@ export function BookingConflictBanner({
         <VStack className="fx-fade-up">
           <Banner
             status="info"
+            role="status"
             title="Anticipo obligatorio por política de puntualidad"
             description="Para proteger la agenda del estudio, esta reserva requiere anticipo previo para confirmar tu horario."
           />
@@ -44,6 +45,7 @@ export function BookingConflictBanner({
         <VStack className="fx-fade-up">
           <Banner
             status="warning"
+            role="alert"
             title="Ese horario se acaba de ocupar"
             description={conflict.message}
             isDismissable

@@ -266,10 +266,10 @@ export function DateOverridesSection({
         }}
         title={
           pendingDelete
-            ? `¿Quitar excepción del ${pendingDelete.overrideDate}?`
+            ? `¿Quitar fecha especial (${pendingDelete.overrideDate})?`
             : '¿Quitar fecha especial?'
         }
-        description="Esa fecha volverá a regirse por los turnos semanales habituales de la manicurista."
+        description="Ese día volverá a usar los turnos normales de la semana."
         confirmLabel="Sí, quitar fecha"
         variant="destructive"
         isLoading={Boolean(busyOverrideId)}

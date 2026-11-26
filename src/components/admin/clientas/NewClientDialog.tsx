@@ -92,6 +92,7 @@ export function NewClientDialog({
           {createError ? (
             <Banner
               status={createConflict ? 'warning' : 'error'}
+              role="alert"
               title={
                 createConflict ? 'WhatsApp ya registrado' : 'No se pudo guardar la clienta'
               }
@@ -132,8 +133,8 @@ export function NewClientDialog({
               isOptional
             />
             <TextInput
-              label="Cumpleaños (AAAA-MM-DD)"
-              placeholder="1997-08-15"
+              label="Cumpleaños"
+              placeholder="Ej. 1997-08-15 (año-mes-día)"
               value={newBirthday}
               onChange={setNewBirthday}
               isOptional

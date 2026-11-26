@@ -3,6 +3,7 @@
 import { VStack } from '@astryxdesign/core/VStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Table } from '@astryxdesign/core/Table';
 import { Token } from '@astryxdesign/core/Token';
 import { formatCurrency } from '@/lib/format';
@@ -38,6 +39,7 @@ export function CajaCommissionsTab({
               isCompact
               title="Sin movimientos para calcular"
               description="Cuando cobres citas verás aquí el desglose de comisión y propinas de cada manicurista."
+              actions={<Button label="Ir a agenda" variant="secondary" size="sm" href="/admin/citas" />}
             />
           </VStack>
         ) : (

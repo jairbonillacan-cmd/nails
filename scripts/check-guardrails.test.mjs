@@ -752,3 +752,147 @@ test('M3 checkSeedParity: passes on synced demo-seed.ts + seed.sql and catches s
   assert.ok(driftRes.diffs.some((d) => d.includes('GIFT500')));
   assert.ok(driftRes.diffs.some((d) => d.includes('rubber')));
 });
+
+test('W5 no-localhost-in-seo: forbids literal localhost URLs in SEO/metadata files and allows getSiteOrigin() and tests', () => {
+  const badSeo = [
+    'export const fallbackA = "http://localhost:3000";',
+    'export const fallbackB = "https://localhost";',
+    'export const sitemapUrl = `http://localhost:3000/sitemap.xml`;',
+    'export const dynamicUrl = `http://localhost:3000${"/reservar"}`;',
+  ].join('\n');
+
+  const guardedSeoFiles = [
+    'src/app/robots.ts',
+    'src/app/sitemap.ts',
+    'src/app/layout.tsx',
+    'src/lib/seo/site-url.ts',
+    'src/lib/seo/structured-data.ts',
+  ];
+
+  for (const rel of guardedSeoFiles) {
+    assert.deepEqual(rulesOf(rel, badSeo), [
+      'no-localhost-in-seo',
+      'no-localhost-in-seo',
+      'no-localhost-in-seo',
+      'no-localhost-in-seo',
+    ]);
+  }
+
+  assert.deepEqual(rulesOf('src/lib/seo/site-url.test.ts', badSeo), []);
+  assert.deepEqual(rulesOf('src/lib/seo/structured-data.test.ts', badSeo), []);
+  assert.deepEqual(rulesOf('src/lib/env.ts', badSeo), []);
+
+  const cleanSeo = [
+    'const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);',
+    'export function resolveOrigin(host: string) {',
+    '  if (LOOPBACK_HOSTS.has(host) || host.endsWith(".localhost")) {',
+    '    return "https://laikonanails.com";',
+    '  }',
+    '  return `https://${host}`;',
+    '}',
+  ].join('\n');
+
+  for (const rel of guardedSeoFiles) {
+    assert.deepEqual(rulesOf(rel, cleanSeo), []);
+  }
+});
+
+test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanitized settings/calendarConnections in NextResponse.json, allows DTO sanitizers', () => {
+  const badDirectSecrets = [
+    'import { NextResponse } from "next/server";',
+    'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'import { getSnapshot } from "@/lib/repositories/db";',
+    'export async function GET() {',
+    '  await requireAdmin();',
+    '  const db = getSnapshot();',
+    '  const pin = db.settings.ownerPinHash;',
+    '  const conn = db.calendarConnections[0];',
+    '  return NextResponse.json({',
+    '    ownerPinHash: pin,',
+    '    accessTokenEncrypted: conn?.accessTokenEncrypted,',
+    '    refreshTokenEncrypted: conn?.refreshTokenEncrypted,',
+    '  });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    rulesOf('src/app/api/admin/overview/route.ts', badDirectSecrets),
+    [
+      'no-sensitive-admin-secrets-in-api',
+      'no-sensitive-admin-secrets-in-api',
+      'no-sensitive-admin-secrets-in-api',
+    ],
+  );
+
+  const badRawModels = [
+    'import { NextResponse } from "next/server";',
+    'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'import { getSnapshot, updateSalonSettings, updateCalendarConnection, saveOnboardingSetup } from "@/lib/repositories/db";',
+    'function scopeByStaff<T>(items: T[]) { return items; }',
+    'export async function POST() {',
+    '  await requireAdmin();',
+    '  const db = getSnapshot();',
+    '  const updatedSettings = await updateSalonSettings({});',
+    '  const updatedConn = await updateCalendarConnection("s1", {});',
+    '  const scopedConns = scopeByStaff(db.calendarConnections);',
+    '  const onboarding = await saveOnboardingSetup({});',
+    '  return NextResponse.json({',
+    '    rawDbSettings: db.settings,',
+    '    updatedSettings,',
+    '    updatedConn,',
+    '    scopedConns,',
+    '    onboarding,',
+    '  });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    rulesOf('src/app/api/admin/brand/route.ts', badRawModels),
+    [
+      'no-sensitive-admin-secrets-in-api',
+      'no-sensitive-admin-secrets-in-api',
+      'no-sensitive-admin-secrets-in-api',
+      'no-sensitive-admin-secrets-in-api',
+      'no-sensitive-admin-secrets-in-api',
+    ],
+  );
+
+  const cleanSanitizedApi = [
+    'import { NextResponse } from "next/server";',
+    'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'import { toAdminCalendarConnectionDTO, toAdminSettingsDTO, toPublicSettingsDTO } from "@/lib/public-dto";',
+    'import { getSnapshot, saveOnboardingSetup, updateCalendarConnection, updateSalonSettings } from "@/lib/repositories/db";',
+    'function scopeByStaff<T>(items: T[]) { return items; }',
+    'export async function POST() {',
+    '  await requireAdmin();',
+    '  const db = getSnapshot();',
+    '  const pinGate = Boolean(db.settings.ownerPinEnabled && db.settings.ownerPinHash);',
+    '  const baseSettings = toAdminSettingsDTO(db.settings);',
+    '  const safeSettings = { ...baseSettings, defaultCommissionPercent: 0 };',
+    '  const updated = await updateSalonSettings({ ownerPinHash: null });',
+    '  const connection = await updateCalendarConnection("s1", {});',
+    '  const scopedConnections = scopeByStaff(db.calendarConnections).map(toAdminCalendarConnectionDTO);',
+    '  const onboarding = await saveOnboardingSetup({});',
+    '  return NextResponse.json({',
+    '    ...onboarding,',
+    '    pinGate,',
+    '    salonName: db.settings.name,',
+    '    settings: toAdminSettingsDTO(onboarding.settings),',
+    '    overviewSettings: safeSettings,',
+    '    publicSettings: toPublicSettingsDTO(updated),',
+    '    connection: toAdminCalendarConnectionDTO(connection),',
+    '    calendarConnections: scopedConnections,',
+    '  });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    rulesOf('src/app/api/admin/overview/route.ts', cleanSanitizedApi),
+    [],
+  );
+
+  assert.deepEqual(
+    rulesOf('src/app/api/security.test.ts', badDirectSecrets),
+    [],
+  );
+});

@@ -97,6 +97,16 @@ export function ClientLoyaltyTab({
               isCompact
               title="Aún no hay clientas cerca de su premio"
               description="Cuando una clienta esté a 2 visitas o menos de llenar su tarjeta aparecerá aquí."
+              actions={
+                !loyaltyProgram || !loyaltyProgram.isActive ? (
+                  <Button
+                    label="Configurar en Mi página"
+                    variant="secondary"
+                    size="sm"
+                    href="/admin/marca"
+                  />
+                ) : undefined
+              }
             />
           </VStack>
         ) : (
@@ -211,7 +221,21 @@ export function ClientLoyaltyTab({
                 framed={false}
                 isCompact
                 title="Sin paquetes asignados todavía"
-                description="Asigna un paquete prepagado a una clienta desde el panel derecho."
+                description={
+                  activeCatalogPackages.length === 0
+                    ? 'Primero crea un paquete en Caja → Promos y paquetes para poder asignarlo aquí.'
+                    : 'Asigna un paquete prepagado a una clienta desde el panel derecho.'
+                }
+                actions={
+                  activeCatalogPackages.length === 0 ? (
+                    <Button
+                      label="Crear paquetes en Caja"
+                      variant="secondary"
+                      size="sm"
+                      href="/admin/caja?tab=promos"
+                    />
+                  ) : undefined
+                }
               />
             </VStack>
           ) : (

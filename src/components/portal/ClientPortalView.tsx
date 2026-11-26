@@ -242,6 +242,7 @@ export function ClientPortalView({
             {errorMessage ? (
               <Banner
                 status="error"
+                role="alert"
                 title="Aviso"
                 description={errorMessage}
                 isDismissable

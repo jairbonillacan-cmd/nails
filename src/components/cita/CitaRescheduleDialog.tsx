@@ -117,6 +117,7 @@ export function CitaRescheduleDialog({
                 <VStack gap={2} className="fx-fade-up">
                   <Banner
                     status="warning"
+                    role="alert"
                     title="Ese horario acaba de ser ocupado"
                     description={
                       errorMessage ||
@@ -143,6 +144,7 @@ export function CitaRescheduleDialog({
                 <VStack gap={2} className="fx-fade-up">
                   <Banner
                     status={isPolicyError ? 'warning' : 'error'}
+                    role="alert"
                     title={
                       isPolicyError
                         ? `Faltan menos de ${minRescheduleHours} h; escríbenos por WhatsApp para ayudarte`

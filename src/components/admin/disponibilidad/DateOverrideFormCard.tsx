@@ -143,7 +143,8 @@ export function DateOverrideFormCard({
 
           {ovrMode === 'single' ? (
             <TextInput
-              label="Fecha (AAAA-MM-DD)"
+              label="Fecha"
+              placeholder="Ej. 2026-12-24 (año-mes-día)"
               value={ovrDate}
               onChange={setOvrDateInput}
               isRequired
@@ -152,14 +153,14 @@ export function DateOverrideFormCard({
             <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
               <TextInput
                 label="Desde"
-                placeholder="AAAA-MM-DD"
+                placeholder="Ej. 2026-12-24"
                 value={ovrDate}
                 onChange={setOvrDateInput}
                 isRequired
               />
               <TextInput
                 label="Hasta"
-                placeholder="AAAA-MM-DD"
+                placeholder="Ej. 2026-12-31"
                 value={ovrEndDate}
                 onChange={setOvrEndDateInput}
                 isRequired

@@ -171,7 +171,7 @@ export function ClientProfileDialog({
             />
           </HStack>
 
-          {editError ? <Banner status="error" title={editError} /> : null}
+          {editError ? <Banner status="error" role="alert" title={editError} /> : null}
 
           {client.noShowCount >= noShowThreshold ? (
             <SurfaceCard tone="warning" padded>
@@ -268,8 +268,8 @@ export function ClientProfileDialog({
                 isOptional
               />
               <TextInput
-                label="Cumpleaños (AAAA-MM-DD)"
-                placeholder="1997-08-15"
+                label="Cumpleaños"
+                placeholder="Ej. 1997-08-15 (año-mes-día)"
                 value={birthdayDraft}
                 onChange={setBirthdayDraft}
                 isOptional

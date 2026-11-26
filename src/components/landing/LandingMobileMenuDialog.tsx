@@ -36,7 +36,13 @@ export function LandingMobileMenuDialog({
   const closeMenu = () => onOpenChange(false);
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={onOpenChange} variant="fullscreen" padding={0}>
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      variant="fullscreen"
+      padding={0}
+      aria-label="Menú principal"
+    >
       <VStack className="lk-portal lk-menu-panel fx-sheet-in" padding={5} gap={8} minHeight="100dvh">
         <HStack justify="between" align="center">
           <img
@@ -52,7 +58,7 @@ export function LandingMobileMenuDialog({
             label="Cerrar menú"
             variant="secondary"
             size="md"
-            className="lk-btn-outline fx-press"
+            className="lk-btn-outline lk-icon-touch fx-press"
             isIconOnly
             icon={<X size={20} aria-hidden="true" />}
             onClick={closeMenu}

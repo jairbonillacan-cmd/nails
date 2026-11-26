@@ -170,6 +170,7 @@ export default function AdminLoginPage() {
               type="submit"
               label="Entrar al salón"
               variant="primary"
+              size="lg"
               width="100%"
               isLoading={loadingEmail === email}
               isDisabled={Boolean(loadingEmail)}

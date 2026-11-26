@@ -40,7 +40,7 @@ export function LandingNav({
   return (
     <header className="lk-header">
       <nav className="lk-nav" data-floating={isFloating ? 'true' : 'false'} aria-label="Principal">
-        <a href="#inicio" aria-label={`${salonName}, inicio`} style={{ lineHeight: 0 }}>
+        <a href="#inicio" aria-label={`${salonName}, inicio`} className="lk-logo-link">
           <img
             className="lk-logo"
             src={isFloating ? LANDING_ASSETS.logoBlack : LANDING_ASSETS.logoWhite}

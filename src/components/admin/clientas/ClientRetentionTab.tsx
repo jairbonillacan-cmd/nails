@@ -224,6 +224,17 @@ export function ClientRetentionTab({
               isCompact
               title={`Todas vinieron en los últimos ${inactiveDays} días`}
               description="Tus clientas ya tienen visita reciente o una cita agendada."
+              actions={
+                inactiveDays > 21 ? (
+                  <Button
+                    type="button"
+                    label="Revisar desde 21 días"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onInactiveDaysChange(21)}
+                  />
+                ) : undefined
+              }
             />
           </VStack>
         ) : (

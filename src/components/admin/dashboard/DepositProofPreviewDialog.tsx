@@ -115,7 +115,7 @@ export function DepositProofPreviewDialog({
             <VStack gap={1.5} className="ad-proof-note">
               <Text weight="semibold" size="sm">
                 {deposit.proofDeliveryMethod === 'instagram_dm'
-                  ? 'Enviado por Instagram DM'
+                  ? 'Enviado por mensaje de Instagram'
                   : 'Referencia de comprobante registrada'}
               </Text>
               <Text type="supporting" color="secondary">

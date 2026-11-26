@@ -134,14 +134,14 @@ export function TechnicalSettingsSection({
         >
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
             <TextInput
-              label="Meta Pixel (Instagram / Facebook)"
+              label="Anuncios de Instagram y Facebook"
               placeholder="Ej. 123456789012345"
               value={activeMetaPixel}
               onChange={setMetaPixel}
               isOptional
             />
             <TextInput
-              label="Google Analytics (GA4)"
+              label="Estadísticas de visitas (Google)"
               placeholder="Ej. G-XXXXXXXXXX"
               value={activeGa4}
               onChange={setGa4Id}
@@ -206,11 +206,11 @@ export function TechnicalSettingsSection({
       <SurfaceCard
         id="sms-twilio-heading"
         icon={<Bell size={16} aria-hidden="true" />}
-        title="Recordatorios por SMS (Twilio)"
+        title="Recordatorios por mensaje de texto (SMS)"
         subtitle="Opcional si también quieres enviar mensajes de texto tradicionales."
         actions={
           <Switch
-            label="Activar SMS Twilio"
+            label="Activar mensajes de texto (SMS)"
             size="sm"
             value={settings.smsRemindersEnabled}
             onChange={(v) => onSaveSettingsPatch({ smsRemindersEnabled: v })}
@@ -272,20 +272,20 @@ export function TechnicalSettingsSection({
 
         <SurfaceCard
           id="technical-links-heading"
-          title="Enlaces de conexión externa"
-          subtitle="Solo los necesitas si alguien de soporte técnico configura Google Calendar o Mercado Pago."
+          title="Enlaces para soporte"
+          subtitle="Solo compártelos si alguien te ayuda a conectar Google Calendar o Mercado Pago."
         >
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
             <CopyableField
-              label="Dirección técnica de Google Calendar"
+              label="Enlace de conexión para Google Calendar"
               value={googleCalendarTechUrl}
-              feedbackMessage="Dirección de Google Calendar copiada."
+              feedbackMessage="Enlace de Google Calendar copiado."
               monospace
             />
             <CopyableField
-              label="Dirección técnica de Mercado Pago"
+              label="Enlace de conexión para Mercado Pago"
               value={mercadoPagoTechUrl}
-              feedbackMessage="Dirección de Mercado Pago copiada."
+              feedbackMessage="Enlace de Mercado Pago copiado."
               monospace
             />
           </VStack>

@@ -77,6 +77,16 @@ export function WaitlistPanel({
           isCompact
           title="Sin personas en lista de espera"
           description="Cuando un día esté lleno, tus clientas podrán apuntarse desde tu página de reservas."
+          actions={
+            <Button
+              label="Ver página de reservas"
+              variant="secondary"
+              size="sm"
+              href="/reservar"
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          }
         />
       ) : (
         <VStack className="ad-row-list fx-stagger" gap={0}>

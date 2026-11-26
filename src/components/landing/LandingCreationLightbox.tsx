@@ -74,6 +74,7 @@ export function LandingCreationLightbox({
       onOpenChange={(isOpen) => {
         if (!isOpen) close();
       }}
+      aria-labelledby="lk-lightbox-title"
       width="min(32rem, 94vw)"
       maxHeight="90dvh"
       padding={0}
@@ -81,7 +82,7 @@ export function LandingCreationLightbox({
       <VStack gap={0} className="lk-portal fx-sheet-in">
         <HStack justify="between" align="center" gap={3} padding={5} paddingBlockEnd={3}>
           <VStack gap={0.5} style={{ minWidth: 0 }}>
-            <Heading level={2} className="lk-serif" style={{ fontSize: '1.65rem' }}>
+            <Heading level={2} id="lk-lightbox-title" className="lk-serif" style={{ fontSize: '1.65rem' }}>
               {activeCreation.title}
             </Heading>
             <Text type="supporting" color="secondary">
@@ -92,7 +93,7 @@ export function LandingCreationLightbox({
             label="Cerrar"
             variant="ghost"
             size="md"
-            className="fx-press"
+            className="lk-icon-touch fx-press"
             isIconOnly
             icon={<X size={18} aria-hidden="true" />}
             onClick={close}
@@ -139,9 +140,12 @@ export function LandingCreationLightbox({
               weight="bold"
               hasTabularNumbers
               className="lk-lightbox-counter"
-              aria-live="polite"
+              aria-hidden="true"
             >
               {counterLabel}
+            </Text>
+            <Text className="rb-sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {`${activeCreation.title}, diseño ${counterLabel}`}
             </Text>
             <button
               type="button"

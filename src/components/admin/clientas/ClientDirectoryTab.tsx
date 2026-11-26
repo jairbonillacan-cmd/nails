@@ -81,13 +81,30 @@ export function ClientDirectoryTab({
           title="No encontramos clientas"
           description="Prueba con otro nombre o número, o agrega una clienta nueva."
           actions={
-            canManageClients ? (
-              <Button
-                label="Nueva clienta"
-                variant="primary"
-                size="sm"
-                onClick={onOpenNewClient}
-              />
+            query.trim() || onlyBirthdays || canManageClients ? (
+              <HStack gap={2} wrap="wrap" justify="center">
+                {query.trim() || onlyBirthdays ? (
+                  <Button
+                    type="button"
+                    label="Ver todas"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      onQueryChange('');
+                      onOnlyBirthdaysChange(false);
+                    }}
+                  />
+                ) : null}
+                {canManageClients ? (
+                  <Button
+                    type="button"
+                    label="Nueva clienta"
+                    variant="primary"
+                    size="sm"
+                    onClick={onOpenNewClient}
+                  />
+                ) : null}
+              </HStack>
             ) : undefined
           }
         />

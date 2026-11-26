@@ -155,6 +155,7 @@ export function BookingAppearanceSection({
         {!colorReadability.lightPassesAA ? (
           <Banner
             status="warning"
+            role="status"
             title="Color muy claro, cuesta leer en modo claro"
             description="Prueba un tono un poco más oscuro para que los botones y textos se lean con claridad."
           />
@@ -163,6 +164,7 @@ export function BookingAppearanceSection({
         {!colorReadability.darkPassesAA ? (
           <Banner
             status="warning"
+            role="status"
             title="Color difícil de leer en modo oscuro"
             description="Elige un tono más luminoso para que destaque bien sobre fondo oscuro."
           />

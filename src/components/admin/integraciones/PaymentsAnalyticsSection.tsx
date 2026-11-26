@@ -161,10 +161,10 @@ export function PaymentsAnalyticsSection({
               <SlidersHorizontal size={15} aria-hidden="true" />
               <VStack gap={0}>
                 <Text weight="semibold" size="base">
-                  Ajustes técnicos (opcional)
+                  Más herramientas (opcional)
                 </Text>
                 <Text type="supporting" color="secondary">
-                  Meta Pixel, Google Analytics, mensajes SMS, link de reseñas de Google y prueba de WhatsApp.
+                  Seguimiento de anuncios, visitas de Google, mensajes de texto, reseñas de Google y prueba de WhatsApp.
                 </Text>
               </VStack>
             </HStack>

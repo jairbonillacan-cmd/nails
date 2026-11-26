@@ -316,6 +316,18 @@ export function QuickSlotFinderDialog({
               isCompact
               title="No hay horarios libres en estos días"
               description="Prueba buscando en los próximos 30 días o eligiendo cualquier manicurista."
+              actions={
+                daysWindow !== '30' || (!lockedStaffId && effectiveStaffId !== 'any') ? (
+                  <HStack gap={2} wrap="wrap" justify="center">
+                    {daysWindow !== '30' ? (
+                      <Button type="button" size="sm" variant="secondary" label="Buscar en 30 días" onClick={() => setDaysWindow('30')} />
+                    ) : null}
+                    {!lockedStaffId && effectiveStaffId !== 'any' ? (
+                      <Button type="button" size="sm" variant="secondary" label="Cualquier manicurista" onClick={() => setStaffId('any')} />
+                    ) : null}
+                  </HStack>
+                ) : undefined
+              }
             />
           </VStack>
         ) : (

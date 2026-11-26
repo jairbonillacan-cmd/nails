@@ -3,6 +3,7 @@
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { EmptyStateCard, SurfaceCard } from '@/components/ui';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import type { ServiceProfitabilityRow } from '@/lib/analytics/reports';
@@ -34,6 +35,7 @@ export function ServiceProfitabilityCard({
             isCompact
             title="Sin servicios en estas fechas"
             description="Cuando completes citas, aquí verás qué servicios te dejan más por minuto."
+            actions={<Button label="Ir a agenda" variant="secondary" size="sm" href="/admin/citas" />}
           />
         </VStack>
       ) : (

@@ -147,7 +147,7 @@ export function ServiceEditorPanel({
                   </Text>
                 </HStack>
                 <Text type="supporting" color="secondary">
-                  {hasCustomAdvancedValues ? 'Personalizado' : 'Limpieza, anticipo, VIP'}
+                  {hasCustomAdvancedValues ? 'Personalizado' : 'Limpieza, anticipo, link privado'}
                 </Text>
               </HStack>
             }

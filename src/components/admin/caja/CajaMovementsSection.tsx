@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Table } from '@astryxdesign/core/Table';
 import { Token } from '@astryxdesign/core/Token';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -84,6 +85,17 @@ export function CajaMovementsSection({
               isCompact
               title="Sin movimientos con este filtro"
               description="Cambia el filtro o registra una venta o un gasto desde el panel derecho."
+              actions={
+                movementFilter !== 'all' ? (
+                  <Button
+                    type="button"
+                    label="Ver todos"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setMovementFilter('all')}
+                  />
+                ) : undefined
+              }
             />
           </VStack>
         ) : (

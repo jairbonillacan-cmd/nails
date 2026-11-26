@@ -99,6 +99,7 @@ interface BookingsListViewProps {
   busyStatus: BookingStatus | null;
   requestingRescheduleId: string | null;
   onSelectRangeWeek: () => void;
+  onClearSearch?: () => void;
   onOpenNewBooking: () => void;
   onSelectBooking: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
@@ -121,6 +122,7 @@ export function BookingsListView({
   busyStatus,
   requestingRescheduleId,
   onSelectRangeWeek,
+  onClearSearch,
   onOpenNewBooking,
   onSelectBooking,
   onUpdateStatus,
@@ -141,8 +143,18 @@ export function BookingsListView({
         }
         actions={
           <HStack gap={2} wrap="wrap" justify="center">
+            {search.trim() && onClearSearch ? (
+              <Button
+                type="button"
+                label="Limpiar búsqueda"
+                variant="secondary"
+                size="sm"
+                onClick={onClearSearch}
+              />
+            ) : null}
             {tab === 'upcoming' && agendaRange !== 'week' && !search.trim() ? (
               <Button
+                type="button"
                 label="Ver toda la semana"
                 variant="secondary"
                 size="sm"
@@ -150,6 +162,7 @@ export function BookingsListView({
               />
             ) : null}
             <Button
+              type="button"
               label="Nueva cita"
               variant="primary"
               size="sm"

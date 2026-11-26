@@ -219,7 +219,7 @@ export function WeeklyScheduleEditor({
           <HStack gap={2} align="center">
             <SlidersHorizontal size={14} aria-hidden="true" />
             <Text weight="semibold" size="sm">
-              Opciones avanzadas de horario
+              Más opciones de horario
             </Text>
           </HStack>
         }

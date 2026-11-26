@@ -172,7 +172,7 @@ export function UploadDropzone({
         <ProgressBar label={`Procesando ${label}`} value={clampedProgress} max={100} hasValueLabel variant="accent" />
       ) : null}
 
-      {previewUrl && error ? <Banner status="error" title={error} /> : null}
+      {previewUrl && error ? <Banner status="error" role="alert" title={error} /> : null}
     </VStack>
   );
 }

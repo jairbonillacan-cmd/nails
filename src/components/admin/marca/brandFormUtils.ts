@@ -93,8 +93,8 @@ export function buildBrandKpis(params: {
     {
       id: 'contrast',
       label: 'Lectura de colores',
-      value: colorsReadable ? 'AA óptimo' : 'Revisar',
-      sub: colorsReadable ? 'Claro y oscuro legibles' : 'Ajusta el contraste',
+      value: colorsReadable ? 'Muy legible' : 'Revisar',
+      sub: colorsReadable ? 'Se lee bien en claro y oscuro' : 'Elige un tono con mejor lectura',
       tone: colorsReadable ? 'success' : 'warning',
     },
     {

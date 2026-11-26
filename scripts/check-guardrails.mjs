@@ -169,6 +169,42 @@ const HEX_COLOR_RE = /#[0-9a-fA-F]{3,8}\b/;
 const PX_UNIT_RE = /\b\d+(?:\.\d+)?px\b/i;
 const DEMO_BYPASS_HEADER_RE = /^x-[a-z0-9-]*demo[a-z0-9-]*$/i;
 const SECRET_ENV_NAME_RE = /(SECRET|TOKEN|KEY|PASSWORD)/i;
+const LOCALHOST_URL_RE = /https?:\/\/localhost(?::\d+)?(?=$|\/|[?#\s'"`])|https?:\/\/localhost:$/i;
+
+const SEO_NO_LOCALHOST_FILES = new Set([
+  'src/app/robots.ts',
+  'src/app/sitemap.ts',
+  'src/app/layout.tsx',
+]);
+
+const SENSITIVE_ADMIN_SECRET_FIELDS = new Set([
+  'ownerPinHash',
+  'accessTokenEncrypted',
+  'refreshTokenEncrypted',
+]);
+
+const ADMIN_SECRET_SANITIZER_CALLEES = new Set([
+  'toAdminSettingsDTO',
+  'toPublicSettingsDTO',
+  'toAdminCalendarConnectionDTO',
+]);
+
+const RAW_SETTINGS_PRODUCERS = new Set([
+  'updateSalonSettings',
+]);
+
+const RAW_CALENDAR_PRODUCERS = new Set([
+  'updateCalendarConnection',
+]);
+
+const RAW_SETTINGS_CONTAINER_PRODUCERS = new Set([
+  'saveOnboardingSetup',
+]);
+
+function isSeoNoLocalhostFile(rel) {
+  if (isTestFile(rel)) return false;
+  return SEO_NO_LOCALHOST_FILES.has(rel) || rel.startsWith('src/lib/seo/');
+}
 
 function toPosix(filePath) {
   return filePath.replace(/\\/g, '/');
@@ -1094,6 +1130,449 @@ function checkRawHtmlInterpolation(rel, sf, addViolation) {
   walk(sf);
 }
 
+function checkSensitiveAdminSecretsInApi(rel, sf, addViolation) {
+  const scopes = [new Map()];
+
+  const TAINT_PRIORITY = {
+    clean: 0,
+    snapshot: 1,
+    'settings-container': 2,
+    'raw-settings': 3,
+    'raw-calendar': 3,
+    secret: 4,
+  };
+
+  function currentScope() {
+    return scopes[scopes.length - 1];
+  }
+
+  function getTaint(name) {
+    for (let i = scopes.length - 1; i >= 0; i -= 1) {
+      if (scopes[i].has(name)) {
+        return scopes[i].get(name);
+      }
+    }
+    return 'clean';
+  }
+
+  function mergeTaint(a, b) {
+    return TAINT_PRIORITY[b] > TAINT_PRIORITY[a] ? b : a;
+  }
+
+  function unwrapAwait(expr) {
+    let current = unwrapExpression(expr);
+    while (ts.isAwaitExpression(current)) {
+      current = unwrapExpression(current.expression);
+    }
+    return current;
+  }
+
+  function isJsonResponseCall(node) {
+    if (!ts.isCallExpression(node)) return false;
+    const callee = unwrapExpression(node.expression);
+    const method = getCalleeMethodName(callee);
+    if (method !== 'json') return false;
+    if (!ts.isPropertyAccessExpression(callee) && !ts.isElementAccessExpression(callee)) {
+      return false;
+    }
+    const receiver = unwrapExpression(callee.expression);
+    return (
+      ts.isIdentifier(receiver) &&
+      (receiver.text === 'NextResponse' || receiver.text === 'Response')
+    );
+  }
+
+  function isSanitizerCall(expr) {
+    const node = unwrapAwait(expr);
+    if (!ts.isCallExpression(node)) return false;
+    const callee = unwrapExpression(node.expression);
+    if (ts.isIdentifier(callee)) {
+      return ADMIN_SECRET_SANITIZER_CALLEES.has(callee.text);
+    }
+    const method = getCalleeMethodName(callee);
+    return Boolean(method && ADMIN_SECRET_SANITIZER_CALLEES.has(method));
+  }
+
+  function isSanitizerCallback(expr) {
+    const node = unwrapExpression(expr);
+    if (ts.isIdentifier(node)) {
+      return ADMIN_SECRET_SANITIZER_CALLEES.has(node.text);
+    }
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+      if (!ts.isBlock(node.body)) {
+        return isSanitizerCall(node.body);
+      }
+      const returns = [];
+      function collectReturns(inner) {
+        if (
+          ts.isFunctionDeclaration(inner) ||
+          ts.isFunctionExpression(inner) ||
+          ts.isArrowFunction(inner)
+        ) {
+          return;
+        }
+        if (ts.isReturnStatement(inner)) {
+          returns.push(inner.expression ?? null);
+          return;
+        }
+        ts.forEachChild(inner, collectReturns);
+      }
+      for (const stmt of node.body.statements) {
+        collectReturns(stmt);
+      }
+      return returns.length > 0 && returns.every((ret) => ret !== null && isSanitizerCall(ret));
+    }
+    return false;
+  }
+
+  function classifyExpr(expr) {
+    const node = unwrapAwait(expr);
+
+    if (ts.isIdentifier(node)) {
+      if (SENSITIVE_ADMIN_SECRET_FIELDS.has(node.text)) {
+        return 'secret';
+      }
+      return getTaint(node.text);
+    }
+
+    if (ts.isPropertyAccessExpression(node)) {
+      const prop = node.name.text;
+      if (SENSITIVE_ADMIN_SECRET_FIELDS.has(prop)) {
+        return 'secret';
+      }
+      const base = classifyExpr(node.expression);
+      if (base === 'snapshot') {
+        if (prop === 'settings') return 'raw-settings';
+        if (prop === 'calendarConnections') return 'raw-calendar';
+        return 'clean';
+      }
+      if (base === 'settings-container' && prop === 'settings') {
+        return 'raw-settings';
+      }
+      return 'clean';
+    }
+
+    if (ts.isElementAccessExpression(node)) {
+      const key = node.argumentExpression
+        ? getStringLiteralValue(node.argumentExpression)
+        : null;
+      if (key && SENSITIVE_ADMIN_SECRET_FIELDS.has(key)) {
+        return 'secret';
+      }
+      const base = classifyExpr(node.expression);
+      if (base === 'raw-calendar') return 'raw-calendar';
+      if (base === 'snapshot') {
+        if (key === 'settings') return 'raw-settings';
+        if (key === 'calendarConnections') return 'raw-calendar';
+      }
+      if (base === 'settings-container' && key === 'settings') {
+        return 'raw-settings';
+      }
+      return 'clean';
+    }
+
+    if (ts.isCallExpression(node)) {
+      if (isSanitizerCall(node)) {
+        return 'clean';
+      }
+      const callee = unwrapExpression(node.expression);
+      if (ts.isIdentifier(callee)) {
+        if (callee.text === 'getSnapshot') return 'snapshot';
+        if (RAW_SETTINGS_PRODUCERS.has(callee.text)) return 'raw-settings';
+        if (RAW_CALENDAR_PRODUCERS.has(callee.text)) return 'raw-calendar';
+        if (RAW_SETTINGS_CONTAINER_PRODUCERS.has(callee.text)) {
+          return 'settings-container';
+        }
+        if (callee.text === 'scopeByStaff' && node.arguments[0]) {
+          const argTaint = classifyExpr(node.arguments[0]);
+          if (argTaint === 'raw-calendar' || argTaint === 'secret') {
+            return argTaint;
+          }
+        }
+        return 'clean';
+      }
+      const method = getCalleeMethodName(callee);
+      if (
+        method &&
+        (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
+      ) {
+        if (method === 'getSnapshot') return 'snapshot';
+        if (RAW_SETTINGS_PRODUCERS.has(method)) return 'raw-settings';
+        if (RAW_CALENDAR_PRODUCERS.has(method)) return 'raw-calendar';
+        if (RAW_SETTINGS_CONTAINER_PRODUCERS.has(method)) {
+          return 'settings-container';
+        }
+        const recvTaint = classifyExpr(callee.expression);
+        if (method === 'map') {
+          if (node.arguments[0] && isSanitizerCallback(node.arguments[0])) {
+            return 'clean';
+          }
+          if (recvTaint === 'raw-calendar' || recvTaint === 'secret') {
+            return recvTaint;
+          }
+          return 'clean';
+        }
+        if (
+          SNAPSHOT_SHALLOW_COPY_METHODS.has(method) ||
+          SNAPSHOT_ELEMENT_ACCESS_METHODS.has(method)
+        ) {
+          if (
+            recvTaint === 'raw-calendar' ||
+            recvTaint === 'raw-settings' ||
+            recvTaint === 'secret'
+          ) {
+            return recvTaint;
+          }
+        }
+      }
+      return 'clean';
+    }
+
+    if (ts.isConditionalExpression(node)) {
+      return mergeTaint(classifyExpr(node.whenTrue), classifyExpr(node.whenFalse));
+    }
+
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+        node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+    ) {
+      return mergeTaint(classifyExpr(node.left), classifyExpr(node.right));
+    }
+
+    if (ts.isObjectLiteralExpression(node)) {
+      let taint = 'clean';
+      for (const prop of node.properties) {
+        if (ts.isSpreadAssignment(prop)) {
+          taint = mergeTaint(taint, classifyExpr(prop.expression));
+        } else if (ts.isPropertyAssignment(prop)) {
+          const propName = getPropertyNameText(prop.name);
+          if (propName && SENSITIVE_ADMIN_SECRET_FIELDS.has(propName)) {
+            return 'secret';
+          }
+          const valTaint = classifyExpr(prop.initializer);
+          if (propName === 'settings' && valTaint === 'clean' && taint === 'settings-container') {
+            taint = 'clean';
+          } else {
+            taint = mergeTaint(taint, valTaint);
+          }
+        } else if (ts.isShorthandPropertyAssignment(prop)) {
+          const propName = prop.name.text;
+          if (SENSITIVE_ADMIN_SECRET_FIELDS.has(propName)) {
+            return 'secret';
+          }
+          const valTaint = classifyExpr(prop.name);
+          if (propName === 'settings' && valTaint === 'clean' && taint === 'settings-container') {
+            taint = 'clean';
+          } else {
+            taint = mergeTaint(taint, valTaint);
+          }
+        }
+      }
+      return taint;
+    }
+
+    if (ts.isArrayLiteralExpression(node)) {
+      let taint = 'clean';
+      for (const el of node.elements) {
+        taint = mergeTaint(
+          taint,
+          classifyExpr(ts.isSpreadElement(el) ? el.expression : el),
+        );
+      }
+      return taint;
+    }
+
+    return 'clean';
+  }
+
+  function bindPattern(nameNode, taint, scope) {
+    if (ts.isIdentifier(nameNode)) {
+      scope.set(nameNode.text, taint);
+    } else if (ts.isObjectBindingPattern(nameNode)) {
+      for (const el of nameNode.elements) {
+        if (el.dotDotDotToken) {
+          bindPattern(el.name, taint, scope);
+          continue;
+        }
+        const propName = el.propertyName
+          ? getPropertyNameText(el.propertyName)
+          : ts.isIdentifier(el.name)
+            ? el.name.text
+            : null;
+        if (propName && SENSITIVE_ADMIN_SECRET_FIELDS.has(propName)) {
+          bindPattern(el.name, 'secret', scope);
+        } else if (taint === 'snapshot') {
+          if (propName === 'settings') {
+            bindPattern(el.name, 'raw-settings', scope);
+          } else if (propName === 'calendarConnections') {
+            bindPattern(el.name, 'raw-calendar', scope);
+          } else {
+            bindPattern(el.name, 'clean', scope);
+          }
+        } else if (taint === 'settings-container' && propName === 'settings') {
+          bindPattern(el.name, 'raw-settings', scope);
+        } else {
+          bindPattern(el.name, 'clean', scope);
+        }
+      }
+    } else if (ts.isArrayBindingPattern(nameNode)) {
+      for (const el of nameNode.elements) {
+        if (ts.isBindingElement(el)) {
+          bindPattern(
+            el.name,
+            taint === 'raw-calendar' || taint === 'secret' ? taint : 'clean',
+            scope,
+          );
+        }
+      }
+    }
+  }
+
+  function reportSecretTaint(node, taint, detail) {
+    const { line, col } = getLineCol(sf, node.getStart(sf));
+    if (taint === 'raw-settings' || taint === 'settings-container' || taint === 'snapshot') {
+      addViolation(
+        rel,
+        line,
+        col,
+        'no-sensitive-admin-secrets-in-api',
+        `Prohibido devolver SalonSettings sin sanitizar en NextResponse.json() (${detail}). Usa toAdminSettingsDTO(...) o toPublicSettingsDTO(...) para omitir ownerPinHash.`,
+      );
+    } else if (taint === 'raw-calendar') {
+      addViolation(
+        rel,
+        line,
+        col,
+        'no-sensitive-admin-secrets-in-api',
+        `Prohibido devolver CalendarConnection sin sanitizar en NextResponse.json() (${detail}). Usa toAdminCalendarConnectionDTO(...) para omitir accessTokenEncrypted/refreshTokenEncrypted.`,
+      );
+    } else {
+      addViolation(
+        rel,
+        line,
+        col,
+        'no-sensitive-admin-secrets-in-api',
+        `Campo secreto sensible prohibido en NextResponse.json() (${detail}). Nunca devuelvas ownerPinHash, accessTokenEncrypted ni refreshTokenEncrypted.`,
+      );
+    }
+  }
+
+  function inspectJsonPayload(expr) {
+    const node = unwrapAwait(expr);
+
+    if (ts.isObjectLiteralExpression(node)) {
+      const hasCleanSettingsOverrideAfter = (startIndex) => {
+        for (let j = startIndex + 1; j < node.properties.length; j += 1) {
+          const later = node.properties[j];
+          if (ts.isPropertyAssignment(later) && getPropertyNameText(later.name) === 'settings') {
+            return classifyExpr(later.initializer) === 'clean';
+          }
+          if (ts.isShorthandPropertyAssignment(later) && later.name.text === 'settings') {
+            return classifyExpr(later.name) === 'clean';
+          }
+        }
+        return false;
+      };
+
+      for (let i = 0; i < node.properties.length; i += 1) {
+        const prop = node.properties[i];
+        if (ts.isSpreadAssignment(prop)) {
+          const spreadTaint = classifyExpr(prop.expression);
+          if (spreadTaint === 'settings-container' && hasCleanSettingsOverrideAfter(i)) {
+            continue;
+          }
+          if (spreadTaint !== 'clean') {
+            reportSecretTaint(prop.expression, spreadTaint, prop.expression.getText(sf));
+          }
+        } else if (ts.isPropertyAssignment(prop)) {
+          const propName = getPropertyNameText(prop.name);
+          if (propName && SENSITIVE_ADMIN_SECRET_FIELDS.has(propName)) {
+            reportSecretTaint(prop.name, 'secret', propName);
+            continue;
+          }
+          inspectJsonPayload(prop.initializer);
+        } else if (ts.isShorthandPropertyAssignment(prop)) {
+          const propName = prop.name.text;
+          if (SENSITIVE_ADMIN_SECRET_FIELDS.has(propName)) {
+            reportSecretTaint(prop.name, 'secret', propName);
+            continue;
+          }
+          const valTaint = classifyExpr(prop.name);
+          if (valTaint !== 'clean') {
+            reportSecretTaint(prop.name, valTaint, propName);
+          }
+        }
+      }
+      return;
+    }
+
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const el of node.elements) {
+        inspectJsonPayload(ts.isSpreadElement(el) ? el.expression : el);
+      }
+      return;
+    }
+
+    if (ts.isConditionalExpression(node)) {
+      inspectJsonPayload(node.whenTrue);
+      inspectJsonPayload(node.whenFalse);
+      return;
+    }
+
+    const taint = classifyExpr(node);
+    if (taint !== 'clean') {
+      reportSecretTaint(node, taint, node.getText(sf));
+    }
+  }
+
+  function walk(node) {
+    if (ts.isVariableDeclaration(node)) {
+      if (node.initializer) {
+        walk(node.initializer);
+      }
+      const taint = node.initializer ? classifyExpr(node.initializer) : 'clean';
+      bindPattern(node.name, taint, currentScope());
+      return;
+    }
+
+    if (
+      ts.isFunctionDeclaration(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isArrowFunction(node) ||
+      ts.isMethodDeclaration(node)
+    ) {
+      const fnScope = new Map();
+      for (const param of node.parameters) {
+        bindPattern(param.name, 'clean', fnScope);
+      }
+      scopes.push(fnScope);
+      if (node.body) {
+        walk(node.body);
+      }
+      scopes.pop();
+      return;
+    }
+
+    if (ts.isBlock(node)) {
+      scopes.push(new Map());
+      for (const stmt of node.statements) {
+        walk(stmt);
+      }
+      scopes.pop();
+      return;
+    }
+
+    if (isJsonResponseCall(node) && node.arguments[0]) {
+      inspectJsonPayload(node.arguments[0]);
+    }
+
+    ts.forEachChild(node, walk);
+  }
+
+  walk(sf);
+}
+
 export function checkSourceText(rawRel, text) {
   const rel = toPosix(rawRel);
   const full = path.resolve(ROOT, rel);
@@ -1118,10 +1597,16 @@ export function checkSourceText(rawRel, text) {
   const isPublicBookingsRoute = rel === 'src/app/api/bookings/route.ts';
   const isBookingContractsFile = rel === 'src/lib/contracts/bookings.ts';
   const isNotificationsFile = rel === 'src/lib/integrations/notifications.ts';
+  const isSeoNoLocalhost = isSeoNoLocalhostFile(rel);
+  const isApiRoute = rel.startsWith('src/app/api/') && !testFile;
   const hasCsvContentType = !testFile && text.toLowerCase().includes('text/csv');
 
   if (isAdminRouteRequiringAuth(rel)) {
     checkAdminAuthRequired(rel, sf, addViolation);
+  }
+
+  if (isApiRoute) {
+    checkSensitiveAdminSecretsInApi(rel, sf, addViolation);
   }
 
   if (!testFile) {
@@ -1205,6 +1690,25 @@ export function checkSourceText(rawRel, text) {
           );
         }
       }
+    }
+
+    if (
+      isSeoNoLocalhost &&
+      (ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node)) &&
+      LOCALHOST_URL_RE.test(node.text)
+    ) {
+      const { line, col } = getLineCol(sf, node.getStart(sf));
+      addViolation(
+        rel,
+        line,
+        col,
+        'no-localhost-in-seo',
+        `Prohibida URL literal de localhost ("${node.text}") en metadatos/SEO (${rel}). Usa getSiteOrigin() o getSiteMetadataBase() de @/lib/seo/site-url.`,
+      );
     }
 
     if (

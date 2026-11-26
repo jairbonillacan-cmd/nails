@@ -243,7 +243,7 @@ export default function LinksPage() {
                   rel="noopener noreferrer"
                 />
                 <Button
-                  label={`Seguir en Instagram (${instagramHandle})`}
+                  label={`Instagram · ${instagramHandle}`}
                   variant="secondary"
                   size="lg"
                   width="100%"
