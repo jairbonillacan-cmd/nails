@@ -49,7 +49,11 @@ export function buildLiveAnnouncement(input: {
 }): string {
   const { flow, holdRemainingSec, holdTotalSec, slotHoldMinutes, realtimeMessage, loadingAvail, selectedDaySummary, timezone } = input;
   if (flow.holdExpired && flow.holdExpiredMessage) return flow.holdExpiredMessage;
-  if (flow.conflict?.message) return `Horario recién ocupado. ${flow.conflict.message}`;
+  if (flow.conflict?.message) {
+    return flow.conflict.kind === 'expired'
+      ? flow.conflict.message
+      : `Horario recién ocupado. ${flow.conflict.message}`;
+  }
   if (flow.formErrorCode === 'MAX_ACTIVE_BOOKINGS' && flow.formError) {
     return `Límite de citas activas alcanzado. ${flow.formError}`;
   }
@@ -105,7 +109,7 @@ export function buildSummaryRows(input: {
     },
     {
       key: 'staff',
-      label: 'Artista',
+      label: 'Profesional',
       value: !staffDecided
         ? 'Por elegir'
         : input.chosenStaffId === 'any' && !input.isPinned
@@ -209,7 +213,7 @@ export function computeStepNavigation(input: {
               : ''
             : step === 'design'
               ? input.hasDesignDetails
-                ? 'Tu artista ya tiene tu idea'
+                ? 'Tu profesional ya tiene tu idea'
                 : 'Paso opcional · Puedes saltarlo'
             : step === 'details'
               ? ''

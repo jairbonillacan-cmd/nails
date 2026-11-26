@@ -74,8 +74,8 @@ const DEFAULT_CONFIRMATION_TEMPLATE_SPEC: OfficialWhatsAppTemplateSpec = {
   category: 'UTILITY',
   languageCode: 'es_MX',
   friendlyTitle: 'Confirmación de cita',
-  description: 'Confirma horario, servicio, manicurista y enlace para agregar al calendario.',
-  parameterLabels: ['Clienta', 'Servicio', 'Fecha', 'Hora', 'Manicurista', 'Enlace'],
+  description: 'Confirma horario, servicio, profesional y enlace para agregar al calendario.',
+  parameterLabels: ['Clienta', 'Servicio', 'Fecha', 'Hora', 'Profesional', 'Enlace'],
 };
 
 export const OFFICIAL_WHATSAPP_TEMPLATES: readonly OfficialWhatsAppTemplateSpec[] = [
@@ -87,7 +87,7 @@ export const OFFICIAL_WHATSAPP_TEMPLATES: readonly OfficialWhatsAppTemplateSpec[
     languageCode: 'es_MX',
     friendlyTitle: 'Recordatorio 24 horas antes',
     description: 'Recuerda la cita un día antes con opción de confirmar o reagendar.',
-    parameterLabels: ['Clienta', 'Servicio', 'Hora', 'Manicurista', 'Enlace'],
+    parameterLabels: ['Clienta', 'Servicio', 'Hora', 'Profesional', 'Enlace'],
   },
   {
     triggerKey: 'reminder_2h',

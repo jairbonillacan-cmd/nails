@@ -12,65 +12,115 @@ interface DashboardKpiRowProps {
   metrics: DashboardMetrics;
 }
 
+function formatDeltaBadge(
+  deltaPercent: number | null,
+  compareLabel: string,
+): { text: string; tone: 'accent' | 'warning' | 'default'; detail: string } | undefined {
+  if (deltaPercent === null) return undefined;
+  const arrow = deltaPercent > 0 ? '↗' : deltaPercent < 0 ? '↘' : '→';
+  const sign = deltaPercent > 0 ? '+' : '';
+  return {
+    text: `${arrow} ${sign}${deltaPercent}%`,
+    tone: deltaPercent >= 0 ? 'accent' : 'warning',
+    detail: compareLabel,
+  };
+}
+
 export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
-  const { kpis, settings } = data;
+  const { settings } = data;
   const currency = settings.currency;
   const uncollectedCount = data.uncollectedBookings.length;
+  const pendingDepositsCount = data.pendingDeposits.length;
   const canReports = roleCanAccess(data.session.user.role, 'reports');
+  const { periodMetrics } = metrics;
 
-  const todaySub =
-    metrics.todayBookings.length > 0
-      ? `${metrics.upcomingTodayCount} por venir`
-      : metrics.tomorrowBookings.length > 0
-        ? `${metrics.tomorrowBookings.length} para mañana`
-        : `${kpis.pendingConfirmationsCount} por confirmar`;
+  const revenueSeries = metrics.dailySeries.map((day) => day.revenueCents);
+  const bookingsSeries = metrics.dailySeries.map((day) => day.bookingsCount);
 
-  const netCashValue = metrics.cash.hasTodayEntries
-    ? formatCurrency(metrics.cash.todayNetCashCents, currency)
-    : formatCurrency(kpis.netCashCents, currency);
-  const netCashSub = metrics.cash.hasTodayEntries
-    ? 'Efectivo, tarjeta y transferencia'
-    : 'Total registrado · $0 hoy';
+  const revenueFallbackValue =
+    periodMetrics.revenueCents > 0
+      ? formatCurrency(periodMetrics.revenueCents, currency)
+      : formatCurrency(0, currency);
+
+  const bookingsSub =
+    periodMetrics.period === 'today'
+      ? metrics.todayBookings.length > 0
+        ? `${metrics.upcomingTodayCount} por venir hoy`
+        : metrics.tomorrowBookings.length > 0
+          ? `${metrics.tomorrowBookings.length} para mañana`
+          : 'Sin citas agendadas hoy'
+      : `${periodMetrics.confirmedCount} confirmadas o completadas`;
 
   const items: MetricTileItem[] = [
     {
-      id: 'today-bookings',
-      label: 'Citas hoy',
-      value: String(kpis.todayBookingsCount),
-      sub: todaySub,
+      id: 'period-revenue',
+      label: periodMetrics.period === 'today' ? 'Ingresos hoy' : 'Ingresos',
+      description: periodMetrics.periodLabel,
+      value: revenueFallbackValue,
+      unitPrefix: currency,
+      sparkline: revenueSeries,
+      delta: formatDeltaBadge(periodMetrics.revenueDeltaPercent, periodMetrics.compareLabel),
+      sub:
+        periodMetrics.revenueDeltaPercent === null
+          ? 'Efectivo, tarjeta y transferencia'
+          : undefined,
       tone: 'default',
       interactive: true,
     },
     {
-      id: 'collected-today',
-      label: 'Cobrado hoy',
-      value: netCashValue,
-      sub: netCashSub,
+      id: 'period-bookings',
+      label: periodMetrics.period === 'today' ? 'Citas hoy' : 'Citas',
+      description: periodMetrics.periodLabel,
+      value: String(periodMetrics.bookingsCount),
+      unitSuffix:
+        periodMetrics.bookingsCount > 0
+          ? `/ ${periodMetrics.confirmedCount} conf.`
+          : undefined,
+      sparkline: bookingsSeries,
+      delta: formatDeltaBadge(periodMetrics.bookingsDeltaPercent, periodMetrics.compareLabel),
+      sub: periodMetrics.bookingsDeltaPercent === null ? bookingsSub : undefined,
       tone: 'default',
       interactive: true,
     },
     {
       id: 'uncollected',
-      label: 'Falta cobrar',
+      label: 'Por cobrar',
+      description: 'Citas terminadas sin cobro',
       value: formatCurrency(metrics.uncollectedTotalCents, currency),
       sub:
         uncollectedCount > 0
-          ? `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} terminada${uncollectedCount === 1 ? '' : 's'}`
+          ? `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} pendiente${uncollectedCount === 1 ? '' : 's'}`
           : 'Todo cobrado',
       tone: metrics.uncollectedTotalCents > 0 ? 'warning' : 'success',
+      interactive: true,
+    },
+    {
+      id: 'pending-deposits',
+      label: 'Anticipos',
+      description: 'Comprobantes por validar',
+      value: String(pendingDepositsCount),
+      unitSuffix:
+        pendingDepositsCount > 0
+          ? `· ${formatCurrency(metrics.pendingDepositsTotalCents, currency)}`
+          : undefined,
+      sub:
+        pendingDepositsCount > 0
+          ? 'Listos para revisar y confirmar'
+          : 'Todo validado',
+      tone: pendingDepositsCount > 0 ? 'accent' : 'success',
       interactive: true,
     },
   ];
 
   return (
     <MetricGrid
-      ariaLabel="Resumen de hoy"
+      ariaLabel="Resumen del periodo"
       items={items}
-      cols={3}
+      cols={4}
       footerLink={
         canReports ? (
           <NextLink href="/admin/reportes" className="ad-inline-link-muted">
-            Ver más en Reportes →
+            Ver analítica completa en Reportes ›
           </NextLink>
         ) : undefined
       }

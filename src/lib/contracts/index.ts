@@ -65,10 +65,15 @@ export {
 
 export {
   ClientPortalOtpActionSchema,
+  ClientPortalOtpResponseSchema,
+  ClientPortalProfileResponseSchema,
+  ClientPortalProfileSchema,
   CreateClientSchema,
   DispatchCampaignSchema,
   PatchClientSchema,
 } from './clients';
+
+export type { ClientAuthMethod, ClientPortalOtpResponse, ClientPortalProfile } from './clients';
 
 export {
   BrandPatchSchema,

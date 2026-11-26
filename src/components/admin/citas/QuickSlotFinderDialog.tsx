@@ -209,14 +209,14 @@ export function QuickSlotFinderDialog({
           />
 
           <Selector
-            label="Manicurista"
+            label="Profesional"
             value={effectiveStaffId}
             isDisabled={Boolean(lockedStaffId)}
             onChange={(val) => {
               if (!lockedStaffId) setStaffId(val || 'any');
             }}
             options={[
-              { value: 'any', label: 'Cualquier manicurista' },
+              { value: 'any', label: 'Cualquier profesional' },
               ...activeStaff.map((s) => ({ value: s.id, label: s.name })),
             ]}
           />
@@ -315,7 +315,7 @@ export function QuickSlotFinderDialog({
             <EmptyState
               isCompact
               title="No hay horarios libres en estos días"
-              description="Prueba buscando en los próximos 30 días o eligiendo cualquier manicurista."
+              description="Prueba buscando en los próximos 30 días o eligiendo cualquier profesional."
               actions={
                 daysWindow !== '30' || (!lockedStaffId && effectiveStaffId !== 'any') ? (
                   <HStack gap={2} wrap="wrap" justify="center">
@@ -323,7 +323,7 @@ export function QuickSlotFinderDialog({
                       <Button type="button" size="sm" variant="secondary" label="Buscar en 30 días" onClick={() => setDaysWindow('30')} />
                     ) : null}
                     {!lockedStaffId && effectiveStaffId !== 'any' ? (
-                      <Button type="button" size="sm" variant="secondary" label="Cualquier manicurista" onClick={() => setStaffId('any')} />
+                      <Button type="button" size="sm" variant="secondary" label="Cualquier profesional" onClick={() => setStaffId('any')} />
                     ) : null}
                   </HStack>
                 ) : undefined

@@ -10,7 +10,12 @@ import { useSalonAppearance } from './SalonThemeProvider';
 import { BookingHeader } from './booking/BookingChrome';
 import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
 
-export function PublicShell({ children }: { children: React.ReactNode }) {
+interface PublicShellProps {
+  hero: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export function PublicShell({ hero, children }: PublicShellProps) {
   const { settings } = useSalonAppearance();
   const whatsappDirect = buildWhatsAppLink(
     settings.whatsappNumber,
@@ -23,6 +28,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
   return (
     <VStack className="lk-root rb-root" gap={0} width="100%">
       <BookingHeader settings={settings} />
+      {hero}
 
       <VStack as="main" gap={0} width="100%" style={{ flex: '1 1 auto' }}>
         {children}

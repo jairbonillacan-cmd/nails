@@ -26,7 +26,7 @@ import type { AdminRole, AuditAction, AuditLogEntry } from '@/lib/types';
 const ROLE_LABELS: Record<AdminRole, string> = {
   owner: 'Dueña',
   admin: 'Recepción',
-  specialist: 'Manicurista',
+  specialist: 'Profesional',
 };
 
 const HISTORY_ACTION_META: Record<

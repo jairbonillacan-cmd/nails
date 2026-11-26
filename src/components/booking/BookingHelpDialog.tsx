@@ -20,7 +20,7 @@ function buildBookingHelpFaqs(settings: PublicSettingsDTO): readonly SalonFaqIte
       answer: `Tu horario queda guardado ${holdMinutes} minutos mientras terminas. Antes de que se acabe te preguntamos si quieres más tiempo, y si se libera no pierdes lo que ya escribiste: solo lo vuelves a apartar.`,
     },
     {
-      id: 'help-artista',
+      id: 'help-profesional',
       question: '¿Puedo elegir con quién me atiendo?',
       answer:
         'Sí. Después de escoger tu horario ves quién está libre a esa hora. Si escoges "Cualquier profesional", te atiende quien esté disponible.',

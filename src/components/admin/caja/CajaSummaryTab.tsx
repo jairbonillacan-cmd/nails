@@ -16,6 +16,7 @@ import {
   getDateKeyInTimezone,
 } from '@/lib/format';
 import type { CashRegisterEntry, PaymentMethod } from '@/lib/types';
+import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { ActionRow, StatusTag, SurfaceCard } from '@/components/ui';
 import {
   formatInstagramDisplay,
@@ -44,7 +45,7 @@ interface CajaSummaryTabProps {
     description: string;
     amountMxn: number;
     method: PaymentMethod;
-  }) => Promise<boolean>;
+  }) => Promise<FormSubmitResult>;
 }
 
 export function CajaSummaryTab({

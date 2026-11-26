@@ -38,8 +38,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 function formatSpanishList(items: string[]): string {
-  if (items.length === 0) return 'nuestras especialistas';
-  if (items.length === 1) return items[0] ?? 'nuestras especialistas';
+  if (items.length === 0) return 'nuestras profesionales';
+  if (items.length === 1) return items[0] ?? 'nuestras profesionales';
   if (items.length === 2) return `${items[0]} y ${items[1]}`;
   return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
 }
@@ -124,19 +124,10 @@ export default async function LinksPage() {
   const staffSummary = formatSpanishList(activeStaff.map((member) => member.name));
 
   return (
-    <PublicShell>
-      <VStack gap={0} width="100%">
+    <PublicShell
+      hero={
         <VStack as="section" className="rb-hero ck-hero" aria-labelledby="links-title">
           <VStack gap={3} align="center" className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={560} style={{ textAlign: 'center' }}>
-            <img
-              src={landing.customLogoUrl || LANDING_ASSETS.logoWhite}
-              alt={settings.name}
-              width={200}
-              height={84}
-              fetchPriority="high"
-              decoding="async"
-              style={{ height: '3.5rem', width: 'auto', objectFit: 'contain', display: 'block' }}
-            />
             <VStack gap={1.5} align="center">
               <Heading level={1} id="links-title" color="inherit" justify="center" textWrap="balance" className="lk-serif rb-hero-title">
                 {settings.name}
@@ -172,169 +163,169 @@ export default async function LinksPage() {
             <path d="M0 40h1440V22c-120-14-240-20-360-12S840 34 720 34 480 14 360 10 120 20 0 26Z" />
           </svg>
         </VStack>
+      }
+    >
+      <VStack paddingBlock={6} paddingInline={4} width="100%">
+        <VStack
+          gap={5}
+          maxWidth={560}
+          width="100%"
+          align="center"
+          style={{ marginInline: 'auto' }}
+        >
+          <VStack gap={5} align="center" width="100%" className="ck-panel fx-fade-up">
+            <HStack gap={2} justify="center" wrap="wrap">
+              <Token
+                label={`${landing.visitHoursDays} · Solo con cita`}
+                size="md"
+                icon={<CalendarCheck size={14} aria-hidden="true" />}
+              />
+              <Token
+                label={`Turnos fijos con ${staffSummary}`}
+                size="md"
+                icon={<Clock size={14} aria-hidden="true" />}
+              />
+              <Token
+                label={`Anticipo ${depositLabel}`}
+                size="md"
+                icon={<Sparkles size={14} aria-hidden="true" />}
+              />
+            </HStack>
 
-        <VStack paddingBlock={6} paddingInline={4} width="100%">
-          <VStack
-            gap={5}
-            maxWidth={560}
-            width="100%"
-            align="center"
-            style={{ marginInline: 'auto' }}
-          >
-            <VStack gap={5} align="center" width="100%" className="ck-panel fx-fade-up">
-              <HStack gap={2} justify="center" wrap="wrap">
-                <Token
-                  label={`${landing.visitHoursDays} · Solo con cita`}
-                  size="md"
-                  icon={<CalendarCheck size={14} aria-hidden="true" />}
-                />
-                <Token
-                  label={`Turnos fijos con ${staffSummary}`}
-                  size="md"
-                  icon={<Clock size={14} aria-hidden="true" />}
-                />
-                <Token
-                  label={`Anticipo ${depositLabel}`}
-                  size="md"
-                  icon={<Sparkles size={14} aria-hidden="true" />}
-                />
-              </HStack>
-
-              <VStack gap={3} width="100%" className="fx-stagger">
-                <Button
-                  label="Agendar mi cita ahora"
-                  variant="primary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<CalendarCheck size={18} aria-hidden="true" />}
-                  href="/reservar"
-                />
-                <Button
-                  label="Mis citas y sellos"
-                  variant="secondary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<Clock size={18} aria-hidden="true" />}
-                  href="/mis-citas"
-                />
-                <Button
-                  label="Ver catálogo y precios"
-                  variant="secondary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<Sparkles size={18} aria-hidden="true" />}
-                  href="/#servicios"
-                />
-                <Button
-                  label="Galería de diseños"
-                  variant="secondary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<ImageIcon size={18} aria-hidden="true" />}
-                  href="/#galeria"
-                />
-                <Button
-                  label="Escribir por WhatsApp"
-                  variant="secondary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<MessageCircle size={18} aria-hidden="true" />}
-                  href={whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-                <Button
-                  label={`Instagram · ${instagramHandle}`}
-                  variant="secondary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<AtSign size={18} aria-hidden="true" />}
-                  href={instagramUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-                <Button
-                  label="Cómo llegar (Google Maps)"
-                  variant="secondary"
-                  size="lg"
-                  width="100%"
-                  className="fx-press"
-                  icon={<MapPin size={18} aria-hidden="true" />}
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              </VStack>
-
-              <Divider />
-
+            <VStack gap={3} width="100%" className="fx-stagger">
               <Button
-                label="Aviso de privacidad"
-                variant="ghost"
+                label="Agendar mi cita ahora"
+                variant="primary"
                 size="lg"
                 width="100%"
                 className="fx-press"
-                icon={<ShieldCheck size={16} aria-hidden="true" />}
-                href="/aviso-de-privacidad"
+                icon={<CalendarCheck size={18} aria-hidden="true" />}
+                href="/reservar"
+              />
+              <Button
+                label="Mis citas y sellos"
+                variant="secondary"
+                size="lg"
+                width="100%"
+                className="fx-press"
+                icon={<Clock size={18} aria-hidden="true" />}
+                href="/mis-citas"
+              />
+              <Button
+                label="Ver catálogo y precios"
+                variant="secondary"
+                size="lg"
+                width="100%"
+                className="fx-press"
+                icon={<Sparkles size={18} aria-hidden="true" />}
+                href="/#servicios"
+              />
+              <Button
+                label="Galería de diseños"
+                variant="secondary"
+                size="lg"
+                width="100%"
+                className="fx-press"
+                icon={<ImageIcon size={18} aria-hidden="true" />}
+                href="/#galeria"
+              />
+              <Button
+                label="Escribir por WhatsApp"
+                variant="secondary"
+                size="lg"
+                width="100%"
+                className="fx-press"
+                icon={<MessageCircle size={18} aria-hidden="true" />}
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+              <Button
+                label={`Instagram · ${instagramHandle}`}
+                variant="secondary"
+                size="lg"
+                width="100%"
+                className="fx-press"
+                icon={<AtSign size={18} aria-hidden="true" />}
+                href={instagramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+              <Button
+                label="Cómo llegar (Google Maps)"
+                variant="secondary"
+                size="lg"
+                width="100%"
+                className="fx-press"
+                icon={<MapPin size={18} aria-hidden="true" />}
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
               />
             </VStack>
 
-            {featuredServices.length > 0 ? (
-              <VStack gap={3} width="100%" className="ck-panel fx-fade-up">
-                <VStack gap={0.5} align="center">
-                  <Heading level={2} justify="center" className="lk-serif ck-h3">
-                    Reserva directo por servicio
-                  </Heading>
-                  <Text type="supporting" color="secondary" justify="center">
-                    Elige tu favorito y entra directo a elegir día y hora.
-                  </Text>
-                </VStack>
-                <List hasDividers density="balanced">
-                  {featuredServices.map((service) => (
-                    <ListItem
-                      key={service.id}
-                      href={`/reservar/${encodeURIComponent(service.slug)}`}
-                      label={service.name}
-                      startContent={
-                        <img
-                          src={servicePhoto(service.slug, service.imageUrl)}
-                          alt=""
-                          width={48}
-                          height={48}
-                          loading="lazy"
-                          decoding="async"
-                          style={{
-                            width: '3rem',
-                            height: '3rem',
-                            objectFit: 'cover',
-                            borderRadius: '0.75rem',
-                            display: 'block',
-                          }}
-                        />
-                      }
-                      description={
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {formatDuration(service.durationMinutes)} ·{' '}
-                          {formatServicePrice(
-                            service.priceCents,
-                            service.isStartingPrice,
-                            settings.currency,
-                          )}
-                        </Text>
-                      }
-                      endContent={<ArrowRight size={16} aria-hidden="true" />}
-                    />
-                  ))}
-                </List>
-              </VStack>
-            ) : null}
+            <Divider />
+
+            <Button
+              label="Aviso de privacidad"
+              variant="ghost"
+              size="lg"
+              width="100%"
+              className="fx-press"
+              icon={<ShieldCheck size={16} aria-hidden="true" />}
+              href="/aviso-de-privacidad"
+            />
           </VStack>
+
+          {featuredServices.length > 0 ? (
+            <VStack gap={3} width="100%" className="ck-panel fx-fade-up">
+              <VStack gap={0.5} align="center">
+                <Heading level={2} justify="center" className="lk-serif ck-h3">
+                  Reserva directo por servicio
+                </Heading>
+                <Text type="supporting" color="secondary" justify="center">
+                  Elige tu favorito y entra directo a elegir día y hora.
+                </Text>
+              </VStack>
+              <List hasDividers density="balanced">
+                {featuredServices.map((service) => (
+                  <ListItem
+                    key={service.id}
+                    href={`/reservar/${encodeURIComponent(service.slug)}`}
+                    label={service.name}
+                    startContent={
+                      <img
+                        src={servicePhoto(service.slug, service.imageUrl)}
+                        alt=""
+                        width={48}
+                        height={48}
+                        loading="lazy"
+                        decoding="async"
+                        style={{
+                          width: '3rem',
+                          height: '3rem',
+                          objectFit: 'cover',
+                          borderRadius: '0.75rem',
+                          display: 'block',
+                        }}
+                      />
+                    }
+                    description={
+                      <Text type="supporting" color="secondary" hasTabularNumbers>
+                        {formatDuration(service.durationMinutes)} ·{' '}
+                        {formatServicePrice(
+                          service.priceCents,
+                          service.isStartingPrice,
+                          settings.currency,
+                        )}
+                      </Text>
+                    }
+                    endContent={<ArrowRight size={16} aria-hidden="true" />}
+                  />
+                ))}
+              </List>
+            </VStack>
+          ) : null}
         </VStack>
       </VStack>
     </PublicShell>

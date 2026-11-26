@@ -33,7 +33,7 @@ export function DesignStep({
 }: DesignStepProps) {
   const [inspoProgress, setInspoProgress] = useState<number | null>(null);
   const [inspoError, setInspoError] = useState<string | null>(null);
-  const who = artistName ?? 'tu artista';
+  const who = artistName ?? 'tu profesional';
 
   const processInspoFile = async (file: File | null) => {
     if (!file) {

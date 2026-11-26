@@ -921,3 +921,76 @@ test('no-sync-snapshot-in-app: blocks sync getSnapshot import in src/app/** and 
 
   assert.deepEqual(rulesOf('src/app/api/public/bootstrap/route.ts', goodAsyncImport), []);
 });
+
+test('css-scroll-driven-unguarded: animation-timeline must live inside @supports + reduced-motion no-preference', async () => {
+  const { checkCssText } = await import('./check-guardrails.mjs');
+  const cssRules = (css) => checkCssText('src/app/landing.css', css).map((v) => v.rule);
+
+  assert.deepEqual(cssRules('.a { animation: up linear both; animation-timeline: view(); }'), [
+    'css-scroll-driven-unguarded',
+  ]);
+  assert.deepEqual(
+    cssRules('@supports (animation-timeline: view()) { .a { animation-timeline: view(); animation-range: entry 0% entry 50%; } }'),
+    ['css-scroll-driven-unguarded', 'css-scroll-driven-unguarded'],
+  );
+  assert.deepEqual(
+    cssRules('@media (prefers-reduced-motion: no-preference) { .a { view-timeline-name: --x; } }'),
+    ['css-scroll-driven-unguarded'],
+  );
+  assert.deepEqual(
+    cssRules('@media (prefers-reduced-motion: no-preference) { @supports (animation-timeline: view()) { .a { animation: up linear both; animation-timeline: view(); } } }'),
+    [],
+  );
+  assert.deepEqual(
+    cssRules('@supports (animation-timeline: view()) { @media (prefers-reduced-motion: no-preference) { .a { animation-timeline: view(); } } }'),
+    [],
+  );
+  assert.deepEqual(
+    cssRules('@media (prefers-reduced-motion: reduce) { .a { animation-timeline: auto !important; } }'),
+    [],
+  );
+  assert.deepEqual(
+    cssRules('@keyframes up { from { opacity: 0; } to { opacity: 1; } } .b { content: "{"; opacity: 0; }'),
+    [],
+  );
+});
+
+test('css-scroll-driven-hidden-start: hidden start state of a view() reveal must stay inside the guard', async () => {
+  const { checkCssText } = await import('./check-guardrails.mjs');
+  const css = [
+    '.lk-reveal { opacity: 0; }',
+    '@media (prefers-reduced-motion: no-preference) {',
+    '  @supports (animation-timeline: view()) {',
+    '    .lk-reveal, .lk-pop { animation: up linear both; animation-timeline: view(); }',
+    '    .lk-pop { opacity: 0; }',
+    '  }',
+    '}',
+  ].join('\n');
+  const violations = checkCssText('src/app/landing.css', css);
+  assert.deepEqual(violations.map((v) => [v.rule, v.line]), [['css-scroll-driven-hidden-start', 1]]);
+});
+
+test('css-scroll-driven: real stylesheets under src/app are clean', async () => {
+  const { checkCssText } = await import('./check-guardrails.mjs');
+  for (const file of ['src/app/landing.css', 'src/app/globals.css', 'src/app/booking.css']) {
+    if (!fs.existsSync(file)) continue;
+    assert.deepEqual(checkCssText(file, fs.readFileSync(file, 'utf-8')), [], file);
+  }
+});
+
+test('admin-form-dialog: raw <Dialog purpose="form"> in admin must go through FormDialog', () => {
+  const raw = [
+    "import { Dialog } from '@astryxdesign/core/Dialog';",
+    'export function EditThing({ open }: { open: boolean }) {',
+    '  return <Dialog isOpen={open} onOpenChange={() => undefined} purpose="form">x</Dialog>;',
+    '}',
+  ].join('\n');
+  const braced = raw.replace('purpose="form"', "purpose={'form'}");
+  const info = raw.replace('purpose="form"', 'purpose="info"');
+
+  assert.deepEqual(rulesOf('src/components/admin/equipo/EditThing.tsx', raw), ['admin-form-dialog']);
+  assert.deepEqual(rulesOf('src/app/admin/servicios/page.tsx', braced), ['admin-form-dialog']);
+  assert.deepEqual(rulesOf('src/components/admin/equipo/EditThing.tsx', info), []);
+  assert.deepEqual(rulesOf('src/components/booking/EditThing.tsx', raw), []);
+  assert.deepEqual(rulesOf('src/components/admin/config/OwnerPinDialog.tsx', raw), []);
+});

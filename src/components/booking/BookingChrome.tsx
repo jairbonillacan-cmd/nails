@@ -21,7 +21,7 @@ export const STEP_LABELS: Readonly<Record<BookingStep, string>> = {
   service: 'Servicio',
   extras: 'Extras',
   schedule: 'Día y hora',
-  staff: 'Artista',
+  staff: 'Profesional',
   design: 'Tu diseño',
   details: 'Tus datos',
   payment: 'Pago',
@@ -34,14 +34,12 @@ export function formatHoldClock(totalSeconds: number): string {
 interface BookingHeaderProps {
   settings: PublicSettingsDTO;
   holdRemainingSec?: number;
-  tone?: 'light' | 'cherry';
   onBack?: (() => void) | null;
 }
 
 export function BookingHeader({
   settings,
   holdRemainingSec = 0,
-  tone = 'light',
   onBack = null,
 }: BookingHeaderProps) {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -49,8 +47,8 @@ export function BookingHeader({
   const salonName = settings.name;
 
   return (
-    <header className="rb-header" data-tone={tone}>
-      <nav className="rb-header-bar" aria-label="Reserva">
+    <header className="rb-header">
+      <nav className="rb-header-bar" aria-label="Navegación principal">
         <HStack align="center">
           {onBack ? (
             <button type="button" className="rb-ghost fx-press" onClick={onBack} aria-label="Paso anterior">
@@ -71,7 +69,7 @@ export function BookingHeader({
         <NextLink href="/" aria-label={`${salonName}, inicio`} className="rb-logo-link">
           <img
             className="rb-logo"
-            src={tone === 'cherry' ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack}
+            src={LANDING_ASSETS.logoWhite}
             alt={salonName}
             width={120}
             height={50}

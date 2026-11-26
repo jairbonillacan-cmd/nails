@@ -6,7 +6,7 @@ import NextLink from 'next/link';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Menu } from 'lucide-react';
-import { useHeroScrollState } from '@/lib/hooks/useHeroScrollState';
+import { useHeroNavPhase } from '@/lib/hooks/useHeroScrollState';
 import type { ResolvedLandingSections } from '@/lib/landing-config';
 import { LANDING_ASSETS } from './landingContent';
 
@@ -39,14 +39,11 @@ export function LandingNav({
   whatsappUrl,
   sections,
 }: LandingNavProps) {
-  const heroState = useHeroScrollState('#inicio');
-  const isFloating = heroState === 'past';
+  const { state: heroState, isFloating } = useHeroNavPhase('#inicio');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const visibleLinks = ALL_NAV_LINKS.filter((item) =>
     sections ? sections[item.key] : true,
   );
-  const logoSrc =
-    customLogoUrl || (isFloating ? LANDING_ASSETS.logoBlack : LANDING_ASSETS.logoWhite);
 
   return (
     <header className="lk-header">
@@ -57,15 +54,38 @@ export function LandingNav({
         aria-label="Principal"
       >
         <a href="#inicio" aria-label={`${salonName}, inicio`} className="lk-logo-link">
-          <img
-            className="lk-logo"
-            src={logoSrc}
-            alt={salonName}
-            width={180}
-            height={76}
-            loading="eager"
-            decoding="async"
-          />
+          {customLogoUrl ? (
+            <img
+              className="lk-logo"
+              src={customLogoUrl}
+              alt=""
+              width={180}
+              height={76}
+              loading="eager"
+              decoding="async"
+            />
+          ) : (
+            <>
+              <img
+                className="lk-logo lk-logo-light"
+                src={LANDING_ASSETS.logoWhite}
+                alt=""
+                width={180}
+                height={76}
+                loading="eager"
+                decoding="async"
+              />
+              <img
+                className="lk-logo lk-logo-dark"
+                src={LANDING_ASSETS.logoBlack}
+                alt=""
+                width={180}
+                height={76}
+                loading="eager"
+                decoding="async"
+              />
+            </>
+          )}
         </a>
         <HStack
           as="ul"
@@ -95,6 +115,7 @@ export function LandingNav({
             isIconOnly
             icon={<Menu size={20} aria-hidden="true" />}
             className="lk-burger fx-press"
+            aria-haspopup="dialog"
             aria-expanded={isMenuOpen}
             onClick={() => setIsMenuOpen(true)}
           />

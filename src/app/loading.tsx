@@ -29,18 +29,18 @@ export default function HomeLoading() {
           gap={3}
         >
           <img
-            src={LANDING_ASSETS.logoBlack}
+            src={LANDING_ASSETS.logoWhite}
             alt="LAIKONA NAILS"
             width={160}
             height={68}
             className="lk-logo"
           />
           <HStack gap={4} align="center" className="rb-d" aria-hidden="true">
-            <VStack className="sk-bar" data-size="pill" />
-            <VStack className="sk-bar" data-size="pill" />
-            <VStack className="sk-bar" data-size="pill" />
+            <VStack className="sk-bar" data-size="pill" data-on="cherry" />
+            <VStack className="sk-bar" data-size="pill" data-on="cherry" />
+            <VStack className="sk-bar" data-size="pill" data-on="cherry" />
           </HStack>
-          <VStack className="ad-skeleton" data-size="button" aria-hidden="true" />
+          <VStack className="ad-skeleton" data-size="button" data-on="cherry" aria-hidden="true" />
         </HStack>
       </VStack>
 

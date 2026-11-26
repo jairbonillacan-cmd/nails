@@ -1,3 +1,4 @@
+import { getDateKeyInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import {
   ADMIN_CACHE_KEYS,
@@ -10,7 +11,7 @@ import type { AdminOverviewPayload } from '../AdminProvider';
 export const ROLE_LABELS = {
   owner: 'Dueña',
   admin: 'Recepción',
-  specialist: 'Manicurista',
+  specialist: 'Profesional',
 } as const;
 
 export type NavIconId =
@@ -40,16 +41,16 @@ export interface NavGroupConfig {
   items: NavItemConfig[];
 }
 
+export interface SidebarStaffRow {
+  id: string;
+  firstName: string;
+  todayCount: number;
+  href: string;
+}
+
 export function cleanDisplayName(fullName: string): string {
   const cleaned = fullName.replace(/\s*\([^)]*\)\s*$/, '').trim();
   return cleaned || fullName.trim();
-}
-
-export function getInitials(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'LN';
-  if (parts.length === 1) return (parts[0] ?? 'LN').slice(0, 2).toUpperCase();
-  return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
 }
 
 export function getDisplayBookingHost(appUrl: string): string {
@@ -71,11 +72,11 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
   const role = data.session.user.role;
   const rawGroups: Array<{ title: string; items: Array<NavItemConfig & { visible: boolean }> }> = [
     {
-      title: 'Tu día',
+      title: 'Operación',
       items: [
         {
           id: 'overview',
-          label: 'Inicio',
+          label: 'Resumen',
           href: '/admin',
           matchPath: '/admin',
           visible: true,
@@ -105,10 +106,17 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
           matchPath: '/admin/caja',
           visible: roleCanAccess(role, 'cash'),
         },
+        {
+          id: 'reports',
+          label: 'Reportes',
+          href: '/admin/reportes',
+          matchPath: '/admin/reportes',
+          visible: roleCanAccess(role, 'reports'),
+        },
       ],
     },
     {
-      title: 'Tu salón',
+      title: 'Salón',
       items: [
         {
           id: 'services',
@@ -132,11 +140,12 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
           visible: roleCanAccess(role, 'team'),
         },
         {
-          id: 'brand',
-          label: 'Mi página',
-          href: '/admin/marca',
-          matchPath: '/admin/marca',
-          visible: roleCanAccess(role, 'brand'),
+          id: 'inventory',
+          label: 'Inventario',
+          href: '/admin/inventario',
+          matchPath: '/admin/inventario',
+          badge: data.kpis.lowStockCount > 0 ? String(data.kpis.lowStockCount) : null,
+          visible: roleCanAccess(role, 'inventory'),
         },
       ],
     },
@@ -152,23 +161,15 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
     .filter((group) => group.items.length > 0);
 }
 
-export function buildSecondaryNavItems(data: AdminOverviewPayload): NavItemConfig[] {
+export function buildFooterNavItems(data: AdminOverviewPayload): NavItemConfig[] {
   const role = data.session.user.role;
   const rawItems: Array<NavItemConfig & { visible: boolean }> = [
     {
-      id: 'reports',
-      label: 'Reportes',
-      href: '/admin/reportes',
-      matchPath: '/admin/reportes',
-      visible: roleCanAccess(role, 'reports'),
-    },
-    {
-      id: 'inventory',
-      label: 'Inventario',
-      href: '/admin/inventario',
-      matchPath: '/admin/inventario',
-      badge: data.kpis.lowStockCount > 0 ? String(data.kpis.lowStockCount) : null,
-      visible: roleCanAccess(role, 'inventory'),
+      id: 'brand',
+      label: 'Mi página',
+      href: '/admin/marca',
+      matchPath: '/admin/marca',
+      visible: roleCanAccess(role, 'brand'),
     },
     {
       id: 'integrations',
@@ -192,6 +193,31 @@ export function buildSecondaryNavItems(data: AdminOverviewPayload): NavItemConfi
   return rawItems
     .filter((item) => item.visible)
     .map(({ visible: _visible, ...item }) => item);
+}
+
+export function buildSidebarStaffRows(data: AdminOverviewPayload): SidebarStaffRow[] {
+  if (data.session.user.role === 'specialist') return [];
+  const tz = data.settings.timezone || 'America/Mexico_City';
+  const todayKey = data.serverTodayKey || getDateKeyInTimezone(new Date(data.serverNowIso), tz);
+  const todayCounts = new Map<string, number>();
+
+  for (const booking of data.bookings) {
+    if (booking.status === 'canceled') continue;
+    if (getDateKeyInTimezone(new Date(booking.startAt), tz) === todayKey) {
+      todayCounts.set(booking.staffId, (todayCounts.get(booking.staffId) ?? 0) + 1);
+    }
+  }
+
+  return data.staff
+    .filter((member) => member.isActive)
+    .toSorted((a, b) => a.displayOrder - b.displayOrder)
+    .slice(0, 6)
+    .map((member) => ({
+      id: member.id,
+      firstName: member.name.trim().split(/\s+/)[0] || member.name,
+      todayCount: todayCounts.get(member.id) ?? 0,
+      href: '/admin/citas',
+    }));
 }
 
 export function prefetchAdminRoute(

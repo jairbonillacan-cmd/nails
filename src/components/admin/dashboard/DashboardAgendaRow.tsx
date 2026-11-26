@@ -1,6 +1,7 @@
 'use client';
 
 import { memo } from 'react';
+import { Avatar } from '@astryxdesign/core/Avatar';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -49,7 +50,7 @@ function getAgendaRowMeta(
   }
   if (booking.status === 'pending_confirmation' || booking.status === 'pending_payment') {
     return {
-      customTag: { label: 'Anticipo por confirmar', tone: 'warning' },
+      customTag: { label: 'Anticipo pendiente', tone: 'warning' },
       isPast: false,
       actionKind: 'validate',
     };
@@ -101,7 +102,7 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
       aria-busy={isConfirming || undefined}
     >
       <VStack gap={0} className="ad-row-time">
-        <Text weight="bold" size="base" hasTabularNumbers>
+        <Text weight="semibold" size="base" hasTabularNumbers>
           {startTimeLabel}
         </Text>
         <Text type="supporting" color="secondary" size="sm">
@@ -113,16 +114,24 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
         {'\u200B'}
       </Text>
 
-      <VStack gap={0.5} className="ad-row-info">
-        <Text weight="semibold" maxLines={1}>
-          {booking.client.fullName}
-        </Text>
-        <Text type="supporting" color="secondary" maxLines={1}>
-          {booking.service.name} · con {booking.staff.name.split(' ')[0]}
-        </Text>
-      </VStack>
+      <HStack gap={2} align="center" className="ad-row-info">
+        <Avatar name={booking.client.fullName} size={24} tooltip={false} />
+        <VStack gap={0} className="rb-grow">
+          <HStack gap={2} align="center" wrap="wrap">
+            <Text weight="semibold" size="base" maxLines={1}>
+              {booking.client.fullName}
+            </Text>
+            <Text type="code" color="secondary" size="sm" className="ad-code-muted">
+              {booking.bookingCode}
+            </Text>
+          </HStack>
+          <Text type="supporting" color="secondary" maxLines={1}>
+            {booking.service.name} · {booking.staff.name.split(' ')[0]}
+          </Text>
+        </VStack>
+      </HStack>
 
-      <HStack align="center" justify="end" gap={2} wrap="wrap" className="ad-row-actions">
+      <HStack align="center" justify="end" gap={3} wrap="wrap" className="ad-row-actions">
         {isNextUp ? (
           <StatusTag label="Siguiente" tone="accent" showDot />
         ) : meta.customTag ? (
@@ -136,6 +145,7 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
           <BookingStatusTag
             status={booking.status}
             hasPaymentProof={Boolean(booking.paymentProofUrl)}
+            showDot
           />
         )}
 
@@ -152,7 +162,7 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
           <Button
             type="button"
             label={isConfirming ? 'Confirmando...' : 'Confirmar'}
-            variant="secondary"
+            variant="primary"
             size="sm"
             isLoading={isConfirming}
             isDisabled={isConfirming}
@@ -163,7 +173,7 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
         {meta.actionKind === 'whatsapp' ? (
           <Button
             label="WhatsApp"
-            variant="secondary"
+            variant="ghost"
             size="sm"
             href={waHref}
             target="_blank"

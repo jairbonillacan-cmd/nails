@@ -29,7 +29,7 @@ export function CajaCommissionsTab({
     <VStack gap={4} className="fx-step-in">
       <SurfaceCard
         title="Comisiones y propinas"
-        subtitle="Lo que le corresponde a cada manicurista según sus servicios cobrados y propinas."
+        subtitle="Lo que le corresponde a cada profesional según sus servicios cobrados y propinas."
         count={commissionsByStaff.length}
       >
         {commissionsByStaff.length === 0 ? (
@@ -38,7 +38,7 @@ export function CajaCommissionsTab({
               framed={false}
               isCompact
               title="Sin movimientos para calcular"
-              description="Cuando cobres citas verás aquí el desglose de comisión y propinas de cada manicurista."
+              description="Cuando cobres citas verás aquí el desglose de comisión y propinas de cada profesional."
               actions={<Button label="Ir a agenda" variant="secondary" size="sm" href="/admin/citas" />}
             />
           </VStack>
@@ -49,7 +49,7 @@ export function CajaCommissionsTab({
               hasHover
               data={[...commissionsByStaff]}
               columns={[
-                { key: 'name', header: 'Manicurista' },
+                { key: 'name', header: 'Profesional' },
                 {
                   key: 'percent',
                   header: '% Comisión',

@@ -19,13 +19,13 @@ export async function GET(request: NextRequest) {
   if (session.user.role === 'specialist') {
     if (!session.user.staffMemberId) {
       return NextResponse.json(
-        { error: 'Tu usuario no tiene especialista vinculada.' },
+        { error: 'Tu usuario no tiene profesional vinculada.' },
         { status: 403 },
       );
     }
     if (requestedStaffId && requestedStaffId !== session.user.staffMemberId) {
       return NextResponse.json(
-        { error: 'No puedes conectar el calendario de otra especialista.' },
+        { error: 'No puedes conectar el calendario de otra profesional.' },
         { status: 403 },
       );
     }
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   const snapshot = await getRepository().getSnapshot();
   const staffExists = snapshot.staff.some((s) => s.id === staffId);
   if (!staffExists) {
-    return NextResponse.json({ error: 'Especialista no encontrada.' }, { status: 404 });
+    return NextResponse.json({ error: 'Profesional no encontrada.' }, { status: 404 });
   }
 
   const signedState = createGoogleOAuthState({

@@ -259,7 +259,7 @@ export function explainSlotInPlainSpanish(slot: SlotDiagnosis): string {
   if (/Google Calendar/i.test(raw)) {
     return 'Aparece un compromiso ocupado en Google Calendar a esta hora.';
   }
-  if (/Especialista inactiva/i.test(raw)) {
+  if (/Profesional inactiva/i.test(raw)) {
     return `${slot.staffName} está pausada o no tiene asignado este servicio en Equipo.`;
   }
   return raw || 'Esta hora no está disponible por ahora.';

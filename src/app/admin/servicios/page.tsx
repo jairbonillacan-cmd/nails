@@ -1,13 +1,11 @@
 'use client';
 
-import type React from 'react';
 import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Check, Plus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
@@ -17,6 +15,7 @@ import {
   PageSkeleton,
   type MetricTileItem,
 } from '@/components/ui';
+import { FormDialog } from '@/components/ui/FormDialog';
 import { ServiceCatalogSection } from '@/components/admin/servicios/ServiceCatalogSection';
 import { ServiceLivePreview } from '@/components/admin/servicios/ServiceLivePreview';
 import { ServiceEditorPanel } from '@/components/admin/servicios/ServiceEditorPanel';
@@ -27,6 +26,11 @@ import {
 } from '@/components/admin/servicios/ServiceThumbnail';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { formatCurrency } from '@/lib/format';
+import {
+  FORM_SUBMIT_OK,
+  formSubmitResultFromResponse,
+  type FormSubmitResult,
+} from '@/lib/forms/form-submit';
 import type { Service } from '@/lib/types';
 
 export default function AdminServicesPage() {
@@ -34,7 +38,6 @@ export default function AdminServicesPage() {
   const [section, setSection] = useState('services');
   const [editing, setEditing] = useState<Partial<Service> | null>(null);
   const [cleanupEnabledOverride, setCleanupEnabledOverride] = useState<boolean | null>(null);
-  const [savingService, setSavingService] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [pendingPauseService, setPendingPauseService] = useState<Service | null>(null);
   const saveNotice = useEphemeralMessage(3200);
@@ -115,11 +118,7 @@ export default function AdminServicesPage() {
     setCleanupEnabledOverride(null);
   };
 
-  const handleSaveService = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isServiceDirty || savingService) return;
-    setSavingService(true);
-    setSavedMsg(null);
+  const saveService = async (): Promise<FormSubmitResult> => {
     const wasEditing = Boolean(activeDraft.id);
     const normalizedPayload = {
       ...activeDraft,
@@ -129,30 +128,17 @@ export default function AdminServicesPage() {
       bufferAfterMinutes: hasCleanupTime ? (activeDraft.bufferAfterMinutes ?? 0) : 0,
       isPrivate: Boolean(activeDraft.isPrivate),
     };
-    try {
-      const res = await fetch('/api/admin/services', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
-      });
-      if (res.ok) {
-        await refresh();
-        closeEditor();
-        saveNotice.show(
-          wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
-        );
-      } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        setSavedMsg({
-          status: 'error',
-          text: errJson?.error || 'No se pudo guardar el servicio.',
-        });
-      }
-    } catch {
-      setSavedMsg({ status: 'error', text: 'Error de conexión al guardar el servicio.' });
-    } finally {
-      setSavingService(false);
-    }
+    const res = await fetch('/api/admin/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
+    });
+    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el servicio.');
+    await refresh();
+    saveNotice.show(
+      wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
+    );
+    return FORM_SUBMIT_OK;
   };
 
   const applyToggleServiceActive = async (srv: Service, checked: boolean) => {
@@ -171,6 +157,8 @@ export default function AdminServicesPage() {
       } else {
         setSavedMsg({ status: 'error', text: 'No se pudo actualizar el estado del servicio.' });
       }
+    } catch {
+      setSavedMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el servicio.' });
     } finally {
       setTogglingId(null);
     }
@@ -197,7 +185,7 @@ export default function AdminServicesPage() {
         title="Servicios"
         subtitle="Edita tus precios, duraciones y extras tal como los ven tus clientas al agendar."
         meta={
-          savingService || togglingId ? (
+          togglingId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
               Guardando...
             </Text>
@@ -267,55 +255,53 @@ export default function AdminServicesPage() {
         />
       )}
 
-      <Dialog
+      <FormDialog
         isOpen={editing !== null}
         onOpenChange={(open) => {
-          if (!open && !savingService) closeEditor();
+          if (!open) closeEditor();
         }}
-        purpose="form"
+        title={activeDraft.id ? 'Editar servicio' : 'Nuevo servicio'}
+        subtitle="Solo necesitas nombre, precio y duración."
         width="min(40rem, 96vw)"
-        maxHeight="92dvh"
-        padding={5}
       >
-        <VStack gap={4} className="fx-sheet-in">
-          <DialogHeader
-            title={activeDraft.id ? 'Editar servicio' : 'Nuevo servicio'}
-            subtitle="Nombre, precio y duración es lo único obligatorio."
-            onOpenChange={(open) => {
-              if (!open && !savingService) closeEditor();
-            }}
-          />
-          <ServiceLivePreview
-            draft={activeDraft}
-            categoryName={previewCategoryName}
-            currency={currency}
-            appUrl={data.integration.appUrl}
-          />
-          <ServiceEditorPanel
-            draft={activeDraft}
-            categoryOptions={categoryOptions}
-            defaultDepositCents={defaultDepositCents}
-            hasCleanupTime={hasCleanupTime}
-            hasCustomAdvancedValues={hasCustomAdvancedValues}
-            isDirty={isServiceDirty}
-            saving={savingService}
-            onChangeDraft={setEditing}
-            onToggleCleanupTime={(checked) => {
-              setCleanupEnabledOverride(checked);
-              if (!checked) {
-                setEditing({ ...activeDraft, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 });
-              } else if (
-                (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
-                (activeDraft.bufferAfterMinutes ?? 0) === 0
-              ) {
-                setEditing({ ...activeDraft, bufferAfterMinutes: 15 });
-              }
-            }}
-            onCancel={closeEditor}
-            onSubmit={handleSaveService}
-          />
-        </VStack>
-      </Dialog>
+        {(controls) => (
+          <VStack gap={4}>
+            <ServiceLivePreview
+              draft={activeDraft}
+              categoryName={previewCategoryName}
+              currency={currency}
+              appUrl={data.integration.appUrl}
+            />
+            <ServiceEditorPanel
+              draft={activeDraft}
+              categoryOptions={categoryOptions}
+              defaultDepositCents={defaultDepositCents}
+              hasCleanupTime={hasCleanupTime}
+              hasCustomAdvancedValues={hasCustomAdvancedValues}
+              isDirty={isServiceDirty}
+              saving={controls.isSubmitting}
+              onChangeDraft={setEditing}
+              onToggleCleanupTime={(checked) => {
+                setCleanupEnabledOverride(checked);
+                if (!checked) {
+                  setEditing({ ...activeDraft, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 });
+                } else if (
+                  (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
+                  (activeDraft.bufferAfterMinutes ?? 0) === 0
+                ) {
+                  setEditing({ ...activeDraft, bufferAfterMinutes: 15 });
+                }
+              }}
+              onCancel={controls.close}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!isServiceDirty) return;
+                controls.submit(saveService);
+              }}
+            />
+          </VStack>
+        )}
+      </FormDialog>
 
       <ConfirmActionDialog
         isOpen={Boolean(pendingPauseService)}

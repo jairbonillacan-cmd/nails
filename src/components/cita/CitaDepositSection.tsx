@@ -67,7 +67,7 @@ function buildBookingDmSummary(
     `- Servicios: ${serviceNames.join(' + ')}`,
     ...(addonNames.length > 0 ? [`- Extras: ${addonNames.join(', ')}`] : []),
     `- Fecha y hora: ${formatDateLongInTimezone(booking.startAt, timezone)} · ${formatTimeInTimezone(booking.startAt, timezone)} (${formatDuration(booking.totalDurationMinutes)})`,
-    `- Especialista: ${booking.staff.name}`,
+    `- Profesional: ${booking.staff.name}`,
     `- Clienta: ${booking.client.fullName}`,
     ...(booking.clientInstagram
       ? [`- Instagram: ${normalizeInstagramHandle(booking.clientInstagram, '')}`]

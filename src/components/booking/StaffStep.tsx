@@ -54,21 +54,20 @@ export function StaffStep({
           ¿Con quién?
         </Heading>
         <Text color="secondary">
-          Libres el {formatDateLongInTimezone(slot.startAt, timezone)} a las{' '}
+          Tu horario ya está apartado: {formatDateLongInTimezone(slot.startAt, timezone)},{' '}
           <Text color="inherit" weight="semibold" hasTabularNumbers>
             {time}
           </Text>
-          . Ya te guardamos el horario.
         </Text>
       </VStack>
 
       {errorMessage ? (
         <VStack className="fx-fade-up">
-          <Banner status="warning" role="alert" title="Esa artista ya no está libre" description={errorMessage} />
+          <Banner status="warning" role="alert" title="Esa profesional ya no está libre" description={errorMessage} />
         </VStack>
       ) : null}
 
-      <ul className="rb-artists fx-stagger" aria-label="Artista">
+      <ul className="rb-artists fx-stagger" aria-label="Profesional">
         <li>
           <button
             type="button"

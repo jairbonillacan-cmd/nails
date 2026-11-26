@@ -17,16 +17,16 @@ export default function CitaLoading() {
 
       <VStack as="header" className="rb-header" gap={0}>
         <VStack className="rb-header-bar" gap={0}>
-          <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
+          <VStack className="sk-bar" data-size="pill" data-on="cherry" aria-hidden="true" />
           <img
-            src={LANDING_ASSETS.logoBlack}
+            src={LANDING_ASSETS.logoWhite}
             alt="LAIKONA NAILS"
             width={120}
             height={50}
             className="rb-logo"
           />
           <HStack justify="end">
-            <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
+            <VStack className="sk-bar" data-size="pill" data-on="cherry" aria-hidden="true" />
           </HStack>
         </VStack>
       </VStack>

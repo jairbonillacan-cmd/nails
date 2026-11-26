@@ -30,7 +30,7 @@ interface LandingTeamProps {
 }
 
 export function LandingTeam({
-  title = 'Elige a tu artista',
+  title = 'Elige a tu profesional',
   subtitle = 'Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio.',
   staff,
   services,

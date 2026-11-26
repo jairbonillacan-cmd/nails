@@ -191,6 +191,11 @@ export function LandingTeamDialog({
                     <Text weight="semibold" textWrap="balance">
                       {service.name}
                     </Text>
+                    {service.description ? (
+                      <Text type="supporting" color="secondary" textWrap="pretty">
+                        {service.description}
+                      </Text>
+                    ) : null}
                     <Text type="supporting" color="secondary" hasTabularNumbers>
                       {formatDuration(service.durationMinutes)} ·{' '}
                       {formatServicePrice(service.priceCents, service.isStartingPrice, currency)}

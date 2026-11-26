@@ -1,12 +1,18 @@
 'use client';
 
+import { useState } from 'react';
 import NextLink from 'next/link';
-import { VStack } from '@astryxdesign/core/VStack';
-import { HStack } from '@astryxdesign/core/HStack';
-import { Text } from '@astryxdesign/core/Text';
+import { Avatar } from '@astryxdesign/core/Avatar';
+import { Divider } from '@astryxdesign/core/Divider';
+import { Popover } from '@astryxdesign/core/Popover';
 import { Selector } from '@astryxdesign/core/Selector';
+import { Text } from '@astryxdesign/core/Text';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
+import { VStack } from '@astryxdesign/core/VStack';
 import {
+  Check,
+  ChevronsUpDown,
+  Copy,
   ExternalLink,
   LogOut,
   Moon,
@@ -14,8 +20,14 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import type { AdminOverviewPayload } from '../AdminProvider';
-import { cleanDisplayName, getInitials, ROLE_LABELS } from './adminNavConfig';
+import {
+  cleanDisplayName,
+  getBookingCopyUrl,
+  getDisplayBookingHost,
+  ROLE_LABELS,
+} from './adminNavConfig';
 
 interface AdminFooterControlsProps {
   data: AdminOverviewPayload;
@@ -23,7 +35,6 @@ interface AdminFooterControlsProps {
   soundActive: boolean;
   soundFeedbackMessage: string | null;
   isDark: boolean;
-  onExpandSidebar: () => void;
   onToggleMute: () => void;
   onTestSound: () => void;
   onToggleTheme: () => void;
@@ -38,7 +49,6 @@ export function AdminFooterControls({
   soundActive,
   soundFeedbackMessage,
   isDark,
-  onExpandSidebar,
   onToggleMute,
   onTestSound,
   onToggleTheme,
@@ -46,141 +56,110 @@ export function AdminFooterControls({
   onLogout,
   closeDrawer,
 }: AdminFooterControlsProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { copied, feedback, copy } = useCopyToClipboard(2200);
   const role = data.session.user.role;
   const displayName = cleanDisplayName(data.session.user.fullName);
-  const initials = getInitials(displayName);
+  const bookingDisplayLink = getDisplayBookingHost(data.integration.appUrl);
+  const demoUserOptions =
+    data.integration.mode === 'demo'
+      ? data.adminUsers
+          .filter((u) => u.isActive)
+          .map((u) => ({
+            value: u.email,
+            label: `${cleanDisplayName(u.fullName).split(' ')[0]} · ${ROLE_LABELS[u.role]}`,
+          }))
+      : [];
 
-  if (isCompactRail) {
-    return (
-      <VStack gap={1.5} align="center" className="ad-side-foot ad-side-foot-compact">
-        <Tooltip
-          content={`${displayName} · ${ROLE_LABELS[role]}`}
-          placement="end"
-          hasHoverIndication={false}
-        >
-          <button
-            type="button"
-            className="ad-avatar-btn"
-            aria-label={`${displayName} (${ROLE_LABELS[role]}). Expandir barra lateral`}
-            onClick={onExpandSidebar}
-          >
-            <Text color="inherit" weight="bold" className="ad-avatar" aria-hidden="true">
-              {initials}
-            </Text>
-            <Text className="ad-online-dot" aria-hidden="true">
-              {'\u200B'}
-            </Text>
-          </button>
-        </Tooltip>
-
-        <Tooltip
-          content={
-            soundActive ? 'Quitar sonido de citas nuevas' : 'Sonar con cada cita nueva'
-          }
-          placement="end"
-          hasHoverIndication={false}
-        >
-          <button
-            type="button"
-            className="ad-rail-btn"
-            aria-label={
-              soundActive ? 'Quitar sonido de citas nuevas' : 'Sonar con cada cita nueva'
-            }
-            aria-pressed={soundActive}
-            onClick={onToggleMute}
-          >
-            {soundActive ? (
-              <Volume2 size={16} strokeWidth={1.85} aria-hidden="true" />
-            ) : (
-              <VolumeX size={16} strokeWidth={1.85} aria-hidden="true" />
-            )}
-          </button>
-        </Tooltip>
-
-        <Tooltip
-          content={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-          placement="end"
-          hasHoverIndication={false}
-        >
-          <button
-            type="button"
-            className="ad-rail-btn"
-            aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-            aria-pressed={isDark}
-            onClick={onToggleTheme}
-          >
-            {isDark ? (
-              <Sun size={16} strokeWidth={1.85} aria-hidden="true" />
-            ) : (
-              <Moon size={16} strokeWidth={1.85} aria-hidden="true" />
-            )}
-          </button>
-        </Tooltip>
-
-        <Tooltip content="Ver mi página" placement="end" hasHoverIndication={false}>
-          <NextLink href="/" className="ad-rail-btn" aria-label="Ver mi página">
-            <ExternalLink size={16} strokeWidth={1.85} aria-hidden="true" />
-          </NextLink>
-        </Tooltip>
-
-        <Tooltip content="Salir" placement="end" hasHoverIndication={false}>
-          <button
-            type="button"
-            className="ad-rail-btn"
-            aria-label="Salir"
-            onClick={onLogout}
-          >
-            <LogOut size={16} strokeWidth={1.85} aria-hidden="true" />
-          </button>
-        </Tooltip>
-      </VStack>
+  const handleCopyBookingLink = () => {
+    void copy(
+      getBookingCopyUrl(data.integration.appUrl),
+      '¡Link de citas copiado!',
+      'Copia /reservar',
     );
-  }
+  };
 
-  return (
-    <VStack gap={2} className="ad-side-foot">
-      <HStack gap={2} align="center">
-        <HStack className="ad-avatar-wrap" aria-hidden="true">
-          <Text color="inherit" weight="bold" className="ad-avatar">
-            {initials}
+  const popoverContent = (
+    <VStack gap={1.5} className="ad-user-popover">
+      <VStack gap={0.5} paddingInline={2} paddingBlock={1}>
+        <Text weight="semibold" size="sm" maxLines={1}>
+          {displayName}
+        </Text>
+        <Text type="supporting" color="secondary" size="sm" maxLines={1}>
+          {ROLE_LABELS[role]} · {data.settings.name}
+        </Text>
+      </VStack>
+
+      <Divider />
+
+      {demoUserOptions.length > 1 ? (
+        <VStack gap={1} paddingInline={1} paddingBlock={1}>
+          <Text type="supporting" color="secondary" size="sm" className="ad-popover-kicker">
+            Cambiar cuenta de prueba
           </Text>
-          <Text className="ad-online-dot">{'\u200B'}</Text>
-        </HStack>
-        <VStack gap={0} className="rb-grow">
-          <Text weight="semibold" size="sm" maxLines={1}>
-            {displayName}
-          </Text>
-          <Text type="supporting" color="secondary" size="sm">
-            {ROLE_LABELS[role]}
-          </Text>
+          <Selector
+            label="Ver panel como"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            value={data.session.user.email}
+            onChange={(val) => {
+              if (val) {
+                setMenuOpen(false);
+                onSwitchDemoUser(val);
+                if (closeDrawer) closeDrawer();
+              }
+            }}
+            options={demoUserOptions}
+          />
         </VStack>
-      </HStack>
-
-      {data.integration.mode === 'demo' ? (
-        <Selector
-          label="Ver panel como"
-          isLabelHidden
-          size="sm"
-          width="100%"
-          value={data.session.user.email}
-          onChange={(val) => {
-            if (val) {
-              onSwitchDemoUser(val);
-              if (closeDrawer) closeDrawer();
-            }
-          }}
-          options={data.adminUsers
-            .filter((u) => u.isActive)
-            .map((u) => ({
-              value: u.email,
-              label: `${cleanDisplayName(u.fullName).split(' ')[0]} · ${ROLE_LABELS[u.role]}`,
-            }))}
-        />
       ) : null}
 
       <button
         type="button"
-        className="ad-pill ad-foot-pill fx-press"
+        className="ad-menu-row fx-press"
+        onClick={handleCopyBookingLink}
+      >
+        {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+        <VStack gap={0} align="start" className="rb-grow">
+          <Text color="inherit" size="sm" weight="medium">
+            {copied ? '¡Link de citas copiado!' : 'Copiar link de citas'}
+          </Text>
+          <Text type="supporting" color="secondary" size="sm" className="ad-link-url">
+            {bookingDisplayLink}
+          </Text>
+        </VStack>
+      </button>
+
+      <NextLink
+        href="/"
+        className="ad-menu-row fx-press"
+        onClick={() => {
+          setMenuOpen(false);
+          if (closeDrawer) closeDrawer();
+        }}
+      >
+        <ExternalLink size={15} aria-hidden="true" />
+        <Text color="inherit" size="sm" weight="medium">
+          Ver página pública
+        </Text>
+      </NextLink>
+
+      <button
+        type="button"
+        className="ad-menu-row fx-press"
+        aria-pressed={isDark}
+        onClick={onToggleTheme}
+      >
+        {isDark ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+        <Text color="inherit" size="sm" weight="medium">
+          {isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+        </Text>
+      </button>
+
+      <button
+        type="button"
+        className="ad-menu-row fx-press"
         aria-pressed={soundActive}
         onClick={() => {
           onToggleMute();
@@ -188,51 +167,100 @@ export function AdminFooterControls({
         }}
       >
         {soundActive ? (
-          <Volume2 size={14} aria-hidden="true" />
+          <Volume2 size={15} aria-hidden="true" />
         ) : (
-          <VolumeX size={14} aria-hidden="true" />
+          <VolumeX size={15} aria-hidden="true" />
         )}
-        <Text color="inherit" size="sm" weight="semibold" maxLines={1}>
+        <Text color="inherit" size="sm" weight="medium" maxLines={1}>
           {soundFeedbackMessage
             ? soundFeedbackMessage
             : soundActive
-              ? 'Sonar con cada cita nueva'
-              : 'Sin sonido'}
+              ? 'Sonido de citas activo'
+              : 'Sonido silenciado'}
         </Text>
       </button>
 
-      <HStack justify="between" align="center" gap={1}>
-        <Tooltip content={isDark ? 'Modo claro' : 'Modo oscuro'} hasHoverIndication={false}>
+      <Divider />
+
+      <button
+        type="button"
+        className="ad-menu-row ad-menu-row-danger fx-press"
+        onClick={() => {
+          setMenuOpen(false);
+          if (closeDrawer) closeDrawer();
+          onLogout();
+        }}
+      >
+        <LogOut size={15} aria-hidden="true" />
+        <Text color="inherit" size="sm" weight="medium">
+          Cerrar sesión
+        </Text>
+      </button>
+    </VStack>
+  );
+
+  return (
+    <VStack
+      gap={1}
+      align={isCompactRail ? 'center' : 'stretch'}
+      className={isCompactRail ? 'ad-side-foot ad-side-foot-compact' : 'ad-side-foot'}
+    >
+      <Text
+        type="supporting"
+        color="secondary"
+        role="status"
+        aria-live="polite"
+        className="rb-sr-only"
+      >
+        {feedback ?? ''}
+      </Text>
+
+      <Popover
+        isOpen={menuOpen}
+        onOpenChange={setMenuOpen}
+        placement={isCompactRail ? 'end' : 'above'}
+        alignment="start"
+        presentation="adaptive"
+        width="16rem"
+        padding={2}
+        label="Opciones de cuenta"
+        content={popoverContent}
+      >
+        {isCompactRail ? (
+          <Tooltip
+            content={`${displayName} · ${ROLE_LABELS[role]}`}
+            placement="end"
+            hasHoverIndication={false}
+          >
+            <button
+              type="button"
+              className="ad-user-trigger ad-user-trigger-compact fx-press"
+              aria-label={`Cuenta de ${displayName} (${ROLE_LABELS[role]})`}
+              aria-expanded={menuOpen}
+            >
+              <Avatar name={displayName} size={32} tooltip={false} />
+            </button>
+          </Tooltip>
+        ) : (
           <button
             type="button"
-            className="ad-rail-btn"
-            aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-            aria-pressed={isDark}
-            onClick={onToggleTheme}
+            className="ad-user-trigger fx-press"
+            aria-label={`Opciones de cuenta: ${displayName}`}
+            aria-expanded={menuOpen}
           >
-            {isDark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+            <Avatar name={displayName} size={36} tooltip={false} />
+            <VStack gap={0} align="start" className="rb-grow">
+              <Text weight="semibold" size="sm" maxLines={1}>
+                {displayName}
+              </Text>
+              <Text type="supporting" color="secondary" size="sm" maxLines={1}>
+                {ROLE_LABELS[role]}
+              </Text>
+            </VStack>
+            <ChevronsUpDown size={15} className="ad-user-chevron" aria-hidden="true" />
           </button>
-        </Tooltip>
-        <NextLink href="/" className="ad-foot-link" onClick={closeDrawer}>
-          <ExternalLink size={14} aria-hidden="true" />
-          <Text color="inherit" size="sm">
-            Mi página
-          </Text>
-        </NextLink>
-        <button
-          type="button"
-          className="ad-foot-link"
-          onClick={() => {
-            if (closeDrawer) closeDrawer();
-            onLogout();
-          }}
-        >
-          <LogOut size={14} aria-hidden="true" />
-          <Text color="inherit" size="sm">
-            Salir
-          </Text>
-        </button>
-      </HStack>
+        )}
+      </Popover>
     </VStack>
   );
 }

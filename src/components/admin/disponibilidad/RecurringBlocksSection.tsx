@@ -22,7 +22,14 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import type { RecurringBlock } from '@/lib/types';
+import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
+import {
+  FORM_SUBMIT_OK,
+  formSubmitError,
+  formSubmitResultFromResponse,
+  type FormSubmitResult,
+} from '@/lib/forms/form-submit';
 import { DAYS, FIXED_TIME_OPTIONS, formatRecurringSummary } from './scheduleConstants';
 
 interface RecurringBlocksSectionProps {
@@ -34,14 +41,17 @@ interface RecurringBlocksSectionProps {
   onMessage: (msg: { status: 'success' | 'error'; text: string } | null) => void;
 }
 
-export function RecurringBlocksSection({
+function RecurringBreakFormBody({
   staffId,
-  staffName,
-  recurringBlocks,
   onRefresh,
   onSavedNotice,
-  onMessage,
-}: RecurringBlocksSectionProps) {
+  controls,
+}: {
+  staffId: string;
+  onRefresh: () => Promise<void>;
+  onSavedNotice: (text: string) => void;
+  controls: FormDialogControls;
+}) {
   const [recFrequency, setRecFrequency] = useState<'weekly' | 'monthly'>('weekly');
   const [recWeekdays, setRecWeekdays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [recDayOfMonth, setRecDayOfMonth] = useState<number>(15);
@@ -49,9 +59,7 @@ export function RecurringBlocksSection({
   const [recEndTime, setRecEndTime] = useState('13:15');
   const [recReason, setRecReason] = useState('');
   const [recUntilDate, setRecUntilDate] = useState('');
-  const [savingRecurring, setSavingRecurring] = useState(false);
-  const [busyBlockId, setBusyBlockId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<RecurringBlock | null>(null);
+  const { isSubmitting } = controls;
 
   const toggleRecWeekday = (dow: number, checked: boolean) => {
     setRecWeekdays((prev) => {
@@ -62,64 +70,152 @@ export function RecurringBlocksSection({
     });
   };
 
-  const createRecurringBreak = async (e: React.FormEvent, onDone: () => void) => {
-    e.preventDefault();
-    if (!staffId || savingRecurring) return;
+  const saveBreak = async (): Promise<FormSubmitResult> => {
     if (recFrequency === 'weekly' && recWeekdays.length === 0) {
-      onMessage({
-        status: 'error',
-        text: 'Elige al menos un día de la semana para este descanso.',
-      });
-      return;
+      return formSubmitError('Elige al menos un día de la semana.');
     }
     if (recStartTime >= recEndTime) {
-      onMessage({
-        status: 'error',
-        text: 'La hora de inicio debe ser antes que la hora de fin.',
-      });
-      return;
+      return formSubmitError('La hora de inicio debe ser antes que la hora de fin.');
     }
-    setSavingRecurring(true);
-    onMessage(null);
-    try {
-      const res = await fetch('/api/admin/availability', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'recurring_block',
-          staffId,
-          reason: recReason.trim() || 'Descanso fijo',
-          frequency: recFrequency,
-          weekdays: recFrequency === 'weekly' ? recWeekdays : [],
-          dayOfMonth:
-            recFrequency === 'monthly'
-              ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1)))
-              : null,
-          startTime: recStartTime,
-          endTime: recEndTime,
-          untilDate: recUntilDate.trim() || null,
-          isActive: true,
-        }),
-      });
-      if (res.ok) {
-        await onRefresh();
-        setRecReason('');
-        setRecUntilDate('');
-        onDone();
-        onSavedNotice('Descanso fijo guardado');
-      } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        onMessage({
-          status: 'error',
-          text: errJson?.error || 'No se pudo guardar el descanso fijo.',
-        });
-      }
-    } catch {
-      onMessage({ status: 'error', text: 'Error de conexión al guardar el descanso.' });
-    } finally {
-      setSavingRecurring(false);
-    }
+    const res = await fetch('/api/admin/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'recurring_block',
+        staffId,
+        reason: recReason.trim() || 'Descanso',
+        frequency: recFrequency,
+        weekdays: recFrequency === 'weekly' ? recWeekdays : [],
+        dayOfMonth:
+          recFrequency === 'monthly'
+            ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1)))
+            : null,
+        startTime: recStartTime,
+        endTime: recEndTime,
+        untilDate: recUntilDate.trim() || null,
+        isActive: true,
+      }),
+    });
+    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el descanso.');
+    await onRefresh();
+    onSavedNotice('Descanso guardado');
+    return FORM_SUBMIT_OK;
   };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffId) return;
+    controls.submit(saveBreak);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <VStack gap={3}>
+        <FilterPillBar<'weekly' | 'monthly'>
+          ariaLabel="Con qué frecuencia se repite"
+          mode="segmented"
+          size="sm"
+          layout="fill"
+          value={recFrequency}
+          onChange={setRecFrequency}
+          options={[
+            { value: 'weekly', label: 'Cada semana' },
+            { value: 'monthly', label: 'Cada mes' },
+          ]}
+        />
+
+        {recFrequency === 'weekly' ? (
+          <VStack gap={1.5} role="group" aria-label="Qué días">
+            <Text type="label" weight="semibold" aria-hidden="true">
+              Qué días
+            </Text>
+            <Grid columns={{ minWidth: 72, max: 4 }} gap={1.5}>
+              {DAYS.map(({ dow, short }) => (
+                <CheckboxInput
+                  key={dow}
+                  size="sm"
+                  label={short}
+                  value={recWeekdays.includes(dow)}
+                  onChange={(checked) => toggleRecWeekday(dow, checked)}
+                />
+              ))}
+            </Grid>
+          </VStack>
+        ) : (
+          <NumberInput
+            label="Qué día del mes"
+            description="Del 1 al 31."
+            value={recDayOfMonth}
+            min={1}
+            max={31}
+            isIntegerOnly
+            onChange={(val) => setRecDayOfMonth(val || 1)}
+          />
+        )}
+
+        <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
+          <Selector
+            label="Desde"
+            value={recStartTime}
+            onChange={(v) => v && setRecStartTime(v)}
+            options={FIXED_TIME_OPTIONS}
+          />
+          <Selector
+            label="Hasta"
+            value={recEndTime}
+            onChange={(v) => v && setRecEndTime(v)}
+            options={FIXED_TIME_OPTIONS}
+          />
+        </Grid>
+
+        <TextInput
+          label="Nombre"
+          placeholder="Ej. Comida"
+          value={recReason}
+          onChange={setRecReason}
+          isOptional
+        />
+
+        <DateInput
+          label="Termina el"
+          description="Déjalo vacío si se repite siempre."
+          value={(recUntilDate || undefined) as ISODateString | undefined}
+          onChange={(v) => setRecUntilDate(v ?? '')}
+          isOptional
+        />
+
+        <HStack gap={2} justify="end" wrap="wrap">
+          <Button
+            type="button"
+            label="Cancelar"
+            variant="secondary"
+            isDisabled={isSubmitting}
+            onClick={controls.close}
+          />
+          <Button
+            type="submit"
+            label="Guardar descanso"
+            variant="primary"
+            icon={<Plus size={14} aria-hidden="true" />}
+            isLoading={isSubmitting}
+            isDisabled={isSubmitting}
+          />
+        </HStack>
+      </VStack>
+    </form>
+  );
+}
+
+export function RecurringBlocksSection({
+  staffId,
+  staffName,
+  recurringBlocks,
+  onRefresh,
+  onSavedNotice,
+  onMessage,
+}: RecurringBlocksSectionProps) {
+  const [busyBlockId, setBusyBlockId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<RecurringBlock | null>(null);
 
   const handleToggleRecurringBlock = async (block: RecurringBlock) => {
     if (busyBlockId) return;
@@ -187,103 +283,18 @@ export function RecurringBlocksSection({
         actions={
           <FormDialogLauncher
             triggerLabel="Agregar descanso"
-            title="Descanso fijo"
+            title="Descanso que se repite"
             subtitle="Tu hora de comida o limpieza, sin bloquear día por día."
             triggerVariant="secondary"
+            triggerSize="sm"
           >
-            {(close) => (
-        <form onSubmit={(e) => void createRecurringBreak(e, close)}>
-          <VStack
-            gap={3}
-            className={savingRecurring ? 'fx-busy' : undefined}
-            aria-busy={savingRecurring || undefined}
-          >
-            <FilterPillBar<'weekly' | 'monthly'>
-              ariaLabel="Con qué frecuencia se repite"
-              mode="segmented"
-              size="sm"
-              layout="fill"
-              value={recFrequency}
-              onChange={setRecFrequency}
-              options={[
-                { value: 'weekly', label: 'Cada semana' },
-                { value: 'monthly', label: 'Cada mes' },
-              ]}
-            />
-
-            {recFrequency === 'weekly' ? (
-              <VStack gap={1.5}>
-                <Text type="label" weight="semibold">
-                  Días de la semana
-                </Text>
-                <Grid columns={{ minWidth: 80, max: 4 }} gap={1.5}>
-                  {DAYS.map(({ dow, short }) => (
-                    <CheckboxInput
-                      key={dow}
-                      size="sm"
-                      label={short}
-                      value={recWeekdays.includes(dow)}
-                      onChange={(checked) => toggleRecWeekday(dow, checked)}
-                    />
-                  ))}
-                </Grid>
-              </VStack>
-            ) : (
-              <NumberInput
-                label="Día del mes (1 al 31)"
-                value={recDayOfMonth}
-                min={1}
-                max={31}
-                isIntegerOnly
-                onChange={(val) => setRecDayOfMonth(val || 1)}
+            {(controls) => (
+              <RecurringBreakFormBody
+                staffId={staffId}
+                onRefresh={onRefresh}
+                onSavedNotice={onSavedNotice}
+                controls={controls}
               />
-            )}
-
-            <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
-              <Selector
-                label="Desde"
-                value={recStartTime}
-                onChange={(v) => v && setRecStartTime(v)}
-                options={FIXED_TIME_OPTIONS}
-              />
-              <Selector
-                label="Hasta"
-                value={recEndTime}
-                onChange={(v) => v && setRecEndTime(v)}
-                options={FIXED_TIME_OPTIONS}
-              />
-            </Grid>
-
-            <TextInput
-              label="Nombre del descanso"
-              placeholder="Ej. Comida y limpieza de herramienta"
-              value={recReason}
-              onChange={setRecReason}
-              isRequired
-            />
-
-            <DateInput
-              label="Hasta cuándo"
-              description="Déjalo vacío si se repite siempre."
-              placeholder="Sin fecha de fin"
-              value={(recUntilDate || undefined) as ISODateString | undefined}
-              onChange={(v) => setRecUntilDate(v ?? '')}
-              isOptional
-            />
-
-            <HStack gap={2} justify="end" wrap="wrap">
-              <Button type="button" label="Cancelar" variant="secondary" isDisabled={savingRecurring} onClick={close} />
-              <Button
-                type="submit"
-                label={savingRecurring ? 'Guardando...' : 'Guardar descanso'}
-                variant="primary"
-                icon={<Plus size={14} aria-hidden="true" />}
-                isLoading={savingRecurring}
-                isDisabled={savingRecurring}
-              />
-            </HStack>
-          </VStack>
-        </form>
             )}
           </FormDialogLauncher>
         }

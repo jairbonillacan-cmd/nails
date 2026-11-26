@@ -1,6 +1,5 @@
 'use client';
 
-import type React from 'react';
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -14,7 +13,6 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Check, Copy, Pencil, Save, UserPlus, Users } from 'lucide-react';
 import {
   ActionRow,
@@ -23,8 +21,15 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import { FormDialog } from '@/components/ui/FormDialog';
 import { staffAvatar } from '@/components/landing/landingContent';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
+import {
+  FORM_SUBMIT_OK,
+  formSubmitError,
+  formSubmitResultFromResponse,
+  type FormSubmitResult,
+} from '@/lib/forms/form-submit';
 import type { Service, StaffMember } from '@/lib/types';
 
 interface StaffEditorSectionProps {
@@ -35,7 +40,6 @@ interface StaffEditorSectionProps {
   busyId: string | null;
   onRequestToggleStaffActive: (st: StaffMember, checked: boolean) => void;
   onRefresh: () => Promise<void>;
-  onError: (message: string) => void;
   onNotice: (message: string) => void;
 }
 
@@ -47,17 +51,15 @@ export function StaffEditorSection({
   busyId,
   onRequestToggleStaffActive,
   onRefresh,
-  onError,
   onNotice,
 }: StaffEditorSectionProps) {
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [sName, setSName] = useState('');
-  const [sRoleTitle, setSRoleTitle] = useState('Manicurista');
+  const [sRoleTitle, setSRoleTitle] = useState('Profesional');
   const [sBio, setSBio] = useState('');
   const [sCommission, setSCommission] = useState(defaultCommissionPercent || 35);
   const [sServiceIds, setSServiceIds] = useState<string[] | null>(null);
-  const [savingStaff, setSavingStaff] = useState(false);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const clipboard = useCopyToClipboard(2400);
 
@@ -85,7 +87,7 @@ export function StaffEditorSection({
     setIsEditorOpen(false);
     setEditingStaffId(null);
     setSName('');
-    setSRoleTitle('Manicurista');
+    setSRoleTitle('Profesional');
     setSBio('');
     setSCommission(defaultCommissionPercent || 35);
     setSServiceIds(null);
@@ -98,41 +100,30 @@ export function StaffEditorSection({
     });
   };
 
-  const handleSaveStaff = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (sName.trim().length < 2 || savingStaff) return;
-    setSavingStaff(true);
-    try {
-      const existing = editingStaffId ? staff.find((item) => item.id === editingStaffId) : null;
-      const res = await fetch('/api/admin/team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'staff',
-          data: {
-            ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
-            name: sName.trim(),
-            roleTitle: sRoleTitle.trim() || 'Manicurista',
-            bio: sBio.trim(),
-            commissionPercent: sCommission,
-            serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
-          },
-        }),
-      });
-      if (res.ok) {
-        const wasEditing = Boolean(editingStaffId);
-        await onRefresh();
-        resetStaffForm();
-        onNotice(wasEditing ? 'Cambios guardados' : 'Manicurista agregada');
-      } else {
-        const err = (await res.json().catch(() => null)) as { error?: string } | null;
-        onError(err?.error || 'No se pudo guardar a la manicurista.');
-      }
-    } catch {
-      onError('Error de conexión al guardar los cambios.');
-    } finally {
-      setSavingStaff(false);
+  const saveStaff = async (): Promise<FormSubmitResult> => {
+    if (services.length > 0 && effectiveServiceIds.length === 0) {
+      return formSubmitError('Elige al menos un servicio que haga.');
     }
+    const existing = editingStaffId ? staff.find((item) => item.id === editingStaffId) : null;
+    const res = await fetch('/api/admin/team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'staff',
+        data: {
+          ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
+          name: sName.trim(),
+          roleTitle: sRoleTitle.trim() || 'Profesional',
+          bio: sBio.trim(),
+          commissionPercent: sCommission,
+          serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
+        },
+      }),
+    });
+    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar a la profesional.');
+    await onRefresh();
+    onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
+    return FORM_SUBMIT_OK;
   };
 
   const handleCopyStaffLink = async (slug: string, name: string) => {
@@ -153,7 +144,7 @@ export function StaffEditorSection({
 
       <SurfaceCard
         id="team-staff-heading"
-        title="Manicuristas del salón"
+        title="Profesionales del salón"
         subtitle="Cada una tiene su link propio de citas y porcentaje de comisión."
         count={staff.length}
         actions={
@@ -176,8 +167,8 @@ export function StaffEditorSection({
               framed={false}
               isCompact
               icon={<Users size={22} aria-hidden="true" />}
-              title="Aún no hay manicuristas"
-              description="Agrega a tu primera manicurista para abrir horarios y recibir citas."
+              title="Aún no hay profesionales"
+              description="Agrega a tu primera profesional para abrir horarios y recibir citas."
             />
           </VStack>
         ) : (
@@ -217,7 +208,6 @@ export function StaffEditorSection({
                           variant="ghost"
                           size="sm"
                           icon={<Pencil size={13} aria-hidden="true" />}
-                          isDisabled={savingStaff}
                           onClick={() => startEditingStaff(st)}
                         />
                         <Switch
@@ -238,26 +228,24 @@ export function StaffEditorSection({
         )}
       </SurfaceCard>
 
-      <Dialog
+      <FormDialog
         isOpen={isEditorOpen}
         onOpenChange={(open) => {
-          if (!open && !savingStaff) resetStaffForm();
+          if (!open) resetStaffForm();
         }}
-        purpose="form"
+        title={editingStaffId ? `Editar a ${editingStaff?.name ?? 'profesional'}` : 'Agregar profesional'}
+        subtitle="Nombre, comisión y los servicios que hace."
         width="min(34rem, 96vw)"
-        maxHeight="92dvh"
-        padding={5}
       >
-        <VStack gap={4} className="fx-sheet-in">
-        <DialogHeader
-          title={editingStaffId ? `Editar a ${editingStaff?.name ?? 'manicurista'}` : 'Agregar manicurista'}
-          subtitle="Nombre, comisión y los servicios que hace."
-          onOpenChange={(open) => {
-            if (!open && !savingStaff) resetStaffForm();
+        {(controls) => (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (sName.trim().length < 2) return;
+            controls.submit(saveStaff);
           }}
-        />
-        <form onSubmit={handleSaveStaff}>
-          <VStack gap={3} className={savingStaff ? 'fx-busy' : undefined} aria-busy={savingStaff || undefined}>
+        >
+          <VStack gap={3}>
             {editingStaff ? (
               <CopyableField
                 label={`Link directo de ${editingStaff.name}`}
@@ -272,12 +260,21 @@ export function StaffEditorSection({
 
             <TextInput label="Nombre" placeholder="Ej. Fernanda Ruiz" value={sName} onChange={setSName} isRequired />
             <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
-              <TextInput label="Especialidad" value={sRoleTitle} onChange={setSRoleTitle} />
-              <NumberInput label="Comisión (%)" value={sCommission} min={0} max={100} isIntegerOnly onChange={setSCommission} />
+              <TextInput label="Puesto" placeholder="Ej. Profesional" value={sRoleTitle} onChange={setSRoleTitle} />
+              <NumberInput
+                label="Comisión (%)"
+                description="Lo que gana de cada servicio."
+                value={sCommission}
+                min={0}
+                max={100}
+                isIntegerOnly
+                onChange={setSCommission}
+              />
             </Grid>
             <TextInput
-              label="Presentación breve"
-              placeholder="Especialista en Rubber y diseños minimalistas"
+              label="Presentación"
+              description="Se ve en tu página de citas."
+              placeholder="Ej. Experta en Rubber y diseños finos"
               value={sBio}
               onChange={setSBio}
               isOptional
@@ -314,20 +311,26 @@ export function StaffEditorSection({
             ) : null}
 
             <HStack gap={2} justify="end" wrap="wrap">
-              <Button type="button" label="Cancelar" variant="secondary" isDisabled={savingStaff} onClick={resetStaffForm} />
+              <Button
+                type="button"
+                label="Cancelar"
+                variant="secondary"
+                isDisabled={controls.isSubmitting}
+                onClick={controls.close}
+              />
               <Button
                 type="submit"
-                label={savingStaff ? 'Guardando...' : editingStaffId ? 'Guardar cambios' : 'Agregar'}
+                label={editingStaffId ? 'Guardar cambios' : 'Agregar'}
                 variant="primary"
                 icon={editingStaffId ? <Save size={15} aria-hidden="true" /> : <UserPlus size={15} aria-hidden="true" />}
-                isLoading={savingStaff}
-                isDisabled={sName.trim().length < 2 || savingStaff}
+                isLoading={controls.isSubmitting}
+                isDisabled={sName.trim().length < 2 || controls.isSubmitting}
               />
             </HStack>
           </VStack>
         </form>
-        </VStack>
-      </Dialog>
+        )}
+      </FormDialog>
     </VStack>
   );
 }

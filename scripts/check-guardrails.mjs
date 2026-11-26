@@ -177,6 +177,33 @@ const SEO_NO_LOCALHOST_FILES = new Set([
   'src/app/layout.tsx',
 ]);
 
+const ADMIN_FORM_DIALOG_SELF_MANAGED = new Set([
+  'src/components/admin/citas/CheckoutDrawerDialog.tsx',
+  'src/components/admin/config/OwnerPinDialog.tsx',
+]);
+
+function isAdminUiFile(rel) {
+  return rel.startsWith('src/components/admin/') || rel.startsWith('src/app/admin/');
+}
+
+function isRawAdminFormDialog(node) {
+  if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node)) return false;
+  if (!ts.isIdentifier(node.tagName) || node.tagName.text !== 'Dialog') return false;
+  return node.attributes.properties.some((attr) => {
+    if (!ts.isJsxAttribute(attr) || !ts.isIdentifier(attr.name) || attr.name.text !== 'purpose') {
+      return false;
+    }
+    const init = attr.initializer;
+    if (!init) return false;
+    if (ts.isStringLiteral(init)) return init.text === 'form';
+    return (
+      ts.isJsxExpression(init) &&
+      init.expression !== undefined &&
+      getStringLiteralValue(init.expression) === 'form'
+    );
+  });
+}
+
 const SENSITIVE_ADMIN_SECRET_FIELDS = new Set([
   'ownerPinHash',
   'accessTokenEncrypted',
@@ -1984,6 +2011,22 @@ export function checkSourceText(rawRel, text) {
       }
     }
 
+    if (
+      isAdminUiFile(rel) &&
+      !testFile &&
+      !ADMIN_FORM_DIALOG_SELF_MANAGED.has(rel) &&
+      isRawAdminFormDialog(node)
+    ) {
+      const { line, col } = getLineCol(sf, node.tagName.getStart(sf));
+      addViolation(
+        rel,
+        line,
+        col,
+        'admin-form-dialog',
+        'Formulario en modal con <Dialog purpose="form"> crudo en admin. Usa FormDialog o FormDialogLauncher (@/components/ui/FormDialog): bloquea doble envío, muestra el error dentro del modal, solo cierra si se guardó y limpia el formulario al reabrir.',
+      );
+    }
+
     if (checkAstryx) {
       if (
         (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
@@ -2034,13 +2077,176 @@ export function checkSourceText(rawRel, text) {
   return violations;
 }
 
+const SCROLL_DRIVEN_PROP_RE =
+  /^(?:animation-timeline|animation-range(?:-start|-end)?|view-timeline(?:-name|-axis|-inset)?|scroll-timeline(?:-name|-axis)?|timeline-scope)$/i;
+const SCROLL_DRIVEN_RESET_VALUE_RE = /^\s*(?:auto|none|normal)\s*(?:!important)?\s*$/i;
+const SCROLL_DRIVEN_FN_RE = /(?:^|[\s,(])(?:view|scroll)\(/i;
+const HIDDEN_START_RE = /^(?:opacity\s*:\s*0(?:\.0+)?\s*(?:!important)?|visibility\s*:\s*hidden\b.*)$/i;
+
+function collectCssDeclarations(text) {
+  const declarations = [];
+  const stack = [];
+  let buffer = '';
+  let bufferStart = 0;
+  let quote = null;
+  let i = 0;
+
+  function lineAt(offset) {
+    let line = 1;
+    for (let k = 0; k < offset && k < text.length; k++) {
+      if (text[k] === '\n') line++;
+    }
+    return line;
+  }
+
+  function flushDeclaration() {
+    const leading = buffer.length - buffer.trimStart().length;
+    const decl = buffer.trim();
+    const match = /^([a-z-]+)\s*:([\s\S]*)$/i.exec(decl);
+    if (match && stack.length > 0) {
+      declarations.push({
+        prop: match[1].toLowerCase(),
+        value: match[2].trim(),
+        decl,
+        selector: stack[stack.length - 1],
+        ancestors: stack.slice(0, -1),
+        line: lineAt(bufferStart + leading),
+      });
+    }
+    buffer = '';
+  }
+
+  while (i < text.length) {
+    const ch = text[i];
+    if (quote) {
+      buffer += ch;
+      if (ch === '\\') {
+        buffer += text[i + 1] ?? '';
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end === -1 ? text.length : end + 2;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      if (buffer.trim() === '') bufferStart = i;
+      buffer += ch;
+      i++;
+      continue;
+    }
+    if (ch === '{') {
+      stack.push(buffer.trim().replace(/\s+/g, ' '));
+      buffer = '';
+      bufferStart = i + 1;
+    } else if (ch === '}') {
+      flushDeclaration();
+      stack.pop();
+      bufferStart = i + 1;
+    } else if (ch === ';') {
+      flushDeclaration();
+      bufferStart = i + 1;
+    } else {
+      if (buffer === '') bufferStart = i;
+      buffer += ch;
+    }
+    i++;
+  }
+  return declarations;
+}
+
+function isInsideKeyframes(ancestors) {
+  return ancestors.some((prelude) => /^@(?:-webkit-)?keyframes\b/i.test(prelude));
+}
+
+function isScrollDrivenGuarded(ancestors) {
+  const hasSupports = ancestors.some(
+    (prelude) => /^@supports\b/i.test(prelude) && /animation-timeline/i.test(prelude),
+  );
+  const hasMotionOk = ancestors.some(
+    (prelude) =>
+      /^@media\b/i.test(prelude) && /prefers-reduced-motion\s*:\s*no-preference/i.test(prelude),
+  );
+  return hasSupports && hasMotionOk;
+}
+
+function isScrollDrivenDeclaration(prop, value) {
+  if (SCROLL_DRIVEN_PROP_RE.test(prop)) return !SCROLL_DRIVEN_RESET_VALUE_RE.test(value);
+  return /^animation/i.test(prop) && SCROLL_DRIVEN_FN_RE.test(value);
+}
+
+export function checkCssText(rawRel, text) {
+  const rel = toPosix(rawRel);
+  const violations = [];
+  const declarations = collectCssDeclarations(text).filter((d) => !isInsideKeyframes(d.ancestors));
+  const scrollDrivenSelectors = new Set();
+
+  for (const d of declarations) {
+    if (!isScrollDrivenDeclaration(d.prop, d.value)) continue;
+    const allAncestors = [...d.ancestors, d.selector];
+    if (isScrollDrivenGuarded(allAncestors)) {
+      for (const part of d.selector.split(',')) scrollDrivenSelectors.add(part.trim());
+      continue;
+    }
+    violations.push({
+      rel,
+      line: d.line,
+      col: 1,
+      rule: 'css-scroll-driven-unguarded',
+      message:
+        `"${d.decl}" usa scroll-driven animations fuera de @media (prefers-reduced-motion: no-preference) + @supports (animation-timeline: …). En Safari/Firefox el contenido quedaría oculto o sin animar; muévelo dentro de ambos bloques.`,
+    });
+  }
+
+  for (const d of declarations) {
+    if (!HIDDEN_START_RE.test(`${d.prop}: ${d.value}`)) continue;
+    if (isScrollDrivenGuarded([...d.ancestors, d.selector])) continue;
+    const target = d.selector.split(',').map((s) => s.trim()).find((s) => scrollDrivenSelectors.has(s));
+    if (!target) continue;
+    violations.push({
+      rel,
+      line: d.line,
+      col: 1,
+      rule: 'css-scroll-driven-hidden-start',
+      message:
+        `"${target}" se revela con animation-timeline pero declara "${d.decl}" fuera del bloque @supports. Sin soporte quedaría invisible; el estado inicial oculto solo puede vivir en el keyframe.`,
+    });
+  }
+
+  return violations;
+}
+
+function walkCssFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walkCssFiles(full));
+    } else if (entry.isFile() && entry.name.endsWith('.css')) {
+      out.push({ full, rel: toPosix(path.relative(ROOT, full)) });
+    }
+  }
+  return out;
+}
+
 function runCli() {
   const files = walkSourceFiles(SRC_DIR);
+  const cssFiles = walkCssFiles(SRC_DIR);
   const allViolations = [];
 
   for (const { full, rel } of files) {
     const text = fs.readFileSync(full, 'utf-8');
     allViolations.push(...checkSourceText(rel, text));
+  }
+
+  for (const { full, rel } of cssFiles) {
+    allViolations.push(...checkCssText(rel, fs.readFileSync(full, 'utf-8')));
   }
 
   if (allViolations.length > 0) {
@@ -2052,7 +2258,7 @@ function runCli() {
     process.exit(1);
   }
 
-  console.log(`[guardrails] OK — ${files.length} archivos verificados con 0 violaciones.`);
+  console.log(`[guardrails] OK — ${files.length + cssFiles.length} archivos verificados con 0 violaciones.`);
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

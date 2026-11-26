@@ -916,7 +916,7 @@ export function assertSlotBookable(
     return {
       ok: false,
       code: 'STAFF_INELIGIBLE',
-      message: 'La especialista seleccionada no está disponible para este servicio.',
+      message: 'La profesional seleccionada no está disponible para este servicio.',
       suggestedSlots: findNearestAvailableSlots(effectiveCtx, fallbackIso, null, 3),
     };
   }
@@ -1158,7 +1158,7 @@ export function diagnoseDateSlots(
         staffId,
         staffName: staff.name,
         isAvailable: false,
-        reason: 'Especialista inactiva o no realiza este servicio',
+        reason: 'Profesional inactiva o no realiza este servicio',
       });
       continue;
     }

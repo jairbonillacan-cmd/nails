@@ -10,7 +10,6 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Shield, UserPlus } from 'lucide-react';
 import {
   ActionRow,
@@ -18,12 +17,31 @@ import {
   SurfaceCard,
   type StatusTagTone,
 } from '@/components/ui';
+import type { FormDialogControls } from '@/components/ui/FormDialog';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
+import {
+  FORM_SUBMIT_OK,
+  formSubmitResultFromResponse,
+  type FormSubmitResult,
+} from '@/lib/forms/form-submit';
 import type { AdminRole, AdminUser, StaffMember } from '@/lib/types';
 
 const ROLE_META: Record<AdminRole, { label: string; tone: StatusTagTone }> = {
   owner: { label: 'Dueña', tone: 'accent' },
   admin: { label: 'Recepción', tone: 'neutral' },
-  specialist: { label: 'Manicurista', tone: 'success' },
+  specialist: { label: 'Profesional', tone: 'success' },
+};
+
+const ROLE_OPTIONS: Array<{ value: AdminRole; label: string }> = [
+  { value: 'admin', label: 'Recepción' },
+  { value: 'specialist', label: 'Profesional' },
+  { value: 'owner', label: 'Dueña' },
+];
+
+const ROLE_HINT: Record<AdminRole, string> = {
+  owner: 'Ve y cambia todo, incluso pagos y conexiones.',
+  admin: 'Agenda, cobros, servicios y clientas.',
+  specialist: 'Solo su agenda, horarios y comisiones.',
 };
 
 export function cleanAccessDisplayName(fullName: string): string {
@@ -39,8 +57,106 @@ interface AdminAccessSectionProps {
   busyId: string | null;
   onRequestToggleAccessActive: (user: AdminUser, checked: boolean) => void;
   onRefresh: () => Promise<void>;
-  onError: (message: string) => void;
   onNotice: (message: string) => void;
+}
+
+function AccessFormBody({
+  staff,
+  onRefresh,
+  onNotice,
+  controls,
+}: {
+  staff: StaffMember[];
+  onRefresh: () => Promise<void>;
+  onNotice: (message: string) => void;
+  controls: FormDialogControls;
+}) {
+  const [aName, setAName] = useState('');
+  const [aEmail, setAEmail] = useState('');
+  const [aRole, setARole] = useState<AdminRole>('admin');
+  const [aStaffId, setAStaffId] = useState<string>('none');
+  const { isSubmitting } = controls;
+
+  const addAccess = async (): Promise<FormSubmitResult> => {
+    const res = await fetch('/api/admin/team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'admin_user',
+        data: {
+          fullName: aName.trim(),
+          email: aEmail.trim(),
+          role: aRole,
+          staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
+          isActive: true,
+        },
+      }),
+    });
+    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo dar acceso a esta persona.');
+    await onRefresh();
+    onNotice('Acceso creado');
+    return FORM_SUBMIT_OK;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aEmail.trim() || !aName.trim()) return;
+    controls.submit(addAccess);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <VStack gap={3}>
+        <TextInput label="Nombre" value={aName} onChange={setAName} autoComplete="off" isRequired />
+        <TextInput
+          label="Correo con el que entrará"
+          type="email"
+          value={aEmail}
+          onChange={setAEmail}
+          autoComplete="off"
+          isRequired
+        />
+        <Selector
+          label="Qué puede hacer"
+          description={ROLE_HINT[aRole]}
+          value={aRole}
+          onChange={(v) => {
+            const next = ROLE_OPTIONS.find((option) => option.value === v);
+            if (next) setARole(next.value);
+          }}
+          options={ROLE_OPTIONS}
+        />
+        {aRole === 'specialist' ? (
+          <Selector
+            label="¿Cuál es su agenda?"
+            value={aStaffId}
+            onChange={(v) => v && setAStaffId(v)}
+            options={[
+              { value: 'none', label: 'Elegir después' },
+              ...staff.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
+        ) : null}
+        <HStack gap={2} justify="end" wrap="wrap">
+          <Button
+            type="button"
+            label="Cancelar"
+            variant="secondary"
+            isDisabled={isSubmitting}
+            onClick={controls.close}
+          />
+          <Button
+            type="submit"
+            label="Dar acceso"
+            variant="primary"
+            icon={<UserPlus size={15} aria-hidden="true" />}
+            isLoading={isSubmitting}
+            isDisabled={!aName.trim() || !aEmail.trim() || isSubmitting}
+          />
+        </HStack>
+      </VStack>
+    </form>
+  );
 }
 
 export function AdminAccessSection({
@@ -51,55 +167,9 @@ export function AdminAccessSection({
   busyId,
   onRequestToggleAccessActive,
   onRefresh,
-  onError,
   onNotice,
 }: AdminAccessSectionProps) {
-  const [aName, setAName] = useState('');
-  const [aEmail, setAEmail] = useState('');
-  const [aRole, setARole] = useState<AdminRole>('admin');
-  const [aStaffId, setAStaffId] = useState<string>('none');
-  const [savingAdmin, setSavingAdmin] = useState(false);
-  const [isInviteOpen, setIsInviteOpen] = useState(false);
-
   const staffNameById = new Map(staff.map((st) => [st.id, st.name]));
-
-  const handleAddAccess = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aEmail.trim() || !aName.trim() || savingAdmin) return;
-    setSavingAdmin(true);
-    try {
-      const res = await fetch('/api/admin/team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'admin_user',
-          data: {
-            fullName: aName.trim(),
-            email: aEmail.trim(),
-            role: aRole,
-            staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
-            isActive: true,
-          },
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        onError(json?.error || 'No se pudo agregar a esta persona.');
-        return;
-      }
-      await onRefresh();
-      setIsInviteOpen(false);
-      setAName('');
-      setAEmail('');
-      setARole('admin');
-      setAStaffId('none');
-      onNotice('Acceso creado');
-    } catch {
-      onError('Error de conexión al crear el acceso.');
-    } finally {
-      setSavingAdmin(false);
-    }
-  };
 
   return (
     <VStack gap={4}>
@@ -107,18 +177,28 @@ export function AdminAccessSection({
         id="team-access-heading"
         icon={<Shield size={16} aria-hidden="true" />}
         title="Accesos al panel"
-        subtitle="Quién puede entrar y qué puede ver: Dueña, Recepción o Manicurista."
+        subtitle="Quién puede entrar y qué puede ver: Dueña, Recepción o Profesional."
         count={adminUsers.length}
         actions={
           isOwner ? (
-            <Button
-              type="button"
-              label="Agregar persona"
-              variant="secondary"
-              size="sm"
+            <FormDialogLauncher
+              triggerLabel="Agregar persona"
+              title="Agregar persona al panel"
+              subtitle="Entrará con su propio correo y solo verá lo que le permitas."
+              triggerVariant="secondary"
+              triggerSize="sm"
               icon={<UserPlus size={14} aria-hidden="true" />}
-              onClick={() => setIsInviteOpen(true)}
-            />
+              width="min(30rem, 96vw)"
+            >
+              {(controls) => (
+                <AccessFormBody
+                  staff={staff}
+                  onRefresh={onRefresh}
+                  onNotice={onNotice}
+                  controls={controls}
+                />
+              )}
+            </FormDialogLauncher>
           ) : undefined
         }
       >
@@ -166,99 +246,6 @@ export function AdminAccessSection({
           })}
         </VStack>
       </SurfaceCard>
-
-      <Dialog
-        isOpen={isInviteOpen}
-        onOpenChange={(open) => {
-          if (!savingAdmin) setIsInviteOpen(open);
-        }}
-        purpose="form"
-        width="min(30rem, 96vw)"
-        padding={5}
-      >
-        <VStack gap={4} className="fx-sheet-in">
-          <DialogHeader
-            title="Agregar persona al panel"
-            subtitle="Entrará con su propio correo y solo verá lo que su permiso le deje."
-            onOpenChange={(open) => {
-              if (!savingAdmin) setIsInviteOpen(open);
-            }}
-          />
-              <form onSubmit={handleAddAccess}>
-                <VStack
-                  gap={3}
-                  className={savingAdmin ? 'fx-busy' : undefined}
-                  aria-busy={savingAdmin || undefined}
-                >
-                  <TextInput
-                    label="Nombre completo"
-                    placeholder="Ej. Recepción Turno Tarde"
-                    value={aName}
-                    onChange={setAName}
-                    isRequired
-                  />
-                  <TextInput
-                    label="Correo para entrar"
-                    type="email"
-                    value={aEmail}
-                    onChange={setAEmail}
-                    isRequired
-                  />
-                  <Selector
-                    label="Tipo de permiso"
-                    value={aRole}
-                    onChange={(v) => {
-                      if (v === 'owner' || v === 'admin' || v === 'specialist') {
-                        setARole(v);
-                      }
-                    }}
-                    options={[
-                      {
-                        value: 'owner',
-                        label: 'Dueña (Todo el salón, mi página y conexiones)',
-                      },
-                      {
-                        value: 'admin',
-                        label: 'Recepción (Citas, cobros, servicios y clientas)',
-                      },
-                      {
-                        value: 'specialist',
-                        label: 'Manicurista (Solo su agenda, horarios y comisiones)',
-                      },
-                    ]}
-                  />
-                  {aRole === 'specialist' ? (
-                    <Selector
-                      label="Conectar con manicurista"
-                      value={aStaffId}
-                      onChange={(v) => v && setAStaffId(v)}
-                      options={[
-                        { value: 'none', label: 'Sin conectar' },
-                        ...staff.map((s) => ({ value: s.id, label: s.name })),
-                      ]}
-                    />
-                  ) : null}
-                  <HStack gap={2} justify="end" wrap="wrap">
-                    <Button
-                      type="button"
-                      label="Cancelar"
-                      variant="secondary"
-                      isDisabled={savingAdmin}
-                      onClick={() => setIsInviteOpen(false)}
-                    />
-                    <Button
-                      type="submit"
-                      label={savingAdmin ? 'Agregando...' : 'Dar acceso'}
-                      variant="primary"
-                      icon={<UserPlus size={15} aria-hidden="true" />}
-                      isLoading={savingAdmin}
-                      isDisabled={!aName.trim() || !aEmail.trim() || savingAdmin}
-                    />
-                  </HStack>
-                </VStack>
-              </form>
-        </VStack>
-      </Dialog>
     </VStack>
   );
 }

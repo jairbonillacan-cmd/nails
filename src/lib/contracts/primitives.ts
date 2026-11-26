@@ -23,9 +23,8 @@ export const PhoneInputSchema = z
 export const OptionalEmailSchema = z
   .string()
   .trim()
-  .email('Correo inválido')
+  .pipe(z.union([z.literal(''), z.string().email('Correo inválido')]))
   .optional()
-  .or(z.literal(''))
   .nullable();
 
 export const InstagramHandleSchema = z.string().max(120).optional().nullable();

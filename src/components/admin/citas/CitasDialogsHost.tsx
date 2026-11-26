@@ -224,7 +224,6 @@ export function CitasDialogsHost({
             await onRefresh();
             onShowNotice(`Día ${dateKey} bloqueado`);
           }}
-          onError={(title) => onSetFeedback({ status: 'error', title })}
         />
       ) : null}
 

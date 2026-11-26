@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -12,19 +13,133 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Gift } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { Coupon } from '@/lib/types';
+import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
+import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
+
+type CouponKind = 'coupon' | 'gift_card';
+type CouponDiscountType = 'percent' | 'fixed_cents';
+
+type CreateCouponHandler = (input: {
+  code: string;
+  kind: CouponKind;
+  discountType: CouponDiscountType;
+  value: number;
+  recipient: string;
+}) => Promise<FormSubmitResult>;
 
 interface CouponsSubSectionProps {
   coupons: readonly Coupon[];
   currency: 'MXN' | 'USD';
-  onCreateCoupon: (input: {
-    code: string;
-    kind: 'coupon' | 'gift_card';
-    discountType: 'percent' | 'fixed_cents';
-    value: number;
-    recipient: string;
-  }) => Promise<boolean>;
+  onCreateCoupon: CreateCouponHandler;
+}
+
+const COUPON_KIND_OPTIONS: Array<{ value: CouponKind; label: string }> = [
+  { value: 'coupon', label: 'Cupón de descuento' },
+  { value: 'gift_card', label: 'Tarjeta de regalo con saldo' },
+];
+
+const DISCOUNT_TYPE_OPTIONS: Array<{ value: CouponDiscountType; label: string }> = [
+  { value: 'percent', label: 'Porcentaje (%)' },
+  { value: 'fixed_cents', label: 'Cantidad fija en pesos' },
+];
+
+function CouponFormBody({
+  onCreateCoupon,
+  controls,
+}: {
+  onCreateCoupon: CreateCouponHandler;
+  controls: FormDialogControls;
+}) {
+  const [cpCode, setCpCode] = useState('');
+  const [cpKind, setCpKind] = useState<CouponKind>('coupon');
+  const [cpDiscountType, setCpDiscountType] = useState<CouponDiscountType>('percent');
+  const [cpValue, setCpValue] = useState(15);
+  const [cpRecipient, setCpRecipient] = useState('');
+  const { isSubmitting } = controls;
+  const isMoney = cpKind === 'gift_card' || cpDiscountType === 'fixed_cents';
+
+  const handleCouponSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cpCode.trim()) return;
+    controls.submit(() =>
+      onCreateCoupon({
+        code: cpCode.trim(),
+        kind: cpKind,
+        discountType: cpDiscountType,
+        value: cpValue,
+        recipient: cpRecipient.trim(),
+      }),
+    );
+  };
+
+  return (
+    <form onSubmit={handleCouponSubmit}>
+      <VStack gap={3}>
+        <TextInput
+          label="Código"
+          description="La palabra que tu clienta escribe al agendar."
+          placeholder="Ej. CUMPLE20"
+          value={cpCode}
+          onChange={setCpCode}
+          isRequired
+        />
+        <Selector
+          label="Tipo"
+          value={cpKind}
+          onChange={(v) => {
+            const next = COUPON_KIND_OPTIONS.find((option) => option.value === v);
+            if (next) setCpKind(next.value);
+          }}
+          options={COUPON_KIND_OPTIONS}
+        />
+        {cpKind === 'coupon' ? (
+          <Selector
+            label="Descuento en"
+            value={cpDiscountType}
+            onChange={(v) => {
+              const next = DISCOUNT_TYPE_OPTIONS.find((option) => option.value === v);
+              if (next) setCpDiscountType(next.value);
+            }}
+            options={DISCOUNT_TYPE_OPTIONS}
+          />
+        ) : null}
+        <NumberInput
+          label={
+            cpKind === 'gift_card' ? 'Saldo de la tarjeta (MXN)' : isMoney ? 'Descuento (MXN)' : 'Descuento (%)'
+          }
+          value={cpValue}
+          min={1}
+          max={isMoney ? undefined : 100}
+          onChange={setCpValue}
+        />
+        <TextInput
+          label="Para quién es"
+          placeholder="Ej. Regalo para Ana"
+          value={cpRecipient}
+          onChange={setCpRecipient}
+          isOptional
+        />
+        <HStack gap={2} justify="end" wrap="wrap">
+          <Button
+            type="button"
+            label="Cancelar"
+            variant="secondary"
+            isDisabled={isSubmitting}
+            onClick={controls.close}
+          />
+          <Button
+            type="submit"
+            label="Crear código"
+            variant="primary"
+            isLoading={isSubmitting}
+            isDisabled={isSubmitting || !cpCode.trim()}
+          />
+        </HStack>
+      </VStack>
+    </form>
+  );
 }
 
 export function CouponsSubSection({
@@ -32,35 +147,6 @@ export function CouponsSubSection({
   currency,
   onCreateCoupon,
 }: CouponsSubSectionProps) {
-  const [cpCode, setCpCode] = useState('');
-  const [cpKind, setCpKind] = useState<'coupon' | 'gift_card'>('coupon');
-  const [cpDiscountType, setCpDiscountType] = useState<'percent' | 'fixed_cents'>('percent');
-  const [cpValue, setCpValue] = useState(15);
-  const [cpRecipient, setCpRecipient] = useState('');
-  const [cpSaving, setCpSaving] = useState(false);
-
-  const handleCouponSubmit = async (e: React.FormEvent, onDone: () => void) => {
-    e.preventDefault();
-    if (!cpCode.trim() || cpSaving) return;
-    setCpSaving(true);
-    try {
-      const ok = await onCreateCoupon({
-        code: cpCode.trim(),
-        kind: cpKind,
-        discountType: cpDiscountType,
-        value: cpValue,
-        recipient: cpRecipient.trim(),
-      });
-      if (ok) {
-        setCpCode('');
-        setCpRecipient('');
-        onDone();
-      }
-    } finally {
-      setCpSaving(false);
-    }
-  };
-
   return (
     <VStack gap={0}>
       <SurfaceCard
@@ -73,67 +159,9 @@ export function CouponsSubSection({
             title="Crear cupón o tarjeta de regalo"
             subtitle="Tus clientas lo escriben al agendar y se descuenta solo."
             triggerVariant="secondary"
+            triggerSize="sm"
           >
-            {(close) => (
-        <form onSubmit={(e) => void handleCouponSubmit(e, close)}>
-          <VStack gap={3}>
-            <TextInput
-              label="Código"
-              placeholder="Ej. CUMPLE20 o REGALO500"
-              value={cpCode}
-              onChange={setCpCode}
-              isRequired
-            />
-            <Selector
-              label="Tipo"
-              value={cpKind}
-              onChange={(v) => v && setCpKind(v as 'coupon' | 'gift_card')}
-              options={[
-                { value: 'coupon', label: 'Cupón de descuento' },
-                { value: 'gift_card', label: 'Tarjeta de regalo con saldo' },
-              ]}
-            />
-            {cpKind === 'coupon' ? (
-              <Selector
-                label="Descuento por"
-                value={cpDiscountType}
-                onChange={(v) => v && setCpDiscountType(v as 'percent' | 'fixed_cents')}
-                options={[
-                  { value: 'percent', label: 'Porcentaje (%)' },
-                  { value: 'fixed_cents', label: 'Monto fijo (MXN)' },
-                ]}
-              />
-            ) : null}
-            <NumberInput
-              label={
-                cpKind === 'gift_card' || cpDiscountType === 'fixed_cents'
-                  ? 'Monto en MXN'
-                  : 'Porcentaje (%)'
-              }
-              value={cpValue}
-              min={1}
-              onChange={setCpValue}
-            />
-            <TextInput
-              label="Para quién es (opcional)"
-              placeholder="Ej. Regalo para Ana"
-              value={cpRecipient}
-              onChange={setCpRecipient}
-              isOptional
-            />
-            <HStack gap={2} justify="end" wrap="wrap">
-              <Button type="button" label="Cancelar" variant="secondary" isDisabled={cpSaving} onClick={close} />
-              <Button
-                type="submit"
-                label="Crear código"
-                variant="primary"
-                isLoading={cpSaving}
-                isDisabled={cpSaving || !cpCode.trim()}
-              />
-            </HStack>
-          </VStack>
-        </form>
-            )}
+            {(controls) => <CouponFormBody onCreateCoupon={onCreateCoupon} controls={controls} />}
           </FormDialogLauncher>
         }
       >

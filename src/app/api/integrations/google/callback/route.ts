@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
   ) {
     return clearOAuthCookie(
       NextResponse.json(
-        { error: 'No tienes permiso para conectar el calendario de otra especialista.' },
+        { error: 'No tienes permiso para conectar el calendario de otra profesional.' },
         { status: 403 },
       ),
     );
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
   const staffExists = snapshot.staff.some((s) => s.id === statePayload.staffId);
   if (!staffExists) {
     return clearOAuthCookie(
-      NextResponse.json({ error: 'Especialista no encontrada.' }, { status: 400 }),
+      NextResponse.json({ error: 'Profesional no encontrada.' }, { status: 400 }),
     );
   }
 

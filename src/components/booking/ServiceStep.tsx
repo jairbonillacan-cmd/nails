@@ -112,11 +112,16 @@ export function ServiceStep({
                     decoding="async"
                   />
                 )}
-                <VStack gap={0} className="rb-service-body">
+                <VStack gap={1} className="rb-service-body">
                   <Text weight="medium" className="lk-serif rb-service-name">
                     {service.name}
                   </Text>
-                  <HStack justify="between" gap={2} wrap="wrap">
+                  {service.description ? (
+                    <Text type="supporting" color="secondary" textWrap="pretty" className="rb-service-desc">
+                      {service.description}
+                    </Text>
+                  ) : null}
+                  <HStack justify="between" gap={2} wrap="wrap" className="rb-service-meta">
                     <Text type="supporting" color="secondary" hasTabularNumbers>
                       {formatDuration(service.durationMinutes)}
                     </Text>

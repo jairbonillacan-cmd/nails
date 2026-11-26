@@ -18,7 +18,7 @@ export default function ReservarLoading() {
     >
       <Text className="rb-sr-only">Cargando agenda de reservas…</Text>
 
-      <VStack as="header" className="rb-header" data-tone="cherry" gap={0}>
+      <VStack as="header" className="rb-header" gap={0}>
         <VStack className="rb-header-bar" gap={0}>
           <VStack className="sk-bar" data-size="pill" data-on="cherry" aria-hidden="true" />
           <img

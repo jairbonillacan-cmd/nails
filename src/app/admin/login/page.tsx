@@ -41,7 +41,7 @@ const ROLE_META: Record<
     tone: 'info',
   },
   specialist: {
-    label: 'Manicurista',
+    label: 'Profesional',
     hint: 'Sus citas y comisiones',
     tone: 'neutral',
   },

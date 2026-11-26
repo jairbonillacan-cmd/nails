@@ -562,7 +562,7 @@ async function testAdminRbacAndSpecialistIsolation() {
     assert.equal(
       bk.staffId,
       specStaffId,
-      'Especialista no debe ver citas de otras manicuristas',
+      'Profesional no debe ver citas de otras profesionales',
     );
   }
 
@@ -909,7 +909,7 @@ async function testAdminReportsRbac() {
     assert.equal(
       row.staffId,
       specStaffId,
-      'Specialist jamás debe ver ocupación de otras manicuristas',
+      'Specialist jamás debe ver ocupación de otras profesionales',
     );
   }
   assert.equal(specReports.json?.heatmap?.days?.length, 7);

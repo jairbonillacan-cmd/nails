@@ -164,7 +164,7 @@ export function resolveLandingContent(
       content.reviewsSubtitle,
       'Opiniones verificadas de clientas que ya salieron con su set.',
     ),
-    teamTitle: cleanText(content.teamTitle, 'Elige a tu artista'),
+    teamTitle: cleanText(content.teamTitle, 'Elige a tu profesional'),
     teamSubtitle: cleanText(
       content.teamSubtitle,
       'Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio.',
@@ -177,7 +177,7 @@ export function resolveLandingContent(
     faqTitle: cleanText(content.faqTitle, 'Preguntas frecuentes'),
     faqSubtitle: cleanText(
       content.faqSubtitle,
-      'Lo que más nos preguntan antes de su primera cita.',
+      'Lo que más nos preguntan antes de tu primera cita.',
     ),
     customFaqs,
     visitTitle: cleanText(content.visitTitle, 'Visítanos'),

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -14,6 +15,7 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { Package, Plus } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
+import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import {
   ConfirmActionDialog,
   EmptyStateCard,
@@ -21,8 +23,18 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import type { ServicePackageCatalogRow } from './cajaTypes';
+
+type CreatePackageHandler = (input: {
+  name: string;
+  description: string;
+  serviceId: string;
+  totalSessions: number;
+  priceMxn: number;
+  validDays: number;
+}) => Promise<FormSubmitResult>;
 
 interface PackagesSubSectionProps {
   packagesCatalog: readonly ServicePackageCatalogRow[];
@@ -31,15 +43,117 @@ interface PackagesSubSectionProps {
   currency: 'MXN' | 'USD';
   canManagePackages: boolean;
   togglingPkgId: string | null;
-  onCreatePackage: (input: {
-    name: string;
-    description: string;
-    serviceId: string;
-    totalSessions: number;
-    priceMxn: number;
-    validDays: number;
-  }) => Promise<boolean>;
+  onCreatePackage: CreatePackageHandler;
   onTogglePackage: (pkg: ServicePackageCatalogRow, nextActive: boolean) => Promise<void>;
+}
+
+function PackageFormBody({
+  activeServices,
+  currency,
+  onCreatePackage,
+  controls,
+}: {
+  activeServices: readonly Service[];
+  currency: 'MXN' | 'USD';
+  onCreatePackage: CreatePackageHandler;
+  controls: FormDialogControls;
+}) {
+  const [pkgName, setPkgName] = useState('');
+  const [pkgDescription, setPkgDescription] = useState('');
+  const [pkgServiceId, setPkgServiceId] = useState('');
+  const [pkgTotalSessions, setPkgTotalSessions] = useState(5);
+  const [pkgPriceMxn, setPkgPriceMxn] = useState(1600);
+  const [pkgValidDays, setPkgValidDays] = useState(120);
+  const { isSubmitting } = controls;
+  const effectivePkgServiceId = pkgServiceId || activeServices[0]?.id || '';
+
+  const handlePackageSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pkgName.trim() || !effectivePkgServiceId) return;
+    controls.submit(() =>
+      onCreatePackage({
+        name: pkgName.trim(),
+        description: pkgDescription.trim(),
+        serviceId: effectivePkgServiceId,
+        totalSessions: pkgTotalSessions,
+        priceMxn: pkgPriceMxn,
+        validDays: pkgValidDays,
+      }),
+    );
+  };
+
+  return (
+    <form onSubmit={handlePackageSubmit}>
+      <VStack gap={3}>
+        <TextInput
+          label="Nombre del paquete"
+          placeholder="Ej. 5 retoques de Rubber"
+          value={pkgName}
+          onChange={setPkgName}
+          isRequired
+        />
+        <Selector
+          label="Servicio incluido"
+          value={effectivePkgServiceId}
+          onChange={(v) => v && setPkgServiceId(v)}
+          options={activeServices.map((srv) => ({
+            value: srv.id,
+            label: `${srv.name} (${formatCurrency(srv.priceCents, currency)})`,
+          }))}
+        />
+        <Grid columns={{ minWidth: 110, max: 3 }} gap={2}>
+          <NumberInput
+            label="Sesiones"
+            value={pkgTotalSessions}
+            min={2}
+            max={20}
+            isIntegerOnly
+            onChange={setPkgTotalSessions}
+          />
+          <NumberInput
+            label={`Precio total (${currency})`}
+            value={pkgPriceMxn}
+            min={0}
+            onChange={setPkgPriceMxn}
+          />
+          <NumberInput
+            label="Vence en (días)"
+            description="0 = no vence"
+            value={pkgValidDays}
+            min={0}
+            max={730}
+            isIntegerOnly
+            onChange={setPkgValidDays}
+          />
+        </Grid>
+        <TextArea
+          label="Notas"
+          placeholder="Ej. Precio especial pagando por adelantado."
+          value={pkgDescription}
+          onChange={setPkgDescription}
+          rows={2}
+          isOptional
+        />
+        <HStack gap={2} justify="end" wrap="wrap">
+          <Button
+            type="button"
+            label="Cancelar"
+            variant="secondary"
+            isDisabled={isSubmitting}
+            onClick={controls.close}
+          />
+          <Button
+            type="submit"
+            label="Crear paquete"
+            variant="primary"
+            icon={<Plus size={15} aria-hidden="true" />}
+            isLoading={isSubmitting}
+            isDisabled={isSubmitting || !pkgName.trim() || !effectivePkgServiceId}
+          />
+        </HStack>
+      </VStack>
+    </form>
+  );
 }
 
 export function PackagesSubSection({
@@ -55,39 +169,7 @@ export function PackagesSubSection({
   const activeServices = services
     .filter((s) => s.isActive)
     .toSorted((a, b) => a.displayOrder - b.displayOrder);
-  const [pkgName, setPkgName] = useState('');
-  const [pkgDescription, setPkgDescription] = useState('');
-  const [pkgServiceId, setPkgServiceId] = useState('');
-  const [pkgTotalSessions, setPkgTotalSessions] = useState(5);
-  const [pkgPriceMxn, setPkgPriceMxn] = useState(1600);
-  const [pkgValidDays, setPkgValidDays] = useState(120);
-  const [pkgSaving, setPkgSaving] = useState(false);
   const [pendingPausePkg, setPendingPausePkg] = useState<ServicePackageCatalogRow | null>(null);
-
-  const effectivePkgServiceId = pkgServiceId || activeServices[0]?.id || '';
-
-  const handlePackageSubmit = async (e: React.FormEvent, onDone: () => void) => {
-    e.preventDefault();
-    if (!pkgName.trim() || !effectivePkgServiceId || pkgSaving) return;
-    setPkgSaving(true);
-    try {
-      const ok = await onCreatePackage({
-        name: pkgName.trim(),
-        description: pkgDescription.trim(),
-        serviceId: effectivePkgServiceId,
-        totalSessions: pkgTotalSessions,
-        priceMxn: pkgPriceMxn,
-        validDays: pkgValidDays,
-      });
-      if (ok) {
-        setPkgName('');
-        setPkgDescription('');
-        onDone();
-      }
-    } finally {
-      setPkgSaving(false);
-    }
-  };
 
   return (
     <>
@@ -103,71 +185,16 @@ export function PackagesSubSection({
                 title="Nuevo paquete de sesiones"
                 subtitle="Elige el servicio, cuántas sesiones incluye y su precio."
                 triggerVariant="secondary"
+                triggerSize="sm"
+                isDisabled={activeServices.length === 0}
               >
-                {(close) => (
-            <form onSubmit={(e) => void handlePackageSubmit(e, close)}>
-              <VStack gap={3}>
-                <TextInput
-                  label="Nombre del paquete"
-                  placeholder="Ej. Paquete 5 retoques Rubber"
-                  value={pkgName}
-                  onChange={setPkgName}
-                  isRequired
-                />
-                <Selector
-                  label="Servicio incluido"
-                  value={effectivePkgServiceId}
-                  onChange={(v) => v && setPkgServiceId(v)}
-                  options={activeServices.map((srv) => ({
-                    value: srv.id,
-                    label: `${srv.name} (${formatCurrency(srv.priceCents, currency)})`,
-                  }))}
-                />
-                <Grid columns={{ minWidth: 110, max: 3 }} gap={2}>
-                  <NumberInput
-                    label="Sesiones"
-                    value={pkgTotalSessions}
-                    min={2}
-                    max={20}
-                    isIntegerOnly
-                    onChange={setPkgTotalSessions}
+                {(controls) => (
+                  <PackageFormBody
+                    activeServices={activeServices}
+                    currency={currency}
+                    onCreatePackage={onCreatePackage}
+                    controls={controls}
                   />
-                  <NumberInput
-                    label={`Precio (${currency})`}
-                    value={pkgPriceMxn}
-                    min={0}
-                    onChange={setPkgPriceMxn}
-                  />
-                  <NumberInput
-                    label="Vigencia (días)"
-                    value={pkgValidDays}
-                    min={0}
-                    max={730}
-                    isIntegerOnly
-                    onChange={setPkgValidDays}
-                  />
-                </Grid>
-                <TextArea
-                  label="Notas del paquete (opcional)"
-                  placeholder="Ej. Incluye 5 retoques con precio preferencial."
-                  value={pkgDescription}
-                  onChange={setPkgDescription}
-                  rows={2}
-                  isOptional
-                />
-                <HStack gap={2} justify="end" wrap="wrap">
-                  <Button type="button" label="Cancelar" variant="secondary" isDisabled={pkgSaving} onClick={close} />
-                  <Button
-                    type="submit"
-                    label="Crear paquete"
-                    variant="primary"
-                    icon={<Plus size={15} aria-hidden="true" />}
-                    isLoading={pkgSaving}
-                    isDisabled={pkgSaving || !pkgName.trim() || !effectivePkgServiceId}
-                  />
-                </HStack>
-              </VStack>
-            </form>
                 )}
               </FormDialogLauncher>
             ) : undefined

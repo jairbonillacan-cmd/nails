@@ -38,6 +38,43 @@ export const ClientPortalOtpActionSchema = z.discriminatedUnion('action', [
   }),
 ]);
 
+const ClientAuthMethodSchema = z.enum(['whatsapp_otp', 'email_magic_link', 'google']);
+
+export type ClientAuthMethod = z.infer<typeof ClientAuthMethodSchema>;
+
+export const ClientPortalOtpResponseSchema = z.object({
+  ok: z.boolean().optional(),
+  phoneE164: z.string().max(20).optional(),
+  channel: z.enum(['whatsapp', 'sms', 'email']).optional(),
+  demoCode: z.string().regex(/^\d{6}$/).optional(),
+  error: z.string().max(300).optional(),
+  attemptsRemaining: z.number().int().nonnegative().optional(),
+});
+
+export type ClientPortalOtpResponse = z.infer<typeof ClientPortalOtpResponseSchema>;
+
+export const ClientPortalProfileSchema = z.object({
+  fullName: z.string().max(200),
+  phoneE164: z.string().min(8).max(20),
+  email: z.string().max(320).nullable(),
+  instagramHandle: z.string().max(120).nullable(),
+  birthday: z.string().max(20).nullable(),
+  isRegistered: z.boolean(),
+});
+
+export type ClientPortalProfile = z.infer<typeof ClientPortalProfileSchema>;
+
+export const ClientPortalProfileResponseSchema = z.discriminatedUnion('authenticated', [
+  z.object({
+    authenticated: z.literal(true),
+    authMethod: ClientAuthMethodSchema,
+    profile: ClientPortalProfileSchema,
+  }),
+  z.object({
+    authenticated: z.literal(false),
+  }),
+]);
+
 export const DispatchCampaignSchema = z.object({
   kind: CampaignKindSchema,
   clientId: NonEmptyIdSchema,

@@ -44,14 +44,14 @@ export default function AdminTeamPage() {
   const kpiItems: MetricTileItem[] = [
     {
       id: 'active-staff',
-      label: 'Manicuristas activas',
+      label: 'Profesionales activas',
       value: String(activeStaffCount),
       sub: `de ${data.staff.length} en tu salón`,
     },
     {
       id: 'web-mode',
       label: 'Al reservar',
-      value: activeStaffCount <= 1 ? 'Directa' : 'Por artista',
+      value: activeStaffCount <= 1 ? 'Directa' : 'Por profesional',
       sub:
         activeStaffCount <= 1
           ? 'Se asigna en automático'
@@ -136,7 +136,7 @@ export default function AdminTeamPage() {
       <PageHeader
         eyebrow="Tu equipo"
         title="Equipo"
-        subtitle="Administra a tus manicuristas, sus comisiones y quién puede entrar al panel del salón."
+        subtitle="Administra a tus profesionales, sus comisiones y quién puede entrar al panel del salón."
         meta={
           busyId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -178,7 +178,6 @@ export default function AdminTeamPage() {
             }
           }}
           onRefresh={refresh}
-          onError={(text) => setMsg({ status: 'error', text })}
           onNotice={saveNotice.show}
         />
 
@@ -196,7 +195,6 @@ export default function AdminTeamPage() {
             }
           }}
           onRefresh={refresh}
-          onError={(text) => setMsg({ status: 'error', text })}
           onNotice={saveNotice.show}
         />
       </VStack>

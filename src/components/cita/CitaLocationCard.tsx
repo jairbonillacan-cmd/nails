@@ -113,7 +113,7 @@ export function CitaLocationCard({
           {booking.clientNotes.trim() ? (
             <VStack gap={0.5}>
               <Text type="supporting" color="secondary">
-                Notas para tu artista
+                Notas para tu profesional
               </Text>
               <Text textWrap="pretty" style={{ overflowWrap: 'anywhere' }}>
                 {booking.clientNotes}

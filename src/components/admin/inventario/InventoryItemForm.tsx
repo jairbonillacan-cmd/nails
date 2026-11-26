@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -11,6 +12,8 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { PackagePlus } from 'lucide-react';
 import type { InventoryItem } from '@/lib/types';
+import type { FormSubmitResult } from '@/lib/forms/form-submit';
+import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 
 export interface NewInventoryItemInput {
@@ -27,7 +30,7 @@ export interface NewInventoryItemInput {
 }
 
 interface InventoryItemFormProps {
-  onCreateItem: (item: NewInventoryItemInput) => Promise<boolean>;
+  onCreateItem: (item: NewInventoryItemInput) => Promise<FormSubmitResult>;
 }
 
 export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
@@ -38,7 +41,7 @@ export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
       subtitle="Cuánto tienes, cuándo avisarte y si también lo vendes."
       icon={<PackagePlus size={16} aria-hidden="true" />}
     >
-      {(close) => <InventoryItemFormBody onCreateItem={onCreateItem} onDone={close} />}
+      {(controls) => <InventoryItemFormBody onCreateItem={onCreateItem} controls={controls} />}
     </FormDialogLauncher>
   );
 }
@@ -53,8 +56,8 @@ const CATEGORY_OPTIONS: Array<{ value: InventoryItem['category']; label: string 
 
 function InventoryItemFormBody({
   onCreateItem,
-  onDone,
-}: InventoryItemFormProps & { onDone: () => void }) {
+  controls,
+}: InventoryItemFormProps & { controls: FormDialogControls }) {
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
   const [category, setCategory] = useState<InventoryItem['category']>('Gel / Esmalte');
@@ -64,15 +67,14 @@ function InventoryItemFormBody({
   const [costMxn, setCostMxn] = useState(150);
   const [retailMxn, setRetailMxn] = useState(0);
   const [isForRetail, setIsForRetail] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const { isSubmitting } = controls;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim().length < 2 || creating) return;
-    setCreating(true);
-    try {
-      const generatedCode = sku.trim() || `PROD-${String(Date.now()).slice(-4)}`;
-      const ok = await onCreateItem({
+    if (name.trim().length < 2) return;
+    const generatedCode = sku.trim() || `PROD-${String(Date.now()).slice(-4)}`;
+    controls.submit(() =>
+      onCreateItem({
         sku: generatedCode,
         name: name.trim(),
         category,
@@ -83,86 +85,99 @@ function InventoryItemFormBody({
         retailPriceCents: isForRetail ? Math.round(retailMxn * 100) : 0,
         isForRetail,
         isActive: true,
-      });
-      if (ok) onDone();
-    } finally {
-      setCreating(false);
-    }
+      }),
+    );
   };
 
   return (
-      <form onSubmit={(e) => void handleSubmit(e)}>
-        <VStack gap={3}>
+    <form onSubmit={handleSubmit}>
+      <VStack gap={3}>
+        <TextInput
+          label="Nombre"
+          placeholder="Ej. Top coat brillante"
+          value={name}
+          onChange={setName}
+          isRequired
+        />
+        <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
+          <Selector
+            label="Categoría"
+            value={category}
+            onChange={(v) => {
+              const next = CATEGORY_OPTIONS.find((option) => option.value === v);
+              if (next) setCategory(next.value);
+            }}
+            options={CATEGORY_OPTIONS}
+          />
           <TextInput
-            label="Nombre"
-            placeholder="Ej. Top Coat Gloss Sin Capa"
-            value={name}
-            onChange={setName}
-            isRequired
+            label="Se cuenta por"
+            placeholder="Ej. frasco o pieza"
+            value={unit}
+            onChange={setUnit}
           />
-          <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
-            <TextInput
-              label="Código"
-              placeholder="Ej. GEL-01"
-              value={sku}
-              onChange={setSku}
-              isOptional
-            />
-            <Selector
-              label="Categoría"
-              value={category}
-              onChange={(v) => v && setCategory(v as InventoryItem['category'])}
-              options={CATEGORY_OPTIONS}
-            />
-          </Grid>
-          <Grid columns={{ minWidth: 96, max: 3 }} gap={2}>
-            <NumberInput
-              label="Cantidad"
-              value={stock}
-              min={0}
-              isIntegerOnly
-              onChange={setStock}
-            />
-            <NumberInput
-              label="Avisar en"
-              value={minAlert}
-              min={0}
-              isIntegerOnly
-              onChange={setMinAlert}
-            />
-            <TextInput label="Unidad" value={unit} onChange={setUnit} />
-          </Grid>
+        </Grid>
+        <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
           <NumberInput
-            label="Precio de compra (MXN)"
-            value={costMxn}
+            label="Tienes ahora"
+            value={stock}
             min={0}
-            onChange={setCostMxn}
+            isIntegerOnly
+            onChange={setStock}
           />
-          <Switch
-            label="También se vende a clientas (se suma directo a Caja)"
-            value={isForRetail}
-            onChange={setIsForRetail}
+          <NumberInput
+            label="Avisarme si quedan"
+            value={minAlert}
+            min={0}
+            isIntegerOnly
+            onChange={setMinAlert}
           />
-          {isForRetail ? (
-            <NumberInput
-              label="Precio de venta (MXN)"
-              value={retailMxn}
-              min={0}
-              onChange={setRetailMxn}
-            />
-          ) : null}
-          <HStack gap={2} justify="end" wrap="wrap">
-            <Button type="button" label="Cancelar" variant="secondary" isDisabled={creating} onClick={onDone} />
-            <Button
-              type="submit"
-              label="Guardar producto"
-              variant="primary"
-              icon={<PackagePlus size={15} aria-hidden="true" />}
-              isLoading={creating}
-              isDisabled={name.trim().length < 2 || creating}
-            />
-          </HStack>
-        </VStack>
-      </form>
+        </Grid>
+        <NumberInput
+          label="Te costó (MXN)"
+          value={costMxn}
+          min={0}
+          onChange={setCostMxn}
+        />
+        <Switch
+          label="También lo vendo a clientas"
+          description="Al venderlo se suma solo a Caja."
+          value={isForRetail}
+          onChange={setIsForRetail}
+        />
+        {isForRetail ? (
+          <NumberInput
+            label="Precio de venta (MXN)"
+            value={retailMxn}
+            min={0}
+            onChange={setRetailMxn}
+          />
+        ) : null}
+        <TextInput
+          label="Código interno"
+          description="Si lo dejas vacío lo creamos por ti."
+          placeholder="Ej. GEL-01"
+          value={sku}
+          onChange={setSku}
+          isOptional
+        />
+        <HStack gap={2} justify="end" wrap="wrap">
+          <Button
+            type="button"
+            label="Cancelar"
+            variant="secondary"
+            isDisabled={isSubmitting}
+            onClick={controls.close}
+          />
+          <Button
+            type="submit"
+            label="Guardar producto"
+            variant="primary"
+            icon={<PackagePlus size={15} aria-hidden="true" />}
+            isLoading={isSubmitting}
+            isDisabled={name.trim().length < 2 || isSubmitting}
+          />
+        </HStack>
+      </VStack>
+    </form>
   );
 }

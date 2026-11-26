@@ -59,11 +59,11 @@ export function DashboardAgendaCard({
     nowInsertIndex = firstFutureIdx === -1 ? filteredBookings.length : firstFutureIdx;
   }
 
-  const artistSummaryParts: string[] = [];
+  const staffSummaryParts: string[] = [];
   for (const member of metrics.activeStaff) {
     const count = dayList.filter((booking) => booking.staffId === member.id).length;
     if (count > 0) {
-      artistSummaryParts.push(`${member.name.split(' ')[0]} ${count}`);
+      staffSummaryParts.push(`${member.name.split(' ')[0]} ${count}`);
     }
   }
   const pendingForDay = dayList.filter(
@@ -80,7 +80,7 @@ export function DashboardAgendaCard({
         : 'Sin citas agendadas para mañana'
       : [
           day === 'manana' ? `Mañana: ${dayList.length} citas` : null,
-          artistSummaryParts.join(' · '),
+          staffSummaryParts.join(' · '),
           pendingForDay > 0
             ? `${pendingForDay} anticipo${pendingForDay === 1 ? '' : 's'} por confirmar`
             : null,
@@ -152,13 +152,19 @@ export function DashboardAgendaCard({
   return (
     <SurfaceCard
       id="ad-ag"
-      title="Agenda"
+      title="Agenda del día"
+      subtitle={
+        day === 'hoy'
+          ? `${metrics.headerDateLabel} · Horarios en vivo`
+          : 'Vista anticipada de mañana'
+      }
       badge={statusPill}
       className="ad-card"
       actions={
         <FilterPillBar
           ariaLabel="Día de la agenda"
           mode="segmented"
+          size="sm"
           value={day}
           options={dayOptions}
           onChange={setDay}
@@ -169,25 +175,16 @@ export function DashboardAgendaCard({
           <Text type="supporting" color="secondary">
             {footerSummary}
           </Text>
-          <HStack gap={3} align="center" wrap="wrap">
-            <Button
-              label="Nueva cita"
-              variant="secondary"
-              size="sm"
-              icon={<Plus size={14} aria-hidden="true" />}
-              href="/admin/citas?new=1"
-            />
-            <NextLink href="/admin/citas" className="ad-inline-link">
-              Abrir agenda completa →
-            </NextLink>
-          </HStack>
+          <NextLink href="/admin/citas" className="ad-inline-link">
+            Ver agenda completa ›
+          </NextLink>
         </>
       }
     >
       {!isSpecialist && metrics.activeStaff.length > 1 ? (
         <HStack className="ad-filter-bar" paddingInline={5} paddingBlock={3}>
           <FilterPillBar
-            ariaLabel="Filtrar por manicurista"
+            ariaLabel="Filtrar por profesional"
             mode="pills"
             size="sm"
             value={effectiveStaffId}
@@ -197,9 +194,18 @@ export function DashboardAgendaCard({
         </HStack>
       ) : null}
 
+      {filteredBookings.length > 0 ? (
+        <HStack className="ad-tbl-head ad-row ad-hide-s" aria-hidden="true">
+          <Text className="ad-tbl-th">Hora</Text>
+          <Text className="ad-tbl-th">{'\u200B'}</Text>
+          <Text className="ad-tbl-th">Clienta y servicio</Text>
+          <Text className="ad-tbl-th ad-tbl-th-end">Estado y acción</Text>
+        </HStack>
+      ) : null}
+
       <VStack key={`${day}-${effectiveStaffId}`} className="fx-step-in" gap={0}>
         {filteredBookings.length === 0 ? (
-          <VStack padding={4}>
+          <VStack padding={5}>
             <EmptyStateCard
               framed={false}
               isCompact
@@ -208,7 +214,7 @@ export function DashboardAgendaCard({
                   ? 'No tienes citas programadas para hoy.'
                   : effectiveStaffId === 'all'
                     ? 'No hay citas programadas para mañana.'
-                    : 'Sin citas para esta manicurista en este día.'
+                    : 'Sin citas para esta profesional en este día.'
               }
               actions={
                 <HStack gap={2} wrap="wrap">

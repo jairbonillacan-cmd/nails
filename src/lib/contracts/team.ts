@@ -16,7 +16,7 @@ const UpsertAdminUserSchema = z
 const UpsertStaffMemberSchema = z
   .object({
     id: NonEmptyIdSchema.optional(),
-    name: z.string().trim().min(2, 'Escribe el nombre de la especialista').max(120),
+    name: z.string().trim().min(2, 'Escribe el nombre de la profesional').max(120),
     roleTitle: z.string().trim().max(120).optional(),
     bio: z.string().max(1000).optional(),
     avatarUrl: z.string().max(2_500_000).nullable().optional(),

@@ -3,6 +3,7 @@
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import type { Coupon, Service } from '@/lib/types';
+import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui';
 import type { PromosSubTab, ServicePackageCatalogRow } from './cajaTypes';
 import { CouponsSubSection } from './CouponsSubSection';
@@ -24,7 +25,7 @@ interface CajaPromosTabProps {
     discountType: 'percent' | 'fixed_cents';
     value: number;
     recipient: string;
-  }) => Promise<boolean>;
+  }) => Promise<FormSubmitResult>;
   onCreatePackage: (input: {
     name: string;
     description: string;
@@ -32,7 +33,7 @@ interface CajaPromosTabProps {
     totalSessions: number;
     priceMxn: number;
     validDays: number;
-  }) => Promise<boolean>;
+  }) => Promise<FormSubmitResult>;
   onTogglePackage: (pkg: ServicePackageCatalogRow, nextActive: boolean) => Promise<void>;
 }
 

@@ -9,6 +9,7 @@ import {
   toPublicStaffDTO,
   type PublicReviewDTO,
 } from '@/lib/public-dto';
+import { readSignedInClientProfile } from '@/lib/auth/client-portal-profile';
 import { getRepository } from '@/lib/repositories/db';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 import type { BookingLayoutView } from '@/lib/types';
@@ -226,6 +227,7 @@ export default async function ReservarServicioPage({
         initialLayout={parseLayoutParam(query.layout)}
         initialSlot={query.slot?.trim() || undefined}
         initialInspoNote={query.inspo?.trim() || undefined}
+        initialClientProfile={await readSignedInClientProfile(db.clients)}
       />
       {selectedService ? (
         <ServiceReviewsSection

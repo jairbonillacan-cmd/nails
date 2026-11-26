@@ -68,8 +68,8 @@ const SECTION_SWITCHES: ReadonlyArray<{
   },
   {
     key: 'showTeam',
-    label: 'Equipo de artistas',
-    description: 'Perfiles de especialistas y acceso directo.',
+    label: 'Equipo de profesionales',
+    description: 'Perfiles de profesionales y acceso directo.',
   },
   {
     key: 'showConnect',
@@ -614,7 +614,7 @@ export function LandingContentEditorSection({
               <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
                 <TextInput
                   label="Título del equipo"
-                  placeholder="Elige a tu artista"
+                  placeholder="Elige a tu profesional"
                   value={draft.landingContent.teamTitle ?? ''}
                   onChange={(v) => patchLanding({ teamTitle: v })}
                   isOptional

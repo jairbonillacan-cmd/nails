@@ -14,6 +14,8 @@ import {
   type AppliedCouponState,
 } from '@/components/booking/bookingApi';
 import {
+  birthdayInputToIso,
+  hasClientFieldErrors,
   prefersReducedMotion,
   validateClientBookingFields,
   type ClientFieldErrors,
@@ -25,8 +27,9 @@ import type {
   BookingStep,
 } from '@/components/booking/bookingMachine';
 import { buildIdempotencyKey } from '@/components/booking/bookingViewHelpers';
+import { isPhoneMatchingSession } from '@/components/booking/clientAccountHelpers';
 
-const EMPTY_FIELD_ERRORS: ClientFieldErrors = { name: null, phone: null };
+const EMPTY_FIELD_ERRORS: ClientFieldErrors = { name: null, phone: null, email: null, birthday: null };
 
 interface ClientFormValues {
   clientName: string;
@@ -55,6 +58,8 @@ interface UseBookingFlowActionsInput {
   subtotalCents: number;
   showsDeposit: boolean;
   client: ClientFormValues;
+  signedInPhoneE164?: string | null;
+  todayKey: string;
   revalidateActive: () => void;
   navigateToManageUrl: (url: string) => void;
 }
@@ -74,6 +79,8 @@ export function useBookingFlowActions({
   subtotalCents,
   showsDeposit,
   client,
+  signedInPhoneE164 = null,
+  todayKey,
   revalidateActive,
   navigateToManageUrl,
 }: UseBookingFlowActionsInput) {
@@ -276,15 +283,24 @@ export function useBookingFlowActions({
   };
 
   const isSubmittingBooking = flow.phase === 'submitting' || flow.phase === 'confirmed';
-  const fieldErrors = hasTriedSubmit
-    ? validateClientBookingFields(client.clientName, client.clientPhone)
-    : EMPTY_FIELD_ERRORS;
+  const salonTodayKey = todayKey;
+  const contactInput = {
+    name: client.clientName,
+    phone: client.clientPhone,
+    email: client.clientEmail,
+    birthday: client.clientBirthday,
+  };
+  const fieldErrors = hasTriedSubmit ? validateClientBookingFields(contactInput, salonTodayKey) : EMPTY_FIELD_ERRORS;
+
+  const hasSessionPhoneMismatch = Boolean(
+    signedInPhoneE164 && !isPhoneMatchingSession(client.clientPhone, signedInPhoneE164),
+  );
 
   const handleDetailsContinue = (e: React.FormEvent) => {
     e.preventDefault();
     setHasTriedSubmit(true);
-    const errors = validateClientBookingFields(client.clientName, client.clientPhone);
-    if (errors.name || errors.phone) return;
+    if (hasSessionPhoneMismatch) return;
+    if (hasClientFieldErrors(validateClientBookingFields(contactInput, salonTodayKey))) return;
     goToStep('payment');
   };
 
@@ -300,8 +316,10 @@ export function useBookingFlowActions({
       return;
     }
     setHasTriedSubmit(true);
-    const errors = validateClientBookingFields(client.clientName, client.clientPhone);
-    if (errors.name || errors.phone) {
+    if (
+      hasSessionPhoneMismatch ||
+      hasClientFieldErrors(validateClientBookingFields(contactInput, salonTodayKey))
+    ) {
       goToStep('details');
       return;
     }
@@ -334,8 +352,8 @@ export function useBookingFlowActions({
         clientName: client.clientName,
         clientPhone: normalizePhoneE164(client.clientPhone),
         clientInstagram: client.clientInstagram.trim() || null,
-        clientEmail: client.clientEmail || null,
-        clientBirthday: client.clientBirthday || null,
+        clientEmail: client.clientEmail.trim() || null,
+        clientBirthday: birthdayInputToIso(client.clientBirthday, salonTodayKey),
         clientNotes: client.clientNotes,
         inspoPhotoUrl: client.inspoDataUrl,
         paymentProofUrl: effectiveProofMethod === 'web_upload' ? client.proofDataUrl : null,

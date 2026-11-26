@@ -17,7 +17,7 @@ interface LandingFaqProps {
 
 export function LandingFaq({
   title = 'Preguntas frecuentes',
-  subtitle = 'Lo que más nos preguntan antes de su primera cita.',
+  subtitle = 'Lo que más nos preguntan antes de tu primera cita.',
   faqs = SALON_FAQS,
   whatsappUrl,
 }: LandingFaqProps) {

@@ -2,19 +2,20 @@
 
 import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
-import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
+import { Selector } from '@astryxdesign/core/Selector';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
-import { Check, Plus, Search } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { PageHeader } from '@/components/ui';
 import {
   useAdminData,
   type AdminOverviewPayload,
 } from '@/components/admin/AdminProvider';
-import { useAdminShellControls } from '@/components/admin/AdminShell';
-import { buildDashboardMetrics } from '@/components/admin/dashboard/dashboardMetrics';
+import {
+  buildDashboardMetrics,
+  type DashboardPeriod,
+} from '@/components/admin/dashboard/dashboardMetrics';
 import { DashboardAttentionCard } from '@/components/admin/dashboard/DashboardAttentionCard';
 import { DashboardKpiRow } from '@/components/admin/dashboard/DashboardKpiRow';
 import { DashboardAgendaCard } from '@/components/admin/dashboard/DashboardAgendaCard';
@@ -32,9 +33,15 @@ import {
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type { BookingWithRelations } from '@/lib/types';
 
+const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
+  { value: 'today', label: 'Hoy' },
+  { value: '7d', label: 'Esta semana' },
+  { value: '30d', label: 'Últimos 30 días' },
+];
+
 export default function AdminOverviewPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
-  const { openQuickSearch } = useAdminShellControls();
+  const [period, setPeriod] = useState<DashboardPeriod>('7d');
   const [confirmingBookingId, setConfirmingBookingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const savedNotice = useEphemeralMessage(3200);
@@ -53,8 +60,8 @@ export default function AdminOverviewPage() {
   const data = overviewQuery.data ?? providerData;
 
   const metrics = useMemo(
-    () => (data ? buildDashboardMetrics(data) : null),
-    [data],
+    () => (data ? buildDashboardMetrics(data, period) : null),
+    [data, period],
   );
 
   if (!data || !metrics) return null;
@@ -68,12 +75,12 @@ export default function AdminOverviewPage() {
 
   const headline =
     todayCount > 0 && pendingCount > 0
-      ? `Hoy tienes ${todayCount} cita${todayCount === 1 ? '' : 's'} y ${pendingCount} ${pendingCount === 1 ? 'pendiente' : 'pendientes'}.`
+      ? `${metrics.headerDateLabel} · ${todayCount} cita${todayCount === 1 ? '' : 's'} hoy y ${pendingCount} ${pendingCount === 1 ? 'pendiente' : 'pendientes'}`
       : todayCount > 0
-        ? `Hoy tienes ${todayCount} cita${todayCount === 1 ? '' : 's'}. Todo está al día.`
+        ? `${metrics.headerDateLabel} · ${todayCount} cita${todayCount === 1 ? '' : 's'} hoy, todo al día`
         : pendingCount > 0
-          ? `Sin citas hoy · ${pendingCount} ${pendingCount === 1 ? 'pendiente' : 'pendientes'} por atender.`
-          : 'Sin citas hoy. Todo está al día.';
+          ? `${metrics.headerDateLabel} · Sin citas hoy · ${pendingCount} ${pendingCount === 1 ? 'pendiente' : 'pendientes'}`
+          : `${metrics.headerDateLabel} · Sin citas hoy, todo al día`;
 
   const handleConfirmDeposit = async (bookingId: string, clientName: string): Promise<boolean> => {
     if (confirmingBookingId === bookingId) return false;
@@ -144,87 +151,66 @@ export default function AdminOverviewPage() {
     }
   };
 
-  return (
-    <VStack gap={5} className="ad-dashboard fx-fade-up">
-      <HStack
-        as="header"
-        justify="between"
-        align="end"
-        gap={3}
-        wrap="wrap"
-        className="ad-head"
-      >
-        <VStack gap={1} className="ad-head-copy">
-          <HStack gap={2} align="center" wrap="wrap">
-            <Text type="supporting" color="secondary" weight="medium" className="ad-date">
-              {metrics.headerDateLabel}
-            </Text>
-            {data.integration.mode === 'demo' ? (
-              <Tooltip
-                content="Modo de prueba: todo se guarda solo aquí para que explores sin miedo."
-                placement="below"
-                touchTrigger="tap"
-                hasHoverIndication={false}
-              >
-                <button type="button" className="ad-demo-chip fx-press">
-                  Modo de prueba
-                </button>
-              </Tooltip>
-            ) : null}
-            {confirmingBookingId ? (
-              <Text
-                role="status"
-                aria-live="polite"
-                className="fx-save-pill"
-                data-state="saving"
-              >
-                Confirmando cita...
-              </Text>
-            ) : savedNotice.message ? (
-              <Text
-                role="status"
-                aria-live="polite"
-                className="fx-save-pill"
-                data-state="saved"
-              >
-                <Check size={12} aria-hidden="true" />
-                {savedNotice.message}
-              </Text>
-            ) : null}
-          </HStack>
-
-          <Heading level={1} className="lk-serif ad-title">
-            Hola, {firstName}
-          </Heading>
-          <Text color="secondary" className="ad-subtitle">
-            {headline}
-          </Text>
-        </VStack>
-
-        <HStack gap={2} align="center" wrap="wrap">
-          <button
-            type="button"
-            className="ad-search-btn ad-hide-s fx-press"
-            onClick={openQuickSearch}
-          >
-            <HStack gap={2} align="center">
-              <Search size={15} aria-hidden="true" />
-              <Text color="inherit" size="sm" weight="medium">
-                Buscar clienta o cita
-              </Text>
-            </HStack>
-            <kbd className="ad-kbd">Ctrl K</kbd>
+  const statusMeta = (
+    <>
+      {data.integration.mode === 'demo' ? (
+        <Tooltip
+          content="Modo de prueba: todo se guarda solo aquí para que explores sin miedo."
+          placement="below"
+          touchTrigger="tap"
+          hasHoverIndication={false}
+        >
+          <button type="button" className="ad-demo-chip fx-press">
+            Modo de prueba
           </button>
+        </Tooltip>
+      ) : null}
+      {confirmingBookingId ? (
+        <Text
+          role="status"
+          aria-live="polite"
+          className="fx-save-pill"
+          data-state="saving"
+        >
+          Confirmando cita...
+        </Text>
+      ) : savedNotice.message ? (
+        <Text
+          role="status"
+          aria-live="polite"
+          className="fx-save-pill"
+          data-state="saved"
+        >
+          <Check size={12} aria-hidden="true" />
+          {savedNotice.message}
+        </Text>
+      ) : null}
+    </>
+  );
 
-          <Button
-            label="Nueva cita"
-            variant="primary"
-            size="md"
-            icon={<Plus size={16} aria-hidden="true" />}
-            href="/admin/citas?new=1"
+  return (
+    <VStack gap={4} className="ad-dashboard fx-fade-up">
+      <PageHeader
+        eyebrow={`${metrics.greetingLabel}, ${firstName}`}
+        title="Resumen"
+        subtitle={headline}
+        meta={statusMeta}
+        actions={
+          <Selector
+            label="Periodo del resumen"
+            isLabelHidden
+            size="sm"
+            variant="secondary"
+            value={period}
+            options={PERIOD_OPTIONS}
+            onChange={(next) => {
+              if (next === 'today' || next === '7d' || next === '30d') {
+                setPeriod(next);
+              }
+            }}
           />
-        </HStack>
-      </HStack>
+        }
+      />
 
       {errorMessage ? (
         <Banner
@@ -236,17 +222,9 @@ export default function AdminOverviewPage() {
         />
       ) : null}
 
-      <DashboardAttentionCard
-        data={data}
-        metrics={metrics}
-        confirmingBookingId={confirmingBookingId}
-        savedMessage={savedNotice.message}
-        onConfirmDeposit={handleConfirmDeposit}
-      />
-
       <DashboardKpiRow data={data} metrics={metrics} />
 
-      <VStack className="ad-main" gap={5}>
+      <VStack className="ad-main" gap={4}>
         <DashboardAgendaCard
           data={data}
           metrics={metrics}
@@ -254,8 +232,16 @@ export default function AdminOverviewPage() {
           savedMessage={savedNotice.message}
           onConfirmDeposit={handleConfirmDeposit}
         />
-        <DashboardRightColumn data={data} metrics={metrics} />
+        <DashboardAttentionCard
+          data={data}
+          metrics={metrics}
+          confirmingBookingId={confirmingBookingId}
+          savedMessage={savedNotice.message}
+          onConfirmDeposit={handleConfirmDeposit}
+        />
       </VStack>
+
+      <DashboardRightColumn data={data} metrics={metrics} />
     </VStack>
   );
 }

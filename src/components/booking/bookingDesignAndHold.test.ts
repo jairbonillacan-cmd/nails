@@ -58,7 +58,7 @@ describe('design step', () => {
     expect(onDesign.completedSteps.has('staff')).toBe(true);
 
     const withNotes = computeStepNavigation({ ...NAV_BASE, hasDesignDetails: true, flow: heldOn('design') });
-    expect(withNotes.nextHint).toBe('Tu artista ya tiene tu idea');
+    expect(withNotes.nextHint).toBe('Tu profesional ya tiene tu idea');
 
     const onDetails = computeStepNavigation({ ...NAV_BASE, flow: heldOn('details') });
     expect(onDetails.backTarget).toBe('design');
@@ -70,6 +70,21 @@ describe('design step', () => {
     const expired = bookingReducer(onPayment, { type: 'HOLD_EXPIRED', message: 'x' });
     expect(expired.step).toBe('payment');
     expect(expired.selectedSlot?.startAt).toBe(SLOT.startAt);
+  });
+
+  it('labels a hold that ran out before the design step as expired, not as taken by someone else', () => {
+    for (const step of ['schedule', 'staff'] as const) {
+      const expired = bookingReducer(heldOn(step), { type: 'HOLD_EXPIRED', message: 'Soltamos tu horario.' });
+      expect(expired.step).toBe('schedule');
+      expect(expired.selectedSlot).toBeNull();
+      expect(expired.conflict?.kind).toBe('expired');
+    }
+    const taken = bookingReducer(heldOn('schedule'), {
+      type: 'SLOT_CONFLICT',
+      message: 'Alguien más lo tomó.',
+      suggestions: [],
+    });
+    expect(taken.conflict?.kind).toBe('taken');
   });
 
   it('flags design, details and payment as post-hold steps', () => {

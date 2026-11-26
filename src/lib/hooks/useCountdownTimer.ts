@@ -2,11 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+interface ClockState {
+  expiresAtMs: number | null;
+  nowMs: number;
+}
+
 export function useCountdownTimer(
   expiresAtMs: number | null,
   onExpire: () => void,
 ): number {
-  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [clock, setClock] = useState<ClockState | null>(null);
   const onExpireRef = useRef(onExpire);
   const expiredForRef = useRef<number | null>(null);
 
@@ -16,20 +21,23 @@ export function useCountdownTimer(
 
   useEffect(() => {
     if (!expiresAtMs) return;
-    const id = window.setInterval(() => {
+    let id = 0;
+    const tick = () => {
       const current = Date.now();
-      setNowMs(current);
+      setClock({ expiresAtMs, nowMs: current });
       if (current >= expiresAtMs && expiredForRef.current !== expiresAtMs) {
         expiredForRef.current = expiresAtMs;
         window.clearInterval(id);
         onExpireRef.current();
       }
-    }, 1000);
+    };
+    id = window.setInterval(tick, 1000);
+    tick();
     return () => {
       window.clearInterval(id);
     };
   }, [expiresAtMs]);
 
-  if (!expiresAtMs) return 0;
-  return Math.max(0, Math.ceil((expiresAtMs - nowMs) / 1000));
+  if (!expiresAtMs || !clock || clock.expiresAtMs !== expiresAtMs) return 0;
+  return Math.max(0, Math.ceil((expiresAtMs - clock.nowMs) / 1000));
 }

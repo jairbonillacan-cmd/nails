@@ -78,7 +78,7 @@ export function generateBookingIcs(
   const summary = `${booking.service.name}${addonsSummary} — ${settings.name}`;
   const descriptionLines = [
     `Código de cita: ${booking.bookingCode}`,
-    `Especialista: ${booking.staff.name}`,
+    `Profesional: ${booking.staff.name}`,
     `Servicio: ${booking.service.name}${addonsSummary}`,
     `Gestionar, reagendar o cancelar: ${manageUrl}`,
   ];

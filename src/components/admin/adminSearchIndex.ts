@@ -40,7 +40,7 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
     },
     {
       label: 'Agenda',
-      description: 'Horarios por manicurista, reprogramar y cobrar',
+      description: 'Horarios por profesional, reprogramar y cobrar',
       href: '/admin/citas',
       keywords: 'citas agenda calendario horarios',
       visible: true,
@@ -75,9 +75,9 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
     },
     {
       label: 'Equipo',
-      description: 'Manicuristas, comisiones y accesos del salón',
+      description: 'Profesionales, comisiones y accesos del salón',
       href: '/admin/equipo',
-      keywords: 'equipo manicuristas comisiones accesos roles',
+      keywords: 'equipo profesionales comisiones accesos roles',
       visible: roleCanAccess(role, 'team'),
     },
     {

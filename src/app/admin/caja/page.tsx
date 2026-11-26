@@ -23,6 +23,7 @@ import type { CajaTab, ServicePackageCatalogRow } from '@/components/admin/caja/
 import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
 import type { PaymentMethod } from '@/lib/types';
+import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 function CajaTabFallback() {
   return (
@@ -132,17 +133,16 @@ export default function AdminCashPage() {
     description: string;
     amountMxn: number;
     method: PaymentMethod;
-  }): Promise<boolean> => {
-    setErrorMsg(null);
+  }): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await recordCajaCashEntry(input);
     if (!result.ok) {
-      setErrorMsg(result.error ?? 'No se pudo guardar el movimiento.');
-      return false;
+      return formSubmitError(result.error ?? 'No se pudo guardar el movimiento.');
     }
+    setErrorMsg(null);
     setMsg(result.message ?? null);
     await refresh();
-    return true;
+    return FORM_SUBMIT_OK;
   };
 
   const handleCreateCoupon = async (input: {
@@ -151,17 +151,16 @@ export default function AdminCashPage() {
     discountType: 'percent' | 'fixed_cents';
     value: number;
     recipient: string;
-  }): Promise<boolean> => {
-    setErrorMsg(null);
+  }): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await createCajaCoupon(input);
     if (!result.ok) {
-      setErrorMsg(result.error ?? 'No se pudo crear el código.');
-      return false;
+      return formSubmitError(result.error ?? 'No se pudo crear el código.');
     }
+    setErrorMsg(null);
     setMsg(result.message ?? null);
     await refresh();
-    return true;
+    return FORM_SUBMIT_OK;
   };
 
   const handleCreatePackage = async (input: {
@@ -171,17 +170,16 @@ export default function AdminCashPage() {
     totalSessions: number;
     priceMxn: number;
     validDays: number;
-  }): Promise<boolean> => {
-    setErrorMsg(null);
+  }): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await createCajaPackage(input);
     if (!result.ok) {
-      setErrorMsg(result.error ?? 'No se pudo crear el paquete de sesiones.');
-      return false;
+      return formSubmitError(result.error ?? 'No se pudo crear el paquete de sesiones.');
     }
+    setErrorMsg(null);
     reloadPackages();
     setMsg(result.message ?? null);
-    return true;
+    return FORM_SUBMIT_OK;
   };
 
   const handleTogglePackage = async (

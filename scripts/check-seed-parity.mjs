@@ -217,7 +217,7 @@ export function checkSeedParity(demoSeedText, seedSqlText) {
   const staffBlock = extractInsertBlock(cleanSql, 'staff_members');
   const staffTuples = getInsertValuesTuples(staffBlock);
   if (demo.staff.length === 0) {
-    diffs.push('demo-seed.ts no contiene especialistas en staff[]');
+    diffs.push('demo-seed.ts no contiene profesionales en staff[]');
   }
   for (const member of demo.staff) {
     const tuple = staffTuples.find((t) => hasSqlLiteral(t, member.bookingSlug));

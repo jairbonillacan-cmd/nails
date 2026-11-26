@@ -150,7 +150,7 @@ export function useCajaData(
           id: 'tips',
           label: 'Propinas',
           value: formatCurrency(data.kpis.totalTipsCents, data.settings.currency),
-          sub: 'Para tus manicuristas',
+          sub: 'Para tus profesionales',
           interactive: true,
         },
       ]

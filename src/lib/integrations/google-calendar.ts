@@ -329,7 +329,7 @@ export async function syncBookingToGoogleCalendar(params: {
 
   const eventBody = {
     summary: `${params.booking.service.name} — ${params.booking.client.fullName} (${params.booking.bookingCode})`,
-    description: `Especialista: ${params.booking.staff.name}\nTeléfono: ${params.booking.client.phoneE164}\nCódigo: ${params.booking.bookingCode}`,
+    description: `Profesional: ${params.booking.staff.name}\nTeléfono: ${params.booking.client.phoneE164}\nCódigo: ${params.booking.bookingCode}`,
     location: params.settings.address,
     start: {
       dateTime: params.booking.startAt,

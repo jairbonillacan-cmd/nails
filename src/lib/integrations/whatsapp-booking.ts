@@ -130,7 +130,7 @@ export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInp
       `¡Listo ${booking.client.fullName}! Tu cita en ${db.settings.name} quedó registrada (${booking.bookingCode}).`,
       `Servicio: ${booking.service.name}`,
       `Fecha: ${formatDateLongInTimezone(booking.startAt, tz)} · ${formatTimeInTimezone(booking.startAt, tz)}`,
-      `Especialista: ${booking.staff.name}`,
+      `Profesional: ${booking.staff.name}`,
       `Agregar al calendario, reagendar o cancelar: ${manageUrl}`,
     ].join('\n');
 

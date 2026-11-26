@@ -203,7 +203,7 @@ export function CajaDepositsTab({
             <VStack gap={2} className="ad-proof-meta">
               <HStack justify="between" align="center" gap={2} wrap="wrap">
                 <Text type="supporting" color="secondary">
-                  Servicio y manicurista
+                  Servicio y profesional
                 </Text>
                 <Text weight="semibold" size="sm">
                   {previewDeposit.serviceName} · {previewDeposit.staffName}

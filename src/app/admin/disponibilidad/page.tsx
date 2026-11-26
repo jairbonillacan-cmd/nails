@@ -63,7 +63,7 @@ export default function AdminAvailabilityPage() {
     : (selectedStaffId ?? data.staff[0]?.id ?? '');
 
   const activeStaffMember = data.staff.find((s) => s.id === staffId) ?? data.staff[0] ?? null;
-  const staffName = activeStaffMember?.name ?? 'la manicurista';
+  const staffName = activeStaffMember?.name ?? 'la profesional';
 
   const currentScheduleRules =
     data.schedules.find((s) => s.staffId === staffId)?.rules ?? [];
@@ -87,7 +87,7 @@ export default function AdminAvailabilityPage() {
       id: 'work-days',
       label: 'Días que trabaja',
       value: `${activeDaysCount} de 7`,
-      sub: activeStaffMember?.name ?? 'Manicurista',
+      sub: activeStaffMember?.name ?? 'Profesional',
     },
     {
       id: 'recurring-count',
@@ -119,7 +119,7 @@ export default function AdminAvailabilityPage() {
       <PageHeader
         eyebrow="Agenda del equipo"
         title="Horarios"
-        subtitle="Elige los turnos fijos de cada manicurista, sus descansos y días cerrados."
+        subtitle="Elige los turnos fijos de cada profesional, sus descansos y días cerrados."
         meta={
           savingWeekly ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -136,7 +136,7 @@ export default function AdminAvailabilityPage() {
           !isSpecialistOnly ? (
             data.staff.length <= 5 ? (
               <FilterPillBar<string>
-                ariaLabel="Elegir manicurista"
+                ariaLabel="Elegir profesional"
                 mode="pills"
                 size="sm"
                 isDisabled={savingWeekly}
@@ -154,7 +154,7 @@ export default function AdminAvailabilityPage() {
               />
             ) : (
               <Selector
-                label="Manicurista"
+                label="Profesional"
                 value={staffId}
                 isDisabled={savingWeekly}
                 onChange={(v) => v && handleSelectStaff(v)}

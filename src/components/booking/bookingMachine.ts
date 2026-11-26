@@ -25,6 +25,7 @@ export function isPostHoldStep(step: BookingStep): boolean {
 }
 
 export interface BookingConflictState {
+  kind: 'taken' | 'expired';
   message: string;
   suggestions: AvailableSlot[];
 }
@@ -196,6 +197,7 @@ export function bookingReducer(
         holdExpired: false,
         holdExpiredMessage: null,
         conflict: {
+          kind: 'taken',
           message: action.message,
           suggestions: action.suggestions,
         },
@@ -227,6 +229,7 @@ export function bookingReducer(
         holdExpired: false,
         holdExpiredMessage: null,
         conflict: {
+          kind: 'expired',
           message: action.message,
           suggestions: [],
         },

@@ -3,6 +3,8 @@ import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations, InventoryItem, StaffMember, WaitlistEntry } from '@/lib/types';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
+export type DashboardPeriod = 'today' | '7d' | '30d';
+
 type UncollectedBookingItem = AdminOverviewPayload['uncollectedBookings'][number];
 
 interface DashboardCashMetrics {
@@ -15,16 +17,48 @@ interface DashboardCashMetrics {
   todayTipsCents: number;
 }
 
+interface DailySeriesPoint {
+  dateKey: string;
+  shortLabel: string;
+  revenueCents: number;
+  bookingsCount: number;
+  isToday: boolean;
+}
+
+interface StaffTodayLoad {
+  id: string;
+  name: string;
+  firstName: string;
+  colorIdx: number;
+  todayCount: number;
+  sharePercent: number;
+}
+
+interface DashboardPeriodMetrics {
+  period: DashboardPeriod;
+  periodLabel: string;
+  compareLabel: string;
+  revenueCents: number;
+  prevRevenueCents: number;
+  revenueDeltaPercent: number | null;
+  bookingsCount: number;
+  confirmedCount: number;
+  prevBookingsCount: number;
+  bookingsDeltaPercent: number | null;
+}
+
 export interface DashboardMetrics {
   tz: string;
   serverNowMs: number;
   todayKey: string;
   tomorrowKey: string;
+  greetingLabel: string;
   headerDateLabel: string;
   activeStaff: StaffMember[];
   staffColorIndex: Map<string, number>;
   uncollectedByBookingId: Map<string, UncollectedBookingItem>;
   uncollectedTotalCents: number;
+  pendingDepositsTotalCents: number;
   waitingList: WaitlistEntry[];
   lowStock: InventoryItem[];
   todayBookings: BookingWithRelations[];
@@ -32,7 +66,12 @@ export interface DashboardMetrics {
   upcomingTodayCount: number;
   totalAttentionCount: number;
   cash: DashboardCashMetrics;
+  periodMetrics: DashboardPeriodMetrics;
+  dailySeries: DailySeriesPoint[];
+  staffTodayLoad: StaffTodayLoad[];
 }
+
+const DAY_MS = 86_400_000;
 
 function capitalizeFirst(value: string): string {
   if (!value) return value;
@@ -49,6 +88,39 @@ function formatHeaderDate(iso: string, timeZone: string): string {
   return capitalizeFirst(formatted.replace(/,/g, ''));
 }
 
+function resolveGreeting(iso: string, timeZone: string): string {
+  const hourStr = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    hour12: false,
+  }).format(new Date(iso));
+  const hour = Number.parseInt(hourStr, 10);
+  if (!Number.isFinite(hour) || hour < 12) return 'Buenos días';
+  if (hour < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+function shiftDateKey(dateKey: string, deltaDays: number): string {
+  const parts = dateKey.split('-').map((chunk) => Number.parseInt(chunk, 10));
+  const dt = new Date(
+    Date.UTC(parts[0] || 2026, (parts[1] || 1) - 1, (parts[2] || 1) + deltaDays, 12, 0, 0),
+  );
+  return dt.toISOString().slice(0, 10);
+}
+
+function shortWeekdayLabel(dateKey: string): string {
+  const formatted = new Intl.DateTimeFormat('es-MX', {
+    timeZone: 'UTC',
+    weekday: 'short',
+  }).format(new Date(`${dateKey}T12:00:00Z`));
+  return capitalizeFirst(formatted.replace(/\./g, '').slice(0, 3));
+}
+
+export function computePercentDelta(current: number, previous: number): number | null {
+  if (previous <= 0) return current > 0 ? 100 : null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 export function getDisplayBookingUrl(appUrl: string): string {
   const cleaned = appUrl.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   if (!cleaned || cleaned.startsWith('localhost') || cleaned.startsWith('127.0.0.1')) {
@@ -62,15 +134,20 @@ export function isDisplayableProofUrl(url: string | null): url is string {
   return url.startsWith('/api/media/') || url.startsWith('https://');
 }
 
-export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetrics {
+export function buildDashboardMetrics(
+  data: AdminOverviewPayload,
+  period: DashboardPeriod = '7d',
+): DashboardMetrics {
   const tz = data.settings.timezone || 'America/Mexico_City';
   const serverNowDate = new Date(data.serverNowIso);
   const serverNowMs = serverNowDate.getTime();
   const todayKey = data.serverTodayKey || getDateKeyInTimezone(serverNowDate, tz);
-  const tomorrowKey = getDateKeyInTimezone(new Date(serverNowMs + 86_400_000), tz);
+  const tomorrowKey = getDateKeyInTimezone(new Date(serverNowMs + DAY_MS), tz);
   const role = data.session.user.role;
 
-  const activeStaff = data.staff.filter((member) => member.isActive);
+  const activeStaff = data.staff
+    .filter((member) => member.isActive)
+    .toSorted((a, b) => a.displayOrder - b.displayOrder);
   const staffColorIndex = new Map<string, number>();
   activeStaff.forEach((member, idx) => {
     staffColorIndex.set(member.id, idx % 4);
@@ -83,6 +160,12 @@ export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetr
     uncollectedTotalCents += item.remainingCents;
   }
 
+  const depositFallbackCents = data.settings.depositAmountCents ?? 20000;
+  const pendingDepositsTotalCents = data.pendingDeposits.reduce(
+    (sum, item) => sum + (item.depositAmountCents || depositFallbackCents),
+    0,
+  );
+
   const waitingList = data.waitlist.filter((entry) => entry.status === 'waiting');
   const lowStock = roleCanAccess(role, 'inventory')
     ? data.inventory.filter((item) => item.isActive && item.stockQuantity <= item.minStockAlert)
@@ -92,11 +175,14 @@ export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetr
     .filter((booking) => booking.status !== 'canceled')
     .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 
-  const todayBookings = nonCanceledBookings.filter(
-    (booking) => getDateKeyInTimezone(new Date(booking.startAt), tz) === todayKey,
-  );
+  const bookingDateKey = (booking: BookingWithRelations) =>
+    getDateKeyInTimezone(new Date(booking.startAt), tz);
+  const entryDateKey = (occurredAt: string) =>
+    getDateKeyInTimezone(new Date(occurredAt), tz);
+
+  const todayBookings = nonCanceledBookings.filter((booking) => bookingDateKey(booking) === todayKey);
   const tomorrowBookings = nonCanceledBookings.filter(
-    (booking) => getDateKeyInTimezone(new Date(booking.startAt), tz) === tomorrowKey,
+    (booking) => bookingDateKey(booking) === tomorrowKey,
   );
 
   const upcomingTodayCount = todayBookings.filter(
@@ -106,9 +192,7 @@ export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetr
       new Date(booking.endAt).getTime() >= serverNowMs,
   ).length;
 
-  const todayCashEntries = data.cashEntries.filter(
-    (entry) => getDateKeyInTimezone(new Date(entry.occurredAt), tz) === todayKey,
-  );
+  const todayCashEntries = data.cashEntries.filter((entry) => entryDateKey(entry.occurredAt) === todayKey);
   const hasTodayEntries = todayCashEntries.length > 0;
   const activeCashEntries = hasTodayEntries ? todayCashEntries : data.cashEntries;
 
@@ -137,6 +221,70 @@ export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetr
     .reduce((sum, entry) => sum + Math.abs(entry.amountCents), 0);
   const todayTipsCents = todayCashEntries.reduce((sum, entry) => sum + entry.tipCents, 0);
 
+  const windowDays = period === 'today' ? 1 : period === '7d' ? 7 : 30;
+  const currentStartKey = shiftDateKey(todayKey, -(windowDays - 1));
+  const prevEndKey = shiftDateKey(currentStartKey, -1);
+  const prevStartKey = shiftDateKey(prevEndKey, -(windowDays - 1));
+
+  const sumCashRange = (startKey: string, endKey: string) =>
+    data.cashEntries.reduce((sum, entry) => {
+      if (entry.entryType === 'expense') return sum;
+      const key = entryDateKey(entry.occurredAt);
+      return key >= startKey && key <= endKey ? sum + entry.amountCents : sum;
+    }, 0);
+
+  const currentBookings = nonCanceledBookings.filter((booking) => {
+    const key = bookingDateKey(booking);
+    return key >= currentStartKey && key <= todayKey;
+  });
+  const prevBookingsCount = nonCanceledBookings.filter((booking) => {
+    const key = bookingDateKey(booking);
+    return key >= prevStartKey && key <= prevEndKey;
+  }).length;
+
+  const periodRevenueCents = sumCashRange(currentStartKey, todayKey);
+  const prevRevenueCents = sumCashRange(prevStartKey, prevEndKey);
+  const periodConfirmedCount = currentBookings.filter(
+    (booking) => booking.status === 'confirmed' || booking.status === 'completed',
+  ).length;
+
+  const periodLabel =
+    period === 'today' ? 'Hoy' : period === '7d' ? 'Últimos 7 días' : 'Últimos 30 días';
+  const compareLabel =
+    period === 'today' ? 'vs ayer' : period === '7d' ? 'vs semana pasada' : 'vs mes anterior';
+
+  const dailySeries: DailySeriesPoint[] = [];
+  for (let offset = -6; offset <= 0; offset += 1) {
+    const key = shiftDateKey(todayKey, offset);
+    const revenueCents = data.cashEntries.reduce((sum, entry) => {
+      if (entry.entryType === 'expense') return sum;
+      return entryDateKey(entry.occurredAt) === key ? sum + entry.amountCents : sum;
+    }, 0);
+    const bookingsCount = nonCanceledBookings.filter((booking) => bookingDateKey(booking) === key).length;
+    dailySeries.push({
+      dateKey: key,
+      shortLabel: shortWeekdayLabel(key),
+      revenueCents,
+      bookingsCount,
+      isToday: offset === 0,
+    });
+  }
+
+  const totalTodayBookings = todayBookings.length;
+  const staffTodayLoad: StaffTodayLoad[] = activeStaff.map((member) => {
+    const todayCount = todayBookings.filter((booking) => booking.staffId === member.id).length;
+    const sharePercent =
+      totalTodayBookings > 0 ? Math.round((todayCount / totalTodayBookings) * 100) : 0;
+    return {
+      id: member.id,
+      name: member.name,
+      firstName: member.name.trim().split(/\s+/)[0] || member.name,
+      colorIdx: staffColorIndex.get(member.id) ?? 0,
+      todayCount,
+      sharePercent,
+    };
+  });
+
   const totalAttentionCount =
     data.pendingDeposits.length +
     data.uncollectedBookings.length +
@@ -148,11 +296,13 @@ export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetr
     serverNowMs,
     todayKey,
     tomorrowKey,
+    greetingLabel: resolveGreeting(data.serverNowIso, tz),
     headerDateLabel: formatHeaderDate(data.serverNowIso, tz),
     activeStaff,
     staffColorIndex,
     uncollectedByBookingId,
     uncollectedTotalCents,
+    pendingDepositsTotalCents,
     waitingList,
     lowStock,
     todayBookings,
@@ -168,5 +318,19 @@ export function buildDashboardMetrics(data: AdminOverviewPayload): DashboardMetr
       todayNetCashCents: todayRevenueCents - todayExpensesCents,
       todayTipsCents,
     },
+    periodMetrics: {
+      period,
+      periodLabel,
+      compareLabel,
+      revenueCents: periodRevenueCents,
+      prevRevenueCents,
+      revenueDeltaPercent: computePercentDelta(periodRevenueCents, prevRevenueCents),
+      bookingsCount: currentBookings.length,
+      confirmedCount: periodConfirmedCount,
+      prevBookingsCount,
+      bookingsDeltaPercent: computePercentDelta(currentBookings.length, prevBookingsCount),
+    },
+    dailySeries,
+    staffTodayLoad,
   };
 }

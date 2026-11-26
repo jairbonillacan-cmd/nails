@@ -291,7 +291,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
       {
         id: 'adm-camila',
         email: 'camila@nails.studio',
-        fullName: 'Tere (Especialista)',
+        fullName: 'Tere (Profesional)',
         role: 'specialist',
         staffMemberId: staffTere,
         isActive: true,

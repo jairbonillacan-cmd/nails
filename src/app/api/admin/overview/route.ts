@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     },
     {
       id: 'staff-schedules',
-      label: 'Define los horarios fijos de tus especialistas',
+      label: 'Define los horarios fijos de tus profesionales',
       href: '/admin/disponibilidad',
       done: scopedSchedules.some((sc) => sc.rules.length > 0),
     },

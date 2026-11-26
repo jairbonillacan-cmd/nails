@@ -15,6 +15,7 @@ import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import { formatServicePrice } from '../booking/bookingHelpers';
 import { SectionHeading } from './LandingParts';
+import { LandingServiceDialog } from './LandingServiceDialog';
 import {
   LANDING_ASSETS,
   NAIL_SHAPES,
@@ -48,8 +49,12 @@ export function LandingMenu({
     services.some((service) => service.categoryId === category.id),
   );
   const [selected, setSelected] = useState<string>(visibleCategories[0]?.id ?? ART_TAB);
+  const [activeService, setActiveService] = useState<PublicServiceDTO | null>(null);
   const isArt = selected === ART_TAB;
   const categoryServices = services.filter((service) => service.categoryId === selected);
+  const activeServiceCategory = activeService
+    ? (categories.find((category) => category.id === activeService.categoryId)?.name ?? null)
+    : null;
 
   return (
     <VStack as="section" id="servicios" aria-labelledby="menu-t" className="lk-section">
@@ -128,20 +133,11 @@ export function LandingMenu({
                 const photoSrc = servicePhoto(service.slug, service.imageUrl);
                 return (
                   <VStack role="listitem" key={service.id}>
-                    <NextLink
-                      href={`/reservar/${service.slug}`}
-                      className="lk-card fx-card-lift fx-press"
-                      style={{
-                        display: 'flex',
-                        gap: '1rem',
-                        alignItems: 'center',
-                        padding: '0.75rem',
-                        color: 'inherit',
-                        textDecoration: 'none',
-                        minWidth: 0,
-                        width: '100%',
-                        boxSizing: 'border-box',
-                      }}
+                    <HStack
+                      as="article"
+                      gap={3}
+                      align="center"
+                      className="lk-card lk-service-card fx-card-lift"
                     >
                       {isOptimizableLocalRasterImage(photoSrc) ? (
                         <Image
@@ -167,7 +163,7 @@ export function LandingMenu({
                           style={{ background: 'var(--lk-tinte)' }}
                         />
                       )}
-                      <VStack gap={1} style={{ flex: '1 1 auto', minWidth: 0, paddingInlineEnd: '0.35rem' }}>
+                      <VStack gap={1} className="lk-service-card-body">
                         <HStack justify="between" align="start" wrap="wrap" gap={1.5}>
                           <Heading
                             level={3}
@@ -175,7 +171,14 @@ export function LandingMenu({
                             className="lk-serif lk-h3"
                             textWrap="balance"
                           >
-                            {service.name}
+                            <button
+                              type="button"
+                              className="lk-service-card-btn"
+                              aria-label={`Ver detalles de ${service.name}`}
+                              onClick={() => setActiveService(service)}
+                            >
+                              {service.name}
+                            </button>
                           </Heading>
                           <Text weight="bold" color="accent" hasTabularNumbers textWrap="nowrap">
                             {formatServicePrice(service.priceCents, service.isStartingPrice, currency)}
@@ -184,27 +187,43 @@ export function LandingMenu({
                         <Text type="supporting" color="secondary" maxLines={2} textWrap="pretty">
                           {service.description}
                         </Text>
-                        <HStack justify="between" align="center" gap={2} wrap="wrap">
-                          <HStack gap={1.5} align="center">
+                        <HStack justify="between" align="center" gap={1.5} wrap="wrap">
+                          <HStack gap={1} align="center">
                             <img
                               src={LANDING_ASSETS.iconClock}
                               alt=""
                               aria-hidden="true"
-                              width={16}
-                              height={16}
+                              width={15}
+                              height={15}
                               loading="lazy"
                               decoding="async"
                             />
-                            <Text type="supporting" color="secondary" hasTabularNumbers>
+                            <Text type="supporting" color="secondary" hasTabularNumbers textWrap="nowrap">
                               {formatDuration(service.durationMinutes)}
                             </Text>
+                            <Text type="supporting" color="secondary" aria-hidden="true">
+                              ·
+                            </Text>
+                            <Text
+                              type="supporting"
+                              color="secondary"
+                              className="lk-service-more"
+                              textWrap="nowrap"
+                              aria-hidden="true"
+                            >
+                              Ver más
+                            </Text>
                           </HStack>
-                          <Text type="supporting" weight="semibold" color="accent" aria-hidden="true">
+                          <NextLink
+                            href={`/reservar/${service.slug}`}
+                            className="lk-service-book-link fx-press"
+                            aria-label={`Reservar ${service.name}`}
+                          >
                             Reservar →
-                          </Text>
+                          </NextLink>
                         </HStack>
                       </VStack>
-                    </NextLink>
+                    </HStack>
                   </VStack>
                 );
               })}
@@ -223,6 +242,16 @@ export function LandingMenu({
           <Button label="Agendar cita" variant="secondary" size="lg" className="lk-btn-light fx-press" href="/reservar" />
         </HStack>
       </VStack>
+
+      {activeService ? (
+        <LandingServiceDialog
+          service={activeService}
+          categoryName={activeServiceCategory}
+          currency={currency}
+          depositLabel={depositLabel}
+          onClose={() => setActiveService(null)}
+        />
+      ) : null}
     </VStack>
   );
 }

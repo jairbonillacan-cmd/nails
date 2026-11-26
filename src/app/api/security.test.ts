@@ -1089,7 +1089,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             serviceId: 'srv-unas-acrilicas',
             staffId: 'staff-karla',
             startAt: valeriaSlot.startAt,
-            clientName: 'Otra Especialista',
+            clientName: 'Otra Profesional',
             clientPhone: '+525500112234',
           }),
         }),
@@ -1724,7 +1724,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
             'content-type': 'application/json',
             cookie: getSpecialistCookieHeader(),
           },
-          body: JSON.stringify({ fullName: 'Especialista', phone: '2221112233' }),
+          body: JSON.stringify({ fullName: 'Profesional', phone: '2221112233' }),
         }),
       );
       expect(specialistRes.status).toBe(403);
@@ -3746,7 +3746,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
           body: JSON.stringify({
             kind: 'staff',
             data: {
-              name: 'Manicurista Nueva',
+              name: 'Profesional Nueva',
               commissionPercent: 40,
               role: 'owner',
             },

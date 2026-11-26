@@ -81,8 +81,8 @@ export default async function AvisoDePrivacidadPage() {
   const mailtoArco = `mailto:${encodeURIComponent(settings.contactEmail)}?subject=${encodeURIComponent(`Solicitud Derechos ARCO — ${settings.name}`)}`;
 
   return (
-    <PublicShell>
-      <VStack width="100%" gap={0}>
+    <PublicShell
+      hero={
         <VStack as="section" className="rb-hero ck-hero" aria-labelledby="privacidad-title">
           <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={840}>
             <Text color="inherit" className="ck-eyebrow">
@@ -124,252 +124,252 @@ export default async function AvisoDePrivacidadPage() {
             <path d="M0 40h1440V22c-120-14-240-20-360-12S840 34 720 34 480 14 360 10 120 20 0 26Z" />
           </svg>
         </VStack>
+      }
+    >
+      <VStack paddingBlock={6} paddingInline={4} width="100%">
+        <VStack
+          gap={5}
+          maxWidth={840}
+          width="100%"
+          style={{ marginInline: 'auto' }}
+          className="ck-panel fx-fade-up"
+        >
+          <HStack gap={2} wrap="wrap" align="center">
+            <Token
+              label={`Versión ${policyVersion}`}
+              size="sm"
+              icon={<ShieldCheck size={14} aria-hidden="true" />}
+            />
+            <Token label="LFPDPPP · México" size="sm" />
+            <Token label={cityLabel} size="sm" />
+          </HStack>
 
-        <VStack paddingBlock={6} paddingInline={4} width="100%">
-          <VStack
-            gap={5}
-            maxWidth={840}
-            width="100%"
-            style={{ marginInline: 'auto' }}
-            className="ck-panel fx-fade-up"
-          >
-            <HStack gap={2} wrap="wrap" align="center">
-              <Token
-                label={`Versión ${policyVersion}`}
-                size="sm"
-                icon={<ShieldCheck size={14} aria-hidden="true" />}
+          <HStack as="nav" aria-label="Secciones del aviso" gap={1.5} wrap="wrap">
+            <a className="ck-anchor-pill" href="#responsable">
+              1. Responsable
+            </a>
+            <a className="ck-anchor-pill" href="#datos">
+              2. Datos que recabamos
+            </a>
+            <a className="ck-anchor-pill" href="#finalidades">
+              3. Finalidades
+            </a>
+            <a className="ck-anchor-pill" href="#arco">
+              5. Derechos ARCO
+            </a>
+          </HStack>
+
+          <Divider />
+
+          <VStack gap={2}>
+            <Heading level={2} id="responsable" className="lk-serif ck-h3">
+              1. Identidad y domicilio del responsable
+            </Heading>
+            <Text as="p" type="body" textWrap="pretty" style={{ overflowWrap: 'anywhere' }}>
+              <strong>{responsibleName}</strong>, responsable comercial de{' '}
+              <strong>{settings.name}</strong> ({instagramHandle}), con domicilio en{' '}
+              {settings.address}, es responsable del uso, resguardo y protección de
+              tus datos personales. Para cualquier asunto relacionado con este aviso
+              puedes escribir a {settings.contactEmail} o por WhatsApp al{' '}
+              {settings.whatsappNumber}.
+            </Text>
+          </VStack>
+
+          <VStack gap={2}>
+            <Heading level={2} id="datos" className="lk-serif ck-h3">
+              2. Datos personales que recabamos
+            </Heading>
+            <Text as="p" type="body" textWrap="pretty">
+              Aplicamos el principio de minimización de datos: solo solicitamos la
+              información indispensable para agendar y brindarte un servicio seguro.
+            </Text>
+            <List listStyle="disc" density="compact">
+              <ListItem
+                label="Datos de identificación y contacto obligatorios"
+                description={
+                  <Text type="supporting" color="secondary">
+                    Nombre completo y número de teléfono o WhatsApp para confirmar,
+                    recordar y gestionar tu cita.
+                  </Text>
+                }
               />
-              <Token label="LFPDPPP · México" size="sm" />
-              <Token label={cityLabel} size="sm" />
-            </HStack>
+              <ListItem
+                label="Datos opcionales proporcionados voluntariamente"
+                description={
+                  <Text type="supporting" color="secondary">
+                    Correo electrónico (envío de confirmación e invitación de
+                    calendario .ics), cuenta de @instagram (coordinación de diseño o
+                    comprobante por DM) y fecha de cumpleaños (cortesías de temporada
+                    si eliges compartirla).
+                  </Text>
+                }
+              />
+              <ListItem
+                label="Datos técnicos del servicio y comprobación de anticipo"
+                description={
+                  <Text type="supporting" color="secondary">
+                    Notas técnicas sobre diseño, largo o sensibilidades/alergias que
+                    decidas informarnos, fotografías de inspiración que subas y
+                    comprobantes de transferencia bancaria de anticipo.
+                  </Text>
+                }
+              />
+            </List>
+            <Text as="p" type="supporting" color="secondary">
+              No recabamos datos biométricos ni almacenamos contraseñas o números de
+              tarjetas bancarias en nuestros formularios públicos.
+            </Text>
+          </VStack>
 
-            <HStack as="nav" aria-label="Secciones del aviso" gap={1.5} wrap="wrap">
-              <a className="ck-anchor-pill" href="#responsable">
-                1. Responsable
-              </a>
-              <a className="ck-anchor-pill" href="#datos">
-                2. Datos que recabamos
-              </a>
-              <a className="ck-anchor-pill" href="#finalidades">
-                3. Finalidades
-              </a>
-              <a className="ck-anchor-pill" href="#arco">
-                5. Derechos ARCO
-              </a>
-            </HStack>
+          <VStack gap={3}>
+            <Heading level={2} id="finalidades" className="lk-serif ck-h3">
+              3. Finalidades del tratamiento
+            </Heading>
 
-            <Divider />
-
-            <VStack gap={2}>
-              <Heading level={2} id="responsable" className="lk-serif ck-h3">
-                1. Identidad y domicilio del responsable
+            <VStack gap={1.5}>
+              <Heading level={3}>
+                Finalidades primarias (necesarias para el servicio)
               </Heading>
-              <Text as="p" type="body" textWrap="pretty" style={{ overflowWrap: 'anywhere' }}>
-                <strong>{responsibleName}</strong>, responsable comercial de{' '}
-                <strong>{settings.name}</strong> ({instagramHandle}), con domicilio en{' '}
-                {settings.address}, es responsable del uso, resguardo y protección de
-                tus datos personales. Para cualquier asunto relacionado con este aviso
-                puedes escribir a {settings.contactEmail} o por WhatsApp al{' '}
-                {settings.whatsappNumber}.
-              </Text>
+              <List listStyle="disc" density="compact">
+                <ListItem label="Agendar, confirmar, reagendar y cancelar citas en tiempo real." />
+                <ListItem label="Enviar confirmaciones, enlace personal de gestión y recordatorios operativos por WhatsApp o correo." />
+                <ListItem label="Validar anticipos, aplicar cupones o tarjetas de regalo y emitir comprobantes del servicio." />
+                <ListItem label="Atender notas técnicas o alergias declaradas por la clienta y prevenir reservas duplicadas o suplantaciones." />
+              </List>
             </VStack>
 
-            <VStack gap={2}>
-              <Heading level={2} id="datos" className="lk-serif ck-h3">
-                2. Datos personales que recabamos
+            <VStack gap={1.5}>
+              <Heading level={3}>
+                Finalidades secundarias (opcionales y con consentimiento expreso)
               </Heading>
-              <Text as="p" type="body" textWrap="pretty">
-                Aplicamos el principio de minimización de datos: solo solicitamos la
-                información indispensable para agendar y brindarte un servicio seguro.
-              </Text>
               <List listStyle="disc" density="compact">
-                <ListItem
-                  label="Datos de identificación y contacto obligatorios"
-                  description={
-                    <Text type="supporting" color="secondary">
-                      Nombre completo y número de teléfono o WhatsApp para confirmar,
-                      recordar y gestionar tu cita.
-                    </Text>
-                  }
-                />
-                <ListItem
-                  label="Datos opcionales proporcionados voluntariamente"
-                  description={
-                    <Text type="supporting" color="secondary">
-                      Correo electrónico (envío de confirmación e invitación de
-                      calendario .ics), cuenta de @instagram (coordinación de diseño o
-                      comprobante por DM) y fecha de cumpleaños (cortesías de temporada
-                      si eliges compartirla).
-                    </Text>
-                  }
-                />
-                <ListItem
-                  label="Datos técnicos del servicio y comprobación de anticipo"
-                  description={
-                    <Text type="supporting" color="secondary">
-                      Notas técnicas sobre diseño, largo o sensibilidades/alergias que
-                      decidas informarnos, fotografías de inspiración que subas y
-                      comprobantes de transferencia bancaria de anticipo.
-                    </Text>
-                  }
-                />
+                <ListItem label="Enviar promociones, aperturas de agenda de temporada y recordatorios opcionales de retoque." />
+                <ListItem label="Otorgar sellos de lealtad y cortesías de cumpleaños." />
               </List>
               <Text as="p" type="supporting" color="secondary">
-                No recabamos datos biométricos ni almacenamos contraseñas o números de
-                tarjetas bancarias en nuestros formularios públicos.
+                La negativa para finalidades secundarias nunca será motivo para
+                negarte citas ni servicios en {settings.name}. Puedes otorgar o
+                revocar este permiso en cualquier momento.
               </Text>
             </VStack>
+          </VStack>
 
-            <VStack gap={3}>
-              <Heading level={2} id="finalidades" className="lk-serif ck-h3">
-                3. Finalidades del tratamiento
-              </Heading>
+          <VStack gap={2}>
+            <Heading level={2} className="lk-serif ck-h3">
+              4. Transferencias limitadas de datos
+            </Heading>
+            <Text as="p" type="body" textWrap="pretty">
+              {settings.name} no vende, renta ni comercializa tus datos personales con
+              terceros. Únicamente realizamos remisiones operativas estrictamente
+              necesarias con proveedores tecnológicos de infraestructura en la nube,
+              correo transaccional y mensajería oficial de WhatsApp que permiten
+              confirmar tu cita, bajo deberes de confidencialidad, así como los casos
+              previstos en el artículo 37 de la LFPDPPP ante requerimiento legal de
+              autoridad competente.
+            </Text>
+          </VStack>
 
-              <VStack gap={1.5}>
-                <Heading level={3}>
-                  Finalidades primarias (necesarias para el servicio)
-                </Heading>
-                <List listStyle="disc" density="compact">
-                  <ListItem label="Agendar, confirmar, reagendar y cancelar citas en tiempo real." />
-                  <ListItem label="Enviar confirmaciones, enlace personal de gestión y recordatorios operativos por WhatsApp o correo." />
-                  <ListItem label="Validar anticipos, aplicar cupones o tarjetas de regalo y emitir comprobantes del servicio." />
-                  <ListItem label="Atender notas técnicas o alergias declaradas por la clienta y prevenir reservas duplicadas o suplantaciones." />
-                </List>
-              </VStack>
-
-              <VStack gap={1.5}>
-                <Heading level={3}>
-                  Finalidades secundarias (opcionales y con consentimiento expreso)
-                </Heading>
-                <List listStyle="disc" density="compact">
-                  <ListItem label="Enviar promociones, aperturas de agenda de temporada y recordatorios opcionales de retoque." />
-                  <ListItem label="Otorgar sellos de lealtad y cortesías de cumpleaños." />
-                </List>
-                <Text as="p" type="supporting" color="secondary">
-                  La negativa para finalidades secundarias nunca será motivo para
-                  negarte citas ni servicios en {settings.name}. Puedes otorgar o
-                  revocar este permiso en cualquier momento.
-                </Text>
-              </VStack>
-            </VStack>
-
-            <VStack gap={2}>
-              <Heading level={2} className="lk-serif ck-h3">
-                4. Transferencias limitadas de datos
-              </Heading>
-              <Text as="p" type="body" textWrap="pretty">
-                {settings.name} no vende, renta ni comercializa tus datos personales con
-                terceros. Únicamente realizamos remisiones operativas estrictamente
-                necesarias con proveedores tecnológicos de infraestructura en la nube,
-                correo transaccional y mensajería oficial de WhatsApp que permiten
-                confirmar tu cita, bajo deberes de confidencialidad, así como los casos
-                previstos en el artículo 37 de la LFPDPPP ante requerimiento legal de
-                autoridad competente.
-              </Text>
-            </VStack>
-
-            <VStack gap={3} padding={5} width="100%" className="rb-deposit">
-              <Heading level={2} id="arco" className="lk-serif ck-h3">
-                5. Derechos ARCO, descarga de datos y revocación
-              </Heading>
-              <Text as="p" type="body" textWrap="pretty">
-                En todo momento tienes derecho a <strong>Acceder</strong> a los datos
-                personales que tenemos sobre ti (incluyendo solicitar una copia
-                descargable de tu perfil, citas, sellos de lealtad y registros de
-                consentimiento), <strong>Rectificarlos</strong> si son inexactos,{' '}
-                <strong>Cancelarlos</strong> cuando consideres que ya no son
-                necesarios, <strong>Oponerte</strong> a su uso para fines específicos
-                o <strong>Revocar</strong> tu consentimiento para comunicaciones
-                promocionales.
-              </Text>
-              <Text as="p" type="supporting" color="secondary" textWrap="pretty">
-                Para ejercer tus derechos ARCO envía una solicitud a{' '}
-                {settings.contactEmail} o por WhatsApp indicando tu nombre
-                completo, teléfono registrado en tu cita, el derecho que deseas
-                ejercer y el medio para recibir respuesta. Conforme al artículo 32 de
-                la LFPDPPP responderemos en un plazo máximo de 20 días hábiles y, de
-                resultar procedente, haremos efectiva la solicitud dentro de los 15
-                días hábiles siguientes.
-              </Text>
-              <HStack gap={2} wrap="wrap">
-                <Button
-                  label="Solicitar por correo"
-                  aria-label={`Solicitar derechos ARCO por correo a ${settings.contactEmail}`}
-                  variant="primary"
-                  size="lg"
-                  className="fx-press"
-                  icon={<Mail size={16} aria-hidden="true" />}
-                  href={mailtoArco}
-                />
-                <Button
-                  label="Solicitar por WhatsApp"
-                  variant="secondary"
-                  size="lg"
-                  className="fx-press"
-                  icon={<MessageCircle size={16} aria-hidden="true" />}
-                  href={whatsappArcoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              </HStack>
-            </VStack>
-
-            <VStack gap={2}>
-              <Heading level={2} className="lk-serif ck-h3">
-                6. Conservación y medidas de seguridad
-              </Heading>
-              <Text as="p" type="body" textWrap="pretty">
-                Resguardamos tus datos mediante controles de acceso restringido al
-                personal autorizado del estudio y sesiones firmadas. Conservamos tu
-                información únicamente durante el tiempo necesario para atender tus
-                citas, mantener el historial técnico de servicio mientras seas clienta
-                activa y cumplir obligaciones administrativas o fiscales aplicables. Las
-                imágenes de inspiración y comprobantes de pago pueden eliminarse
-                directamente a solicitud tuya mediante los canales de contacto
-                anteriores.
-              </Text>
-            </VStack>
-
-            <VStack gap={2}>
-              <Heading level={2} className="lk-serif ck-h3">
-                7. Cambios y versión vigente del aviso
-              </Heading>
-              <Text as="p" type="body" textWrap="pretty">
-                Cualquier actualización a este Aviso de Privacidad se publicará de
-                manera transparente en esta misma dirección (/aviso-de-privacidad) con
-                su identificador de versión correspondiente. Versión vigente:{' '}
-                <strong>{policyVersion}</strong>.
-              </Text>
-            </VStack>
-
-            <Divider />
-
-            <HStack gap={3} wrap="wrap">
+          <VStack gap={3} padding={5} width="100%" className="rb-deposit">
+            <Heading level={2} id="arco" className="lk-serif ck-h3">
+              5. Derechos ARCO, descarga de datos y revocación
+            </Heading>
+            <Text as="p" type="body" textWrap="pretty">
+              En todo momento tienes derecho a <strong>Acceder</strong> a los datos
+              personales que tenemos sobre ti (incluyendo solicitar una copia
+              descargable de tu perfil, citas, sellos de lealtad y registros de
+              consentimiento), <strong>Rectificarlos</strong> si son inexactos,{' '}
+              <strong>Cancelarlos</strong> cuando consideres que ya no son
+              necesarios, <strong>Oponerte</strong> a su uso para fines específicos
+              o <strong>Revocar</strong> tu consentimiento para comunicaciones
+              promocionales.
+            </Text>
+            <Text as="p" type="supporting" color="secondary" textWrap="pretty">
+              Para ejercer tus derechos ARCO envía una solicitud a{' '}
+              {settings.contactEmail} o por WhatsApp indicando tu nombre
+              completo, teléfono registrado en tu cita, el derecho que deseas
+              ejercer y el medio para recibir respuesta. Conforme al artículo 32 de
+              la LFPDPPP responderemos en un plazo máximo de 20 días hábiles y, de
+              resultar procedente, haremos efectiva la solicitud dentro de los 15
+              días hábiles siguientes.
+            </Text>
+            <HStack gap={2} wrap="wrap">
               <Button
-                label="Volver a reservar cita"
+                label="Solicitar por correo"
+                aria-label={`Solicitar derechos ARCO por correo a ${settings.contactEmail}`}
                 variant="primary"
                 size="lg"
                 className="fx-press"
-                icon={<CalendarCheck size={16} aria-hidden="true" />}
-                href="/reservar"
+                icon={<Mail size={16} aria-hidden="true" />}
+                href={mailtoArco}
               />
               <Button
-                label="Enlaces rápidos"
+                label="Solicitar por WhatsApp"
                 variant="secondary"
                 size="lg"
                 className="fx-press"
-                href="/links"
-              />
-              <Button
-                label="Ir al inicio"
-                variant="ghost"
-                size="lg"
-                className="fx-press"
-                icon={<ArrowLeft size={16} aria-hidden="true" />}
-                href="/"
+                icon={<MessageCircle size={16} aria-hidden="true" />}
+                href={whatsappArcoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
               />
             </HStack>
           </VStack>
+
+          <VStack gap={2}>
+            <Heading level={2} className="lk-serif ck-h3">
+              6. Conservación y medidas de seguridad
+            </Heading>
+            <Text as="p" type="body" textWrap="pretty">
+              Resguardamos tus datos mediante controles de acceso restringido al
+              personal autorizado del estudio y sesiones firmadas. Conservamos tu
+              información únicamente durante el tiempo necesario para atender tus
+              citas, mantener el historial técnico de servicio mientras seas clienta
+              activa y cumplir obligaciones administrativas o fiscales aplicables. Las
+              imágenes de inspiración y comprobantes de pago pueden eliminarse
+              directamente a solicitud tuya mediante los canales de contacto
+              anteriores.
+            </Text>
+          </VStack>
+
+          <VStack gap={2}>
+            <Heading level={2} className="lk-serif ck-h3">
+              7. Cambios y versión vigente del aviso
+            </Heading>
+            <Text as="p" type="body" textWrap="pretty">
+              Cualquier actualización a este Aviso de Privacidad se publicará de
+              manera transparente en esta misma dirección (/aviso-de-privacidad) con
+              su identificador de versión correspondiente. Versión vigente:{' '}
+              <strong>{policyVersion}</strong>.
+            </Text>
+          </VStack>
+
+          <Divider />
+
+          <HStack gap={3} wrap="wrap">
+            <Button
+              label="Volver a reservar cita"
+              variant="primary"
+              size="lg"
+              className="fx-press"
+              icon={<CalendarCheck size={16} aria-hidden="true" />}
+              href="/reservar"
+            />
+            <Button
+              label="Enlaces rápidos"
+              variant="secondary"
+              size="lg"
+              className="fx-press"
+              href="/links"
+            />
+            <Button
+              label="Ir al inicio"
+              variant="ghost"
+              size="lg"
+              className="fx-press"
+              icon={<ArrowLeft size={16} aria-hidden="true" />}
+              href="/"
+            />
+          </HStack>
         </VStack>
       </VStack>
     </PublicShell>

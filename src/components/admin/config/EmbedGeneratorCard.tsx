@@ -188,7 +188,7 @@ export function EmbedGeneratorCard({
             ]}
           />
           <Selector
-            label="Manicurista (opcional)"
+            label="Profesional (opcional)"
             size="sm"
             value={staffSlug}
             onChange={(val) => setStaffSlug(val || 'all')}
@@ -218,7 +218,7 @@ export function EmbedGeneratorCard({
           </HStack>
           <Text type="supporting" color="secondary">
             {selectedService ? `Servicio: ${selectedService.name}` : 'Todos los servicios'} ·{' '}
-            {selectedStaff ? `Manicurista: ${selectedStaff.name}` : 'Todo el equipo'}
+            {selectedStaff ? `Profesional: ${selectedStaff.name}` : 'Todo el equipo'}
           </Text>
           <HStack gap={2} wrap="wrap" justify="center">
             <Button

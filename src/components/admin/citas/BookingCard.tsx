@@ -208,7 +208,7 @@ export const BookingCard = memo(function BookingCard({
             {formatDateShortInTimezone(b.startAt, timezone)} ·{' '}
             {formatTimeInTimezone(b.startAt, timezone, true)} –{' '}
             {formatTimeInTimezone(b.endAt, timezone, true)} (
-            {formatDuration(b.totalDurationMinutes)}) · Manicurista: {b.staff.name}
+            {formatDuration(b.totalDurationMinutes)}) · Profesional: {b.staff.name}
           </Text>
 
           <HStack gap={2} align="center" wrap="wrap">

@@ -370,7 +370,7 @@ function hydrateBooking(db: Readonly<DemoDatabase>, booking: Booking): BookingWi
   const staff: StaffMember = db.staff.find((s) => s.id === booking.staffId) ??
     db.staff[0] ?? {
       id: booking.staffId,
-      name: 'Especialista',
+      name: 'Profesional',
       roleTitle: 'Nail Artist',
       bio: '',
       avatarUrl: null,
@@ -892,7 +892,7 @@ function assignWaitlistPriorityOfferInLock(
     clientEmail: matchedClient?.email ?? null,
     serviceName: service?.name ?? 'Servicio',
     serviceSlug: service?.slug ?? 'servicio',
-    staffName: staff?.name ?? 'Especialista',
+    staffName: staff?.name ?? 'Profesional',
     slotStartAt: canceledBooking.startAt,
     dateKey,
     offerToken,
@@ -1278,7 +1278,7 @@ function resolveBookableSlotOrThrow(params: {
     ) {
       throw new PolicyError(
         'STAFF_INELIGIBLE',
-        'La especialista seleccionada no está disponible para todos los servicios elegidos.',
+        'La profesional seleccionada no está disponible para todos los servicios elegidos.',
       );
     }
 
@@ -1304,7 +1304,7 @@ function resolveBookableSlotOrThrow(params: {
   if (eligibleStaff.length === 0) {
     throw new PolicyError(
       'STAFF_INELIGIBLE',
-      'No hay especialistas disponibles para este servicio.',
+      'No hay profesionales disponibles para este servicio.',
       [],
     );
   }
@@ -1707,7 +1707,7 @@ export async function createBookingAtomic(
           return {
             bookingCode: b.bookingCode,
             serviceName: svc?.name ?? 'Servicio',
-            staffName: st?.name ?? 'Especialista',
+            staffName: st?.name ?? 'Profesional',
             startAt: b.startAt,
             manageUrl: `/cita/${b.manageToken}`,
           };
@@ -3728,7 +3728,7 @@ function computeClientPortalSnapshotByPhone(
         serviceName: svc?.name ?? 'Servicio',
         serviceSlug,
         staffId: b.staffId,
-        staffName: st?.name ?? 'Especialista',
+        staffName: st?.name ?? 'Profesional',
         staffBookingSlug,
         addons: b.addons.map((a) => ({
           name: a.name,
@@ -4258,20 +4258,20 @@ function validateOverrideStaffAndRedirect(
   redirectStaffId?: string | null,
 ): string | null {
   if (!db.staff.some((s) => s.id === staffId)) {
-    throw new PolicyError('STAFF_NOT_FOUND', 'Especialista no encontrada.');
+    throw new PolicyError('STAFF_NOT_FOUND', 'Profesional no encontrada.');
   }
   const cleanRedirect = redirectStaffId?.trim() || null;
   if (!cleanRedirect) return null;
   if (cleanRedirect === staffId) {
     throw new PolicyError(
       'INVALID_REDIRECT_STAFF',
-      'La especialista de redirección debe ser distinta a la especialista bloqueada.',
+      'La profesional de redirección debe ser distinta a la profesional bloqueada.',
     );
   }
   if (!db.staff.some((s) => s.id === cleanRedirect && s.isActive)) {
     throw new PolicyError(
       'REDIRECT_STAFF_NOT_FOUND',
-      'La especialista de redirección no existe o está inactiva.',
+      'La profesional de redirección no existe o está inactiva.',
     );
   }
   return cleanRedirect;
@@ -4502,7 +4502,7 @@ export async function upsertRecurringBlock(
   return withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     if (!db.staff.some((s) => s.id === input.staffId)) {
-      throw new PolicyError('STAFF_NOT_FOUND', 'Especialista no encontrada.');
+      throw new PolicyError('STAFF_NOT_FOUND', 'Profesional no encontrada.');
     }
     const existing = input.id
       ? cols.recurringBlocks.find((b) => b.id === input.id)

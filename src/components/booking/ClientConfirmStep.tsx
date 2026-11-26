@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -12,26 +12,42 @@ import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Link } from '@astryxdesign/core/Link';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { Clock, RefreshCw, ShieldAlert } from 'lucide-react';
+import { LogOut, RefreshCw, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { AvailableSlot } from '@/lib/availability/engine';
+import type { ClientPortalProfile } from '@/lib/contracts';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import type { ServiceAddon } from '@/lib/types';
 import type { ActiveBookingSummary, AppliedCouponState } from './bookingApi';
 import { ClientExtraDetailsBox } from './ClientExtraDetailsBox';
+import type { ClientSignInIntent } from './ClientSignInDialog';
 import { CouponRedeemBox } from './CouponRedeemBox';
 import { DepositCard } from './DepositCard';
 import {
+  formatMxPhoneDisplay,
+  hasClientFieldErrors,
   hasConfiguredDeposit,
+  isValidMxPhone,
   prefersReducedMotion,
   validateClientBookingFields,
   type ClientFieldErrors,
   type ProofDeliveryMethod,
 } from './bookingHelpers';
+import { isPhoneMatchingSession } from './clientAccountHelpers';
+
+export interface ClientAccountBinding {
+  isEnabled: boolean;
+  profile: ClientPortalProfile | null;
+  isSigningOut: boolean;
+  onOpenSignIn: (intent: ClientSignInIntent, phone: string) => void;
+  onSignOut: () => void;
+}
 
 export interface ClientConfirmStepProps {
   section: 'details' | 'payment';
+  todayKey: string;
+  account: ClientAccountBinding;
   onContinueDetails: (e: React.FormEvent) => void;
   formId: string;
   settings: PublicSettingsDTO;
@@ -64,11 +80,6 @@ export interface ClientConfirmStepProps {
   formErrorCode: string | null;
   activeBookings: ActiveBookingSummary[];
   isSubmitting: boolean;
-  holdExpired: boolean;
-  holdExpiredMessage: string | null;
-  isReholding: boolean;
-  onReholdSlot: () => void;
-  onPickAnotherTime: () => void;
   onChangeCouponInput: (value: string) => void;
   onApplyCoupon: () => void;
   onRemoveCoupon: () => void;
@@ -119,14 +130,63 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
     !props.fieldErrors.phone;
 
   const isDetails = props.section === 'details';
+  const todayKey = props.todayKey;
+  const contactInput = {
+    name: props.clientName,
+    phone: props.clientPhone,
+    email: props.clientEmail,
+    birthday: props.clientBirthday,
+  };
+  const profile = props.account.profile;
+  const phoneMatchesSession = profile ? isPhoneMatchingSession(props.clientPhone, profile.phoneE164) : true;
+  const hasPhoneMismatch = Boolean(profile) && isValidMxPhone(props.clientPhone) && !phoneMatchesSession;
+  const hasContactErrors = hasClientFieldErrors(validateClientBookingFields(contactInput, todayKey));
+  const profileSessionKey = profile ? `${profile.phoneE164}:${profile.isRegistered ? '1' : '0'}` : null;
+  const defaultEditing = !profile || !profile.isRegistered || !phoneMatchesSession || hasContactErrors;
+  const [detailsView, setDetailsView] = useState<{
+    sessionKey: string | null;
+    isEditing: boolean;
+    isGuestChoiceOpen: boolean;
+  }>(() => ({
+    sessionKey: profileSessionKey,
+    isEditing: defaultEditing,
+    isGuestChoiceOpen: true,
+  }));
+  if (detailsView.sessionKey !== profileSessionKey) {
+    setDetailsView({
+      sessionKey: profileSessionKey,
+      isEditing: defaultEditing,
+      isGuestChoiceOpen: true,
+    });
+  }
+  const showCompactSummary = Boolean(profile) && phoneMatchesSession && !detailsView.isEditing;
+  const showGuestChoice = !profile && props.account.isEnabled && detailsView.isGuestChoiceOpen;
+  const displayName = props.clientName.trim() || profile?.fullName.trim() || '';
+  const displaySessionPhone = profile ? formatMxPhoneDisplay(profile.phoneE164) : '';
+  const savedDetailsLine = [
+    props.clientEmail.trim(),
+    props.clientInstagram.trim(),
+    props.clientBirthday.trim() ? `Cumple ${props.clientBirthday.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     if (isDetails) {
-      const errors = validateClientBookingFields(props.clientName, props.clientPhone);
+      if (hasPhoneMismatch) {
+        e.preventDefault();
+        focusFieldSmoothly(phoneInputRef.current, e.currentTarget, 'input[name="clientPhone"]');
+        return;
+      }
+      const errors = validateClientBookingFields(contactInput, todayKey);
       if (errors.name) {
         focusFieldSmoothly(nameInputRef.current, e.currentTarget, 'input[name="clientName"]');
       } else if (errors.phone) {
         focusFieldSmoothly(phoneInputRef.current, e.currentTarget, 'input[name="clientPhone"]');
+      } else if (errors.email) {
+        focusFieldSmoothly(null, e.currentTarget, 'input[name="clientEmail"]');
+      } else if (errors.birthday) {
+        focusFieldSmoothly(null, e.currentTarget, 'input[name="clientBirthday"]');
       }
       props.onContinueDetails(e);
       return;
@@ -161,43 +221,6 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
                 : 'Si tienes un cupón, ponlo aquí. Luego acepta el aviso de privacidad y listo.'}
           </Text>
         </VStack>
-
-        {!isDetails && props.holdExpired ? (
-          <VStack className="fx-fade-up">
-            <Banner
-              status="warning"
-              role="alert"
-              title="Tu apartado temporal terminó"
-              description={
-                props.holdExpiredMessage ||
-                'No perdiste nada de lo que escribiste. Revisa si tu horario sigue libre o escoge otro.'
-              }
-              icon={<Clock size={18} aria-hidden="true" />}
-            >
-              <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="md"
-                  className="fx-press"
-                  label={props.isReholding ? 'Revisando…' : 'Apartarlo otra vez'}
-                  isLoading={props.isReholding}
-                  isDisabled={props.isReholding}
-                  onClick={props.onReholdSlot}
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="md"
-                  className="fx-press"
-                  label="Elegir otro horario"
-                  isDisabled={props.isReholding}
-                  onClick={props.onPickAnotherTime}
-                />
-              </HStack>
-            </Banner>
-          </VStack>
-        ) : null}
 
         {!isDetails && showFormBanner ? (
           <VStack className="fx-fade-up">
@@ -248,6 +271,126 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
 
         {isDetails ? (
         <>
+        {profile ? (
+          <SurfaceCard
+            tone="accent"
+            padded
+            headingLevel={3}
+            title={
+              displayName
+                ? `Reservas como ${displayName} · ${displaySessionPhone}`
+                : `WhatsApp verificado · ${displaySessionPhone}`
+            }
+            subtitle={
+              !profile.isRegistered
+                ? 'Al terminar esta cita guardamos tus datos para la próxima.'
+                : showCompactSummary && savedDetailsLine
+                  ? savedDetailsLine
+                  : undefined
+            }
+            icon={<UserCheck size={18} aria-hidden="true" />}
+            className="fx-fade-up"
+          >
+            <HStack gap={2} wrap="wrap">
+              {showCompactSummary ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  label="Editar mis datos"
+                  isDisabled={props.isSubmitting}
+                  onClick={() => setDetailsView((prev) => ({ ...prev, isEditing: true }))}
+                />
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                label="No soy yo"
+                icon={<LogOut size={15} aria-hidden="true" />}
+                isLoading={props.account.isSigningOut}
+                isDisabled={props.isSubmitting}
+                onClick={props.account.onSignOut}
+              />
+            </HStack>
+          </SurfaceCard>
+        ) : null}
+
+        {showGuestChoice ? (
+          <SurfaceCard
+            tone="subtle"
+            padded
+            headingLevel={3}
+            title="¿Ya reservaste antes?"
+            subtitle="Entra con tu WhatsApp y llenamos tus datos. Sin contraseñas."
+            icon={<Sparkles size={18} aria-hidden="true" />}
+            className="fx-fade-up"
+          >
+            <HStack gap={2} wrap="wrap">
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                label="Iniciar sesión"
+                className="fx-press"
+                onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                label="Registrarme"
+                onClick={() => props.account.onOpenSignIn('register', props.clientPhone)}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                label="Continuar sin registro"
+                onClick={() => {
+                  setDetailsView((prev) => ({ ...prev, isGuestChoiceOpen: false }));
+                  nameInputRef.current?.focus();
+                }}
+              />
+            </HStack>
+          </SurfaceCard>
+        ) : null}
+
+        {!profile && props.account.isEnabled && !detailsView.isGuestChoiceOpen ? (
+          <HStack justify="between" align="center" gap={2} wrap="wrap">
+            <Text type="supporting" color="secondary">
+              ¿Prefieres entrar con tu cuenta?
+            </Text>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              label="Iniciar sesión"
+              onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
+            />
+          </HStack>
+        ) : null}
+
+        {hasPhoneMismatch ? (
+          <Banner
+            status="warning"
+            role="alert"
+            title="Ese WhatsApp no es el de tu sesión"
+            description="Verifica el número nuevo o toca «No soy yo» para seguir sin cuenta."
+            endContent={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                label="Verificar número"
+                onClick={() => props.account.onOpenSignIn('signin', props.clientPhone)}
+              />
+            }
+          />
+        ) : null}
+
+        {!showCompactSummary ? (
+        <>
         <VStack as="fieldset" gap={3} className="rb-fieldset">
           <legend className="rb-legend">Tus datos</legend>
           <TextInput
@@ -290,11 +433,15 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
             clientInstagram={props.clientInstagram}
             clientEmail={props.clientEmail}
             clientBirthday={props.clientBirthday}
+            emailError={props.fieldErrors.email}
+            birthdayError={props.fieldErrors.birthday}
             isDisabled={props.isSubmitting}
             onChangeClientInstagram={props.onChangeClientInstagram}
             onChangeClientEmail={props.onChangeClientEmail}
             onChangeClientBirthday={props.onChangeClientBirthday}
           />
+        </>
+        ) : null}
         </>
         ) : (
         <>
@@ -350,7 +497,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           </Link>
           <CheckboxInput
             htmlName="marketingOptIn"
-            label="Avísame cuando toque mi retoque y en mi cumpleaños"
+            label="Avísame de mi retoque y en mi cumpleaños"
             value={props.marketingOptIn}
             onChange={props.onChangeMarketingOptIn}
             isDisabled={props.isSubmitting}

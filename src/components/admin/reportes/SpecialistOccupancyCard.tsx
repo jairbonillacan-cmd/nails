@@ -35,7 +35,7 @@ export function SpecialistOccupancyCard({
           <EmptyStateCard
             framed={false}
             isCompact
-            title="Sin manicuristas con actividad"
+            title="Sin profesionales con actividad"
             description="Configura turnos en Horarios para ver la ocupación de tu equipo."
             actions={
               <Button label="Configurar horarios" variant="secondary" size="sm" href="/admin/disponibilidad" />
@@ -51,7 +51,7 @@ export function SpecialistOccupancyCard({
             columns={[
               {
                 key: 'staffName',
-                header: 'Manicurista',
+                header: 'Profesional',
                 renderCell: (row) => (
                   <VStack gap={0.5}>
                     <Text weight="semibold" size="sm">

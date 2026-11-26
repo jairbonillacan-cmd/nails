@@ -1,7 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Token, type TokenColor } from '@astryxdesign/core/Token';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Text } from '@astryxdesign/core/Text';
 import { StatusDot, type StatusDotVariant } from '@astryxdesign/core/StatusDot';
 import type { BookingStatus, ClientPackage, WaitlistEntry } from '@/lib/types';
 
@@ -37,15 +38,6 @@ interface PackageStatusTagProps extends DomainTagBaseProps {
   isExpired?: boolean;
 }
 
-const TONE_TO_TOKEN_COLOR: Record<StatusTagTone, TokenColor> = {
-  neutral: 'gray',
-  success: 'green',
-  warning: 'yellow',
-  danger: 'red',
-  info: 'blue',
-  accent: 'pink',
-};
-
 const TONE_TO_DOT_VARIANT: Record<StatusTagTone, StatusDotVariant> = {
   neutral: 'neutral',
   success: 'success',
@@ -53,6 +45,15 @@ const TONE_TO_DOT_VARIANT: Record<StatusTagTone, StatusDotVariant> = {
   danger: 'error',
   info: 'accent',
   accent: 'accent',
+};
+
+const TONE_TEXT_COLOR: Record<StatusTagTone, string> = {
+  neutral: 'var(--color-text-secondary)',
+  success: 'var(--color-text-success)',
+  warning: 'var(--color-text-warning)',
+  danger: 'var(--color-text-error)',
+  info: 'var(--color-text-info)',
+  accent: 'var(--color-text-accent)',
 };
 
 const WAITLIST_STATUS_META: Record<
@@ -93,7 +94,7 @@ function resolveBookingStatusMeta(
         tone: 'warning',
       };
     case 'completed':
-      return { label: 'Completada', tone: 'info' };
+      return { label: 'Completada', tone: 'neutral' };
     case 'canceled':
       return { label: 'Cancelada', tone: 'danger' };
     case 'no_show':
@@ -110,24 +111,37 @@ export function StatusTag({
   hasTabularNumbers = false,
   className,
 }: StatusTagProps) {
-  const leadingIcon =
+  const rootClass = className ? `ad-status-tag ${className}` : 'ad-status-tag';
+  const leading =
     icon ??
     (showDot ? (
       <StatusDot variant={TONE_TO_DOT_VARIANT[tone]} label={label} aria-hidden="true" />
-    ) : undefined);
+    ) : null);
 
   return (
-    <Token
-      label={label}
-      color={TONE_TO_TOKEN_COLOR[tone]}
-      size={size}
-      icon={leadingIcon}
-      className={className}
+    <HStack
+      align="center"
+      gap={1.5}
+      className={rootClass}
+      data-tone={tone}
+      data-size={size}
       style={{
+        display: 'inline-flex',
         flexShrink: 0,
-        ...(hasTabularNumbers ? { fontVariantNumeric: 'tabular-nums' } : {}),
+        color: TONE_TEXT_COLOR[tone],
+        fontVariantNumeric: hasTabularNumbers ? 'tabular-nums' : undefined,
       }}
-    />
+    >
+      {leading}
+      <Text
+        color="inherit"
+        weight="semibold"
+        size={size === 'md' ? 'base' : 'sm'}
+        hasTabularNumbers={hasTabularNumbers}
+      >
+        {label}
+      </Text>
+    </HStack>
   );
 }
 

@@ -59,7 +59,7 @@ function plainDate(dateKey: string): Date {
 
 function staffCountLabel(slot: AvailableSlot): string {
   const count = slot.availableStaffIds.length;
-  return count === 1 ? '1 artista' : `${count} artistas`;
+  return count === 1 ? '1 profesional' : `${count} profesionales`;
 }
 
 interface ScheduleSlotItemProps {

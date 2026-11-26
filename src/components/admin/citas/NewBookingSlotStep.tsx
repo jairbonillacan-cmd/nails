@@ -94,7 +94,7 @@ export function NewBookingSlotStep({
 
         <Grid columns={{ minWidth: 200, max: 2 }} gap={3}>
           <Selector
-            label="Manicurista"
+            label="Profesional"
             value={effectiveStaffId}
             isDisabled={Boolean(lockedStaffId)}
             onChange={(val) => {
@@ -103,7 +103,7 @@ export function NewBookingSlotStep({
               }
             }}
             options={[
-              { value: 'any', label: 'Cualquier manicurista disponible' },
+              { value: 'any', label: 'Cualquier profesional disponible' },
               ...activeStaff.map((s) => ({ value: s.id, label: s.name })),
             ]}
           />
@@ -146,7 +146,7 @@ export function NewBookingSlotStep({
         ) : slotsByDate.length === 0 ? (
           <Text type="supporting" color="secondary">
             No hay turnos libres desde esta fecha. Prueba eligiendo otra fecha o cualquier
-            manicurista.
+            profesional.
           </Text>
         ) : (
           <VStack gap={3}>

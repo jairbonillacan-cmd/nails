@@ -186,7 +186,7 @@ export function BookingsFiltersBar({
 
           {!isSpecialistOnly && visibleStaff.length > 1 ? (
             <FilterPillBar<string>
-              ariaLabel="Filtrar por manicurista"
+              ariaLabel="Filtrar por profesional"
               mode="pills"
               size="sm"
               value={selectedStaffFilter}

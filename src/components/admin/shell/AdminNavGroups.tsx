@@ -9,59 +9,58 @@ import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
   Clock,
-  Home,
+  LayoutGrid,
   Package,
   Palette,
   Plug,
   Scissors,
-  SlidersHorizontal,
   UserCheck,
   Users,
   Wallet,
 } from 'lucide-react';
-import type { NavGroupConfig, NavIconId, NavItemConfig } from './adminNavConfig';
+import type {
+  NavGroupConfig,
+  NavIconId,
+  NavItemConfig,
+  SidebarStaffRow,
+} from './adminNavConfig';
 
 function renderNavIcon(iconId: NavIconId): React.ReactNode {
   switch (iconId) {
     case 'overview':
-      return <Home size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <LayoutGrid size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'bookings':
-      return <CalendarDays size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <CalendarDays size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'clients':
-      return <Users size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Users size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'cash':
-      return <Wallet size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Wallet size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'services':
-      return <Scissors size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Scissors size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'availability':
-      return <Clock size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Clock size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'team':
-      return <UserCheck size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <UserCheck size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'brand':
-      return <Palette size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Palette size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'reports':
-      return <BarChart3 size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <BarChart3 size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'inventory':
-      return <Package size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Package size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'integrations':
-      return <Plug size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <Plug size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'onboarding':
-      return <CheckCircle2 size={17} strokeWidth={1.85} aria-hidden="true" />;
+      return <CheckCircle2 size={16} strokeWidth={1.85} aria-hidden="true" />;
   }
 }
 
 interface AdminNavGroupsProps {
   pathname: string;
   primaryNavGroups: NavGroupConfig[];
-  secondaryNavItems: NavItemConfig[];
-  isSecondaryRouteActive: boolean;
-  isMoreToolsOpen: boolean;
+  footerNavItems: NavItemConfig[];
+  staffRows: SidebarStaffRow[];
   isCompactRail: boolean;
-  idPrefix: 'side' | 'drawer';
-  onToggleMoreTools: () => void;
   onPrefetchRoute: (routeId: string, href: string) => void;
   onItemClick?: () => void;
 }
@@ -69,18 +68,12 @@ interface AdminNavGroupsProps {
 export function AdminNavGroups({
   pathname,
   primaryNavGroups,
-  secondaryNavItems,
-  isSecondaryRouteActive,
-  isMoreToolsOpen,
+  footerNavItems,
+  staffRows,
   isCompactRail,
-  idPrefix,
-  onToggleMoreTools,
   onPrefetchRoute,
   onItemClick,
 }: AdminNavGroupsProps) {
-  const moreListId = `ad-more-tools-${idPrefix}`;
-  const secondaryHasBadge = secondaryNavItems.some((item) => Boolean(item.badge));
-
   const renderNavItem = (item: NavItemConfig) => {
     const isSelected = pathname === item.matchPath;
     const tooltipText = item.badge ? `${item.label} (${item.badge})` : item.label;
@@ -95,7 +88,9 @@ export function AdminNavGroups({
         onFocus={() => onPrefetchRoute(item.id, item.href)}
         onClick={onItemClick}
       >
-        {renderNavIcon(item.id)}
+        <Text color="inherit" className="ad-nav-icon" aria-hidden="true">
+          {renderNavIcon(item.id)}
+        </Text>
         {!isCompactRail ? (
           <Text color="inherit" className="ad-nav-label">
             {item.label}
@@ -107,7 +102,7 @@ export function AdminNavGroups({
               {'\u200B'}
             </Text>
           ) : (
-            <Text color="inherit" weight="bold" className="ad-nav-badge" hasTabularNumbers>
+            <Text color="inherit" weight="semibold" className="ad-nav-count" hasTabularNumbers>
               {item.badge}
             </Text>
           )
@@ -129,15 +124,15 @@ export function AdminNavGroups({
   };
 
   return (
-    <VStack as="nav" aria-label="Panel" gap={isCompactRail ? 1.5 : 2} className="ad-nav-wrap">
+    <VStack as="nav" aria-label="Panel" gap={isCompactRail ? 2 : 4} className="ad-nav-wrap">
       {primaryNavGroups.map((group, groupIdx) => (
         <VStack
           key={group.title}
-          gap={0.5}
+          gap={1}
           className={isCompactRail && groupIdx > 0 ? 'ad-nav-group-rail' : undefined}
         >
           {!isCompactRail ? (
-            <Text type="supporting" weight="semibold" className="ad-nav-group-title">
+            <Text type="supporting" weight="medium" className="ad-nav-group-title">
               {group.title}
             </Text>
           ) : null}
@@ -147,56 +142,49 @@ export function AdminNavGroups({
         </VStack>
       ))}
 
-      {secondaryNavItems.length > 0 ? (
-        <VStack gap={0.5} className={isCompactRail ? 'ad-nav-group-rail' : undefined}>
-          {isCompactRail ? (
-            <Tooltip
-              content={isMoreToolsOpen ? 'Ocultar más herramientas' : 'Más herramientas'}
-              placement="end"
-              hasHoverIndication={false}
-            >
-              <button
-                type="button"
-                className="ad-nav ad-nav-compact fx-press"
-                data-on={isSecondaryRouteActive && !isMoreToolsOpen ? 'true' : 'false'}
-                aria-label="Más herramientas"
-                aria-expanded={isMoreToolsOpen}
-                aria-controls={moreListId}
-                onClick={onToggleMoreTools}
-              >
-                <SlidersHorizontal size={16} strokeWidth={1.85} aria-hidden="true" />
-                {!isMoreToolsOpen && secondaryHasBadge ? (
-                  <Text className="ad-rail-dot" aria-hidden="true">
+      {!isCompactRail && staffRows.length > 0 ? (
+        <VStack gap={1}>
+          <Text type="supporting" weight="medium" className="ad-nav-group-title">
+            Profesionales
+          </Text>
+          <VStack as="ul" gap={0.5} className="ad-nav-list">
+            {staffRows.map((member) => (
+              <li key={member.id}>
+                <NextLink
+                  href={member.href}
+                  className="ad-nav ad-nav-staff fx-press"
+                  onMouseEnter={() => onPrefetchRoute('bookings', member.href)}
+                  onFocus={() => onPrefetchRoute('bookings', member.href)}
+                  onClick={onItemClick}
+                >
+                  <Text
+                    className="ad-staff-dot"
+                    data-active={member.todayCount > 0 ? 'true' : 'false'}
+                    aria-hidden="true"
+                  >
                     {'\u200B'}
                   </Text>
-                ) : null}
-              </button>
-            </Tooltip>
-          ) : (
-            <button
-              type="button"
-              className="ad-nav-more-btn fx-press"
-              data-open={isMoreToolsOpen ? 'true' : 'false'}
-              aria-expanded={isMoreToolsOpen}
-              aria-controls={moreListId}
-              onClick={onToggleMoreTools}
-            >
-              <Text color="inherit" size="sm" weight="semibold">
-                Más herramientas
-              </Text>
-              {isMoreToolsOpen ? (
-                <ChevronDown size={15} strokeWidth={1.9} aria-hidden="true" />
-              ) : (
-                <ChevronRight size={15} strokeWidth={1.9} aria-hidden="true" />
-              )}
-            </button>
-          )}
+                  <Text color="inherit" className="ad-nav-label">
+                    {member.firstName}
+                  </Text>
+                  <Text type="supporting" className="ad-staff-meta" hasTabularNumbers>
+                    {member.todayCount > 0 ? `${member.todayCount} hoy` : 'Libre'}
+                  </Text>
+                </NextLink>
+              </li>
+            ))}
+          </VStack>
+        </VStack>
+      ) : null}
 
-          {isMoreToolsOpen ? (
-            <VStack as="ul" id={moreListId} gap={0.5} className="ad-nav-list">
-              {secondaryNavItems.map(renderNavItem)}
-            </VStack>
-          ) : null}
+      {footerNavItems.length > 0 ? (
+        <VStack
+          gap={0.5}
+          className={isCompactRail ? 'ad-nav-group-rail ad-nav-utility' : 'ad-nav-utility'}
+        >
+          <VStack as="ul" gap={0.5} className="ad-nav-list">
+            {footerNavItems.map(renderNavItem)}
+          </VStack>
         </VStack>
       ) : null}
     </VStack>

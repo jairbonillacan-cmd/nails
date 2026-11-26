@@ -1011,7 +1011,7 @@ function hydrateBookingFromSnapshot(
     db.staff.find((s) => s.id === booking.staffId) ??
     db.staff[0] ?? {
       id: booking.staffId,
-      name: 'Especialista',
+      name: 'Profesional',
       roleTitle: 'Nail Artist',
       bio: '',
       avatarUrl: null,
@@ -1175,7 +1175,7 @@ function resolveBookableSlotOrThrow(params: {
     });
 
   if (eligibleStaff.length === 0) {
-    throw new PolicyError('STAFF_INELIGIBLE', 'Especialista no disponible para este servicio.');
+    throw new PolicyError('STAFF_INELIGIBLE', 'Profesional no disponible para este servicio.');
   }
 
   let firstFailure: Extract<ReturnType<typeof assertSlotBookable>, { ok: false }> | null =
@@ -3308,7 +3308,7 @@ export function createSupabaseRepository(
       if (error || !data) {
         throw new PolicyError(
           'STAFF_UPSERT_FAILED',
-          error?.message ?? 'No se pudo guardar especialista.',
+          error?.message ?? 'No se pudo guardar profesional.',
         );
       }
 

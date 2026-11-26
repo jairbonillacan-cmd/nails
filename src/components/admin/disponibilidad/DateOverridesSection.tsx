@@ -223,7 +223,6 @@ export function DateOverridesSection({
                 serverTodayKey={serverTodayKey}
                 onRefresh={onRefresh}
                 onSavedNotice={onSavedNotice}
-                onMessage={onMessage}
               />
             }
           >

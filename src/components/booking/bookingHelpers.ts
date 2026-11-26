@@ -11,6 +11,14 @@ import type {
 } from '@/lib/public-dto';
 import type { ServiceAddon } from '@/lib/types';
 
+const CLIENT_EMAIL_RE =
+  /^(?:[A-Za-z0-9_'+-]+\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/;
+
+export function isAcceptableClientEmail(raw: string): boolean {
+  const email = raw.trim();
+  return email.length === 0 || CLIENT_EMAIL_RE.test(email);
+}
+
 export type ProofDeliveryMethod = 'web_upload' | 'instagram_dm' | 'none';
 
 export interface AvailabilityCacheKeyInput {
@@ -24,6 +32,15 @@ export interface AvailabilityCacheKeyInput {
 export interface ClientFieldErrors {
   name: string | null;
   phone: string | null;
+  email: string | null;
+  birthday: string | null;
+}
+
+export interface ClientContactInput {
+  name: string;
+  phone: string;
+  email: string;
+  birthday: string;
 }
 
 const DEFAULT_INSTAGRAM_HANDLE = '@laikona.nailsss';
@@ -86,15 +103,48 @@ export function isValidMxPhone(raw: string): boolean {
   return stripMxCountryPrefix(raw.replace(/\D/g, '')).length === 10;
 }
 
+export function formatBirthdayInput(raw: string): string {
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
+  if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+export function birthdayInputToIso(display: string, todayKey: string): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display.trim());
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  const isRealDate =
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  const iso = `${match[3]}-${match[2]}-${match[1]}`;
+  if (!isRealDate || year < 1900 || iso > todayKey) return null;
+  return iso;
+}
+
 export function validateClientBookingFields(
-  name: string,
-  phone: string,
+  input: ClientContactInput,
+  todayKey: string,
 ): ClientFieldErrors {
-  const words = name.trim().split(/\s+/).filter(Boolean);
+  const words = input.name.trim().split(/\s+/).filter(Boolean);
+  const birthday = input.birthday.trim();
   return {
     name: words.length >= 2 ? null : 'Escribe tu nombre y apellido.',
-    phone: isValidMxPhone(phone) ? null : 'Tu WhatsApp debe tener 10 dígitos.',
+    phone: isValidMxPhone(input.phone) ? null : 'Tu WhatsApp debe tener 10 dígitos.',
+    email: isAcceptableClientEmail(input.email) ? null : 'Revisa tu correo, parece incompleto.',
+    birthday:
+      !birthday || birthdayInputToIso(birthday, todayKey)
+        ? null
+        : 'Escribe tu cumpleaños como día/mes/año, por ejemplo 15/08/1997.',
   };
+}
+
+export function hasClientFieldErrors(errors: ClientFieldErrors): boolean {
+  return Boolean(errors.name || errors.phone || errors.email || errors.birthday);
 }
 
 export function isOptimizableLocalRasterImage(src: string): boolean {
@@ -256,7 +306,7 @@ export function buildInstagramDmSummary(input: {
     `- Servicios: ${serviceNames.join(' + ') || 'Cita de uñas'}`,
     ...(addonNames.length > 0 ? [`- Extras: ${addonNames.join(', ')}`] : []),
     `- Fecha y hora: ${dateText}${timeText ? ` · ${timeText}` : ''} (aprox. ${formatDuration(input.totalDurationMinutes)})`,
-    ...(input.slot ? [`- Especialista: ${input.slot.staffName}`] : []),
+    ...(input.slot ? [`- Profesional: ${input.slot.staffName}`] : []),
     ...(input.clientName.trim() ? [`- Clienta: ${input.clientName.trim()}`] : []),
     ...(input.clientInstagram.trim()
       ? [`- Instagram: ${normalizeInstagramHandle(input.clientInstagram, '')}`]

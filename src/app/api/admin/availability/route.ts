@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
   if (session.user.role === 'specialist') {
     if (!session.user.staffMemberId) {
       return NextResponse.json(
-        { error: 'Tu usuario no tiene especialista vinculada.' },
+        { error: 'Tu usuario no tiene profesional vinculada.' },
         { status: 403 },
       );
     }

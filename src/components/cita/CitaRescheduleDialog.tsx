@@ -230,7 +230,7 @@ export function CitaRescheduleDialog({
               ) : days.length === 0 ? (
                 <EmptyStateCard
                   title="Sin horarios cercanos libres"
-                  description="No hay horarios próximos libres en los siguientes 14 días con la misma artista. Escríbenos por WhatsApp para ayudarte a encontrar lugar."
+                  description="No hay horarios próximos libres en los siguientes 14 días con la misma profesional. Escríbenos por WhatsApp para ayudarte a encontrar lugar."
                   isCompact
                   actions={
                     <Button

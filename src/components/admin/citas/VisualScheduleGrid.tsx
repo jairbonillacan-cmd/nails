@@ -123,8 +123,8 @@ export function VisualScheduleGrid({
   if (activeStaff.length === 0) {
     return (
       <EmptyStateCard
-        title="Sin manicuristas activas en la agenda"
-        description="Activa al menos una manicurista en Equipo para ver los horarios del día."
+        title="Sin profesionales activas en la agenda"
+        description="Activa al menos una profesional en Equipo para ver los horarios del día."
         icon={<CalendarDays size={22} aria-hidden="true" />}
         actions={<Button label="Ir a Equipo" variant="secondary" size="sm" href="/admin/equipo" />}
       />

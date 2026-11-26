@@ -105,7 +105,7 @@ export function ExtrasStep({
             <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
               <Text weight="semibold">¿Algo más en la misma visita?</Text>
               <Text type="supporting" color="secondary" hasTabularNumbers>
-                {extraCount > 0 ? `${extraCount} agregado${extraCount > 1 ? 's' : ''}` : 'Opcional'}
+                {extraCount > 0 ? 'Agregado' : 'Opcional · elige uno'}
               </Text>
             </HStack>
           }

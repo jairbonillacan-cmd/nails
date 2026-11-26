@@ -66,14 +66,14 @@
 
 .ck-aside {
   position: sticky;
-  top: 4.5rem;
+  top: 1.25rem;
   min-width: 0;
 }
 
 .ck-h3 {
   font-size: clamp(1.35rem, 2.4vw, 1.65rem);
   line-height: 1.1;
-  scroll-margin-top: 5.5rem;
+  scroll-margin-top: 1.5rem;
 }
 
 .ck-detail-list {

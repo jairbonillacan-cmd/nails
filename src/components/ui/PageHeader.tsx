@@ -38,7 +38,7 @@ export function PageHeader({
       style={{ minWidth: 0, width: '100%' }}
     >
       <VStack
-        gap={1.5}
+        gap={1}
         className="ad-head-copy"
         style={{ minWidth: 0, flex: '1 1 18rem' }}
       >
@@ -48,7 +48,7 @@ export function PageHeader({
               <Text
                 type="supporting"
                 color="secondary"
-                weight="semibold"
+                weight="medium"
                 className="ad-date"
               >
                 {eyebrow}
@@ -57,7 +57,7 @@ export function PageHeader({
             {meta}
           </HStack>
         ) : null}
-        <Heading level={1} className="ad-page-title">
+        <Heading level={1} className="lk-serif ad-page-title">
           {title}
         </Heading>
         {subtitle ? (

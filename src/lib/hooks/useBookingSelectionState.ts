@@ -1,10 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import type { ClientPortalProfile } from '@/lib/contracts';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
-import type { BookingLayoutView, ServiceAddon } from '@/lib/types';
+import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
 import type { ScheduleLayout } from '@/components/booking/ScheduleStep';
+import { buildServiceComboOptions, filterRedundantAddons, toggleExtraServiceInZone } from '@/components/booking/serviceCombos';
 import {
+  formatBirthdayInput,
   formatMxPhoneDisplay,
   getStaffScheduleLabel,
   hasConfiguredDeposit,
@@ -16,9 +19,11 @@ import {
   resolveInitialBookingSelections,
   shiftPlainDateKey,
 } from '@/components/booking/bookingViewHelpers';
+import { profileToContactFields } from '@/components/booking/clientAccountHelpers';
 
 interface UseBookingSelectionStateInput {
   settings: PublicSettingsDTO;
+  categories: ServiceCategory[];
   services: PublicServiceDTO[];
   addons: ServiceAddon[];
   staff: PublicStaffDTO[];
@@ -30,10 +35,12 @@ interface UseBookingSelectionStateInput {
   initialDate?: string;
   initialLayout?: BookingLayoutView;
   initialInspoNote?: string;
+  initialClientProfile?: ClientPortalProfile | null;
 }
 
 export function useBookingSelectionState({
   settings,
+  categories,
   services,
   addons,
   staff,
@@ -45,6 +52,7 @@ export function useBookingSelectionState({
   initialDate,
   initialLayout,
   initialInspoNote,
+  initialClientProfile,
 }: UseBookingSelectionStateInput) {
   const initial = useMemo(
     () =>
@@ -85,11 +93,14 @@ export function useBookingSelectionState({
   const [windowStartDate, setWindowStartDate] = useState(initial.initialDate);
   const [selectedDate, setSelectedDate] = useState(initial.initialDate);
 
-  const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
-  const [clientInstagram, setClientInstagram] = useState('');
-  const [clientEmail, setClientEmail] = useState('');
-  const [clientBirthday, setClientBirthday] = useState('');
+  const [initialContact] = useState(() =>
+    initialClientProfile ? profileToContactFields(initialClientProfile) : null,
+  );
+  const [clientName, setClientName] = useState(initialContact?.clientName ?? '');
+  const [clientPhone, setClientPhone] = useState(initialContact?.clientPhone ?? '');
+  const [clientInstagram, setClientInstagram] = useState(initialContact?.clientInstagram ?? '');
+  const [clientEmail, setClientEmail] = useState(initialContact?.clientEmail ?? '');
+  const [clientBirthday, setClientBirthday] = useState(initialContact?.clientBirthday ?? '');
   const [clientNotes, setClientNotes] = useState(
     initialInspoNote ? `Referencia de galería: ${initialInspoNote}` : '',
   );
@@ -103,25 +114,33 @@ export function useBookingSelectionState({
     () => services.find((s) => s.id === selectedServiceId) ?? services[0],
     [services, selectedServiceId],
   );
-  const selectedExtraServices = useMemo(
-    () => services.filter((srv) => srv.id !== selectedService?.id && selectedExtraServiceIds.includes(srv.id)),
-    [services, selectedService, selectedExtraServiceIds],
+  const combos = useMemo(
+    () =>
+      buildServiceComboOptions({
+        primary: selectedService,
+        services,
+        categories,
+        allAddons: addons.filter((addon) => addon.isActive),
+        selectedExtraIds: selectedExtraServiceIds,
+      }),
+    [selectedService, services, categories, addons, selectedExtraServiceIds],
   );
+  const selectedExtraServices = combos.selectedExtraServices;
   const selectedServiceIdSet = useMemo(() => {
     const ids = selectedExtraServices.map((srv) => srv.id);
     if (selectedService) ids.push(selectedService.id);
     return new Set(ids);
   }, [selectedService, selectedExtraServices]);
-  const extraServices = useMemo(
-    () => services.filter((service) => service.id !== selectedService?.id),
-    [services, selectedService],
-  );
+  const extraServices = combos.extraServices;
   const compatibleAddons = useMemo(
     () =>
       selectedService
-        ? addons.filter((a) => a.appliesToAll || a.serviceIds.some((id) => selectedServiceIdSet.has(id)))
+        ? filterRedundantAddons(
+            addons.filter((a) => a.appliesToAll || a.serviceIds.some((id) => selectedServiceIdSet.has(id))),
+            [selectedService, ...selectedExtraServices],
+          )
         : [],
-    [addons, selectedService, selectedServiceIdSet],
+    [addons, selectedService, selectedExtraServices, selectedServiceIdSet],
   );
   const hasExtrasOptions = compatibleAddons.length > 0 || extraServices.length > 0;
   const activeSelectedAddons = useMemo(
@@ -200,7 +219,7 @@ export function useBookingSelectionState({
     onChangeClientPhone: (value: string) => setClientPhone(formatMxPhoneDisplay(value)),
     onChangeClientInstagram: setClientInstagram,
     onChangeClientEmail: setClientEmail,
-    onChangeClientBirthday: setClientBirthday,
+    onChangeClientBirthday: (value: string) => setClientBirthday(formatBirthdayInput(value)),
     onChangeClientNotes: setClientNotes,
     onChangeInspoFile: (file: File | null, dataUrl: string | null) => {
       setInspoFile(file);
@@ -225,6 +244,14 @@ export function useBookingSelectionState({
       setWindowStartDate(nextDate);
     }
   };
+
+  const nextExtraServiceIds = (serviceId: string, checked: boolean) =>
+    toggleExtraServiceInZone({
+      selectedIds: selectedExtraServices.map((srv) => srv.id),
+      serviceId,
+      checked,
+      zoneById: combos.zoneById,
+    });
 
   const advanceMonthWindow = (loadingAvail: boolean) => {
     if (!canAdvanceMonth || loadingAvail || nextMonthStartKey === windowStartDate) return;
@@ -254,6 +281,7 @@ export function useBookingSelectionState({
     windowStartDate,
     selectedDate,
     selectDateWithinWindow,
+    nextExtraServiceIds,
     advanceMonthWindow,
     returnToTodayWindow,
     selectedService,

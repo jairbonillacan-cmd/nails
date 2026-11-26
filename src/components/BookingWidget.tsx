@@ -12,6 +12,9 @@ import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
 import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
 import { useBookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
 import { useBookingUrlSync } from '@/lib/hooks/useBookingUrlSync';
+import { useClientAccount } from '@/lib/hooks/useClientAccount';
+import { isClientAuthMethodEnabled } from '@/lib/client-account';
+import type { ClientPortalProfile } from '@/lib/contracts';
 import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
@@ -25,7 +28,16 @@ import { BookingStepRouter, prefetchBookingNextStep } from './booking/BookingSte
 import { BookingDesktopActions, BookingStickyBar } from './booking/BookingStickyBar';
 import { BookingSummaryCard } from './booking/BookingSummaryCard';
 import { HoldExtendDialog, shouldPromptHoldExtension } from './booking/HoldExtendDialog';
+import { HoldExpiredBanner } from './booking/HoldExpiredBanner';
 import { resolveEffectiveSelectedDate } from './booking/bookingHelpers';
+import type { ClientAccountBinding } from './booking/ClientConfirmStep';
+import type { ClientSignInIntent } from './booking/ClientSignInDialog';
+import {
+  profileToContactFields,
+  resolveAccountTransitionPatch,
+  resolveSignOutClear,
+  type ClientContactPatch,
+} from './booking/clientAccountHelpers';
 import {
   BOOKING_STEPS,
   bookingReducer,
@@ -42,6 +54,11 @@ import {
 
 const WaitlistDialog = dynamic(
   () => import('./booking/WaitlistDialog').then((mod) => mod.WaitlistDialog),
+  { ssr: false },
+);
+
+const ClientSignInDialog = dynamic(
+  () => import('./booking/ClientSignInDialog').then((mod) => mod.ClientSignInDialog),
   { ssr: false },
 );
 
@@ -62,6 +79,7 @@ interface BookingWidgetProps {
   initialInspoNote?: string;
   siteOrigin?: string;
   emitBookingBreadcrumb?: boolean;
+  initialClientProfile?: ClientPortalProfile | null;
 }
 
 const FORM_ID = 'rb-details-form';
@@ -80,6 +98,50 @@ export function BookingWidget(props: BookingWidgetProps) {
   const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
   const selection = useBookingSelectionState(props);
+  const account = useClientAccount(props.initialClientProfile ?? null);
+  const clientAuthEnabled = isClientAuthMethodEnabled('whatsapp_otp');
+  const [signInRequest, setSignInRequest] = useState<{ intent: ClientSignInIntent; phone: string } | null>(null);
+  const [isStartPromptDismissed, setIsStartPromptDismissed] = useState(false);
+  const [justSignedInOnStart, setJustSignedInOnStart] = useState(false);
+
+  const applyContactPatch = (patch: ClientContactPatch) => {
+    const form = selection.clientForm;
+    if (patch.clientName !== undefined) form.onChangeClientName(patch.clientName);
+    if (patch.clientPhone !== undefined) form.onChangeClientPhone(patch.clientPhone);
+    if (patch.clientInstagram !== undefined) form.onChangeClientInstagram(patch.clientInstagram);
+    if (patch.clientEmail !== undefined) form.onChangeClientEmail(patch.clientEmail);
+    if (patch.clientBirthday !== undefined) form.onChangeClientBirthday(patch.clientBirthday);
+  };
+  const currentContact = () => ({
+    clientName: selection.clientForm.clientName,
+    clientPhone: selection.clientForm.clientPhone,
+    clientInstagram: selection.clientForm.clientInstagram,
+    clientEmail: selection.clientForm.clientEmail,
+    clientBirthday: selection.clientForm.clientBirthday,
+  });
+  const openSignIn = (intent: ClientSignInIntent, phone: string) => setSignInRequest({ intent, phone });
+  const handleSignInVerified = async () => {
+    const previous = account.profile;
+    const before = currentContact();
+    const profile = await account.refreshProfile();
+    if (profile) {
+      applyContactPatch(resolveAccountTransitionPatch(before, previous, profile));
+      if (flow.step === 'service') setJustSignedInOnStart(true);
+    }
+  };
+  const handleSignOut = async () => {
+    const before = currentContact();
+    const previous = await account.signOut();
+    setJustSignedInOnStart(false);
+    if (previous) applyContactPatch(resolveSignOutClear(before, previous));
+  };
+  const clientAccountBinding: ClientAccountBinding = {
+    isEnabled: clientAuthEnabled,
+    profile: account.profile,
+    isSigningOut: account.isSigningOut,
+    onOpenSignIn: openSignIn,
+    onSignOut: () => void handleSignOut(),
+  };
   const realtimePing = useEphemeralMessage(3500);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [hasOpenedWaitlist, setHasOpenedWaitlist] = useState(false);
@@ -159,10 +221,12 @@ export function BookingWidget(props: BookingWidgetProps) {
     useCallback(() => {
       dispatch({
         type: 'HOLD_EXPIRED',
-        message: 'Se acabó el tiempo y soltamos tu horario. Lo que escribiste sigue aquí.',
+        message: isPostHoldStep(flow.step)
+          ? 'Se acabó el tiempo y soltamos tu horario. Lo que escribiste sigue aquí.'
+          : 'Soltamos tu horario para que otras lo puedan ver. Si sigue libre, vuelve a elegirlo.',
       });
       revalidateActive();
-    }, [revalidateActive]),
+    }, [flow.step, revalidateActive]),
   );
 
   const actions = useBookingFlowActions({
@@ -180,6 +244,8 @@ export function BookingWidget(props: BookingWidgetProps) {
     subtotalCents: selection.subtotalCents,
     showsDeposit: selection.showsDeposit,
     client: selection.clientForm,
+    signedInPhoneE164: account.profile?.phoneE164 ?? null,
+    todayKey: initialTodayKey,
     revalidateActive,
     navigateToManageUrl: (url) => router.push(url),
   });
@@ -188,6 +254,7 @@ export function BookingWidget(props: BookingWidgetProps) {
     bookingDraft.resetDraft();
     actions.resetSelection();
     actions.goToStep('service');
+    if (account.profile) applyContactPatch(profileToContactFields(account.profile));
   };
 
   const discountCents = actions.appliedCoupon?.discountCents ?? 0;
@@ -292,7 +359,7 @@ export function BookingWidget(props: BookingWidgetProps) {
       </p>
 
       {!isEmbed ? (
-        <BookingHeader settings={settings} tone="cherry" holdRemainingSec={holdRemainingSec} onBack={handleBack} />
+        <BookingHeader settings={settings} holdRemainingSec={holdRemainingSec} onBack={handleBack} />
       ) : null}
       <BookingHero step={flow.step} completedSteps={nav.completedSteps} onGoToStep={actions.goToStep} isCompact={isEmbed} holdRemainingSec={holdRemainingSec} />
 
@@ -303,6 +370,45 @@ export function BookingWidget(props: BookingWidgetProps) {
               <HStack justify="start" className="rb-m">
                 <Button type="button" variant="ghost" size="md" label="Paso anterior" style={{ minHeight: '2.75rem' }} onClick={handleBack} />
               </HStack>
+            ) : null}
+
+            {flow.step === 'service' && clientAuthEnabled && !account.profile && !isStartPromptDismissed ? (
+              <Banner
+                status="info"
+                title="¿Ya reservaste antes?"
+                description="Inicia sesión y llenamos tus datos por ti."
+                endContent={
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    label="Iniciar sesión"
+                    onClick={() => openSignIn('signin', selection.clientForm.clientPhone)}
+                  />
+                }
+                isDismissable
+                dismissLabel="Ahora no"
+                onDismiss={() => setIsStartPromptDismissed(true)}
+              />
+            ) : null}
+
+            {flow.step === 'service' && account.profile && justSignedInOnStart ? (
+              <Banner
+                status="success"
+                title={
+                  account.profile.fullName
+                    ? `Hola, ${account.profile.fullName.split(/\s+/)[0]}`
+                    : 'WhatsApp verificado'
+                }
+                description={
+                  account.profile.isRegistered
+                    ? 'Llenamos tus datos para cuando llegues a ese paso.'
+                    : 'Tu WhatsApp ya quedó listo para tu reserva.'
+                }
+                isDismissable
+                dismissLabel="Cerrar"
+                onDismiss={() => setJustSignedInOnStart(false)}
+              />
             ) : null}
 
             {bookingDraft.hasRestoredDraft ? (
@@ -327,6 +433,18 @@ export function BookingWidget(props: BookingWidgetProps) {
               onSelectSuggestion={(alt) => void actions.handleSelectSlot(alt, { stayOnDetails: isPostHoldStep(flow.step) })}
             />
 
+            {flow.holdExpired && isPostHoldStep(flow.step) ? (
+              <HoldExpiredBanner
+                message={flow.holdExpiredMessage}
+                isReholding={actions.isReholding}
+                onRehold={() => void actions.handleReholdExpiredSlot()}
+                onPickAnotherTime={() => {
+                  dispatch({ type: 'RESET_TO_SCHEDULE' });
+                  actions.revealPanel();
+                }}
+              />
+            ) : null}
+
             <VStack key={flow.step} className="rb-step-motion" data-dir={stepMotion.direction}>
             <BookingStepRouter
               formId={FORM_ID}
@@ -340,6 +458,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               selection={selection}
               actions={actions}
               totalPriceCents={totalPriceCents}
+              clientAccount={clientAccountBinding}
               schedule={{
                 todayKey: initialTodayKey,
                 effectiveSelectedDate,
@@ -354,7 +473,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   if (!serviceId || serviceId === selection.selectedService?.id) return;
                   prefetchWindow({
                     serviceId,
-                    extraServiceIds: selection.selectedExtraServiceIds.filter((id) => id !== serviceId),
+                    extraServiceIds: selection.activeExtraServiceIds.filter((id) => id !== serviceId),
                     addonIds: selection.activeAddonIds,
                     staffId: selection.pinnedStaffId,
                     windowStartDate: selection.windowStartDate,
@@ -416,6 +535,15 @@ export function BookingWidget(props: BookingWidgetProps) {
         onExtend={() => void handleExtendHold()}
         onDecline={() => setHoldPromptDismissedFor(flow.holdExpiresAt)}
       />
+
+      {signInRequest ? (
+        <ClientSignInDialog
+          intent={signInRequest.intent}
+          initialPhone={signInRequest.phone}
+          onClose={() => setSignInRequest(null)}
+          onVerified={handleSignInVerified}
+        />
+      ) : null}
 
       {hasOpenedWaitlist ? (
         <WaitlistDialog

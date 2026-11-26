@@ -33,6 +33,7 @@ import {
   type FilterPillOption,
 } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
+import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 type InventoryFilter = 'all' | 'low' | 'retail' | 'cabin';
 
@@ -106,14 +107,12 @@ export default function AdminInventoryPage() {
     }
   };
 
-  const handleCreateItem = async (newItem: NewInventoryItemInput): Promise<boolean> => {
+  const handleCreateItem = async (newItem: NewInventoryItemInput): Promise<FormSubmitResult> => {
     const result = await createInventoryItemRequest(newItem);
+    if (result.status !== 'success') return formSubmitError(result.text);
     setMsg(result);
-    if (result.status === 'success') {
-      await refresh();
-      return true;
-    }
-    return false;
+    await refresh();
+    return FORM_SUBMIT_OK;
   };
 
   return (

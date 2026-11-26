@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import '../booking.css';
+import { readSignedInClientProfile } from '@/lib/auth/client-portal-profile';
 import { getRepository } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 const RESERVAR_TITLE = 'Reservar cita en línea';
 const RESERVAR_DESCRIPTION =
-  'Agenda tu cita de manicure, rubber, acrílico, softgel o pedicure en Puebla. Consulta horarios en vivo, elige especialista y aparta en LAIKONA NAILS.';
+  'Agenda tu cita de manicure, rubber, acrílico, softgel o pedicure en Puebla. Consulta horarios en vivo, elige profesional y aparta en LAIKONA NAILS.';
 const RESERVAR_OG_ALT =
   'LAIKONA NAILS — Reserva tu cita de manicure, rubber y nail art en Puebla';
 
@@ -132,6 +133,7 @@ export default async function ReservarPage({
       initialInspoNote={params.inspo?.trim() || undefined}
       siteOrigin={siteOrigin}
       emitBookingBreadcrumb
+      initialClientProfile={await readSignedInClientProfile(db.clients)}
     />
   );
 }

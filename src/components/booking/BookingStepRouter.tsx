@@ -11,6 +11,7 @@ import type { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
 import type { BookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { ServiceCategory } from '@/lib/types';
+import type { ClientAccountBinding } from './ClientConfirmStep';
 import { ServiceStep } from './ServiceStep';
 import type { BookingFlowAction, BookingFlowState, BookingStep } from './bookingMachine';
 
@@ -131,6 +132,7 @@ interface BookingStepRouterProps {
   actions: BookingActions;
   schedule: ScheduleRouterState;
   totalPriceCents: number;
+  clientAccount: ClientAccountBinding;
 }
 
 export function BookingStepRouter({
@@ -146,6 +148,7 @@ export function BookingStepRouter({
   actions,
   schedule,
   totalPriceCents,
+  clientAccount,
 }: BookingStepRouterProps) {
   if (flow.step === 'service') {
     return (
@@ -175,15 +178,13 @@ export function BookingStepRouter({
         currency={settings.currency}
         selectedServiceName={selection.selectedService?.name ?? null}
         extraServices={selection.extraServices}
-        selectedExtraServiceIds={selection.selectedExtraServiceIds}
+        selectedExtraServiceIds={selection.activeExtraServiceIds}
         compatibleAddons={selection.compatibleAddons}
         selectedAddonIds={selection.selectedAddonIds}
         onToggleExtraService={(serviceId, checked) => {
           prefetchBookingNextStep('extras', selection.hasExtrasOptions);
-          const nextIds = checked
-            ? Array.from(new Set([...selection.selectedExtraServiceIds, serviceId])).slice(0, 8)
-            : selection.selectedExtraServiceIds.filter((id) => id !== serviceId);
-          if (nextIds.join(',') === selection.selectedExtraServiceIds.join(',')) return;
+          const nextIds = selection.nextExtraServiceIds(serviceId, checked);
+          if (nextIds.join(',') === selection.activeExtraServiceIds.join(',')) return;
           selection.setSelectedExtraServiceIds(nextIds);
           actions.resetSelection();
         }}
@@ -289,6 +290,8 @@ export function BookingStepRouter({
       <ClientConfirmStep
         key={flow.step}
         section={flow.step}
+        todayKey={schedule.todayKey}
+        account={clientAccount}
         onContinueDetails={actions.handleDetailsContinue}
         formId={formId}
         settings={settings}
@@ -321,14 +324,6 @@ export function BookingStepRouter({
         formErrorCode={flow.formErrorCode}
         activeBookings={flow.activeBookings}
         isSubmitting={actions.isSubmittingBooking}
-        holdExpired={flow.holdExpired}
-        holdExpiredMessage={flow.holdExpiredMessage}
-        isReholding={actions.isReholding}
-        onReholdSlot={() => void actions.handleReholdExpiredSlot()}
-        onPickAnotherTime={() => {
-          dispatch({ type: 'RESET_TO_SCHEDULE' });
-          actions.revealPanel();
-        }}
         onChangeCouponInput={actions.setCouponInput}
         onApplyCoupon={() => void actions.handleApplyCoupon()}
         onRemoveCoupon={actions.handleRemoveCoupon}

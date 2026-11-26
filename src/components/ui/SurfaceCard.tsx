@@ -67,7 +67,7 @@ export function SurfaceCard({
   const hasCount = typeof count === 'number';
   const hasHeader = Boolean(title || subtitle || actions || badge || hasCount);
   const surfaceClass = className ? `ad-surface ${className}` : 'ad-surface';
-  const headingClass = headingLevel === 2 ? 'lk-serif ad-h2' : 'lk-serif ad-h3';
+  const headingClass = headingLevel === 2 ? 'ad-h2' : 'ad-h3';
 
   return (
     <VStack
@@ -81,7 +81,7 @@ export function SurfaceCard({
       gap={0}
       style={{
         ...TONE_SURFACE_STYLES[tone],
-        borderRadius: 'var(--radius-container)',
+        borderRadius: 'var(--ad-card-radius, var(--radius-container))',
         minWidth: 0,
         overflow: overflowVisible ? 'visible' : 'hidden',
       }}
@@ -89,17 +89,17 @@ export function SurfaceCard({
       {hasHeader ? (
         <HStack
           justify="between"
-          align="center"
+          align="start"
           gap={3}
           wrap="wrap"
           className="ad-section-head"
           paddingInline={padded ? 0 : 5}
-          paddingBlockStart={padded ? 0 : 4}
-          paddingBlockEnd={4}
+          paddingBlockStart={padded ? 0 : 5}
+          paddingBlockEnd={padded ? 3 : 4}
           style={{
             minWidth: 0,
-            borderBottom: '0.0625rem solid var(--ad-border-soft, var(--color-border))',
-            marginBlockEnd: padded ? 'var(--spacing-3)' : 0,
+            borderBottom: padded ? 'none' : '0.0625rem solid var(--ad-border-soft, var(--color-border))',
+            marginBlockEnd: padded ? 'var(--spacing-1)' : 0,
           }}
         >
           <VStack gap={0.5} style={{ minWidth: 0, flex: '1 1 12rem' }}>
@@ -138,7 +138,7 @@ export function SurfaceCard({
           paddingBlock={3}
           style={{
             borderTop: '0.0625rem solid var(--ad-border-soft, var(--color-border))',
-            marginBlockStart: padded ? 'var(--spacing-3)' : 0,
+            marginBlockStart: padded ? 'var(--spacing-4)' : 0,
           }}
         >
           {footer}

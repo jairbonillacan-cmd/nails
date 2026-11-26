@@ -1,8 +1,13 @@
 'use client';
 
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 
-export type HeroScrollState = 'top' | 'inside' | 'past';
+export type HeroScrollState = 'pending' | 'top' | 'inside' | 'past';
+
+export interface HeroNavPhase {
+  state: HeroScrollState;
+  isFloating: boolean;
+}
 
 function subscribeToScroll(onChange: () => void): () => void {
   window.addEventListener('scroll', onChange, { passive: true });
@@ -14,7 +19,7 @@ function subscribeToScroll(onChange: () => void): () => void {
 }
 
 function getServerSnapshot(): HeroScrollState {
-  return 'top';
+  return 'pending';
 }
 
 export function resolveHeroScrollState(input: {
@@ -28,7 +33,18 @@ export function resolveHeroScrollState(input: {
   return input.heroBottom > input.navHeight ? 'inside' : 'past';
 }
 
-export function useHeroScrollState(heroSelector: string, topThreshold = 24, navHeight = 96): HeroScrollState {
+export function resolveNavPhase(previous: HeroNavPhase, next: HeroScrollState): HeroNavPhase {
+  if (next === 'past') return { state: next, isFloating: true };
+  if (next === 'inside') {
+    return {
+      state: next,
+      isFloating: previous.state === 'past' || (previous.state === 'inside' && previous.isFloating),
+    };
+  }
+  return { state: next, isFloating: false };
+}
+
+function useHeroScrollState(heroSelector: string, topThreshold: number, navHeight: number): HeroScrollState {
   const getSnapshot = useCallback((): HeroScrollState => {
     const hero = document.querySelector(heroSelector);
     return resolveHeroScrollState({
@@ -39,4 +55,13 @@ export function useHeroScrollState(heroSelector: string, topThreshold = 24, navH
     });
   }, [heroSelector, topThreshold, navHeight]);
   return useSyncExternalStore(subscribeToScroll, getSnapshot, getServerSnapshot);
+}
+
+export function useHeroNavPhase(heroSelector: string, topThreshold = 24, navHeight = 96): HeroNavPhase {
+  const state = useHeroScrollState(heroSelector, topThreshold, navHeight);
+  const [phase, setPhase] = useState<HeroNavPhase>(() => ({ state, isFloating: state === 'past' }));
+  if (phase.state === state) return phase;
+  const nextPhase = resolveNavPhase(phase, state);
+  setPhase(nextPhase);
+  return nextPhase;
 }

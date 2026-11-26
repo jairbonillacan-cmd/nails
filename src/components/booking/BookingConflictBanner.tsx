@@ -46,7 +46,7 @@ export function BookingConflictBanner({
           <Banner
             status="warning"
             role="alert"
-            title="Ese horario se acaba de ocupar"
+            title={conflict.kind === 'expired' ? 'Se acabó tu tiempo de apartado' : 'Ese horario se acaba de ocupar'}
             description={conflict.message}
             isDismissable
             onDismiss={onDismissConflict}

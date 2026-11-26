@@ -150,6 +150,35 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     expect(adminCss).toMatch(/\.ad-login-brand\s*\{[^}]*background:\s*var\(--ad-cherry\)/);
   });
 
+  it('keeps the public cherry header integrated with its hero and never sticky or fixed', () => {
+    const globalsCss = readText('src/app/globals.css');
+    const headerRule = globalsCss.match(/\n\.rb-header\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(headerRule).toContain('background: var(--lk-cereza)');
+    for (const cssFile of ['src/app/globals.css', 'src/app/booking.css', 'src/app/cita.css', 'src/app/portal.css']) {
+      const css = readText(cssFile);
+      for (const rule of css.match(/[^{}]*\.rb-header[^{]*\{[^}]*\}/g) ?? []) {
+        expect(rule, `${cssFile} must not pin .rb-header`).not.toMatch(/position:\s*(sticky|fixed)/);
+      }
+    }
+
+    const publicLoaders = [
+      'src/app/reservar/loading.tsx',
+      'src/app/cita/[token]/loading.tsx',
+      'src/app/mis-citas/loading.tsx',
+      'src/app/links/loading.tsx',
+      'src/app/aviso-de-privacidad/loading.tsx',
+    ];
+    for (const rel of publicLoaders) {
+      const source = readText(rel);
+      expect(source, `${rel} must render the white header logo`).toContain('className="rb-header"');
+      expect(source, `${rel} must not render the black logo on cherry`).not.toContain('logoBlack');
+    }
+
+    const shellSource = readText('src/components/PublicShell.tsx');
+    expect(shellSource.indexOf('<BookingHeader')).toBeLessThan(shellSource.indexOf('{hero}'));
+    expect(shellSource.indexOf('{hero}')).toBeLessThan(shellSource.indexOf('as="main"'));
+  });
+
   it('maintains LCP preloads, dynamic below-the-fold splits, content-visibility, and sticky-header anchor clearance', () => {
     const homeSource = readText('src/app/page.tsx');
     const landingView = readText('src/components/LandingView.tsx');

@@ -95,13 +95,13 @@ export async function POST(request: NextRequest) {
     if (session.user.role === 'specialist') {
       if (!session.user.staffMemberId) {
         return NextResponse.json(
-          { error: 'Tu usuario no tiene especialista vinculada.' },
+          { error: 'Tu usuario no tiene profesional vinculada.' },
           { status: 403 },
         );
       }
       if (parsed.staffId && parsed.staffId !== session.user.staffMemberId) {
         return NextResponse.json(
-          { error: 'No tienes permiso para crear citas en la agenda de otra especialista.' },
+          { error: 'No tienes permiso para crear citas en la agenda de otra profesional.' },
           { status: 403 },
         );
       }
@@ -222,7 +222,7 @@ export async function PATCH(request: NextRequest) {
           target.staffId !== session.user.staffMemberId
         ) {
           return NextResponse.json(
-            { error: 'No tienes permiso para enviar recordatorios de otra especialista.' },
+            { error: 'No tienes permiso para enviar recordatorios de otra profesional.' },
             { status: 403 },
           );
         }
@@ -255,7 +255,7 @@ export async function PATCH(request: NextRequest) {
           return NextResponse.json(
             {
               error:
-                'No tienes permiso para solicitar reprogramación en citas de otra especialista.',
+                'No tienes permiso para solicitar reprogramación en citas de otra profesional.',
             },
             { status: 403 },
           );
@@ -282,7 +282,7 @@ export async function PATCH(request: NextRequest) {
           target.staffId !== session.user.staffMemberId
         ) {
           return NextResponse.json(
-            { error: 'No tienes permiso para cobrar citas de otra especialista.' },
+            { error: 'No tienes permiso para cobrar citas de otra profesional.' },
             { status: 403 },
           );
         }
@@ -311,7 +311,7 @@ export async function PATCH(request: NextRequest) {
         target.staffId !== session.user.staffMemberId
       ) {
         return NextResponse.json(
-          { error: 'No tienes permiso para modificar citas de otra especialista.' },
+          { error: 'No tienes permiso para modificar citas de otra profesional.' },
           { status: 403 },
         );
       }

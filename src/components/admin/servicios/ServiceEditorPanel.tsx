@@ -51,14 +51,10 @@ export function ServiceEditorPanel({
 }: ServiceEditorPanelProps) {
   return (
       <form onSubmit={onSubmit}>
-        <VStack
-          gap={3}
-          className={saving ? 'fx-busy' : undefined}
-          aria-busy={saving || undefined}
-        >
+        <VStack gap={3}>
           <TextInput
             label="Nombre"
-            placeholder="Ej. Rubber / Uñas acrílicas"
+            placeholder="Ej. Uñas acrílicas"
             value={draft.name || ''}
             onChange={(v) => onChangeDraft({ ...draft, name: v })}
             isRequired
@@ -84,8 +80,8 @@ export function ServiceEditorPanel({
               />
             </Grid>
             <Switch
-              label='Precio "Desde"'
-              description='Muestra "Desde $..." si el precio varía por largo o diseño.'
+              label="Mostrar como «Desde»"
+              description="Para precios que cambian según largo o diseño."
               size="sm"
               value={Boolean(draft.isStartingPrice)}
               onChange={(v) => onChangeDraft({ ...draft, isStartingPrice: v })}
@@ -131,8 +127,8 @@ export function ServiceEditorPanel({
 
               <VStack gap={2}>
                 <Switch
-                  label="Tiempo de limpieza entre citas"
-                  description="Bloquea minutos extra antes o después de este servicio para limpiar tu mesa."
+                  label="Tiempo de limpieza"
+                  description="Minutos libres antes o después de la cita para preparar tu mesa."
                   value={hasCleanupTime}
                   onChange={onToggleCleanupTime}
                 />
@@ -166,14 +162,14 @@ export function ServiceEditorPanel({
 
               <VStack gap={2}>
                 <Switch
-                  label="Anticipo distinto"
-                  description="Pide un monto específico de anticipo para este servicio."
+                  label="Anticipo diferente al del salón"
+                  description="Pide otro monto de anticipo solo para este servicio."
                   value={Boolean(draft.depositRequired)}
                   onChange={(v) => onChangeDraft({ ...draft, depositRequired: v })}
                 />
                 {draft.depositRequired ? (
                   <NumberInput
-                    label="Monto de anticipo (MXN)"
+                    label="Anticipo (MXN)"
                     value={(draft.depositAmountCents ?? defaultDepositCents) / 100}
                     min={0}
                     onChange={(v) =>
@@ -190,19 +186,21 @@ export function ServiceEditorPanel({
 
               <Switch
                 label="Solo con link privado"
-                description="No se ve en tu página pública; solo pueden reservar quienes tengan su link."
+                description="No aparece en tu página; solo reserva quien tenga el link."
                 value={Boolean(draft.isPrivate)}
                 onChange={(v) => onChangeDraft({ ...draft, isPrivate: v })}
               />
 
               <Switch
-                label="Permitir foto de inspiración"
+                label="Pedir foto de inspiración"
+                description="Tu clienta puede subir una foto del diseño que quiere."
                 value={Boolean(draft.allowInspoPhoto)}
                 onChange={(v) => onChangeDraft({ ...draft, allowInspoPhoto: v })}
               />
 
               <Switch
-                label="Confirmar manualmente antes de aprobar"
+                label="Aprobar cada cita a mano"
+                description="La cita queda pendiente hasta que tú la confirmes."
                 value={Boolean(draft.requiresConfirmation)}
                 onChange={(v) =>
                   onChangeDraft({ ...draft, requiresConfirmation: v })

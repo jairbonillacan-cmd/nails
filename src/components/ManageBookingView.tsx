@@ -104,7 +104,7 @@ export function ManageBookingView({
     },
     {
       key: 'staff',
-      label: 'Artista',
+      label: 'Profesional',
       value: booking.staff.name,
       sub: booking.client.fullName,
       mark: '3',
@@ -160,7 +160,7 @@ export function ManageBookingView({
             <Banner
               status="info"
               title="Anticipo requerido por política de puntualidad"
-              description="Para asegurar tu horario y cuidar la agenda de tu artista, se solicitó anticipo automático en esta cita."
+              description="Para asegurar tu horario y cuidar la agenda de tu profesional, se solicitó anticipo automático en esta cita."
             />
           </VStack>
         ) : null}

@@ -126,7 +126,7 @@ export function VisualTroubleshooter({
     <VStack className="ad-split" gap={5}>
       <SurfaceCard
         id="slot-help-results-heading"
-        title={`${selectedDate} · ${selectedStaff?.name ?? 'Manicurista'}`}
+        title={`${selectedDate} · ${selectedStaff?.name ?? 'Profesional'}`}
         subtitle={
           selectedService
             ? `Viendo horarios para ${selectedService.name}. Toca cualquier hora para ver el motivo.`
@@ -313,7 +313,7 @@ export function VisualTroubleshooter({
             />
             {!isSpecialistOnly ? (
               <Selector
-                label="Manicurista"
+                label="Profesional"
                 value={staffId}
                 onChange={(v) => {
                   if (v) {

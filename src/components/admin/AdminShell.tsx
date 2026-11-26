@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -22,33 +22,19 @@ import { LANDING_ASSETS } from '../landing/landingContent';
 import { useSalonAppearance } from '../SalonThemeProvider';
 import { useAdminData, type AdminOverviewPayload } from './AdminProvider';
 import {
+  buildFooterNavItems,
   buildPrimaryNavGroups,
-  buildSecondaryNavItems,
+  buildSidebarStaffRows,
   prefetchAdminRoute,
 } from './shell/adminNavConfig';
 import { AdminSidebar } from './shell/AdminSidebar';
-import { AdminMobileHeader, AdminMobileNav } from './shell/AdminMobileNav';
+import { AdminTopBar } from './shell/AdminTopBar';
+import { AdminMobileNav } from './shell/AdminMobileNav';
 
 const AdminQuickSearchDialog = dynamic(
   () => import('./AdminQuickSearchDialog').then((mod) => mod.AdminQuickSearchDialog),
   { ssr: false },
 );
-
-interface AdminShellControls {
-  openMobileMenu: () => void;
-  openQuickSearch: () => void;
-  isMobileMenuOpen: boolean;
-}
-
-const AdminShellContext = createContext<AdminShellControls>({
-  openMobileMenu: () => undefined,
-  openQuickSearch: () => undefined,
-  isMobileMenuOpen: false,
-});
-
-export function useAdminShellControls(): AdminShellControls {
-  return useContext(AdminShellContext);
-}
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -58,10 +44,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const soundFeedback = useEphemeralMessage(2200);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
-  const [moreToolsOverride, setMoreToolsOverride] = useState<{
-    path: string;
-    open: boolean;
-  } | null>(null);
   const [sidebarCollapsed, toggleSidebarCollapsed] = useSidebarCollapsed();
 
   const isLoginRoute = pathname === '/admin/login';
@@ -120,15 +102,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { enabled: Boolean(data) && !isLoginRoute, requireModifier: true },
   );
 
-  const controls = useMemo<AdminShellControls>(
-    () => ({
-      openMobileMenu: () => setMobileMenuOpen(true),
-      openQuickSearch: () => setQuickSearchOpen(true),
-      isMobileMenuOpen: mobileMenuOpen,
-    }),
-    [mobileMenuOpen],
-  );
-
   if (isLoginRoute) {
     return <>{children}</>;
   }
@@ -146,16 +119,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const isDark = mode === 'dark';
   const brandLogo = isDark ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
   const primaryNavGroups = buildPrimaryNavGroups(data);
-  const secondaryNavItems = buildSecondaryNavItems(data);
-  const isSecondaryRouteActive = secondaryNavItems.some((item) => pathname === item.matchPath);
-  const isMoreToolsOpen =
-    moreToolsOverride && moreToolsOverride.path === pathname
-      ? moreToolsOverride.open
-      : isSecondaryRouteActive;
-
-  const toggleMoreTools = () => {
-    setMoreToolsOverride({ path: pathname, open: !isMoreToolsOpen });
-  };
+  const footerNavItems = buildFooterNavItems(data);
+  const staffRows = buildSidebarStaffRows(data);
 
   const handleTestSound = () => {
     void playBookingChime().then((played) => {
@@ -168,70 +133,25 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AdminShellContext.Provider value={controls}>
-      <VStack className="ad-shell" gap={0}>
-        <AdminMobileHeader
-          salonName={data.settings.name}
-          brandLogo={brandLogo}
-          mobileMenuOpen={mobileMenuOpen}
-          onOpenMenu={() => setMobileMenuOpen(true)}
-          onOpenQuickSearch={() => setQuickSearchOpen(true)}
-        />
-
-        <HStack
-          className="ad-frame"
-          data-collapsed={sidebarCollapsed ? 'true' : 'false'}
-          gap={0}
-          align="stretch"
-        >
-          <AdminSidebar
-            data={data}
-            pathname={pathname}
-            brandLogo={brandLogo}
-            sidebarCollapsed={sidebarCollapsed}
-            primaryNavGroups={primaryNavGroups}
-            secondaryNavItems={secondaryNavItems}
-            isSecondaryRouteActive={isSecondaryRouteActive}
-            isMoreToolsOpen={isMoreToolsOpen}
-            soundActive={soundActive}
-            soundFeedbackMessage={soundFeedback.message}
-            isDark={isDark}
-            onToggleSidebar={toggleSidebarCollapsed}
-            onOpenQuickSearch={() => setQuickSearchOpen(true)}
-            onToggleMoreTools={toggleMoreTools}
-            onPrefetchRoute={handlePrefetchRoute}
-            onToggleMute={toggleMute}
-            onTestSound={handleTestSound}
-            onToggleTheme={handleToggleTheme}
-            onSwitchDemoUser={(email) => void handleSwitchDemoUser(email)}
-            onLogout={() => void handleLogout()}
-          />
-
-          <VStack className="ad-main-wrap" gap={0}>
-            <VStack as="main" className="ad-sheet" gap={5}>
-              <VStack gap={5} width="100%" className="ad-content-inner">
-                {children}
-              </VStack>
-            </VStack>
-          </VStack>
-        </HStack>
-
-        <AdminMobileNav
+    <VStack className="ad-shell" gap={0}>
+      <HStack
+        className="ad-frame"
+        data-collapsed={sidebarCollapsed ? 'true' : 'false'}
+        gap={0}
+        align="stretch"
+      >
+        <AdminSidebar
           data={data}
           pathname={pathname}
           brandLogo={brandLogo}
-          mobileMenuOpen={mobileMenuOpen}
+          sidebarCollapsed={sidebarCollapsed}
           primaryNavGroups={primaryNavGroups}
-          secondaryNavItems={secondaryNavItems}
-          isSecondaryRouteActive={isSecondaryRouteActive}
-          isMoreToolsOpen={isMoreToolsOpen}
+          footerNavItems={footerNavItems}
+          staffRows={staffRows}
           soundActive={soundActive}
           soundFeedbackMessage={soundFeedback.message}
           isDark={isDark}
-          onMobileMenuOpenChange={setMobileMenuOpen}
-          onToggleMoreTools={toggleMoreTools}
           onPrefetchRoute={handlePrefetchRoute}
-          onExpandSidebar={toggleSidebarCollapsed}
           onToggleMute={toggleMute}
           onTestSound={handleTestSound}
           onToggleTheme={handleToggleTheme}
@@ -239,14 +159,53 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           onLogout={() => void handleLogout()}
         />
 
-        {quickSearchOpen ? (
-          <AdminQuickSearchDialog
-            isOpen={quickSearchOpen}
-            onOpenChange={setQuickSearchOpen}
+        <VStack className="ad-main-wrap" gap={0}>
+          <AdminTopBar
             data={data}
+            sidebarCollapsed={sidebarCollapsed}
+            mobileMenuOpen={mobileMenuOpen}
+            soundActive={soundActive}
+            onToggleSidebar={toggleSidebarCollapsed}
+            onOpenMobileMenu={() => setMobileMenuOpen(true)}
+            onOpenQuickSearch={() => setQuickSearchOpen(true)}
+            onToggleMute={toggleMute}
           />
-        ) : null}
-      </VStack>
-    </AdminShellContext.Provider>
+
+          <VStack as="main" className="ad-sheet" gap={5}>
+            <VStack gap={5} width="100%" className="ad-content-inner">
+              {children}
+            </VStack>
+          </VStack>
+        </VStack>
+      </HStack>
+
+      <AdminMobileNav
+        data={data}
+        pathname={pathname}
+        brandLogo={brandLogo}
+        mobileMenuOpen={mobileMenuOpen}
+        primaryNavGroups={primaryNavGroups}
+        footerNavItems={footerNavItems}
+        staffRows={staffRows}
+        soundActive={soundActive}
+        soundFeedbackMessage={soundFeedback.message}
+        isDark={isDark}
+        onMobileMenuOpenChange={setMobileMenuOpen}
+        onPrefetchRoute={handlePrefetchRoute}
+        onToggleMute={toggleMute}
+        onTestSound={handleTestSound}
+        onToggleTheme={handleToggleTheme}
+        onSwitchDemoUser={(email) => void handleSwitchDemoUser(email)}
+        onLogout={() => void handleLogout()}
+      />
+
+      {quickSearchOpen ? (
+        <AdminQuickSearchDialog
+          isOpen={quickSearchOpen}
+          onOpenChange={setQuickSearchOpen}
+          data={data}
+        />
+      ) : null}
+    </VStack>
   );
 }
