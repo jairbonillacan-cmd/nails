@@ -290,6 +290,7 @@ export function subscribeSupabasePublicSlots(
 export function useRealtimeSubscription(
   onEvent: (event: RealtimeEvent) => void,
   debounceMs = DEFAULT_DEBOUNCE_MS,
+  enabled = true,
 ): void {
   const callbackRef = useRef(onEvent);
 
@@ -298,6 +299,7 @@ export function useRealtimeSubscription(
   }, [onEvent]);
 
   useEffect(() => {
+    if (!enabled) return;
     const debouncer = createRealtimeDebouncer(
       (event) => callbackRef.current(event),
       debounceMs,
@@ -338,5 +340,5 @@ export function useRealtimeSubscription(
       debouncer.cancel();
       es.close();
     };
-  }, [debounceMs]);
+  }, [debounceMs, enabled]);
 }

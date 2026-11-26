@@ -13,11 +13,15 @@ import {
   useAdminCachedQuery,
   useAdminCacheSessionSync,
 } from '@/lib/hooks/useAdminCache';
+import { useAdminIdlePrefetch } from '@/lib/hooks/useAdminIdlePrefetch';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useBookingAlertSound } from '@/lib/hooks/useBookingAlertSound';
-import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
+import {
+  useAdminGlobalShortcuts,
+  useKeyboardShortcut,
+} from '@/lib/hooks/useKeyboardShortcut';
 import { useSidebarCollapsed } from '@/lib/hooks/useSidebarCollapsed';
-import { AdminShellSkeleton } from '@/components/ui';
+import { AdminShellSkeleton } from '@/components/ui/SkeletonBlock';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import { useSalonAppearance } from '../SalonThemeProvider';
 import { useAdminData, type AdminOverviewPayload } from './AdminProvider';
@@ -90,6 +94,27 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     [data, router],
   );
 
+  const idlePrefetchRoutes = data
+    ? buildPrimaryNavGroups(data)
+        .flatMap((group) => group.items)
+        .filter(
+          (item) =>
+            item.href !== pathname &&
+            (item.id === 'bookings' ||
+              item.id === 'cash' ||
+              item.id === 'clients' ||
+              item.id === 'reports' ||
+              item.id === 'overview'),
+        )
+        .map((item) => item.href)
+    : [];
+
+  useAdminIdlePrefetch({
+    enabled: Boolean(data) && !isLoginRoute,
+    routes: idlePrefetchRoutes,
+    prefetch: useCallback((href: string) => router.prefetch(href), [router]),
+  });
+
   useKeyboardShortcut(
     'k',
     () => setQuickSearchOpen((prev) => !prev),
@@ -101,6 +126,22 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     toggleSidebarCollapsed,
     { enabled: Boolean(data) && !isLoginRoute, requireModifier: true },
   );
+
+  const allowedShortcutRoutes = new Set(
+    data
+      ? buildPrimaryNavGroups(data)
+          .flatMap((group) => group.items)
+          .map((item) => item.href)
+      : [],
+  );
+
+  useAdminGlobalShortcuts({
+    enabled: Boolean(data) && !isLoginRoute && !quickSearchOpen && !mobileMenuOpen,
+    onQuickSearch: useCallback(() => setQuickSearchOpen(true), []),
+    onNewBooking: useCallback(() => router.push('/admin/citas?new=1'), [router]),
+    onNavigate: useCallback((href: string) => router.push(href), [router]),
+    allowedRoutes: allowedShortcutRoutes,
+  });
 
   if (isLoginRoute) {
     return <>{children}</>;

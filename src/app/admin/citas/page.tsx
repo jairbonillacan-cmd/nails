@@ -6,8 +6,9 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Ban, Check, Copy, MessageCircle, Plus, Sparkles } from 'lucide-react';
-import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
+import { Ban, Check, Copy, MessageCircle, Sparkles } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { PageSkeleton, SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import { BookingsFiltersBar } from '@/components/admin/citas/BookingsFiltersBar';
 import { BookingsListView } from '@/components/admin/citas/BookingsListView';
 import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
@@ -81,12 +82,12 @@ export default function AdminBookingsPage() {
     (ws.viewMode === 'schedule' || ws.viewMode === 'list');
 
   return (
-    <VStack gap={5} className="ad-page fx-fade-up">
+    <VStack gap={4} className="ad-page fx-fade-up">
       <PageHeader
         title="Agenda"
-        subtitle="Revisa tus citas del día, confirma anticipos y cobra en un par de toques."
+        subtitle="Calendario por profesional: arrastra para mover, ajusta duración o haz clic en un hueco libre."
         meta={
-          actions.busyAction ? (
+          actions.busyAction || actions.reschedulingId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
               Actualizando...
             </Text>
@@ -103,62 +104,61 @@ export default function AdminBookingsPage() {
               type="button"
               label="Buscar hora libre"
               variant="secondary"
-              size="md"
-              icon={<Sparkles size={15} aria-hidden="true" />}
+              size="sm"
+              icon={<Sparkles size={14} aria-hidden="true" />}
               onClick={() => ws.setQuickFinderOpen(true)}
             />
             <Button
               type="button"
               label="Bloquear día"
               variant="ghost"
-              size="md"
-              icon={<Ban size={15} aria-hidden="true" />}
+              size="sm"
+              icon={<Ban size={14} aria-hidden="true" />}
               onClick={ws.openBlockModal}
-            />
-            <Button
-              type="button"
-              label="Nueva cita"
-              variant="primary"
-              size="md"
-              icon={<Plus size={16} aria-hidden="true" />}
-              onClick={() => ws.openManualModal()}
             />
           </>
         }
       />
 
-      <MetricGrid
-        ariaLabel="Resumen de agenda"
-        cols={3}
-        items={[
-          {
-            id: 'today',
-            label: 'Citas hoy',
-            value: String(data.kpis.todayBookingsCount),
-            sub: 'En agenda hoy',
-            interactive: true,
-          },
-          {
-            id: 'pending',
-            label: 'Por confirmar',
-            value: String(data.kpis.pendingConfirmationsCount),
-            sub:
-              data.kpis.pendingConfirmationsCount > 0
-                ? 'Anticipos por revisar'
-                : 'Todo confirmado',
-            tone: data.kpis.pendingConfirmationsCount > 0 ? 'warning' : 'success',
-            interactive: true,
-          },
-          {
-            id: 'uncollected',
-            label: 'Falta cobrar',
-            value: String(data.uncollectedBookings.length),
-            sub: data.uncollectedBookings.length > 0 ? 'Con saldo pendiente' : 'Todo cobrado',
-            tone: data.uncollectedBookings.length > 0 ? 'warning' : 'success',
-            interactive: true,
-          },
-        ]}
-      />
+      <HStack className="ad-cal-kpi-strip" gap={4} align="center" wrap="wrap" aria-label="Resumen de agenda">
+        <HStack gap={1.5} align="center" className="ad-cal-strip-item">
+          <Text className="lk-serif ad-cal-strip-num" hasTabularNumbers>
+            {data.kpis.todayBookingsCount}
+          </Text>
+          <Text type="supporting" color="secondary">
+            {data.kpis.todayBookingsCount === 1 ? 'cita hoy' : 'citas hoy'}
+          </Text>
+        </HStack>
+        <Text color="secondary" aria-hidden="true">·</Text>
+        <button
+          type="button"
+          className="ad-cal-strip-btn"
+          onClick={() => {
+            ws.setTab('unconfirmed');
+            ws.setViewMode('list');
+          }}
+        >
+          <Text
+            className="lk-serif ad-cal-strip-num"
+            color={data.kpis.pendingConfirmationsCount > 0 ? 'accent' : 'primary'}
+            hasTabularNumbers
+          >
+            {data.kpis.pendingConfirmationsCount}
+          </Text>
+          <Text type="supporting" color="secondary">
+            por confirmar
+          </Text>
+        </button>
+        <Text color="secondary" aria-hidden="true">·</Text>
+        <HStack gap={1.5} align="center" className="ad-cal-strip-item">
+          <Text className="lk-serif ad-cal-strip-num" hasTabularNumbers>
+            {data.uncollectedBookings.length}
+          </Text>
+          <Text type="supporting" color="secondary">
+            falta cobrar
+          </Text>
+        </HStack>
+      </HStack>
 
       {actions.feedback ? (
         <Banner
@@ -252,6 +252,7 @@ export default function AdminBookingsPage() {
           rangeMode={ws.agendaRange === 'week' ? 'week' : 'day'}
           dateKey={activeVisualDate}
           todayKey={ws.todayKey}
+          serverNowIso={data.serverNowIso}
           timezone={ws.tz}
           staff={scheduleStaff}
           allStaffColorIndex={ws.allStaffColorIndex}
@@ -260,23 +261,36 @@ export default function AdminBookingsPage() {
           paymentSplits={data.paymentSplits}
           bookings={ws.tabFilteredBookings}
           allServices={data.services}
+          isSpecialistLocked={Boolean(ws.lockedStaffId)}
           busyBookingId={actions.busyAction?.bookingId ?? null}
           busyStatus={actions.busyAction?.status ?? null}
+          reschedulingBookingId={actions.reschedulingId}
           onChangeDate={(nextDateKey) => {
             ws.setSelectedVisualDate(nextDateKey);
-            if (nextDateKey === ws.todayKey) ws.setAgendaRange('today');
-            else if (nextDateKey === ws.tomorrowKey) ws.setAgendaRange('tomorrow');
+            if (ws.agendaRange !== 'week') {
+              if (nextDateKey === ws.todayKey) ws.setAgendaRange('today');
+              else if (nextDateKey === ws.tomorrowKey) ws.setAgendaRange('tomorrow');
+            }
           }}
           onJumpToDay={(nextDateKey) => {
             ws.setSelectedVisualDate(nextDateKey);
             ws.setAgendaRange(nextDateKey === ws.tomorrowKey ? 'tomorrow' : 'today');
             ws.setViewMode('schedule');
           }}
-          onOpenNewForStaff={(staffId, preferredDate) =>
-            ws.openManualModal(staffId, preferredDate ? { startDate: preferredDate } : null)
+          onOpenNewForStaff={(staffId, preferredDate, preferredStartAt) =>
+            ws.openManualModal(
+              staffId,
+              preferredDate || preferredStartAt
+                ? {
+                    ...(preferredDate ? { startDate: preferredDate } : {}),
+                    ...(preferredStartAt ? { preferredStartAt } : {}),
+                  }
+                : null,
+            )
           }
           onSelectBooking={(b) => ws.setPopoverBookingId(b.id)}
           onUpdateStatus={(id, status) => void actions.updateStatus(id, status)}
+          onRescheduleBooking={actions.rescheduleAdmin}
           onOpenCheckout={ws.openCheckoutDrawer}
         />
       ) : (

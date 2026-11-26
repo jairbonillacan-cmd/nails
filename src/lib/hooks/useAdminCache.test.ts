@@ -411,6 +411,12 @@ describe('useAdminCache store', () => {
     });
   });
 
+  it('preserves pre-seeded entries on initial null-to-scope bootstrap without aborting', () => {
+    mutateAdminCache(ADMIN_CACHE_KEYS.overview, { seeded: true });
+    setAdminCacheScope('owner-1:owner');
+    expect(getAdminCacheSnapshot(ADMIN_CACHE_KEYS.overview)).toEqual({ seeded: true });
+  });
+
   it('purges all cached data and aborts in-flight requests on role switch or logout', async () => {
     setAdminCacheScope('owner-1:owner');
     mutateAdminCache(ADMIN_CACHE_KEYS.overview, { scope: 'owner-secret' });

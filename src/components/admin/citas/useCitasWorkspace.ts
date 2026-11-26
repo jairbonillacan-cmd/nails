@@ -32,7 +32,7 @@ export function useCitasWorkspace() {
     {
       enabled: Boolean(providerData),
       initialData: providerData ?? undefined,
-      staleTimeMs: 10_000,
+      staleTimeMs: 30_000,
       revalidateKey: bookingEventSeq,
     },
   );
@@ -44,7 +44,7 @@ export function useCitasWorkspace() {
     {
       enabled: Boolean(providerData),
       initialData: providerData ? { bookings: providerData.bookings } : undefined,
-      staleTimeMs: 10_000,
+      staleTimeMs: 30_000,
       revalidateKey: bookingEventSeq,
     },
   );
@@ -79,14 +79,28 @@ export function useCitasWorkspace() {
   const paramCollect = searchParams.get('collect')?.trim() ?? '';
   const paramNew = searchParams.get('new')?.trim() ?? '';
   const paramQuery = searchParams.get('q')?.trim() ?? '';
+  const paramDate = searchParams.get('date')?.trim() ?? '';
   const urlSyncKey = data
-    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}`
+    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}|${paramDate}`
     : 'citas-loading';
 
   useExternalSync(urlSyncKey, async (signal, key) => {
     if (signal.aborted || !key.startsWith('citas-ready') || !data) return;
     if (lastHandledUrlKeyRef.current === key) return;
     lastHandledUrlKeyRef.current = key;
+    if (paramDate && /^\d{4}-\d{2}-\d{2}$/.test(paramDate)) {
+      setSelectedVisualDate(paramDate);
+      setTab('upcoming');
+      setViewMode('schedule');
+      if (paramDate === data.serverTodayKey) {
+        setAgendaRange('today');
+      } else if (paramDate === shiftDateKey(data.serverTodayKey, 1)) {
+        setAgendaRange('tomorrow');
+      } else {
+        setAgendaRange('today');
+      }
+      return;
+    }
     if (paramCollect) {
       const target = data.bookings.find((b) => b.id === paramCollect);
       if (target) {

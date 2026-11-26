@@ -52,7 +52,7 @@ export default function AdminOverviewPage() {
     {
       enabled: Boolean(providerData),
       initialData: providerData ?? undefined,
-      staleTimeMs: 10_000,
+      staleTimeMs: 30_000,
       revalidateKey: bookingEventSeq,
     },
   );

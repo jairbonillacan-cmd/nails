@@ -1,0 +1,133 @@
+{
+  "name": "nails-admin",
+  "like": "neutral",
+  "mode": "both",
+  "settings": [
+    {
+      "thing": "corners",
+      "value": "small",
+      "source": "dial"
+    },
+    {
+      "thing": "spacing",
+      "value": "compact",
+      "source": "dial"
+    },
+    {
+      "thing": "font",
+      "value": "dm-sans",
+      "source": "dial"
+    },
+    {
+      "thing": "font",
+      "value": "source-serif",
+      "source": "dial",
+      "on": "heading"
+    },
+    {
+      "thing": "headings",
+      "value": "semibold",
+      "source": "dial",
+      "axis": "weight"
+    },
+    {
+      "thing": "headings",
+      "value": "tight",
+      "source": "dial",
+      "axis": "tracking"
+    },
+    {
+      "thing": "accent",
+      "value": "#8B1E2B",
+      "source": "dial"
+    },
+    {
+      "thing": "neutral",
+      "value": "#6E6566",
+      "source": "dial"
+    },
+    {
+      "thing": "info",
+      "value": "#5B7FA6",
+      "source": "dial"
+    },
+    {
+      "thing": "success",
+      "value": "#3E7B5B",
+      "source": "dial"
+    },
+    {
+      "thing": "warning",
+      "value": "#b97f2a",
+      "source": "dial"
+    },
+    {
+      "thing": "danger",
+      "value": "#B54049",
+      "source": "dial"
+    },
+    {
+      "thing": "vibrancy",
+      "value": "40",
+      "source": "dial"
+    },
+    {
+      "thing": "--color-background-body",
+      "value": "#FAF7F5",
+      "source": "token",
+      "mode": "light"
+    },
+    {
+      "thing": "--color-background-surface",
+      "value": "#FFFFFF",
+      "source": "token",
+      "mode": "light"
+    },
+    {
+      "thing": "--color-background-muted",
+      "value": "#F3EFEA",
+      "source": "token",
+      "mode": "light"
+    },
+    {
+      "thing": "--color-background-body",
+      "value": "#110F10",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "--color-background-surface",
+      "value": "#181516",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "--color-accent",
+      "value": "#E57A89",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "--color-on-accent",
+      "value": "#141414",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "background-color",
+      "value": "var(--color-accent-muted)",
+      "source": "property",
+      "on": "side-nav-item",
+      "state": "selected"
+    },
+    {
+      "thing": "background-color",
+      "value": "#413C3D",
+      "source": "property",
+      "on": "progress-bar-track",
+      "mode": "dark"
+    }
+  ],
+  "lifted": [],
+  "palette": "91e2d8ae33294755828410305daf482ec27e5e8a85bb39f95a3dd1e543324744"
+}

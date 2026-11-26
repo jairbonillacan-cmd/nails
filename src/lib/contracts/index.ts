@@ -36,6 +36,7 @@ export { isSafeInternalBookingMediaPath, TimeHHMMSchema } from './primitives';
 export {
   AdminCreateBookingSchema,
   AdminPatchBookingStatusSchema,
+  AdminRescheduleBookingSchema,
   CheckoutSplitSchema,
   CreateSlotHoldSchema,
   CreateWaitlistSchema,

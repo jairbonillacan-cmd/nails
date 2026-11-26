@@ -4,6 +4,8 @@ import { useState } from 'react';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
   ADMIN_CACHE_KEYS,
+  applyOptimisticBookingReschedule,
+  applyOptimisticBookingRescheduleToList,
   applyOptimisticBookingStatus,
   applyOptimisticBookingStatusToList,
   getAdminCacheSnapshot,
@@ -234,10 +236,108 @@ export function useCitasBookingActions({
     }
   };
 
+  const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+
+  const rescheduleAdmin = async (params: {
+    bookingId: string;
+    startAt: string;
+    staffId: string;
+    durationMinutes: number;
+    summaryLabel: string;
+  }): Promise<boolean> => {
+    if (!data || reschedulingId === params.bookingId) return false;
+
+    const prevOverview =
+      getAdminCacheSnapshot<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview) ?? data;
+    const prevBookings =
+      getAdminCacheSnapshot<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+      ) ?? { bookings: data.bookings };
+
+    const endAtIso = new Date(
+      Date.parse(params.startAt) + params.durationMinutes * 60_000,
+    ).toISOString();
+    const staffName = data.staff.find((s) => s.id === params.staffId)?.name;
+
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      applyOptimisticBookingReschedule(current ?? prevOverview, {
+        bookingId: params.bookingId,
+        startAt: params.startAt,
+        endAt: endAtIso,
+        staffId: params.staffId,
+        durationMinutes: params.durationMinutes,
+      }),
+    );
+    mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+      ADMIN_CACHE_KEYS.bookings,
+      (current) =>
+        applyOptimisticBookingRescheduleToList(current ?? prevBookings, {
+          bookingId: params.bookingId,
+          startAt: params.startAt,
+          endAt: endAtIso,
+          staffId: params.staffId,
+          staffName,
+          durationMinutes: params.durationMinutes,
+        }),
+    );
+
+    setReschedulingId(params.bookingId);
+    setFeedback(null);
+
+    const rollback = () => {
+      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
+      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+        prevBookings,
+      );
+    };
+
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reschedule_admin',
+          bookingId: params.bookingId,
+          startAt: params.startAt,
+          staffId: params.staffId,
+          durationMinutes: params.durationMinutes,
+        }),
+      });
+      if (res.ok) {
+        invalidateAdminCache('/api/admin/reports');
+        inlineNotice.show(params.summaryLabel);
+        void refresh();
+        void revalidateBookings();
+        return true;
+      }
+      rollback();
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        code?: string;
+      } | null;
+      setFeedback({
+        status: 'error',
+        title: json?.error || 'No se pudo mover o ajustar la cita.',
+      });
+      return false;
+    } catch {
+      rollback();
+      setFeedback({
+        status: 'error',
+        title: 'Error de conexión al mover la cita.',
+      });
+      return false;
+    } finally {
+      setReschedulingId(null);
+    }
+  };
+
   return {
     feedback,
     setFeedback,
     busyAction,
+    reschedulingId,
     remindingId,
     requestingRescheduleId,
     pendingCancelBookingId,
@@ -248,6 +348,7 @@ export function useCitasBookingActions({
     inlineNotice,
     rescheduleCopy,
     updateStatus,
+    rescheduleAdmin,
     sendReminder,
     requestReschedule,
   };

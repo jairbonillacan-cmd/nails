@@ -7,6 +7,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { QrCode } from 'lucide-react';
+import { useClientOrigin } from '@/lib/hooks/useClientOrigin';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { LANDING_ASSETS } from '../../landing/landingContent';
@@ -31,10 +32,8 @@ export function DashboardShareCard({
   const [qrOpen, setQrOpen] = useState(false);
 
   const bookingDisplayUrl = getDisplayBookingUrl(appUrl);
-  const qrTargetUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/reservar`
-      : `${appUrl.replace(/\/+$/, '')}/reservar`;
+  const resolvedOrigin = useClientOrigin(appUrl);
+  const qrTargetUrl = `${resolvedOrigin}/reservar`;
 
   const handleCopyBookingLink = () => {
     void copy(
@@ -154,14 +153,16 @@ export function DashboardShareCard({
         </HStack>
       </VStack>
 
-      <DashboardQrDialog
-        isOpen={qrOpen}
-        onOpenChange={setQrOpen}
-        salonName={salonName}
-        targetUrl={qrTargetUrl}
-        canCustomizeBrand={canCustomizeBrand}
-        onDownloaded={() => shareStatus.show('Código QR descargado')}
-      />
+      {qrOpen ? (
+        <DashboardQrDialog
+          isOpen={qrOpen}
+          onOpenChange={setQrOpen}
+          salonName={salonName}
+          targetUrl={qrTargetUrl}
+          canCustomizeBrand={canCustomizeBrand}
+          onDownloaded={() => shareStatus.show('Código QR descargado')}
+        />
+      ) : null}
     </>
   );
 }

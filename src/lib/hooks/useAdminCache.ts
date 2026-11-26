@@ -110,6 +110,20 @@ function subscribeKey(key: string, listener: () => void): () => void {
 
 export function setAdminCacheScope(nextScope: string | null): void {
   if (nextScope === activeScope) return;
+  if (activeScope === null && nextScope !== null) {
+    activeScope = nextScope;
+    for (const [key, entry] of Array.from(cacheStore.entries())) {
+      if (entry.scope === '') {
+        cacheStore.set(key, { ...entry, scope: nextScope });
+      }
+    }
+    for (const entry of Array.from(inFlightStore.values())) {
+      if (entry.scope === '') {
+        entry.scope = nextScope;
+      }
+    }
+    return;
+  }
   for (const entry of Array.from(inFlightStore.values())) {
     entry.controller.abort();
   }
@@ -347,7 +361,7 @@ export async function prefetchAdminData<T>(
 ): Promise<T | undefined> {
   try {
     const { promise } = runCachedFetch(key, fetcher, {
-      staleTimeMs: options?.staleTimeMs ?? 5_000,
+      staleTimeMs: options?.staleTimeMs ?? 30_000,
       isPrefetch: true,
     });
     return await promise;
@@ -382,12 +396,18 @@ export function useAdminCachedQuery<T>(
   const enabled = options?.enabled ?? true;
   const staleTimeMs = options?.staleTimeMs ?? 0;
   const revalidateKey = options?.revalidateKey ?? 0;
+  const initialData = options?.initialData;
   const fetcherRef = useRef(fetcher);
+  const initialDataRef = useRef(initialData);
   const lastRevalidateKeyRef = useRef<string | number>(revalidateKey);
 
   useEffect(() => {
     fetcherRef.current = fetcher;
   }, [fetcher]);
+
+  useEffect(() => {
+    initialDataRef.current = initialData;
+  }, [initialData]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) =>
@@ -403,7 +423,7 @@ export function useAdminCachedQuery<T>(
   const getServerSnapshot = useCallback((): CacheEntry<T> | undefined => undefined, []);
 
   const record = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const data = record?.hasData ? record.data : options?.initialData;
+  const data = record?.hasData ? record.data : initialData;
   const error = record?.error ?? null;
   const isValidating = Boolean(enabled && key && record?.isValidating);
 
@@ -412,6 +432,26 @@ export function useAdminCachedQuery<T>(
     lastRevalidateKeyRef.current = revalidateKey;
 
     if (!enabled || !key) {
+      return;
+    }
+
+    const requestScope = activeScope ?? '';
+    const existing = cacheStore.get(key);
+    if (
+      !force &&
+      staleTimeMs > 0 &&
+      initialDataRef.current !== undefined &&
+      (!existing || !existing.hasData)
+    ) {
+      cacheStore.set(key, {
+        data: initialDataRef.current,
+        hasData: true,
+        error: null,
+        isValidating: false,
+        updatedAt: Date.now(),
+        scope: requestScope,
+      });
+      notifyKey(key);
       return;
     }
 
@@ -551,6 +591,66 @@ export function applyOptimisticBookingStatusToList(
     bookings: payload.bookings.map((booking) =>
       booking.id === bookingId ? { ...booking, status: nextStatus } : booking,
     ),
+  };
+}
+
+export function applyOptimisticBookingReschedule(
+  overview: AdminOverviewPayload,
+  params: {
+    bookingId: string;
+    startAt: string;
+    endAt: string;
+    staffId: string;
+    durationMinutes: number;
+  },
+): AdminOverviewPayload {
+  const targetStaff = overview.staff.find((s) => s.id === params.staffId);
+  const nextBookings = overview.bookings.map((booking) => {
+    if (booking.id !== params.bookingId) return booking;
+    return {
+      ...booking,
+      staffId: params.staffId,
+      staff: targetStaff ?? booking.staff,
+      startAt: params.startAt,
+      endAt: params.endAt,
+      occupiedStartAt: params.startAt,
+      occupiedEndAt: params.endAt,
+      totalDurationMinutes: params.durationMinutes,
+    };
+  });
+  return {
+    ...overview,
+    bookings: nextBookings,
+  };
+}
+
+export function applyOptimisticBookingRescheduleToList(
+  payload: { bookings: BookingWithRelations[] },
+  params: {
+    bookingId: string;
+    startAt: string;
+    endAt: string;
+    staffId: string;
+    staffName?: string;
+    durationMinutes: number;
+  },
+): { bookings: BookingWithRelations[] } {
+  return {
+    bookings: payload.bookings.map((booking) => {
+      if (booking.id !== params.bookingId) return booking;
+      return {
+        ...booking,
+        staffId: params.staffId,
+        staff: params.staffName
+          ? { ...booking.staff, id: params.staffId, name: params.staffName }
+          : booking.staff,
+        startAt: params.startAt,
+        endAt: params.endAt,
+        occupiedStartAt: params.startAt,
+        occupiedEndAt: params.endAt,
+        totalDurationMinutes: params.durationMinutes,
+      };
+    }),
   };
 }
 

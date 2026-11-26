@@ -126,7 +126,7 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
 
     const adminError = readText('src/app/admin/error.tsx');
     expect(adminError).toContain('ad-boundary-hero');
-    expect(adminError).toContain('ad-boundary-wave');
+    expect(adminError).toContain('ad-boundary-body');
     expect(adminError).toContain('ad-boundary-code');
     expect(adminError).not.toContain('lk-boundary-code');
   });
@@ -143,6 +143,7 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     const providerSource = readText('src/components/SalonThemeProvider.tsx');
     expect(providerSource).toContain("safePathname === '/admin' || safePathname.startsWith('/admin/')");
     expect(providerSource).toContain("isAdminRoute ? mode : 'light'");
+    expect(providerSource).toContain("themes['nails-admin']");
   });
 
   it('preserves production password auth UI and deep wine-cherry dark panel on /admin/login', () => {

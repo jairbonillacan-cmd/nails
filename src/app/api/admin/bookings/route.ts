@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/admin-session';
 import {
   AdminCreateBookingSchema,
   AdminPatchBookingStatusSchema,
+  AdminRescheduleBookingSchema,
   CheckoutSplitSchema,
   RequestRescheduleSchema,
   SendReminderSchema,
@@ -15,6 +16,7 @@ import {
   PolicyError,
   recordBookingCheckoutAtomic,
   requestBookingReschedule,
+  rescheduleBookingAdmin,
   sendManualBookingReminder,
   SlotConflictError,
   updateBookingStatus,
@@ -270,6 +272,36 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(result);
     }
 
+    if (rawAction === 'reschedule_admin') {
+      const rescheduleReq = AdminRescheduleBookingSchema.parse(raw);
+
+      if (session.user.role === 'specialist') {
+        const db = await getRepository().getSnapshot();
+        const target = db.bookings.find((b) => b.id === rescheduleReq.bookingId);
+        if (
+          !session.user.staffMemberId ||
+          !target ||
+          target.staffId !== session.user.staffMemberId ||
+          (rescheduleReq.staffId && rescheduleReq.staffId !== session.user.staffMemberId)
+        ) {
+          return NextResponse.json(
+            { error: 'No tienes permiso para mover citas de otra profesional.' },
+            { status: 403 },
+          );
+        }
+      }
+
+      const booking = await rescheduleBookingAdmin({
+        bookingId: rescheduleReq.bookingId,
+        startAt: rescheduleReq.startAt,
+        staffId: rescheduleReq.staffId,
+        durationMinutes: rescheduleReq.durationMinutes,
+        reason: rescheduleReq.reason,
+        actor,
+      });
+      return NextResponse.json({ booking });
+    }
+
     if (rawAction === 'checkout_split') {
       const checkoutReq = CheckoutSplitSchema.parse(raw);
 
@@ -334,6 +366,16 @@ export async function PATCH(request: NextRequest) {
     });
     return NextResponse.json({ booking });
   } catch (err) {
+    if (err instanceof SlotConflictError) {
+      return NextResponse.json(
+        {
+          code: err.code,
+          error: err.message,
+          suggestedSlots: err.suggestedSlots,
+        },
+        { status: 409 },
+      );
+    }
     if (err instanceof PolicyError) {
       const status =
         err.code === 'PAST_BOOKING_LOCKED'

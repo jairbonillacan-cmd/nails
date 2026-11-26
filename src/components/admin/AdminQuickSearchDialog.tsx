@@ -8,10 +8,11 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
-import { CalendarDays, Search, Sparkles, Users } from 'lucide-react';
+import { Calendar, CalendarDays, Search, Sparkles, Users } from 'lucide-react';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
 import { useQuickSearchKeyboardNav } from '@/lib/hooks/useAdminCache';
-import { BookingStatusTag, EmptyStateCard } from '@/components/ui';
+import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
+import { BookingStatusTag } from '@/components/ui/StatusTag';
 import type { AdminOverviewPayload } from './AdminProvider';
 import { buildQuickSearchResults } from './adminSearchIndex';
 
@@ -32,7 +33,7 @@ export function AdminQuickSearchDialog({
   const [activeIndex, setActiveIndex] = useState(0);
   const tz = data.settings.timezone || 'America/Mexico_City';
 
-  const { matchedBookings, matchedClients, matchedNav, flatOptions } = useMemo(
+  const { dateJumps, matchedBookings, matchedClients, matchedNav, flatOptions } = useMemo(
     () => buildQuickSearchResults(data, query),
     [data, query],
   );
@@ -100,8 +101,9 @@ export function AdminQuickSearchDialog({
   });
 
   const hasResults = flatOptions.length > 0;
-  const clientsOffset = matchedBookings.length;
-  const navOffset = matchedBookings.length + matchedClients.length;
+  const bookingsOffset = dateJumps.length;
+  const clientsOffset = bookingsOffset + matchedBookings.length;
+  const navOffset = clientsOffset + matchedClients.length;
 
   return (
     <Dialog
@@ -117,8 +119,8 @@ export function AdminQuickSearchDialog({
       padding={5}
     >
       <DialogHeader
-        title="Búsqueda rápida"
-        subtitle="Encuentra clientas, citas por código o salta directo a cualquier sección."
+        title="Búsqueda y comandos"
+        subtitle="Busca clienta por nombre o teléfono, escribe una fecha (ej. mañana, 15 dic, 2026-12-01) o crea una cita."
         onOpenChange={onOpenChange}
       />
       <VStack gap={4} paddingBlockStart={3} className="fx-sheet-in">
@@ -126,7 +128,7 @@ export function AdminQuickSearchDialog({
           ref={inputRef}
           label="Buscar en el panel"
           isLabelHidden
-          placeholder="Nombre de clienta, @instagram, código NL-..., servicio o sección..."
+          placeholder="Clienta, teléfono, código NL-..., fecha (mañana, 15 dic) o sección..."
           value={query}
           onChange={handleQueryChange}
           role="combobox"
@@ -145,7 +147,7 @@ export function AdminQuickSearchDialog({
               framed={false}
               isCompact
               title="Sin coincidencias"
-              description={`No encontramos resultados para «${query}». Prueba con un nombre, teléfono o sección.`}
+              description={`No encontramos resultados para «${query}». Prueba con un nombre, teléfono, fecha (ej. viernes o 15 dic) o sección.`}
             />
           </VStack>
         ) : (
@@ -155,6 +157,47 @@ export function AdminQuickSearchDialog({
             aria-label="Resultados de búsqueda"
             gap={3}
           >
+            {dateJumps.length > 0 ? (
+              <VStack className="ad-surface" gap={0}>
+                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                  <HStack gap={1.5} align="center">
+                    <Calendar size={14} aria-hidden="true" />
+                    <Text type="label" color="secondary" weight="semibold">
+                      Ir a fecha en Agenda
+                    </Text>
+                  </HStack>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {dateJumps.length}
+                  </Text>
+                </HStack>
+                <List hasDividers density="compact" role="presentation">
+                  {dateJumps.map((jump, idx) => {
+                    const isActive = safeActiveIndex === idx;
+                    const optionId = `ad-search-opt-${jump.id}`;
+                    return (
+                      <ListItem
+                        key={jump.id}
+                        id={optionId}
+                        role="option"
+                        aria-selected={isActive}
+                        isSelected={isActive}
+                        className="ad-search-item"
+                        data-active={isActive ? 'true' : 'false'}
+                        label={jump.label}
+                        description={
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {jump.description}
+                          </Text>
+                        }
+                        onMouseEnter={() => setActiveIndex(idx)}
+                        onClick={() => handleNavigate(jump.href)}
+                      />
+                    );
+                  })}
+                </List>
+              </VStack>
+            ) : null}
+
             {matchedBookings.length > 0 ? (
               <VStack className="ad-surface" gap={0}>
                 <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
@@ -170,7 +213,8 @@ export function AdminQuickSearchDialog({
                 </HStack>
                 <List hasDividers density="compact" role="presentation">
                   {matchedBookings.map((b, idx) => {
-                    const isActive = safeActiveIndex === idx;
+                    const flatIdx = bookingsOffset + idx;
+                    const isActive = safeActiveIndex === flatIdx;
                     const optionId = `ad-search-opt-booking-${b.id}`;
                     return (
                       <ListItem
@@ -194,7 +238,7 @@ export function AdminQuickSearchDialog({
                             hasPaymentProof={Boolean(b.paymentProofUrl)}
                           />
                         }
-                        onMouseEnter={() => setActiveIndex(idx)}
+                        onMouseEnter={() => setActiveIndex(flatIdx)}
                         onClick={() =>
                           handleNavigate(`/admin/citas?q=${encodeURIComponent(b.bookingCode)}`)
                         }
@@ -255,7 +299,7 @@ export function AdminQuickSearchDialog({
                 <HStack gap={1.5} align="center" className="ad-section-head">
                   <Sparkles size={14} aria-hidden="true" />
                   <Text type="label" color="secondary" weight="semibold">
-                    Accesos del panel
+                    Acciones y secciones
                   </Text>
                 </HStack>
                 <List hasDividers density="compact" role="presentation">
@@ -294,13 +338,25 @@ export function AdminQuickSearchDialog({
             <HStack gap={1} align="center">
               <kbd className="ad-kbd">↑ ↓</kbd>
               <Text type="supporting" color="secondary">
-                navegar
+                mover
               </Text>
             </HStack>
             <HStack gap={1} align="center">
               <kbd className="ad-kbd">Enter</kbd>
               <Text type="supporting" color="secondary">
                 abrir
+              </Text>
+            </HStack>
+            <HStack gap={1} align="center">
+              <kbd className="ad-kbd">N</kbd>
+              <Text type="supporting" color="secondary">
+                nueva cita
+              </Text>
+            </HStack>
+            <HStack gap={1} align="center">
+              <kbd className="ad-kbd">G A</kbd>
+              <Text type="supporting" color="secondary">
+                agenda
               </Text>
             </HStack>
           </HStack>

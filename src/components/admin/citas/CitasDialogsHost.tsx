@@ -4,9 +4,13 @@ import dynamic from 'next/dynamic';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import { ADMIN_CACHE_KEYS, invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import type { BookingStatus, BookingWithRelations, StaffMember } from '@/lib/types';
-import { BlockDayDialog } from './BlockDayDialog';
 import type { NewBookingPrefill } from './NewBookingDialog';
 import type { CitasFeedbackState } from './useCitasBookingActions';
+
+const BlockDayDialog = dynamic(
+  () => import('./BlockDayDialog').then((mod) => mod.BlockDayDialog),
+  { ssr: false },
+);
 
 const BookingQuickPopover = dynamic(
   () => import('./BookingQuickPopover').then((mod) => mod.BookingQuickPopover),

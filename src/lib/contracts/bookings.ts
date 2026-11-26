@@ -88,6 +88,15 @@ export const RequestRescheduleSchema = z.object({
   note: z.string().trim().max(400).optional(),
 });
 
+export const AdminRescheduleBookingSchema = z.object({
+  action: z.literal('reschedule_admin'),
+  bookingId: NonEmptyIdSchema,
+  startAt: NonEmptyIdSchema,
+  staffId: NonEmptyIdSchema.optional(),
+  durationMinutes: z.number().int().min(15).max(480).optional(),
+  reason: z.string().trim().max(300).optional(),
+});
+
 export const CheckoutSplitSchema = z.object({
   action: z.literal('checkout_split'),
   bookingId: NonEmptyIdSchema,

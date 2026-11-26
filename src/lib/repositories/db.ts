@@ -3277,6 +3277,278 @@ export async function manageClientBookingAction(params: {
   return committed.hydrated;
 }
 
+export async function rescheduleBookingAdmin(params: {
+  bookingId: string;
+  startAt: string;
+  staffId?: string;
+  durationMinutes?: number;
+  reason?: string;
+  actor: AuditActor;
+}): Promise<BookingWithRelations> {
+  const newStartMs = Date.parse(params.startAt);
+  if (!Number.isFinite(newStartMs)) {
+    throw new PolicyError('INVALID_START_AT', 'La fecha y hora seleccionadas no son válidas.');
+  }
+
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const supabase = createSupabaseAdminClient();
+    const snapshot = await repo.getSnapshot();
+    const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (!isActiveBookingStatus(booking.status)) {
+      throw new PolicyError('INVALID_STATE', 'Solo se pueden mover o ajustar citas activas.');
+    }
+
+    const isPast = new Date(booking.endAt).getTime() < Date.now();
+    const pastLockActive = snapshot.settings.lockPastBookings !== false;
+    if (pastLockActive && isPast && params.actor.role !== 'owner') {
+      throw new PolicyError(
+        'PAST_BOOKING_LOCKED',
+        'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
+      );
+    }
+
+    const targetStaffId = params.staffId?.trim() || booking.staffId;
+    const targetStaff = snapshot.staff.find((s) => s.id === targetStaffId && s.isActive);
+    if (!targetStaff) {
+      throw new PolicyError('STAFF_NOT_FOUND', 'La profesional seleccionada no está activa.');
+    }
+
+    const service = snapshot.services.find((s) => s.id === booking.serviceId);
+    const bufferBefore = service?.bufferBeforeMinutes ?? 0;
+    const bufferAfter = service?.bufferAfterMinutes ?? 0;
+    const nextDurationMinutes = params.durationMinutes ?? booking.totalDurationMinutes;
+    const newEndMs = newStartMs + nextDurationMinutes * 60_000;
+    const newOccStartMs = newStartMs - bufferBefore * 60_000;
+    const newOccEndMs = newEndMs + bufferAfter * 60_000;
+
+    const overlapping = snapshot.bookings.find(
+      (other) =>
+        other.id !== booking.id &&
+        other.staffId === targetStaff.id &&
+        isActiveBookingStatus(other.status) &&
+        new Date(other.occupiedStartAt).getTime() < newOccEndMs &&
+        new Date(other.occupiedEndAt).getTime() > newOccStartMs,
+    );
+    if (overlapping) {
+      throw new SlotConflictError(
+        `Ese horario se empalma con otra cita de ${targetStaff.name}. Elige otro espacio libre.`,
+        [],
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    const startIso = new Date(newStartMs).toISOString();
+    const endIso = new Date(newEndMs).toISOString();
+    const occStartIso = new Date(newOccStartMs).toISOString();
+    const occEndIso = new Date(newOccEndMs).toISOString();
+
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        staff_id: targetStaff.id,
+        start_at: startIso,
+        end_at: endIso,
+        occupied_start_at: occStartIso,
+        occupied_end_at: occEndIso,
+        occupied_range: `[${occStartIso},${occEndIso})`,
+        total_duration_minutes: nextDurationMinutes,
+        ...(params.durationMinutes !== undefined
+          ? { custom_duration_minutes: nextDurationMinutes }
+          : {}),
+        updated_at: nowIso,
+      })
+      .eq('id', booking.id);
+
+    if (error) {
+      throw new PolicyError('RESCHEDULE_FAILED', error.message);
+    }
+
+    await supabase
+      .from('scheduled_notifications')
+      .update({ status: 'canceled' })
+      .eq('booking_id', booking.id)
+      .eq('status', 'pending');
+
+    if (pastLockActive && isPast && params.actor.role === 'owner') {
+      await repo.writeAuditLog({
+        actorId: params.actor.id,
+        actorEmail: params.actor.email,
+        actorRole: params.actor.role,
+        action: 'past_booking_override',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          operation: 'reschedule_admin',
+          newStartAt: startIso,
+          newStaffId: targetStaff.id,
+          durationMinutes: nextDurationMinutes,
+        },
+      });
+    }
+
+    const updatedSnapshot = await repo.getSnapshot();
+    const updatedRaw = updatedSnapshot.bookings.find((b) => b.id === booking.id);
+    if (!updatedRaw) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada tras actualizar.');
+    }
+    const hydrated = hydrateBooking(updatedSnapshot, updatedRaw);
+    const conn = updatedSnapshot.calendarConnections.find(
+      (c) => c.staffId === hydrated.staffId && c.isConnected,
+    );
+    await dispatchPostCommitOutbox([
+      {
+        type: 'SyncCalendar',
+        booking: hydrated,
+        connection: conn ? { ...conn } : undefined,
+        settings: updatedSnapshot.settings,
+        action: hydrated.googleEventId ? 'update' : 'create',
+      },
+      {
+        type: 'Realtime',
+        eventType: 'slot_changed',
+        payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
+      },
+    ]);
+    return hydrated;
+  }
+
+  const committed = await withWriteLock((db) => {
+    const booking = db.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (!isActiveBookingStatus(booking.status)) {
+      throw new PolicyError('INVALID_STATE', 'Solo se pueden mover o ajustar citas activas.');
+    }
+
+    const isPast = new Date(booking.endAt).getTime() < Date.now();
+    const pastLockActive = db.settings.lockPastBookings !== false;
+    if (pastLockActive && isPast && params.actor.role !== 'owner') {
+      throw new PolicyError(
+        'PAST_BOOKING_LOCKED',
+        'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
+      );
+    }
+
+    const targetStaffId = params.staffId?.trim() || booking.staffId;
+    const targetStaff = db.staff.find((s) => s.id === targetStaffId && s.isActive);
+    if (!targetStaff) {
+      throw new PolicyError('STAFF_NOT_FOUND', 'La profesional seleccionada no está activa.');
+    }
+
+    const service = db.services.find((s) => s.id === booking.serviceId);
+    const bufferBefore = service?.bufferBeforeMinutes ?? 0;
+    const bufferAfter = service?.bufferAfterMinutes ?? 0;
+    const nextDurationMinutes = params.durationMinutes ?? booking.totalDurationMinutes;
+    const newEndMs = newStartMs + nextDurationMinutes * 60_000;
+    const newOccStartMs = newStartMs - bufferBefore * 60_000;
+    const newOccEndMs = newEndMs + bufferAfter * 60_000;
+
+    const overlapping = db.bookings.find(
+      (other) =>
+        other.id !== booking.id &&
+        other.staffId === targetStaff.id &&
+        isActiveBookingStatus(other.status) &&
+        new Date(other.occupiedStartAt).getTime() < newOccEndMs &&
+        new Date(other.occupiedEndAt).getTime() > newOccStartMs,
+    );
+    if (overlapping) {
+      throw new SlotConflictError(
+        `Ese horario se empalma con otra cita de ${targetStaff.name}. Elige otro espacio libre.`,
+        [],
+      );
+    }
+
+    const prevStaffId = booking.staffId;
+    const nowIso = new Date().toISOString();
+    booking.staffId = targetStaff.id;
+    booking.startAt = new Date(newStartMs).toISOString();
+    booking.endAt = new Date(newEndMs).toISOString();
+    booking.occupiedStartAt = new Date(newOccStartMs).toISOString();
+    booking.occupiedEndAt = new Date(newOccEndMs).toISOString();
+    booking.totalDurationMinutes = nextDurationMinutes;
+    if (params.durationMinutes !== undefined) {
+      booking.customDurationMinutes = nextDurationMinutes;
+    }
+    booking.updatedAt = nowIso;
+
+    for (const n of db.notifications) {
+      if (n.bookingId === booking.id && n.status === 'pending') {
+        n.status = 'canceled';
+      }
+    }
+
+    if (pastLockActive && isPast && params.actor.role === 'owner') {
+      appendAuditLog(db, {
+        actor: params.actor,
+        action: 'past_booking_override',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          operation: 'reschedule_admin',
+          prevStaffId,
+          newStaffId: targetStaff.id,
+          newStartAt: booking.startAt,
+          durationMinutes: nextDurationMinutes,
+        },
+      });
+    }
+
+    const hydrated = hydrateBooking(db, booking);
+    const bookingId = booking.id;
+    const conn = db.calendarConnections.find(
+      (c) => c.staffId === booking.staffId && c.isConnected,
+    );
+    const settingsSnapshot = { ...db.settings };
+    const workflowsSnapshot = [...db.workflows];
+
+    const outboxEvents: OutboxEventInput[] = [
+      {
+        type: 'SyncCalendar',
+        booking: hydrated,
+        connection: conn ? { ...conn } : undefined,
+        settings: settingsSnapshot,
+        action: booking.googleEventId ? 'update' : 'create',
+        onSynced: async (googleEventId) => {
+          hydrated.googleEventId = googleEventId;
+          await withWriteLock((liveDb) => {
+            const target = liveDb.bookings.find((b) => b.id === bookingId);
+            if (target) target.googleEventId = googleEventId;
+          });
+        },
+      },
+      {
+        type: 'Notify',
+        booking: hydrated,
+        workflows: workflowsSnapshot,
+        settings: settingsSnapshot,
+        trigger: 'booking_rescheduled',
+        onLogs: async (logs) => {
+          await withWriteLock((liveDb) => {
+            liveDb.notifications.unshift(...logs);
+          });
+        },
+      },
+      {
+        type: 'Realtime',
+        eventType: 'slot_changed',
+        payload: { staffId: booking.staffId, startAt: booking.startAt },
+      },
+    ];
+
+    return { hydrated, outboxEvents };
+  });
+
+  await dispatchPostCommitOutbox(committed.outboxEvents);
+  return committed.hydrated;
+}
+
 export async function sendManualBookingReminder(params: {
   bookingId: string;
   channel?: 'whatsapp' | 'email' | 'both';

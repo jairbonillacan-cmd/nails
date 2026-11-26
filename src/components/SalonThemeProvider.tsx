@@ -158,7 +158,16 @@ export function SalonThemeProvider({
   const isAdminRoute = safePathname === '/admin' || safePathname.startsWith('/admin/');
   const effectiveMode: ThemeModePreference = isAdminRoute ? mode : 'light';
 
-  const resolvedTheme = useMemo(() => resolveSalonTheme(settings), [settings]);
+  const resolvedTheme = useMemo<ResolvedSalonTheme>(() => {
+    if (isAdminRoute) {
+      return {
+        theme: themes['nails-admin'],
+        ssrStyleId: null,
+        ssrCss: null,
+      };
+    }
+    return resolveSalonTheme(settings);
+  }, [isAdminRoute, settings]);
   const safeGa4Id = sanitizeGa4MeasurementId(settings.ga4MeasurementId);
   const safeMetaPixelId = sanitizeMetaPixelId(settings.metaPixelId);
 
