@@ -13,7 +13,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { roleCanAccess } from '@/lib/rbac';
-import { LANDING_ASSETS } from '../../landing/landingContent';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import type { NavGroupConfig, NavItemConfig, SidebarStaffRow } from './adminNavConfig';
 import { AdminNavGroups } from './AdminNavGroups';
@@ -162,15 +161,6 @@ export function AdminMobileNav({
             className="ad-logo-link"
             onClick={closeDrawer}
           >
-            <Text className="ad-brand-tile" aria-hidden="true">
-              <img
-                src={LANDING_ASSETS.cherriesWhite}
-                alt=""
-                width={16}
-                height={16}
-                className="ad-brand-tile-mark"
-              />
-            </Text>
             <img
               src={brandLogo}
               alt={data.settings.name}

@@ -3,7 +3,6 @@
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Text } from '@astryxdesign/core/Text';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
 import { LANDING_ASSETS } from '../../landing/landingContent';
 import type { AdminOverviewPayload } from '../AdminProvider';
@@ -82,15 +81,6 @@ export function AdminSidebar({
             aria-label={`${data.settings.name}, inicio del panel`}
             className="ad-logo-link"
           >
-            <Text className="ad-brand-tile" aria-hidden="true">
-              <img
-                src={LANDING_ASSETS.cherriesWhite}
-                alt=""
-                width={16}
-                height={16}
-                className="ad-brand-tile-mark"
-              />
-            </Text>
             <img
               src={brandLogo}
               alt={data.settings.name}
