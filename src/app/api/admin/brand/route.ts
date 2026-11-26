@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { BrandPatchSchema, GalleryItemInputSchema } from '@/lib/contracts';
+import { toAdminSettingsDTO } from '@/lib/public-dto';
 import {
   deleteGalleryItem,
   normalizeInstagramHandle,
@@ -11,112 +13,6 @@ import {
 } from '@/lib/repositories/db';
 import { hashOwnerPin, isValidOwnerPinFormat } from '@/lib/security/auth-pin';
 import type { SalonSettings } from '@/lib/types';
-
-const landingContentPatchSchema = z
-  .object({
-    heroEyebrow: z.string().max(180),
-    heroTitle: z.string().max(220),
-    heroSubtitle: z.string().max(500),
-    aboutTitle: z.string().max(220),
-    aboutBody: z.string().max(1200),
-  })
-  .partial();
-
-const loyaltyProgramPatchSchema = z
-  .object({
-    id: z.string().min(1).optional(),
-    isActive: z.boolean().optional(),
-    name: z.string().trim().min(2).max(120).optional(),
-    stampsRequired: z.number().int().min(1).max(30).optional(),
-    rewardType: z.enum(['free_service', 'percent_discount']).optional(),
-    rewardServiceId: z.string().min(1).nullable().optional(),
-    discountPercent: z.number().int().min(1).max(100).nullable().optional(),
-    maxDiscountCents: z.number().int().nonnegative().max(10_000_000).nullable().optional(),
-    validDays: z.number().int().min(1).max(365).nullable().optional(),
-  })
-  .optional();
-
-const brandPatchSchema = z
-  .object({
-    name: z.string().trim().min(1).max(120),
-    tagline: z.string().max(240),
-    description: z.string().max(1000),
-    logoUrl: z.string().max(2_500_000).nullable(),
-    coverImageUrl: z.string().max(2_500_000).nullable(),
-    address: z.string().max(240),
-    city: z.string().max(120),
-    mapsUrl: z.string().max(500),
-    instagramHandle: z.string().max(120),
-    instagramUrl: z.string().max(500),
-    sisterStudioHandle: z.string().max(120),
-    whatsappNumber: z.string().max(32),
-    contactEmail: z.string().email().or(z.literal('')),
-    timezone: z.string().min(1).max(80),
-
-    brandAccentLight: z.string().max(32),
-    brandAccentDark: z.string().max(32),
-    defaultPublicMode: z.enum(['light', 'dark', 'system']),
-    defaultAdminMode: z.enum(['light', 'dark', 'system']),
-    cornerStyle: z.enum(['sharp', 'soft', 'rounded', 'pill']),
-    defaultBookingLayout: z.enum(['month', 'week', 'column']),
-    enabledBookingLayouts: z.array(z.enum(['month', 'week', 'column'])).min(1),
-    lockTimezone: z.boolean(),
-    slotIntervalMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]),
-    optimizeContinuousSlots: z.boolean(),
-    enableSlotHold: z.boolean(),
-    slotHoldMinutes: z.number().int().min(1).max(15),
-
-    minBookingNoticeMinutes: z.number().int().min(0).max(10_080),
-    maxBookingDaysAhead: z.number().int().min(1).max(365),
-    minCancelHours: z.number().int().min(0).max(168),
-    minRescheduleHours: z.number().int().min(0).max(168),
-    cancellationPolicyText: z.string().max(1000),
-    bookingInstructionsText: z.string().max(1000),
-
-    paymentMode: z.enum(['none', 'manual_transfer', 'stripe', 'mercadopago']),
-    depositBankName: z.string().max(120),
-    depositAccountHolder: z.string().max(160),
-    depositBeneficiary: z.string().max(160),
-    depositClabe: z.string().max(40),
-    depositAmountCents: z.number().int().nonnegative().max(10_000_000),
-    depositInstructions: z.string().max(1000),
-    currency: z.enum(['MXN', 'USD']),
-
-    serviceMode: z.enum(['studio', 'home', 'online']),
-    businessType: z.string().max(120),
-    teamSizeTier: z.string().max(60),
-    onboardingCompleted: z.boolean(),
-    soundAlertsEnabled: z.boolean(),
-    lockPastBookings: z.boolean(),
-    maxActiveBookingsPerClient: z.number().int().min(1).max(20),
-    privacyPolicyVersion: z.string().trim().min(1).max(40),
-    noShowDepositThreshold: z.number().int().min(0).max(10),
-    ownerPinEnabled: z.boolean(),
-    ownerPin: z.string().trim().min(4).max(6),
-    clearOwnerPin: z.boolean(),
-
-    landingContent: landingContentPatchSchema,
-    loyaltyProgram: loyaltyProgramPatchSchema,
-
-    whatsappBookingEnabled: z.boolean(),
-    smsRemindersEnabled: z.boolean(),
-
-    metaPixelId: z.string().max(120).nullable(),
-    ga4MeasurementId: z.string().max(120).nullable(),
-    googleReviewUrl: z.string().max(500).nullable(),
-    defaultCommissionPercent: z.number().min(0).max(100),
-  })
-  .partial();
-
-const galleryItemSchema = z.object({
-  id: z.string().min(1).optional(),
-  title: z.string().trim().min(1).max(120),
-  caption: z.string().max(400).default(''),
-  category: z.string().max(80).default('Gel'),
-  imageUrl: z.string().min(1).max(2_500_000),
-  serviceId: z.string().min(1).nullable().default(null),
-  isFeatured: z.boolean().default(true),
-});
 
 export async function PATCH(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -131,7 +27,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const parsed = brandPatchSchema.parse(await request.json());
+    const parsed = BrandPatchSchema.parse(await request.json());
     const {
       landingContent,
       loyaltyProgram,
@@ -184,7 +80,7 @@ export async function PATCH(request: NextRequest) {
       : undefined;
 
     return NextResponse.json({
-      settings,
+      settings: toAdminSettingsDTO(settings),
       ...(updatedProgram ? { loyaltyProgram: updatedProgram } : {}),
     });
   } catch (err) {
@@ -211,7 +107,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = galleryItemSchema.parse(await request.json());
+    const parsed = GalleryItemInputSchema.parse(await request.json());
     const item = await upsertGalleryItem(parsed);
     return NextResponse.json({ item });
   } catch (err) {

@@ -3,17 +3,21 @@
 import { useCallback, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
-import {
-  SegmentedControl,
-  SegmentedControlItem,
-} from '@astryxdesign/core/SegmentedControl';
 import { RefreshCw } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import {
+  EmptyStateCard,
+  FilterPillBar,
+  MetricGrid,
+  PageHeader,
+  PageSkeleton,
+  StatusTag,
+  SurfaceCard,
+  type MetricTileItem,
+} from '@/components/ui';
 import { DemandHeatmapCard } from '@/components/admin/reportes/DemandHeatmapCard';
 import { ServiceProfitabilityCard } from '@/components/admin/reportes/ServiceProfitabilityCard';
 import { SpecialistOccupancyCard } from '@/components/admin/reportes/SpecialistOccupancyCard';
@@ -41,9 +45,12 @@ const PERIOD_LABELS: Record<ReportPeriod, string> = {
   all: 'Todo el historial',
 };
 
-function isReportPeriod(value: string): value is ReportPeriod {
-  return value === '7d' || value === '30d' || value === '90d' || value === 'all';
-}
+const PERIOD_OPTIONS = [
+  { value: '7d' as const, label: '7 días' },
+  { value: '30d' as const, label: '30 días' },
+  { value: '90d' as const, label: '90 días' },
+  { value: 'all' as const, label: 'Todo' },
+];
 
 export default function AdminReportsPage() {
   const { data, bookingEventSeq } = useAdminData();
@@ -70,7 +77,9 @@ export default function AdminReportsPage() {
   const loading = reportQuery.isLoading || reportQuery.isValidating;
   const errorMsg = reportQuery.error ? reportQuery.error.message : null;
 
-  if (!data) return null;
+  if (!data) {
+    return <PageSkeleton kpiCount={6} withSplit ariaLabel="Cargando reportes" />;
+  }
 
   const isSpecialistScope =
     report?.scope === 'specialist' || data.session.user.role === 'specialist';
@@ -79,14 +88,15 @@ export default function AdminReportsPage() {
     ? `Tus citas y resultados personales${report?.scopeStaffName ? ` (${report.scopeStaffName})` : ''} · ${PERIOD_LABELS[period]}`
     : `Resumen de citas, ingresos y equipo · ${PERIOD_LABELS[period]}`;
 
-  const kpiCards = report
+  const kpiCards: MetricTileItem[] = report
     ? [
         {
           id: 'revenue',
           label: 'Ingresos cobrados',
           value: formatCurrency(report.summary.totalRevenueCollectedCents, currency),
           sub: `${report.summary.completedCount} completada${report.summary.completedCount === 1 ? '' : 's'}`,
-          tone: 'default' as const,
+          tone: 'default',
+          interactive: true,
         },
         {
           id: 'avg-ticket',
@@ -96,37 +106,32 @@ export default function AdminReportsPage() {
               ? formatCurrency(report.summary.averageTicketCents, currency)
               : '—',
           sub: 'Por cita cobrada',
-          tone: 'default' as const,
+          tone: 'default',
+          interactive: true,
         },
         {
           id: 'completion-rate',
           label: 'Asistencia',
           value: `${report.summary.completionRatePercent}%`,
           sub: `${report.summary.totalBookings} cita${report.summary.totalBookings === 1 ? '' : 's'} en este período`,
-          tone:
-            report.summary.completionRatePercent >= 80
-              ? ('success' as const)
-              : ('default' as const),
+          tone: report.summary.completionRatePercent >= 80 ? 'success' : 'default',
+          interactive: true,
         },
         {
           id: 'noshow-rate',
           label: 'Inasistencias',
           value: `${report.summary.noShowRatePercent}%`,
           sub: `${report.summary.noShowCount} no llegaron`,
-          tone:
-            report.summary.noShowRatePercent >= 15
-              ? ('warning' as const)
-              : ('default' as const),
+          tone: report.summary.noShowRatePercent >= 15 ? 'warning' : 'default',
+          interactive: true,
         },
         {
           id: 'cancel-rate',
           label: 'Cancelaciones',
           value: `${report.summary.cancellationRatePercent}%`,
           sub: `${report.summary.canceledCount} cancelada${report.summary.canceledCount === 1 ? '' : 's'}`,
-          tone:
-            report.summary.cancellationRatePercent >= 20
-              ? ('warning' as const)
-              : ('default' as const),
+          tone: report.summary.cancellationRatePercent >= 20 ? 'warning' : 'default',
+          interactive: true,
         },
         {
           id: 'rating-tips',
@@ -136,59 +141,34 @@ export default function AdminReportsPage() {
               ? `${report.summary.averageRating.toFixed(1)} ★`
               : '—',
           sub: `${report.summary.reviewsCount} reseña${report.summary.reviewsCount === 1 ? '' : 's'} · ${formatCurrency(report.summary.totalTipsCents, currency)} propinas`,
-          tone: 'default' as const,
+          tone: 'default',
+          interactive: true,
         },
       ]
     : [];
 
   return (
     <VStack gap={6} className="ad-page fx-fade-up">
-      <HStack
-        as="header"
-        className="ad-page-head"
-        justify="between"
-        align="end"
-        wrap="wrap"
-        gap={4}
-      >
-        <VStack gap={1} className="ad-head-copy">
-          <HStack gap={2} align="center" wrap="wrap">
-            <Text type="supporting" color="secondary" weight="medium" hasTabularNumbers>
-              {report
-                ? `${report.rangeStartDate} — ${report.rangeEndDate}`
-                : PERIOD_LABELS[period]}
-            </Text>
-            {isSpecialistScope ? (
-              <Text color="inherit" className="ad-chip" data-tone="accent">
-                Vista individual
-              </Text>
-            ) : null}
-          </HStack>
-
-          <Heading level={1} className="lk-serif ad-page-title">
-            Reportes
-          </Heading>
-          <Text className="ad-page-sub">{scopeSubtitle}</Text>
-        </VStack>
-
-        <HStack gap={2} align="center" wrap="wrap">
-          <SegmentedControl
-            label="Período del reporte"
-            size="sm"
+      <PageHeader
+        eyebrow={
+          report ? `${report.rangeStartDate} — ${report.rangeEndDate}` : PERIOD_LABELS[period]
+        }
+        meta={
+          isSpecialistScope ? <StatusTag tone="accent" label="Vista individual" /> : undefined
+        }
+        title="Reportes"
+        subtitle={scopeSubtitle}
+        actions={
+          <FilterPillBar
+            ariaLabel="Período del reporte"
+            mode="segmented"
+            size="md"
             value={period}
-            onChange={(value) => {
-              if (isReportPeriod(value)) {
-                setPeriod(value);
-              }
-            }}
-          >
-            <SegmentedControlItem value="7d" label="7 días" />
-            <SegmentedControlItem value="30d" label="30 días" />
-            <SegmentedControlItem value="90d" label="90 días" />
-            <SegmentedControlItem value="all" label="Todo" />
-          </SegmentedControl>
-        </HStack>
-      </HStack>
+            options={PERIOD_OPTIONS}
+            onChange={setPeriod}
+          />
+        }
+      />
 
       {errorMsg ? (
         <Banner
@@ -207,61 +187,14 @@ export default function AdminReportsPage() {
       ) : null}
 
       {loading && !report ? (
-        <VStack gap={5} role="status" aria-busy="true">
-          <Text className="rb-sr-only">Cargando reportes...</Text>
-          <section className="ad-kpis" aria-hidden="true">
-            <VStack className="ad-skeleton" data-size="kpi" />
-            <VStack className="ad-skeleton" data-size="kpi" />
-            <VStack className="ad-skeleton" data-size="kpi" />
-            <VStack className="ad-skeleton" data-size="kpi" />
-            <VStack className="ad-skeleton" data-size="kpi" />
-            <VStack className="ad-skeleton" data-size="kpi" />
-          </section>
-          <VStack className="ad-skeleton" data-size="card" aria-hidden="true" />
-          <section className="ad-split" aria-hidden="true">
-            <VStack className="ad-skeleton" data-size="card" />
-            <VStack className="ad-skeleton" data-size="card" />
-          </section>
-        </VStack>
+        <PageSkeleton kpiCount={6} withSplit ariaLabel="Cargando reportes" />
       ) : report ? (
         <VStack gap={5} aria-busy={loading}>
-          <section
-            aria-label="Indicadores clave del período"
-            className="ad-kpis fx-stagger"
-          >
-            {kpiCards.map((kpi) => (
-              <VStack
-                key={kpi.id}
-                as="article"
-                className="ad-card ad-kpi-card fx-card-lift"
-                gap={1}
-              >
-                <Text
-                  type="supporting"
-                  color="secondary"
-                  weight="medium"
-                  className="ad-kpi-label"
-                >
-                  {kpi.label}
-                </Text>
-                <Text
-                  className="lk-serif ad-kpi-val fx-tabular"
-                  data-tone={kpi.tone}
-                  hasTabularNumbers
-                >
-                  {kpi.value}
-                </Text>
-                <Text
-                  type="supporting"
-                  color="secondary"
-                  className="ad-kpi-sub"
-                  hasTabularNumbers
-                >
-                  {kpi.sub}
-                </Text>
-              </VStack>
-            ))}
-          </section>
+          <MetricGrid
+            ariaLabel="Indicadores clave del período"
+            items={kpiCards}
+            cols={3}
+          />
 
           <SpecialistOccupancyCard
             rows={report.specialistOccupancy}
@@ -280,45 +213,22 @@ export default function AdminReportsPage() {
             />
           </section>
 
-          <VStack
-            as="section"
-            className="ad-surface"
-            gap={0}
-            aria-labelledby="reports-cancellations-heading"
-          >
-            <HStack
-              className="ad-section-head"
-              justify="between"
-              align="center"
-              wrap="wrap"
-              gap={2}
-            >
-              <VStack gap={0.5} className="rb-grow">
-                <Heading
-                  level={2}
-                  id="reports-cancellations-heading"
-                  className="lk-serif ad-h2"
-                >
-                  Motivos de cancelación
-                </Heading>
-                <Text type="supporting" color="secondary">
-                  Razones más frecuentes por las que se cancelan citas.
-                </Text>
-              </VStack>
-              <Text
-                color="inherit"
-                className="ad-chip"
-                data-tone={report.summary.canceledCount > 0 ? 'warning' : 'success'}
+          <SurfaceCard
+            id="reports-cancellations-heading"
+            title="Motivos de cancelación"
+            subtitle="Razones más frecuentes por las que se cancelan citas."
+            badge={
+              <StatusTag
+                tone={report.summary.canceledCount > 0 ? 'warning' : 'success'}
+                label={`${report.summary.canceledCount} cancelada${report.summary.canceledCount === 1 ? '' : 's'}`}
                 hasTabularNumbers
-              >
-                {report.summary.canceledCount} cancelada
-                {report.summary.canceledCount === 1 ? '' : 's'}
-              </Text>
-            </HStack>
-
+              />
+            }
+          >
             {report.cancellationReasons.length === 0 ? (
               <VStack className="ad-empty" gap={2}>
-                <EmptyState
+                <EmptyStateCard
+                  framed={false}
                   isCompact
                   title="Sin cancelaciones en este período"
                   description="No hubo citas canceladas en estas fechas."
@@ -357,7 +267,7 @@ export default function AdminReportsPage() {
                 ))}
               </VStack>
             )}
-          </VStack>
+          </SurfaceCard>
         </VStack>
       ) : null}
     </VStack>

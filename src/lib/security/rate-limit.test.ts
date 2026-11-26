@@ -81,7 +81,24 @@ describe('Sliding-window rate limiter', () => {
     expect(afterSlide.remaining).toBe(0);
   });
 
-  it('extracts client IP safely from proxy headers and falls back to unknown', () => {
+  it('extracts client IP prioritizing cf-connecting-ip over x-real-ip and x-forwarded-for (SEC-04)', () => {
+    const cfWinsReq = new Request('http://localhost:3000/api/bookings', {
+      headers: {
+        'x-forwarded-for': '203.0.113.99, 10.0.0.1',
+        'x-real-ip': '203.0.113.88',
+        'cf-connecting-ip': '198.51.100.42',
+      },
+    });
+    expect(getRequestIp(cfWinsReq)).toBe('198.51.100.42');
+
+    const realIpWinsReq = new Request('http://localhost:3000/api/bookings', {
+      headers: {
+        'x-forwarded-for': '203.0.113.99, 10.0.0.1',
+        'x-real-ip': '198.51.100.8',
+      },
+    });
+    expect(getRequestIp(realIpWinsReq)).toBe('198.51.100.8');
+
     const forwardedReq = new Request('http://localhost:3000/api/bookings', {
       headers: { 'x-forwarded-for': '198.51.100.7, 10.0.0.1' },
     });

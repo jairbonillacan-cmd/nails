@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { ValidateCouponSchema } from '@/lib/contracts';
 import { validateCouponCode } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
-
-const schema = z.object({
-  code: z.string().min(1),
-  subtotalCents: z.number().int().nonnegative(),
-});
 
 export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
@@ -33,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = schema.parse(await request.json());
+    const body = ValidateCouponSchema.parse(await request.json());
     const result = validateCouponCode(body.code, body.subtotalCents);
     if (!result.valid) {
       return NextResponse.json(

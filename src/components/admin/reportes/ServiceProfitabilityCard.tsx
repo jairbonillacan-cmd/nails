@@ -2,9 +2,8 @@
 
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
+import { EmptyStateCard, SurfaceCard } from '@/components/ui';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import type { ServiceProfitabilityRow } from '@/lib/analytics/reports';
 
@@ -23,36 +22,15 @@ export function ServiceProfitabilityCard({
   );
 
   return (
-    <VStack
-      as="section"
-      className="ad-surface"
-      gap={0}
-      aria-labelledby="reports-profitability-heading"
+    <SurfaceCard
+      id="reports-profitability-heading"
+      title="Servicios más rentables"
+      subtitle="Cuánto genera cada servicio por minuto trabajado, de mayor a menor."
     >
-      <HStack
-        className="ad-section-head"
-        justify="between"
-        align="center"
-        wrap="wrap"
-        gap={2}
-      >
-        <VStack gap={0.5} className="rb-grow">
-          <Heading
-            level={2}
-            id="reports-profitability-heading"
-            className="lk-serif ad-h2"
-          >
-            Servicios más rentables
-          </Heading>
-          <Text type="supporting" color="secondary">
-            Cuánto genera cada servicio por minuto trabajado, de mayor a menor.
-          </Text>
-        </VStack>
-      </HStack>
-
       {rows.length === 0 ? (
         <VStack className="ad-empty" gap={2}>
-          <EmptyState
+          <EmptyStateCard
+            framed={false}
             isCompact
             title="Sin servicios en estas fechas"
             description="Cuando completes citas, aquí verás qué servicios te dejan más por minuto."
@@ -132,6 +110,6 @@ export function ServiceProfitabilityCard({
           })}
         </VStack>
       )}
-    </VStack>
+    </SurfaceCard>
   );
 }

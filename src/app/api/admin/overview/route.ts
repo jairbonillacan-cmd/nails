@@ -6,6 +6,10 @@ import { getDateKeyInTimezone } from '@/lib/format';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
 import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import {
+  toAdminCalendarConnectionDTO,
+  toAdminSettingsDTO,
+} from '@/lib/public-dto';
+import {
   getBookingsWithRelations,
   getNearRewardClients,
   getSnapshot,
@@ -16,6 +20,15 @@ import type { PaymentSplit } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
+function scopeByStaff<T extends { staffId: string | null }>(
+  items: readonly T[],
+  isSpecialist: boolean,
+  ownStaffId: string | null,
+): T[] {
+  if (!isSpecialist) return [...items];
+  return ownStaffId ? items.filter((item) => item.staffId === ownStaffId) : [];
+}
+
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
@@ -24,8 +37,10 @@ export async function GET(request: NextRequest) {
 
   const db = getSnapshot();
   const integration = getRuntimeIntegrationStatus();
+  const isSpecialist = session.user.role === 'specialist';
+  const ownStaffId = isSpecialist ? session.user.staffMemberId : null;
   const bookings =
-    session.user.role === 'specialist' && !session.user.staffMemberId
+    isSpecialist && !ownStaffId
       ? []
       : getBookingsWithRelations(session.user.role, session.user.staffMemberId);
 
@@ -45,13 +60,7 @@ export async function GET(request: NextRequest) {
   const completedCount = bookings.filter((b) => b.status === 'completed').length;
   const noShowCount = bookings.filter((b) => b.status === 'no_show').length;
 
-  const cashEntries =
-    session.user.role === 'specialist'
-      ? session.user.staffMemberId
-        ? db.cashEntries.filter((c) => c.staffId === session.user.staffMemberId)
-        : []
-      : db.cashEntries;
-
+  const cashEntries = scopeByStaff(db.cashEntries, isSpecialist, ownStaffId);
   const totalRevenueCents = cashEntries
     .filter((c) => c.entryType !== 'expense')
     .reduce((sum, c) => sum + c.amountCents, 0);
@@ -60,14 +69,53 @@ export async function GET(request: NextRequest) {
     .filter((c) => c.entryType === 'expense')
     .reduce((sum, c) => sum + Math.abs(c.amountCents), 0);
 
-  const lowStockItems = db.inventory.filter(
+  const visibleBookingIds = new Set(bookings.map((b) => b.id));
+  const visibleClientIds = new Set(bookings.map((b) => b.clientId));
+
+  const scopedStaff = isSpecialist
+    ? ownStaffId
+      ? db.staff.filter((s) => s.id === ownStaffId)
+      : []
+    : db.staff;
+  const scopedSchedules = scopeByStaff(db.schedules, isSpecialist, ownStaffId);
+  const scopedDateOverrides = scopeByStaff(db.dateOverrides, isSpecialist, ownStaffId);
+  const scopedCalendarConnections = scopeByStaff(
+    db.calendarConnections,
+    isSpecialist,
+    ownStaffId,
+  ).map(toAdminCalendarConnectionDTO);
+  const scopedClients = isSpecialist
+    ? db.clients.filter((c) => visibleClientIds.has(c.id))
+    : db.clients;
+  const scopedReviews = isSpecialist
+    ? db.reviews.filter(
+        (r) =>
+          (ownStaffId !== null && r.staffId === ownStaffId) ||
+          (r.staffId === null && visibleBookingIds.has(r.bookingId)),
+      )
+    : db.reviews;
+  const scopedInventory = isSpecialist ? [] : db.inventory;
+  const scopedInventoryMovements = isSpecialist
+    ? []
+    : db.inventoryMovements.slice(0, 40);
+  const scopedWaitlist = isSpecialist ? [] : db.waitlist;
+  const scopedCoupons = isSpecialist ? [] : db.coupons;
+  const scopedWorkflows = isSpecialist ? [] : db.workflows;
+  const scopedAdminUsers = isSpecialist ? [] : db.adminUsers;
+  const scopedNotifications = (
+    isSpecialist
+      ? db.notifications.filter((n) => visibleBookingIds.has(n.bookingId))
+      : db.notifications
+  ).slice(0, 60);
+
+  const lowStockItems = scopedInventory.filter(
     (i) => i.isActive && i.stockQuantity <= i.minStockAlert,
   );
   const avgRating =
-    db.reviews.length > 0
+    scopedReviews.length > 0
       ? Number(
           (
-            db.reviews.reduce((sum, r) => sum + r.rating, 0) / db.reviews.length
+            scopedReviews.reduce((sum, r) => sum + r.rating, 0) / scopedReviews.length
           ).toFixed(1),
         )
       : 5.0;
@@ -89,7 +137,7 @@ export async function GET(request: NextRequest) {
       id: 'staff-schedules',
       label: 'Define los horarios fijos de tus especialistas',
       href: '/admin/disponibilidad',
-      done: db.schedules.some((sc) => sc.rules.length > 0),
+      done: scopedSchedules.some((sc) => sc.rules.length > 0),
     },
     {
       id: 'deposit-bank',
@@ -107,7 +155,7 @@ export async function GET(request: NextRequest) {
       id: 'first-booking',
       label: 'Registra o recibe tu primera cita en agenda',
       href: '/admin/citas',
-      done: db.bookings.length > 0,
+      done: bookings.length > 0,
     },
   ];
 
@@ -170,24 +218,13 @@ export async function GET(request: NextRequest) {
   }
 
   let returningClientsCount = 0;
-  const inactiveClientsUnsorted: Array<{
-    clientId: string;
-    fullName: string;
-    phoneE164: string;
-    instagramHandle: string | null;
-    lastVisitAt: string;
-    daysSinceLastVisit: number;
-    totalVisits: number;
-  }> = [];
-
+  const inactiveClientsUnsorted = [];
   for (const [clientId, stat] of clientVisitStats.entries()) {
-    if (stat.totalVisits >= 2) {
-      returningClientsCount += 1;
-    }
+    if (stat.totalVisits >= 2) returningClientsCount += 1;
     if (stat.lastPastVisitMs !== null && !stat.hasUpcoming) {
       const daysSinceLastVisit = Math.floor((nowMs - stat.lastPastVisitMs) / 86_400_000);
       if (daysSinceLastVisit >= 30) {
-        const client = db.clients.find((c) => c.id === clientId);
+        const client = scopedClients.find((c) => c.id === clientId);
         if (client) {
           inactiveClientsUnsorted.push({
             clientId: client.id,
@@ -210,11 +247,9 @@ export async function GET(request: NextRequest) {
     ),
   };
 
-  const visibleBookingIds = new Set(bookings.map((b) => b.id));
-  const visibleClientIds = new Set(bookings.map((b) => b.clientId));
-  const allPaymentSplits = db.paymentSplits ?? [];
-  const paymentSplits = allPaymentSplits.filter((s) => visibleBookingIds.has(s.bookingId));
-
+  const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
+    visibleBookingIds.has(s.bookingId),
+  );
   const splitsByBookingId = new Map<string, PaymentSplit[]>();
   for (const split of paymentSplits) {
     const list = splitsByBookingId.get(split.bookingId) ?? [];
@@ -222,24 +257,7 @@ export async function GET(request: NextRequest) {
     splitsByBookingId.set(split.bookingId, list);
   }
 
-  const uncollectedUnsorted: Array<{
-    bookingId: string;
-    bookingCode: string;
-    status: string;
-    clientId: string;
-    clientName: string;
-    clientPhone: string;
-    clientInstagram: string | null;
-    serviceName: string;
-    staffId: string;
-    staffName: string;
-    startAt: string;
-    endAt: string;
-    totalPriceCents: number;
-    paidCents: number;
-    remainingCents: number;
-  }> = [];
-
+  const uncollectedUnsorted = [];
   for (const b of bookings) {
     const isPastActive =
       isActiveBookingStatus(b.status) && new Date(b.endAt).getTime() < nowMs;
@@ -271,29 +289,20 @@ export async function GET(request: NextRequest) {
   const uncollectedBookings = uncollectedUnsorted.toSorted(
     (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
   );
-
-  const allRecurringBlocks = db.recurringBlocks ?? [];
-  const recurringBlocks =
-    session.user.role === 'specialist'
-      ? session.user.staffMemberId
-        ? allRecurringBlocks.filter((r) => r.staffId === session.user.staffMemberId)
-        : []
-      : allRecurringBlocks;
+  const recurringBlocks = scopeByStaff(db.recurringBlocks ?? [], isSpecialist, ownStaffId);
 
   const loyaltyPrograms = db.loyaltyPrograms ?? [];
   const loyaltyProgram =
     loyaltyPrograms.find((p) => p.isActive) ?? loyaltyPrograms[0] ?? null;
   const allLoyaltyStamps = db.loyaltyStamps ?? [];
-  const loyaltyStamps =
-    session.user.role === 'specialist'
-      ? allLoyaltyStamps.filter((st) => visibleClientIds.has(st.clientId))
-      : allLoyaltyStamps;
+  const loyaltyStamps = isSpecialist
+    ? allLoyaltyStamps.filter((st) => visibleClientIds.has(st.clientId))
+    : allLoyaltyStamps;
 
   const allNearRewardClients = getNearRewardClients();
-  const nearRewardClients =
-    session.user.role === 'specialist'
-      ? allNearRewardClients.filter((c) => visibleClientIds.has(c.clientId))
-      : allNearRewardClients;
+  const nearRewardClients = isSpecialist
+    ? allNearRewardClients.filter((c) => visibleClientIds.has(c.clientId))
+    : allNearRewardClients;
 
   const recentAuditLogs =
     session.user.role === 'owner' ? (db.auditLogs ?? []).slice(0, 50) : [];
@@ -301,15 +310,23 @@ export async function GET(request: NextRequest) {
   const whatsappMonthKey = getWhatsAppMonthKey(now, tz);
   const [whatsappUsage, whatsappTemplates] = await Promise.all([
     getWhatsAppMonthlyUsage(whatsappMonthKey),
-    getWhatsAppTemplates(),
+    isSpecialist ? Promise.resolve([]) : getWhatsAppTemplates(),
   ]);
+
+  const baseSettings = toAdminSettingsDTO(db.settings);
+  const safeSettings = isSpecialist
+    ? {
+        ...baseSettings,
+        defaultCommissionPercent: scopedStaff[0]?.commissionPercent ?? 0,
+      }
+    : baseSettings;
 
   return NextResponse.json({
     session,
     integration,
     serverNowIso: now.toISOString(),
     serverTodayKey: todayKey,
-    settings: db.settings,
+    settings: safeSettings,
     kpis: {
       todayBookingsCount: todayBookings.length,
       pendingConfirmationsCount: pendingConfirmations.length,
@@ -318,13 +335,13 @@ export async function GET(request: NextRequest) {
       totalExpensesCents,
       netCashCents: totalRevenueCents - totalExpensesCents,
       lowStockCount: lowStockItems.length,
-      waitlistCount: db.waitlist.filter((w) => w.status === 'waiting').length,
+      waitlistCount: scopedWaitlist.filter((w) => w.status === 'waiting').length,
       noShowRatePercent:
         completedCount + noShowCount > 0
           ? Math.round((noShowCount / (completedCount + noShowCount)) * 100)
           : 0,
       avgRating,
-      reviewsCount: db.reviews.length,
+      reviewsCount: scopedReviews.length,
     },
     onboardingChecklist,
     pendingDeposits,
@@ -340,20 +357,20 @@ export async function GET(request: NextRequest) {
     services: db.services,
     categories: db.categories,
     addons: db.addons,
-    staff: db.staff,
-    adminUsers: db.adminUsers,
-    schedules: db.schedules,
-    dateOverrides: db.dateOverrides,
-    calendarConnections: db.calendarConnections,
-    clients: db.clients,
-    workflows: db.workflows,
-    notifications: db.notifications.slice(0, 60),
+    staff: scopedStaff,
+    adminUsers: scopedAdminUsers,
+    schedules: scopedSchedules,
+    dateOverrides: scopedDateOverrides,
+    calendarConnections: scopedCalendarConnections,
+    clients: scopedClients,
+    workflows: scopedWorkflows,
+    notifications: scopedNotifications,
     gallery: db.gallery,
-    coupons: db.coupons,
-    waitlist: db.waitlist,
-    reviews: db.reviews,
-    inventory: db.inventory,
-    inventoryMovements: db.inventoryMovements.slice(0, 40),
+    coupons: scopedCoupons,
+    waitlist: scopedWaitlist,
+    reviews: scopedReviews,
+    inventory: scopedInventory,
+    inventoryMovements: scopedInventoryMovements,
     cashEntries,
     whatsappUsage,
     whatsappTemplates,

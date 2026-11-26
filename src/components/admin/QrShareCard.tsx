@@ -5,12 +5,13 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
-import { Check, Copy, Download, ExternalLink, QrCode } from 'lucide-react';
+import { Check, Download, ExternalLink, QrCode } from 'lucide-react';
 import {
-  AdminConfigChip,
-  AdminConfigSection,
-} from '@/components/admin/config/AdminConfigPrimitives';
+  CopyableField,
+  FilterPillBar,
+  StatusTag,
+  SurfaceCard,
+} from '@/components/ui';
 import { generateQrSvg } from '@/lib/qr';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 
@@ -20,6 +21,11 @@ interface QrShareCardProps {
 }
 
 type QrTargetMode = 'reservar' | 'links';
+
+const QR_TARGET_OPTIONS = [
+  { value: 'reservar' as const, label: 'Agenda de citas' },
+  { value: 'links' as const, label: 'Links de Instagram' },
+];
 
 function sanitizeFilenameSegment(value: string): string {
   const cleaned = value
@@ -31,7 +37,7 @@ function sanitizeFilenameSegment(value: string): string {
 
 export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
   const [target, setTarget] = useState<QrTargetMode>('reservar');
-  const [lastAction, setLastAction] = useState<'copy' | 'svg' | 'png' | null>(null);
+  const [lastAction, setLastAction] = useState<'svg' | 'png' | null>(null);
   const feedback = useEphemeralMessage(2600);
 
   const baseOrigin = (
@@ -104,49 +110,37 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
     img.src = svgDataUri;
   };
 
-  const handleCopyUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(targetUrl);
-      setLastAction('copy');
-      feedback.show('Link de reservas copiado.');
-    } catch {
-      feedback.show(`Copia manualmente: ${targetUrl}`);
-    }
-  };
-
-  const isCopyActive = lastAction === 'copy' && Boolean(feedback.message);
   const isSvgActive = lastAction === 'svg' && Boolean(feedback.message);
   const isPngActive = lastAction === 'png' && Boolean(feedback.message);
 
   return (
-    <AdminConfigSection
+    <SurfaceCard
       id="qr-share-heading"
       icon={<QrCode size={16} aria-hidden="true" />}
       title="Link de reservas y QR para el mostrador"
       subtitle="Compártelo por Instagram o imprímelo para tu espejo, mesa o tarjetas."
       badge={
-        <AdminConfigChip
+        <StatusTag
           label={target === 'links' ? 'Página de enlaces' : 'Agenda directa'}
           tone="accent"
         />
       }
       footer={
         <Text type="supporting" color="secondary" role="status" aria-live="polite">
-          {feedback.message ?? 'Se escanea con la cámara de cualquier celular, sin descargar apps.'}
+          {feedback.message ??
+            'Se escanea con la cámara de cualquier celular, sin descargar apps.'}
         </Text>
       }
     >
       <VStack gap={4} className="ad-card-body" paddingBlockStart={4}>
-        <SegmentedControl
-          label="A dónde lleva el código QR"
+        <FilterPillBar
+          ariaLabel="A dónde lleva el código QR"
+          mode="segmented"
           layout="fill"
-          size="sm"
           value={target}
-          onChange={(val) => setTarget(val === 'links' ? 'links' : 'reservar')}
-        >
-          <SegmentedControlItem value="reservar" label="Agenda de citas" />
-          <SegmentedControlItem value="links" label="Links de Instagram" />
-        </SegmentedControl>
+          options={QR_TARGET_OPTIONS}
+          onChange={setTarget}
+        />
 
         <VStack className="ad-subpanel" gap={3} align="center">
           <VStack className="ad-qr-stage" align="center" justify="center">
@@ -163,30 +157,22 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
               }}
             />
           </VStack>
-          <Text className="ad-code-pill" color="secondary">
-            {targetUrl}
-          </Text>
+
+          <CopyableField
+            label="Link para compartir"
+            value={targetUrl}
+            copyLabel="Copiar link"
+            copiedLabel="Link copiado"
+            feedbackMessage="Link de reservas copiado."
+            monospace
+          />
         </VStack>
 
         <HStack gap={2} wrap="wrap">
           <Button
             type="button"
-            label={isCopyActive ? 'Link copiado' : 'Copiar link'}
-            variant="primary"
-            size="sm"
-            icon={
-              isCopyActive ? (
-                <Check size={14} aria-hidden="true" className="fx-pop" />
-              ) : (
-                <Copy size={14} aria-hidden="true" />
-              )
-            }
-            onClick={() => void handleCopyUrl()}
-          />
-          <Button
-            type="button"
             label={isPngActive ? 'Imagen lista' : 'Descargar QR'}
-            variant="secondary"
+            variant="primary"
             size="sm"
             icon={
               isPngActive ? (
@@ -222,6 +208,6 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
           />
         </HStack>
       </VStack>
-    </AdminConfigSection>
+    </SurfaceCard>
   );
 }

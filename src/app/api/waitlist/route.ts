@@ -1,18 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { CreateWaitlistSchema } from '@/lib/contracts';
 import { addWaitlistEntry } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
-
-const schema = z.object({
-  serviceId: z.string().min(1),
-  preferredStaffId: z.string().nullable().optional(),
-  desiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  preferredWindow: z.enum(['morning', 'afternoon', 'any']).default('any'),
-  clientName: z.string().min(2),
-  clientPhoneE164: z.string().min(8),
-  clientEmail: z.string().email().optional().or(z.literal('')).nullable(),
-  notes: z.string().max(400).default(''),
-});
 
 export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
@@ -38,7 +27,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = schema.parse(await request.json());
+    const body = CreateWaitlistSchema.parse(await request.json());
     const entry = await addWaitlistEntry({
       ...body,
       preferredStaffId: body.preferredStaffId ?? null,

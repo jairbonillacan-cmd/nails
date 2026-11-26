@@ -1,0 +1,224 @@
+'use client';
+
+import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
+import { Badge } from '@astryxdesign/core/Badge';
+import { TabList, Tab } from '@astryxdesign/core/TabList';
+import { TextInput } from '@astryxdesign/core/TextInput';
+import { AlertTriangle, CalendarClock, List as ListIcon, Search } from 'lucide-react';
+import { FilterPillBar, StatusTag, SurfaceCard } from '@/components/ui';
+import type { BookingWithRelations, StaffMember } from '@/lib/types';
+
+export type AgendaRange = 'today' | 'tomorrow' | 'week';
+
+interface BookingsFiltersBarProps {
+  tab: string;
+  viewMode: 'schedule' | 'list';
+  agendaRange: AgendaRange;
+  selectedStaffFilter: string;
+  search: string;
+  pendingConfirmationsCount: number;
+  waitlistCount: number;
+  isDateRangeActive: boolean;
+  isTodaySelected: boolean;
+  isTomorrowSelected: boolean;
+  listCount: number;
+  isSpecialistOnly: boolean;
+  visibleStaff: StaffMember[];
+  allStaffColorIndex: ReadonlyMap<string, number>;
+  flaggedBookings: BookingWithRelations[];
+  noShowThreshold: number;
+  onChangeTab: (nextTab: string) => void;
+  onChangeSearch: (value: string) => void;
+  onChangeViewMode: (mode: 'schedule' | 'list') => void;
+  onSelectRange: (range: AgendaRange) => void;
+  onChangeStaffFilter: (staffId: string) => void;
+  onInspectFlaggedBooking: (bookingId: string) => void;
+}
+
+export function BookingsFiltersBar({
+  tab,
+  viewMode,
+  agendaRange,
+  selectedStaffFilter,
+  search,
+  pendingConfirmationsCount,
+  waitlistCount,
+  isDateRangeActive,
+  isTodaySelected,
+  isTomorrowSelected,
+  listCount,
+  isSpecialistOnly,
+  visibleStaff,
+  allStaffColorIndex,
+  flaggedBookings,
+  noShowThreshold,
+  onChangeTab,
+  onChangeSearch,
+  onChangeViewMode,
+  onSelectRange,
+  onChangeStaffFilter,
+  onInspectFlaggedBooking,
+}: BookingsFiltersBarProps) {
+  const activeRangeValue: AgendaRange | '' = isTodaySelected
+    ? 'today'
+    : isTomorrowSelected
+      ? 'tomorrow'
+      : agendaRange === 'week'
+        ? 'week'
+        : '';
+
+  return (
+    <VStack gap={3}>
+      {flaggedBookings.length > 0 && tab !== 'waitlist' ? (
+        <SurfaceCard tone="warning" padded>
+          <HStack justify="between" align="center" wrap="wrap" gap={2}>
+            <HStack gap={2} align="center" wrap="wrap" className="rb-grow">
+              <AlertTriangle size={15} aria-hidden="true" />
+              <Text size="sm" weight="semibold" hasTabularNumbers>
+                Atención: {flaggedBookings.length} cita
+                {flaggedBookings.length === 1 ? '' : 's'} de clientas con {noShowThreshold}+
+                inasistencias previas (anticipo obligatorio)
+              </Text>
+            </HStack>
+            <HStack gap={1.5} wrap="wrap">
+              {flaggedBookings.slice(0, 3).map((bk) => (
+                <Button
+                  key={bk.id}
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  label={`${bk.client.fullName} (${bk.client.noShowCount})`}
+                  onClick={() => onInspectFlaggedBooking(bk.id)}
+                />
+              ))}
+            </HStack>
+          </HStack>
+        </SurfaceCard>
+      ) : null}
+
+      <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={3}>
+        <TabList value={tab} onChange={onChangeTab}>
+          <Tab value="upcoming" label="Próximas" />
+          <Tab
+            value="unconfirmed"
+            label="Por confirmar"
+            endContent={
+              pendingConfirmationsCount > 0 ? (
+                <Badge variant="warning" label={String(pendingConfirmationsCount)} />
+              ) : undefined
+            }
+          />
+          <Tab value="past" label="Pasadas" />
+          <Tab value="canceled" label="Canceladas" />
+          <Tab
+            value="waitlist"
+            label="Lista de espera"
+            endContent={
+              waitlistCount > 0 ? (
+                <Badge variant="info" label={String(waitlistCount)} />
+              ) : undefined
+            }
+          />
+        </TabList>
+
+        <HStack gap={2} align="center" wrap="wrap">
+          <TextInput
+            type="search"
+            label="Buscar cita"
+            isLabelHidden
+            placeholder="Buscar clienta o código..."
+            startIcon={<Search size={14} aria-hidden="true" />}
+            size="sm"
+            width="min(16rem, 100%)"
+            hasClear
+            autoCapitalize="none"
+            hasAutoCorrect={false}
+            hasSpellCheck={false}
+            enterKeyHint="search"
+            value={search}
+            onChange={onChangeSearch}
+          />
+          {tab !== 'waitlist' ? (
+            <FilterPillBar<'schedule' | 'list'>
+              ariaLabel="Vista de agenda"
+              mode="segmented"
+              size="sm"
+              value={viewMode}
+              onChange={onChangeViewMode}
+              options={[
+                { value: 'schedule', label: 'Horario', icon: <CalendarClock size={14} aria-hidden="true" /> },
+                { value: 'list', label: 'Lista', icon: <ListIcon size={14} aria-hidden="true" /> },
+              ]}
+            />
+          ) : null}
+        </HStack>
+      </HStack>
+
+      {tab !== 'waitlist' ? (
+        <HStack justify="between" align="center" wrap="wrap" gap={2}>
+          {isDateRangeActive ? (
+            <FilterPillBar<AgendaRange | ''>
+              ariaLabel="Rango de fechas"
+              mode="pills"
+              size="sm"
+              value={activeRangeValue}
+              onChange={(next) => {
+                if (next === 'today' || next === 'tomorrow' || next === 'week') {
+                  onSelectRange(next);
+                }
+              }}
+              options={[
+                { value: 'today', label: 'Hoy' },
+                { value: 'tomorrow', label: 'Mañana' },
+                { value: 'week', label: 'Semana' },
+              ]}
+            />
+          ) : search.trim() ? (
+            <StatusTag label="Buscando en todas las fechas" tone="neutral" />
+          ) : (
+            <Text type="supporting" color="secondary" hasTabularNumbers>
+              {listCount} {listCount === 1 ? 'cita encontrada' : 'citas encontradas'}
+            </Text>
+          )}
+
+          {!isSpecialistOnly && visibleStaff.length > 1 ? (
+            <FilterPillBar<string>
+              ariaLabel="Filtrar por manicurista"
+              mode="pills"
+              size="sm"
+              value={selectedStaffFilter}
+              onChange={onChangeStaffFilter}
+              options={[
+                {
+                  value: 'all',
+                  label: 'Todas',
+                  icon: (
+                    <Text className="ad-dot" data-idx="all" aria-hidden="true">
+                      {'\u200B'}
+                    </Text>
+                  ),
+                },
+                ...visibleStaff.map((st) => ({
+                  value: st.id,
+                  label: st.name,
+                  icon: (
+                    <Text
+                      className="ad-dot"
+                      data-idx={String(allStaffColorIndex.get(st.id) ?? 0)}
+                      aria-hidden="true"
+                    >
+                      {'\u200B'}
+                    </Text>
+                  ),
+                })),
+              ]}
+            />
+          ) : null}
+        </HStack>
+      ) : null}
+    </VStack>
+  );
+}

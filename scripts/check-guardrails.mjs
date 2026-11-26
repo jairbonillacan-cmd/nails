@@ -179,6 +179,7 @@ function isTestFile(rel) {
 function isPureDomainFile(rel) {
   return (
     PURE_DOMAIN_FILES.has(rel) ||
+    rel.startsWith('src/lib/contracts/') ||
     rel.startsWith('src/lib/availability/') ||
     rel.startsWith('src/lib/booking/') ||
     rel.startsWith('src/lib/loyalty/') ||
@@ -1108,6 +1109,7 @@ export function checkSourceText(rawRel, text) {
   const isClockFile = rel === 'src/lib/clock.ts';
   const isPublicUiDtoBoundary = isPublicUiDtoBoundaryFile(rel);
   const isPublicBookingsRoute = rel === 'src/app/api/bookings/route.ts';
+  const isBookingContractsFile = rel === 'src/lib/contracts/bookings.ts';
   const isNotificationsFile = rel === 'src/lib/integrations/notifications.ts';
   const hasCsvContentType = !testFile && text.toLowerCase().includes('text/csv');
 
@@ -1240,6 +1242,49 @@ export function checkSourceText(rawRel, text) {
           `Campo interno "${node.text}" prohibido en UI pública (${rel}). Usa PublicStaffDTO / PublicSettingsDTO.`,
         );
       }
+    }
+
+    if (
+      isBookingContractsFile &&
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'PublicCreateBookingSchema' &&
+      node.initializer
+    ) {
+      function scanPublicContract(inner) {
+        if (ts.isCallExpression(inner)) {
+          const method = getCalleeMethodName(inner.expression);
+          const firstArg = inner.arguments[0] ? unwrapExpression(inner.arguments[0]) : null;
+          if (
+            method &&
+            ZOD_OBJECT_METHODS.has(method) &&
+            firstArg &&
+            ts.isObjectLiteralExpression(firstArg)
+          ) {
+            for (const prop of firstArg.properties) {
+              if (
+                ts.isPropertyAssignment(prop) ||
+                ts.isShorthandPropertyAssignment(prop) ||
+                ts.isMethodDeclaration(prop)
+              ) {
+                const propName = getPropertyNameText(prop.name);
+                if (propName && PRIVILEGED_PUBLIC_BOOKING_FIELDS.has(propName)) {
+                  const { line, col } = getLineCol(sf, prop.name.getStart(sf));
+                  addViolation(
+                    rel,
+                    line,
+                    col,
+                    'no-privileged-public-fields',
+                    `Campo privilegiado "${propName}" prohibido en PublicCreateBookingSchema.`,
+                  );
+                }
+              }
+            }
+          }
+        }
+        ts.forEachChild(inner, scanPublicContract);
+      }
+      scanPublicContract(node.initializer);
     }
 
     if (isPublicBookingsRoute && ts.isCallExpression(node)) {

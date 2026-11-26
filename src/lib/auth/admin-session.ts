@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
+import { AdminRoleSchema } from '@/lib/contracts';
 import { getSnapshot } from '../repositories/db';
 import {
   createSupabaseAdminClient,
@@ -25,7 +26,7 @@ const adminSessionPayloadSchema = z.object({
   v: z.literal(1),
   sub: z.string().min(1),
   email: z.string().email(),
-  role: z.enum(['owner', 'admin', 'specialist']),
+  role: AdminRoleSchema,
   exp: z.number().int().positive(),
 });
 
@@ -41,7 +42,7 @@ const supabaseAdminUserRowSchema = z.object({
   id: z.string().min(1),
   email: z.string().email(),
   full_name: z.string(),
-  role: z.enum(['owner', 'admin', 'specialist']),
+  role: AdminRoleSchema,
   staff_member_id: z.string().nullable(),
   is_active: z.boolean(),
   created_at: z.string(),

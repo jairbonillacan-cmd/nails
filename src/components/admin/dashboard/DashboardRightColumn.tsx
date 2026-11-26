@@ -1,25 +1,20 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { List, ListItem } from '@astryxdesign/core/List';
-import { Badge } from '@astryxdesign/core/Badge';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { CheckCircle2, Circle, Copy, Download, QrCode } from 'lucide-react';
+import { CheckCircle2, Circle } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
-import { generateQrSvg } from '@/lib/qr';
 import { roleCanAccess } from '@/lib/rbac';
-import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
-import { LANDING_ASSETS } from '../../landing/landingContent';
+import { StatusTag, SurfaceCard } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
-import { getDisplayBookingUrl, type DashboardMetrics } from './dashboardMetrics';
+import type { DashboardMetrics } from './dashboardMetrics';
+import { DashboardShareCard } from './DashboardShareCard';
 
 interface DashboardRightColumnProps {
   data: AdminOverviewPayload;
@@ -27,82 +22,13 @@ interface DashboardRightColumnProps {
 }
 
 export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProps) {
-  const shareFeedback = useEphemeralMessage(2400);
-  const lastFeedbackRef = useRef('');
-  const [qrOpen, setQrOpen] = useState(false);
   const { settings, onboardingChecklist, nearRewardClients, retention } = data;
   const role = data.session.user.role;
   const currency = settings.currency;
-  const bookingDisplayUrl = getDisplayBookingUrl(data.integration.appUrl);
 
   const checklistComplete =
     onboardingChecklist.completedCount >= onboardingChecklist.totalCount;
   const nextStep = onboardingChecklist.steps.find((step) => !step.done) ?? null;
-
-  const announce = (raw: string) => {
-    let message = raw;
-    if (message === lastFeedbackRef.current) message += '\u00A0';
-    lastFeedbackRef.current = message;
-    shareFeedback.show(message);
-  };
-
-  const getPublicUrl = (suffix: '/reservar' | '/links') =>
-    typeof window !== 'undefined'
-      ? `${window.location.origin}${suffix}`
-      : `${data.integration.appUrl.replace(/\/+$/, '')}${suffix}`;
-
-  const qrTargetUrl = getPublicUrl('/reservar');
-  const qrSvgMarkup = useMemo(
-    () => (qrOpen ? generateQrSvg(qrTargetUrl, `Código QR para agendar en ${settings.name}`) : ''),
-    [qrOpen, qrTargetUrl, settings.name],
-  );
-  const qrDataUri = useMemo(
-    () => (qrSvgMarkup ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrSvgMarkup)}` : ''),
-    [qrSvgMarkup],
-  );
-
-  const handleDownloadQrSvg = () => {
-    if (!qrSvgMarkup) return;
-    const blob = new Blob([qrSvgMarkup], { type: 'image/svg+xml;charset=utf-8' });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = 'qr-reservas.svg';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(objectUrl);
-    announce('Código QR descargado');
-  };
-
-  const handleCopyBookingLink = async () => {
-    try {
-      await navigator.clipboard.writeText(getPublicUrl('/reservar'));
-      announce('¡Link de reservas copiado!');
-    } catch {
-      announce('Copia manualmente /reservar');
-    }
-  };
-
-  const handleShareBookingLink = async () => {
-    const url = getPublicUrl('/reservar');
-    const text = `Reserva tu cita en ${settings.name} en segundos:`;
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: settings.name, text, url });
-        announce('Página compartida');
-        return;
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(`${text} ${url}`);
-      announce('¡Enlace listo para WhatsApp o IG!');
-    } catch {
-      announce('Abre /reservar para compartir');
-    }
-  };
 
   const cashRows = [
     {
@@ -128,232 +54,97 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
 
   return (
     <VStack gap={5} className="ad-right-col">
-      <VStack as="section" className="ad-cherry-card" aria-labelledby="ad-pg" gap={3}>
-        <img
-          src={LANDING_ASSETS.cherriesWhite}
-          alt=""
-          width={170}
-          height={170}
-          className="ad-cherry-art"
-          aria-hidden="true"
-        />
-
-        <HStack gap={2} align="center" className="ad-cherry-layer">
-          <Text className="ad-live-dot fx-pulse-dot" aria-hidden="true">
-            {'\u200B'}
-          </Text>
-          <Text color="inherit" weight="bold" size="sm" className="ad-live-label">
-            EN VIVO
-          </Text>
-        </HStack>
-
-        <Heading level={2} id="ad-pg" className="lk-serif ad-cherry-title ad-cherry-layer">
-          Tu página de reservas
-        </Heading>
-
-        <Text color="inherit" className="ad-cherry-desc ad-cherry-layer" textWrap="pretty">
-          Compártela en {settings.instagramHandle || 'Instagram'} y WhatsApp para que tus clientas
-          agenden con anticipo.
-        </Text>
-
-        <HStack
-          justify="between"
-          align="center"
-          gap={2}
-          className="ad-cherry-link ad-cherry-layer"
-        >
-          <Text color="inherit" weight="semibold" size="sm" className="ad-link-url">
-            {bookingDisplayUrl}
-          </Text>
-          <button
-            type="button"
-            className="ad-cherry-copy fx-press"
-            onClick={() => void handleCopyBookingLink()}
-          >
-            {shareFeedback.message ? '¡Copiado!' : 'Copiar'}
-          </button>
-        </HStack>
-
-        <Text
-          type="supporting"
-          color="inherit"
-          role="status"
-          aria-live="polite"
-          className="rb-sr-only"
-        >
-          {shareFeedback.message ?? ''}
-        </Text>
-
-        <HStack gap={2} wrap="wrap" className="ad-cherry-layer">
-          <NextLink
-            href="/reservar"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ad-cherry-chip fx-press"
-          >
-            Ver página
-          </NextLink>
-          <NextLink
-            href="/links"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ad-cherry-chip fx-press"
-          >
-            Link para Instagram
-          </NextLink>
-          <button
-            type="button"
-            className="ad-cherry-chip fx-press"
-            onClick={() => setQrOpen(true)}
-          >
-            <QrCode size={13} aria-hidden="true" />
-            <Text color="inherit" size="sm" weight="semibold">
-              Código QR
-            </Text>
-          </button>
-          <button
-            type="button"
-            className="ad-cherry-chip fx-press"
-            onClick={() => void handleShareBookingLink()}
-          >
-            Compartir
-          </button>
-        </HStack>
-      </VStack>
-
-      <Dialog isOpen={qrOpen} onOpenChange={setQrOpen} width={440} padding={5}>
-        <VStack gap={4}>
-          <DialogHeader
-            title="Código QR de tu salón"
-            subtitle="Muéstralo en mostrador o descárgalo para que tus clientas agenden con su cámara."
-            onOpenChange={setQrOpen}
-          />
-          <VStack className="ad-subpanel" gap={3} align="center">
-            {qrDataUri ? (
-              <VStack className="ad-qr-stage" align="center" justify="center">
-                <img
-                  src={qrDataUri}
-                  alt={`Código QR para agendar en ${settings.name}`}
-                  width={200}
-                  height={200}
-                  style={{
-                    display: 'block',
-                    maxWidth: '100%',
-                    height: 'auto',
-                    borderRadius: 'var(--radius-sm)',
-                  }}
-                />
-              </VStack>
-            ) : null}
-            <Text className="ad-code-pill" color="secondary">
-              {qrTargetUrl}
-            </Text>
-          </VStack>
-          <HStack gap={2} justify="end" wrap="wrap">
-            {roleCanAccess(role, 'brand') ? (
-              <Button label="Personalizar en Mi página" variant="ghost" size="sm" href="/admin/marca" />
-            ) : null}
-            <Button
-              type="button"
-              label="Copiar enlace"
-              variant="secondary"
-              size="sm"
-              icon={<Copy size={14} aria-hidden="true" />}
-              onClick={() => void handleCopyBookingLink()}
-            />
-            <Button
-              type="button"
-              label="Descargar QR"
-              variant="primary"
-              size="sm"
-              icon={<Download size={14} aria-hidden="true" />}
-              onClick={handleDownloadQrSvg}
-            />
-          </HStack>
-        </VStack>
-      </Dialog>
+      <DashboardShareCard
+        salonName={settings.name}
+        instagramHandle={settings.instagramHandle}
+        appUrl={data.integration.appUrl}
+        canCustomizeBrand={roleCanAccess(role, 'brand')}
+      />
 
       {!checklistComplete && nextStep ? (
-        <VStack as="section" className="ad-card ad-side-card" aria-labelledby="ad-setup" gap={3}>
-          <HStack justify="between" align="center" gap={2}>
-            <Heading level={2} id="ad-setup" className="lk-serif ad-h3">
-              Termina de configurar tu salón
-            </Heading>
+        <SurfaceCard
+          id="ad-setup"
+          title="Termina de configurar tu salón"
+          headingLevel={3}
+          padded
+          className="ad-card ad-side-card"
+          actions={
             <Text color="accent" weight="bold" size="sm" hasTabularNumbers>
               {onboardingChecklist.completedCount} de {onboardingChecklist.totalCount}
             </Text>
-          </HStack>
-
-          <ProgressBar
-            label="Pasos completados"
-            isLabelHidden
-            value={onboardingChecklist.completedCount}
-            max={onboardingChecklist.totalCount}
-            variant="accent"
-          />
-
-          <HStack justify="between" align="center" gap={3} wrap="wrap">
-            <Text size="sm" className="rb-grow">
-              <Text color="secondary" size="sm">
-                Falta:{' '}
+          }
+        >
+          <VStack gap={3}>
+            <ProgressBar
+              label="Pasos completados"
+              isLabelHidden
+              value={onboardingChecklist.completedCount}
+              max={onboardingChecklist.totalCount}
+              variant="accent"
+            />
+            <HStack justify="between" align="center" gap={3} wrap="wrap">
+              <Text size="sm" className="rb-grow">
+                <Text color="secondary" size="sm">
+                  Falta:{' '}
+                </Text>
+                {nextStep.label}
               </Text>
-              {nextStep.label}
-            </Text>
-            <Button label="Terminar →" variant="secondary" size="sm" href={nextStep.href} />
-          </HStack>
-
-          <Collapsible
-            defaultIsOpen={false}
-            trigger={
-              <Text type="supporting" color="secondary" weight="semibold">
-                Ver los {onboardingChecklist.totalCount} pasos
-              </Text>
-            }
-          >
-            <List hasDividers density="compact">
-              {onboardingChecklist.steps.map((step) => (
-                <ListItem
-                  key={step.id}
-                  label={step.label}
-                  href={step.href}
-                  startContent={
-                    step.done ? (
-                      <CheckCircle2 size={15} aria-hidden="true" />
-                    ) : (
-                      <Circle size={15} aria-hidden="true" />
-                    )
-                  }
-                  endContent={
-                    <Badge
-                      variant={step.done ? 'success' : 'neutral'}
-                      label={step.done ? 'Listo' : 'Pendiente'}
-                    />
-                  }
-                />
-              ))}
-            </List>
-          </Collapsible>
-        </VStack>
+              <Button label="Terminar →" variant="secondary" size="sm" href={nextStep.href} />
+            </HStack>
+            <Collapsible
+              defaultIsOpen={false}
+              trigger={
+                <Text type="supporting" color="secondary" weight="semibold">
+                  Ver los {onboardingChecklist.totalCount} pasos
+                </Text>
+              }
+            >
+              <List hasDividers density="compact">
+                {onboardingChecklist.steps.map((step) => (
+                  <ListItem
+                    key={step.id}
+                    label={step.label}
+                    href={step.href}
+                    startContent={
+                      step.done ? (
+                        <CheckCircle2 size={15} aria-hidden="true" />
+                      ) : (
+                        <Circle size={15} aria-hidden="true" />
+                      )
+                    }
+                    endContent={
+                      <StatusTag
+                        tone={step.done ? 'success' : 'neutral'}
+                        label={step.done ? 'Listo' : 'Pendiente'}
+                      />
+                    }
+                  />
+                ))}
+              </List>
+            </Collapsible>
+          </VStack>
+        </SurfaceCard>
       ) : null}
 
       {roleCanAccess(role, 'cash') ? (
-        <VStack as="section" className="ad-card ad-side-card" aria-labelledby="ad-caja" gap={3}>
-          <HStack justify="between" align="center" gap={2}>
-            <Heading level={2} id="ad-caja" className="lk-serif ad-h3">
-              Corte de hoy
-            </Heading>
+        <SurfaceCard
+          id="ad-caja"
+          title="Corte de hoy"
+          headingLevel={3}
+          padded
+          className="ad-card ad-side-card"
+          actions={
             <NextLink href="/admin/caja" className="ad-inline-link">
               Ir a Caja →
             </NextLink>
-          </HStack>
-
-          {!metrics.cash.hasTodayEntries && data.cashEntries.length > 0 ? (
-            <Text type="supporting" color="secondary">
-              Sin movimientos hoy · resumen registrado
-            </Text>
-          ) : null}
-
+          }
+        >
           <VStack gap={2}>
+            {!metrics.cash.hasTodayEntries && data.cashEntries.length > 0 ? (
+              <Text type="supporting" color="secondary">
+                Sin movimientos hoy · resumen registrado
+              </Text>
+            ) : null}
             {cashRows.map((row) => (
               <HStack key={row.label} justify="between" align="center" gap={2} className="ad-cash-row">
                 <Text color="secondary" size="sm">
@@ -365,19 +156,35 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
               </HStack>
             ))}
           </VStack>
-        </VStack>
+        </SurfaceCard>
       ) : null}
 
-      <VStack as="section" className="ad-card ad-side-card" aria-labelledby="ad-loy" gap={3}>
-        <HStack justify="between" align="center" gap={2}>
-          <Heading level={2} id="ad-loy" className="lk-serif ad-h3">
-            Cerca de su premio
-          </Heading>
+      <SurfaceCard
+        id="ad-loy"
+        title="Cerca de su premio"
+        headingLevel={3}
+        padded
+        className="ad-card ad-side-card"
+        actions={
           <Text type="supporting" color="secondary" hasTabularNumbers>
             {retention.returningClientsCount} que regresan
           </Text>
-        </HStack>
-
+        }
+        footer={
+          <>
+            {roleCanAccess(role, 'clients') ? (
+              <NextLink href="/admin/clientas" className="ad-inline-link">
+                Ver clientas →
+              </NextLink>
+            ) : null}
+            {roleCanAccess(role, 'team') ? (
+              <NextLink href="/admin/equipo" className="ad-inline-link-muted">
+                Equipo ({metrics.activeStaff.length}) →
+              </NextLink>
+            ) : null}
+          </>
+        }
+      >
         {nearRewardClients.length === 0 ? (
           <Text type="supporting" color="secondary">
             Cuando tus clientas acumulen sellos cerca del objetivo aparecerán aquí para recordarles
@@ -435,20 +242,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             })}
           </VStack>
         )}
-
-        <HStack justify="between" align="center" gap={2} wrap="wrap">
-          {roleCanAccess(role, 'clients') ? (
-            <NextLink href="/admin/clientas" className="ad-inline-link">
-              Ver clientas →
-            </NextLink>
-          ) : null}
-          {roleCanAccess(role, 'team') ? (
-            <NextLink href="/admin/equipo" className="ad-inline-link-muted">
-              Equipo ({metrics.activeStaff.length}) →
-            </NextLink>
-          ) : null}
-        </HStack>
-      </VStack>
+      </SurfaceCard>
     </VStack>
   );
 }

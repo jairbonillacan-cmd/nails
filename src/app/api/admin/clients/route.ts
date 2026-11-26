@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { CreateClientSchema, PatchClientSchema } from '@/lib/contracts';
 import {
   createClientProfile,
   getClientArcoExport,
@@ -10,25 +11,6 @@ import {
   PolicyError,
   updateClientNotes,
 } from '@/lib/repositories/db';
-
-const createClientSchema = z.object({
-  fullName: z.string().trim().min(2, 'Escribe el nombre completo').max(120),
-  phone: z.string().trim().min(8, 'Escribe un WhatsApp válido de 10 dígitos').max(30),
-  email: z.string().trim().email('Correo inválido').optional().or(z.literal('')).nullable(),
-  instagramHandle: z.string().max(120).optional().nullable(),
-  birthday: z.string().max(20).optional().nullable(),
-  technicalNotes: z.string().max(1000).optional(),
-  notes: z.string().max(1000).optional(),
-});
-
-const patchClientSchema = z.object({
-  clientId: z.string().min(1),
-  notes: z.string().max(1000).optional(),
-  technicalNotes: z.string().max(1000).optional(),
-  birthday: z.string().max(20).optional().nullable(),
-  email: z.string().trim().email('Correo inválido').optional().or(z.literal('')).nullable(),
-  instagramHandle: z.string().max(120).optional().nullable(),
-});
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -91,7 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = createClientSchema.parse(await request.json());
+    const parsed = CreateClientSchema.parse(await request.json());
     const client = await createClientProfile({
       fullName: parsed.fullName,
       phone: parsed.phone,
@@ -126,7 +108,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const parsed = patchClientSchema.parse(await request.json());
+    const parsed = PatchClientSchema.parse(await request.json());
     const client = await updateClientNotes({
       clientId: parsed.clientId,
       notes: parsed.technicalNotes ?? parsed.notes,

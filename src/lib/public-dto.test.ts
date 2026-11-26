@@ -9,6 +9,9 @@ import {
   PublicServiceDTOSchema,
   PublicSettingsDTOSchema,
   PublicStaffDTOSchema,
+  toAdminCalendarConnectionDTO,
+  toAdminSettingsDTO,
+  toPublicBookingDTO,
   toPublicClientPackageDTO,
   toPublicReviewDTO,
   toPublicServiceDTO,
@@ -228,5 +231,51 @@ describe('Public DTO schemas and mappers (S3)', () => {
     });
     expect('internalNotes' in portalParsed).toBe(false);
     expect('commissionPercent' in portalParsed).toBe(false);
+  });
+
+  it('toAdminSettingsDTO, toAdminCalendarConnectionDTO, and toPublicBookingDTO strip sensitive fields', () => {
+    const db = createInitialDemoDatabase();
+    const adminSettings = toAdminSettingsDTO({
+      ...db.settings,
+      ownerPinHash: 'scrypt$16384$8$1$salt$hash',
+      ownerPinEnabled: true,
+    });
+    expect('ownerPinHash' in adminSettings).toBe(false);
+    expect(JSON.stringify(adminSettings)).not.toContain('scrypt$');
+    expect(adminSettings.hasOwnerPin).toBe(true);
+    expect(adminSettings.ownerPinEnabled).toBe(true);
+
+    const conn = db.calendarConnections[0];
+    if (!conn) throw new Error('Expected calendar connection');
+    const adminConn = toAdminCalendarConnectionDTO({
+      ...conn,
+      accessTokenEncrypted: 'v1.enc-access',
+      refreshTokenEncrypted: 'v1.enc-refresh',
+    });
+    expect('accessTokenEncrypted' in adminConn).toBe(false);
+    expect('refreshTokenEncrypted' in adminConn).toBe(false);
+    expect(JSON.stringify(adminConn)).not.toContain('v1.enc-');
+
+    const booking = db.bookings[0];
+    const staff = db.staff.find((s) => s.id === booking?.staffId);
+    const service = db.services.find((s) => s.id === booking?.serviceId);
+    const client = db.clients.find((c) => c.id === booking?.clientId);
+    if (!booking || !staff || !service || !client) {
+      throw new Error('Expected seeded booking relations');
+    }
+    const pubBooking = toPublicBookingDTO(
+      {
+        ...booking,
+        internalNotes: 'Solo personal interno',
+        staff,
+        service,
+        client: { ...client, notes: 'Nota CRM privada' },
+      },
+      db.services,
+    );
+    expect(pubBooking.internalNotes).toBe('');
+    expect(pubBooking.client.notes).toBe('');
+    expect('commissionPercent' in pubBooking.staff).toBe(false);
+    expect('bufferBeforeMinutes' in pubBooking.service).toBe(false);
   });
 });

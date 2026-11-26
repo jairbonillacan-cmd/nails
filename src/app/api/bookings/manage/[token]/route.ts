@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { ManageBookingPatchSchema, SubmitReviewSchema } from '@/lib/contracts';
+import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { buildCalendarAddLinks } from '@/lib/ics';
+import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
+import { toPublicBookingDTO, toPublicSettingsDTO } from '@/lib/public-dto';
 import {
   getBookingByToken,
   getClientLoyaltySummary,
@@ -9,136 +14,163 @@ import {
   SlotConflictError,
   submitBookingReview,
 } from '@/lib/repositories/db';
-import { buildCalendarAddLinks } from '@/lib/ics';
-import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
-import { getRuntimeIntegrationStatus } from '@/lib/env';
-import {
-  toPublicServiceDTO,
-  toPublicSettingsDTO,
-  toPublicStaffDTO,
-  type PublicServiceDTO,
-} from '@/lib/public-dto';
-import type { BookingWithRelations, Service } from '@/lib/types';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-function resolveExtraPublicServices(
-  booking: BookingWithRelations,
-  allServices: readonly Service[],
-): PublicServiceDTO[] {
-  const extraIds = booking.extraServiceIds ?? [];
-  if (extraIds.length === 0) return [];
-  return extraIds
-    .filter((id) => id !== booking.serviceId)
-    .map((id) => allServices.find((srv) => srv.id === id))
-    .filter((srv): srv is Service => Boolean(srv))
-    .map(toPublicServiceDTO);
-}
-
-function toPublicManageBooking(
-  booking: BookingWithRelations,
-  allServices: readonly Service[],
-) {
-  return {
-    ...booking,
-    internalNotes: '',
-    staff: toPublicStaffDTO(booking.staff),
-    service: toPublicServiceDTO(booking.service),
-    extraServices: resolveExtraPublicServices(booking, allServices),
-  };
+function rateLimitedResponse(retryAfterSeconds: number): NextResponse {
+  return NextResponse.json(
+    {
+      code: 'RATE_LIMITED',
+      error: 'Demasiadas solicitudes en poco tiempo. Espera unos segundos e intenta de nuevo.',
+    },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfterSeconds),
+        'X-RateLimit-Remaining': '0',
+      },
+    },
+  );
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ token: string }> },
 ) {
+  const rate = checkRateLimit({
+    bucket: 'public:manage-read',
+    key: getRequestIp(request),
+    limit: 90,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return rateLimitedResponse(rate.retryAfterSeconds);
+  }
+
   const { token } = await context.params;
   const booking = getBookingByToken(token);
   if (!booking) {
-    return NextResponse.json({ error: 'Cita no encontrada' }, { status: 404 });
+    return NextResponse.json(
+      { error: 'Cita no encontrada' },
+      { status: 404, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
   }
   const db = getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
   const loyaltySummary = getClientLoyaltySummary(booking.clientId);
 
-  return NextResponse.json({
-    booking: toPublicManageBooking(booking, db.services),
-    settings: toPublicSettingsDTO(db.settings),
-    calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
-    whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
-    manageUrl,
-    loyaltySummary,
-  });
+  return NextResponse.json(
+    {
+      booking: toPublicBookingDTO(booking, db.services),
+      settings: toPublicSettingsDTO(db.settings),
+      calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
+      whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
+      manageUrl,
+      loyaltySummary,
+    },
+    { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+  );
 }
-
-const patchSchema = z.object({
-  action: z.enum(['cancel', 'reschedule', 'upload_proof']),
-  reason: z.string().max(400).optional(),
-  newStartAt: z.string().optional(),
-  newStaffId: z.string().optional(),
-  paymentProofUrl: z.string().max(4_000_000).optional(),
-});
 
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ token: string }> },
 ) {
+  const rate = checkRateLimit({
+    bucket: 'public:manage-write',
+    key: getRequestIp(request),
+    limit: 40,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return rateLimitedResponse(rate.retryAfterSeconds);
+  }
+
   try {
     const { token } = await context.params;
-    const body = patchSchema.parse(await request.json());
+    const body = ManageBookingPatchSchema.parse(await request.json());
     const booking = await manageClientBookingAction({ token, ...body });
     const db = getSnapshot();
     const env = getRuntimeIntegrationStatus();
     const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
-    return NextResponse.json({
-      booking: toPublicManageBooking(booking, db.services),
-      calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
-      whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
-      manageUrl,
-    });
+    return NextResponse.json(
+      {
+        booking: toPublicBookingDTO(booking, db.services),
+        calendarLinks: buildCalendarAddLinks(booking, db.settings, manageUrl),
+        whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
+        manageUrl,
+      },
+      { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
   } catch (err) {
     if (err instanceof SlotConflictError) {
       return NextResponse.json(
         { code: err.code, error: err.message, suggestedSlots: err.suggestedSlots },
-        { status: 409 },
+        { status: 409, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
       );
     }
     if (err instanceof PolicyError) {
-      return NextResponse.json({ code: err.code, error: err.message }, { status: 400 });
+      return NextResponse.json(
+        { code: err.code, error: err.message },
+        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      );
     }
-    return NextResponse.json({ error: 'No se pudo actualizar la cita' }, { status: 400 });
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: err.issues[0]?.message || 'Datos inválidos para actualizar la cita' },
+        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      );
+    }
+    return NextResponse.json(
+      { error: 'No se pudo actualizar la cita' },
+      { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
   }
 }
-
-const reviewSchema = z.object({
-  rating: z.union([
-    z.literal(1),
-    z.literal(2),
-    z.literal(3),
-    z.literal(4),
-    z.literal(5),
-  ]),
-  comment: z.string().max(600).default(''),
-  clickedGoogleReview: z.boolean().optional(),
-});
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ token: string }> },
 ) {
+  const rate = checkRateLimit({
+    bucket: 'public:manage-review',
+    key: getRequestIp(request),
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return rateLimitedResponse(rate.retryAfterSeconds);
+  }
+
   try {
     const { token } = await context.params;
-    const body = reviewSchema.parse(await request.json());
+    const body = SubmitReviewSchema.parse(await request.json());
     const review = await submitBookingReview({
       manageToken: token,
       ...body,
     });
-    return NextResponse.json({ review });
+    return NextResponse.json(
+      { review },
+      { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
   } catch (err) {
     if (err instanceof PolicyError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
+      return NextResponse.json(
+        { error: err.message },
+        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      );
     }
-    return NextResponse.json({ error: 'No se pudo guardar tu reseña' }, { status: 400 });
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: err.issues[0]?.message || 'Revisa los datos de tu reseña' },
+        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      );
+    }
+    return NextResponse.json(
+      { error: 'No se pudo guardar tu reseña' },
+      { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    );
   }
 }

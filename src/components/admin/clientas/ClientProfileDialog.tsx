@@ -12,7 +12,6 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
-import { Selector } from '@astryxdesign/core/Selector';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -22,8 +21,6 @@ import {
   Calendar,
   Download,
   MessageCircle,
-  Package,
-  PackageCheck,
   Shield,
 } from 'lucide-react';
 import {
@@ -32,17 +29,14 @@ import {
   formatTimeInTimezone,
 } from '@/lib/format';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
-import type {
-  BookingWithRelations,
-  ClientProfile,
-  ServicePackage,
-} from '@/lib/types';
+import type { BookingWithRelations, ClientProfile, ServicePackage } from '@/lib/types';
+import { ActionRow, BookingStatusTag, StatusTag, SurfaceCard } from '@/components/ui';
 import {
-  formatBookingStatusLabel,
   formatInstagramDisplay,
   formatInstagramUrl,
   type ClientPackageRow,
 } from './clientasTypes';
+import { ClientProfilePackagesSection } from './ClientProfilePackagesSection';
 
 type LoyaltySummary = ReturnType<typeof computeClientLoyaltySummary>;
 
@@ -95,7 +89,6 @@ export function ClientProfileDialog({
   const [birthdayDraft, setBirthdayDraft] = useState(client?.birthday ?? '');
   const [emailDraft, setEmailDraft] = useState(client?.email ?? '');
   const [instagramDraft, setInstagramDraft] = useState(client?.instagramHandle ?? '');
-  const [fichaPackageId, setFichaPackageId] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -106,7 +99,7 @@ export function ClientProfileDialog({
       .toSorted((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
   }, [bookings, client]);
 
-  const effectiveFichaPackageId = fichaPackageId || activeCatalogPackages[0]?.id || '';
+  const nonCanceledCount = clientVisits.filter((v) => v.status !== 'canceled').length;
 
   const handleSave = async () => {
     if (!client || savingEdit) return;
@@ -120,38 +113,22 @@ export function ClientProfileDialog({
         email: emailDraft.trim() || null,
         instagramHandle: instagramDraft.trim() || null,
       });
-      if (errorText) {
-        setEditError(errorText);
-      }
+      if (errorText) setEditError(errorText);
     } finally {
       setSavingEdit(false);
     }
   };
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open) onClose();
+  };
+
   return (
-    <Dialog
-      isOpen={Boolean(client)}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      width={540}
-      padding={5}
-    >
-      <DialogHeader
-        title="Ficha de clienta"
-        onOpenChange={(open) => {
-          if (!open) onClose();
-        }}
-      />
+    <Dialog isOpen={Boolean(client)} onOpenChange={handleOpenChange} width={540} padding={5}>
+      <DialogHeader title="Ficha de clienta" onOpenChange={handleOpenChange} />
       {client ? (
         <VStack gap={4} paddingBlockStart={3} className="fx-sheet-in">
-          <HStack
-            className="ad-contact-head"
-            justify="between"
-            align="center"
-            wrap="wrap"
-            gap={3}
-          >
+          <HStack className="ad-contact-head" justify="between" align="center" wrap="wrap" gap={3}>
             <HStack gap={3} align="center" className="rb-grow">
               <Avatar name={client.fullName} size="lg" />
               <VStack gap={0.5} className="rb-grow">
@@ -171,12 +148,11 @@ export function ClientProfileDialog({
                       {formatInstagramDisplay(client.instagramHandle)}
                     </Link>
                   ) : null}
-                  <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
-                    {clientVisits.filter((v) => v.status !== 'canceled').length}{' '}
-                    {clientVisits.filter((v) => v.status !== 'canceled').length === 1
-                      ? 'visita'
-                      : 'visitas'}
-                  </Text>
+                  <StatusTag
+                    tone="neutral"
+                    hasTabularNumbers
+                    label={`${nonCanceledCount} ${nonCanceledCount === 1 ? 'visita' : 'visitas'}`}
+                  />
                 </HStack>
               </VStack>
             </HStack>
@@ -198,197 +174,81 @@ export function ClientProfileDialog({
           {editError ? <Banner status="error" title={editError} /> : null}
 
           {client.noShowCount >= noShowThreshold ? (
-            <HStack
-              className="ad-surface"
-              data-tone="warning"
-              data-padded="true"
-              gap={2}
-              align="center"
-            >
-              <AlertTriangle size={15} aria-hidden="true" />
-              <Text type="supporting" weight="semibold" hasTabularNumbers>
-                {client.noShowCount} inasistencias registradas · Al agendar se le solicita
-                anticipo para apartar su lugar.
-              </Text>
-            </HStack>
+            <SurfaceCard tone="warning" padded>
+              <HStack gap={2} align="center">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <Text type="supporting" weight="semibold" hasTabularNumbers>
+                  {client.noShowCount} inasistencias registradas · Al agendar se le solicita
+                  anticipo para apartar su lugar.
+                </Text>
+              </HStack>
+            </SurfaceCard>
           ) : null}
 
           {loyalty ? (
-            <VStack
-              className="ad-surface"
-              data-tone={loyalty.isRewardReady ? 'accent' : 'subtle'}
-              data-padded="true"
-              gap={2}
-            >
-              <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                <HStack gap={1.5} align="center">
-                  <Award size={15} aria-hidden="true" />
-                  <Text weight="semibold">{loyalty.programName}</Text>
-                </HStack>
-                <Text
-                  color="inherit"
-                  className="ad-chip"
-                  data-tone={loyalty.isRewardReady ? 'success' : 'accent'}
-                  hasTabularNumbers
-                >
-                  {loyalty.currentStamps}/{loyalty.stampsRequired} sellos
-                </Text>
-              </HStack>
-              <ProgressBar
-                label="Progreso de sellos"
-                isLabelHidden
-                value={loyalty.currentStamps}
-                max={loyalty.stampsRequired}
-                variant={loyalty.isRewardReady ? 'success' : 'accent'}
-              />
-              <Text type="supporting" color="secondary">
-                {loyalty.isRewardReady
-                  ? `¡Premio listo para canjear! (${loyalty.rewardLabel})`
-                  : `Faltan ${loyalty.remainingForReward} visita(s) para: ${loyalty.rewardLabel}`}
-              </Text>
-            </VStack>
-          ) : null}
-
-          {clientPackages.length > 0 || (canManageClients && activeCatalogPackages.length > 0) ? (
-            <VStack gap={2}>
-              <HStack justify="between" align="center" gap={2}>
-                <HStack gap={1.5} align="center">
-                  <Package size={15} aria-hidden="true" />
-                  <Text weight="semibold" size="sm">
-                    Paquetes de sesiones
-                  </Text>
-                </HStack>
-                <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
-                  {clientPackages.length}
-                </Text>
-              </HStack>
-
-              {clientPackages.map((pkg) => {
-                const totalPips = Math.min(12, Math.max(1, pkg.totalSessions));
-                const usedPips = Math.min(totalPips, pkg.usedSessions);
-                return (
-                  <VStack key={pkg.id} className="ad-pkg-card" gap={1.5}>
-                    <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                      <Text weight="semibold" size="sm">
-                        {pkg.packageName}
-                      </Text>
-                      <Text
-                        color="inherit"
-                        className="ad-chip"
-                        data-tone={
-                          pkg.status === 'active' && !pkg.isExpired ? 'accent' : 'neutral'
-                        }
-                        hasTabularNumbers
-                      >
-                        {pkg.remainingSessions}/{pkg.totalSessions} disponibles
-                      </Text>
-                    </HStack>
-                    <ul
-                      className="ad-pkg-pips"
-                      aria-label={`${pkg.usedSessions} de ${pkg.totalSessions} sesiones usadas`}
-                    >
-                      {Array.from({ length: totalPips }, (_, idx) => (
-                        <li
-                          key={idx}
-                          className="ad-pkg-pip"
-                          data-used={idx < usedPips ? 'true' : 'false'}
-                        />
-                      ))}
-                    </ul>
-                    {canManageClients &&
-                    pkg.status === 'active' &&
-                    !pkg.isExpired &&
-                    pkg.remainingSessions > 0 ? (
-                      <HStack justify="end">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          icon={<PackageCheck size={13} aria-hidden="true" />}
-                          label="Usar 1 sesión"
-                          isLoading={redeemingPkgId === pkg.id}
-                          onClick={() => void onRedeemPackageSession(pkg)}
-                        />
-                      </HStack>
-                    ) : null}
-                  </VStack>
-                );
-              })}
-
-              {canManageClients && activeCatalogPackages.length > 0 ? (
-                <HStack gap={2} align="end" wrap="wrap">
-                  <VStack className="rb-grow">
-                    <Selector
-                      label="Asignar paquete"
-                      size="sm"
-                      value={effectiveFichaPackageId}
-                      onChange={(v) => v && setFichaPackageId(v)}
-                      options={activeCatalogPackages.map((p) => ({
-                        value: p.id,
-                        label: `${p.name} (${p.totalSessions} ses.)`,
-                      }))}
-                    />
-                  </VStack>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    label="Asignar"
-                    isLoading={assigningPkg}
-                    isDisabled={assigningPkg || !effectiveFichaPackageId}
-                    onClick={() =>
-                      void onAssignPackage(client.id, effectiveFichaPackageId, '')
-                    }
+            <SurfaceCard tone={loyalty.isRewardReady ? 'accent' : 'subtle'} padded>
+              <VStack gap={2}>
+                <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                  <HStack gap={1.5} align="center">
+                    <Award size={15} aria-hidden="true" />
+                    <Text weight="semibold">{loyalty.programName}</Text>
+                  </HStack>
+                  <StatusTag
+                    tone={loyalty.isRewardReady ? 'success' : 'accent'}
+                    hasTabularNumbers
+                    label={`${loyalty.currentStamps}/${loyalty.stampsRequired} sellos`}
                   />
                 </HStack>
-              ) : null}
-            </VStack>
+                <ProgressBar
+                  label="Progreso de sellos"
+                  isLabelHidden
+                  value={loyalty.currentStamps}
+                  max={loyalty.stampsRequired}
+                  variant={loyalty.isRewardReady ? 'success' : 'accent'}
+                />
+                <Text type="supporting" color="secondary">
+                  {loyalty.isRewardReady
+                    ? `¡Premio listo para canjear! (${loyalty.rewardLabel})`
+                    : `Faltan ${loyalty.remainingForReward} visita(s) para: ${loyalty.rewardLabel}`}
+                </Text>
+              </VStack>
+            </SurfaceCard>
           ) : null}
 
+          <ClientProfilePackagesSection
+            clientId={client.id}
+            canManageClients={canManageClients}
+            clientPackages={clientPackages}
+            activeCatalogPackages={activeCatalogPackages}
+            assigningPkg={assigningPkg}
+            redeemingPkgId={redeemingPkgId}
+            onAssignPackage={onAssignPackage}
+            onRedeemPackageSession={onRedeemPackageSession}
+          />
+
           {clientVisits.length > 0 ? (
-            <VStack gap={2}>
-              <HStack gap={1.5} align="center">
-                <Calendar size={15} aria-hidden="true" />
-                <Text weight="semibold" size="sm">
-                  Últimas visitas
-                </Text>
-              </HStack>
-              <VStack className="ad-surface" gap={0}>
-                <VStack className="ad-row-list" gap={0}>
-                  {clientVisits.slice(0, 5).map((visit) => {
-                    const statusMeta = formatBookingStatusLabel(visit.status);
-                    return (
-                      <HStack
-                        key={visit.id}
-                        className="ad-row-item"
-                        justify="between"
-                        align="center"
-                        wrap="wrap"
-                        gap={2}
-                      >
-                        <VStack gap={0} className="rb-grow">
-                          <Text weight="medium" size="sm">
-                            {visit.service.name}
-                          </Text>
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {formatDateShortInTimezone(visit.startAt, tz)} ·{' '}
-                            {formatTimeInTimezone(visit.startAt, tz, true)} con{' '}
-                            {visit.staff.name}
-                          </Text>
-                        </VStack>
-                        <Text
-                          color="inherit"
-                          className="ad-chip"
-                          data-tone={statusMeta.tone}
-                        >
-                          {statusMeta.label}
-                        </Text>
-                      </HStack>
-                    );
-                  })}
-                </VStack>
+            <SurfaceCard
+              title="Últimas visitas"
+              headingLevel={3}
+              icon={<Calendar size={15} aria-hidden="true" />}
+              count={Math.min(5, clientVisits.length)}
+            >
+              <VStack className="ad-row-list" gap={0}>
+                {clientVisits.slice(0, 5).map((visit) => (
+                  <ActionRow
+                    key={visit.id}
+                    title={visit.service.name}
+                    subtitle={`${formatDateShortInTimezone(visit.startAt, tz)} · ${formatTimeInTimezone(visit.startAt, tz, true)} con ${visit.staff.name}`}
+                    status={
+                      <BookingStatusTag
+                        status={visit.status}
+                        hasPaymentProof={Boolean(visit.paymentProofUrl)}
+                      />
+                    }
+                  />
+                ))}
               </VStack>
-            </VStack>
+            </SurfaceCard>
           ) : null}
 
           <VStack gap={3}>

@@ -1,30 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { OnboardingPostSchema } from '@/lib/contracts';
+import { toAdminSettingsDTO } from '@/lib/public-dto';
 import {
   getSnapshot,
   PolicyError,
   saveOnboardingSetup,
 } from '@/lib/repositories/db';
-
-const starterServiceSchema = z.object({
-  id: z.string().min(1).optional(),
-  name: z.string().trim().min(2, 'Nombre de servicio muy corto').max(120),
-  priceCents: z.number().int().nonnegative().max(10_000_000),
-  durationMinutes: z.number().int().min(15).max(480),
-  isStartingPrice: z.boolean().optional(),
-});
-
-const onboardingPostSchema = z.object({
-  businessType: z.string().trim().min(1).max(120).optional(),
-  teamSizeTier: z.string().trim().min(1).max(60).optional(),
-  salonName: z.string().trim().min(2, 'Nombre del estudio muy corto').max(120).optional(),
-  serviceMode: z.enum(['studio', 'home', 'online']).optional(),
-  address: z.string().trim().max(240).optional(),
-  soundAlertsEnabled: z.boolean().optional(),
-  onboardingCompleted: z.boolean().optional(),
-  starterService: starterServiceSchema.optional(),
-});
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -66,9 +49,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = onboardingPostSchema.parse(await request.json());
+    const parsed = OnboardingPostSchema.parse(await request.json());
     const result = await saveOnboardingSetup(parsed);
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      settings: toAdminSettingsDTO(result.settings),
+    });
   } catch (err) {
     if (err instanceof PolicyError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });

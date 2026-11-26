@@ -2,11 +2,7 @@ import type {
   InactiveReactivationCandidate,
   UpcomingBirthdayCandidate,
 } from '@/lib/campaigns/retention';
-import type {
-  BookingStatus,
-  CampaignDispatchLog,
-  ClientPackage,
-} from '@/lib/types';
+import type { CampaignDispatchLog, ClientPackage } from '@/lib/types';
 
 export type ClientsTab = 'directory' | 'retention' | 'loyalty';
 
@@ -83,17 +79,4 @@ export function resolveClientasTabParam(param: string | null): ClientsTab | null
   }
   if (param === 'directorio' || param === 'directory') return 'directory';
   return null;
-}
-
-export function formatBookingStatusLabel(status: BookingStatus): {
-  label: string;
-  tone: 'success' | 'warning' | 'accent' | 'neutral';
-} {
-  if (status === 'completed') return { label: 'Completada', tone: 'success' };
-  if (status === 'confirmed') return { label: 'Confirmada', tone: 'accent' };
-  if (status === 'pending_confirmation' || status === 'pending_payment') {
-    return { label: 'Pendiente', tone: 'warning' };
-  }
-  if (status === 'no_show') return { label: 'No asistió', tone: 'warning' };
-  return { label: 'Cancelada', tone: 'neutral' };
 }

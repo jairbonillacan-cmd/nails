@@ -12,12 +12,12 @@ export type BookingStep = 'service' | 'extras' | 'schedule' | 'staff' | 'details
 
 export const BOOKING_STEPS: readonly BookingStep[] = ['service', 'extras', 'schedule', 'staff', 'details'];
 
-interface BookingConflictState {
+export interface BookingConflictState {
   message: string;
   suggestions: AvailableSlot[];
 }
 
-interface BookingFlowState {
+export interface BookingFlowState {
   phase: BookingPhase;
   step: BookingStep;
   selectedSlot: AvailableSlot | null;

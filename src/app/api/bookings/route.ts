@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { readClientSessionToken } from '@/lib/auth/client-session';
 import { evaluateClientNoShowPolicy } from '@/lib/booking/no-show-policy';
+import { PublicCreateBookingSchema } from '@/lib/contracts';
+import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { createDepositCheckout } from '@/lib/integrations/payments';
 import { logError } from '@/lib/logger';
+import { toPublicBookingDTO } from '@/lib/public-dto';
 import {
   createBookingWithExtras,
   getRepository,
@@ -12,32 +16,8 @@ import {
   PolicyError,
   SlotConflictError,
 } from '@/lib/repositories/db';
-import { createDepositCheckout } from '@/lib/integrations/payments';
-import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 import { MediaValidationError } from '@/lib/storage/media';
-
-const createBookingSchema = z.object({
-  serviceId: z.string().min(1),
-  extraServiceIds: z.array(z.string().min(1)).max(8).default([]),
-  addonIds: z.array(z.string()).default([]),
-  staffId: z.string().nullable().optional(),
-  startAt: z.string().min(1),
-  clientName: z.string().min(2, 'Escribe tu nombre completo'),
-  clientPhone: z.string().min(8, 'Escribe un WhatsApp válido de 10 dígitos'),
-  clientEmail: z.string().email('Correo inválido').optional().or(z.literal('')).nullable(),
-  clientInstagram: z.string().max(120).optional().nullable(),
-  clientBirthday: z.string().optional().nullable(),
-  clientNotes: z.string().max(1000).optional(),
-  inspoPhotoUrl: z.string().max(4_000_000).optional().nullable(),
-  paymentProofUrl: z.string().max(4_000_000).optional().nullable(),
-  proofDeliveryMethod: z.enum(['web_upload', 'instagram_dm', 'none']).optional(),
-  couponCode: z.string().max(40).optional().nullable(),
-  sessionToken: z.string().optional().nullable(),
-  holdId: z.string().min(1).optional().nullable(),
-  privacyConsentAccepted: z.boolean(),
-  marketingOptIn: z.boolean().default(false),
-});
 
 export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
@@ -63,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = createBookingSchema.parse(await request.json());
+    const parsed = PublicCreateBookingSchema.parse(await request.json());
     if (!parsed.privacyConsentAccepted) {
       return NextResponse.json(
         {
@@ -115,7 +95,8 @@ export async function POST(request: NextRequest) {
       manageUrl: `${env.appUrl}${manageUrl}`,
     });
 
-    const snapshotSettings = getSnapshot().settings;
+    const snapshot = getSnapshot();
+    const snapshotSettings = snapshot.settings;
     const noShowPolicy = evaluateClientNoShowPolicy({
       noShowCount: booking.client.noShowCount,
       threshold: snapshotSettings.noShowDepositThreshold,
@@ -125,7 +106,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        booking,
+        booking: toPublicBookingDTO(booking, snapshot.services),
         manageUrl,
         checkout,
         noShowPolicy,

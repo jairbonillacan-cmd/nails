@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { DispatchCampaignSchema } from '@/lib/contracts';
 import {
   buildBirthdayWhatsAppMessage,
   buildReactivationWhatsAppMessage,
@@ -14,12 +15,6 @@ import {
   listCampaignDispatches,
   logCampaignDispatch,
 } from '@/lib/repositories/db';
-
-const postCampaignSchema = z.object({
-  kind: z.enum(['birthday', 'reactivation']),
-  clientId: z.string().min(1),
-  messagePreview: z.string().trim().max(600).optional(),
-});
 
 function parseBoundedInt(
   raw: string | null,
@@ -112,7 +107,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = postCampaignSchema.parse(await request.json());
+    const parsed = DispatchCampaignSchema.parse(await request.json());
     const db = getSnapshot();
     const client = db.clients.find((c) => c.id === parsed.clientId);
     if (!client) {

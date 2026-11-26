@@ -14,6 +14,7 @@ import {
   transitionBookingStatus,
 } from '../booking/state-machine';
 import { generateBookingCode, systemClock, type Clock } from '../clock';
+import { isSafeInternalBookingMediaPath } from '../contracts';
 import { createDefaultWhatsAppTemplates } from '../demo-seed';
 import {
   getConfiguredWhatsAppMonthlyQuota,
@@ -2044,6 +2045,16 @@ export function createSupabaseRepository(
           }
           throw err;
         }
+      } else if (persistedInspoPhotoUrl) {
+        if (!isSafeInternalBookingMediaPath(persistedInspoPhotoUrl, 'inspo')) {
+          throw new PolicyError(
+            'INVALID_MEDIA_URL',
+            'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+          );
+        }
+        persistedInspoPhotoUrl = persistedInspoPhotoUrl.startsWith('/api/media/')
+          ? persistedInspoPhotoUrl
+          : `/api/media/${persistedInspoPhotoUrl}`;
       }
 
       let persistedPaymentProofUrl = params.paymentProofUrl?.trim() || null;
@@ -2066,6 +2077,16 @@ export function createSupabaseRepository(
           }
           throw err;
         }
+      } else if (persistedPaymentProofUrl) {
+        if (!isSafeInternalBookingMediaPath(persistedPaymentProofUrl, 'proofs')) {
+          throw new PolicyError(
+            'INVALID_MEDIA_URL',
+            'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+          );
+        }
+        persistedPaymentProofUrl = persistedPaymentProofUrl.startsWith('/api/media/')
+          ? persistedPaymentProofUrl
+          : `/api/media/${persistedPaymentProofUrl}`;
       }
 
       const { data: createdBookingId, error: rpcError } = await supabase.rpc(
@@ -2426,13 +2447,15 @@ export function createSupabaseRepository(
             }
             throw err;
           }
-        } else if (
-          !rawProof.startsWith('/api/media/') &&
-          !rawProof.startsWith('proofs/') &&
-          !rawProof.startsWith('https://') &&
-          !rawProof.startsWith('http://')
-        ) {
-          throw new PolicyError('INVALID_MEDIA_URL', 'Referencia de imagen inválida.');
+        } else if (!isSafeInternalBookingMediaPath(rawProof, 'proofs')) {
+          throw new PolicyError(
+            'INVALID_MEDIA_URL',
+            'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+          );
+        } else {
+          persistedProofUrl = rawProof.startsWith('/api/media/')
+            ? rawProof
+            : `/api/media/${rawProof}`;
         }
         const nowIso = clock.now().toISOString();
         const { error: proofError } = await supabase

@@ -19,7 +19,7 @@ export interface CalendarAddLinks {
   icsDownload: string;
 }
 
-export const MAX_PROOF_FILE_BYTES = 2_500_000;
+const MAX_PROOF_FILE_BYTES = 2_500_000;
 
 const ALLOWED_PROOF_MIME_TYPES = new Set([
   'image/png',
@@ -88,4 +88,21 @@ export function isDisplayableMediaUrl(value: string | null | undefined): boolean
     trimmed.startsWith('https://') ||
     trimmed.startsWith('http://')
   );
+}
+
+export function appendManageTokenToMediaUrl(
+  url: string | null | undefined,
+  manageToken: string,
+): string | null {
+  const trimmed = url?.trim() ?? '';
+  if (!trimmed) return null;
+  const cleanToken = manageToken.trim();
+  if (!trimmed.startsWith('/api/media/') || !cleanToken) {
+    return trimmed;
+  }
+  if (/(?:^|[?&])token=/.test(trimmed)) {
+    return trimmed;
+  }
+  const separator = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${separator}token=${encodeURIComponent(cleanToken)}`;
 }

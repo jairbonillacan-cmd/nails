@@ -1,66 +1,37 @@
 'use client';
 
-import type React from 'react';
-import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useMemo, useReducer, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Banner } from '@astryxdesign/core/Banner';
-import { BottomSheet } from '@astryxdesign/core/BottomSheet';
-import { ChevronUp } from 'lucide-react';
-import type { AvailableSlot } from '@/lib/availability/engine';
-import {
-  buildWhatsAppLink,
-  formatDateLongInTimezone,
-  formatDateShortInTimezone,
-  formatDuration,
-  normalizePhoneE164,
-} from '@/lib/format';
+import { buildWhatsAppLink } from '@/lib/format';
 import {
   isAvailabilityRealtimeEvent,
   useBookingAvailability,
 } from '@/lib/hooks/useBookingAvailability';
+import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
+import { useBookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
 import { useBookingUrlSync } from '@/lib/hooks/useBookingUrlSync';
 import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
-import { getOrCreateBrowserSessionToken } from '@/lib/hooks/useSessionToken';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
 import { BookingHeader, BookingHero, STEP_LABELS } from './booking/BookingChrome';
-import { BookingSummaryCard, type SummaryRow } from './booking/BookingSummaryCard';
-import { ClientConfirmStep } from './booking/ClientConfirmStep';
-import { ExtrasStep } from './booking/ExtrasStep';
-import { ScheduleStep, type ScheduleLayout } from './booking/ScheduleStep';
-import { ServiceStep } from './booking/ServiceStep';
-import { StaffStep } from './booking/StaffStep';
+import { BookingConflictBanner } from './booking/BookingConflictBanner';
+import { BookingStepRouter } from './booking/BookingStepRouter';
+import { BookingDesktopActions, BookingStickyBar } from './booking/BookingStickyBar';
+import { BookingSummaryCard } from './booking/BookingSummaryCard';
+import { resolveEffectiveSelectedDate } from './booking/bookingHelpers';
+import { bookingReducer, createInitialBookingFlowState } from './booking/bookingMachine';
 import {
-  requestSlotHold,
-  submitBookingRequest,
-  validateCouponCode,
-  type AppliedCouponState,
-} from './booking/bookingApi';
-import {
-  formatMxPhoneDisplay,
-  formatServicePrice,
-  getStaffScheduleLabel,
-  hasConfiguredDeposit,
-  prefersReducedMotion,
-  resolveDepositAmountCents,
-  resolveEffectiveSelectedDate,
-  validateClientBookingFields,
-  type ClientFieldErrors,
-  type ProofDeliveryMethod,
-} from './booking/bookingHelpers';
-import {
-  BOOKING_STEPS,
-  bookingReducer,
-  createInitialBookingFlowState,
-  type BookingStep,
-} from './booking/bookingMachine';
+  buildLiveAnnouncement,
+  buildSummaryRows,
+  computeStepNavigation,
+  toScheduleLayout,
+} from './booking/bookingViewHelpers';
 
 const WaitlistDialog = dynamic(
   () => import('./booking/WaitlistDialog').then((mod) => mod.WaitlistDialog),
@@ -85,48 +56,9 @@ interface BookingWidgetProps {
 }
 
 const FORM_ID = 'rb-details-form';
-const EMPTY_FIELD_ERRORS: ClientFieldErrors = { name: null, phone: null };
 
-function shiftPlainDateKey(dateKey: string, deltaDays: number): string {
-  const parts = dateKey.split('-').map(Number);
-  const dt = new Date(Date.UTC(parts[0] ?? 2026, (parts[1] ?? 1) - 1, (parts[2] ?? 1) + deltaDays, 12, 0, 0));
-  return dt.toISOString().slice(0, 10);
-}
-
-function getNextMonthStartKey(dateKey: string): string {
-  const parts = dateKey.split('-').map(Number);
-  const dt = new Date(Date.UTC(parts[0] ?? 2026, parts[1] ?? 1, 1, 12, 0, 0));
-  return dt.toISOString().slice(0, 10);
-}
-
-function toScheduleLayout(view: BookingLayoutView | undefined): ScheduleLayout {
-  return view === 'week' || view === 'column' ? 'week' : 'month';
-}
-
-function buildIdempotencyKey(suffixSeed: string): string {
-  const randomSuffix =
-    typeof globalThis.crypto?.randomUUID === 'function'
-      ? globalThis.crypto.randomUUID()
-      : `${Date.now()}-${suffixSeed}`;
-  return `idem-${randomSuffix}`;
-}
-
-export function BookingWidget({
-  settings,
-  categories,
-  services,
-  addons,
-  staff,
-  initialTodayKey,
-  initialServiceSlug,
-  initialExtraServiceSlugs,
-  initialAddonIds,
-  initialStaffSlug,
-  initialDate,
-  initialLayout,
-  initialSlot,
-  initialInspoNote,
-}: BookingWidgetProps) {
+export function BookingWidget(props: BookingWidgetProps) {
+  const { settings, categories, services, staff, initialTodayKey, initialSlot } = props;
   const router = useRouter();
   const searchParams = useSearchParams();
   const isEmbed = searchParams.get('embed') === '1';
@@ -134,175 +66,11 @@ export function BookingWidget({
   const timezone = settings.timezone || 'America/Mexico_City';
   const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
-  const initialService = services.find((s) => s.slug === initialServiceSlug) ?? services[0] ?? null;
-  const initialPinnedStaff =
-    staff.find((member) => member.bookingSlug === initialStaffSlug || member.id === initialStaffSlug)?.id ?? 'any';
-
-  const resolvedInitialExtraIds = useMemo(() => {
-    if (!initialExtraServiceSlugs || initialExtraServiceSlugs.length === 0) return [];
-    const primaryId = initialService?.id ?? '';
-    return Array.from(
-      new Set(
-        initialExtraServiceSlugs
-          .map((token) => services.find((srv) => srv.slug === token || srv.id === token)?.id)
-          .filter((id): id is string => Boolean(id) && id !== primaryId),
-      ),
-    ).slice(0, 8);
-  }, [initialExtraServiceSlugs, initialService, services]);
-
-  const resolvedInitialAddonIds = useMemo(() => {
-    if (!initialAddonIds || initialAddonIds.length === 0) return [];
-    const activeIds = new Set(addons.map((addon) => addon.id));
-    return Array.from(new Set(initialAddonIds.filter((id) => activeIds.has(id))));
-  }, [addons, initialAddonIds]);
-
-  const resolvedInitialDate = initialDate && initialDate >= initialTodayKey ? initialDate : initialTodayKey;
-  const resolvedInitialLayout = toScheduleLayout(
-    initialLayout &&
-      (settings.enabledBookingLayouts.length === 0 || settings.enabledBookingLayouts.includes(initialLayout))
-      ? initialLayout
-      : settings.defaultBookingLayout,
-  );
-
-  const [selectedServiceId, setSelectedServiceId] = useState(initialService?.id ?? '');
-  const [selectedExtraServiceIds, setSelectedExtraServiceIds] = useState<string[]>(resolvedInitialExtraIds);
-  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(resolvedInitialAddonIds);
-  const [pinnedStaffId, setPinnedStaffId] = useState(
-    staff.length === 1 && staff[0] ? staff[0].id : initialPinnedStaff,
-  );
-  const [chosenStaffId, setChosenStaffId] = useState('any');
-  const [takenStaffIds, setTakenStaffIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [staffError, setStaffError] = useState<string | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
-  const [pendingSlotKey, setPendingSlotKey] = useState<string | null>(null);
-  const [pendingStaffId, setPendingStaffId] = useState<string | null>(null);
-  const [isReholding, setIsReholding] = useState(false);
-
-  const [layoutView, setLayoutView] = useState<ScheduleLayout>(resolvedInitialLayout);
-  const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h');
-  const [windowStartDate, setWindowStartDate] = useState(resolvedInitialDate);
-  const [selectedDate, setSelectedDate] = useState(resolvedInitialDate);
+  const selection = useBookingSelectionState(props);
   const realtimePing = useEphemeralMessage(3500);
-
-  const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
-  const [clientInstagram, setClientInstagram] = useState('');
-  const [clientEmail, setClientEmail] = useState('');
-  const [clientBirthday, setClientBirthday] = useState('');
-  const [clientNotes, setClientNotes] = useState(initialInspoNote ? `Referencia de galería: ${initialInspoNote}` : '');
-  const [inspoFile, setInspoFile] = useState<File | null>(null);
-  const [inspoDataUrl, setInspoDataUrl] = useState<string | null>(null);
-  const [proofDeliveryMethod, setProofDeliveryMethod] = useState<ProofDeliveryMethod>('web_upload');
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
-  const [hasTriedSubmit, setHasTriedSubmit] = useState(false);
-
-  const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCouponState | null>(null);
-  const [couponError, setCouponError] = useState<string | null>(null);
-  const [couponLoading, setCouponLoading] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [hasOpenedWaitlist, setHasOpenedWaitlist] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
-
-  const idempotencyKeyRef = useRef('');
-  const busyLockRef = useRef(false);
-  const submitLockRef = useRef(false);
-
-  const selectedService = useMemo(
-    () => services.find((s) => s.id === selectedServiceId) ?? services[0],
-    [services, selectedServiceId],
-  );
-  const selectedExtraServices = useMemo(
-    () => services.filter((srv) => srv.id !== selectedService?.id && selectedExtraServiceIds.includes(srv.id)),
-    [services, selectedService, selectedExtraServiceIds],
-  );
-  const selectedServiceIdSet = useMemo(() => {
-    const ids = selectedExtraServices.map((srv) => srv.id);
-    if (selectedService) ids.push(selectedService.id);
-    return new Set(ids);
-  }, [selectedService, selectedExtraServices]);
-
-  const extraServices = useMemo(
-    () => services.filter((service) => service.id !== selectedService?.id),
-    [services, selectedService],
-  );
-
-  const compatibleAddons = useMemo(() => {
-    if (!selectedService) return [];
-    return addons.filter((a) => a.appliesToAll || a.serviceIds.some((id) => selectedServiceIdSet.has(id)));
-  }, [addons, selectedService, selectedServiceIdSet]);
-
-  const hasExtrasOptions = compatibleAddons.length > 0 || extraServices.length > 0;
-
-  const activeSelectedAddons = useMemo(
-    () => compatibleAddons.filter((a) => selectedAddonIds.includes(a.id)),
-    [compatibleAddons, selectedAddonIds],
-  );
-
-  const eligibleStaff = useMemo(() => {
-    if (!selectedService) return staff;
-    const requiredIds = Array.from(selectedServiceIdSet);
-    return staff.filter(
-      (member) => member.serviceIds.length === 0 || requiredIds.every((id) => member.serviceIds.includes(id)),
-    );
-  }, [staff, selectedService, selectedServiceIdSet]);
-
-  const isPinned = pinnedStaffId !== 'any';
-  const pinnedStaff = isPinned ? (staff.find((member) => member.id === pinnedStaffId) ?? null) : null;
-  const pinnedStaffSchedule = pinnedStaff ? getStaffScheduleLabel(pinnedStaff, timeFormat) : null;
-  const skipsStaffStep = isPinned || eligibleStaff.length <= 1;
-
-  const totalDurationMinutes = useMemo(() => {
-    if (!selectedService) return 0;
-    return (
-      selectedService.durationMinutes +
-      selectedExtraServices.reduce((sum, srv) => sum + srv.durationMinutes, 0) +
-      activeSelectedAddons.reduce((sum, a) => sum + a.extraMinutes, 0)
-    );
-  }, [selectedService, selectedExtraServices, activeSelectedAddons]);
-
-  const subtotalCents = useMemo(() => {
-    if (!selectedService) return 0;
-    return (
-      selectedService.priceCents +
-      selectedExtraServices.reduce((sum, srv) => sum + srv.priceCents, 0) +
-      activeSelectedAddons.reduce((sum, a) => sum + a.extraPriceCents, 0)
-    );
-  }, [selectedService, selectedExtraServices, activeSelectedAddons]);
-
-  const hasStartingPrice = Boolean(
-    selectedService?.isStartingPrice || selectedExtraServices.some((srv) => srv.isStartingPrice),
-  );
-  const depositAmountCents = useMemo(
-    () => resolveDepositAmountCents(settings, selectedService, selectedExtraServices),
-    [settings, selectedService, selectedExtraServices],
-  );
-  const showsDeposit = hasConfiguredDeposit(settings, depositAmountCents);
-  const discountCents = appliedCoupon?.discountCents ?? 0;
-  const totalPriceCents = Math.max(0, subtotalCents - discountCents);
-
-  const activeExtraServiceIds = useMemo(
-    () => selectedExtraServices.map((srv) => srv.id),
-    [selectedExtraServices],
-  );
-  const activeAddonIds = useMemo(
-    () => activeSelectedAddons.map((a) => a.id),
-    [activeSelectedAddons],
-  );
-
-  const maxAllowedDateKey = useMemo(
-    () => shiftPlainDateKey(initialTodayKey, Math.max(35, settings.maxBookingDaysAhead || 45)),
-    [initialTodayKey, settings.maxBookingDaysAhead],
-  );
-
-  const nextMonthStartKey = useMemo(() => {
-    const base = selectedDate >= windowStartDate ? selectedDate : windowStartDate;
-    const candidate = getNextMonthStartKey(base);
-    return candidate > windowStartDate ? candidate : shiftPlainDateKey(windowStartDate, 30);
-  }, [selectedDate, windowStartDate]);
-
-  const canAdvanceMonth = nextMonthStartKey <= maxAllowedDateKey;
 
   const {
     days: availabilityDays,
@@ -312,26 +80,27 @@ export function BookingWidget({
     invalidateFromRealtime,
     revalidateActive,
   } = useBookingAvailability({
-    serviceId: selectedService?.id ?? null,
-    extraServiceIds: activeExtraServiceIds,
-    addonIds: activeAddonIds,
-    staffId: pinnedStaffId,
-    windowStartDate,
-    nextWindowStartDate: flow.step === 'schedule' && canAdvanceMonth ? nextMonthStartKey : null,
+    serviceId: selection.selectedService?.id ?? null,
+    extraServiceIds: selection.activeExtraServiceIds,
+    addonIds: selection.activeAddonIds,
+    staffId: selection.pinnedStaffId,
+    windowStartDate: selection.windowStartDate,
+    nextWindowStartDate:
+      flow.step === 'schedule' && selection.canAdvanceMonth ? selection.nextMonthStartKey : null,
   });
 
   const effectiveSelectedDate = useMemo(
-    () => resolveEffectiveSelectedDate(selectedDate, availabilityDays),
-    [selectedDate, availabilityDays],
+    () => resolveEffectiveSelectedDate(selection.selectedDate, availabilityDays),
+    [selection.selectedDate, availabilityDays],
   );
 
   useBookingUrlSync({
-    servicio: selectedService?.slug,
-    extras: selectedExtraServices.map((srv) => srv.slug),
-    addons: activeAddonIds,
-    staff: pinnedStaff?.bookingSlug ?? '',
+    servicio: selection.selectedService?.slug,
+    extras: selection.selectedExtraServices.map((srv) => srv.slug),
+    addons: selection.activeAddonIds,
+    staff: selection.pinnedStaff?.bookingSlug ?? '',
     date: effectiveSelectedDate,
-    layout: layoutView,
+    layout: selection.layoutView,
     defaultLayout: toScheduleLayout(settings.defaultBookingLayout),
     slot: flow.selectedSlot?.startAt ?? initialSlot ?? '',
   });
@@ -339,14 +108,11 @@ export function BookingWidget({
   useRealtimeSubscription(
     useCallback(
       (evt) => {
-        if (isAvailabilityRealtimeEvent(evt.type)) {
-          const affected = invalidateFromRealtime({
-            staffId: evt.staffId,
-            date: evt.date,
-          });
-          if (affected) {
-            realtimePing.show('Disponibilidad actualizada en tiempo real');
-          }
+        if (
+          isAvailabilityRealtimeEvent(evt.type) &&
+          invalidateFromRealtime({ staffId: evt.staffId, date: evt.date })
+        ) {
+          realtimePing.show('Disponibilidad actualizada en tiempo real');
         }
       },
       [invalidateFromRealtime, realtimePing],
@@ -364,6 +130,27 @@ export function BookingWidget({
     }, [revalidateActive, settings.slotHoldMinutes]),
   );
 
+  const actions = useBookingFlowActions({
+    flow,
+    dispatch,
+    settings,
+    staff,
+    selectedService: selection.selectedService,
+    selectedExtraServices: selection.selectedExtraServices,
+    activeSelectedAddons: selection.activeSelectedAddons,
+    hasExtrasOptions: selection.hasExtrasOptions,
+    isPinned: selection.isPinned,
+    pinnedStaffId: selection.pinnedStaffId,
+    skipsStaffStep: selection.skipsStaffStep,
+    subtotalCents: selection.subtotalCents,
+    showsDeposit: selection.showsDeposit,
+    client: selection.clientForm,
+    revalidateActive,
+    navigateToManageUrl: (url) => router.push(url),
+  });
+
+  const discountCents = actions.appliedCoupon?.discountCents ?? 0;
+  const totalPriceCents = Math.max(0, selection.subtotalCents - discountCents);
   const availableDateSet = useMemo(
     () => new Set(availabilityDays.filter((d) => d.hasSlots).map((d) => d.date)),
     [availabilityDays],
@@ -373,506 +160,86 @@ export function BookingWidget({
     [availabilityDays, effectiveSelectedDate],
   );
 
-  const liveAnnouncement = useMemo(() => {
-    if (flow.holdExpired && flow.holdExpiredMessage) return flow.holdExpiredMessage;
-    if (flow.conflict?.message) return `Horario recién ocupado. ${flow.conflict.message}`;
-    if (flow.formErrorCode === 'MAX_ACTIVE_BOOKINGS' && flow.formError) {
-      return `Límite de citas activas alcanzado. ${flow.formError}`;
-    }
-    if (holdRemainingSec === holdTotalSec) {
-      return `Horario apartado por ${settings.slotHoldMinutes || 5} minutos mientras terminas.`;
-    }
-    if (holdRemainingSec === 60) return 'Te queda 1 minuto para terminar tu reserva.';
-    if (holdRemainingSec === 30) return 'Te quedan 30 segundos para terminar tu reserva.';
-    if (holdRemainingSec === 10) return 'Te quedan 10 segundos de apartado.';
-    if (realtimePing.message) return realtimePing.message;
-    if (flow.step === 'schedule' && !loadingAvail && selectedDaySummary) {
-      const dateLabel = formatDateShortInTimezone(`${selectedDaySummary.date}T18:00:00Z`, timezone);
-      return selectedDaySummary.slotCount > 0
-        ? `${selectedDaySummary.slotCount} horarios disponibles para ${dateLabel}.`
-        : `Sin horarios disponibles para ${dateLabel}.`;
-    }
-    return '';
-  }, [
-    flow.conflict,
-    flow.formError,
-    flow.formErrorCode,
-    flow.holdExpired,
-    flow.holdExpiredMessage,
-    flow.step,
-    holdRemainingSec,
-    holdTotalSec,
-    loadingAvail,
-    realtimePing.message,
-    selectedDaySummary,
-    settings.slotHoldMinutes,
-    timezone,
-  ]);
+  const liveAnnouncement = useMemo(
+    () =>
+      buildLiveAnnouncement({
+        flow,
+        holdRemainingSec,
+        holdTotalSec,
+        slotHoldMinutes: settings.slotHoldMinutes || 5,
+        realtimeMessage: realtimePing.message,
+        loadingAvail,
+        selectedDaySummary,
+        timezone,
+      }),
+    [flow, holdRemainingSec, holdTotalSec, settings.slotHoldMinutes, realtimePing.message, loadingAvail, selectedDaySummary, timezone],
+  );
 
-  const revealPanel = () => {
-    if (typeof window !== 'undefined' && window.scrollY > 0) {
-      window.scrollTo({
-        top: 0,
-        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-      });
-    }
-  };
+  const skipsStaffForSlot =
+    selection.skipsStaffStep || (flow.selectedSlot?.availableStaffIds.length ?? 0) <= 1;
+  const nav = computeStepNavigation({
+    flow,
+    hasExtrasOptions: selection.hasExtrasOptions,
+    hasSelectedService: Boolean(selection.selectedService),
+    requiresConfirmation: Boolean(selection.selectedService?.requiresConfirmation),
+    skipsStaffForSlot,
+    totalDurationMinutes: selection.totalDurationMinutes,
+    extrasSelectedCount: selection.activeSelectedAddons.length + selection.selectedExtraServices.length,
+    chosenStaffId: actions.chosenStaffId,
+    isSubmittingBooking: actions.isSubmittingBooking,
+    showsDeposit: selection.showsDeposit,
+    proofDataUrl: selection.clientForm.proofDataUrl,
+    proofDeliveryMethod: selection.clientForm.proofDeliveryMethod,
+  });
 
-  const goToStep = (nextStep: BookingStep) => {
-    if (nextStep === 'extras' && !hasExtrasOptions) {
-      dispatch({ type: 'GO_TO_STEP', step: flow.step === 'service' ? 'schedule' : 'service' });
-      revealPanel();
-      return;
-    }
-    dispatch({ type: 'GO_TO_STEP', step: nextStep });
-    revealPanel();
-  };
-
-  const releaseHold = () => {
-    if (flow.holdId) void fetch('/api/slot-holds', { method: 'DELETE' });
-  };
-
-  const resetSelection = () => {
-    releaseHold();
-    setAppliedCoupon(null);
-    setCouponError(null);
-    dispatch({ type: 'SELECTION_CHANGED' });
-  };
-
-  const handleAdvanceMonth = () => {
-    if (!canAdvanceMonth || loadingAvail || nextMonthStartKey === windowStartDate) return;
-    setWindowStartDate(nextMonthStartKey);
-    setSelectedDate(nextMonthStartKey);
-  };
-
-  const handleReturnToToday = () => {
-    if (loadingAvail || windowStartDate === initialTodayKey) return;
-    setWindowStartDate(initialTodayKey);
-    setSelectedDate(initialTodayKey);
-  };
-
-  const handleSelectDate = (nextDate: string) => {
-    setSelectedDate(nextDate);
-    const loadedStart = availabilityDays[0]?.date;
-    const loadedEnd = availabilityDays[availabilityDays.length - 1]?.date;
-    if (loadedEnd && nextDate > loadedEnd && nextDate <= maxAllowedDateKey && nextDate !== windowStartDate) {
-      setWindowStartDate(nextDate);
-    } else if (loadedStart && nextDate < loadedStart && nextDate >= initialTodayKey && nextDate !== windowStartDate) {
-      setWindowStartDate(nextDate);
-    }
-  };
-
-  const handlePrefetchService = (serviceId: string) => {
-    if (!serviceId || serviceId === selectedService?.id) return;
-    prefetchWindow({
-      serviceId,
-      extraServiceIds: selectedExtraServiceIds.filter((id) => id !== serviceId),
-      addonIds: activeAddonIds,
-      staffId: pinnedStaffId,
-      windowStartDate,
-    });
-  };
-
-  const handlePrefetchNextMonth = () => {
-    if (!selectedService || !canAdvanceMonth || nextMonthStartKey === windowStartDate) return;
-    prefetchWindow({
-      serviceId: selectedService.id,
-      extraServiceIds: activeExtraServiceIds,
-      addonIds: activeAddonIds,
-      staffId: pinnedStaffId,
-      windowStartDate: nextMonthStartKey,
-    });
-  };
-
-  const handleOpenWaitlist = () => {
-    setHasOpenedWaitlist(true);
-    setWaitlistOpen(true);
-  };
-
-  const holdSlot = async (slot: AvailableSlot, staffId: string) => {
-    if (!selectedService || !settings.enableSlotHold) {
-      return { ok: true as const, holdId: null, holdExpiresAt: null };
-    }
-    try {
-      return await requestSlotHold({
-        serviceId: selectedService.id,
-        extraServiceIds: selectedExtraServices.map((srv) => srv.id),
-        addonIds: activeSelectedAddons.map((a) => a.id),
-        staffId,
-        startAt: slot.startAt,
-        sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
-      });
-    } catch {
-      return { ok: true as const, holdId: null, holdExpiresAt: null };
-    }
-  };
-
-  const handleSelectSlot = async (
-    slot: AvailableSlot,
-    options?: { stayOnDetails?: boolean },
-  ) => {
-    if (!selectedService || isBusy || busyLockRef.current) return;
-    const slotKey = `${slot.staffId}-${slot.startAt}`;
-    busyLockRef.current = true;
-    setIsBusy(true);
-    setPendingSlotKey(slotKey);
-    try {
-      const result = await holdSlot(slot, slot.staffId);
-      if (!result.ok) {
-        dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
-        revealPanel();
-        revalidateActive();
-        return;
-      }
-      idempotencyKeyRef.current = buildIdempotencyKey(slot.staffId);
-      const stayOnDetails = Boolean(options?.stayOnDetails);
-      const hasStaffChoice = !stayOnDetails && !skipsStaffStep && slot.availableStaffIds.length > 1;
-      setChosenStaffId(
-        stayOnDetails
-          ? slot.staffId
-          : isPinned
-            ? pinnedStaffId
-            : hasStaffChoice
-              ? 'any'
-              : slot.staffId,
-      );
-      setTakenStaffIds(new Set());
-      setStaffError(null);
-      dispatch({
-        type: 'SELECT_SLOT_HOLD_ACQUIRED',
-        slot,
-        holdId: result.holdId,
-        holdExpiresAt: result.holdExpiresAt,
-        nextStep: hasStaffChoice ? 'staff' : 'details',
-      });
-      revealPanel();
-    } finally {
-      busyLockRef.current = false;
-      setIsBusy(false);
-      setPendingSlotKey(null);
-    }
-  };
-
-  const handleReholdExpiredSlot = async () => {
-    const expiredSlot = flow.selectedSlot;
-    if (!expiredSlot || isReholding || busyLockRef.current) return;
-    setIsReholding(true);
-    try {
-      await handleSelectSlot(expiredSlot, { stayOnDetails: true });
-    } finally {
-      setIsReholding(false);
-    }
-  };
-
-  const handlePickStaff = async (staffId: string) => {
-    const slot = flow.selectedSlot;
-    if (!slot || isBusy || busyLockRef.current) return;
-    setStaffError(null);
-    const member = staff.find((item) => item.id === staffId);
-    if (staffId === 'any' || !member || staffId === slot.staffId) {
-      setChosenStaffId(staffId);
-      dispatch({ type: 'STAFF_ASSIGNED', slot, holdId: null, holdExpiresAt: null });
-      revealPanel();
-      return;
-    }
-    busyLockRef.current = true;
-    setIsBusy(true);
-    setPendingStaffId(staffId);
-    try {
-      const result = await holdSlot(slot, staffId);
-      if (!result.ok) {
-        setTakenStaffIds((prev) => new Set([...prev, staffId]));
-        setStaffError(`${member.name} acaba de ocupar esa hora. Tu horario sigue apartado: elige otra opción.`);
-        return;
-      }
-      setChosenStaffId(staffId);
-      dispatch({
-        type: 'STAFF_ASSIGNED',
-        slot: { ...slot, staffId, staffName: member.name },
-        holdId: result.holdId,
-        holdExpiresAt: result.holdExpiresAt,
-      });
-      revealPanel();
-    } finally {
-      busyLockRef.current = false;
-      setIsBusy(false);
-      setPendingStaffId(null);
-    }
-  };
-
-  const handleApplyCoupon = async () => {
-    if (!couponInput.trim() || couponLoading) return;
-    setCouponError(null);
-    setCouponLoading(true);
-    try {
-      const result = await validateCouponCode(couponInput, subtotalCents);
-      if (!result.valid) {
-        setAppliedCoupon(null);
-        setCouponError(result.error);
-        return;
-      }
-      setAppliedCoupon(result.coupon);
-    } catch {
-      setAppliedCoupon(null);
-      setCouponError('Error de conexión al validar el cupón. Intenta de nuevo.');
-    } finally {
-      setCouponLoading(false);
-    }
-  };
-
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
-    setCouponError(null);
-    setCouponInput('');
-  };
-
-  const fieldErrors = hasTriedSubmit
-    ? validateClientBookingFields(clientName, clientPhone)
-    : EMPTY_FIELD_ERRORS;
-  const isSubmittingBooking = flow.phase === 'submitting' || flow.phase === 'confirmed';
-
-  const handleConfirmBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (
-      submitLockRef.current ||
-      isSubmittingBooking ||
-      flow.holdExpired ||
-      !selectedService ||
-      !flow.selectedSlot
-    ) {
-      return;
-    }
-    setHasTriedSubmit(true);
-    const errors = validateClientBookingFields(clientName, clientPhone);
-    if (errors.name || errors.phone) {
-      dispatch({ type: 'SUBMIT_FAILED', error: errors.name ?? errors.phone ?? '' });
-      return;
-    }
-    if (!flow.privacyConsentAccepted) {
-      dispatch({ type: 'CONSENT_REQUIRED_ERROR', message: 'Necesitamos tu aceptación para apartar la cita.' });
-      return;
-    }
-
-    if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current = buildIdempotencyKey(flow.selectedSlot.staffId);
-    }
-
-    submitLockRef.current = true;
-    dispatch({ type: 'START_SUBMIT' });
-    const effectiveProofMethod: ProofDeliveryMethod = !showsDeposit
-      ? 'none'
-      : proofDeliveryMethod === 'instagram_dm'
-        ? 'instagram_dm'
-        : proofDataUrl
-          ? 'web_upload'
-          : 'none';
-
-    try {
-      const result = await submitBookingRequest(idempotencyKeyRef.current, {
-        serviceId: selectedService.id,
-        extraServiceIds: selectedExtraServices.map((srv) => srv.id),
-        addonIds: activeSelectedAddons.map((a) => a.id),
-        staffId: flow.selectedSlot.staffId,
-        startAt: flow.selectedSlot.startAt,
-        clientName,
-        clientPhone: normalizePhoneE164(clientPhone),
-        clientInstagram: clientInstagram.trim() || null,
-        clientEmail: clientEmail || null,
-        clientBirthday: clientBirthday || null,
-        clientNotes,
-        inspoPhotoUrl: inspoDataUrl,
-        paymentProofUrl: effectiveProofMethod === 'web_upload' ? proofDataUrl : null,
-        proofDeliveryMethod: effectiveProofMethod,
-        couponCode: appliedCoupon?.code || null,
-        holdId: flow.holdId ?? undefined,
-        sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
-        privacyConsentAccepted: true,
-        marketingOptIn: flow.marketingOptIn,
-      });
-
-      if (result.kind === 'conflict') {
-        submitLockRef.current = false;
-        dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
-        revealPanel();
-        revalidateActive();
-        return;
-      }
-      if (result.kind === 'error') {
-        submitLockRef.current = false;
-        dispatch({
-          type: 'SUBMIT_FAILED',
-          error: result.error,
-          code: result.code ?? null,
-          activeBookings: result.activeBookings,
-        });
-        revealPanel();
-        return;
-      }
-      dispatch({ type: 'SUBMIT_CONFIRMED', manageUrl: result.manageUrl });
-      router.push(result.manageUrl);
-    } catch {
-      submitLockRef.current = false;
-      dispatch({ type: 'SUBMIT_FAILED', error: 'Error de conexión. Intenta nuevamente.' });
-    }
-  };
-
-  const step = flow.step;
-  const stepIndex = BOOKING_STEPS.indexOf(step);
-  const hasSlot = Boolean(flow.selectedSlot);
-  const skipsStaffForSlot = skipsStaffStep || (flow.selectedSlot?.availableStaffIds.length ?? 0) <= 1;
-  const completedSteps = new Set<BookingStep>(['service']);
-  if (stepIndex > BOOKING_STEPS.indexOf('extras') || !hasExtrasOptions) {
-    completedSteps.add('extras');
-  }
-  if (hasSlot) completedSteps.add('schedule');
-  if (hasSlot && (skipsStaffForSlot || step === 'details')) completedSteps.add('staff');
-
-  const previousStep = (current: BookingStep): BookingStep | null => {
-    if (current === 'details') return skipsStaffForSlot ? 'schedule' : 'staff';
-    if (current === 'staff') return 'schedule';
-    if (current === 'schedule') return hasExtrasOptions ? 'extras' : 'service';
-    if (current === 'extras') return 'service';
-    return null;
-  };
-  const backTarget = previousStep(step);
-  const handleBack = backTarget && !isSubmittingBooking ? () => goToStep(backTarget) : null;
+  const handleBack =
+    nav.backTarget && !actions.isSubmittingBooking ? () => actions.goToStep(nav.backTarget!) : null;
 
   const handleNext = () => {
-    if (step === 'service') goToStep(hasExtrasOptions ? 'extras' : 'schedule');
-    else if (step === 'extras') goToStep('schedule');
-    else if (step === 'schedule' && hasSlot) goToStep(skipsStaffForSlot ? 'details' : 'staff');
-    else if (step === 'staff') void handlePickStaff(chosenStaffId);
+    if (flow.step === 'service') actions.goToStep(selection.hasExtrasOptions ? 'extras' : 'schedule');
+    else if (flow.step === 'extras') actions.goToStep('schedule');
+    else if (flow.step === 'schedule' && flow.selectedSlot) actions.goToStep(skipsStaffForSlot ? 'details' : 'staff');
+    else if (flow.step === 'staff') void actions.handlePickStaff(actions.chosenStaffId);
   };
-
-  const canContinue =
-    step === 'service' || step === 'extras'
-      ? Boolean(selectedService)
-      : step === 'schedule'
-        ? hasSlot
-        : step === 'staff'
-          ? hasSlot
-          : !flow.holdExpired;
-
-  const nextLabel =
-    step === 'details'
-      ? flow.phase === 'confirmed'
-        ? 'Abriendo tu cita…'
-        : flow.phase === 'submitting'
-          ? 'Apartando tu cita...'
-          : showsDeposit || selectedService?.requiresConfirmation
-            ? 'Apartar mi cita'
-            : 'Confirmar cita'
-      : 'Continuar';
-
-  const extrasSelectedCount = activeSelectedAddons.length + selectedExtraServices.length;
-  const nextHint =
-    step === 'service'
-      ? `${formatDuration(totalDurationMinutes)} en total`
-      : step === 'extras'
-        ? extrasSelectedCount > 0
-          ? `${extrasSelectedCount} extra${extrasSelectedCount > 1 ? 's' : ''} · ${formatDuration(totalDurationMinutes)}`
-          : 'Paso opcional · Sin extras'
-        : step === 'schedule'
-          ? hasSlot
-            ? 'Horario apartado'
-            : 'Elige un horario'
-          : step === 'staff'
-            ? chosenStaffId === 'any'
-              ? 'Te asignamos a quien esté libre'
-              : ''
-            : flow.holdExpired
-              ? 'Reverifica tu horario arriba'
-              : isSubmittingBooking
-                ? 'Guardando tu reserva…'
-                : showsDeposit && proofDataUrl && proofDeliveryMethod !== 'instagram_dm'
-                  ? 'Comprobante listo para enviar'
-                  : showsDeposit && proofDeliveryMethod === 'instagram_dm'
-                    ? 'Envías tu anticipo por Instagram DM'
-                    : showsDeposit
-                      ? 'Después subes tu anticipo'
-                      : '';
-
-  const slot = flow.selectedSlot;
-  const slotTime = slot ? (timeFormat === '24h' ? slot.localTime24 : slot.localTime12) : '';
-  const staffDecided = Boolean(slot) && (skipsStaffForSlot || step === 'details');
-  const summaryRows: SummaryRow[] = [
-    {
-      key: 'service',
-      label: 'Servicio',
-      value: [selectedService?.name, ...selectedExtraServices.map((srv) => srv.name)].filter(Boolean).join(' + '),
-      sub: activeSelectedAddons.map((a) => a.name).join(' · ') || 'Sin extras',
-      mark: '1',
-      isDone: true,
-    },
-    {
-      key: 'when',
-      label: 'Cuándo',
-      value: slot ? `${formatDateLongInTimezone(slot.startAt, timezone)} · ${slotTime}` : 'Por elegir',
-      sub: slot ? settings.address : null,
-      mark: '2',
-      isDone: Boolean(slot) && !flow.holdExpired,
-    },
-    {
-      key: 'staff',
-      label: 'Artista',
-      value: !staffDecided
-        ? 'Por elegir'
-        : chosenStaffId === 'any' && !isPinned
-          ? 'Me da igual'
-          : (slot?.staffName ?? 'Por elegir'),
-      sub: staffDecided && chosenStaffId === 'any' && !isPinned && slot ? `Te atiende ${slot.staffName}` : null,
-      mark: '3',
-      isDone: staffDecided,
-    },
-    {
-      key: 'duration',
-      label: 'Duración',
-      value: formatDuration(totalDurationMinutes),
-      sub: null,
-      mark: 'clock',
-      isDone: true,
-    },
-  ];
 
   const summaryProps = {
     currency: settings.currency,
-    rows: summaryRows,
+    rows: buildSummaryRows({
+      selectedService: selection.selectedService,
+      selectedExtraServices: selection.selectedExtraServices,
+      activeSelectedAddons: selection.activeSelectedAddons,
+      flow,
+      timeFormat: selection.timeFormat,
+      timezone,
+      address: settings.address,
+      chosenStaffId: actions.chosenStaffId,
+      isPinned: selection.isPinned,
+      skipsStaffForSlot,
+      totalDurationMinutes: selection.totalDurationMinutes,
+    }),
     totalPriceCents,
-    hasStartingPrice,
+    hasStartingPrice: selection.hasStartingPrice,
     discountCents,
-    depositAmountCents: showsDeposit ? depositAmountCents || 20000 : 0,
+    depositAmountCents: selection.showsDeposit ? selection.depositAmountCents || 20000 : 0,
     holdRemainingSec,
     holdTotalSec,
     isHoldExpired: flow.holdExpired,
   };
 
-  const whatsappUrl = buildWhatsAppLink(settings.whatsappNumber, `Hola ${settings.name}, tengo una duda para agendar mi cita.`);
-
-  const nextButton = (fullWidth: boolean) =>
-    step === 'details' ? (
-      <Button
-        type="submit"
-        form={FORM_ID}
-        variant="primary"
-        size="lg"
-        label={nextLabel}
-        width={fullWidth ? '100%' : undefined}
-        isDisabled={isSubmittingBooking || flow.holdExpired}
-        isLoading={isSubmittingBooking}
-        className="rb-cta fx-press"
-      />
-    ) : (
-      <Button
-        variant="primary"
-        size="lg"
-        label={nextLabel}
-        width={fullWidth ? '100%' : undefined}
-        isDisabled={!canContinue || isBusy}
-        isLoading={isBusy && step === 'staff'}
-        onClick={handleNext}
-        className="rb-cta fx-press"
-      />
-    );
+  const whatsappUrl = buildWhatsAppLink(
+    settings.whatsappNumber,
+    `Hola ${settings.name}, tengo una duda para agendar mi cita.`,
+  );
+  const ctaProps = {
+    step: flow.step,
+    formId: FORM_ID,
+    nextLabel: nav.nextLabel,
+    canContinue: nav.canContinue,
+    isBusy: actions.isBusy,
+    isSubmittingBooking: actions.isSubmittingBooking,
+    holdExpired: flow.holdExpired,
+    onNext: handleNext,
+  };
 
   return (
     <VStack className={isEmbed ? 'lk-root rb-root rb-embed' : 'lk-root rb-root'}>
@@ -881,274 +248,93 @@ export function BookingWidget({
       </p>
 
       {!isEmbed ? (
-        <BookingHeader
-          salonName={settings.name}
-          step={step}
-          holdRemainingSec={holdRemainingSec}
-          whatsappUrl={whatsappUrl}
-          onBack={handleBack}
-        />
+        <BookingHeader salonName={settings.name} step={flow.step} holdRemainingSec={holdRemainingSec} whatsappUrl={whatsappUrl} onBack={handleBack} />
       ) : null}
-      <BookingHero
-        step={step}
-        completedSteps={completedSteps}
-        onGoToStep={goToStep}
-        isCompact={isEmbed}
-        holdRemainingSec={holdRemainingSec}
-      />
+      <BookingHero step={flow.step} completedSteps={nav.completedSteps} onGoToStep={actions.goToStep} isCompact={isEmbed} holdRemainingSec={holdRemainingSec} />
 
       <VStack as="main" className="rb-wrap rb-main">
         <VStack className="rb-layout">
-          <VStack as="section" className="rb-panel" aria-label={STEP_LABELS[step]}>
+          <VStack as="section" className="rb-panel" aria-label={STEP_LABELS[flow.step]}>
             {isEmbed && handleBack ? (
               <HStack justify="start" className="rb-m">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="md"
-                  label="Paso anterior"
-                  style={{ minHeight: '2.75rem' }}
-                  onClick={handleBack}
-                />
+                <Button type="button" variant="ghost" size="md" label="Paso anterior" style={{ minHeight: '2.75rem' }} onClick={handleBack} />
               </HStack>
             ) : null}
-            {flow.formErrorCode === 'NO_SHOW_DEPOSIT_REQUIRED' ? (
-              <VStack className="fx-fade-up">
-                <Banner
-                  status="info"
-                  title="Anticipo obligatorio por política de puntualidad"
-                  description="Para proteger la agenda del estudio, esta reserva requiere anticipo previo para confirmar tu horario."
-                />
-              </VStack>
-            ) : null}
-            {flow.conflict ? (
-              <VStack className="fx-fade-up">
-                <Banner
-                  status="warning"
-                  title="Ese horario se acaba de ocupar"
-                  description={flow.conflict.message}
-                  isDismissable
-                  onDismiss={() => dispatch({ type: 'DISMISS_CONFLICT' })}
-                >
-                  {flow.conflict.suggestions.length > 0 ? (
-                    <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
-                      {flow.conflict.suggestions.slice(0, 3).map((alt) => {
-                        const altKey = `${alt.staffId}-${alt.startAt}`;
-                        const isAltPending = pendingSlotKey === altKey;
-                        return (
-                          <Button
-                            key={altKey}
-                            variant="secondary"
-                            size="md"
-                            className="fx-press fx-tabular"
-                            isDisabled={isBusy}
-                            isLoading={isAltPending}
-                            label={
-                              isAltPending
-                                ? 'Apartando…'
-                                : `${formatDateShortInTimezone(alt.startAt, timezone)} · ${
-                                    timeFormat === '24h' ? alt.localTime24 : alt.localTime12
-                                  }`
-                            }
-                            onClick={() =>
-                              void handleSelectSlot(alt, { stayOnDetails: step === 'details' })
-                            }
-                          />
-                        );
-                      })}
-                    </HStack>
-                  ) : null}
-                </Banner>
-              </VStack>
-            ) : null}
 
-            {step === 'service' ? (
-              <ServiceStep
-                currency={settings.currency}
-                categories={categories}
-                services={services}
-                selectedService={selectedService}
-                onSelectService={(serviceId) => {
-                  if (serviceId === selectedService?.id) return;
-                  setSelectedServiceId(serviceId);
-                  setSelectedExtraServiceIds((prev) => prev.filter((id) => id !== serviceId));
-                  resetSelection();
-                }}
-                onPrefetchService={handlePrefetchService}
-              />
-            ) : null}
+            <BookingConflictBanner
+              formErrorCode={flow.formErrorCode}
+              conflict={flow.conflict}
+              timezone={timezone}
+              timeFormat={selection.timeFormat}
+              pendingSlotKey={actions.pendingSlotKey}
+              isBusy={actions.isBusy}
+              onDismissConflict={() => dispatch({ type: 'DISMISS_CONFLICT' })}
+              onSelectSuggestion={(alt) => void actions.handleSelectSlot(alt, { stayOnDetails: flow.step === 'details' })}
+            />
 
-            {step === 'extras' ? (
-              <ExtrasStep
-                currency={settings.currency}
-                selectedServiceName={selectedService?.name ?? null}
-                extraServices={extraServices}
-                selectedExtraServiceIds={selectedExtraServiceIds}
-                compatibleAddons={compatibleAddons}
-                selectedAddonIds={selectedAddonIds}
-                onToggleExtraService={(serviceId, checked) => {
-                  const nextIds = checked
-                    ? Array.from(new Set([...selectedExtraServiceIds, serviceId])).slice(0, 8)
-                    : selectedExtraServiceIds.filter((id) => id !== serviceId);
-                  if (nextIds.join(',') === selectedExtraServiceIds.join(',')) return;
-                  setSelectedExtraServiceIds(nextIds);
-                  resetSelection();
-                }}
-                onToggleAddon={(addonId, checked) => {
-                  const nextIds = checked
-                    ? Array.from(new Set([...selectedAddonIds, addonId]))
-                    : selectedAddonIds.filter((id) => id !== addonId);
-                  if (nextIds.join(',') === selectedAddonIds.join(',')) return;
-                  setSelectedAddonIds(nextIds);
-                  resetSelection();
-                }}
-              />
-            ) : null}
+            <BookingStepRouter
+              formId={FORM_ID}
+              settings={settings}
+              timezone={timezone}
+              categories={categories}
+              services={services}
+              staff={staff}
+              flow={flow}
+              dispatch={dispatch}
+              selection={selection}
+              actions={actions}
+              totalPriceCents={totalPriceCents}
+              schedule={{
+                todayKey: initialTodayKey,
+                effectiveSelectedDate,
+                availabilityDays,
+                availableDateSet,
+                selectedDaySummary,
+                loadingAvail,
+                isRevalidatingAvail,
+                onPrefetchService: (serviceId) => {
+                  if (!serviceId || serviceId === selection.selectedService?.id) return;
+                  prefetchWindow({
+                    serviceId,
+                    extraServiceIds: selection.selectedExtraServiceIds.filter((id) => id !== serviceId),
+                    addonIds: selection.activeAddonIds,
+                    staffId: selection.pinnedStaffId,
+                    windowStartDate: selection.windowStartDate,
+                  });
+                },
+                onSelectDate: (nextDate) =>
+                  selection.selectDateWithinWindow(
+                    nextDate,
+                    availabilityDays[0]?.date,
+                    availabilityDays[availabilityDays.length - 1]?.date,
+                  ),
+                onAdvanceMonth: () => selection.advanceMonthWindow(loadingAvail),
+                onPrefetchNextMonth: () => {
+                  if (!selection.selectedService || !selection.canAdvanceMonth || selection.nextMonthStartKey === selection.windowStartDate) return;
+                  prefetchWindow({
+                    serviceId: selection.selectedService.id,
+                    extraServiceIds: selection.activeExtraServiceIds,
+                    addonIds: selection.activeAddonIds,
+                    staffId: selection.pinnedStaffId,
+                    windowStartDate: selection.nextMonthStartKey,
+                  });
+                },
+                onReturnToToday: () => selection.returnToTodayWindow(loadingAvail),
+                onOpenWaitlist: () => {
+                  setHasOpenedWaitlist(true);
+                  setWaitlistOpen(true);
+                },
+              }}
+            />
 
-            {step === 'schedule' ? (
-              <ScheduleStep
-                settings={settings}
-                layoutView={layoutView}
-                timeFormat={timeFormat}
-                todayKey={initialTodayKey}
-                selectedDate={effectiveSelectedDate}
-                availabilityDays={availabilityDays}
-                availableDateSet={availableDateSet}
-                selectedDaySummary={selectedDaySummary}
-                selectedSlot={flow.selectedSlot}
-                pinnedStaffName={pinnedStaff?.name ?? null}
-                pinnedStaffSchedule={pinnedStaffSchedule}
-                pendingSlotKey={pendingSlotKey}
-                isBusy={isBusy}
-                loadingAvail={loadingAvail}
-                isRevalidating={isRevalidatingAvail}
-                canAdvanceMonth={canAdvanceMonth}
-                isViewingFutureWindow={windowStartDate > initialTodayKey}
-                onChangeLayoutView={setLayoutView}
-                onChangeTimeFormat={setTimeFormat}
-                onSelectDate={handleSelectDate}
-                onSelectSlot={(next) => void handleSelectSlot(next)}
-                onShowAllStaff={() => {
-                  if (pinnedStaffId === 'any') return;
-                  setPinnedStaffId('any');
-                  resetSelection();
-                }}
-                onRedirectStaff={(staffId) => {
-                  if (pinnedStaffId === staffId) return;
-                  setPinnedStaffId(staffId);
-                  resetSelection();
-                }}
-                onAdvanceMonth={handleAdvanceMonth}
-                onPrefetchNextMonth={handlePrefetchNextMonth}
-                onReturnToToday={handleReturnToToday}
-                onOpenWaitlist={handleOpenWaitlist}
-              />
-            ) : null}
-
-            {step === 'staff' && slot ? (
-              <StaffStep
-                timezone={timezone}
-                timeFormat={timeFormat}
-                slot={slot}
-                eligibleStaff={eligibleStaff}
-                allStaff={staff}
-                chosenStaffId={chosenStaffId}
-                pendingStaffId={pendingStaffId}
-                takenStaffIds={takenStaffIds}
-                isBusy={isBusy}
-                errorMessage={staffError}
-                onPickStaff={(staffId) => void handlePickStaff(staffId)}
-              />
-            ) : null}
-
-            {step === 'details' ? (
-              <ClientConfirmStep
-                formId={FORM_ID}
-                settings={settings}
-                selectedService={selectedService}
-                selectedExtraServices={selectedExtraServices}
-                activeSelectedAddons={activeSelectedAddons}
-                selectedSlot={flow.selectedSlot}
-                timeFormat={timeFormat}
-                totalDurationMinutes={totalDurationMinutes}
-                subtotalCents={subtotalCents}
-                totalPriceCents={totalPriceCents}
-                depositAmountCents={depositAmountCents}
-                couponInput={couponInput}
-                appliedCoupon={appliedCoupon}
-                couponError={couponError}
-                couponLoading={couponLoading}
-                clientName={clientName}
-                clientPhone={clientPhone}
-                clientInstagram={clientInstagram}
-                clientEmail={clientEmail}
-                clientBirthday={clientBirthday}
-                clientNotes={clientNotes}
-                inspoFile={inspoFile}
-                inspoDataUrl={inspoDataUrl}
-                proofDeliveryMethod={proofDeliveryMethod}
-                proofFile={proofFile}
-                proofDataUrl={proofDataUrl}
-                privacyConsentAccepted={flow.privacyConsentAccepted}
-                marketingOptIn={flow.marketingOptIn}
-                privacyConsentError={flow.privacyConsentError}
-                fieldErrors={fieldErrors}
-                formError={flow.formError}
-                formErrorCode={flow.formErrorCode}
-                activeBookings={flow.activeBookings}
-                isSubmitting={isSubmittingBooking}
-                holdExpired={flow.holdExpired}
-                holdExpiredMessage={flow.holdExpiredMessage}
-                isReholding={isReholding}
-                onReholdSlot={() => void handleReholdExpiredSlot()}
-                onPickAnotherTime={() => {
-                  dispatch({ type: 'RESET_TO_SCHEDULE' });
-                  revealPanel();
-                }}
-                onChangeCouponInput={setCouponInput}
-                onApplyCoupon={() => void handleApplyCoupon()}
-                onRemoveCoupon={handleRemoveCoupon}
-                onChangeClientName={setClientName}
-                onChangeClientPhone={(value) => setClientPhone(formatMxPhoneDisplay(value))}
-                onChangeClientInstagram={setClientInstagram}
-                onChangeClientEmail={setClientEmail}
-                onChangeClientBirthday={setClientBirthday}
-                onChangeClientNotes={setClientNotes}
-                onChangeInspoFile={(file, dataUrl) => {
-                  setInspoFile(file);
-                  setInspoDataUrl(dataUrl);
-                }}
-                onChangeProofMethod={setProofDeliveryMethod}
-                onChangeProofFile={(file, dataUrl) => {
-                  setProofFile(file);
-                  setProofDataUrl(dataUrl);
-                }}
-                onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}
-                onChangeMarketingOptIn={(optedIn) => dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })}
-                onSubmit={(e) => void handleConfirmBooking(e)}
-              />
-            ) : null}
-
-            <HStack justify="between" align="center" gap={3} className="rb-actions rb-d">
-              <Button
-                label="Atrás"
-                variant="secondary"
-                size="lg"
-                className="fx-press"
-                isDisabled={!backTarget || isSubmittingBooking}
-                onClick={() => {
-                  if (backTarget) goToStep(backTarget);
-                }}
-              />
-              <HStack gap={3} align="center">
-                {nextHint ? (
-                  <Text type="supporting" color="secondary">
-                    {nextHint}
-                  </Text>
-                ) : null}
-                {nextButton(false)}
-              </HStack>
-            </HStack>
+            <BookingDesktopActions
+              {...ctaProps}
+              canGoBack={Boolean(nav.backTarget)}
+              nextHint={nav.nextHint}
+              onBack={() => {
+                if (nav.backTarget) actions.goToStep(nav.backTarget);
+              }}
+            />
           </VStack>
 
           <VStack as="aside" className="rb-aside rb-d" aria-labelledby="rb-summary-aside">
@@ -1157,36 +343,23 @@ export function BookingWidget({
         </VStack>
       </VStack>
 
-      <HStack justify="between" align="center" gap={3} className="rb-bottom rb-m">
-        <button
-          type="button"
-          className="rb-bottom-summary fx-press"
-          style={{ minWidth: 0 }}
-          aria-haspopup="dialog"
-          onClick={() => setSummaryOpen(true)}
-        >
-          <Text className="lk-serif rb-bottom-total" hasTabularNumbers>
-            {formatServicePrice(totalPriceCents, hasStartingPrice, settings.currency)}
-          </Text>
-          <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint" hasTabularNumbers>
-            {formatDuration(totalDurationMinutes)} · Ver resumen
-            <ChevronUp size={14} aria-hidden="true" />
-          </Text>
-        </button>
-        {nextButton(false)}
-      </HStack>
-
-      <BottomSheet isOpen={summaryOpen} onOpenChange={setSummaryOpen} label="Resumen de tu cita" padding={0} height="hug">
-        <VStack className="lk-portal rb-sheet fx-sheet-in">
-          <BookingSummaryCard {...summaryProps} headingId="rb-summary-sheet" />
-        </VStack>
-      </BottomSheet>
+      <BookingStickyBar
+        {...ctaProps}
+        currency={settings.currency}
+        totalPriceCents={totalPriceCents}
+        hasStartingPrice={selection.hasStartingPrice}
+        totalDurationMinutes={selection.totalDurationMinutes}
+        summaryOpen={summaryOpen}
+        summaryProps={summaryProps}
+        onOpenSummary={() => setSummaryOpen(true)}
+        onSummaryOpenChange={setSummaryOpen}
+      />
 
       {hasOpenedWaitlist ? (
         <WaitlistDialog
           isOpen={waitlistOpen}
-          serviceId={selectedService?.id}
-          selectedStaffId={pinnedStaffId}
+          serviceId={selection.selectedService?.id}
+          selectedStaffId={selection.pinnedStaffId}
           selectedDate={effectiveSelectedDate}
           onOpenChange={setWaitlistOpen}
         />

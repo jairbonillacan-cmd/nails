@@ -1,18 +1,14 @@
 'use client';
 
+import type React from 'react';
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { AspectRatio } from '@astryxdesign/core/AspectRatio';
 import {
   Check,
   Clock,
-  ExternalLink,
   MessageCircle,
   Package,
   ReceiptText,
@@ -24,10 +20,13 @@ import {
   formatDateShortInTimezone,
   formatTimeInTimezone,
 } from '@/lib/format';
+import { ActionRow, EmptyStateCard, SurfaceCard } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import { isDisplayableProofUrl, type DashboardMetrics } from './dashboardMetrics';
-
-type PendingDepositItem = AdminOverviewPayload['pendingDeposits'][number];
+import {
+  DepositProofPreviewDialog,
+  type PendingDepositItem,
+} from './DepositProofPreviewDialog';
 
 interface DashboardAttentionCardProps {
   data: AdminOverviewPayload;
@@ -218,271 +217,138 @@ export function DashboardAttentionCard({
   const visibleTasks = allTasks.slice(0, maxVisible);
   const hiddenCount = Math.max(0, allTasks.length - visibleTasks.length);
 
+  const headerActions = confirmingBookingId ? (
+    <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+      Confirmando...
+    </Text>
+  ) : savedMessage ? (
+    <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+      <Check size={12} aria-hidden="true" />
+      {savedMessage}
+    </Text>
+  ) : (
+    <Text type="supporting" color="secondary" className="ad-hide-s">
+      Resuélvelo aquí mismo en un toque
+    </Text>
+  );
+
   return (
     <>
-      <VStack as="section" className="ad-card ad-enter" aria-labelledby="ad-att" gap={0}>
-        <HStack
-          justify="between"
-          align="center"
-          gap={3}
-          wrap="wrap"
-          className="ad-card-head"
-        >
-          <HStack gap={2} align="center">
-            <Heading level={2} id="ad-att" className="lk-serif ad-h2">
-              Pendientes de hoy
-            </Heading>
-            {allTasks.length > 0 ? (
-              <Text
-                color="inherit"
-                weight="bold"
-                className="ad-chip ad-chip-solid"
-                hasTabularNumbers
-              >
-                {allTasks.length}
-              </Text>
-            ) : null}
-          </HStack>
-          <HStack gap={2} align="center" wrap="wrap">
-            {confirmingBookingId ? (
-              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-                Confirmando...
-              </Text>
-            ) : savedMessage ? (
-              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-                <Check size={12} aria-hidden="true" />
-                {savedMessage}
-              </Text>
-            ) : (
-              <Text type="supporting" color="secondary" className="ad-hide-s">
-                Resuélvelo aquí mismo en un toque
-              </Text>
-            )}
-          </HStack>
-        </HStack>
-
-        {visibleTasks.length === 0 ? (
-          <HStack className="ad-task" align="center" gap={3}>
-            <VStack
-              className="ad-done-circle fx-pop"
-              align="center"
-              justify="center"
-              aria-hidden="true"
-            >
-              <Check size={18} />
-            </VStack>
-            <VStack gap={0.5} className="rb-grow">
-              <Text weight="semibold">Todo al día</Text>
+      <SurfaceCard
+        id="ad-att"
+        title="Pendientes de hoy"
+        count={allTasks.length > 0 ? allTasks.length : undefined}
+        actions={headerActions}
+        className="ad-card ad-enter"
+        footer={
+          hiddenCount > 0 ? (
+            <>
               <Text type="supporting" color="secondary">
-                No tienes anticipos, cobros ni avisos pendientes.
+                Hay {hiddenCount} pendiente{hiddenCount === 1 ? '' : 's'} más en tu panel.
               </Text>
-            </VStack>
-          </HStack>
+              <Button label="Revisar en Caja" variant="ghost" size="sm" href="/admin/caja" />
+            </>
+          ) : undefined
+        }
+      >
+        {visibleTasks.length === 0 ? (
+          <VStack padding={4}>
+            <EmptyStateCard
+              framed={false}
+              isCompact
+              icon={
+                <VStack
+                  className="ad-done-circle fx-pop"
+                  align="center"
+                  justify="center"
+                  aria-hidden="true"
+                >
+                  <Check size={18} />
+                </VStack>
+              }
+              title="Todo al día"
+              description="No tienes anticipos, cobros ni avisos pendientes."
+            />
+          </VStack>
         ) : (
           <VStack gap={0}>
             {visibleTasks.map((task) => (
-              <HStack
+              <ActionRow
                 key={task.id}
                 className={task.isBusy ? 'ad-task fx-busy' : 'ad-task'}
-                aria-busy={task.isBusy || undefined}
-                align="center"
-                gap={3}
-                wrap="wrap"
-              >
-                {task.thumbnail ? (
-                  <button
-                    type="button"
-                    className="ad-proof-thumb"
-                    aria-label={task.thumbnail.ariaLabel}
-                    title="Toca para ampliar el comprobante"
-                    disabled={Boolean(task.isBusy)}
-                    onClick={task.thumbnail.onClick}
-                  >
-                    <img src={task.thumbnail.src} alt={task.thumbnail.alt} />
-                  </button>
-                ) : (
-                  <VStack
-                    className="ad-task-icon"
-                    data-tone={task.tone}
-                    align="center"
-                    justify="center"
-                    aria-hidden="true"
-                  >
-                    {task.icon}
-                  </VStack>
-                )}
-                <VStack gap={0.5} className="ad-task-body">
-                  <Text weight="semibold" className="ad-task-title">
-                    {task.title}
-                  </Text>
-                  <Text type="supporting" color="secondary">
-                    {task.subtitle}
-                  </Text>
-                </VStack>
-                <HStack gap={2} wrap="wrap" className="ad-task-actions">
-                  {task.secondary ? (
+                leading={
+                  task.thumbnail ? (
+                    <button
+                      type="button"
+                      className="ad-proof-thumb"
+                      aria-label={task.thumbnail.ariaLabel}
+                      title="Toca para ampliar el comprobante"
+                      disabled={Boolean(task.isBusy)}
+                      onClick={task.thumbnail.onClick}
+                    >
+                      <img src={task.thumbnail.src} alt={task.thumbnail.alt} />
+                    </button>
+                  ) : (
+                    <VStack
+                      className="ad-task-icon"
+                      data-tone={task.tone}
+                      align="center"
+                      justify="center"
+                      aria-hidden="true"
+                    >
+                      {task.icon}
+                    </VStack>
+                  )
+                }
+                title={task.title}
+                subtitle={task.subtitle}
+                actions={
+                  <HStack gap={2} wrap="wrap">
+                    {task.secondary ? (
+                      <Button
+                        type={task.secondary.href ? undefined : 'button'}
+                        label={task.secondary.label}
+                        variant="secondary"
+                        size="sm"
+                        isDisabled={Boolean(task.isBusy)}
+                        href={task.secondary.href}
+                        onClick={task.secondary.onClick}
+                      />
+                    ) : null}
                     <Button
-                      type={task.secondary.href ? undefined : 'button'}
-                      label={task.secondary.label}
-                      variant="secondary"
+                      type={task.primary.href ? undefined : 'button'}
+                      label={task.primary.label}
+                      variant="primary"
                       size="sm"
-                      isDisabled={Boolean(task.isBusy)}
-                      href={task.secondary.href}
-                      onClick={task.secondary.onClick}
+                      icon={
+                        task.primary.isExternal ? (
+                          <MessageCircle size={14} aria-hidden="true" />
+                        ) : undefined
+                      }
+                      isLoading={Boolean(task.primary.isLoading)}
+                      isDisabled={Boolean(task.primary.isLoading)}
+                      href={task.primary.href}
+                      target={task.primary.isExternal ? '_blank' : undefined}
+                      rel={task.primary.isExternal ? 'noopener noreferrer' : undefined}
+                      onClick={task.primary.onClick}
                     />
-                  ) : null}
-                  <Button
-                    type={task.primary.href ? undefined : 'button'}
-                    label={task.primary.label}
-                    variant="primary"
-                    size="sm"
-                    icon={
-                      task.primary.isExternal ? (
-                        <MessageCircle size={14} aria-hidden="true" />
-                      ) : undefined
-                    }
-                    isLoading={Boolean(task.primary.isLoading)}
-                    isDisabled={Boolean(task.primary.isLoading)}
-                    href={task.primary.href}
-                    target={task.primary.isExternal ? '_blank' : undefined}
-                    rel={task.primary.isExternal ? 'noopener noreferrer' : undefined}
-                    onClick={task.primary.onClick}
-                  />
-                </HStack>
-              </HStack>
+                  </HStack>
+                }
+              />
             ))}
-
-            {hiddenCount > 0 ? (
-              <HStack justify="between" align="center" gap={2} className="ad-card-foot">
-                <Text type="supporting" color="secondary">
-                  Hay {hiddenCount} pendiente{hiddenCount === 1 ? '' : 's'} más en tu panel.
-                </Text>
-                <Button label="Revisar en Caja" variant="ghost" size="sm" href="/admin/caja" />
-              </HStack>
-            ) : null}
           </VStack>
         )}
-      </VStack>
+      </SurfaceCard>
 
-      <Dialog
-        isOpen={Boolean(previewDeposit)}
-        onOpenChange={(open) => {
-          if (!open && !confirmingBookingId) setPreviewDeposit(null);
-        }}
-        width={520}
-        padding={5}
-      >
-        {previewDeposit ? (
-          <VStack
-            gap={4}
-            className={confirmingBookingId === previewDeposit.bookingId ? 'fx-busy' : undefined}
-            aria-busy={confirmingBookingId === previewDeposit.bookingId || undefined}
-          >
-            <DialogHeader
-              title="Comprobante de anticipo"
-              subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
-              onOpenChange={(open) => {
-                if (!open && !confirmingBookingId) setPreviewDeposit(null);
-              }}
-            />
-
-            <VStack gap={2} className="ad-proof-meta">
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  Servicio y manicurista
-                </Text>
-                <Text weight="semibold" size="sm">
-                  {previewDeposit.serviceName} · {previewDeposit.staffName}
-                </Text>
-              </HStack>
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  Fecha de cita
-                </Text>
-                <Text weight="semibold" size="sm" hasTabularNumbers>
-                  {formatDateShortInTimezone(previewDeposit.startAt, tz)} ·{' '}
-                  {formatTimeInTimezone(previewDeposit.startAt, tz, true)}
-                </Text>
-              </HStack>
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  Anticipo esperado
-                </Text>
-                <Badge
-                  variant="info"
-                  label={formatCurrency(
-                    previewDeposit.depositAmountCents || depositFallbackCents,
-                    currency,
-                  )}
-                />
-              </HStack>
-            </VStack>
-
-            {isDisplayableProofUrl(previewDeposit.paymentProofUrl) ? (
-              <VStack gap={2}>
-                <AspectRatio ratio={4 / 3} fit="contain">
-                  <img
-                    src={previewDeposit.paymentProofUrl}
-                    alt={`Comprobante de anticipo de ${previewDeposit.clientName}`}
-                    className="ad-proof-img"
-                  />
-                </AspectRatio>
-                <Button
-                  label="Abrir imagen completa"
-                  variant="ghost"
-                  size="sm"
-                  icon={<ExternalLink size={14} aria-hidden="true" />}
-                  href={previewDeposit.paymentProofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              </VStack>
-            ) : (
-              <VStack gap={1.5} className="ad-proof-note">
-                <Text weight="semibold" size="sm">
-                  {previewDeposit.proofDeliveryMethod === 'instagram_dm'
-                    ? 'Enviado por Instagram DM'
-                    : 'Referencia de comprobante registrada'}
-                </Text>
-                <Text type="supporting" color="secondary">
-                  {previewDeposit.proofDeliveryMethod === 'instagram_dm'
-                    ? `Revisa el mensaje de ${previewDeposit.clientInstagram ?? previewDeposit.clientName} en Instagram para validar la transferencia.`
-                    : `Referencia: ${previewDeposit.paymentProofUrl ?? 'Comprobante adjunto'}`}
-                </Text>
-              </VStack>
-            )}
-
-            <HStack justify="end" gap={2} wrap="wrap">
-              <Button
-                label="Ir a Anticipos en Caja"
-                variant="secondary"
-                size="sm"
-                isDisabled={confirmingBookingId === previewDeposit.bookingId}
-                href="/admin/caja?tab=anticipos"
-              />
-              <Button
-                type="button"
-                label={
-                  confirmingBookingId === previewDeposit.bookingId
-                    ? 'Confirmando...'
-                    : 'Confirmar cita'
-                }
-                variant="primary"
-                size="sm"
-                isLoading={confirmingBookingId === previewDeposit.bookingId}
-                isDisabled={confirmingBookingId === previewDeposit.bookingId}
-                onClick={async () => {
-                  const target = previewDeposit;
-                  const ok = await onConfirmDeposit(target.bookingId, target.clientName);
-                  if (ok) {
-                    setPreviewDeposit(null);
-                  }
-                }}
-              />
-            </HStack>
-          </VStack>
-        ) : null}
-      </Dialog>
+      <DepositProofPreviewDialog
+        deposit={previewDeposit}
+        currency={currency}
+        timezone={tz}
+        depositFallbackCents={depositFallbackCents}
+        confirmingBookingId={confirmingBookingId}
+        onClose={() => setPreviewDeposit(null)}
+        onConfirmDeposit={onConfirmDeposit}
+      />
     </>
   );
 }

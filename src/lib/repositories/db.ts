@@ -94,6 +94,7 @@ import {
   type PublicLoyaltySummaryDTO,
 } from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
+import { isSafeInternalBookingMediaPath } from '../contracts';
 import { MediaValidationError, storeMediaUpload } from '../storage/media';
 import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
 import { parseDemoDatabase } from './schema';
@@ -1420,18 +1421,13 @@ export async function persistBookingMediaField(
       throw err;
     }
   }
-  if (
-    trimmed.startsWith('/api/media/') ||
-    trimmed.startsWith('/gallery/') ||
-    trimmed.startsWith('inspo/') ||
-    trimmed.startsWith('proofs/') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('demo-')
-  ) {
-    return trimmed;
+  if (isSafeInternalBookingMediaPath(trimmed, folder)) {
+    return trimmed.startsWith('/api/media/') ? trimmed : `/api/media/${trimmed}`;
   }
-  throw new PolicyError('INVALID_MEDIA_URL', 'Referencia de imagen inválida.');
+  throw new PolicyError(
+    'INVALID_MEDIA_URL',
+    'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+  );
 }
 
 interface ExtendedCreateSlotHoldInput extends CreateSlotHoldInput {

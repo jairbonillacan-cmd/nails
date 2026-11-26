@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
+import { AdminOperationsPostSchema } from '@/lib/contracts';
+import { toAdminCalendarConnectionDTO } from '@/lib/public-dto';
 import {
   addCashEntry,
   adjustInventoryItem,
   getSnapshot,
+  PolicyError,
   recordAuditEvent,
   updateCalendarConnection,
   updateWaitlistStatus,
@@ -12,6 +16,7 @@ import {
   verifyStoredOwnerPin,
 } from '@/lib/repositories/db';
 import { serializeCsv } from '@/lib/sanitize';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin'], request);
@@ -25,7 +30,36 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   if (searchParams.get('export') === 'csv') {
+    const db = getSnapshot();
     const providedPin = request.headers.get('x-owner-pin') ?? undefined;
+    const ownerPinGateActive = Boolean(
+      (db.settings.ownerPinEnabled && db.settings.ownerPinHash) || providedPin?.trim(),
+    );
+    if (ownerPinGateActive) {
+      const pinRate = checkRateLimit({
+        bucket: 'admin:owner-pin',
+        key: `${session.user.id}:${getRequestIp(request)}`,
+        limit: 10,
+        windowMs: 5 * 60_000,
+      });
+      if (!pinRate.allowed) {
+        return NextResponse.json(
+          {
+            code: 'RATE_LIMITED',
+            error:
+              'Demasiados intentos de PIN de autorización. Espera unos minutos e intenta de nuevo.',
+          },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(pinRate.retryAfterSeconds),
+              'X-RateLimit-Remaining': '0',
+            },
+          },
+        );
+      }
+    }
+
     const pinCheck = verifyStoredOwnerPin(providedPin);
     if (pinCheck.required && !pinCheck.valid) {
       const hasAttempt = Boolean(providedPin?.trim());
@@ -40,7 +74,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const db = getSnapshot();
     const headers = [
       'Fecha',
       'Tipo',
@@ -92,59 +125,83 @@ export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
-  const body = await request.json();
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json({ error: 'Solicitud JSON inválida.' }, { status: 400 });
+  }
 
-  if (body.kind === 'calendar') {
-    if (
-      session.user.role === 'specialist' &&
-      (!session.user.staffMemberId || body.staffId !== session.user.staffMemberId)
-    ) {
+  try {
+    const parsed = AdminOperationsPostSchema.parse(rawBody);
+
+    if (parsed.kind === 'calendar') {
+      if (
+        session.user.role === 'specialist' &&
+        (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
+      ) {
+        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+      }
+      const connection = await updateCalendarConnection(parsed.staffId, parsed.patch);
+      return NextResponse.json({
+        connection: toAdminCalendarConnectionDTO(connection),
+      });
+    }
+
+    if (session.user.role !== 'owner' && session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
     }
-    const connection = await updateCalendarConnection(body.staffId, body.patch);
-    return NextResponse.json({ connection });
-  }
 
-  if (!['owner', 'admin'].includes(session.user.role)) {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
-  }
+    if (parsed.kind === 'cash') {
+      const entry = await addCashEntry({
+        ...parsed.data,
+        recordedBy: session.user.fullName,
+      });
+      return NextResponse.json({ entry });
+    }
 
-  if (body.kind === 'cash') {
-    const entry = await addCashEntry({
-      ...body.data,
-      recordedBy: session.user.fullName,
-    });
-    return NextResponse.json({ entry });
-  }
+    if (parsed.kind === 'inventory') {
+      const item = await adjustInventoryItem({
+        ...parsed.data,
+        createdBy: session.user.fullName,
+      });
+      return NextResponse.json({ item });
+    }
 
-  if (body.kind === 'inventory') {
-    const item = await adjustInventoryItem({
-      ...body.data,
-      createdBy: session.user.fullName,
-    });
-    return NextResponse.json({ item });
-  }
+    if (parsed.kind === 'coupon') {
+      const coupon = await upsertCoupon(parsed.data);
+      return NextResponse.json({ coupon });
+    }
 
-  if (body.kind === 'coupon') {
-    const coupon = await upsertCoupon(body.data);
-    return NextResponse.json({ coupon });
-  }
+    if (parsed.kind === 'waitlist') {
+      const entry = await updateWaitlistStatus(parsed.id, parsed.status);
+      return NextResponse.json({ entry });
+    }
 
-  if (body.kind === 'waitlist') {
-    const entry = await updateWaitlistStatus(body.id, body.status);
-    return NextResponse.json({ entry });
-  }
-
-  if (body.kind === 'workflow') {
     if (session.user.role !== 'owner') {
       return NextResponse.json(
         { error: 'Solo la Dueña puede editar workflows de automatización.' },
         { status: 403 },
       );
     }
-    const workflow = await updateWorkflow(body.id, body.patch);
+    const workflow = await updateWorkflow(parsed.id, parsed.patch);
     return NextResponse.json({ workflow });
+  } catch (err) {
+    if (err instanceof PolicyError) {
+      const status =
+        err.code === 'ITEM_NOT_FOUND' ||
+        err.code === 'WAITLIST_NOT_FOUND' ||
+        err.code === 'WORKFLOW_NOT_FOUND'
+          ? 404
+          : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
+    }
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: err.issues[0]?.message || 'Datos de operación inválidos.' },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json({ error: 'Error procesando operación.' }, { status: 400 });
   }
-
-  return NextResponse.json({ error: 'Acción desconocida' }, { status: 400 });
 }

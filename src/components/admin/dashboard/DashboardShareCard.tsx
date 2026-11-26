@@ -1,0 +1,172 @@
+'use client';
+
+import { useState } from 'react';
+import NextLink from 'next/link';
+import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Heading } from '@astryxdesign/core/Heading';
+import { Text } from '@astryxdesign/core/Text';
+import { QrCode } from 'lucide-react';
+import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
+import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { LANDING_ASSETS } from '../../landing/landingContent';
+import { getDisplayBookingUrl } from './dashboardMetrics';
+import { DashboardQrDialog } from './DashboardQrDialog';
+
+interface DashboardShareCardProps {
+  salonName: string;
+  instagramHandle: string | null;
+  appUrl: string;
+  canCustomizeBrand: boolean;
+}
+
+export function DashboardShareCard({
+  salonName,
+  instagramHandle,
+  appUrl,
+  canCustomizeBrand,
+}: DashboardShareCardProps) {
+  const { copied, feedback: copyFeedback, copy } = useCopyToClipboard(2400);
+  const shareStatus = useEphemeralMessage(2400);
+  const [qrOpen, setQrOpen] = useState(false);
+
+  const bookingDisplayUrl = getDisplayBookingUrl(appUrl);
+  const qrTargetUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/reservar`
+      : `${appUrl.replace(/\/+$/, '')}/reservar`;
+
+  const handleCopyBookingLink = () => {
+    void copy(
+      qrTargetUrl,
+      '¡Link de reservas copiado!',
+      'Copia manualmente /reservar',
+    );
+  };
+
+  const handleShareBookingLink = async () => {
+    const text = `Reserva tu cita en ${salonName} en segundos:`;
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: salonName, text, url: qrTargetUrl });
+        shareStatus.show('Página compartida');
+        return;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+      }
+    }
+    await copy(
+      `${text} ${qrTargetUrl}`,
+      '¡Enlace listo para WhatsApp o IG!',
+      'Abre /reservar para compartir',
+    );
+  };
+
+  const liveAnnouncement = shareStatus.message ?? copyFeedback ?? '';
+
+  return (
+    <>
+      <VStack as="section" className="ad-cherry-card" aria-labelledby="ad-pg" gap={3}>
+        <img
+          src={LANDING_ASSETS.cherriesWhite}
+          alt=""
+          width={170}
+          height={170}
+          className="ad-cherry-art"
+          aria-hidden="true"
+        />
+
+        <HStack gap={2} align="center" className="ad-cherry-layer">
+          <Text className="ad-live-dot fx-pulse-dot" aria-hidden="true">
+            {'\u200B'}
+          </Text>
+          <Text color="inherit" weight="bold" size="sm" className="ad-live-label">
+            EN VIVO
+          </Text>
+        </HStack>
+
+        <Heading level={2} id="ad-pg" className="lk-serif ad-cherry-title ad-cherry-layer">
+          Tu página de reservas
+        </Heading>
+
+        <Text color="inherit" className="ad-cherry-desc ad-cherry-layer" textWrap="pretty">
+          Compártela en {instagramHandle || 'Instagram'} y WhatsApp para que tus clientas
+          agenden con anticipo.
+        </Text>
+
+        <HStack
+          justify="between"
+          align="center"
+          gap={2}
+          className="ad-cherry-link ad-cherry-layer"
+        >
+          <Text color="inherit" weight="semibold" size="sm" className="ad-link-url">
+            {bookingDisplayUrl}
+          </Text>
+          <button
+            type="button"
+            className="ad-cherry-copy fx-press"
+            onClick={handleCopyBookingLink}
+          >
+            {copied ? '¡Copiado!' : 'Copiar'}
+          </button>
+        </HStack>
+
+        <Text
+          type="supporting"
+          color="inherit"
+          role="status"
+          aria-live="polite"
+          className="rb-sr-only"
+        >
+          {liveAnnouncement}
+        </Text>
+
+        <HStack gap={2} wrap="wrap" className="ad-cherry-layer">
+          <NextLink
+            href="/reservar"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ad-cherry-chip fx-press"
+          >
+            Ver página
+          </NextLink>
+          <NextLink
+            href="/links"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ad-cherry-chip fx-press"
+          >
+            Link para Instagram
+          </NextLink>
+          <button
+            type="button"
+            className="ad-cherry-chip fx-press"
+            onClick={() => setQrOpen(true)}
+          >
+            <QrCode size={13} aria-hidden="true" />
+            <Text color="inherit" size="sm" weight="semibold">
+              Código QR
+            </Text>
+          </button>
+          <button
+            type="button"
+            className="ad-cherry-chip fx-press"
+            onClick={() => void handleShareBookingLink()}
+          >
+            Compartir
+          </button>
+        </HStack>
+      </VStack>
+
+      <DashboardQrDialog
+        isOpen={qrOpen}
+        onOpenChange={setQrOpen}
+        salonName={salonName}
+        targetUrl={qrTargetUrl}
+        canCustomizeBrand={canCustomizeBrand}
+        onDownloaded={() => shareStatus.show('Código QR descargado')}
+      />
+    </>
+  );
+}

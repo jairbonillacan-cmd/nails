@@ -3,15 +3,12 @@
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { MessageCircle, Package, PackageCheck } from 'lucide-react';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
@@ -20,6 +17,14 @@ import {
   formatDateShortInTimezone,
 } from '@/lib/format';
 import type { ClientProfile, LoyaltyProgram, ServicePackage } from '@/lib/types';
+import {
+  ActionRow,
+  EmptyStateCard,
+  PackageStatusTag,
+  SkeletonBlock,
+  StatusTag,
+  SurfaceCard,
+} from '@/components/ui';
 import {
   formatInstagramDisplay,
   formatInstagramUrl,
@@ -76,27 +81,19 @@ export function ClientLoyaltyTab({
 
   return (
     <VStack gap={5} className="fx-step-in">
-      <VStack className="ad-surface" gap={0}>
-        <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
-          <VStack gap={0.5} className="rb-grow">
-            <Heading level={2} className="lk-serif ad-h2">
-              Cerca de su premio
-            </Heading>
-            <Text type="supporting" color="secondary">
-              {loyaltyProgram
-                ? `${loyaltyProgram.name} (${loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a canjear o completar su tarjeta.`
-                : 'Activa tu tarjeta de sellos en Mi página para premiar a tus clientas frecuentes.'}
-            </Text>
-          </VStack>
-          <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
-            {nearRewardClients.length}{' '}
-            {nearRewardClients.length === 1 ? 'clienta' : 'clientas'}
-          </Text>
-        </HStack>
-
+      <SurfaceCard
+        title="Cerca de su premio"
+        subtitle={
+          loyaltyProgram
+            ? `${loyaltyProgram.name} (${loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a canjear o completar su tarjeta.`
+            : 'Activa tu tarjeta de sellos en Mi página para premiar a tus clientas frecuentes.'
+        }
+        count={nearRewardClients.length}
+      >
         {nearRewardClients.length === 0 ? (
-          <VStack className="ad-empty" gap={2}>
-            <EmptyState
+          <VStack padding={4}>
+            <EmptyStateCard
+              framed={false}
               isCompact
               title="Aún no hay clientas cerca de su premio"
               description="Cuando una clienta esté a 2 visitas o menos de llenar su tarjeta aparecerá aquí."
@@ -116,118 +113,102 @@ export function ClientLoyaltyTab({
                 : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Te faltan solo ${entry.summary.remainingForReward} visita(s) para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
 
               return (
-                <HStack
+                <ActionRow
                   key={entry.clientId}
-                  className="ad-row-item"
-                  justify="between"
-                  align="center"
-                  wrap="wrap"
-                  gap={3}
-                >
-                  <HStack gap={3} align="start" className="rb-grow">
-                    <Avatar name={entry.fullName} size="sm" />
-                    <VStack gap={1.5} className="rb-grow">
-                      <HStack gap={2} align="center" wrap="wrap">
-                        <Text weight="semibold">{entry.fullName}</Text>
-                        <Text
-                          color="inherit"
-                          className="ad-chip"
-                          data-tone={entry.summary.isRewardReady ? 'success' : 'accent'}
-                          hasTabularNumbers
+                  leading={<Avatar name={entry.fullName} size="sm" />}
+                  title={
+                    <HStack gap={2} align="center" wrap="wrap">
+                      <Text weight="semibold">{entry.fullName}</Text>
+                      <StatusTag
+                        tone={entry.summary.isRewardReady ? 'success' : 'accent'}
+                        hasTabularNumbers
+                        label={`${entry.summary.currentStamps}/${entry.summary.stampsRequired} sellos`}
+                      />
+                    </HStack>
+                  }
+                  subtitle={
+                    <HStack gap={2} wrap="wrap" align="center">
+                      <Text type="supporting" color="secondary" hasTabularNumbers>
+                        {entry.phoneE164}
+                      </Text>
+                      {entry.instagramHandle ? (
+                        <Link
+                          href={formatInstagramUrl(entry.instagramHandle)}
+                          isExternalLink
+                          type="supporting"
                         >
-                          {entry.summary.currentStamps}/{entry.summary.stampsRequired} sellos
-                        </Text>
-                      </HStack>
-                      <HStack gap={2} wrap="wrap" align="center">
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {entry.phoneE164}
-                        </Text>
-                        {entry.instagramHandle ? (
-                          <Link
-                            href={formatInstagramUrl(entry.instagramHandle)}
-                            isExternalLink
-                            type="supporting"
-                          >
-                            {formatInstagramDisplay(entry.instagramHandle)}
-                          </Link>
-                        ) : null}
-                        <Text type="supporting" color="secondary">
-                          Premio: {entry.summary.rewardLabel}
-                        </Text>
-                      </HStack>
-                      <ul className="ad-stamps" aria-hidden="true">
-                        {Array.from({ length: totalSlots }, (_, idx) => (
-                          <li
-                            key={idx}
-                            className="ad-stamp"
-                            data-on={idx < filledSlots ? 'true' : 'false'}
-                          />
-                        ))}
-                      </ul>
-                    </VStack>
-                  </HStack>
-
-                  <HStack gap={1.5} align="center" wrap="wrap">
-                    <Text
-                      color="inherit"
-                      className="ad-chip"
-                      data-tone={entry.summary.isRewardReady ? 'success' : 'neutral'}
+                          {formatInstagramDisplay(entry.instagramHandle)}
+                        </Link>
+                      ) : null}
+                      <Text type="supporting" color="secondary">
+                        Premio: {entry.summary.rewardLabel}
+                      </Text>
+                    </HStack>
+                  }
+                  meta={
+                    <ul className="ad-stamps" aria-hidden="true">
+                      {Array.from({ length: totalSlots }, (_, idx) => (
+                        <li
+                          key={idx}
+                          className="ad-stamp"
+                          data-on={idx < filledSlots ? 'true' : 'false'}
+                        />
+                      ))}
+                    </ul>
+                  }
+                  status={
+                    <StatusTag
+                      tone={entry.summary.isRewardReady ? 'success' : 'neutral'}
                       hasTabularNumbers
-                    >
-                      {entry.summary.isRewardReady
-                        ? '¡Premio listo!'
-                        : `Faltan ${entry.summary.remainingForReward}`}
-                    </Text>
-                    <Button
-                      type="button"
-                      label="Ver ficha"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => onOpenClientById(entry.clientId)}
+                      label={
+                        entry.summary.isRewardReady
+                          ? '¡Premio listo!'
+                          : `Faltan ${entry.summary.remainingForReward}`
+                      }
                     />
-                    <Button
-                      label="WhatsApp"
-                      size="sm"
-                      variant="primary"
-                      icon={<MessageCircle size={14} aria-hidden="true" />}
-                      href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    />
-                  </HStack>
-                </HStack>
+                  }
+                  actions={
+                    <HStack gap={1.5} align="center" wrap="wrap">
+                      <Button
+                        type="button"
+                        label="Ver ficha"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => onOpenClientById(entry.clientId)}
+                      />
+                      <Button
+                        label="WhatsApp"
+                        size="sm"
+                        variant="primary"
+                        icon={<MessageCircle size={14} aria-hidden="true" />}
+                        href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    </HStack>
+                  }
+                />
               );
             })}
           </VStack>
         )}
-      </VStack>
+      </SurfaceCard>
 
       <VStack className="ad-split" gap={0}>
-        <VStack className="ad-surface" gap={0}>
-          <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
-            <VStack gap={0.5} className="rb-grow">
-              <Heading level={2} className="lk-serif ad-h2">
-                Paquetes de sesiones
-              </Heading>
-              <Text type="supporting" color="secondary">
-                Lleva el control de sesiones usadas y disponibles; también se descuentan al cobrar
-                en Agenda.
-              </Text>
-            </VStack>
-            <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
-              {activeClientPackagesCount}{' '}
-              {activeClientPackagesCount === 1 ? 'activo' : 'activos'}
-            </Text>
-          </HStack>
-
+        <SurfaceCard
+          title="Paquetes de sesiones"
+          subtitle="Lleva el control de sesiones usadas y disponibles; también se descuentan al cobrar en Agenda."
+          count={activeClientPackagesCount}
+        >
           {packagesLoading && clientPackages.length === 0 ? (
             <VStack padding={4} gap={2} role="status" aria-busy="true">
-              <VStack className="ad-skeleton" data-size="row" aria-hidden="true" />
-              <VStack className="ad-skeleton" data-size="row" aria-hidden="true" />
+              <SkeletonBlock width="100%" height="4.5rem" radius={2} index={0} />
+              <SkeletonBlock width="100%" height="4.5rem" radius={2} index={1} />
             </VStack>
           ) : clientPackages.length === 0 ? (
-            <VStack className="ad-empty" gap={2}>
-              <EmptyState
+            <VStack padding={4}>
+              <EmptyStateCard
+                framed={false}
                 isCompact
                 title="Sin paquetes asignados todavía"
                 description="Asigna un paquete prepagado a una clienta desde el panel derecho."
@@ -250,16 +231,11 @@ export function ClientLoyaltyTab({
                         <HStack gap={2} align="center" wrap="wrap">
                           <Package size={15} aria-hidden="true" />
                           <Text weight="semibold">{pkg.clientName}</Text>
-                          <Text
-                            color="inherit"
-                            className="ad-chip"
-                            data-tone={
-                              pkg.status === 'active' && !pkg.isExpired ? 'accent' : 'neutral'
-                            }
+                          <StatusTag
+                            tone={pkg.status === 'active' && !pkg.isExpired ? 'accent' : 'neutral'}
                             hasTabularNumbers
-                          >
-                            {pkg.remainingSessions}/{pkg.totalSessions} disponibles
-                          </Text>
+                            label={`${pkg.remainingSessions}/${pkg.totalSessions} disponibles`}
+                          />
                         </HStack>
                         <Text type="supporting" color="secondary" hasTabularNumbers>
                           {pkg.packageName} · {pkg.serviceName}
@@ -275,24 +251,7 @@ export function ClientLoyaltyTab({
                       </VStack>
 
                       <HStack gap={1.5} align="center" wrap="wrap">
-                        <Badge
-                          variant={
-                            pkg.status === 'active' && !pkg.isExpired
-                              ? 'success'
-                              : pkg.status === 'exhausted'
-                                ? 'info'
-                                : 'neutral'
-                          }
-                          label={
-                            pkg.isExpired
-                              ? 'Vencido'
-                              : pkg.status === 'active'
-                                ? 'Activo'
-                                : pkg.status === 'exhausted'
-                                  ? 'Completado'
-                                  : 'Cancelado'
-                          }
-                        />
+                        <PackageStatusTag status={pkg.status} isExpired={pkg.isExpired} />
                         {canRedeem ? (
                           <Button
                             type="button"
@@ -324,10 +283,15 @@ export function ClientLoyaltyTab({
               })}
             </VStack>
           )}
-        </VStack>
+        </SurfaceCard>
 
         {canManageClients ? (
-          <VStack className="ad-surface" data-padded="true" gap={3}>
+          <SurfaceCard
+            title="Asignar paquete a clienta"
+            subtitle="Crea o ajusta los paquetes disponibles en Caja → Promos y paquetes."
+            headingLevel={3}
+            padded
+          >
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -342,12 +306,6 @@ export function ClientLoyaltyTab({
               }}
             >
               <VStack gap={3}>
-                <Heading level={3} className="lk-serif ad-h3">
-                  Asignar paquete a clienta
-                </Heading>
-                <Text type="supporting" color="secondary">
-                  Crea o ajusta los paquetes disponibles en Caja → Promos y paquetes.
-                </Text>
                 <Selector
                   label="Clienta"
                   value={effectiveAssignClientId}
@@ -386,7 +344,7 @@ export function ClientLoyaltyTab({
                 />
               </VStack>
             </form>
-          </VStack>
+          </SurfaceCard>
         ) : null}
       </VStack>
     </VStack>

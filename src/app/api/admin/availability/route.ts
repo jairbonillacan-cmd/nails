@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { diagnoseDateSlots } from '@/lib/availability/engine';
+import {
+  PostOverrideRangeSchema,
+  PostOverrideSchema,
+  PostRecurringBlockSchema,
+  PreloadHolidaysSchema,
+  PutScheduleSchema,
+  ToggleRecurringBlockSchema,
+} from '@/lib/contracts';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {
   addDateOverride,
@@ -16,123 +24,6 @@ import {
   upsertRecurringBlock,
 } from '@/lib/repositories/db';
 import type { AvailabilityRule } from '@/lib/types';
-
-const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-const availabilityRuleSchema = z
-  .object({
-    id: z.string().min(1),
-    dayOfWeek: z.union([
-      z.literal(0),
-      z.literal(1),
-      z.literal(2),
-      z.literal(3),
-      z.literal(4),
-      z.literal(5),
-      z.literal(6),
-    ]),
-    startTime: z.string().regex(hhmmRegex, 'Hora de inicio inválida (HH:mm)'),
-    endTime: z.string().regex(hhmmRegex, 'Hora de fin inválida (HH:mm)'),
-    fixedStartTimes: z
-      .array(z.string().regex(hhmmRegex, 'Horario fijo inválido (HH:mm)'))
-      .max(24)
-      .optional(),
-  })
-  .refine((rule) => rule.startTime < rule.endTime, {
-    message: 'La hora de inicio debe ser menor a la hora de fin.',
-  })
-  .refine(
-    (rule) =>
-      !rule.fixedStartTimes ||
-      rule.fixedStartTimes.every((t) => t >= rule.startTime && t < rule.endTime),
-    {
-      message: 'Cada horario fijo debe estar dentro de la ventana laboral.',
-    },
-  );
-
-const putScheduleSchema = z.object({
-  staffId: z.string().min(1),
-  rules: z.array(availabilityRuleSchema).max(50),
-});
-
-const postOverrideSchema = z.object({
-  staffId: z.string().min(1),
-  overrideDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)'),
-  isUnavailable: z.boolean(),
-  startTime: z.string().regex(hhmmRegex).nullable().default(null),
-  endTime: z.string().regex(hhmmRegex).nullable().default(null),
-  reason: z.string().max(240).default(''),
-  publicNote: z.string().trim().max(240).optional(),
-  redirectStaffId: z.string().min(1).nullable().optional(),
-});
-
-const postOverrideRangeSchema = z
-  .object({
-    kind: z.literal('override_range'),
-    staffId: z.string().min(1),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida (YYYY-MM-DD)'),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida (YYYY-MM-DD)'),
-    isClosed: z.boolean().optional(),
-    isUnavailable: z.boolean().optional(),
-    startTime: z.string().regex(hhmmRegex).nullable().default(null),
-    endTime: z.string().regex(hhmmRegex).nullable().default(null),
-    reason: z.string().max(240).default(''),
-    publicNote: z.string().trim().max(240).optional(),
-    redirectStaffId: z.string().min(1).nullable().optional(),
-  })
-  .refine(
-    (body) => {
-      const closed = body.isClosed ?? body.isUnavailable ?? true;
-      if (closed) return true;
-      return Boolean(body.startTime && body.endTime && body.startTime < body.endTime);
-    },
-    { message: 'Define hora de inicio y fin válidas cuando el día no está cerrado.' },
-  );
-
-const preloadHolidaysSchema = z.object({
-  kind: z.literal('preload_mx_holidays'),
-  year: z.number().int().min(2024).max(2100),
-  staffId: z.string().min(1),
-  publicNote: z.string().trim().max(240).optional(),
-  redirectStaffId: z.string().min(1).nullable().optional(),
-});
-
-const postRecurringBlockSchema = z
-  .object({
-    kind: z.literal('recurring_block'),
-    id: z.string().min(1).optional(),
-    staffId: z.string().min(1),
-    reason: z.string().trim().min(1, 'Escribe un motivo').max(240),
-    frequency: z.enum(['weekly', 'monthly']),
-    weekdays: z.array(z.number().int().min(0).max(6)).max(7).default([]),
-    dayOfMonth: z.number().int().min(1).max(31).nullable().default(null),
-    startTime: z.string().regex(hhmmRegex, 'Hora de inicio inválida (HH:mm)'),
-    endTime: z.string().regex(hhmmRegex, 'Hora de fin inválida (HH:mm)'),
-    untilDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha límite inválida (YYYY-MM-DD)')
-      .nullable()
-      .default(null),
-    isActive: z.boolean().default(true),
-  })
-  .refine((block) => block.startTime < block.endTime, {
-    message: 'La hora de inicio debe ser menor a la hora de fin.',
-  })
-  .refine(
-    (block) =>
-      block.frequency === 'weekly'
-        ? block.weekdays.length > 0
-        : block.dayOfMonth !== null,
-    {
-      message: 'Define al menos un día de la semana o el día del mes.',
-    },
-  );
-
-const toggleRecurringBlockSchema = z.object({
-  kind: z.literal('recurring_block_toggle'),
-  id: z.string().min(1),
-  isActive: z.boolean(),
-});
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -243,7 +134,7 @@ export async function PUT(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   try {
-    const parsed = putScheduleSchema.parse(await request.json());
+    const parsed = PutScheduleSchema.parse(await request.json());
     if (
       session.user.role === 'specialist' &&
       (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
@@ -291,7 +182,7 @@ export async function POST(request: NextRequest) {
         : undefined;
 
     if (rawKind === 'recurring_block') {
-      const parsed = postRecurringBlockSchema.parse(raw);
+      const parsed = PostRecurringBlockSchema.parse(raw);
       if (session.user.role === 'specialist') {
         if (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId) {
           return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
@@ -321,7 +212,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (rawKind === 'recurring_block_toggle') {
-      const parsed = toggleRecurringBlockSchema.parse(raw);
+      const parsed = ToggleRecurringBlockSchema.parse(raw);
       if (session.user.role === 'specialist') {
         const target = (getSnapshot().recurringBlocks ?? []).find((b) => b.id === parsed.id);
         if (
@@ -337,7 +228,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (rawKind === 'override_range') {
-      const parsed = postOverrideRangeSchema.parse(raw);
+      const parsed = PostOverrideRangeSchema.parse(raw);
       if (
         session.user.role === 'specialist' &&
         (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
@@ -360,7 +251,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (rawKind === 'preload_mx_holidays') {
-      const parsed = preloadHolidaysSchema.parse(raw);
+      const parsed = PreloadHolidaysSchema.parse(raw);
       if (
         session.user.role === 'specialist' &&
         (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
@@ -376,7 +267,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 201 });
     }
 
-    const body = postOverrideSchema.parse(raw);
+    const body = PostOverrideSchema.parse(raw);
     if (
       session.user.role === 'specialist' &&
       (!session.user.staffMemberId || body.staffId !== session.user.staffMemberId)

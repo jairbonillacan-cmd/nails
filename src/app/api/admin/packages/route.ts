@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import {
+  AssignClientPackageSchema,
+  CreateServicePackageSchema,
+  PatchClientPackageSchema,
+} from '@/lib/contracts';
+import {
   assignClientPackage,
   cancelClientPackage,
   listClientPackages,
@@ -11,42 +16,6 @@ import {
   toggleServicePackage,
   upsertServicePackage,
 } from '@/lib/repositories/db';
-
-const createCatalogSchema = z.object({
-  kind: z.literal('catalog'),
-  id: z.string().min(1).optional(),
-  name: z.string().trim().min(2, 'Escribe un nombre para el paquete').max(120),
-  description: z.string().max(400).default(''),
-  serviceId: z.string().min(1),
-  totalSessions: z.number().int().min(2).max(24),
-  priceCents: z.number().int().nonnegative().max(20_000_000),
-  validDays: z.number().int().min(7).max(730).nullable().default(180),
-  isActive: z.boolean().optional(),
-});
-
-const assignPackageSchema = z.object({
-  kind: z.literal('assign'),
-  clientId: z.string().min(1),
-  packageId: z.string().min(1),
-  notes: z.string().max(400).optional(),
-});
-
-const patchPackageSchema = z.discriminatedUnion('action', [
-  z.object({
-    action: z.literal('toggle_catalog'),
-    packageId: z.string().min(1),
-    isActive: z.boolean(),
-  }),
-  z.object({
-    action: z.literal('redeem'),
-    clientPackageId: z.string().min(1),
-    bookingId: z.string().min(1).nullable().optional(),
-  }),
-  z.object({
-    action: z.literal('cancel_client_package'),
-    clientPackageId: z.string().min(1),
-  }),
-]);
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin', 'specialist'], request);
@@ -82,12 +51,12 @@ export async function POST(request: NextRequest) {
         : undefined;
 
     if (rawKind === 'assign') {
-      const parsed = assignPackageSchema.parse(raw);
+      const parsed = AssignClientPackageSchema.parse(raw);
       const clientPackage = await assignClientPackage(parsed);
       return NextResponse.json({ clientPackage }, { status: 201 });
     }
 
-    const parsed = createCatalogSchema.parse(raw);
+    const parsed = CreateServicePackageSchema.parse(raw);
     const servicePackage = await upsertServicePackage({
       id: parsed.id,
       name: parsed.name,
@@ -132,7 +101,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const parsed = patchPackageSchema.parse(await request.json());
+    const parsed = PatchClientPackageSchema.parse(await request.json());
     if (parsed.action === 'toggle_catalog') {
       const servicePackage = await toggleServicePackage(
         parsed.packageId,

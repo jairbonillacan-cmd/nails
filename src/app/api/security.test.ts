@@ -21,9 +21,14 @@ import { getDateKeyInTimezone } from '@/lib/format';
 import {
   addCashEntry,
   getSnapshot,
+  persistBookingMediaField,
   queryAvailability,
   updateCalendarConnection,
+  updateClientNotes,
+  updateSalonSettings,
 } from '@/lib/repositories/db';
+import { hashOwnerPin } from '@/lib/security/auth-pin';
+import { resetRateLimiterForTests } from '@/lib/security/rate-limit';
 import {
   DELETE as deleteAdminSession,
   GET as getAdminSessionRoute,
@@ -34,7 +39,11 @@ import {
   PATCH as patchAdminBookings,
   POST as postAdminBookings,
 } from '@/app/api/admin/bookings/route';
-import { GET as getAdminOperations } from '@/app/api/admin/operations/route';
+import {
+  GET as getAdminOperations,
+  POST as postAdminOperations,
+} from '@/app/api/admin/operations/route';
+import { POST as postAdminTeam } from '@/app/api/admin/team/route';
 import { GET as getAdminOverview } from '@/app/api/admin/overview/route';
 import {
   DELETE as deleteAdminAvailability,
@@ -144,12 +153,14 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  resetRateLimiterForTests();
   resetIsolatedDb();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  resetRateLimiterForTests();
   resetIsolatedDb();
 });
 
@@ -3570,6 +3581,500 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(okJson.booking.proofDeliveryMethod).toBe('web_upload');
       expect(okJson.calendarLinks.icsDownload).toContain('demo-token-andrea-1044');
       expect(okJson.whatsappUrl).toContain('https://wa.me/');
+    });
+  });
+
+  describe('Wave 2A Security Hardening (SEC-01 through SEC-07)', () => {
+    it('SEC-01: POST /api/bookings sanitizes staff/service DTOs and strips internalNotes & client CRM notes', async () => {
+      const db = getSnapshot();
+      const sofia = db.clients.find((c) => c.id === 'client-sofia');
+      if (!sofia) throw new Error('Expected seeded client-sofia');
+      await updateClientNotes({
+        clientId: sofia.id,
+        notes: 'CRM-SECRET-ALLERGY-NOTE-991',
+      });
+
+      const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+      const openSlot = queryAvailability({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: today,
+        days: 14,
+      })
+        .days.filter((d) => d.date > today)
+        .flatMap((d) => d.slots)[0];
+      if (!openSlot) throw new Error('Expected open slot');
+
+      const res = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: sofia.fullName,
+            clientPhone: sofia.phoneE164,
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(res.status).toBe(201);
+      const rawText = await res.text();
+      expect(rawText).not.toContain('commissionPercent');
+      expect(rawText).not.toContain('bufferBeforeMinutes');
+      expect(rawText).not.toContain('bufferAfterMinutes');
+      expect(rawText).not.toContain('CRM-SECRET-ALLERGY-NOTE-991');
+
+      const json = JSON.parse(rawText) as {
+        booking: {
+          internalNotes: string;
+          client: { notes: string };
+          staff: Record<string, unknown>;
+          service: Record<string, unknown>;
+        };
+      };
+      expect(json.booking.internalNotes).toBe('');
+      expect(json.booking.client.notes).toBe('');
+      expect('commissionPercent' in json.booking.staff).toBe(false);
+      expect('isActive' in json.booking.staff).toBe(false);
+      expect('bufferBeforeMinutes' in json.booking.service).toBe(false);
+    });
+
+    it('SEC-02: /api/admin/team and /api/admin/operations enforce 401 vs 403, JSON try/catch, and strict Zod unions', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-sec02');
+
+      const unauthTeam = await postAdminTeam(
+        makeRequest('http://localhost:3000/api/admin/team', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'staff', data: { name: 'Intrusa' } }),
+        }),
+      );
+      expect(unauthTeam.status).toBe(401);
+
+      const badJsonTeam = await postAdminTeam(
+        makeRequest('http://localhost:3000/api/admin/team', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: '{broken-json',
+        }),
+      );
+      expect(badJsonTeam.status).toBe(400);
+
+      const adminCreatingAdmin = await postAdminTeam(
+        makeRequest('http://localhost:3000/api/admin/team', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'admin_user',
+            data: {
+              email: 'elevated@nails.studio',
+              fullName: 'Elevada',
+              role: 'owner',
+              staffMemberId: null,
+              isActive: true,
+            },
+          }),
+        }),
+      );
+      expect(adminCreatingAdmin.status).toBe(403);
+
+      const massAssignStaff = await postAdminTeam(
+        makeRequest('http://localhost:3000/api/admin/team', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'staff',
+            data: {
+              name: 'Manicurista Nueva',
+              commissionPercent: 40,
+              role: 'owner',
+            },
+          }),
+        }),
+      );
+      expect(massAssignStaff.status).toBe(400);
+
+      const validStaffRes = await postAdminTeam(
+        makeRequest('http://localhost:3000/api/admin/team', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getAdminCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'staff',
+            data: {
+              name: 'Valeria Soto',
+              roleTitle: 'Nail Artist',
+              commissionPercent: 38,
+            },
+          }),
+        }),
+      );
+      expect(validStaffRes.status).toBe(200);
+
+      await updateCalendarConnection('staff-karla', {
+        accessTokenEncrypted: encryptOAuthToken('ya29.karla-secret'),
+        refreshTokenEncrypted: encryptOAuthToken('1//karla-refresh'),
+      });
+
+      const calMassAssign = await postAdminOperations(
+        makeRequest('http://localhost:3000/api/admin/operations', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'calendar',
+            staffId: 'staff-karla',
+            patch: {
+              isConnected: true,
+              accessTokenEncrypted: 'v1.attacker-override',
+            },
+          }),
+        }),
+      );
+      expect(calMassAssign.status).toBe(400);
+
+      const validCalRes = await postAdminOperations(
+        makeRequest('http://localhost:3000/api/admin/operations', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({
+            kind: 'calendar',
+            staffId: 'staff-karla',
+            patch: { destinationCalendarId: 'primary' },
+          }),
+        }),
+      );
+      expect(validCalRes.status).toBe(200);
+      const validCalText = await validCalRes.text();
+      expect(validCalText).not.toContain('accessTokenEncrypted');
+      expect(validCalText).not.toContain('refreshTokenEncrypted');
+
+      const badOpsKind = await postAdminOperations(
+        makeRequest('http://localhost:3000/api/admin/operations', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({ kind: 'drop_tables', data: {} }),
+        }),
+      );
+      expect(badOpsKind.status).toBe(400);
+    });
+
+    it('SEC-03: strips ownerPinHash & OAuth tokens from overview/brand and enforces strict specialist RBAC scoping', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-sec03');
+
+      await updateSalonSettings({
+        ownerPinHash: hashOwnerPin('4829'),
+        ownerPinEnabled: true,
+      });
+      await updateCalendarConnection('staff-karla', {
+        accessTokenEncrypted: encryptOAuthToken('ya29.karla-secret-access'),
+        refreshTokenEncrypted: encryptOAuthToken('1//karla-secret-refresh'),
+      });
+
+      const brandRes = await patchAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getOwnerCookieHeader(),
+          },
+          body: JSON.stringify({ ownerPin: '7391', ownerPinEnabled: true }),
+        }),
+      );
+      expect(brandRes.status).toBe(200);
+      const brandRaw = await brandRes.text();
+      expect(brandRaw).not.toContain('ownerPinHash');
+      const brandJson = JSON.parse(brandRaw) as {
+        settings: { hasOwnerPin: boolean; ownerPinEnabled: boolean };
+      };
+      expect(brandJson.settings.hasOwnerPin).toBe(true);
+      expect(brandJson.settings.ownerPinEnabled).toBe(true);
+
+      const ownerOvRes = await getAdminOverview(
+        makeRequest('http://localhost:3000/api/admin/overview', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(ownerOvRes.status).toBe(200);
+      const ownerOvRaw = await ownerOvRes.text();
+      expect(ownerOvRaw).not.toContain('ownerPinHash');
+      expect(ownerOvRaw).not.toContain('accessTokenEncrypted');
+      expect(ownerOvRaw).not.toContain('refreshTokenEncrypted');
+
+      const specOvRes = await getAdminOverview(
+        makeRequest('http://localhost:3000/api/admin/overview', {
+          headers: { cookie: getSpecialistCookieHeader() },
+        }),
+      );
+      expect(specOvRes.status).toBe(200);
+      const specOvRaw = await specOvRes.text();
+      expect(specOvRaw).not.toContain('ownerPinHash');
+      expect(specOvRaw).not.toContain('accessTokenEncrypted');
+      expect(specOvRaw).not.toContain('refreshTokenEncrypted');
+
+      const specOv = JSON.parse(specOvRaw) as {
+        session: { user: { staffMemberId: string } };
+        staff: Array<{ id: string; commissionPercent: number }>;
+        clients: Array<{ id: string }>;
+        bookings: Array<{ id: string; clientId: string; staffId: string }>;
+        adminUsers: unknown[];
+        workflows: unknown[];
+        coupons: unknown[];
+        waitlist: unknown[];
+        inventory: unknown[];
+        inventoryMovements: unknown[];
+        notifications: Array<{ bookingId: string }>;
+        calendarConnections: Array<{ staffId: string }>;
+        schedules: Array<{ staffId: string }>;
+      };
+
+      const ownStaffId = specOv.session.user.staffMemberId;
+      expect(specOv.staff.every((s) => s.id === ownStaffId)).toBe(true);
+      expect(specOv.staff).toHaveLength(1);
+      expect(specOv.adminUsers).toEqual([]);
+      expect(specOv.workflows).toEqual([]);
+      expect(specOv.coupons).toEqual([]);
+      expect(specOv.waitlist).toEqual([]);
+      expect(specOv.inventory).toEqual([]);
+      expect(specOv.inventoryMovements).toEqual([]);
+      expect(specOv.calendarConnections.every((c) => c.staffId === ownStaffId)).toBe(true);
+      expect(specOv.schedules.every((sc) => sc.staffId === ownStaffId)).toBe(true);
+
+      const ownClientIds = new Set(specOv.bookings.map((b) => b.clientId));
+      const ownBookingIds = new Set(specOv.bookings.map((b) => b.id));
+      expect(specOv.clients.every((c) => ownClientIds.has(c.id))).toBe(true);
+      expect(specOv.notifications.every((n) => ownBookingIds.has(n.bookingId))).toBe(true);
+    });
+
+    it('SEC-05: GET and PATCH /api/bookings/manage/[token] scrub booking.client.notes', async () => {
+      const db = getSnapshot();
+      const sofiaBooking = db.bookings.find(
+        (b) => b.manageToken === 'demo-token-sofia-1042',
+      );
+      if (!sofiaBooking) throw new Error('Expected seeded sofia booking');
+      await updateClientNotes({
+        clientId: sofiaBooking.clientId,
+        notes: 'STAFF-ONLY-CRM-SECRET-552',
+      });
+
+      const getRes = await getManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-sofia-1042'),
+        { params: Promise.resolve({ token: 'demo-token-sofia-1042' }) },
+      );
+      expect(getRes.status).toBe(200);
+      const getRaw = await getRes.text();
+      expect(getRaw).not.toContain('STAFF-ONLY-CRM-SECRET-552');
+      const getJson = JSON.parse(getRaw) as { booking: { client: { notes: string } } };
+      expect(getJson.booking.client.notes).toBe('');
+
+      const validPngBase64 = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      ]).toString('base64');
+      const patchRes = await patchManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-sofia-1042', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload_proof',
+            paymentProofUrl: `data:image/png;base64,${validPngBase64}`,
+          }),
+        }),
+        { params: Promise.resolve({ token: 'demo-token-sofia-1042' }) },
+      );
+      expect(patchRes.status).toBe(200);
+      const patchRaw = await patchRes.text();
+      expect(patchRaw).not.toContain('STAFF-ONLY-CRM-SECRET-552');
+      const patchJson = JSON.parse(patchRaw) as { booking: { client: { notes: string } } };
+      expect(patchJson.booking.client.notes).toBe('');
+    });
+
+    it('SEC-04 & SEC-06: enforces rate limits with Retry-After on session login, Owner PIN, manage token, and availability, keyed by cf-connecting-ip', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-sec06');
+
+      for (let i = 0; i < 25; i += 1) {
+        const res = await postAdminSession(
+          makeRequest('http://localhost:3000/api/admin/session', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'cf-connecting-ip': '198.51.100.70',
+              'x-forwarded-for': `203.0.113.${i + 1}`,
+            },
+            body: JSON.stringify({ email: 'desconocida@nails.studio' }),
+          }),
+        );
+        expect(res.status).toBe(401);
+      }
+      const sessionBlocked = await postAdminSession(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'cf-connecting-ip': '198.51.100.70',
+            'x-forwarded-for': '203.0.113.250',
+          },
+          body: JSON.stringify({ email: 'duena@nails.studio' }),
+        }),
+      );
+      expect(sessionBlocked.status).toBe(429);
+      expect(Number(sessionBlocked.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+
+      await updateSalonSettings({
+        ownerPinHash: hashOwnerPin('9182'),
+        ownerPinEnabled: true,
+      });
+      const ownerCookie = getOwnerCookieHeader();
+      for (let i = 0; i < 10; i += 1) {
+        const res = await getAdminOperations(
+          makeRequest('http://localhost:3000/api/admin/operations?export=csv', {
+            headers: {
+              cookie: ownerCookie,
+              'x-owner-pin': '0000',
+              'cf-connecting-ip': '198.51.100.71',
+            },
+          }),
+        );
+        expect(res.status).toBe(403);
+      }
+      const pinBlockedCsv = await getAdminOperations(
+        makeRequest('http://localhost:3000/api/admin/operations?export=csv', {
+          headers: {
+            cookie: ownerCookie,
+            'x-owner-pin': '9182',
+            'cf-connecting-ip': '198.51.100.71',
+          },
+        }),
+      );
+      expect(pinBlockedCsv.status).toBe(429);
+      expect(Number(pinBlockedCsv.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+
+      const pinBlockedBooking = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: ownerCookie,
+            'cf-connecting-ip': '198.51.100.71',
+          },
+          body: JSON.stringify({
+            bookingId: 'bk-1001',
+            status: 'canceled',
+            ownerPin: '9182',
+          }),
+        }),
+      );
+      expect(pinBlockedBooking.status).toBe(429);
+
+      for (let i = 0; i < 90; i += 1) {
+        const res = await getManageBooking(
+          makeRequest('http://localhost:3000/api/bookings/manage/non-existent-token', {
+            headers: { 'cf-connecting-ip': '198.51.100.72' },
+          }),
+          { params: Promise.resolve({ token: 'non-existent-token' }) },
+        );
+        expect(res.status).toBe(404);
+      }
+      const manageBlocked = await getManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-sofia-1042', {
+          headers: { 'cf-connecting-ip': '198.51.100.72' },
+        }),
+        { params: Promise.resolve({ token: 'demo-token-sofia-1042' }) },
+      );
+      expect(manageBlocked.status).toBe(429);
+      expect(Number(manageBlocked.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+
+      for (let i = 0; i < 120; i += 1) {
+        const res = await getPublicAvailability(
+          makeRequest('http://localhost:3000/api/availability?mode=quick&serviceId=srv-rubber', {
+            headers: { 'cf-connecting-ip': '198.51.100.73' },
+          }),
+        );
+        expect(res.status).toBe(200);
+      }
+      const availBlocked = await getPublicAvailability(
+        makeRequest('http://localhost:3000/api/availability?mode=quick&serviceId=srv-rubber', {
+          headers: { 'cf-connecting-ip': '198.51.100.73' },
+        }),
+      );
+      expect(availBlocked.status).toBe(429);
+      expect(Number(availBlocked.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+    });
+
+    it('SEC-07: rejects arbitrary external http/https URLs in persistBookingMediaField and public booking endpoints', async () => {
+      await expect(
+        persistBookingMediaField('https://tracker.evil/pixel.png', 'proofs'),
+      ).rejects.toThrow();
+      await expect(
+        persistBookingMediaField('http://tracker.evil/inspo.jpg', 'inspo'),
+      ).rejects.toThrow();
+
+      const db = getSnapshot();
+      const today = getDateKeyInTimezone(new Date(), db.settings.timezone);
+      const openSlot = queryAvailability({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: today,
+        days: 14,
+      })
+        .days.filter((d) => d.date > today)
+        .flatMap((d) => d.slots)[0];
+      if (!openSlot) throw new Error('Expected open slot');
+
+      const externalBookingRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'External Tracker',
+            clientPhone: '+522229876543',
+            privacyConsentAccepted: true,
+            inspoPhotoUrl: 'https://evil.example/track.png',
+          }),
+        }),
+      );
+      expect(externalBookingRes.status).toBe(400);
+
+      const externalManageRes = await patchManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-andrea-1044', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload_proof',
+            paymentProofUrl: 'https://evil.example/receipt.png',
+          }),
+        }),
+        { params: Promise.resolve({ token: 'demo-token-andrea-1044' }) },
+      );
+      expect(externalManageRes.status).toBe(400);
     });
   });
 });

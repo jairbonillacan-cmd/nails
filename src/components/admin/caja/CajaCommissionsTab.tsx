@@ -1,14 +1,12 @@
 'use client';
 
 import { VStack } from '@astryxdesign/core/VStack';
-import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Table } from '@astryxdesign/core/Table';
 import { Token } from '@astryxdesign/core/Token';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { formatCurrency } from '@/lib/format';
+import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import {
   splitMethodTokenColor,
   type CommissionStaffRow,
@@ -28,25 +26,15 @@ export function CajaCommissionsTab({
 }: CajaCommissionsTabProps) {
   return (
     <VStack gap={4} className="fx-step-in">
-      <VStack className="ad-surface" gap={0}>
-        <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
-          <VStack gap={0.5} className="rb-grow">
-            <Heading level={2} className="lk-serif ad-h2">
-              Comisiones y propinas
-            </Heading>
-            <Text type="supporting" color="secondary">
-              Lo que le corresponde a cada manicurista según sus servicios cobrados y propinas.
-            </Text>
-          </VStack>
-          <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
-            {commissionsByStaff.length}{' '}
-            {commissionsByStaff.length === 1 ? 'manicurista' : 'manicuristas'}
-          </Text>
-        </HStack>
-
+      <SurfaceCard
+        title="Comisiones y propinas"
+        subtitle="Lo que le corresponde a cada manicurista según sus servicios cobrados y propinas."
+        count={commissionsByStaff.length}
+      >
         {commissionsByStaff.length === 0 ? (
-          <VStack className="ad-empty" gap={2}>
-            <EmptyState
+          <VStack padding={4}>
+            <EmptyStateCard
+              framed={false}
               isCompact
               title="Sin movimientos para calcular"
               description="Cuando cobres citas verás aquí el desglose de comisión y propinas de cada manicurista."
@@ -64,9 +52,7 @@ export function CajaCommissionsTab({
                   key: 'percent',
                   header: '% Comisión',
                   renderCell: (row) => (
-                    <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
-                      {row.percent}%
-                    </Text>
+                    <StatusTag tone="neutral" hasTabularNumbers label={`${row.percent}%`} />
                   ),
                 },
                 {
@@ -120,42 +106,35 @@ export function CajaCommissionsTab({
             />
           </VStack>
         )}
-      </VStack>
+      </SurfaceCard>
 
       {splitSummaryByMethod.length > 0 ? (
-        <VStack className="ad-surface" data-padded="true" gap={3}>
-          <VStack gap={0.5}>
-            <Heading level={3} className="lk-serif ad-h3">
-              Propinas y cobros por forma de pago
-            </Heading>
-            <Text type="supporting" color="secondary">
-              Totales recibidos en cada forma de pago junto con las propinas registradas.
-            </Text>
-          </VStack>
+        <SurfaceCard
+          title="Propinas y cobros por forma de pago"
+          subtitle="Totales recibidos en cada forma de pago junto con las propinas registradas."
+          headingLevel={3}
+          padded
+        >
           <Grid columns={{ minWidth: 160, max: 5 }} gap={3}>
             {splitSummaryByMethod.map((item) => (
-              <VStack
-                key={item.method}
-                className="ad-surface"
-                data-tone="subtle"
-                data-padded="true"
-                gap={1}
-              >
-                <Token
-                  size="sm"
-                  color={splitMethodTokenColor(item.method)}
-                  label={item.label}
-                />
-                <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
-                  {formatCurrency(item.amountCents, currency)}
-                </Text>
-                <Text type="supporting" color="secondary" hasTabularNumbers>
-                  Propinas: {formatCurrency(item.tipCents, currency)}
-                </Text>
-              </VStack>
+              <SurfaceCard key={item.method} tone="subtle" padded>
+                <VStack gap={1}>
+                  <Token
+                    size="sm"
+                    color={splitMethodTokenColor(item.method)}
+                    label={item.label}
+                  />
+                  <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
+                    {formatCurrency(item.amountCents, currency)}
+                  </Text>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    Propinas: {formatCurrency(item.tipCents, currency)}
+                  </Text>
+                </VStack>
+              </SurfaceCard>
             ))}
           </Grid>
-        </VStack>
+        </SurfaceCard>
       ) : null}
     </VStack>
   );

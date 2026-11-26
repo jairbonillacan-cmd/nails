@@ -1,6 +1,21 @@
 import { z } from 'zod';
+import {
+  BookingLayoutViewSchema,
+  BookingStatusSchema,
+  ClientPackageStatusSchema,
+  CornerStyleSchema,
+  CurrencySchema,
+  LandingContentSchema,
+  PaymentModeSchema,
+  RatingSchema,
+  ServiceModeSchema,
+  SlotIntervalMinutesSchema,
+  ThemeModePreferenceSchema,
+} from '@/lib/contracts';
 import type {
   BookingReview,
+  BookingWithRelations,
+  CalendarConnection,
   ClientPackage,
   SalonSettings,
   Service,
@@ -41,16 +56,6 @@ export const PublicServiceDTOSchema = z.object({
 
 export type PublicServiceDTO = z.infer<typeof PublicServiceDTOSchema>;
 
-const PublicLandingContentSchema = z.object({
-  heroEyebrow: z.string(),
-  heroTitle: z.string(),
-  heroSubtitle: z.string(),
-  aboutTitle: z.string(),
-  aboutBody: z.string(),
-});
-
-const BookingLayoutViewSchema = z.enum(['month', 'week', 'column']);
-
 export const PublicSettingsDTOSchema = z.object({
   id: z.literal('default'),
   name: z.string(),
@@ -69,12 +74,12 @@ export const PublicSettingsDTOSchema = z.object({
   timezone: z.string(),
   brandAccentLight: z.string(),
   brandAccentDark: z.string(),
-  defaultPublicMode: z.enum(['light', 'dark', 'system']),
-  cornerStyle: z.enum(['sharp', 'soft', 'rounded', 'pill']),
+  defaultPublicMode: ThemeModePreferenceSchema,
+  cornerStyle: CornerStyleSchema,
   defaultBookingLayout: BookingLayoutViewSchema,
   enabledBookingLayouts: z.array(BookingLayoutViewSchema),
   lockTimezone: z.boolean(),
-  slotIntervalMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+  slotIntervalMinutes: SlotIntervalMinutesSchema,
   enableSlotHold: z.boolean(),
   slotHoldMinutes: z.number(),
   minBookingNoticeMinutes: z.number(),
@@ -83,18 +88,18 @@ export const PublicSettingsDTOSchema = z.object({
   minRescheduleHours: z.number(),
   cancellationPolicyText: z.string(),
   bookingInstructionsText: z.string(),
-  paymentMode: z.enum(['none', 'manual_transfer', 'stripe', 'mercadopago']),
+  paymentMode: PaymentModeSchema,
   depositBankName: z.string(),
   depositAccountHolder: z.string(),
   depositBeneficiary: z.string().optional(),
   depositClabe: z.string(),
   depositAmountCents: z.number().optional(),
   depositInstructions: z.string(),
-  currency: z.enum(['MXN', 'USD']),
-  serviceMode: z.enum(['studio', 'home', 'online']).optional(),
+  currency: CurrencySchema,
+  serviceMode: ServiceModeSchema.optional(),
   privacyPolicyVersion: z.string().optional(),
   optimizeContinuousSlots: z.boolean().optional(),
-  landingContent: PublicLandingContentSchema,
+  landingContent: LandingContentSchema,
   whatsappBookingEnabled: z.boolean(),
   metaPixelId: z.string().nullable(),
   ga4MeasurementId: z.string().nullable(),
@@ -108,7 +113,7 @@ export const PublicReviewDTOSchema = z.object({
   id: z.string(),
   serviceId: z.string(),
   clientFirstName: z.string(),
-  rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+  rating: RatingSchema,
   comment: z.string(),
   createdAt: z.string(),
 });
@@ -140,7 +145,7 @@ export const PublicClientPackageDTOSchema = z.object({
   remainingSessions: z.number().int().nonnegative(),
   purchasedAt: z.string(),
   expiresAt: z.string().nullable(),
-  status: z.enum(['active', 'exhausted', 'expired', 'canceled']),
+  status: ClientPackageStatusSchema,
 });
 
 export type PublicClientPackageDTO = z.infer<typeof PublicClientPackageDTOSchema>;
@@ -150,14 +155,7 @@ const ClientPortalBookingDTOSchema = z.object({
   bookingCode: z.string(),
   manageToken: z.string(),
   manageUrl: z.string(),
-  status: z.enum([
-    'pending_payment',
-    'pending_confirmation',
-    'confirmed',
-    'completed',
-    'canceled',
-    'no_show',
-  ]),
+  status: BookingStatusSchema,
   startAt: z.string(),
   endAt: z.string(),
   totalDurationMinutes: z.number(),
@@ -190,6 +188,15 @@ export const ClientPortalSnapshotDTOSchema = z.object({
 });
 
 export type ClientPortalSnapshotDTO = z.infer<typeof ClientPortalSnapshotDTOSchema>;
+
+type AdminSettingsDTO = Omit<SalonSettings, 'ownerPinHash'> & {
+  hasOwnerPin: boolean;
+};
+
+type AdminCalendarConnectionDTO = Omit<
+  CalendarConnection,
+  'accessTokenEncrypted' | 'refreshTokenEncrypted'
+>;
 
 export function toPublicClientPackageDTO(
   pkg: ClientPackage,
@@ -246,6 +253,63 @@ export function toPublicServiceDTO(service: Service): PublicServiceDTO {
     displayOrder: service.displayOrder,
     imageUrl: service.imageUrl,
   });
+}
+
+export function toPublicBookingDTO(
+  booking: BookingWithRelations,
+  allServices: readonly Service[],
+) {
+  const extraIds = booking.extraServiceIds ?? [];
+  const extraServices =
+    extraIds.length === 0
+      ? []
+      : extraIds
+          .filter((id) => id !== booking.serviceId)
+          .map((id) => allServices.find((srv) => srv.id === id))
+          .filter((srv): srv is Service => Boolean(srv))
+          .map(toPublicServiceDTO);
+
+  return {
+    ...booking,
+    internalNotes: '',
+    client: {
+      ...booking.client,
+      notes: '',
+    },
+    staff: toPublicStaffDTO(booking.staff),
+    service: toPublicServiceDTO(booking.service),
+    extraServices,
+  };
+}
+
+export function toAdminSettingsDTO(settings: SalonSettings): AdminSettingsDTO {
+  const { ownerPinHash, ...rest } = settings;
+  const hasOwnerPin = Boolean(ownerPinHash || settings.hasOwnerPin);
+  return {
+    ...rest,
+    enabledBookingLayouts: [...rest.enabledBookingLayouts],
+    landingContent: { ...rest.landingContent },
+    ownerPinEnabled: Boolean(rest.ownerPinEnabled && hasOwnerPin),
+    hasOwnerPin,
+  };
+}
+
+export function toAdminCalendarConnectionDTO(
+  connection: CalendarConnection,
+): AdminCalendarConnectionDTO {
+  const {
+    accessTokenEncrypted: _accessTokenEncrypted,
+    refreshTokenEncrypted: _refreshTokenEncrypted,
+    ...rest
+  } = connection;
+  return {
+    ...rest,
+    conflictCalendarIds: [...rest.conflictCalendarIds],
+    availableCalendars: rest.availableCalendars.map((c) => ({ ...c })),
+    ...(rest.externalBusyBlocks
+      ? { externalBusyBlocks: rest.externalBusyBlocks.map((b) => ({ ...b })) }
+      : {}),
+  };
 }
 
 export function toPublicSettingsDTO(settings: SalonSettings): PublicSettingsDTO {

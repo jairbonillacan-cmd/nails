@@ -4,10 +4,10 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
 import { Token } from '@astryxdesign/core/Token';
 import { Link } from '@astryxdesign/core/Link';
 import { Divider } from '@astryxdesign/core/Divider';
+import { BookingStatusTag, StatusTag } from '@/components/ui';
 import {
   AtSign,
   CalendarClock,
@@ -102,7 +102,6 @@ export function BookingCard({
   onRequestReschedule,
 }: BookingCardProps) {
   const isBusy = Boolean(busyStatus);
-  const meta = BOOKING_STATUS_BADGE[b.status];
   const extraServiceNames = (b.extraServiceIds ?? [])
     .map((id) => allServices.find((s) => s.id === id)?.name)
     .filter((name): name is string => Boolean(name));
@@ -163,23 +162,22 @@ export function BookingCard({
                 {b.client.fullName}
               </Text>
             )}
-            <Badge variant={meta.variant} label={meta.label} />
+            <BookingStatusTag status={b.status} hasPaymentProof={Boolean(b.paymentProofUrl)} />
             {isBusy ? (
               <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
                 Actualizando...
               </Text>
             ) : null}
             {b.status !== 'canceled' && b.status !== 'no_show' ? (
-              <Text
-                color="inherit"
-                className="ad-chip"
-                data-tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
+              <StatusTag
+                tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
                 hasTabularNumbers
-              >
-                {paymentSummary.isFullyPaid
-                  ? 'Pagado'
-                  : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`}
-              </Text>
+                label={
+                  paymentSummary.isFullyPaid
+                    ? 'Pagado'
+                    : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`
+                }
+              />
             ) : null}
             <Token size="sm" label={b.bookingCode} />
             <Token

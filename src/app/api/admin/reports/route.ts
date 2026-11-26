@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { buildExecutiveReport, type ReportPeriod } from '@/lib/analytics/reports';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { ReportPeriodSchema } from '@/lib/contracts';
 import { roleCanAccess } from '@/lib/rbac';
 import { getSnapshot } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
-
-const reportPeriodSchema = z.enum(['7d', '30d', '90d', 'all']);
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -20,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 
   const rawPeriod = new URL(request.url).searchParams.get('period')?.trim() || '30d';
-  const parsedPeriod = reportPeriodSchema.safeParse(rawPeriod);
+  const parsedPeriod = ReportPeriodSchema.safeParse(rawPeriod);
   if (!parsedPeriod.success) {
     return NextResponse.json(
       { error: 'Período inválido. Usa 7d, 30d, 90d o all.' },

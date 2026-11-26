@@ -346,23 +346,23 @@ export interface UseCopyToClipboardResult {
 
 | Dimension | Metric | Wave 1 Baseline | Target (End of Wave 6) | Wave 2 | Wave 3 | Wave 4 | Wave 5 | Wave 6 Final |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| **Monoliths** | UI/API prod files `> 400` LOC (excl. DB repos/seed/types/qr) | 38 files (50 total) | `0` target UI/API monoliths `> 400` LOC | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Atomic UI** | Components in `src/components/ui/` | 0 (6 partial in `AdminConfigPrimitives`) | 10 Astryx-native modules + `useCopyToClipboard` | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Contracts** | Unvalidated admin POST routes (`team`, `operations`) | 2 unvalidated | 0 unvalidated (`src/lib/contracts/` pure domain) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **CSS** | `globals.css` / `admin.css` raw KB (dead selectors) | 62.1 / 45.2 KB (9 dead) | Route-scoped `globals.css <= 20 KB` (0 dead) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Media** | `public/` total MB (orphaned MB) | 15.82 MB (12.89 MB orphaned) | `<= 1.8 MB` (0 MB orphaned) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Bundle** | `next/dynamic` boundaries / `React.memo` usages | 11 / 0 | `>= 22` / `>= 5` hot components | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **A11y** | High contrast defects / Mobile `<44px` targets (`/` & `/admin/reportes`) | 1 HIGH / 22 & 5 (`20px` seg) | 0 HIGH / `0` primary CTA/control `<44px` | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **SEO** | Routes with `og:image` + `twitter:image` + `metadataBase` / Private routes with `noindex` | 0% / 1 of 3 groups (`/mis-citas` only) | 100% public routes / 100% private routes (`/admin*`, `/cita/*`, `/mis-citas`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Security** | Open HIGH / MEDIUM findings (`SEC-01`..`SEC-07`) | 4 HIGH, 3 MEDIUM | **0 HIGH, 0 MEDIUM** (verified by tests + guardrails) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Gatekeeper** | `npm run verify` errors / warnings | 0 / 0 | 0 / 0 | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Monoliths** | UI/API prod files `> 400` LOC (excl. DB repos/seed/types/qr) | 38 files (50 total) | `0` target UI/API monoliths `> 400` LOC | **0 UI/API** (14 `src/lib/` total) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Atomic UI** | Components in `src/components/ui/` | 0 (6 partial in `AdminConfigPrimitives`) | 10 Astryx-native modules + `useCopyToClipboard` | **11 modules** + `useCopyToClipboard` (`AdminConfigPrimitives` deleted) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Contracts** | Unvalidated admin POST routes (`team`, `operations`) | 2 unvalidated | 0 unvalidated (`src/lib/contracts/` pure domain) | **0 unvalidated** (9 pure modules in `src/lib/contracts/`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **CSS** | `globals.css` / `admin.css` raw KB (dead selectors) | 62.1 / 45.2 KB (9 dead) | Route-scoped `globals.css <= 20 KB` (0 dead) | _Wave 3_ (62.1 / 45.2 KB) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Media** | `public/` total MB (orphaned MB) | 15.82 MB (12.89 MB orphaned) | `<= 1.8 MB` (0 MB orphaned) | _Wave 3_ (15.82 MB) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Bundle** | `next/dynamic` boundaries / `React.memo` usages | 11 / 0 | `>= 22` / `>= 5` hot components | 12 / 0 (_Wave 4_) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **A11y** | High contrast defects / Mobile `<44px` targets (`/` & `/admin/reportes`) | 1 HIGH / 22 & 5 (`20px` seg) | 0 HIGH / `0` primary CTA/control `<44px` | `/admin/reportes` period **`44px`** (`FilterPillBar`); `/` _Wave 5_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **SEO** | Routes with `og:image` + `twitter:image` + `metadataBase` / Private routes with `noindex` | 0% / 1 of 3 groups (`/mis-citas` only) | 100% public routes / 100% private routes (`/admin*`, `/cita/*`, `/mis-citas`) | _Wave 5/6_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Security** | Open HIGH / MEDIUM findings (`SEC-01`..`SEC-07`) | 4 HIGH, 3 MEDIUM | **0 HIGH, 0 MEDIUM** (verified by tests + guardrails) | **0 HIGH, 0 MEDIUM** (`SEC-01`..`SEC-07` closed; `SEC-08` LOW open) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Gatekeeper** | `npm run verify` errors / warnings | 0 / 0 | 0 / 0 | **0 / 0** (314/314 Vitest, 25/25 doctor, 0 knip) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 
 ### 9.3 Security Remediation Checklist (Tracked Across Waves 2–6)
-- [ ] **SEC-01 (HIGH):** Sanitize `POST /api/bookings` response (`toPublicStaffDTO`, `toPublicServiceDTO`, strip `internalNotes` & `client.notes`) + test.
-- [ ] **SEC-02 (HIGH):** Add strict Zod contracts (`operations.ts`, `team.ts`) to `POST /api/admin/operations` and `POST /api/admin/team` + fix `401` vs `403` + test.
-- [ ] **SEC-03 (HIGH):** Strip `ownerPinHash` & encrypted OAuth tokens from `/api/admin/overview` & `/api/admin/brand`; enforce specialist RBAC scoping in `/api/admin/overview` + test.
-- [ ] **SEC-04 (HIGH):** Fix `getRequestIp()` header precedence (`cf-connecting-ip` first) + document/wire distributed store path for Workers + test.
-- [ ] **SEC-05 (MEDIUM):** Scrub `booking.client.notes` in `GET`/`PATCH /api/bookings/manage/[token]` + test.
-- [ ] **SEC-06 (MEDIUM):** Add rate limiting to `/api/admin/session`, Owner PIN endpoints, `/api/bookings/manage/[token]`, and `/api/availability` + test.
-- [ ] **SEC-07 (MEDIUM):** Reject arbitrary external `http(s)://` URLs in public `persistBookingMediaField` calls + test.
+- [x] **SEC-01 (HIGH):** Sanitize `POST /api/bookings` response (`toPublicStaffDTO`, `toPublicServiceDTO`, strip `internalNotes` & `client.notes`) + test (`Wave 2`).
+- [x] **SEC-02 (HIGH):** Add strict Zod contracts (`operations.ts`, `team.ts`) to `POST /api/admin/operations` and `POST /api/admin/team` + fix `401` vs `403` + test (`Wave 2`).
+- [x] **SEC-03 (HIGH):** Strip `ownerPinHash` & encrypted OAuth tokens from `/api/admin/overview` & `/api/admin/brand`; enforce specialist RBAC scoping in `/api/admin/overview` + test (`Wave 2`).
+- [x] **SEC-04 (HIGH):** Fix `getRequestIp()` header precedence (`cf-connecting-ip` first) + document/wire distributed store path for Workers + test (`Wave 2`).
+- [x] **SEC-05 (MEDIUM):** Scrub `booking.client.notes` in `GET`/`PATCH /api/bookings/manage/[token]` + test (`Wave 2`).
+- [x] **SEC-06 (MEDIUM):** Add rate limiting to `/api/admin/session`, Owner PIN endpoints, `/api/bookings/manage/[token]`, and `/api/availability` + test (`Wave 2`).
+- [x] **SEC-07 (MEDIUM):** Reject arbitrary external `http(s)://` URLs in public `persistBookingMediaField` calls + test (`Wave 2`).
 - [ ] **SEC-08 (LOW):** Tighten CSP `img-src` / `connect-src` origins in `next.config.ts`.

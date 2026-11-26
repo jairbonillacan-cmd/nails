@@ -11,40 +11,14 @@ import { Text } from '@astryxdesign/core/Text';
 import { CalendarDays, Search, Sparkles, Users } from 'lucide-react';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
 import { useQuickSearchKeyboardNav } from '@/lib/hooks/useAdminCache';
-import { roleCanAccess } from '@/lib/rbac';
-import type { BookingStatus } from '@/lib/types';
+import { BookingStatusTag, EmptyStateCard } from '@/components/ui';
 import type { AdminOverviewPayload } from './AdminProvider';
+import { buildQuickSearchResults } from './adminSearchIndex';
 
 interface AdminQuickSearchDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   data: AdminOverviewPayload;
-}
-
-interface QuickNavTarget {
-  label: string;
-  description: string;
-  href: string;
-  keywords: string;
-  visible: boolean;
-}
-
-interface FlatSearchOption {
-  optionId: string;
-  href: string;
-}
-
-function getSearchStatusMeta(status: BookingStatus): {
-  label: string;
-  tone: 'neutral' | 'warning' | 'accent' | 'success';
-} {
-  if (status === 'confirmed') return { label: 'Confirmada', tone: 'success' };
-  if (status === 'pending_confirmation' || status === 'pending_payment') {
-    return { label: 'Por confirmar', tone: 'warning' };
-  }
-  if (status === 'completed') return { label: 'Completada', tone: 'neutral' };
-  if (status === 'no_show') return { label: 'No llegó', tone: 'warning' };
-  return { label: 'Cancelada', tone: 'neutral' };
 }
 
 export function AdminQuickSearchDialog({
@@ -56,169 +30,12 @@ export function AdminQuickSearchDialog({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const role = data.session.user.role;
   const tz = data.settings.timezone || 'America/Mexico_City';
-  const normalized = query.trim().toLowerCase();
 
-  const navTargets = useMemo<QuickNavTarget[]>(
-    () => [
-      {
-        label: 'Inicio',
-        description: 'Resumen del día, pendientes y tus citas de hoy',
-        href: '/admin',
-        keywords: 'inicio resumen hoy citas pendientes',
-        visible: true,
-      },
-      {
-        label: 'Nueva cita',
-        description: 'Registrar una cita nueva en la agenda',
-        href: '/admin/citas?new=1',
-        keywords: 'nueva cita agendar crear reserva',
-        visible: true,
-      },
-      {
-        label: 'Agenda',
-        description: 'Horarios por manicurista, reprogramar y cobrar',
-        href: '/admin/citas',
-        keywords: 'citas agenda calendario horarios',
-        visible: true,
-      },
-      {
-        label: 'Clientas',
-        description: 'Directorio, sellos, cumpleaños y mensajes',
-        href: '/admin/clientas',
-        keywords: 'clientas directorio sellos cumpleanos mensajes paquetes',
-        visible: roleCanAccess(role, 'clients'),
-      },
-      {
-        label: 'Caja',
-        description: 'Corte del día, anticipos, comisiones y promociones',
-        href: '/admin/caja',
-        keywords: 'caja cobros anticipos comisiones cupones propinas paquetes',
-        visible: roleCanAccess(role, 'cash'),
-      },
-      {
-        label: 'Servicios',
-        description: 'Precios, duraciones, fotos y extras',
-        href: '/admin/servicios',
-        keywords: 'servicios catalogo precios extras disenos',
-        visible: roleCanAccess(role, 'services'),
-      },
-      {
-        label: 'Horarios',
-        description: 'Turnos de trabajo, descansos, vacaciones y festivos',
-        href: '/admin/disponibilidad',
-        keywords: 'horarios disponibilidad turnos descansos vacaciones festivos',
-        visible: roleCanAccess(role, 'availability'),
-      },
-      {
-        label: 'Equipo',
-        description: 'Manicuristas, comisiones y accesos del salón',
-        href: '/admin/equipo',
-        keywords: 'equipo manicuristas comisiones accesos roles',
-        visible: roleCanAccess(role, 'team'),
-      },
-      {
-        label: 'Mi página',
-        description: 'Logo, colores, código QR y tarjeta de sellos',
-        href: '/admin/marca',
-        keywords: 'mi pagina marca colores qr logo tarjeta sellos reglas',
-        visible: roleCanAccess(role, 'brand'),
-      },
-      {
-        label: 'Reportes',
-        description: 'Días con más citas, ocupación y servicios más rentables',
-        href: '/admin/reportes',
-        keywords: 'reportes ocupacion dias horas ventas servicios cancelaciones',
-        visible: roleCanAccess(role, 'reports'),
-      },
-      {
-        label: 'Inventario',
-        description: 'Productos, existencias y alertas de poco material',
-        href: '/admin/inventario',
-        keywords: 'inventario stock material productos insumos',
-        visible: roleCanAccess(role, 'inventory'),
-      },
-      {
-        label: 'Conexiones',
-        description: 'Google Calendar, recordatorios por WhatsApp y cobros',
-        href: '/admin/integraciones',
-        keywords: 'conexiones whatsapp google calendar mercado pago spei',
-        visible: roleCanAccess(role, 'integrations'),
-      },
-      {
-        label: 'Guía inicial',
-        description: 'Pasos rápidos para dejar listo tu salón',
-        href: '/admin/onboarding',
-        keywords: 'guia inicial configurar pasos salon',
-        visible: role === 'owner',
-      },
-      {
-        label: 'Portal de clientas (/mis-citas)',
-        description: 'Página donde tus clientas consultan sus citas y sellos',
-        href: '/mis-citas',
-        keywords: 'mis citas portal clientas historial sellos paquetes',
-        visible: true,
-      },
-    ],
-    [role],
+  const { matchedBookings, matchedClients, matchedNav, flatOptions } = useMemo(
+    () => buildQuickSearchResults(data, query),
+    [data, query],
   );
-
-  const matchedBookings = useMemo(() => {
-    if (!normalized) return data.bookings.slice(0, 4);
-    return data.bookings
-      .filter((b) => {
-        const haystack =
-          `${b.bookingCode} ${b.client.fullName} ${b.client.phoneE164} ${b.clientInstagram ?? b.client.instagramHandle ?? ''} ${b.service.name} ${b.staff.name}`.toLowerCase();
-        return haystack.includes(normalized);
-      })
-      .slice(0, 5);
-  }, [data.bookings, normalized]);
-
-  const matchedClients = useMemo(() => {
-    if (!roleCanAccess(role, 'clients')) return [];
-    if (!normalized) return data.clients.slice(0, 4);
-    return data.clients
-      .filter((c) => {
-        const haystack =
-          `${c.fullName} ${c.phoneE164} ${c.instagramHandle ?? ''} ${c.email ?? ''}`.toLowerCase();
-        return haystack.includes(normalized);
-      })
-      .slice(0, 5);
-  }, [data.clients, normalized, role]);
-
-  const matchedNav = useMemo(() => {
-    const allowed = navTargets.filter((item) => item.visible);
-    if (!normalized) return allowed.slice(0, 5);
-    return allowed
-      .filter((item) =>
-        `${item.label} ${item.description} ${item.keywords}`.toLowerCase().includes(normalized),
-      )
-      .slice(0, 6);
-  }, [navTargets, normalized]);
-
-  const flatOptions = useMemo<FlatSearchOption[]>(() => {
-    const list: FlatSearchOption[] = [];
-    for (const b of matchedBookings) {
-      list.push({
-        optionId: `ad-search-opt-booking-${b.id}`,
-        href: `/admin/citas?q=${encodeURIComponent(b.bookingCode)}`,
-      });
-    }
-    for (const c of matchedClients) {
-      list.push({
-        optionId: `ad-search-opt-client-${c.id}`,
-        href: `/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`,
-      });
-    }
-    matchedNav.forEach((item, idx) => {
-      list.push({
-        optionId: `ad-search-opt-nav-${idx}`,
-        href: item.href,
-      });
-    });
-    return list;
-  }, [matchedBookings, matchedClients, matchedNav]);
 
   const safeActiveIndex =
     flatOptions.length === 0 ? -1 : Math.min(activeIndex, flatOptions.length - 1);
@@ -323,11 +140,13 @@ export function AdminQuickSearchDialog({
         />
 
         {!hasResults ? (
-          <VStack className="ad-empty" gap={1} role="status">
-            <Text weight="semibold">Sin coincidencias</Text>
-            <Text type="supporting" color="secondary">
-              No encontramos resultados para «{query}». Prueba con un nombre, teléfono o sección.
-            </Text>
+          <VStack role="status">
+            <EmptyStateCard
+              framed={false}
+              isCompact
+              title="Sin coincidencias"
+              description={`No encontramos resultados para «${query}». Prueba con un nombre, teléfono o sección.`}
+            />
           </VStack>
         ) : (
           <VStack
@@ -351,9 +170,7 @@ export function AdminQuickSearchDialog({
                 </HStack>
                 <List hasDividers density="compact" role="presentation">
                   {matchedBookings.map((b, idx) => {
-                    const statusMeta = getSearchStatusMeta(b.status);
-                    const flatIdx = idx;
-                    const isActive = safeActiveIndex === flatIdx;
+                    const isActive = safeActiveIndex === idx;
                     const optionId = `ad-search-opt-booking-${b.id}`;
                     return (
                       <ListItem
@@ -372,15 +189,12 @@ export function AdminQuickSearchDialog({
                           </Text>
                         }
                         endContent={
-                          <Text
-                            color="inherit"
-                            className="ad-chip"
-                            data-tone={statusMeta.tone}
-                          >
-                            {statusMeta.label}
-                          </Text>
+                          <BookingStatusTag
+                            status={b.status}
+                            hasPaymentProof={Boolean(b.paymentProofUrl)}
+                          />
                         }
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
+                        onMouseEnter={() => setActiveIndex(idx)}
                         onClick={() =>
                           handleNavigate(`/admin/citas?q=${encodeURIComponent(b.bookingCode)}`)
                         }

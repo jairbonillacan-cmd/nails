@@ -4,6 +4,7 @@ import {
   getOrCreateClientSession,
   readClientSessionToken,
 } from '@/lib/auth/client-session';
+import { CreateSlotHoldSchema } from '@/lib/contracts';
 import { logError } from '@/lib/logger';
 import {
   createOrRefreshSlotHoldWithExtras,
@@ -12,15 +13,6 @@ import {
   SlotConflictError,
 } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
-
-const holdSchema = z.object({
-  serviceId: z.string().min(1),
-  extraServiceIds: z.array(z.string().min(1)).max(8).default([]),
-  addonIds: z.array(z.string()).default([]),
-  staffId: z.string().min(1),
-  startAt: z.string().min(1),
-  sessionToken: z.string().min(4).optional(),
-});
 
 export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
@@ -46,7 +38,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = holdSchema.parse(await request.json());
+    const body = CreateSlotHoldSchema.parse(await request.json());
     const clientSession = await getOrCreateClientSession(request);
     const hold = await createOrRefreshSlotHoldWithExtras({
       serviceId: body.serviceId,

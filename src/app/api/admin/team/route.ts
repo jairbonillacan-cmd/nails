@@ -1,26 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
+import { AdminTeamPostSchema } from '@/lib/contracts';
 import { upsertAdminUser, upsertStaffMember } from '@/lib/repositories/db';
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  const session = await requireAdmin(undefined, request);
+  if (!session) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
 
-  if (body.kind === 'admin_user') {
-    const session = await requireAdmin(['owner']);
-    if (!session) {
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json({ error: 'Solicitud JSON inválida.' }, { status: 400 });
+  }
+
+  try {
+    const parsed = AdminTeamPostSchema.parse(rawBody);
+
+    if (parsed.kind === 'admin_user') {
+      if (session.user.role !== 'owner') {
+        return NextResponse.json(
+          {
+            error:
+              'Solo la Dueña (Owner) puede invitar o cambiar roles de administradores.',
+          },
+          { status: 403 },
+        );
+      }
+      const adminUser = await upsertAdminUser(parsed.data);
+      return NextResponse.json({ adminUser });
+    }
+
+    if (session.user.role !== 'owner' && session.user.role !== 'admin') {
+      return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    }
+
+    const staff = await upsertStaffMember(parsed.data);
+    return NextResponse.json({ staff });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Solo la Dueña (Owner) puede invitar o cambiar roles de administradores.' },
-        { status: 403 },
+        { error: err.issues[0]?.message || 'Revisa los datos del equipo.' },
+        { status: 400 },
       );
     }
-    const adminUser = await upsertAdminUser(body.data);
-    return NextResponse.json({ adminUser });
+    return NextResponse.json(
+      { error: 'No se pudo guardar el registro del equipo.' },
+      { status: 400 },
+    );
   }
-
-  const session = await requireAdmin(['owner', 'admin']);
-  if (!session) {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
-  }
-  const staff = await upsertStaffMember(body.data);
-  return NextResponse.json({ staff });
 }

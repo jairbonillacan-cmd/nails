@@ -132,6 +132,9 @@ test('astryx-boundaries: catches raw div/span and inline hex/px, allows Astryx t
 
 test('dependency-graph: enforces pure domain boundaries for booking/, public-dto.ts, sanitize.ts, availability/, loyalty/, payments/, notifications/, qr.ts, and contrast.ts', () => {
   const forbiddenPaths = [
+    'src/lib/contracts/bookings.ts',
+    'src/lib/contracts/operations.ts',
+    'src/lib/contracts/team.ts',
     'src/lib/booking/state-machine.ts',
     'src/lib/public-dto.ts',
     'src/lib/sanitize.ts',
@@ -335,6 +338,26 @@ test('H2 no-privileged-public-fields: forbids forceConfirmed/source/role in Zod 
     '}',
   ].join('\n');
   assert.deepEqual(rulesOf('src/app/api/admin/team/route.ts', adminWithAuth), []);
+
+  const badContract = [
+    'import { z } from "zod";',
+    'export const PublicCreateBookingSchema = z.object({',
+    '  serviceId: z.string(),',
+    '  forceConfirmed: z.boolean().optional(),',
+    '  source: z.enum(["web", "manual"]).optional(),',
+    '  role: z.string().optional(),',
+    '});',
+    'export const AdminCreateBookingSchema = z.object({',
+    '  serviceId: z.string(),',
+    '  forceConfirmed: z.boolean().default(true),',
+    '  source: z.enum(["manual", "walk_in"]).default("manual"),',
+    '});',
+  ].join('\n');
+  assert.deepEqual(rulesOf('src/lib/contracts/bookings.ts', badContract), [
+    'no-privileged-public-fields',
+    'no-privileged-public-fields',
+    'no-privileged-public-fields',
+  ]);
 });
 
 test('§8 no-inplace-array-mutation: forbids .sort/.reverse/.splice in src/app/** and src/components/** (except *.test.ts)', () => {

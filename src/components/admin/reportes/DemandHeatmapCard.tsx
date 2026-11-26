@@ -3,11 +3,10 @@
 import React from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Flame, Sparkles } from 'lucide-react';
+import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import type { DemandHeatmap } from '@/lib/analytics/reports';
 
 interface DemandHeatmapCardProps {
@@ -18,65 +17,37 @@ const LEGEND_LEVELS: ReadonlyArray<0 | 1 | 2 | 3 | 4> = [0, 1, 2, 3, 4];
 
 export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
   return (
-    <VStack
-      as="section"
-      className="ad-surface"
-      gap={0}
-      aria-labelledby="reports-heatmap-heading"
-    >
-      <HStack
-        className="ad-section-head"
-        justify="between"
-        align="center"
-        wrap="wrap"
-        gap={3}
-      >
-        <VStack gap={0.5} className="rb-grow">
-          <Heading level={2} id="reports-heatmap-heading" className="lk-serif ad-h2">
-            Días y horas con más citas
-          </Heading>
-          <Text type="supporting" color="secondary">
-            Cuántas citas se agendan cada día entre las 9:00 y las 20:00.
-          </Text>
-        </VStack>
-
-        {heatmap.peakSlot || heatmap.quietSlot ? (
+    <SurfaceCard
+      id="reports-heatmap-heading"
+      title="Días y horas con más citas"
+      subtitle="Cuántas citas se agendan cada día entre las 9:00 y las 20:00."
+      actions={
+        heatmap.peakSlot || heatmap.quietSlot ? (
           <HStack gap={1.5} wrap="wrap" align="center">
             {heatmap.peakSlot ? (
-              <HStack
-                gap={1}
-                align="center"
-                className="ad-chip"
-                data-tone="accent"
-              >
-                <Flame size={12} aria-hidden="true" />
-                <Text color="inherit" size="sm" weight="semibold" hasTabularNumbers>
-                  Más lleno: {heatmap.peakSlot.dayShort} {heatmap.peakSlot.hourLabel} (
-                  {heatmap.peakSlot.count})
-                </Text>
-              </HStack>
+              <StatusTag
+                tone="accent"
+                icon={<Flame size={12} aria-hidden="true" />}
+                hasTabularNumbers
+                label={`Más lleno: ${heatmap.peakSlot.dayShort} ${heatmap.peakSlot.hourLabel} (${heatmap.peakSlot.count})`}
+              />
             ) : null}
             {heatmap.quietSlot ? (
-              <HStack
-                gap={1}
-                align="center"
-                className="ad-chip"
-                data-tone="neutral"
-              >
-                <Sparkles size={12} aria-hidden="true" />
-                <Text color="inherit" size="sm" weight="semibold" hasTabularNumbers>
-                  Más tranquilo: {heatmap.quietSlot.dayShort} {heatmap.quietSlot.hourLabel} (
-                  {heatmap.quietSlot.count})
-                </Text>
-              </HStack>
+              <StatusTag
+                tone="neutral"
+                icon={<Sparkles size={12} aria-hidden="true" />}
+                hasTabularNumbers
+                label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${heatmap.quietSlot.hourLabel} (${heatmap.quietSlot.count})`}
+              />
             ) : null}
           </HStack>
-        ) : null}
-      </HStack>
-
+        ) : undefined
+      }
+    >
       {heatmap.totalBookings === 0 ? (
         <VStack className="ad-empty" gap={2}>
-          <EmptyState
+          <EmptyStateCard
+            framed={false}
             isCompact
             title="Todavía no hay citas en estas fechas"
             description="Cuando tengas citas confirmadas o completadas, aquí verás los días y horarios con más movimiento."
@@ -199,6 +170,6 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
           </HStack>
         </VStack>
       )}
-    </VStack>
+    </SurfaceCard>
   );
 }

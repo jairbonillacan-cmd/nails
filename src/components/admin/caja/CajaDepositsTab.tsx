@@ -3,13 +3,10 @@
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
 import { Link } from '@astryxdesign/core/Link';
 import { Token } from '@astryxdesign/core/Token';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { AspectRatio } from '@astryxdesign/core/AspectRatio';
 import { Check, ExternalLink, ImageIcon, Wallet } from 'lucide-react';
@@ -18,6 +15,7 @@ import {
   formatDateShortInTimezone,
   formatTimeInTimezone,
 } from '@/lib/format';
+import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import {
   formatInstagramDisplay,
   formatInstagramUrl,
@@ -53,17 +51,11 @@ export function CajaDepositsTab({
 
   return (
     <VStack gap={4} className="fx-step-in">
-      <VStack className="ad-surface" gap={0}>
-        <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
-          <VStack gap={0.5} className="rb-grow">
-            <Heading level={2} className="lk-serif ad-h2">
-              Anticipos por validar ({defaultDepositLabel})
-            </Heading>
-            <Text type="supporting" color="secondary">
-              Revisa los comprobantes SPEI a {depositBankName} ({depositClabe}) recibidos en la
-              página o por Instagram ({instagramHandle}).
-            </Text>
-          </VStack>
+      <SurfaceCard
+        title={`Anticipos por validar (${defaultDepositLabel})`}
+        subtitle={`Revisa los comprobantes SPEI a ${depositBankName} (${depositClabe}) recibidos en la página o por Instagram (${instagramHandle}).`}
+        count={pendingDeposits.length > 0 ? pendingDeposits.length : undefined}
+        actions={
           <Button
             label="Ver agenda"
             variant="secondary"
@@ -71,11 +63,12 @@ export function CajaDepositsTab({
             icon={<ExternalLink size={14} aria-hidden="true" />}
             href="/admin/citas"
           />
-        </HStack>
-
+        }
+      >
         {pendingDeposits.length === 0 ? (
-          <VStack className="ad-empty" gap={2}>
-            <EmptyState
+          <VStack padding={4}>
+            <EmptyStateCard
+              framed={false}
               isCompact
               title="Todo al día con los anticipos"
               description="No hay transferencias pendientes por revisar. Todas las citas activas ya están confirmadas."
@@ -94,16 +87,10 @@ export function CajaDepositsTab({
               const isApproving = approvingId === dep.bookingId;
 
               return (
-                <HStack
+                <ActionRow
                   key={dep.bookingId}
-                  className="ad-row-item"
-                  justify="between"
-                  align="center"
-                  wrap="wrap"
-                  gap={3}
-                >
-                  <HStack gap={3} align="center" className="rb-grow">
-                    {proofUrl ? (
+                  leading={
+                    proofUrl ? (
                       <button
                         type="button"
                         className="ad-proof-thumb"
@@ -125,77 +112,75 @@ export function CajaDepositsTab({
                       >
                         <Wallet size={17} />
                       </VStack>
-                    )}
-
-                    <VStack gap={0.5} className="rb-grow">
-                      <HStack gap={2} align="center" wrap="wrap">
-                        <Text weight="semibold">{dep.clientName}</Text>
-                        <Token size="sm" color={meta.color} label={meta.label} />
-                      </HStack>
+                    )
+                  }
+                  title={
+                    <HStack gap={2} align="center" wrap="wrap">
+                      <Text weight="semibold">{dep.clientName}</Text>
+                      <Token size="sm" color={meta.color} label={meta.label} />
+                    </HStack>
+                  }
+                  subtitle={`${dep.serviceName} (${dep.bookingCode}) · ${formatDateShortInTimezone(dep.startAt, tz)} ${formatTimeInTimezone(dep.startAt, tz, true)} con ${dep.staffName}`}
+                  meta={
+                    <HStack gap={2} wrap="wrap" align="center">
                       <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {dep.serviceName} ({dep.bookingCode}) ·{' '}
-                        {formatDateShortInTimezone(dep.startAt, tz)}{' '}
-                        {formatTimeInTimezone(dep.startAt, tz, true)} con {dep.staffName}
+                        {dep.clientPhone}
                       </Text>
-                      <HStack gap={2} wrap="wrap" align="center">
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {dep.clientPhone}
+                      {dep.clientInstagram ? (
+                        <Link
+                          href={formatInstagramUrl(dep.clientInstagram)}
+                          isExternalLink
+                          type="supporting"
+                        >
+                          {formatInstagramDisplay(dep.clientInstagram)}
+                        </Link>
+                      ) : null}
+                    </HStack>
+                  }
+                  actions={
+                    <HStack gap={2} align="center" wrap="wrap">
+                      <VStack gap={0} align="end">
+                        <Text weight="bold" hasTabularNumbers>
+                          {formatCurrency(dep.depositAmountCents, currency)}
                         </Text>
-                        {dep.clientInstagram ? (
-                          <Link
-                            href={formatInstagramUrl(dep.clientInstagram)}
-                            isExternalLink
-                            type="supporting"
-                          >
-                            {formatInstagramDisplay(dep.clientInstagram)}
-                          </Link>
-                        ) : null}
-                      </HStack>
-                    </VStack>
-                  </HStack>
-
-                  <HStack gap={2} align="center" wrap="wrap">
-                    <VStack gap={0} align="end">
-                      <Text weight="bold" hasTabularNumbers>
-                        {formatCurrency(dep.depositAmountCents, currency)}
-                      </Text>
-                      <Text type="supporting" color="secondary" hasTabularNumbers>
-                        Total {formatCurrency(dep.totalPriceCents, currency)}
-                      </Text>
-                    </VStack>
-                    {proofUrl ? (
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          Total {formatCurrency(dep.totalPriceCents, currency)}
+                        </Text>
+                      </VStack>
+                      {proofUrl ? (
+                        <Button
+                          type="button"
+                          label="Ver foto"
+                          variant="secondary"
+                          size="sm"
+                          icon={<ImageIcon size={14} aria-hidden="true" />}
+                          onClick={() => setPreviewDeposit(dep)}
+                        />
+                      ) : null}
                       <Button
                         type="button"
-                        label="Ver foto"
-                        variant="secondary"
+                        label="Confirmar anticipo"
+                        variant="primary"
                         size="sm"
-                        icon={<ImageIcon size={14} aria-hidden="true" />}
-                        onClick={() => setPreviewDeposit(dep)}
+                        icon={<Check size={14} aria-hidden="true" />}
+                        isLoading={isApproving}
+                        isDisabled={isApproving}
+                        onClick={() => void onApproveDeposit(dep.bookingId, dep.bookingCode)}
                       />
-                    ) : null}
-                    <Button
-                      type="button"
-                      label="Confirmar anticipo"
-                      variant="primary"
-                      size="sm"
-                      icon={<Check size={14} aria-hidden="true" />}
-                      isLoading={isApproving}
-                      isDisabled={isApproving}
-                      onClick={() => void onApproveDeposit(dep.bookingId, dep.bookingCode)}
-                    />
-                    <Button
-                      label="Ver cita"
-                      variant="ghost"
-                      size="sm"
-                      href={`/admin/citas?q=${encodeURIComponent(dep.bookingCode)}`}
-                    />
-                  </HStack>
-                </HStack>
+                      <Button
+                        label="Ver cita"
+                        variant="ghost"
+                        size="sm"
+                        href={`/admin/citas?q=${encodeURIComponent(dep.bookingCode)}`}
+                      />
+                    </HStack>
+                  }
+                />
               );
             })}
           </VStack>
         )}
-      </VStack>
+      </SurfaceCard>
 
       <Dialog
         isOpen={Boolean(previewDeposit)}
@@ -237,8 +222,9 @@ export function CajaDepositsTab({
                 <Text type="supporting" color="secondary">
                   Anticipo esperado
                 </Text>
-                <Badge
-                  variant="info"
+                <StatusTag
+                  tone="info"
+                  hasTabularNumbers
                   label={formatCurrency(previewDeposit.depositAmountCents, currency)}
                 />
               </HStack>

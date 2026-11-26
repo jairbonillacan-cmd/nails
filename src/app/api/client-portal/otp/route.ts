@@ -7,6 +7,7 @@ import {
   getClientPortalCookieOptions,
   verifyClientPortalOtp,
 } from '@/lib/auth/client-portal-otp';
+import { ClientPortalOtpActionSchema } from '@/lib/contracts';
 import {
   dispatchSmsNotification,
   dispatchWhatsAppNotification,
@@ -15,18 +16,6 @@ import { logInfo, logWarn } from '@/lib/logger';
 import { getSnapshot } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
-
-const otpActionSchema = z.discriminatedUnion('action', [
-  z.object({
-    action: z.literal('request'),
-    phone: z.string().min(8, 'Escribe un WhatsApp válido de 10 dígitos').max(25),
-  }),
-  z.object({
-    action: z.literal('verify'),
-    phone: z.string().min(8, 'Escribe un WhatsApp válido de 10 dígitos').max(25),
-    code: z.string().trim().regex(/^\d{6}$/, 'El código debe tener 6 dígitos'),
-  }),
-]);
 
 const OTP_REQUEST_LIMIT = 15;
 const OTP_VERIFY_LIMIT = 25;
@@ -51,7 +40,7 @@ function rateLimitedResponse(retryAfterSeconds: number) {
 export async function POST(request: NextRequest) {
   try {
     const body: unknown = await request.json();
-    const parsed = otpActionSchema.parse(body);
+    const parsed = ClientPortalOtpActionSchema.parse(body);
     const ip = getRequestIp(request);
 
     if (parsed.action === 'request') {

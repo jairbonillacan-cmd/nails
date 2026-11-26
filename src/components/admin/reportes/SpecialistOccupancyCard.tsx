@@ -2,10 +2,9 @@
 
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Table } from '@astryxdesign/core/Table';
-import { EmptyState } from '@astryxdesign/core/EmptyState';
+import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import type { SpecialistOccupancyRow } from '@/lib/analytics/reports';
 
@@ -21,38 +20,19 @@ export function SpecialistOccupancyCard({
   isSpecialistScope,
 }: SpecialistOccupancyCardProps) {
   return (
-    <VStack
-      as="section"
-      className="ad-surface"
-      gap={0}
-      aria-labelledby="reports-occupancy-heading"
+    <SurfaceCard
+      id="reports-occupancy-heading"
+      title={
+        isSpecialistScope
+          ? 'Tu ocupación y clientas que regresan'
+          : 'Ocupación del equipo'
+      }
+      subtitle="Qué tan llena estuvo la agenda, cuánto se cobró y cuántas clientas regresan."
     >
-      <HStack
-        className="ad-section-head"
-        justify="between"
-        align="center"
-        wrap="wrap"
-        gap={2}
-      >
-        <VStack gap={0.5} className="rb-grow">
-          <Heading
-            level={2}
-            id="reports-occupancy-heading"
-            className="lk-serif ad-h2"
-          >
-            {isSpecialistScope
-              ? 'Tu ocupación y clientas que regresan'
-              : 'Ocupación del equipo'}
-          </Heading>
-          <Text type="supporting" color="secondary">
-            Qué tan llena estuvo la agenda, cuánto se cobró y cuántas clientas regresan.
-          </Text>
-        </VStack>
-      </HStack>
-
       {rows.length === 0 ? (
         <VStack className="ad-empty" gap={2}>
-          <EmptyState
+          <EmptyStateCard
+            framed={false}
             isCompact
             title="Sin manicuristas con actividad"
             description="Configura turnos en Horarios para ver la ocupación de tu equipo."
@@ -132,14 +112,11 @@ export function SpecialistOccupancyCard({
                       {row.completedCount === 1 ? '' : 's'}
                     </Text>
                     {row.noShowCount > 0 ? (
-                      <Text
-                        color="inherit"
-                        className="ad-chip"
-                        data-tone="warning"
+                      <StatusTag
+                        tone="warning"
+                        label={`${row.noShowCount} no llegaron`}
                         hasTabularNumbers
-                      >
-                        {row.noShowCount} no llegaron
-                      </Text>
+                      />
                     ) : (
                       <Text type="supporting" color="secondary" size="sm">
                         0 inasistencias
@@ -183,6 +160,6 @@ export function SpecialistOccupancyCard({
           />
         </VStack>
       )}
-    </VStack>
+    </SurfaceCard>
   );
 }

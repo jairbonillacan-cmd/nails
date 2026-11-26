@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import {
+  AdminCreateBookingSchema,
+  AdminPatchBookingStatusSchema,
+  CheckoutSplitSchema,
+  RequestRescheduleSchema,
+  SendReminderSchema,
+} from '@/lib/contracts';
+import {
   createBookingAtomic,
   createRecurringBookingSeries,
   getBookingsWithRelations,
@@ -14,6 +21,7 @@ import {
   updateBookingStatus,
   verifyStoredOwnerPin,
 } from '@/lib/repositories/db';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -28,43 +36,41 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ bookings });
 }
 
-const createAdminBookingSchema = z.object({
-  serviceId: z.string().min(1),
-  extraServiceIds: z.array(z.string().min(1)).max(8).default([]),
-  addonIds: z.array(z.string()).default([]),
-  staffId: z.string().nullable().optional(),
-  startAt: z.string().min(1),
-  clientName: z.string().min(2, 'Escribe el nombre completo'),
-  clientPhone: z.string().min(8, 'Escribe un WhatsApp válido de 10 dígitos'),
-  clientEmail: z.string().email('Correo inválido').optional().or(z.literal('')).nullable(),
-  clientInstagram: z.string().max(120).optional().nullable(),
-  clientBirthday: z.string().optional().nullable(),
-  clientNotes: z.string().max(1000).optional(),
-  internalNotes: z.string().max(1000).optional(),
-  inspoPhotoUrl: z.string().max(2_500_000).optional().nullable(),
-  paymentProofUrl: z.string().max(2_500_000).optional().nullable(),
-  proofDeliveryMethod: z.enum(['web_upload', 'instagram_dm', 'none']).optional(),
-  customDurationMinutes: z.number().int().min(15).max(480).optional().nullable(),
-  customPriceCents: z.number().int().nonnegative().max(10_000_000).optional().nullable(),
-  notifyEmail: z.boolean().optional(),
-  notifyWhatsapp: z.boolean().optional(),
-  couponCode: z.string().max(40).optional().nullable(),
-  source: z.enum(['manual', 'walk_in']).default('manual'),
-  forceConfirmed: z.boolean().default(true),
-  ownerPin: z.string().max(12).optional(),
-  recurrence: z
-    .object({
-      intervalWeeks: z.union([z.literal(2), z.literal(3), z.literal(4)]),
-      count: z.number().int().min(2).max(6),
-    })
-    .optional(),
-});
-
 function checkOwnerPinGate(
   request: NextRequest,
+  actorId: string,
   bodyPin?: string,
 ): NextResponse | null {
+  const db = getSnapshot();
   const providedPin = bodyPin ?? request.headers.get('x-owner-pin') ?? undefined;
+  const gateActive = Boolean(
+    (db.settings.ownerPinEnabled && db.settings.ownerPinHash) || providedPin?.trim(),
+  );
+  if (gateActive) {
+    const pinRate = checkRateLimit({
+      bucket: 'admin:owner-pin',
+      key: `${actorId}:${getRequestIp(request)}`,
+      limit: 10,
+      windowMs: 5 * 60_000,
+    });
+    if (!pinRate.allowed) {
+      return NextResponse.json(
+        {
+          code: 'RATE_LIMITED',
+          error:
+            'Demasiados intentos de PIN de autorización. Espera unos minutos e intenta de nuevo.',
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(pinRate.retryAfterSeconds),
+            'X-RateLimit-Remaining': '0',
+          },
+        },
+      );
+    }
+  }
+
   const check = verifyStoredOwnerPin(providedPin);
   if (!check.required || check.valid) return null;
   const hasAttempt = Boolean(providedPin?.trim());
@@ -84,7 +90,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   try {
-    const parsed = createAdminBookingSchema.parse(await request.json());
+    const parsed = AdminCreateBookingSchema.parse(await request.json());
 
     let effectiveStaffId: string | null = parsed.staffId ?? null;
     if (session.user.role === 'specialist') {
@@ -116,7 +122,7 @@ export async function POST(request: NextRequest) {
           addons.reduce((sum, a) => sum + a.extraPriceCents, 0)
         : -1;
       if (parsed.customPriceCents !== catalogSubtotal) {
-        const pinDenied = checkOwnerPinGate(request, parsed.ownerPin);
+        const pinDenied = checkOwnerPinGate(request, session.user.id, parsed.ownerPin);
         if (pinDenied) return pinDenied;
       }
     }
@@ -187,63 +193,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-const sendReminderSchema = z.object({
-  action: z.literal('send_reminder'),
-  bookingId: z.string().min(1),
-  channel: z.enum(['whatsapp', 'email', 'both']).default('whatsapp'),
-});
-
-const requestRescheduleSchema = z.object({
-  action: z.literal('request_reschedule'),
-  bookingId: z.string().min(1),
-  note: z.string().trim().max(400).optional(),
-});
-
-const checkoutSplitSchema = z.object({
-  action: z.literal('checkout_split'),
-  bookingId: z.string().min(1),
-  splits: z
-    .array(
-      z.object({
-        method: z.enum(['cash', 'card', 'transfer', 'giftcard', 'online']),
-        amountCents: z.number().int().nonnegative().max(10_000_000),
-        tipCents: z.number().int().nonnegative().max(10_000_000).default(0),
-        tipStaffId: z.string().min(1).nullable().optional(),
-        reference: z.string().max(160).optional(),
-      }),
-    )
-    .min(1)
-    .max(10),
-  extraItem: z
-    .object({
-      inventoryItemId: z.string().min(1),
-      quantity: z.number().int().min(1).max(50),
-    })
-    .nullable()
-    .optional(),
-  markCompleted: z.boolean().default(true),
-  redeemLoyaltyReward: z.boolean().optional(),
-  redeemClientPackageId: z.string().min(1).nullable().optional(),
-});
-
-const patchStatusSchema = z.object({
-  action: z.literal('update_status').optional(),
-  bookingId: z.string().min(1),
-  status: z.enum([
-    'pending_payment',
-    'pending_confirmation',
-    'confirmed',
-    'completed',
-    'canceled',
-    'no_show',
-  ]),
-  cancellationReason: z.string().optional(),
-  internalNotes: z.string().optional(),
-  paymentMethod: z.enum(['cash', 'transfer', 'card', 'gift_card']).optional(),
-  tipCents: z.number().int().nonnegative().optional(),
-  ownerPin: z.string().max(12).optional(),
-});
-
 export async function PATCH(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -263,7 +212,7 @@ export async function PATCH(request: NextRequest) {
         : undefined;
 
     if (rawAction === 'send_reminder') {
-      const reminderReq = sendReminderSchema.parse(raw);
+      const reminderReq = SendReminderSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
         const db = getSnapshot();
@@ -294,7 +243,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (rawAction === 'request_reschedule') {
-      const rescheduleReq = requestRescheduleSchema.parse(raw);
+      const rescheduleReq = RequestRescheduleSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
         const db = getSnapshot();
@@ -323,7 +272,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (rawAction === 'checkout_split') {
-      const checkoutReq = checkoutSplitSchema.parse(raw);
+      const checkoutReq = CheckoutSplitSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
         const db = getSnapshot();
@@ -352,7 +301,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    const body = patchStatusSchema.parse(raw);
+    const body = AdminPatchBookingStatusSchema.parse(raw);
 
     if (session.user.role === 'specialist') {
       const db = getSnapshot();
@@ -370,7 +319,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (body.status === 'canceled') {
-      const pinDenied = checkOwnerPinGate(request, body.ownerPin);
+      const pinDenied = checkOwnerPinGate(request, session.user.id, body.ownerPin);
       if (pinDenied) return pinDenied;
     }
 

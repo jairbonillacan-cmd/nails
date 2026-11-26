@@ -1,41 +1,38 @@
 import { z } from 'zod';
+import {
+  AdminRoleSchema,
+  AuditActionSchema,
+  BookingLayoutViewSchema,
+  BookingSourceSchema,
+  BookingStatusSchema,
+  CampaignKindSchema,
+  CashEntryTypeSchema,
+  ClientPackageStatusSchema,
+  CornerStyleSchema,
+  CouponDiscountTypeSchema,
+  CouponKindSchema,
+  CurrencySchema,
+  DayOfWeekSchema,
+  InventoryCategorySchema,
+  InventoryMovementReasonSchema,
+  LandingContentSchema,
+  NotificationChannelSchema,
+  NotificationTriggerEventSchema,
+  PaymentMethodSchema,
+  PaymentModeSchema,
+  PaymentSplitMethodSchema,
+  PreferredWindowSchema,
+  ProofDeliveryMethodSchema,
+  RatingSchema,
+  RecurringFrequencySchema,
+  RewardTypeSchema,
+  ServiceModeSchema,
+  SlotIntervalMinutesSchema,
+  ThemeModePreferenceSchema,
+  TimeHHMMSchema,
+  WaitlistStatusSchema,
+} from '@/lib/contracts';
 import type { DemoDatabase } from '../types';
-
-const AdminRoleSchema = z.enum(['owner', 'admin', 'specialist']);
-const BookingStatusSchema = z.enum([
-  'pending_payment',
-  'pending_confirmation',
-  'confirmed',
-  'completed',
-  'canceled',
-  'no_show',
-]);
-const BookingSourceSchema = z.enum(['web', 'whatsapp', 'manual', 'walk_in']);
-const BookingLayoutViewSchema = z.enum(['month', 'week', 'column']);
-const ThemeModePreferenceSchema = z.enum(['light', 'dark', 'system']);
-const CornerStyleSchema = z.enum(['sharp', 'soft', 'rounded', 'pill']);
-const PaymentModeSchema = z.enum(['none', 'manual_transfer', 'stripe', 'mercadopago']);
-const PaymentMethodSchema = z.enum(['cash', 'transfer', 'card', 'gift_card']);
-const PaymentSplitMethodSchema = z.enum(['cash', 'card', 'transfer', 'giftcard', 'online']);
-const NotificationChannelSchema = z.enum(['email', 'whatsapp', 'sms']);
-const AuditActionSchema = z.enum([
-  'booking_canceled',
-  'booking_price_override',
-  'csv_exported',
-  'past_booking_override',
-  'deposit_approved',
-  'loyalty_redeemed',
-  'media_retention_warned',
-  'media_retention_purged',
-]);
-
-const LandingContentSchema = z.object({
-  heroEyebrow: z.string(),
-  heroTitle: z.string(),
-  heroSubtitle: z.string(),
-  aboutTitle: z.string(),
-  aboutBody: z.string(),
-});
 
 const SalonSettingsSchema = z.object({
   id: z.literal('default'),
@@ -61,7 +58,7 @@ const SalonSettingsSchema = z.object({
   defaultBookingLayout: BookingLayoutViewSchema,
   enabledBookingLayouts: z.array(BookingLayoutViewSchema),
   lockTimezone: z.boolean(),
-  slotIntervalMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+  slotIntervalMinutes: SlotIntervalMinutesSchema,
   enableSlotHold: z.boolean(),
   slotHoldMinutes: z.number(),
   minBookingNoticeMinutes: z.number(),
@@ -77,8 +74,8 @@ const SalonSettingsSchema = z.object({
   depositClabe: z.string(),
   depositAmountCents: z.number().int().nonnegative().optional(),
   depositInstructions: z.string(),
-  currency: z.enum(['MXN', 'USD']),
-  serviceMode: z.enum(['studio', 'home', 'online']).optional(),
+  currency: CurrencySchema,
+  serviceMode: ServiceModeSchema.optional(),
   businessType: z.string().optional(),
   teamSizeTier: z.string().optional(),
   onboardingCompleted: z.boolean().optional(),
@@ -167,24 +164,12 @@ const ServiceAddonSchema = z.object({
   displayOrder: z.number(),
 });
 
-const DayOfWeekSchema = z.union([
-  z.literal(0),
-  z.literal(1),
-  z.literal(2),
-  z.literal(3),
-  z.literal(4),
-  z.literal(5),
-  z.literal(6),
-]);
-
-const FixedStartTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-
 const AvailabilityRuleSchema = z.object({
   id: z.string(),
   dayOfWeek: DayOfWeekSchema,
   startTime: z.string(),
   endTime: z.string(),
-  fixedStartTimes: z.array(FixedStartTimeSchema).optional(),
+  fixedStartTimes: z.array(TimeHHMMSchema).optional(),
 });
 
 const AvailabilityScheduleSchema = z.object({
@@ -302,7 +287,7 @@ const BookingSchema = z.object({
   internalNotes: z.string(),
   inspoPhotoUrl: z.string().nullable(),
   paymentProofUrl: z.string().nullable(),
-  proofDeliveryMethod: z.enum(['web_upload', 'instagram_dm', 'none']).optional(),
+  proofDeliveryMethod: ProofDeliveryMethodSchema.optional(),
   googleEventId: z.string().nullable(),
   cancellationReason: z.string().nullable(),
   rescheduledFromId: z.string().nullable(),
@@ -319,14 +304,7 @@ const BookingSchema = z.object({
 const NotificationWorkflowSchema = z.object({
   id: z.string(),
   name: z.string(),
-  triggerEvent: z.enum([
-    'booking_created',
-    'booking_confirmed',
-    'booking_canceled',
-    'booking_rescheduled',
-    'before_booking',
-    'after_booking',
-  ]),
+  triggerEvent: NotificationTriggerEventSchema,
   offsetMinutes: z.number(),
   channels: z.array(NotificationChannelSchema),
   isEnabled: z.boolean(),
@@ -364,8 +342,8 @@ const GalleryItemSchema = z.object({
 const CouponSchema = z.object({
   id: z.string(),
   code: z.string(),
-  kind: z.enum(['coupon', 'gift_card']),
-  discountType: z.enum(['percent', 'fixed_cents']),
+  kind: CouponKindSchema,
+  discountType: CouponDiscountTypeSchema,
   discountValue: z.number(),
   remainingBalanceCents: z.number().nullable(),
   maxUses: z.number().nullable(),
@@ -382,12 +360,12 @@ const WaitlistEntrySchema = z.object({
   serviceId: z.string(),
   preferredStaffId: z.string().nullable(),
   desiredDate: z.string(),
-  preferredWindow: z.enum(['morning', 'afternoon', 'any']),
+  preferredWindow: PreferredWindowSchema,
   clientName: z.string(),
   clientPhoneE164: z.string(),
   clientEmail: z.string().nullable(),
   notes: z.string(),
-  status: z.enum(['waiting', 'notified', 'booked', 'expired']),
+  status: WaitlistStatusSchema,
   notifiedAt: z.string().nullable(),
   priorityOfferToken: z.string().nullable().optional(),
   priorityOfferExpiresAt: z.string().nullable().optional(),
@@ -400,21 +378,13 @@ const BookingPaymentSchema = z.object({
   bookingId: z.string(),
   provider: z.enum(['manual_transfer', 'stripe', 'mercadopago']),
   amountCents: z.number().int().nonnegative(),
-  currency: z.enum(['MXN', 'USD']),
+  currency: CurrencySchema,
   status: z.enum(['pending', 'approved', 'rejected', 'refunded']),
   providerPaymentId: z.string().nullable().optional(),
   checkoutUrl: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
-
-const RatingSchema = z.union([
-  z.literal(1),
-  z.literal(2),
-  z.literal(3),
-  z.literal(4),
-  z.literal(5),
-]);
 
 const BookingReviewSchema = z.object({
   id: z.string(),
@@ -431,7 +401,7 @@ const InventoryItemSchema = z.object({
   id: z.string(),
   sku: z.string(),
   name: z.string(),
-  category: z.enum(['Insumo', 'Gel / Esmalte', 'Acrílico', 'Decoración', 'Reventa']),
+  category: InventoryCategorySchema,
   unit: z.string(),
   stockQuantity: z.number(),
   minStockAlert: z.number(),
@@ -446,7 +416,7 @@ const InventoryMovementSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   delta: z.number(),
-  reason: z.enum(['restock', 'service_usage', 'retail_sale', 'adjustment']),
+  reason: InventoryMovementReasonSchema,
   notes: z.string(),
   bookingId: z.string().nullable(),
   createdBy: z.string(),
@@ -457,13 +427,7 @@ const CashRegisterEntrySchema = z.object({
   id: z.string(),
   bookingId: z.string().nullable(),
   staffId: z.string().nullable(),
-  entryType: z.enum([
-    'service_income',
-    'product_sale',
-    'deposit',
-    'expense',
-    'gift_card_sale',
-  ]),
+  entryType: CashEntryTypeSchema,
   description: z.string(),
   amountCents: z.number(),
   tipCents: z.number(),
@@ -488,11 +452,11 @@ const RecurringBlockSchema = z.object({
   id: z.string(),
   staffId: z.string(),
   reason: z.string(),
-  frequency: z.enum(['weekly', 'monthly']),
+  frequency: RecurringFrequencySchema,
   weekdays: z.array(z.number().int().min(0).max(6)),
   dayOfMonth: z.number().int().min(1).max(31).nullable(),
-  startTime: FixedStartTimeSchema,
-  endTime: FixedStartTimeSchema,
+  startTime: TimeHHMMSchema,
+  endTime: TimeHHMMSchema,
   untilDate: z.string().nullable(),
   isActive: z.boolean(),
 });
@@ -502,7 +466,7 @@ const LoyaltyProgramSchema = z.object({
   isActive: z.boolean(),
   name: z.string(),
   stampsRequired: z.number().int().positive(),
-  rewardType: z.enum(['free_service', 'percent_discount']),
+  rewardType: RewardTypeSchema,
   rewardServiceId: z.string().nullable(),
   discountPercent: z.number().int().min(1).max(100).nullable(),
   maxDiscountCents: z.number().int().nonnegative().nullable(),
@@ -575,14 +539,14 @@ const ClientPackageSchema = z.object({
   usedSessions: z.number().int().nonnegative(),
   purchasedAt: z.string(),
   expiresAt: z.string().nullable(),
-  status: z.enum(['active', 'exhausted', 'expired', 'canceled']),
+  status: ClientPackageStatusSchema,
   notes: z.string(),
   redeemedBookingIds: z.array(z.string()).optional(),
 });
 
 const CampaignDispatchLogSchema = z.object({
   id: z.string(),
-  kind: z.enum(['birthday', 'reactivation']),
+  kind: CampaignKindSchema,
   clientId: z.string(),
   clientName: z.string(),
   phoneE164: z.string(),
