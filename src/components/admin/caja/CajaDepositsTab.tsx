@@ -13,6 +13,7 @@ import { Check, ExternalLink, ImageIcon, Wallet } from 'lucide-react';
 import {
   formatCurrency,
   formatDateShortInTimezone,
+  formatPhoneDisplay,
   formatTimeInTimezone,
 } from '@/lib/format';
 import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
@@ -137,7 +138,7 @@ export function CajaDepositsTab({
                   meta={
                     <HStack gap={2} wrap="wrap" align="center">
                       <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {dep.clientPhone}
+                        {formatPhoneDisplay(dep.clientPhone)}
                       </Text>
                       {dep.clientInstagram ? (
                         <Link

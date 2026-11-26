@@ -67,7 +67,13 @@ export function PageHeader({
         ) : null}
       </VStack>
       {actions ? (
-        <HStack gap={2} align="center" wrap="wrap" style={{ minWidth: 0, maxWidth: '100%' }}>
+        <HStack
+          gap={2}
+          align="center"
+          wrap="wrap"
+          className="ad-page-actions"
+          style={{ minWidth: 0, maxWidth: '100%' }}
+        >
           {actions}
         </HStack>
       ) : null}

@@ -88,6 +88,7 @@ export function ServiceThumbnail({
     objectFit: 'cover',
     flexShrink: 0,
     display: 'block',
+    background: 'var(--ad-surface-alt, var(--color-background-muted))',
   };
 
   if (usesOptimized) {

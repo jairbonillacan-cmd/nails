@@ -25,6 +25,41 @@ export function formatUnitCount(count: number, unit: string): string {
   return `${count} ${base}es`;
 }
 
+export function formatPhoneDisplay(phoneE164: string): string {
+  const digits = phoneE164.replace(/\D/g, '');
+  const national = digits.startsWith('52') && digits.length === 12 ? digits.slice(2) : null;
+  if (!national) return phoneE164;
+  return `${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`;
+}
+
+export function formatBirthdayDisplay(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate.trim());
+  if (!match) return isoDate;
+  const [, y, m, d] = match;
+  return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12)),
+  );
+}
+
+export function formatDateRangeDisplay(startKey: string, endKey: string): string {
+  const toDate = (key: string) => {
+    const [y = 2026, m = 1, d = 1] = key.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12));
+  };
+  const start = toDate(startKey);
+  const end = toDate(endKey);
+  const dayMonth = new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const withYear = new Intl.DateTimeFormat('es-MX', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const clean = (text: string) => text.replace(/\./g, '');
+  return `${clean((sameYear ? dayMonth : withYear).format(start))} – ${clean(withYear.format(end))}`;
+}
+
 export function normalizePhoneE164(raw: string, defaultCountryCode = '+52'): string {
   const cleaned = raw.replace(/[^\d+]/g, '');
   if (!cleaned) return '';

@@ -9,7 +9,12 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { Cake, MessageCircle, Sparkles } from 'lucide-react';
-import { buildWhatsAppLink, formatDateShortInTimezone } from '@/lib/format';
+import {
+  buildWhatsAppLink,
+  formatBirthdayDisplay,
+  formatDateShortInTimezone,
+  formatPhoneDisplay,
+} from '@/lib/format';
 import type { ClientProfile } from '@/lib/types';
 import {
   ActionRow,
@@ -157,7 +162,7 @@ export function ClientRetentionTab({
                         {alreadySent ? <StatusTag tone="success" label="Enviado" /> : null}
                       </HStack>
                     }
-                    subtitle={`${item.birthday} · ${item.phoneE164}`}
+                    subtitle={`Cumple el ${formatBirthdayDisplay(item.birthday ?? '')} · ${formatPhoneDisplay(item.phoneE164)}`}
                     meta={
                       <Text type="supporting" color="secondary" maxLines={2}>
                         {item.whatsappMessage}
@@ -283,7 +288,7 @@ export function ClientRetentionTab({
                   subtitle={
                     <HStack gap={2} wrap="wrap" align="center">
                       <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {item.phoneE164}
+                        {formatPhoneDisplay(item.phoneE164)}
                       </Text>
                       {item.instagramHandle ? (
                         <Link

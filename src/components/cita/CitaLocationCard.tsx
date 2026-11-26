@@ -14,6 +14,7 @@ import {
   resolveSafeHttpUrl,
   type PublicManageBooking,
 } from './types';
+import { formatPhoneDisplay } from '@/lib/format';
 
 interface CitaLocationCardProps {
   booking: PublicManageBooking;
@@ -108,7 +109,7 @@ export function CitaLocationCard({
             <Text type="supporting" color="secondary">
               WhatsApp registrado
             </Text>
-            <Text hasTabularNumbers>{booking.client.phoneE164}</Text>
+            <Text hasTabularNumbers>{formatPhoneDisplay(booking.client.phoneE164)}</Text>
           </HStack>
           {booking.clientNotes.trim() ? (
             <VStack gap={0.5}>

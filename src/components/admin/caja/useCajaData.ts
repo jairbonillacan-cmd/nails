@@ -123,7 +123,7 @@ export function useCajaData(
             uncollectedTotalCents + pendingDepositsTotalCents,
             data.settings.currency,
           ),
-          sub: `${uncollectedBookings.length} sin cobrar · ${pendingDeposits.length} anticipos`,
+          sub: `${uncollectedBookings.length} sin cobrar · ${pendingDeposits.length} ${pendingDeposits.length === 1 ? 'anticipo' : 'anticipos'}`,
           tone:
             uncollectedTotalCents + pendingDepositsTotalCents > 0 ? 'warning' : 'success',
           interactive: true,

@@ -9,7 +9,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Cake, MessageCircle, Search } from 'lucide-react';
-import { buildWhatsAppLink } from '@/lib/format';
+import { buildWhatsAppLink, formatBirthdayDisplay, formatPhoneDisplay } from '@/lib/format';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { ClientProfile } from '@/lib/types';
 import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
@@ -112,14 +112,17 @@ export function ClientDirectoryTab({
           }
         />
       ) : (
-        <VStack gap={4} className="fx-stagger">
+        <SurfaceCard>
           {groupedByLetter.map(([letter, clientsInGroup]) => (
-            <SurfaceCard
-              key={letter}
-              title={letter}
-              headingLevel={3}
-              count={clientsInGroup.length}
-            >
+            <VStack key={letter} as="section" aria-label={`Clientas con ${letter}`} gap={0}>
+              <HStack className="ad-letter-divider" justify="between" align="center">
+                <Text weight="semibold" className="lk-serif">
+                  {letter}
+                </Text>
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  {clientsInGroup.length}
+                </Text>
+              </HStack>
               <VStack className="ad-row-list" gap={0}>
                 {clientsInGroup.map((c) => {
                   const visits = visitCountByClient.get(c.id) ?? 0;
@@ -145,7 +148,7 @@ export function ClientDirectoryTab({
                       subtitle={
                         <HStack gap={2} wrap="wrap" align="center">
                           <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {c.phoneE164}
+                            {formatPhoneDisplay(c.phoneE164)}
                           </Text>
                           {c.instagramHandle ? (
                             <Link
@@ -159,8 +162,8 @@ export function ClientDirectoryTab({
                           {c.birthday ? (
                             <HStack gap={1} align="center">
                               <Cake size={13} aria-hidden="true" />
-                              <Text type="supporting" color="secondary" hasTabularNumbers>
-                                {c.birthday}
+                              <Text type="supporting" color="secondary">
+                                Cumple el {formatBirthdayDisplay(c.birthday)}
                               </Text>
                             </HStack>
                           ) : null}
@@ -219,7 +222,7 @@ export function ClientDirectoryTab({
                             icon={<MessageCircle size={14} aria-hidden="true" />}
                             href={buildWhatsAppLink(
                               c.phoneE164,
-                              `Hola ${c.fullName}, te saludamos de ${salonName}!`,
+                              `¡Hola, ${c.fullName.trim().split(/\s+/)[0] ?? c.fullName}! Te escribimos de ${salonName}.`,
                             )}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -230,9 +233,9 @@ export function ClientDirectoryTab({
                   );
                 })}
               </VStack>
-            </SurfaceCard>
+            </VStack>
           ))}
-        </VStack>
+        </SurfaceCard>
       )}
     </VStack>
   );

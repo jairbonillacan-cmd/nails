@@ -9,7 +9,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
 import { Calendar, CalendarDays, Search, Sparkles, Users } from 'lucide-react';
-import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
+import { formatDateShortInTimezone, formatTimeInTimezone, formatPhoneDisplay } from '@/lib/format';
 import { useQuickSearchKeyboardNav } from '@/lib/hooks/useAdminCache';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
@@ -279,7 +279,7 @@ export function AdminQuickSearchDialog({
                         label={c.fullName}
                         description={
                           <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {c.phoneE164}
+                            {formatPhoneDisplay(c.phoneE164)}
                             {c.instagramHandle ? ` · ${c.instagramHandle}` : ''}
                           </Text>
                         }

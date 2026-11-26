@@ -6,7 +6,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { formatDateShortInTimezone } from '@/lib/format';
+import { formatDateShortInTimezone, formatPhoneDisplay } from '@/lib/format';
 import type { CampaignDispatchLog, ClientProfile } from '@/lib/types';
 import { ActionRow, StatusTag } from '@/components/ui';
 import { formatInstagramDisplay, formatInstagramUrl } from './clientasTypes';
@@ -100,7 +100,7 @@ export function ClientRetentionHistorySection({
                 subtitle={
                   <HStack gap={2} wrap="wrap">
                     <Text type="supporting" color="secondary" hasTabularNumbers>
-                      {client.phoneE164}
+                      {formatPhoneDisplay(client.phoneE164)}
                     </Text>
                     {client.instagramHandle ? (
                       <Link

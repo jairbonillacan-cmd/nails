@@ -25,6 +25,7 @@ import { LANDING_ASSETS } from '../landing/landingContent';
 import { PortalBookingsTab } from './PortalBookingsTab';
 import { PortalOtpGate } from './PortalOtpGate';
 import { PortalRewardsTab } from './PortalRewardsTab';
+import { formatPhoneDisplay } from '@/lib/format';
 
 type PortalTab = 'upcoming' | 'history' | 'rewards';
 
@@ -187,7 +188,7 @@ export function ClientPortalView({
             <SurfaceCard padded className="pt-card fx-fade-up">
               <VStack gap={3}>
                 <PageHeader
-                  eyebrow={`Portal de clienta · ${snapshot.phoneE164}`}
+                  eyebrow={`Portal de clienta · ${formatPhoneDisplay(snapshot.phoneE164)}`}
                   title={`Hola, ${snapshot.clientName || 'bienvenida'}`}
                   actions={
                     <>

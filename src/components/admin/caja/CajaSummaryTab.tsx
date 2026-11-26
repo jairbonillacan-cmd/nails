@@ -12,6 +12,7 @@ import { AlertTriangle, CheckCircle2, CreditCard, Wallet } from 'lucide-react';
 import {
   formatCurrency,
   formatDateShortInTimezone,
+  formatPhoneDisplay,
   formatTimeInTimezone,
   getDateKeyInTimezone,
 } from '@/lib/format';
@@ -151,7 +152,7 @@ export function CajaSummaryTab({
                 meta={
                   <HStack gap={2} wrap="wrap" align="center">
                     <Text type="supporting" color="secondary" hasTabularNumbers>
-                      {row.clientPhone}
+                      {formatPhoneDisplay(row.clientPhone)}
                     </Text>
                     {row.clientInstagram ? (
                       <Link

@@ -27,6 +27,7 @@ import {
   buildWhatsAppLink,
   formatDateShortInTimezone,
   formatTimeInTimezone,
+  formatPhoneDisplay,
 } from '@/lib/format';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { BookingWithRelations, ClientProfile, ServicePackage } from '@/lib/types';
@@ -139,7 +140,7 @@ export function ClientProfileDialog({
                   {client.fullName}
                 </Heading>
                 <Text type="supporting" color="secondary" hasTabularNumbers>
-                  {client.phoneE164}
+                  {formatPhoneDisplay(client.phoneE164)}
                 </Text>
                 <HStack gap={2} wrap="wrap" align="center">
                   {client.instagramHandle ? (

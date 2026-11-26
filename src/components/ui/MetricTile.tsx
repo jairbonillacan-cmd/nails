@@ -108,6 +108,7 @@ function MetricTile({
       padding={isCompact ? 4 : 5}
       className={tileClass}
       data-compact={isCompact ? 'true' : undefined}
+      data-tone={tone}
       style={{
         minWidth: 0,
         background: 'var(--ad-surface, var(--color-background-surface))',
@@ -142,7 +143,7 @@ function MetricTile({
             data-tone={tone}
             hasTabularNumbers
             style={{
-              color: TONE_VALUE_COLOR[tone],
+              color: tone === 'accent' ? TONE_VALUE_COLOR.accent : TONE_VALUE_COLOR.default,
               fontVariantNumeric: 'tabular-nums',
             }}
           >

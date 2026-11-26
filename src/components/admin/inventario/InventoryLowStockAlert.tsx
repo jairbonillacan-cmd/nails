@@ -6,6 +6,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { AlertTriangle } from 'lucide-react';
 import type { InventoryItem } from '@/lib/types';
+import { formatUnitCount } from '@/lib/format';
 import { ActionRow, StatusTag, SurfaceCard } from '@/components/ui';
 
 interface InventoryLowStockAlertProps {
@@ -59,7 +60,7 @@ export function InventoryLowStockAlert({
                   </Text>
                   <StatusTag
                     tone="warning"
-                    label={`${item.stockQuantity} ${item.unit}`}
+                    label={formatUnitCount(item.stockQuantity, item.unit)}
                     hasTabularNumbers
                   />
                   {pendingDelta !== 0 ? (

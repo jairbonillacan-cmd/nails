@@ -21,7 +21,7 @@ import {
 import { DemandHeatmapCard } from '@/components/admin/reportes/DemandHeatmapCard';
 import { ServiceProfitabilityCard } from '@/components/admin/reportes/ServiceProfitabilityCard';
 import { SpecialistOccupancyCard } from '@/components/admin/reportes/SpecialistOccupancyCard';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatDateRangeDisplay } from '@/lib/format';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
@@ -103,7 +103,7 @@ export default function AdminReportsPage() {
           label: 'Promedio por cita',
           value:
             report.summary.averageTicketCents > 0
-              ? formatCurrency(report.summary.averageTicketCents, currency)
+              ? formatCurrency(Math.round(report.summary.averageTicketCents / 100) * 100, currency)
               : '—',
           sub: 'Por cita cobrada',
           tone: 'default',
@@ -151,7 +151,7 @@ export default function AdminReportsPage() {
     <VStack gap={6} className="ad-page fx-fade-up">
       <PageHeader
         eyebrow={
-          report ? `${report.rangeStartDate} — ${report.rangeEndDate}` : PERIOD_LABELS[period]
+          report ? formatDateRangeDisplay(report.rangeStartDate, report.rangeEndDate) : PERIOD_LABELS[period]
         }
         meta={
           isSpecialistScope ? <StatusTag tone="accent" label="Vista individual" /> : undefined

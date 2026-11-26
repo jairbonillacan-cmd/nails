@@ -26,7 +26,7 @@ export function ServiceProfitabilityCard({
     <SurfaceCard
       id="reports-profitability-heading"
       title="Servicios más rentables"
-      subtitle="Cuánto genera cada servicio por minuto trabajado, de mayor a menor."
+      subtitle="Cuánto deja cada servicio por hora de trabajo, de mayor a menor."
     >
       {rows.length === 0 ? (
         <VStack className="ad-empty" gap={2}>
@@ -34,7 +34,7 @@ export function ServiceProfitabilityCard({
             framed={false}
             isCompact
             title="Sin servicios en estas fechas"
-            description="Cuando completes citas, aquí verás qué servicios te dejan más por minuto."
+            description="Cuando completes citas, aquí verás qué servicios te dejan más por hora."
             actions={<Button label="Ir a agenda" variant="secondary" size="sm" href="/admin/citas" />}
           />
         </VStack>
@@ -76,7 +76,7 @@ export function ServiceProfitabilityCard({
                     className="fx-tabular"
                     hasTabularNumbers
                   >
-                    {formatCurrency(row.revenuePerMinuteCents, currency)} / min
+                    {formatCurrency(Math.round((row.revenuePerMinuteCents * 60) / 100) * 100, currency)} / h
                   </Text>
                 </HStack>
 

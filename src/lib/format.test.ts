@@ -1,0 +1,34 @@
+import { describe, expect, it } from 'vitest';
+import {
+  formatBirthdayDisplay,
+  formatDateRangeDisplay,
+  formatPhoneDisplay,
+  formatUnitCount,
+} from './format';
+
+describe('display formatters', () => {
+  it('pluralizes inventory units in Spanish without touching abbreviations', () => {
+    expect(formatUnitCount(1, 'frasco')).toBe('1 frasco');
+    expect(formatUnitCount(2, 'frasco')).toBe('2 frascos');
+    expect(formatUnitCount(3, 'caja')).toBe('3 cajas');
+    expect(formatUnitCount(4, 'rol')).toBe('4 roles');
+    expect(formatUnitCount(2, 'lápiz')).toBe('2 lápices');
+    expect(formatUnitCount(9, 'pzas')).toBe('9 pzas');
+    expect(formatUnitCount(5, 'ml')).toBe('5 ml');
+  });
+
+  it('groups Mexican mobile numbers and leaves foreign numbers intact', () => {
+    expect(formatPhoneDisplay('+522228765112')).toBe('222 876 5112');
+    expect(formatPhoneDisplay('+14155550123')).toBe('+14155550123');
+  });
+
+  it('shows birthdays as day and month without the year', () => {
+    expect(formatBirthdayDisplay('2000-08-03')).toBe('3 de agosto');
+    expect(formatBirthdayDisplay('sin fecha')).toBe('sin fecha');
+  });
+
+  it('formats report ranges compactly', () => {
+    expect(formatDateRangeDisplay('2026-10-28', '2026-11-26')).toBe('28 oct – 26 nov 2026');
+    expect(formatDateRangeDisplay('2025-12-28', '2026-01-26')).toBe('28 dic 2025 – 26 ene 2026');
+  });
+});

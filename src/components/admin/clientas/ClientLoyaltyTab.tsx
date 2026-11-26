@@ -15,6 +15,7 @@ import {
   buildWhatsAppLink,
   formatCurrency,
   formatDateShortInTimezone,
+  formatPhoneDisplay,
 } from '@/lib/format';
 import type { ClientProfile, LoyaltyProgram, ServicePackage } from '@/lib/types';
 import {
@@ -139,7 +140,7 @@ export function ClientLoyaltyTab({
                   subtitle={
                     <HStack gap={2} wrap="wrap" align="center">
                       <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {entry.phoneE164}
+                        {formatPhoneDisplay(entry.phoneE164)}
                       </Text>
                       {entry.instagramHandle ? (
                         <Link
@@ -336,7 +337,7 @@ export function ClientLoyaltyTab({
                   onChange={(v) => v && setAssignClientId(v)}
                   options={clients.map((c) => ({
                     value: c.id,
-                    label: `${c.fullName} (${c.phoneE164})`,
+                    label: `${c.fullName} (${formatPhoneDisplay(c.phoneE164)})`,
                   }))}
                 />
                 <Selector

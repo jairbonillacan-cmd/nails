@@ -30,6 +30,7 @@ import {
   formatDateShortInTimezone,
   formatDuration,
   formatTimeInTimezone,
+  formatPhoneDisplay,
 } from '@/lib/format';
 
 export const BOOKING_STATUS_BADGE: Record<
@@ -263,7 +264,7 @@ export const BookingCard = memo(function BookingCard({
               {formatCurrency(b.totalPriceCents, currency)}
             </Text>
             <Text type="supporting" color="secondary" hasTabularNumbers>
-              {b.client.phoneE164}
+              {formatPhoneDisplay(b.client.phoneE164)}
             </Text>
           </VStack>
         </HStack>

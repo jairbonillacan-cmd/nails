@@ -298,7 +298,7 @@ export default function AdminCashPage() {
             />
             <Button
               type="button"
-              label="Descargar en Excel (CSV)"
+              label="Exportar a Excel"
               variant="secondary"
               size="sm"
               icon={<Download size={15} aria-hidden="true" />}
