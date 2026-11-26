@@ -8,19 +8,29 @@ const DEFAULT_FROM = 'LAIKONA NAILS <citas@laikona.devand.net>';
 const DEFAULT_REPLY_TO = 'jairbonillacan@gmail.com';
 const DEFAULT_SITE_URL = 'https://laikona.devand.net';
 
-const LOGO_BLACK_ENGRAVED_URL = 'https://laikona.devand.net/brand/email-logo-black-engraved.png';
-const LOGO_WHITE_URL = 'https://laikona.devand.net/brand/email-wordmark-white.png';
-const COVER_CONFIRMED_URL = 'https://laikona.devand.net/brand/email-cover-confirmed.jpg';
-const COVER_TOUCHUP_URL = 'https://laikona.devand.net/brand/email-cover-touchup.jpg';
-const COVER_WAITLIST_URL = 'https://laikona.devand.net/brand/email-cover-waitlist.jpg';
-const HEADER_CHERRY_ATELIER_URL = 'https://laikona.devand.net/brand/email-header-cherry-atelier.png';
-const HEADER_OBSIDIAN_ATELIER_URL = 'https://laikona.devand.net/brand/email-header-obsidian-atelier.png';
-const STROKE_CEREZA_URL = 'https://laikona.devand.net/brand/email-stroke-cereza.png';
-const STROKE_ROSE_URL = 'https://laikona.devand.net/brand/email-stroke-rose.png';
-const CHERRIES_DECOR_URL = 'https://laikona.devand.net/brand/email-cherries-mark.png';
-const CHERRIES_ROSE_URL = 'https://laikona.devand.net/brand/email-cherries-rose.png';
-const SET_LACA_URL = 'https://laikona.devand.net/brand/email-set-laca.jpg';
-const SET_CHERRY_URL = 'https://laikona.devand.net/brand/email-set-cherry.jpg';
+const BRAND_BASE = 'https://laikona.devand.net/brand';
+const LOGO_BLACK_ENGRAVED_URL = `${BRAND_BASE}/email-logo-black-engraved.png`;
+const LOGO_WHITE_URL = `${BRAND_BASE}/email-wordmark-white.png`;
+const STROKE_CEREZA_URL = `${BRAND_BASE}/email-stroke-cereza.png`;
+const STROKE_ROSE_URL = `${BRAND_BASE}/email-stroke-rose.png`;
+const CHERRIES_DECOR_URL = `${BRAND_BASE}/email-cherries-mark.png`;
+const CHERRIES_ROSE_URL = `${BRAND_BASE}/email-cherries-rose.png`;
+const SET_LACA_URL = `${BRAND_BASE}/email-set-laca.jpg`;
+const SET_CHERRY_URL = `${BRAND_BASE}/email-set-cherry.jpg`;
+
+const COVERS = {
+  spei: `${BRAND_BASE}/email-cover-spei.jpg`,
+  confirmed: `${BRAND_BASE}/email-cover-confirmed.jpg`,
+  reminder24h: `${BRAND_BASE}/email-cover-24h.jpg`,
+  reminder2h: `${BRAND_BASE}/email-cover-2h.jpg`,
+  rescheduled: `${BRAND_BASE}/email-cover-rescheduled.jpg`,
+  canceled: `${BRAND_BASE}/email-cover-canceled.jpg`,
+  touchup: `${BRAND_BASE}/email-cover-touchup.jpg`,
+  waitlist: `${BRAND_BASE}/email-cover-waitlist.jpg`,
+  otp: `${BRAND_BASE}/email-cover-otp.jpg`,
+  salonAlert: `${BRAND_BASE}/email-cover-salon-alert.jpg`,
+  retention: `${BRAND_BASE}/email-cover-retention.jpg`,
+};
 
 const SERIF = "'Source Serif 4', Georgia, 'Times New Roman', serif";
 const SANS = "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
@@ -61,55 +71,7 @@ function buildDarkModeRules(prefix = '') {
       ${s('.lk-only-dark')} { display: block !important; max-height: none !important; overflow: visible !important; }`;
 }
 
-function wrapCoutureDoc({ title, preheader, maxWidth = 580, cardHtml }) {
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="color-scheme" content="light dark" />
-  <meta name="supported-color-schemes" content="light dark" />
-  <title>${title}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap');
-    :root { color-scheme: light dark; supported-color-schemes: light dark; }
-    @media (prefers-color-scheme: dark) {${buildDarkModeRules('')}
-    }
-    ${buildDarkModeRules('[data-ogsc]')}
-    ${buildDarkModeRules('html.lk-force-dark')}
-    u + .body .gmail-lock-cherry { background-image: linear-gradient(#8B1E2B, #8B1E2B) !important; }
-    u + .body .gmail-lock-ink { background-image: linear-gradient(#181314, #181314) !important; }
-    u + .body .gmail-blend-screen { background: #000000; mix-blend-mode: screen; display: inline-block; }
-    u + .body .gmail-blend-difference { background: #000000; mix-blend-mode: difference; display: inline-block; color: #FFFFFF !important; }
-    @media only screen and (max-width:600px) {
-      .lk-outer { padding: 14px 8px 28px !important; }
-      .lk-pad { padding-left: 24px !important; padding-right: 24px !important; }
-      .lk-h1 { font-size: 29px !important; line-height: 1.1 !important; }
-      .lk-h1-lg { font-size: 31px !important; line-height: 1.08 !important; }
-      .lk-time-xl { font-size: 40px !important; }
-      .lk-otp { font-size: 32px !important; letter-spacing: 8px !important; padding-left: 8px !important; }
-      .lk-row-label { width: 42% !important; font-size: 9.5px !important; }
-      .lk-row-val { font-size: 13.5px !important; }
-      .lk-kpi-val { font-size: 23px !important; }
-    }
-  </style>
-</head>
-<body class="body dm-canvas" style="margin:0;padding:0;background-color:${C.canvas};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${preheader}&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.canvas}" class="lk-outer dm-canvas" style="background-color:${C.canvas};padding:36px 12px 48px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.paper}" class="dm-paper" style="max-width:${maxWidth}px;background-color:${C.paper};border:1px solid ${C.hairline};border-radius:6px;overflow:hidden;">
-          ${cardHtml}
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-}
-
-function renderFloatingOfficialLogo({ width = 166, align = 'center' } = {}) {
+function renderFloatingOfficialLogo({ width = 128, align = 'center' } = {}) {
   const margin = align === 'center' ? 'margin:0 auto;' : 'margin:0;';
   return `<a href="{{{SITE_URL}}}" style="text-decoration:none;border:0;display:inline-block;">
                 <img class="lk-only-light" src="${LOGO_BLACK_ENGRAVED_URL}" alt="LAIKONA NAILS BY KARLA" width="${width}" style="display:block;width:${width}px;max-width:100%;height:auto;border:0;${margin}" />
@@ -117,47 +79,7 @@ function renderFloatingOfficialLogo({ width = 166, align = 'center' } = {}) {
               </a>`;
 }
 
-function renderStationeryHeader({ align = 'center', topRuleColor = C.cereza, logoWidth = 164 } = {}) {
-  return `<tr>
-            <td height="3" bgcolor="${topRuleColor}" style="background-color:${topRuleColor};height:3px;line-height:3px;font-size:0;">&nbsp;</td>
-          </tr>
-          <tr>
-            <td class="lk-pad dm-paper" align="${align}" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 24px;">
-              ${renderFloatingOfficialLogo({ width: logoWidth, align })}
-            </td>
-          </tr>`;
-}
-
-function renderEditorialCoverRow(coverUrl, alt) {
-  return `<tr>
-            <td style="padding:0;line-height:0;font-size:0;">
-              <a href="{{{SITE_URL}}}" style="display:block;text-decoration:none;border:0;">
-                <img src="${coverUrl}" alt="${alt}" width="580" style="display:block;width:100%;height:auto;border:0;" />
-              </a>
-            </td>
-          </tr>`;
-}
-
-function renderMetaRuleBar(left, right, { accentRight = true } = {}) {
-  const rightColor = accentRight ? C.cereza : C.muted;
-  const rightClass = accentRight ? 'dm-accent' : 'dm-muted';
-  return `<tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:0 44px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border" style="border-top:1px solid ${C.hairline};border-bottom:1px solid ${C.hairline};">
-                <tr>
-                  <td class="dm-muted" style="padding:11px 0;font-family:${SANS};font-size:9.5px;font-weight:500;letter-spacing:0.20em;text-transform:uppercase;color:${C.muted};">
-                    ${left}
-                  </td>
-                  <td align="right" class="${rightClass}" style="padding:11px 0;font-family:${SANS};font-size:9.5px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:${rightColor};white-space:nowrap;font-variant-numeric:tabular-nums;">
-                    ${right}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>`;
-}
-
-function renderAdaptiveStroke({ width = 124, align = 'center', marginBottom = 18 } = {}) {
+function renderAdaptiveStroke({ width = 126, align = 'left', marginBottom = 18 } = {}) {
   const margin = align === 'center' ? `margin:0 auto ${marginBottom}px;` : `margin:0 0 ${marginBottom}px;`;
   return `<img class="lk-only-light" src="${STROKE_CEREZA_URL}" alt="" width="${width}" style="display:block;width:${width}px;max-width:44%;height:auto;border:0;${margin}" />
               <img class="lk-only-dark" src="${STROKE_ROSE_URL}" alt="" width="${width}" style="display:none;max-height:0;overflow:hidden;mso-hide:all;width:${width}px;max-width:44%;height:auto;border:0;${margin}" />`;
@@ -196,47 +118,70 @@ function renderEditorialLedger(rows, { highlightLast = false, marginTop = 28 } =
               </table>`;
 }
 
-function renderCoutureCta({ label, href, tone = 'cherry', marginTop = 32 }) {
-  const isInk = tone === 'obsidian';
-  const bg = isInk ? C.ink : C.cereza;
-  const darkCls = isInk ? 'dm-cta-ink gmail-lock-ink' : 'dm-cta-cherry gmail-lock-cherry';
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:${marginTop}px;">
+function renderStandardEditorialEmail({
+  preheader,
+  coverUrl,
+  coverAlt,
+  metaLeft,
+  metaRight,
+  accentRight = true,
+  headline,
+  align = 'left',
+  showStroke = true,
+  bodyHtml,
+  primaryCta,
+  ctaTone = 'cherry',
+  secondaryLink = null,
+  footnoteHtml = '',
+  compactFooter = false,
+}) {
+  const rightColor = accentRight ? C.cereza : C.muted;
+  const rightClass = accentRight ? 'dm-accent' : 'dm-muted';
+  const isCentered = align === 'center';
+  const bodyAlignAttr = isCentered ? ' align="center"' : '';
+  const isInkCta = ctaTone === 'obsidian';
+  const ctaBg = isInkCta ? C.ink : C.cereza;
+  const ctaDarkCls = isInkCta ? 'dm-cta-ink gmail-lock-ink' : 'dm-cta-cherry gmail-lock-cherry';
+
+  const strokeHtml = showStroke
+    ? renderAdaptiveStroke({ width: 124, align: isCentered ? 'center' : 'left', marginBottom: 18 })
+    : '';
+
+  const ctaHtml = primaryCta
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:34px;">
                 <tr>
-                  <td align="center" bgcolor="${bg}" class="${darkCls}" style="background-color:${bg};border-radius:999px;">
-                    <a href="${href}" style="display:block;padding:16px 28px;font-family:${SANS};font-size:13.5px;font-weight:600;letter-spacing:0.04em;line-height:1.2;color:${C.white};text-decoration:none;text-align:center;border-radius:999px;">
-                      <span class="gmail-blend-screen"><span class="gmail-blend-difference">${label}</span></span>
+                  <td align="center" bgcolor="${ctaBg}" class="${ctaDarkCls}" style="background-color:${ctaBg};border-radius:999px;">
+                    <a href="${primaryCta.href}" style="display:block;padding:16px 28px;font-family:${SANS};font-size:13.5px;font-weight:600;letter-spacing:0.04em;line-height:1.2;color:${C.white};text-decoration:none;text-align:center;border-radius:999px;">
+                      <span class="gmail-blend-screen"><span class="gmail-blend-difference">${primaryCta.label}</span></span>
                     </a>
                   </td>
                 </tr>
-              </table>`;
-}
+              </table>`
+    : '';
 
-function renderSubtleLink({ label, href, marginTop = 18 }) {
-  return `<p class="dm-body" style="margin:${marginTop}px 0 0;text-align:center;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.body};">
-                <a href="${href}" class="dm-link" style="color:${C.body};text-decoration:none;border-bottom:1px solid ${C.hairlineStrong};padding-bottom:2px;">${label}</a>
-              </p>`;
-}
+  const secondaryHtml = secondaryLink
+    ? `<p class="dm-body" style="margin:18px 0 0;text-align:center;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.body};">
+                <a href="${secondaryLink.href}" class="dm-link" style="color:${C.body};text-decoration:none;border-bottom:1px solid ${C.hairlineStrong};padding-bottom:2px;">${secondaryLink.label}</a>
+              </p>`
+    : '';
 
-function renderFootnote(text, marginTop = 24) {
-  return `<p class="dm-muted" style="margin:${marginTop}px 0 0;font-family:${SANS};font-size:12px;line-height:1.7;color:${C.muted};text-align:center;">${text}</p>`;
-}
+  const noteHtml = footnoteHtml
+    ? `<p class="dm-muted" style="margin:24px 0 0;font-family:${SANS};font-size:12px;line-height:1.7;color:${C.muted};text-align:center;">${footnoteHtml}</p>`
+    : '';
 
-function renderColophon({ compact = false } = {}) {
-  if (compact) {
-    return `<tr>
+  const footerHtml = compactFooter
+    ? `<tr>
             <td class="lk-pad dm-paper dm-border" align="center" bgcolor="${C.paper}" style="background-color:${C.paper};border-top:1px solid ${C.hairline};padding:26px 44px 30px;">
               <div style="margin-bottom:10px;">
-                ${renderFloatingOfficialLogo({ width: 108, align: 'center' })}
+                ${renderFloatingOfficialLogo({ width: 112, align: 'center' })}
               </div>
               <p class="dm-muted" style="margin:0;font-family:${SANS};font-size:11.5px;line-height:1.6;color:${C.muted};">
                 {{{ADDRESS}}} &nbsp;<span class="dm-accent" style="color:${C.cereza};">&#10047;</span>&nbsp;
                 <a href="{{{SITE_URL}}}" class="dm-muted" style="color:${C.muted};text-decoration:none;">{{{SITE_URL}}}</a>
               </p>
             </td>
-          </tr>`;
-  }
-
-  return `<tr>
+          </tr>`
+    : `<tr>
             <td class="lk-pad dm-paper dm-border" align="center" bgcolor="${C.paper}" style="background-color:${C.paper};border-top:1px solid ${C.hairline};padding:30px 44px 36px;">
               <div style="margin-bottom:14px;">
                 ${renderFloatingOfficialLogo({ width: 128, align: 'center' })}
@@ -254,6 +199,84 @@ function renderColophon({ compact = false } = {}) {
               </p>
             </td>
           </tr>`;
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>${headline}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap');
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    @media (prefers-color-scheme: dark) {${buildDarkModeRules('')}
+    }
+    ${buildDarkModeRules('[data-ogsc]')}
+    ${buildDarkModeRules('html.lk-force-dark')}
+    u + .body .gmail-lock-cherry { background-image: linear-gradient(#8B1E2B, #8B1E2B) !important; }
+    u + .body .gmail-lock-ink { background-image: linear-gradient(#181314, #181314) !important; }
+    u + .body .gmail-blend-screen { background: #000000; mix-blend-mode: screen; display: inline-block; }
+    u + .body .gmail-blend-difference { background: #000000; mix-blend-mode: difference; display: inline-block; color: #FFFFFF !important; }
+    @media only screen and (max-width:600px) {
+      .lk-outer { padding: 14px 8px 28px !important; }
+      .lk-pad { padding-left: 24px !important; padding-right: 24px !important; }
+      .lk-h1 { font-size: 30px !important; line-height: 1.08 !important; }
+      .lk-time-xl { font-size: 40px !important; }
+      .lk-otp { font-size: 32px !important; letter-spacing: 8px !important; padding-left: 8px !important; }
+      .lk-row-label { width: 42% !important; font-size: 9.5px !important; }
+      .lk-row-val { font-size: 13.5px !important; }
+      .lk-kpi-val { font-size: 23px !important; }
+    }
+  </style>
+</head>
+<body class="body dm-canvas" style="margin:0;padding:0;background-color:${C.canvas};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${preheader}&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.canvas}" class="lk-outer dm-canvas" style="background-color:${C.canvas};padding:34px 12px 46px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.paper}" class="dm-paper" style="max-width:580px;background-color:${C.paper};border:1px solid ${C.hairline};border-radius:6px;overflow:hidden;">
+          <tr>
+            <td style="padding:0;line-height:0;font-size:0;">
+              <a href="{{{SITE_URL}}}" style="display:block;text-decoration:none;border:0;">
+                <img src="${coverUrl}" alt="${coverAlt}" width="580" style="display:block;width:100%;height:auto;border:0;" />
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:0 44px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border" style="border-bottom:1px solid ${C.hairline};">
+                <tr>
+                  <td class="dm-muted" style="padding:13px 0;font-family:${SANS};font-size:9.5px;font-weight:500;letter-spacing:0.20em;text-transform:uppercase;color:${C.muted};">
+                    ${metaLeft}
+                  </td>
+                  <td align="right" class="${rightClass}" style="padding:13px 0;font-family:${SANS};font-size:9.5px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:${rightColor};white-space:nowrap;font-variant-numeric:tabular-nums;">
+                    ${metaRight}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad dm-paper"${bodyAlignAttr} bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
+              <h1 class="lk-h1 dm-ink" style="margin:0 0 10px;font-family:${SERIF};font-size:36px;font-weight:400;line-height:1.08;letter-spacing:-0.02em;color:${C.ink};">
+                ${headline}
+              </h1>
+              ${strokeHtml}
+              ${bodyHtml}
+              ${ctaHtml}
+              ${secondaryHtml}
+              ${noteHtml}
+            </td>
+          </tr>
+          ${footerHtml}
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }
 
 const COMMON_FOOTER_VARS = [
@@ -284,24 +307,18 @@ export const RESEND_TEMPLATES = [
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Apartamos tu espacio.',
+    html: renderStandardEditorialEmail({
       preheader: 'Apartamos tu espacio {{{BOOKING_CODE}}}. Realiza tu anticipo SPEI para confirmarlo.',
-      cardHtml: `
-          ${renderStationeryHeader({ align: 'center', topRuleColor: C.cereza, logoWidth: 168 })}
-          ${renderMetaRuleBar('PUEBLA &middot; ESTUDIO PRIVADO', 'N&ordm; {{{BOOKING_CODE}}}')}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:36px 44px 40px;">
-              <p class="dm-accent" style="margin:0 0 12px;font-family:${SANS};font-size:10px;font-weight:600;letter-spacing:0.22em;text-transform:uppercase;color:${C.cereza};">
-                Solicitud recibida &middot; Anticipo SPEI
-              </p>
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 18px;font-family:${SERIF};font-size:35px;font-weight:400;line-height:1.12;letter-spacing:-0.015em;color:${C.ink};">
-                Apartamos tu espacio.
-              </h1>
+      coverUrl: COVERS.spei,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set rubí y negro',
+      metaLeft: 'ANTICIPO SPEI &middot; PUEBLA',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      headline: 'Apartamos tu espacio.',
+      bodyHtml: `
               <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, reservamos provisionalmente tu horario en el estudio. Para dejar tu cita confirmada, realiza tu anticipo por transferencia SPEI y sube tu comprobante desde tu enlace personal.
               </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.slip}" class="dm-slip dm-border-accent" style="margin-top:28px;background-color:${C.slip};border-top:1.5px solid ${C.cereza};border-bottom:1.5px solid ${C.cereza};">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.slip}" class="dm-slip dm-border-accent" style="margin-top:26px;background-color:${C.slip};border-top:1.5px solid ${C.cereza};border-bottom:1.5px solid ${C.cereza};">
                 <tr>
                   <td style="padding:22px 24px;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -344,13 +361,17 @@ export const RESEND_TEMPLATES = [
                   ['Total estimado', '{{{TOTAL_LABEL}}}'],
                 ],
                 { highlightLast: true, marginTop: 26 },
-              )}
-              ${renderCoutureCta({ label: 'Subir comprobante y ver mi cita', href: '{{{MANAGE_URL}}}', marginTop: 34 })}
-              ${renderSubtleLink({ label: '¿Prefieres enviarlo por WhatsApp?', href: '{{{WHATSAPP_URL}}}' })}
-              ${renderFootnote('Adjuntamos tu invitación de calendario (.ics) lista para guardar en un clic.')}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              )}`,
+      primaryCta: {
+        label: 'Subir comprobante y ver mi cita',
+        href: '{{{MANAGE_URL}}}',
+      },
+      secondaryLink: {
+        label: '¿Prefieres enviarlo por WhatsApp?',
+        href: '{{{WHATSAPP_URL}}}',
+      },
+      footnoteHtml:
+        'Adjuntamos tu invitación de calendario (.ics) lista para guardar en un clic.',
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 SOLICITUD RECIBIDA · Nº {{{BOOKING_CODE}}}
@@ -398,18 +419,14 @@ Adjuntamos tu invitación de calendario (.ics).
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Tu lugar está listo.',
+    html: renderStandardEditorialEmail({
       preheader: 'Tu cita {{{BOOKING_CODE}}} de {{{SERVICE_NAME}}} con {{{STAFF_NAME}}} está confirmada.',
-      cardHtml: `
-          ${renderEditorialCoverRow(COVER_CONFIRMED_URL, 'LAIKONA NAILS BY KARLA · Manicure editorial cereza')}
-          ${renderMetaRuleBar('CITA CONFIRMADA &middot; PUEBLA', 'N&ordm; {{{BOOKING_CODE}}}')}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
-              <h1 class="lk-h1-lg dm-ink" style="margin:0 0 10px;font-family:${SERIF};font-size:38px;font-weight:400;line-height:1.06;letter-spacing:-0.02em;color:${C.ink};">
-                Tu lugar está listo.
-              </h1>
-              ${renderAdaptiveStroke({ width: 126, align: 'left', marginBottom: 18 })}
+      coverUrl: COVERS.confirmed,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Manicure editorial cereza',
+      metaLeft: 'CITA CONFIRMADA &middot; PUEBLA',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      headline: 'Tu lugar está listo.',
+      bodyHtml: `
               <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, qué gusto recibirte pronto. Tu cita en <strong class="dm-ink" style="color:${C.ink};">{{{SALON_NAME}}}</strong> ha quedado confirmada y preparada especialmente para ti.
               </p>
@@ -447,13 +464,17 @@ Adjuntamos tu invitación de calendario (.ics).
                     Si ya tienes foto de inspiración, tráela lista para revisarla juntas.
                   </td>
                 </tr>
-              </table>
-              ${renderCoutureCta({ label: 'Ver detalles o reagendar', href: '{{{MANAGE_URL}}}', marginTop: 34 })}
-              ${renderSubtleLink({ label: 'Escribir por WhatsApp al estudio', href: '{{{WHATSAPP_URL}}}' })}
-              ${renderFootnote('Adjuntamos tu invitación de calendario (.ics) para guardarla con un clic.')}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              </table>`,
+      primaryCta: {
+        label: 'Ver detalles o reagendar',
+        href: '{{{MANAGE_URL}}}',
+      },
+      secondaryLink: {
+        label: 'Escribir por WhatsApp al estudio',
+        href: '{{{WHATSAPP_URL}}}',
+      },
+      footnoteHtml:
+        'Adjuntamos tu invitación de calendario (.ics) para guardarla con un clic.',
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CITA CONFIRMADA · Nº {{{BOOKING_CODE}}}
@@ -499,21 +520,18 @@ Adjuntamos tu archivo de calendario (.ics).
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Mañana te esperamos.',
+    html: renderStandardEditorialEmail({
       preheader: 'Mañana tienes cita de {{{SERVICE_NAME}}} a las {{{TIME_LABEL}}} con {{{STAFF_NAME}}}.',
-      cardHtml: `
-          ${renderStationeryHeader({ align: 'left', topRuleColor: C.cereza, logoWidth: 146 })}
-          ${renderMetaRuleBar('RECORDATORIO &middot; 24 HORAS', 'N&ordm; {{{BOOKING_CODE}}}')}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 16px;font-family:${SERIF};font-size:35px;font-weight:400;line-height:1.1;letter-spacing:-0.015em;color:${C.ink};">
-                Mañana te esperamos.
-              </h1>
+      coverUrl: COVERS.reminder24h,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set floral french rosa',
+      metaLeft: 'RECORDATORIO &middot; 24 HORAS',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      headline: 'Mañana te esperamos.',
+      bodyHtml: `
               <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
-                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, te recordamos los detalles de tu visita de mañana. Si necesitas mover tu horario, puedes hacerlo desde tu enlace personal.
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, te recordamos los detalles de tu visita de mañana en el estudio. Si necesitas mover tu horario, puedes hacerlo directo desde tu enlace personal.
               </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border-ink" style="margin-top:28px;border-top:1px solid ${C.ink};border-bottom:1px solid ${C.hairline};">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border-ink" style="margin-top:26px;border-top:1px solid ${C.ink};border-bottom:1px solid ${C.hairline};">
                 <tr>
                   <td style="padding:20px 0;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -529,8 +547,8 @@ Adjuntamos tu archivo de calendario (.ics).
                             {{{DATE_LABEL}}}
                           </p>
                         </td>
-                        <td align="right" valign="middle" width="36">
-                          ${renderAdaptiveCherries({ width: 24, height: 29 })}
+                        <td align="right" valign="middle" width="34">
+                          ${renderAdaptiveCherries({ width: 22, height: 26 })}
                         </td>
                       </tr>
                     </table>
@@ -544,13 +562,17 @@ Adjuntamos tu archivo de calendario (.ics).
                   ['Ubicación', '{{{ADDRESS}}}'],
                 ],
                 { marginTop: 0 },
-              )}
-              ${renderCoutureCta({ label: 'Gestionar mi cita', href: '{{{MANAGE_URL}}}', marginTop: 34 })}
-              ${renderSubtleLink({ label: 'Avisar por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
-              ${renderFootnote('Te agradecemos avisar cualquier cambio con anticipación para cuidar tu anticipo.')}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              )}`,
+      primaryCta: {
+        label: 'Gestionar mi cita',
+        href: '{{{MANAGE_URL}}}',
+      },
+      secondaryLink: {
+        label: 'Avisar por WhatsApp',
+        href: '{{{WHATSAPP_URL}}}',
+      },
+      footnoteHtml:
+        'Te agradecemos avisar cualquier cambio con anticipación para cuidar tu anticipo.',
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 RECORDATORIO 24 H · Nº {{{BOOKING_CODE}}}
@@ -585,30 +607,28 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Nos vemos muy pronto.',
+    html: renderStandardEditorialEmail({
       preheader: 'Hoy es tu cita a las {{{TIME_LABEL}}} con {{{STAFF_NAME}}} en {{{SALON_NAME}}}.',
-      cardHtml: `
-          ${renderEditorialCoverRow(HEADER_CHERRY_ATELIER_URL, 'LAIKONA NAILS BY KARLA')}
-          ${renderMetaRuleBar('HOY EN EL ESTUDIO', 'N&ordm; {{{BOOKING_CODE}}}')}
-          <tr>
-            <td class="lk-pad dm-paper" align="center" bgcolor="${C.paper}" style="background-color:${C.paper};padding:38px 44px 42px;">
-              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+      coverUrl: COVERS.reminder2h,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set vino metalizado chrome',
+      metaLeft: 'HOY EN EL ESTUDIO',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      headline: 'Nos vemos muy pronto.',
+      align: 'center',
+      bodyHtml: `
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.74;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, tu mesa está por quedar lista. Te esperamos hoy en {{{SALON_NAME}}}:
               </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border-ink" style="margin-top:28px;border-top:1px solid ${C.ink};border-bottom:1px solid ${C.hairline};">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border-ink" style="margin-top:26px;border-top:1px solid ${C.ink};border-bottom:1px solid ${C.hairline};">
                 <tr>
-                  <td align="center" style="padding:30px 12px;">
+                  <td align="center" style="padding:28px 12px;">
                     <p class="dm-muted" style="margin:0 0 8px;font-family:${SANS};font-size:9.5px;font-weight:600;letter-spacing:0.22em;text-transform:uppercase;color:${C.muted};">
                       Horario de hoy
                     </p>
-                    <p class="lk-time-xl dm-accent" style="margin:0;font-family:${SERIF};font-size:50px;font-weight:400;line-height:1;letter-spacing:-0.02em;color:${C.cereza};font-variant-numeric:tabular-nums;">
+                    <p class="lk-time-xl dm-accent" style="margin:0;font-family:${SERIF};font-size:48px;font-weight:400;line-height:1;letter-spacing:-0.02em;color:${C.cereza};font-variant-numeric:tabular-nums;">
                       {{{TIME_LABEL}}}
                     </p>
-                    <div style="margin-top:12px;">
-                      ${renderAdaptiveStroke({ width: 118, align: 'center', marginBottom: 16 })}
-                    </div>
-                    <p class="dm-ink" style="margin:0;font-family:${SANS};font-size:15px;font-weight:500;color:${C.ink};">
+                    <p class="dm-ink" style="margin:14px 0 0;font-family:${SANS};font-size:15px;font-weight:500;color:${C.ink};">
                       {{{SERVICE_NAME}}} &nbsp;&middot;&nbsp; con {{{STAFF_NAME}}}
                     </p>
                     <p class="dm-muted" style="margin:6px 0 0;font-family:${SANS};font-size:13px;line-height:1.55;color:${C.muted};">
@@ -616,12 +636,16 @@ WhatsApp: {{{WHATSAPP_URL}}}
                     </p>
                   </td>
                 </tr>
-              </table>
-              ${renderCoutureCta({ label: 'Abrir ubicación y detalles', href: '{{{MANAGE_URL}}}', marginTop: 32 })}
-              ${renderSubtleLink({ label: '¿Vienes en camino? Escríbenos por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
-            </td>
-          </tr>
-          ${renderColophon({ compact: true })}`,
+              </table>`,
+      primaryCta: {
+        label: 'Abrir ubicación y detalles',
+        href: '{{{MANAGE_URL}}}',
+      },
+      secondaryLink: {
+        label: '¿Vienes en camino? Escríbenos por WhatsApp',
+        href: '{{{WHATSAPP_URL}}}',
+      },
+      compactFooter: true,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 HOY EN EL ESTUDIO · Nº {{{BOOKING_CODE}}}
@@ -656,20 +680,17 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Actualizamos tu cita.',
+    html: renderStandardEditorialEmail({
       preheader: 'Actualizamos tu cita {{{BOOKING_CODE}}} al {{{DATE_LABEL}}} a las {{{TIME_LABEL}}}.',
-      cardHtml: `
-          ${renderStationeryHeader({ align: 'center', topRuleColor: C.cereza, logoWidth: 160 })}
-          ${renderMetaRuleBar('CAMBIO DE HORARIO', 'N&ordm; {{{BOOKING_CODE}}}')}
-          <tr>
-            <td class="lk-pad dm-paper" align="center" bgcolor="${C.paper}" style="background-color:${C.paper};padding:36px 44px 40px;">
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 10px;font-family:${SERIF};font-size:35px;font-weight:400;line-height:1.1;letter-spacing:-0.015em;color:${C.ink};">
-                Actualizamos tu cita.
-              </h1>
-              ${renderAdaptiveStroke({ width: 122, align: 'center', marginBottom: 18 })}
+      coverUrl: COVERS.rescheduled,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set almendra cristal y dorado',
+      metaLeft: 'CAMBIO DE HORARIO',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      headline: 'Actualizamos tu cita.',
+      align: 'center',
+      bodyHtml: `
               <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.76;color:${C.body};">
-                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, guardamos tu nueva fecha sin problema. Así queda tu próxima visita:
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, guardamos tu nueva fecha sin problema. Así queda confirmada tu próxima visita:
               </p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.slip}" class="dm-slip dm-border-accent" style="margin-top:26px;background-color:${C.slip};border-top:1px solid ${C.cereza};border-bottom:1px solid ${C.cereza};">
                 <tr>
@@ -692,13 +713,17 @@ WhatsApp: {{{WHATSAPP_URL}}}
                   ['Artista', '{{{STAFF_NAME}}}'],
                 ],
                 { marginTop: 22 },
-              )}
-              ${renderCoutureCta({ label: 'Ver mi cita actualizada', href: '{{{MANAGE_URL}}}', marginTop: 32 })}
-              ${renderSubtleLink({ label: 'Escribir por WhatsApp al estudio', href: '{{{WHATSAPP_URL}}}' })}
-              ${renderFootnote('Adjuntamos el archivo .ics actualizado para reemplazar la fecha anterior en tu calendario.')}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              )}`,
+      primaryCta: {
+        label: 'Ver mi cita actualizada',
+        href: '{{{MANAGE_URL}}}',
+      },
+      secondaryLink: {
+        label: 'Escribir por WhatsApp al estudio',
+        href: '{{{WHATSAPP_URL}}}',
+      },
+      footnoteHtml:
+        'Adjuntamos el archivo .ics actualizado para reemplazar la fecha anterior en tu calendario.',
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CAMBIO DE HORARIO · Nº {{{BOOKING_CODE}}}
@@ -735,18 +760,17 @@ Adjuntamos tu archivo .ics actualizado.
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Tu cita ha sido cancelada.',
+    html: renderStandardEditorialEmail({
       preheader: 'Confirmamos la cancelación de tu cita {{{BOOKING_CODE}}} en {{{SALON_NAME}}}.',
-      cardHtml: `
-          ${renderStationeryHeader({ align: 'left', topRuleColor: C.ink, logoWidth: 146 })}
-          ${renderMetaRuleBar('CONFIRMACIÓN DE CANCELACIÓN', 'N&ordm; {{{BOOKING_CODE}}}', { accentRight: false })}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 16px;font-family:${SERIF};font-size:33px;font-weight:400;line-height:1.12;letter-spacing:-0.015em;color:${C.ink};">
-                Tu cita ha sido cancelada.
-              </h1>
-              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
+      coverUrl: COVERS.canceled,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set verde oliva oscuro aura',
+      metaLeft: 'CONFIRMACIÓN DE CANCELACIÓN',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      accentRight: false,
+      headline: 'Tu cita ha sido cancelada.',
+      showStroke: false,
+      bodyHtml: `
+              <p class="dm-body" style="margin:6px 0 0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, liberamos tu espacio en agenda tal como se solicitó. Cuando desees volver a agendar, estaremos encantadas de recibirte.
               </p>
               ${renderEditorialLedger(
@@ -757,12 +781,16 @@ Adjuntamos tu archivo .ics actualizado.
                   ['Observación', '{{{CANCELLATION_NOTE}}}'],
                 ],
                 { marginTop: 28 },
-              )}
-              ${renderCoutureCta({ label: 'Agendar una nueva fecha', href: '{{{BOOKING_URL}}}', tone: 'obsidian', marginTop: 34 })}
-              ${renderSubtleLink({ label: '¿Necesitas ayuda? Escríbenos por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              )}`,
+      primaryCta: {
+        label: 'Agendar una nueva fecha',
+        href: '{{{BOOKING_URL}}}',
+      },
+      ctaTone: 'obsidian',
+      secondaryLink: {
+        label: '¿Necesitas ayuda? Escríbenos por WhatsApp',
+        href: '{{{WHATSAPP_URL}}}',
+      },
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CANCELACIÓN · Nº {{{BOOKING_CODE}}}
@@ -794,18 +822,15 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Tres semanas después.',
+    html: renderStandardEditorialEmail({
       preheader: 'Ya casi cumplen 3 semanas tus uñas. Aparta tu retoque en {{{SALON_NAME}}}.',
-      cardHtml: `
-          ${renderEditorialCoverRow(COVER_TOUCHUP_URL, 'LAIKONA NAILS BY KARLA · Set floral en estudio')}
-          ${renderMetaRuleBar('RITUAL DE MANTENIMIENTO', '3 SEMANAS')}
-          <tr>
-            <td class="lk-pad dm-paper" align="center" bgcolor="${C.paper}" style="background-color:${C.paper};padding:36px 44px 40px;">
-              <h1 class="lk-h1-lg dm-ink" style="margin:0 0 10px;font-family:${SERIF};font-size:38px;font-weight:400;line-height:1.06;letter-spacing:-0.02em;color:${C.ink};">
-                Tres semanas después.
-              </h1>
-              ${renderAdaptiveStroke({ width: 128, align: 'center', marginBottom: 20 })}
+      coverUrl: COVERS.touchup,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set flor coral 3D',
+      metaLeft: 'RITUAL DE MANTENIMIENTO',
+      metaRight: '3 SEMANAS',
+      headline: 'Tres semanas después.',
+      align: 'center',
+      bodyHtml: `
               <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.8;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, ya casi cumplen tres semanas desde tu último servicio de <strong class="dm-ink" style="color:${C.ink};">{{{SERVICE_NAME}}}</strong> con {{{STAFF_NAME}}}. Renovar tu set a tiempo mantiene tu uña natural fuerte, ligera y con estructura impecable.
               </p>
@@ -828,12 +853,15 @@ WhatsApp: {{{WHATSAPP_URL}}}
                     </p>
                   </td>
                 </tr>
-              </table>
-              ${renderCoutureCta({ label: 'Apartar mi retoque en línea', href: '{{{BOOKING_URL}}}', marginTop: 32 })}
-              ${renderSubtleLink({ label: 'Consultar horarios por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              </table>`,
+      primaryCta: {
+        label: 'Apartar mi retoque en línea',
+        href: '{{{BOOKING_URL}}}',
+      },
+      secondaryLink: {
+        label: 'Consultar horarios por WhatsApp',
+        href: '{{{WHATSAPP_URL}}}',
+      },
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 RITUAL DE MANTENIMIENTO · 3 SEMANAS
@@ -863,17 +891,14 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'OFFER_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/reservar` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Se abrió un lugar para ti.',
+    html: renderStandardEditorialEmail({
       preheader: 'Tienes {{{TTL_MINUTES}}} minutos de prioridad para apartar el espacio del {{{DATE_LABEL}}}.',
-      cardHtml: `
-          ${renderEditorialCoverRow(COVER_WAITLIST_URL, 'LAIKONA NAILS BY KARLA · Espacio prioritario')}
-          ${renderMetaRuleBar('LISTA DE ESPERA &middot; ACCESO PRIVADO', 'PRIORIDAD &middot; {{{TTL_MINUTES}}} MIN')}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
-              <h1 class="lk-h1-lg dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:36px;font-weight:400;line-height:1.08;letter-spacing:-0.015em;color:${C.ink};">
-                Se abrió un lugar para ti.
-              </h1>
+      coverUrl: COVERS.waitlist,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set rojo laca y dorado',
+      metaLeft: 'LISTA DE ESPERA &middot; ACCESO PRIVADO',
+      metaRight: 'PRIORIDAD &middot; {{{TTL_MINUTES}}} MIN',
+      headline: 'Se abrió un lugar para ti.',
+      bodyHtml: `
               <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, acaba de liberarse un espacio que coincide con tu solicitud en el estudio. Lo reservamos de forma prioritaria para ti durante los próximos <strong class="dm-accent" style="color:${C.cereza};">{{{TTL_MINUTES}}} minutos</strong>.
               </p>
@@ -885,12 +910,13 @@ WhatsApp: {{{WHATSAPP_URL}}}
                   ['Horario libre', '{{{TIME_LABEL}}}'],
                 ],
                 { highlightLast: true, marginTop: 28 },
-              )}
-              ${renderCoutureCta({ label: 'Tomar este horario ahora', href: '{{{OFFER_URL}}}', marginTop: 34 })}
-              ${renderFootnote('Al concluir los {{{TTL_MINUTES}}} minutos el espacio se libera automáticamente para la siguiente persona en lista.')}
-            </td>
-          </tr>
-          ${renderColophon()}`,
+              )}`,
+      primaryCta: {
+        label: 'Tomar este horario ahora',
+        href: '{{{OFFER_URL}}}',
+      },
+      footnoteHtml:
+        'Al concluir los {{{TTL_MINUTES}}} minutos el espacio se libera automáticamente para la siguiente persona en lista.',
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 LISTA DE ESPERA · PRIORIDAD {{{TTL_MINUTES}}} MIN
@@ -920,19 +946,16 @@ Tomar este horario ahora: {{{OFFER_URL}}}
       { key: 'PORTAL_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/mis-citas` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: 'Tu código de verificación.',
+    html: renderStandardEditorialEmail({
       preheader: 'Tu código privado de {{{SALON_NAME}}} es {{{OTP_CODE}}}. Válido por {{{EXPIRES_MINUTES}}} minutos.',
-      maxWidth: 488,
-      cardHtml: `
-          ${renderStationeryHeader({ align: 'center', topRuleColor: C.cereza, logoWidth: 152 })}
-          ${renderMetaRuleBar('PORTAL MIS CITAS', 'ACCESO PRIVADO')}
-          <tr>
-            <td class="lk-pad dm-paper" align="center" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 40px 38px;">
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:31px;font-weight:400;line-height:1.12;letter-spacing:-0.015em;color:${C.ink};">
-                Tu código de verificación.
-              </h1>
-              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:14.5px;line-height:1.75;color:${C.body};">
+      coverUrl: COVERS.otp,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Set azul joya',
+      metaLeft: 'PORTAL MIS CITAS',
+      metaRight: 'ACCESO PRIVADO',
+      headline: 'Tu código de verificación.',
+      align: 'center',
+      bodyHtml: `
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.75;color:${C.body};">
                 Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, ingresa este código de un solo uso para consultar tus próximas citas, historial y sellos de fidelidad:
               </p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border-ink" style="margin-top:26px;border-top:1px solid ${C.ink};border-bottom:1px solid ${C.hairline};">
@@ -946,12 +969,14 @@ Tomar este horario ahora: {{{OFFER_URL}}}
                     </p>
                   </td>
                 </tr>
-              </table>
-              ${renderCoutureCta({ label: 'Ir a Mis citas', href: '{{{PORTAL_URL}}}', marginTop: 28 })}
-              ${renderFootnote('Si no solicitaste este código, puedes ignorar este correo; nadie puede entrar sin él.')}
-            </td>
-          </tr>
-          ${renderColophon({ compact: true })}`,
+              </table>`,
+      primaryCta: {
+        label: 'Ir a Mis citas',
+        href: '{{{PORTAL_URL}}}',
+      },
+      footnoteHtml:
+        'Si no solicitaste este código, puedes ignorar este correo; nadie puede entrar sin él.',
+      compactFooter: true,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 PORTAL MIS CITAS · ACCESO PRIVADO
@@ -985,21 +1010,17 @@ Ir a Mis citas: {{{PORTAL_URL}}}
       { key: 'ADMIN_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/admin/citas` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: '{{{ALERT_HEADING}}}',
+    html: renderStandardEditorialEmail({
       preheader: '{{{ALERT_HEADING}}} ({{{BOOKING_CODE}}}) — {{{CLIENT_NAME}}}.',
-      cardHtml: `
-          ${renderEditorialCoverRow(HEADER_OBSIDIAN_ATELIER_URL, 'LAIKONA NAILS BY KARLA · Panel Estudio')}
-          ${renderMetaRuleBar('DESPACHO ADMINISTRATIVO', 'N&ordm; {{{BOOKING_CODE}}}', { accentRight: false })}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
-              <p class="dm-accent" style="margin:0 0 10px;font-family:${SANS};font-size:10px;font-weight:600;letter-spacing:0.22em;text-transform:uppercase;color:${C.cereza};">
-                {{{ALERT_BADGE}}}
-              </p>
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:32px;font-weight:400;line-height:1.12;letter-spacing:-0.015em;color:${C.ink};">
-                {{{ALERT_HEADING}}}
-              </h1>
-              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
+      coverUrl: COVERS.salonAlert,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Despacho de estudio',
+      metaLeft: 'PANEL ESTUDIO &middot; {{{ALERT_BADGE}}}',
+      metaRight: 'N&ordm; {{{BOOKING_CODE}}}',
+      accentRight: false,
+      headline: '{{{ALERT_HEADING}}}',
+      showStroke: false,
+      bodyHtml: `
+              <p class="dm-body" style="margin:6px 0 0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
                 {{{ALERT_DETAIL}}}
               </p>
               ${renderEditorialLedger(
@@ -1011,11 +1032,13 @@ Ir a Mis citas: {{{PORTAL_URL}}}
                   ['Fecha y hora', '{{{DATE_LABEL}}} · {{{TIME_LABEL}}}'],
                 ],
                 { marginTop: 28 },
-              )}
-              ${renderCoutureCta({ label: 'Abrir agenda en Admin', href: '{{{ADMIN_URL}}}', tone: 'obsidian', marginTop: 32 })}
-            </td>
-          </tr>
-          ${renderColophon({ compact: true })}`,
+              )}`,
+      primaryCta: {
+        label: 'Abrir agenda en Admin',
+        href: '{{{ADMIN_URL}}}',
+      },
+      ctaTone: 'obsidian',
+      compactFooter: true,
     }),
     text: `LAIKONA NAILS · DESPACHO ADMINISTRATIVO
 {{{ALERT_BADGE}}} · Nº {{{BOOKING_CODE}}}
@@ -1049,21 +1072,16 @@ Abrir agenda en Admin: {{{ADMIN_URL}}}
       { key: 'CAJA_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/admin/caja?tab=anticipos` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: wrapCoutureDoc({
-      title: '{{{HEADING_TEXT}}}',
+    html: renderStandardEditorialEmail({
       preheader: 'Respalda {{{ASSETS_COUNT}}} archivo(s) antes de su purga automática en {{{STAGE_LABEL}}}.',
-      cardHtml: `
-          ${renderStationeryHeader({ align: 'left', topRuleColor: C.ink, logoWidth: 146 })}
-          ${renderMetaRuleBar('RESPALDO CONTABLE', 'VENTANA &middot; {{{STAGE_LABEL}}}')}
-          <tr>
-            <td class="lk-pad dm-paper" bgcolor="${C.paper}" style="background-color:${C.paper};padding:34px 44px 40px;">
-              <p class="dm-accent" style="margin:0 0 10px;font-family:${SANS};font-size:10px;font-weight:600;letter-spacing:0.22em;text-transform:uppercase;color:${C.cereza};">
-                Retención anual de archivos
-              </p>
-              <h1 class="lk-h1 dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:31px;font-weight:400;line-height:1.14;letter-spacing:-0.015em;color:${C.ink};">
-                {{{HEADING_TEXT}}}
-              </h1>
-              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
+      coverUrl: COVERS.retention,
+      coverAlt: 'LAIKONA NAILS BY KARLA · Respaldo contable',
+      metaLeft: 'RESPALDO CONTABLE',
+      metaRight: 'VENTANA &middot; {{{STAGE_LABEL}}}',
+      headline: '{{{HEADING_TEXT}}}',
+      showStroke: false,
+      bodyHtml: `
+              <p class="dm-body" style="margin:6px 0 0;font-family:${SANS};font-size:15px;line-height:1.78;color:${C.body};">
                 {{{INTRO_TEXT}}}
               </p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dm-border-ink" style="margin-top:28px;border-top:1px solid ${C.ink};border-bottom:1px solid ${C.hairline};">
@@ -1096,12 +1114,15 @@ Abrir agenda en Admin: {{{ADMIN_URL}}}
                     </p>
                   </td>
                 </tr>
-              </table>
-              ${renderCoutureCta({ label: 'Abrir Caja y respaldar comprobantes', href: '{{{CAJA_URL}}}', tone: 'obsidian', marginTop: 32 })}
-              ${renderFootnote('Tu historial de citas, pagos, reportes de caja y datos de clientas permanecen intactos; únicamente se depuran las imágenes mayores a 12 meses.')}
-            </td>
-          </tr>
-          ${renderColophon({ compact: true })}`,
+              </table>`,
+      primaryCta: {
+        label: 'Abrir Caja y respaldar comprobantes',
+        href: '{{{CAJA_URL}}}',
+      },
+      ctaTone: 'obsidian',
+      footnoteHtml:
+        'Tu historial de citas, pagos, reportes de caja y datos de clientas permanecen intactos; únicamente se depuran las imágenes mayores a 12 meses.',
+      compactFooter: true,
     }),
     text: `LAIKONA NAILS · RESPALDO CONTABLE ({{{STAGE_LABEL}}})
 {{{HEADING_TEXT}}}
@@ -1257,7 +1278,7 @@ function renderTemplateWithFallbacks(tpl, assetBaseUrl) {
     subject = subject.split(token).join(val);
   }
   if (assetBaseUrl) {
-    html = html.split('https://laikona.devand.net/brand').join(assetBaseUrl);
+    html = html.split(BRAND_BASE).join(assetBaseUrl);
   }
   return { html, text, subject };
 }
@@ -1347,209 +1368,44 @@ function buildGalleryHtml(assetBaseUrl) {
       border-bottom: 1px solid var(--line);
       margin-bottom: 14px;
     }
-    .brand-logo {
-      display: block;
-      width: 132px;
-      height: auto;
-      margin-bottom: 10px;
-    }
+    .brand-logo { display: block; width: 132px; height: auto; margin-bottom: 10px; }
     .brand-logo-dark { display: none; }
     body.ui-dark .brand-logo-light { display: none; }
     body.ui-dark .brand-logo-dark { display: block; }
-    .brand-title {
-      font-family: 'Source Serif 4', Georgia, serif;
-      font-size: 21px;
-      font-weight: 500;
-      letter-spacing: -0.02em;
-      margin: 0;
-      line-height: 1.15;
-    }
-    .brand-sub {
-      font-size: 12px;
-      color: var(--muted);
-      margin: 5px 0 0;
-    }
-    .group-label {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--muted);
-      padding: 14px 10px 6px;
-      margin: 0;
-    }
-    .nav-btn {
-      width: 100%;
-      text-align: left;
-      background: transparent;
-      border: 1px solid transparent;
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      display: block;
-      transition: background 140ms ease, border-color 140ms ease;
-    }
+    .brand-title { font-family: 'Source Serif 4', Georgia, serif; font-size: 21px; font-weight: 500; letter-spacing: -0.02em; margin: 0; line-height: 1.15; }
+    .brand-sub { font-size: 12px; color: var(--muted); margin: 5px 0 0; }
+    .group-label { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); padding: 14px 10px 6px; margin: 0; }
+    .nav-btn { width: 100%; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 10px 12px; margin-bottom: 4px; cursor: pointer; display: block; transition: background 140ms ease, border-color 140ms ease; }
     .nav-btn:hover { background: var(--bg); }
-    .nav-btn.active {
-      background: var(--cherry-soft);
-      border-color: rgba(139, 30, 43, 0.35);
-    }
-    .nav-name {
-      display: block;
-      font-size: 13.5px;
-      font-weight: 600;
-      color: var(--ink);
-      line-height: 1.3;
-    }
-    .nav-meta {
-      display: block;
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 2px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    }
-    main {
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    .toolbar {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      background: var(--surface);
-      border-bottom: 1px solid var(--line);
-      padding: 14px 28px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
+    .nav-btn.active { background: var(--cherry-soft); border-color: rgba(139, 30, 43, 0.35); }
+    .nav-name { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+    .nav-meta { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    main { min-width: 0; display: flex; flex-direction: column; }
+    .toolbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); padding: 14px 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
     .mail-meta { min-width: 220px; flex: 1; }
-    .mail-subject {
-      font-family: 'Source Serif 4', Georgia, serif;
-      font-size: 19px;
-      font-weight: 500;
-      letter-spacing: -0.015em;
-      margin: 0 0 3px;
-    }
+    .mail-subject { font-family: 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 500; letter-spacing: -0.015em; margin: 0 0 3px; }
     .mail-headers { font-size: 12px; color: var(--muted); margin: 0; }
     .mail-headers strong { color: var(--ink); font-weight: 600; }
     .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .modes {
-      display: inline-flex;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--bg);
-      padding: 3px;
-      gap: 3px;
-    }
-    .mode-btn, .theme-btn {
-      border: 0;
-      border-radius: 999px;
-      background: transparent;
-      color: var(--muted);
-      font-family: inherit;
-      font-size: 12px;
-      font-weight: 600;
-      padding: 7px 12px;
-      cursor: pointer;
-    }
+    .modes { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); padding: 3px; gap: 3px; }
+    .mode-btn, .theme-btn { border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
     .mode-btn.active, .theme-btn.active { background: var(--cherry); color: #fff; }
     .stage { padding: 28px; flex: 1; }
-    .split {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      justify-content: center;
-      gap: 28px;
-    }
+    .split { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 28px; }
     .device-col { display: flex; flex-direction: column; align-items: center; }
-    .device-label {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 0 0 10px;
-    }
-    .desktop-frame {
-      width: 660px;
-      max-width: 100%;
-      background: var(--iframe-bg);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      overflow: hidden;
-      box-shadow: 0 20px 50px -30px rgba(0, 0, 0, 0.28);
-    }
-    .desktop-chrome {
-      height: 32px;
-      background: var(--chrome);
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      align-items: center;
-      padding: 0 14px;
-      gap: 6px;
-      font-size: 11px;
-      color: var(--muted);
-    }
+    .device-label { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+    .desktop-frame { width: 660px; max-width: 100%; background: var(--iframe-bg); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px -30px rgba(0, 0, 0, 0.28); }
+    .desktop-chrome { height: 32px; background: var(--chrome); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 14px; gap: 6px; font-size: 11px; color: var(--muted); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
-    .mobile-bezel {
-      width: 414px;
-      background: #0D0A0B;
-      border: 1px solid #2C2325;
-      border-radius: 42px;
-      padding: 12px;
-      box-shadow: 0 24px 54px -24px rgba(0, 0, 0, 0.55);
-    }
-    .mobile-notch {
-      width: 108px;
-      height: 18px;
-      background: #0D0A0B;
-      border-radius: 0 0 14px 14px;
-      margin: 0 auto 8px;
-    }
-    .mobile-screen {
-      width: 390px;
-      background: var(--iframe-bg);
-      border-radius: 30px;
-      overflow: hidden;
-    }
-    iframe.email-iframe {
-      display: block;
-      width: 100%;
-      border: 0;
-      background: var(--iframe-bg);
-      min-height: 620px;
-    }
-    .text-card {
-      max-width: 680px;
-      margin: 0 auto;
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 28px 32px;
-    }
-    .text-card pre {
-      margin: 0;
-      white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 13px;
-      line-height: 1.7;
-      color: var(--ink);
-    }
+    .mobile-bezel { width: 414px; background: #0D0A0B; border: 1px solid #2C2325; border-radius: 42px; padding: 12px; box-shadow: 0 24px 54px -24px rgba(0, 0, 0, 0.55); }
+    .mobile-notch { width: 108px; height: 18px; background: #0D0A0B; border-radius: 0 0 14px 14px; margin: 0 auto 8px; }
+    .mobile-screen { width: 390px; background: var(--iframe-bg); border-radius: 30px; overflow: hidden; }
+    iframe.email-iframe { display: block; width: 100%; border: 0; background: var(--iframe-bg); min-height: 620px; }
+    .text-card { max-width: 680px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 28px 32px; }
+    .text-card pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.7; color: var(--ink); }
     .all-stack { display: flex; flex-direction: column; gap: 44px; }
     .all-block { border-top: 1px solid var(--line); padding-top: 22px; }
-    .all-block-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 18px;
-    }
+    .all-block-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
     .all-block-head h2 { font-family: 'Source Serif 4', Georgia, serif; font-size: 24px; font-weight: 500; margin: 0; }
     .all-block-head code { font-size: 12px; color: var(--ink); background: var(--cherry-soft); border-radius: 999px; padding: 4px 10px; }
     @media (max-width: 960px) {
@@ -1567,7 +1423,7 @@ function buildGalleryHtml(assetBaseUrl) {
       <img class="brand-logo brand-logo-light" src="${logoLightSrc}" alt="LAIKONA NAILS BY KARLA" />
       <img class="brand-logo brand-logo-dark" src="${logoDarkSrc}" alt="LAIKONA NAILS BY KARLA" />
       <h1 class="brand-title">Editorial Mail Suite</h1>
-      <p class="brand-sub">11 diseños editoriales · Claro, Apple &amp; Gmail iOS</p>
+      <p class="brand-sub">11 portadas únicas de estudio · Claro, Apple &amp; Gmail iOS</p>
     </div>
     <p class="group-label">Clientas (9)</p>
     <div id="nav-client"></div>
@@ -1615,8 +1471,6 @@ function buildGalleryHtml(assetBaseUrl) {
     const curAlias = document.getElementById('cur-alias');
     const curSize = document.getElementById('cur-size');
 
-    // Simulates Gmail iOS Dark Mode: ignores @media (prefers-color-scheme: dark),
-    // keeps raster images untouched, inverts unlocked CSS colors, while blend-locked CTAs preserve deep cherry + crisp white!
     const GMAIL_IOS_SIM_CSS = '<style>' +
       'body, .dm-canvas { background-color: #161616 !important; }' +
       '.dm-paper { background-color: #202124 !important; border-color: #36373B !important; }' +
@@ -1729,7 +1583,7 @@ function buildGalleryHtml(assetBaseUrl) {
       if (currentMode === 'all') {
         curSubject.textContent = 'Todas las plantillas (11) — Vista comparativa Desktop + Móvil';
         curAlias.textContent = 'laikona-*';
-        curSize.textContent = '11 diseños editoriales';
+        curSize.textContent = '11 portadas editoriales';
       } else {
         curSubject.textContent = tpl.subject;
         curAlias.textContent = tpl.alias;
