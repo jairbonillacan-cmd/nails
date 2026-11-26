@@ -2015,6 +2015,34 @@ dialog:has(.ad-drawer-body) * {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-dark) 25%, transparent);
 }
 
+.ad-palette-preview {
+  --ad-palette-paper: color-mix(in srgb, var(--ad-cherry) 5%, var(--color-on-dark));
+  --ad-palette-ink: var(--ad-cherry);
+  background: var(--ad-palette-paper);
+  border: 1px solid color-mix(in srgb, var(--ad-palette-ink) 18%, transparent);
+}
+
+.ad-palette-preview--monochrome {
+  --ad-palette-paper: var(--color-on-dark);
+  --ad-palette-ink: var(--color-on-light);
+}
+
+.ad-palette-wordmark {
+  color: var(--ad-palette-ink);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  font-size: var(--font-size-sm, 0.8125rem);
+}
+
+.ad-palette-cta {
+  background: var(--ad-palette-ink);
+  color: var(--color-on-dark);
+  border-radius: var(--radius-full);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .ad-qr-stage {
   display: inline-flex;
   align-items: center;

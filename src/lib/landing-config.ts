@@ -162,7 +162,7 @@ export function resolveLandingContent(
     reviewsTitle: cleanText(content.reviewsTitle, 'De tu idea a tus uñas'),
     reviewsSubtitle: cleanText(
       content.reviewsSubtitle,
-      'Opiniones verificadas de clientas que ya salieron con su set.',
+      'Lo que dicen en Google quienes ya salieron con su set.',
     ),
     teamTitle: cleanText(content.teamTitle, 'Elige a tu profesional'),
     teamSubtitle: cleanText(
@@ -182,7 +182,7 @@ export function resolveLandingContent(
     customFaqs,
     visitTitle: cleanText(content.visitTitle, 'Visítanos'),
     visitHoursDays: cleanText(content.visitHoursDays, 'Lunes a sábado'),
-    visitHoursText: cleanText(content.visitHoursText, 'Citas de 10:00 a 6:00 · Solo con cita'),
+    visitHoursText: cleanText(content.visitHoursText, 'De 10:00 a 18:00 · Solo con cita'),
     sections: resolveLandingSections(content.sections),
   };
 }

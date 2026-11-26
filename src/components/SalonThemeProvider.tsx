@@ -152,8 +152,7 @@ export function SalonThemeProvider({
 }) {
   const pathname = usePathname();
   const [settings, setSettingsOverride] = useState<AppearanceSettings>(initialSettings);
-  const defaultMode = initialSettings.defaultPublicMode || 'light';
-  const [mode, setMode] = usePersistedThemeMode(defaultMode);
+  const [mode, setMode] = usePersistedThemeMode('light');
 
   const safePathname = pathname ?? '';
   const isAdminRoute = safePathname === '/admin' || safePathname.startsWith('/admin/');

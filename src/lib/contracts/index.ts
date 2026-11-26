@@ -8,6 +8,7 @@ export {
   CashEntryTypeSchema,
   ClientPackageStatusSchema,
   CornerStyleSchema,
+  PublicPaletteSchema,
   CouponDiscountTypeSchema,
   CouponKindSchema,
   CurrencySchema,

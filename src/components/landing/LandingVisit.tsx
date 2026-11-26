@@ -25,7 +25,7 @@ function buildMapEmbedUrl(address: string): string {
 export function LandingVisit({
   title = 'Visítanos',
   hoursDays = 'Lunes a sábado',
-  hoursText = 'Citas de 10:00 a 6:00 · Solo con cita',
+  hoursText = 'De 10:00 a 18:00 · Solo con cita',
   showMapEmbed = true,
   address,
   mapsUrl,

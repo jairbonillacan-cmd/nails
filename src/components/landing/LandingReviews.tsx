@@ -23,7 +23,7 @@ interface LandingReviewsProps {
 
 export function LandingReviews({
   title = 'De tu idea a tus uñas',
-  subtitle = 'Opiniones verificadas de clientas que ya salieron con su set.',
+  subtitle = 'Lo que dicen en Google quienes ya salieron con su set.',
   reviews,
   summary,
   reviewUrl,

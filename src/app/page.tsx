@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { ViewTransition } from 'react';
+import { cookies } from 'next/headers';
 import { preload } from 'react-dom';
 import './landing.css';
 import { getRepository } from '@/lib/repositories/db';
@@ -14,6 +15,8 @@ import {
 import { resolveLandingContent } from '@/lib/landing-config';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 import { LandingView } from '@/components/LandingView';
+import { LandingIntro } from '@/components/landing/LandingIntro';
+import { INTRO_COOKIE } from '@/lib/intro';
 
 export const dynamic = 'force-dynamic';
 
@@ -95,8 +98,11 @@ export default async function HomePage() {
     .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 8);
 
+  const showIntro = !(await cookies()).has(INTRO_COOKIE);
+
   return (
     <ViewTransition enter="lk-page-in" exit="lk-page-out" default="none">
+    {showIntro ? <LandingIntro /> : null}
     <LandingView
       initialSettings={publicSettings}
       categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}

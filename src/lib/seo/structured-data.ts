@@ -268,7 +268,7 @@ export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqIt
     {
       id: 'faq-ubicacion',
       question: `¿Dónde está ${salonName}? ¿Atienden sin cita?`,
-      answer: `Estamos en ${address}. Solo atendemos con cita, para que tu tiempo sea completo para ti.`,
+      answer: `Estamos en ${address.replace(/\.+$/, '')}. Solo atendemos con cita: así nadie espera y tu bloque es solo tuyo.`,
     },
     {
       id: 'faq-extras',

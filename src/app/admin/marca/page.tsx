@@ -59,7 +59,7 @@ type BrandEditorTab = 'portada' | 'galeria' | 'estilo' | 'negocio';
 
 export default function AdminBrandPage() {
   const { data, loading, refresh } = useAdminData();
-  const { mode, setSettingsOverride, setMode } = useSalonAppearance();
+  const { mode, setSettingsOverride } = useSalonAppearance();
   const [activeTab, setActiveTab] = useState<BrandEditorTab>('portada');
   const [draftOverride, setDraftOverride] = useState<SalonSettings | null>(null);
   const [loyaltyOverride, setLoyaltyOverride] = useState<LoyaltyProgram | null>(null);
@@ -287,7 +287,6 @@ export default function AdminBrandPage() {
                   soundAlertsEnabled={soundAlertsEnabled}
                   colorReadability={colorReadability}
                   onUpdateDraft={updateDraft}
-                  onModeChange={setMode}
                 />
               ) : null}
 

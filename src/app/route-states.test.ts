@@ -61,8 +61,11 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
   });
 
   it('imports the required route-scoped stylesheet in every public loading.tsx', () => {
+    const homeLoader = readText('src/app/loading.tsx');
+    expect(homeLoader).toContain('<BrandStage');
+    expect(homeLoader).toContain('role="status"');
+
     const publicLoaderCss: Record<string, string> = {
-      'src/app/loading.tsx': './landing.css',
       'src/app/reservar/loading.tsx': '../booking.css',
       'src/app/cita/[token]/loading.tsx': '../../cita.css',
       'src/app/mis-citas/loading.tsx': '../portal.css',
@@ -105,19 +108,21 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     expect(otpGateSource).not.toContain('showDot');
   });
 
-  it('keeps editorial error and 404 boundaries complete with wave transitions and zero undefined public tokens in admin', () => {
+  it('renders public error and 404 boundaries on the brand light stage with at most two actions', () => {
     const publicBoundaries = [
       'src/app/not-found.tsx',
       'src/app/error.tsx',
-      'src/app/global-error.tsx',
       'src/app/cita/[token]/not-found.tsx',
     ];
     for (const rel of publicBoundaries) {
       const source = readText(rel);
-      expect(source, `${rel} must render editorial cherry hero`).toContain('lk-boundary-hero');
-      expect(source, `${rel} must render sculptural wave`).toContain('lk-boundary-wave');
-      expect(source, `${rel} must render white brand logo`).toContain('logoWhite');
+      expect(source, `${rel} must render BrandStage`).toContain('<BrandStage');
+      expect(source.match(/<Button/g)?.length ?? 0, `${rel} must keep two actions`).toBeLessThanOrEqual(2);
     }
+
+    const globalError = readText('src/app/global-error.tsx');
+    expect(globalError).toContain('lk-boundary-hero');
+    expect(globalError).toContain('logoWhite');
 
     const adminError = readText('src/app/admin/error.tsx');
     expect(adminError).toContain('ad-boundary-hero');

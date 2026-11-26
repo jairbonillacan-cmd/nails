@@ -37,6 +37,7 @@ export interface Database {
           default_public_mode: 'light' | 'dark' | 'system';
           default_admin_mode: 'light' | 'dark' | 'system';
           corner_style: 'sharp' | 'soft' | 'rounded' | 'pill';
+          public_palette?: 'laikona' | 'monochrome';
           default_booking_layout: 'month' | 'week' | 'column';
           enabled_booking_layouts: string[];
           lock_timezone: boolean;

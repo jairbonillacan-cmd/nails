@@ -6,153 +6,20 @@ import { Grid } from '@astryxdesign/core/Grid';
 import { Card } from '@astryxdesign/core/Card';
 import { SelectableCard } from '@astryxdesign/core/SelectableCard';
 import { Text } from '@astryxdesign/core/Text';
-import { Divider } from '@astryxdesign/core/Divider';
-import { Token } from '@astryxdesign/core/Token';
-import { Calendar, Columns3, Grid2x2, Monitor, Moon, Sun } from 'lucide-react';
-import type { BookingLayoutView, ThemeModePreference } from '@/lib/types';
+import { Calendar, Columns3, Grid2x2 } from 'lucide-react';
+import type { BookingLayoutView } from '@/lib/types';
 
 export interface AppearanceWireframePickerProps {
-  publicMode: ThemeModePreference;
-  onPublicModeChange: (mode: ThemeModePreference) => void;
   bookingLayout: BookingLayoutView;
   onBookingLayoutChange: (layout: BookingLayoutView) => void;
 }
 
 export function AppearanceWireframePicker({
-  publicMode,
-  onPublicModeChange,
   bookingLayout,
   onBookingLayoutChange,
 }: AppearanceWireframePickerProps) {
   return (
     <VStack gap={4}>
-      <VStack gap={2}>
-        <Text type="label" weight="semibold">
-          Tema público predeterminado
-        </Text>
-        <Grid columns={{ minWidth: 160, max: 3 }} gap={3}>
-          <SelectableCard
-            label="Tema claro Porcelana"
-            padding={3}
-            isSelected={publicMode === 'light'}
-            onChange={() => onPublicModeChange('light')}
-          >
-            <VStack gap={2}>
-              <Card padding={2} variant="default" elevation="low">
-                <VStack gap={1.5}>
-                  <HStack justify="between" align="center">
-                    <Token size="sm" color="pink" label="LAIKONA" />
-                    <Token size="sm" color="default" label="10:00" />
-                  </HStack>
-                  <Divider />
-                  <Grid columns={2} gap={1}>
-                    <Card padding={1} variant="muted">
-                      <Text type="supporting" color="secondary">
-                        Rubber
-                      </Text>
-                    </Card>
-                    <Card padding={1} variant="muted">
-                      <Text type="supporting" color="secondary">
-                        Softgel
-                      </Text>
-                    </Card>
-                  </Grid>
-                </VStack>
-              </Card>
-              <HStack gap={1.5} align="center">
-                <Sun size={14} aria-hidden="true" />
-                <Text weight="semibold" size="sm">
-                  Claro (Porcelana)
-                </Text>
-              </HStack>
-              <Text type="supporting" color="secondary">
-                Editorial luminoso para fotos de uñas.
-              </Text>
-            </VStack>
-          </SelectableCard>
-
-          <SelectableCard
-            label="Tema oscuro Obsidiana"
-            padding={3}
-            isSelected={publicMode === 'dark'}
-            onChange={() => onPublicModeChange('dark')}
-          >
-            <VStack gap={2}>
-              <Card padding={2} variant="gray" elevation="low">
-                <VStack gap={1.5}>
-                  <HStack justify="between" align="center">
-                    <Token size="sm" color="purple" label="LAIKONA" />
-                    <Token size="sm" color="gray" label="13:30" />
-                  </HStack>
-                  <Divider />
-                  <Grid columns={2} gap={1}>
-                    <Card padding={1} variant="default">
-                      <Text type="supporting" color="secondary">
-                        Rubber
-                      </Text>
-                    </Card>
-                    <Card padding={1} variant="default">
-                      <Text type="supporting" color="secondary">
-                        Softgel
-                      </Text>
-                    </Card>
-                  </Grid>
-                </VStack>
-              </Card>
-              <HStack gap={1.5} align="center">
-                <Moon size={14} aria-hidden="true" />
-                <Text weight="semibold" size="sm">
-                  Oscuro (Obsidiana)
-                </Text>
-              </HStack>
-              <Text type="supporting" color="secondary">
-                Contraste nocturno elegante en modo oscuro.
-              </Text>
-            </VStack>
-          </SelectableCard>
-
-          <SelectableCard
-            label="Tema automático del sistema"
-            padding={3}
-            isSelected={publicMode === 'system'}
-            onChange={() => onPublicModeChange('system')}
-          >
-            <VStack gap={2}>
-              <Card padding={2} variant="muted" elevation="low">
-                <VStack gap={1.5}>
-                  <HStack justify="between" align="center">
-                    <Token size="sm" color="blue" label="Auto" />
-                    <Token size="sm" color="default" label="16:30" />
-                  </HStack>
-                  <Divider />
-                  <Grid columns={2} gap={1}>
-                    <Card padding={1} variant="default">
-                      <Text type="supporting" color="secondary">
-                        Día
-                      </Text>
-                    </Card>
-                    <Card padding={1} variant="gray">
-                      <Text type="supporting" color="secondary">
-                        Noche
-                      </Text>
-                    </Card>
-                  </Grid>
-                </VStack>
-              </Card>
-              <HStack gap={1.5} align="center">
-                <Monitor size={14} aria-hidden="true" />
-                <Text weight="semibold" size="sm">
-                  Sistema
-                </Text>
-              </HStack>
-              <Text type="supporting" color="secondary">
-                Adapta la agenda al tema del teléfono.
-              </Text>
-            </VStack>
-          </SelectableCard>
-        </Grid>
-      </VStack>
-
       <VStack gap={2}>
         <Text type="label" weight="semibold">
           Vista predeterminada de agenda

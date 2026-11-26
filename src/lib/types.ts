@@ -13,6 +13,7 @@ export type BookingSource = 'web' | 'whatsapp' | 'manual' | 'walk_in';
 export type BookingLayoutView = 'month' | 'week' | 'column';
 export type ThemeModePreference = 'light' | 'dark' | 'system';
 export type CornerStyle = 'sharp' | 'soft' | 'rounded' | 'pill';
+export type PublicPalette = 'laikona' | 'monochrome';
 export type PaymentMode = 'none' | 'manual_transfer' | 'stripe' | 'mercadopago';
 export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'gift_card';
 export type PaymentSplitMethod = 'cash' | 'card' | 'transfer' | 'giftcard' | 'online';
@@ -99,6 +100,7 @@ export interface SalonSettings {
   defaultPublicMode: ThemeModePreference;
   defaultAdminMode: ThemeModePreference;
   cornerStyle: CornerStyle;
+  publicPalette: PublicPalette;
   defaultBookingLayout: BookingLayoutView;
   enabledBookingLayouts: BookingLayoutView[];
   lockTimezone: boolean;

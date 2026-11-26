@@ -2,6 +2,7 @@ import type { CornerStyle } from './types';
 
 export const DEFAULT_BRAND_ACCENT_LIGHT = '#8B1E2B';
 export const DEFAULT_BRAND_ACCENT_DARK = '#E57A89';
+export const MONOCHROME_INK = '#131010';
 
 export interface AccentPreset {
   label: string;

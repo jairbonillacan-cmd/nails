@@ -168,6 +168,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
       defaultPublicMode: 'light',
       defaultAdminMode: 'system',
       cornerStyle: 'soft',
+      publicPalette: 'laikona',
       defaultBookingLayout: 'month',
       enabledBookingLayouts: ['month', 'week', 'column'],
       lockTimezone: true,

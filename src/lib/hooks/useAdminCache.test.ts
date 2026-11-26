@@ -160,6 +160,7 @@ function makeMockOverview(bookings: BookingWithRelations[]): AdminOverviewPayloa
       defaultPublicMode: 'light',
       defaultAdminMode: 'light',
       cornerStyle: 'soft',
+      publicPalette: 'laikona',
       defaultBookingLayout: 'month',
       enabledBookingLayouts: ['month', 'week'],
       lockTimezone: true,

@@ -80,6 +80,7 @@ export function areSettingsEqual(a: SalonSettings, b: SalonSettings): boolean {
     a.brandAccentDark === b.brandAccentDark &&
     a.defaultPublicMode === b.defaultPublicMode &&
     a.cornerStyle === b.cornerStyle &&
+    a.publicPalette === b.publicPalette &&
     a.defaultBookingLayout === b.defaultBookingLayout &&
     Boolean(a.optimizeContinuousSlots) === Boolean(b.optimizeContinuousSlots) &&
     a.enableSlotHold === b.enableSlotHold &&
@@ -210,6 +211,7 @@ export function buildBrandPatchPayload(params: {
     depositAccountHolder: depositBeneficiary,
     depositAmountCents,
     serviceMode: draft.serviceMode ?? 'studio',
+    publicPalette: draft.publicPalette ?? 'laikona',
     soundAlertsEnabled: draft.soundAlertsEnabled ?? true,
     lockPastBookings: draft.lockPastBookings ?? true,
     optimizeContinuousSlots: draft.optimizeContinuousSlots ?? false,

@@ -128,8 +128,8 @@ export function WaitlistDialog({
             <Banner
               status="success"
               role="status"
-              title="¡Te anotamos en la lista de espera!"
-              description="En cuanto se libere un espacio compatible te escribiremos de inmediato."
+              title="Estás en la lista de espera"
+              description="Si se libera un lugar que te sirva, te avisamos por WhatsApp."
             />
             <Button
               label="Cerrar"

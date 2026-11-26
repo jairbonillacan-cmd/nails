@@ -77,7 +77,7 @@ export function CitaActionsPanel({
           id="ck-canceled-title"
           headingLevel={2}
           title="Esta cita fue cancelada"
-          subtitle="Tu espacio quedó liberado al instante. Cuando quieras volver, puedes elegir un nuevo horario en segundos."
+          subtitle="Liberamos tu lugar. Cuando quieras volver, eliges otro horario desde aquí."
           icon={<CalendarX2 size={20} aria-hidden="true" className="lk-cereza-text" />}
           badge={<BookingStatusTag status={booking.status} size="sm" />}
           padded

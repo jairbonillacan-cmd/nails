@@ -197,6 +197,7 @@ function mapSettingsRow(row: Tables['salon_settings']['Row']): SalonSettings {
     defaultPublicMode: row.default_public_mode,
     defaultAdminMode: row.default_admin_mode,
     cornerStyle: row.corner_style,
+    publicPalette: row.public_palette ?? 'laikona',
     defaultBookingLayout: row.default_booking_layout,
     enabledBookingLayouts: asBookingLayouts(row.enabled_booking_layouts),
     lockTimezone: row.lock_timezone,
@@ -2837,6 +2838,7 @@ export function createSupabaseRepository(
         dbPatch.default_admin_mode = patch.defaultAdminMode;
       }
       if (patch.cornerStyle !== undefined) dbPatch.corner_style = patch.cornerStyle;
+      if (patch.publicPalette !== undefined) dbPatch.public_palette = patch.publicPalette;
       if (patch.defaultBookingLayout !== undefined) {
         dbPatch.default_booking_layout = patch.defaultBookingLayout;
       }

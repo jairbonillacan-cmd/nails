@@ -9,11 +9,27 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Palette } from 'lucide-react';
+import { Button } from '@astryxdesign/core/Button';
+import { Card } from '@astryxdesign/core/Card';
+import { SelectableCard } from '@astryxdesign/core/SelectableCard';
+import { ExternalLink, Palette } from 'lucide-react';
 import { ColorSwatchPicker } from '@/components/admin/ColorSwatchPicker';
 import { SkeletonBlock, StatusTag, SurfaceCard } from '@/components/ui';
 import { ACCENT_PRESETS } from '@/lib/theme-presets';
-import type { CornerStyle, SalonSettings, ThemeModePreference } from '@/lib/types';
+import type { CornerStyle, PublicPalette, SalonSettings } from '@/lib/types';
+
+const PALETTE_OPTIONS: readonly { value: PublicPalette; label: string; description: string }[] = [
+  {
+    value: 'laikona',
+    label: 'Laikona',
+    description: 'Cereza, rosa y porcelana. La identidad de siempre.',
+  },
+  {
+    value: 'monochrome',
+    label: 'Blanco y negro',
+    description: 'Solo tinta y papel. Las fotos de uñas siguen a color.',
+  },
+];
 
 function WireframePickerFallback() {
   return (
@@ -42,7 +58,6 @@ interface BookingAppearanceSectionProps {
   soundAlertsEnabled: boolean;
   colorReadability: ColorReadabilityStatus;
   onUpdateDraft: (patch: Partial<SalonSettings>) => void;
-  onModeChange: (nextMode: ThemeModePreference) => void;
 }
 
 export function BookingAppearanceSection({
@@ -50,8 +65,8 @@ export function BookingAppearanceSection({
   soundAlertsEnabled,
   colorReadability,
   onUpdateDraft,
-  onModeChange,
 }: BookingAppearanceSectionProps) {
+  const currentPalette: PublicPalette = draft.publicPalette ?? 'laikona';
   const colorsReadable =
     colorReadability.lightPassesAA && colorReadability.darkPassesAA;
 
@@ -73,6 +88,52 @@ export function BookingAppearanceSection({
       }
     >
       <VStack gap={4} className="ad-card-body" paddingBlockStart={4}>
+        <VStack gap={2}>
+          <HStack justify="between" align="center" gap={2} wrap="wrap">
+            <Text type="label" weight="semibold">
+              Paleta de tu página pública
+            </Text>
+            <Button
+              label="Ver vista previa"
+              variant="ghost"
+              size="sm"
+              icon={<ExternalLink size={14} aria-hidden="true" />}
+              href={`/?paleta=${currentPalette}`}
+              target="_blank"
+              rel="noopener"
+            />
+          </HStack>
+          <Grid columns={{ minWidth: 180, max: 2 }} gap={3}>
+            {PALETTE_OPTIONS.map((option) => (
+              <SelectableCard
+                key={option.value}
+                label={option.label}
+                padding={3}
+                isSelected={currentPalette === option.value}
+                onChange={() => onUpdateDraft({ publicPalette: option.value })}
+              >
+                <VStack gap={2}>
+                  <Card padding={2} className={`ad-palette-preview ad-palette-preview--${option.value}`}>
+                    <HStack justify="between" align="center" gap={2}>
+                      <Text className="ad-palette-wordmark">LAIKONA</Text>
+                      <Text className="ad-palette-cta">Agendar</Text>
+                    </HStack>
+                  </Card>
+                  <Text weight="semibold" size="sm">
+                    {option.label}
+                  </Text>
+                  <Text type="supporting" color="secondary">
+                    {option.description}
+                  </Text>
+                </VStack>
+              </SelectableCard>
+            ))}
+          </Grid>
+          <Text type="supporting" color="secondary">
+            La paleta cambia la landing, la reserva y la página de cada cita. Tu panel conserva su color.
+          </Text>
+        </VStack>
+
         <ColorSwatchPicker
           presets={ACCENT_PRESETS}
           selectedLight={draft.brandAccentLight}
@@ -104,7 +165,7 @@ export function BookingAppearanceSection({
                 tone={colorReadability.lightPassesAA ? 'success' : 'warning'}
                 label={
                   colorReadability.lightPassesAA
-                    ? 'Se lee súper bien'
+                    ? 'Se lee bien'
                     : 'Color muy claro, cuesta leer'
                 }
               />
@@ -136,7 +197,7 @@ export function BookingAppearanceSection({
                 tone={colorReadability.darkPassesAA ? 'success' : 'warning'}
                 label={
                   colorReadability.darkPassesAA
-                    ? 'Se lee súper bien'
+                    ? 'Se lee bien'
                     : 'Color muy claro, cuesta leer'
                 }
               />
@@ -170,11 +231,6 @@ export function BookingAppearanceSection({
         ) : null}
 
         <AppearanceWireframePicker
-          publicMode={draft.defaultPublicMode}
-          onPublicModeChange={(nextMode) => {
-            onUpdateDraft({ defaultPublicMode: nextMode });
-            onModeChange(nextMode);
-          }}
           bookingLayout={draft.defaultBookingLayout}
           onBookingLayoutChange={(nextLayout) =>
             onUpdateDraft({ defaultBookingLayout: nextLayout })

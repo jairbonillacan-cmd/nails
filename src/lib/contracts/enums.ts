@@ -19,6 +19,8 @@ export const ThemeModePreferenceSchema = z.enum(['light', 'dark', 'system']);
 
 export const CornerStyleSchema = z.enum(['sharp', 'soft', 'rounded', 'pill']);
 
+export const PublicPaletteSchema = z.enum(['laikona', 'monochrome']);
+
 export const PaymentModeSchema = z.enum([
   'none',
   'manual_transfer',

@@ -205,7 +205,7 @@ export function useManageBookingActions({
       }
       applyPayload(res.data);
       proofSavedFeedback.show('Comprobante guardado ✓');
-      setActionSuccess('¡Listo! Recibimos tu comprobante de anticipo. En breve te confirmamos.');
+      setActionSuccess('Recibimos tu comprobante. Te confirmamos por WhatsApp cuando lo revisemos.');
       return true;
     } catch {
       setActionError('Error de conexión al subir el comprobante. Intenta de nuevo.');
@@ -254,7 +254,7 @@ export function useManageBookingActions({
         setRescheduleReason('');
         setRescheduleOpen(false);
         setActionSuccess(
-          '¡Listo! Tu cita fue reagendada y tus enlaces de calendario y WhatsApp se actualizaron.',
+          'Cambiamos tu cita. El calendario y el link de WhatsApp ya tienen la nueva hora.',
         );
       } catch {
         setActionError('Error de conexión al reagendar. Intenta nuevamente.');
