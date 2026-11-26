@@ -98,8 +98,6 @@ export function OnboardingStepProfile({
         </Text>
         <FilterPillBar
           ariaLabel="Dónde atiendes"
-          mode="segmented"
-          layout="fill"
           value={serviceMode}
           options={SERVICE_MODE_OPTIONS}
           onChange={onChangeServiceMode}

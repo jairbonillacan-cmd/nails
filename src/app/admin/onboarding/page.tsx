@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { LayoutDashboard } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { PageHeader, PageSkeleton } from '@/components/ui';
 import { OnboardingProgressCard } from '@/components/admin/onboarding/OnboardingProgressCard';
@@ -174,15 +173,6 @@ export default function AdminOnboardingPage() {
       <PageHeader
         title="Guía inicial"
         subtitle="Cuatro pasos para dejar listo tu salón."
-        actions={
-          <Button
-            label="Ir al inicio"
-            variant="ghost"
-            size="sm"
-            href="/admin"
-            icon={<LayoutDashboard size={15} aria-hidden="true" />}
-          />
-        }
       />
 
       <OnboardingProgressCard
