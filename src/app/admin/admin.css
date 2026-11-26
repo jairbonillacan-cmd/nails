@@ -3085,6 +3085,11 @@ input.ad-pin-input,
     height: auto;
   }
 
+  .ad-shell a[href].ad-brand-tile {
+    justify-content: center;
+    flex: 0 0 2.75rem;
+  }
+
   .ad-shell [role='tablist'] {
     max-width: 100%;
     overflow-x: auto;
@@ -3159,6 +3164,15 @@ input.ad-pin-input,
 @media (max-width: 47.5rem) {
   .ad-topbar {
     padding: 0.625rem 1rem 0.375rem;
+  }
+
+  .ad-topbar .ad-brand-tile {
+    border-radius: 0.625rem;
+  }
+
+  .ad-topbar .ad-brand-tile-mark {
+    width: 1.25rem;
+    height: 1.25rem;
   }
 
   .ad-topbar-search {
