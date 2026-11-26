@@ -11,7 +11,13 @@ import { Token } from '@astryxdesign/core/Token';
 import { VStack } from '@astryxdesign/core/VStack';
 import { ShieldCheck, Star } from 'lucide-react';
 import { formatDateShortInTimezone } from '@/lib/format';
-import type { PublicReviewDTO } from '@/lib/public-dto';
+import type {
+  PublicReviewDTO,
+  PublicServiceDTO,
+  PublicSettingsDTO,
+} from '@/lib/public-dto';
+import { buildServiceStructuredData } from '@/lib/seo/structured-data';
+import { JsonLdScript } from './seo/JsonLdScript';
 
 interface ServiceReviewsSectionProps {
   studioName: string;
@@ -23,6 +29,10 @@ interface ServiceReviewsSectionProps {
   studioAverage: number | null;
   studioReviewCount: number;
   googleReviewUrl?: string | null;
+  service?: PublicServiceDTO;
+  currency?: PublicSettingsDTO['currency'];
+  siteOrigin?: string;
+  serviceType?: string | null;
 }
 
 const STAR_INDICES = [1, 2, 3, 4, 5] as const;
@@ -48,12 +58,28 @@ export function ServiceReviewsSection({
   studioAverage,
   studioReviewCount,
   googleReviewUrl,
+  service,
+  currency,
+  siteOrigin,
+  serviceType,
 }: ServiceReviewsSectionProps) {
   const hasServiceReviews = serviceReviews.length > 0;
   const visibleReviews = hasServiceReviews
     ? serviceReviews
     : studioReviews.slice(0, 3);
   const safeGoogleReviewUrl = resolveSafeHttpsUrl(googleReviewUrl);
+  const serviceStructuredData =
+    service && !service.isPrivate
+      ? buildServiceStructuredData({
+          siteOrigin,
+          studioName,
+          service,
+          currency,
+          serviceType,
+          serviceReviewsCount: serviceReviews.length,
+          serviceAverageRating: serviceAverage,
+        })
+      : null;
 
   return (
     <VStack
@@ -62,6 +88,7 @@ export function ServiceReviewsSection({
       className="lk-root"
       gap={0}
     >
+      <JsonLdScript id="jsonld-service" data={serviceStructuredData} />
       <Divider />
       <VStack gap={5} className="rb-wrap" paddingBlock={8}>
         <HStack justify="between" align="end" wrap="wrap" gap={3} width="100%">

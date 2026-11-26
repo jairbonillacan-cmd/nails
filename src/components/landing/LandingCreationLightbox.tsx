@@ -110,7 +110,7 @@ export function LandingCreationLightbox({
             <Image
               key={activeCreation.src}
               src={activeCreation.src}
-              alt={`Set ${activeCreation.title} hecho en Laikona`}
+              alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
               width={activeCreation.width}
               height={activeCreation.height}
               sizes={LIGHTBOX_IMAGE_SIZES}

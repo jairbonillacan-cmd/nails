@@ -60,11 +60,37 @@ export async function generateMetadata(): Promise<Metadata> {
   const db = getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
+  const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
+  const title = 'Enlaces rápidos y citas';
+  const description = `Accesos directos de ${settings.name} (${instagramHandle}) en ${cityShort}: agenda tu cita en línea, catálogo de uñas, galería, WhatsApp y ubicación.`;
+  const socialTitle = `${title} · ${settings.name}`;
 
   return {
-    title: 'Links',
-    description: `Accesos directos de ${settings.name} (${instagramHandle}) en Puebla: agenda tu cita en línea, catálogo de servicios, galería, WhatsApp y ubicación.`,
+    title,
+    description,
     alternates: { canonical: '/links' },
+    openGraph: {
+      title: socialTitle,
+      description,
+      url: '/links',
+      siteName: settings.name,
+      locale: 'es_MX',
+      type: 'website',
+      images: [
+        {
+          url: '/opengraph-image',
+          width: 1200,
+          height: 630,
+          alt: `${settings.name} — Enlaces rápidos y citas en ${cityShort}`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: socialTitle,
+      description,
+      images: ['/twitter-image'],
+    },
   };
 }
 

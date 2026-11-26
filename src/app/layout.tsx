@@ -4,6 +4,7 @@ import './globals.css';
 import { defaultThemeSlug } from '@/astryx-themes';
 import { getSnapshot } from '@/lib/repositories/db';
 import { toPublicSettingsDTO, type PublicSettingsDTO } from '@/lib/public-dto';
+import { getSiteMetadataBase } from '@/lib/seo/site-url';
 import {
   DEFAULT_BRAND_ACCENT_DARK,
   DEFAULT_BRAND_ACCENT_LIGHT,
@@ -46,24 +47,46 @@ function resolveInitialThemeName(settings: PublicSettingsDTO): string {
 
 export async function generateMetadata(): Promise<Metadata> {
   const { settings } = getSnapshot();
+  const socialTitle = `${settings.name} — Agenda tu cita en línea`;
   return {
+    metadataBase: getSiteMetadataBase(),
     title: {
       default: `${settings.name} — ${settings.tagline}`,
       template: `%s · ${settings.name}`,
     },
     description: settings.description,
     applicationName: settings.name,
-    icons: { icon: '/brand/laikona-avatar.svg' },
+    icons: {
+      icon: [
+        { url: '/brand/laikona-favicon.ico', sizes: 'any' },
+        { url: '/brand/laikona-app-192.png', type: 'image/png', sizes: '192x192' },
+        { url: '/brand/laikona-avatar.svg', type: 'image/svg+xml' },
+      ],
+      apple: [
+        {
+          url: '/brand/laikona-apple-touch.png',
+          sizes: '180x180',
+          type: 'image/png',
+        },
+      ],
+    },
     appleWebApp: {
       capable: true,
       title: settings.name,
       statusBarStyle: 'default',
     },
     openGraph: {
-      title: `${settings.name} — Agenda tu cita en línea`,
+      title: socialTitle,
       description: settings.description,
+      url: '/',
+      siteName: settings.name,
       type: 'website',
       locale: 'es_MX',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: socialTitle,
+      description: settings.description,
     },
   };
 }

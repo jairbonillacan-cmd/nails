@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getBookingByToken, getSnapshot } from '@/lib/repositories/db';
 import { buildCalendarAddLinks } from '@/lib/ics';
@@ -14,6 +15,13 @@ import {
 import { ManageBookingView } from '@/components/ManageBookingView';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Tu cita',
+  description:
+    'Consulta, reagenda o gestiona tu cita en LAIKONA NAILS desde tu enlace personal.',
+  robots: { index: false, follow: false },
+};
 
 export default async function ManageBookingPage({
   params,

@@ -56,6 +56,7 @@ export function LandingCreations({
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesWhite}
         alt=""
+        aria-hidden="true"
         width={488}
         height={572}
         loading="lazy"
@@ -66,6 +67,7 @@ export function LandingCreations({
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesWhite}
         alt=""
+        aria-hidden="true"
         width={366}
         height={429}
         loading="lazy"
@@ -100,7 +102,7 @@ export function LandingCreations({
                 >
                   <Image
                     src={creation.src}
-                    alt={`Set ${creation.title} hecho en Laikona`}
+                    alt={`Set de uñas ${creation.title} (${creation.styleTag}) en LAIKONA NAILS Puebla`}
                     width={creation.width}
                     height={creation.height}
                     sizes={galleryTileSizes(index)}
@@ -143,6 +145,7 @@ export function LandingCreations({
               <img
                 src={LANDING_ASSETS.iconInstagramLight}
                 alt=""
+                aria-hidden="true"
                 width={20}
                 height={20}
                 loading="lazy"

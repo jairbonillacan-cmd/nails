@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { VStack } from '@astryxdesign/core/VStack';
-import { getDateKeyInTimezone } from '@/lib/format';
+import { formatDuration, getDateKeyInTimezone } from '@/lib/format';
 import {
   toPublicReviewDTO,
   toPublicServiceDTO,
@@ -9,7 +9,9 @@ import {
   type PublicReviewDTO,
 } from '@/lib/public-dto';
 import { getSnapshot } from '@/lib/repositories/db';
+import { getSiteOrigin } from '@/lib/seo/site-url';
 import type { BookingLayoutView } from '@/lib/types';
+import { formatServicePrice } from '@/components/booking/bookingHelpers';
 import { BookingWidget } from '@/components/BookingWidget';
 import { ServiceReviewsSection } from '@/components/ServiceReviewsSection';
 
@@ -55,24 +57,60 @@ export async function generateMetadata({
   const { slug } = await params;
   const db = getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
+  const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const service = db.services.find(
     (entry) => entry.isActive && entry.slug === slug,
   );
 
   if (!service) {
     return {
-      title: 'Reservar cita',
-      description: `Agenda tu cita en tiempo real en ${settings.name}.`,
+      title: 'Reservar cita en línea',
+      description: `Agenda tu cita de uñas en tiempo real en ${settings.name}, ${cityShort}.`,
+      robots: { index: false, follow: false },
     };
   }
 
+  if (service.isPrivate) {
+    return {
+      title: 'Reservar cita privada',
+      description: `Agenda tu cita en tiempo real en ${settings.name}.`,
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const publicService = toPublicServiceDTO(service);
+  const durationLabel = formatDuration(publicService.durationMinutes);
+  const priceLabel = formatServicePrice(
+    publicService.priceCents,
+    publicService.isStartingPrice,
+    settings.currency,
+  );
+  const canonicalPath = `/reservar/${encodeURIComponent(publicService.slug)}`;
+  const title = `Reservar ${publicService.name} en ${cityShort}`;
+  const serviceDescription = publicService.description.trim().replace(/\.+$/, '');
+  const summaryPrefix = `${publicService.name} (${durationLabel}, ${priceLabel} ${settings.currency}) en ${settings.name}, ${cityShort}.`;
+  const description = serviceDescription
+    ? `${summaryPrefix} ${serviceDescription}. Agenda en línea con horarios en vivo.`
+    : `${summaryPrefix} Consulta horarios en vivo y agenda tu cita en línea.`;
+  const socialTitle = `${title} · ${settings.name}`;
+
   return {
-    title: `Reservar ${service.name}`,
-    description: `${service.description} Agenda ${service.name} en tiempo real en ${settings.name}.`,
-    alternates: { canonical: `/reservar/${encodeURIComponent(service.slug)}` },
-    ...(service.isPrivate
-      ? { robots: { index: false, follow: false } }
-      : {}),
+    title,
+    description,
+    alternates: { canonical: canonicalPath },
+    openGraph: {
+      title: socialTitle,
+      description,
+      url: canonicalPath,
+      siteName: settings.name,
+      locale: 'es_MX',
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: socialTitle,
+      description,
+    },
   };
 }
 
@@ -115,6 +153,10 @@ export default async function ReservarServicioPage({
     activeServices.find((service) => service.slug === resolvedSlug) ??
     activeServices[0] ??
     null;
+  const selectedCategoryName = selectedService
+    ? db.categories.find((cat) => cat.id === selectedService.categoryId)?.name
+    : undefined;
+  const siteOrigin = getSiteOrigin();
 
   const bookingById = new Map(
     db.bookings.map((booking) => [booking.id, booking]),
@@ -195,6 +237,10 @@ export default async function ReservarServicioPage({
           studioAverage={computeAverageRating(studioReviews)}
           studioReviewCount={studioReviews.length}
           googleReviewUrl={settings.googleReviewUrl}
+          service={selectedService}
+          currency={settings.currency}
+          siteOrigin={siteOrigin}
+          serviceType={selectedCategoryName}
         />
       ) : null}
     </VStack>

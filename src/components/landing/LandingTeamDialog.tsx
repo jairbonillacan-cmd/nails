@@ -69,7 +69,7 @@ export function LandingTeamDialog({
             {isOptimizableLocalRasterImage(avatarSrc) ? (
               <Image
                 src={avatarSrc}
-                alt=""
+                alt={`Retrato de ${member.name}`}
                 width={56}
                 height={56}
                 sizes="3.5rem"
@@ -84,7 +84,7 @@ export function LandingTeamDialog({
             ) : (
               <img
                 src={avatarSrc}
-                alt=""
+                alt={`Retrato de ${member.name}`}
                 width={56}
                 height={56}
                 loading="eager"

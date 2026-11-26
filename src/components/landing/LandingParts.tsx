@@ -48,6 +48,7 @@ export function SectionHeading({
         className="lk-draw"
         src={stroke}
         alt=""
+        aria-hidden="true"
         width={460}
         height={79}
         loading="lazy"

@@ -14,6 +14,11 @@ import type {
   PublicStaffDTO,
 } from '@/lib/public-dto';
 import { buildWhatsAppLink, formatCurrency } from '@/lib/format';
+import {
+  buildHomeStructuredData,
+  buildSalonFaqs,
+} from '@/lib/seo/structured-data';
+import { JsonLdScript } from './seo/JsonLdScript';
 import { useSalonAppearance } from './SalonThemeProvider';
 import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
 import { LandingNav } from './landing/LandingNav';
@@ -22,6 +27,7 @@ import { LandingCreations } from './landing/LandingCreations';
 import { LandingReviews } from './landing/LandingReviews';
 import { LandingTeam } from './landing/LandingTeam';
 import { LandingConnect } from './landing/LandingConnect';
+import { LandingFaq } from './landing/LandingFaq';
 import { LandingVisit } from './landing/LandingVisit';
 import { LandingFooter } from './landing/LandingFooter';
 
@@ -33,6 +39,7 @@ interface LandingViewProps {
   staff: PublicStaffDTO[];
   reviews: PublicReviewDTO[];
   reviewsSummary: { count: number; average: number };
+  siteOrigin?: string;
 }
 
 export function LandingView({
@@ -43,6 +50,7 @@ export function LandingView({
   staff,
   reviews,
   reviewsSummary,
+  siteOrigin,
 }: LandingViewProps) {
   const { settings: liveSettings } = useSalonAppearance();
   const settings = liveSettings ?? initialSettings;
@@ -65,6 +73,13 @@ export function LandingView({
   ];
   const ratingLabel = reviewsSummary.average.toFixed(1);
   const reviewUrl = settings.googleReviewUrl?.trim() || settings.mapsUrl;
+  const salonFaqs = buildSalonFaqs(settings);
+  const homeStructuredData = buildHomeStructuredData({
+    siteOrigin,
+    settings,
+    services,
+    reviewsSummary,
+  });
 
   const heroCommon = {
     alt: '',
@@ -91,6 +106,7 @@ export function LandingView({
 
   return (
     <VStack as="main" gap={0} className="lk-root">
+      <JsonLdScript id="jsonld-home" data={homeStructuredData} />
       <VStack className="lk-marquee" aria-label={marquee.join('. ')}>
         <HStack className="lk-marquee-track" aria-hidden="true">
           {[...marquee, ...marquee, ...marquee, ...marquee].map((item, index) => (
@@ -174,6 +190,7 @@ export function LandingView({
       <LandingReviews reviews={reviews} summary={reviewsSummary} reviewUrl={reviewUrl} />
       <LandingTeam staff={staff} services={services} currency={settings.currency} />
       <LandingConnect instagramUrl={instagramUrl} instagramHandle={instagramHandle} />
+      <LandingFaq faqs={salonFaqs} whatsappUrl={whatsappUrl} />
       <LandingVisit
         address={settings.address}
         mapsUrl={settings.mapsUrl}

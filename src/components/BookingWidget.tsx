@@ -18,7 +18,9 @@ import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
+import { buildBookingBreadcrumbStructuredData } from '@/lib/seo/structured-data';
 import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
+import { JsonLdScript } from './seo/JsonLdScript';
 import { BookingHeader, BookingHero, STEP_LABELS } from './booking/BookingChrome';
 import { BookingConflictBanner } from './booking/BookingConflictBanner';
 import { BookingStepRouter } from './booking/BookingStepRouter';
@@ -53,12 +55,23 @@ interface BookingWidgetProps {
   initialLayout?: BookingLayoutView;
   initialSlot?: string;
   initialInspoNote?: string;
+  siteOrigin?: string;
+  emitBookingBreadcrumb?: boolean;
 }
 
 const FORM_ID = 'rb-details-form';
 
 export function BookingWidget(props: BookingWidgetProps) {
-  const { settings, categories, services, staff, initialTodayKey, initialSlot } = props;
+  const {
+    settings,
+    categories,
+    services,
+    staff,
+    initialTodayKey,
+    initialSlot,
+    siteOrigin,
+    emitBookingBreadcrumb,
+  } = props;
   const router = useRouter();
   const searchParams = useSearchParams();
   const isEmbed = searchParams.get('embed') === '1';
@@ -241,8 +254,14 @@ export function BookingWidget(props: BookingWidgetProps) {
     onNext: handleNext,
   };
 
+  const bookingBreadcrumbData =
+    emitBookingBreadcrumb && !isEmbed
+      ? buildBookingBreadcrumbStructuredData({ siteOrigin })
+      : null;
+
   return (
     <VStack className={isEmbed ? 'lk-root rb-root rb-embed' : 'lk-root rb-root'}>
+      <JsonLdScript id="jsonld-reservar" data={bookingBreadcrumbData} />
       <p role="status" aria-live="polite" aria-atomic="true" className="rb-sr-only">
         {liveAnnouncement}
       </p>

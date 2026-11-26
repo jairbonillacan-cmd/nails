@@ -19,6 +19,7 @@ const EXPLORE_LINKS = [
   { label: 'Menú', href: '#servicios' },
   { label: 'Creaciones', href: '#galeria' },
   { label: 'Equipo', href: '#equipo' },
+  { label: 'Preguntas', href: '#preguntas' },
   { label: 'Visítanos', href: '#visitanos' },
 ] as const;
 
@@ -37,6 +38,7 @@ export function LandingFooter({
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesPorcelain}
         alt=""
+        aria-hidden="true"
         width={488}
         height={572}
         loading="lazy"
@@ -58,6 +60,7 @@ export function LandingFooter({
             <img
               src={LANDING_ASSETS.curvePorcelain}
               alt=""
+              aria-hidden="true"
               width={200}
               height={55}
               loading="lazy"
@@ -106,6 +109,7 @@ export function LandingFooter({
               <img
                 src={LANDING_ASSETS.iconInstagramLight}
                 alt=""
+                aria-hidden="true"
                 width={18}
                 height={18}
                 loading="lazy"

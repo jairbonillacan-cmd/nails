@@ -130,6 +130,58 @@ test('astryx-boundaries: catches raw div/span and inline hex/px, allows Astryx t
   assert.deepEqual(rulesOf('src/app/layout.tsx', badUi), []);
 });
 
+test('astryx-boundaries: exempts only Next.js Satori opengraph/twitter image routes while preserving other guardrails', () => {
+  const satoriCard = [
+    'import { ImageResponse } from "next/og";',
+    'export default function Image() {',
+    '  return new ImageResponse(<div style={{ background: "#81131e", padding: "48px" }}><span>LAIKONA</span></div>);',
+    '}',
+  ].join('\n');
+
+  const exemptPaths = [
+    'src/app/opengraph-image.tsx',
+    'src/app/twitter-image.tsx',
+    'src/app/reservar/[slug]/opengraph-image.tsx',
+    'src/app/reservar/[slug]/twitter-image.tsx',
+  ];
+
+  for (const rel of exemptPaths) {
+    assert.deepEqual(rulesOf(rel, satoriCard), []);
+  }
+
+  const nonExemptPaths = [
+    'src/app/page.tsx',
+    'src/app/reservar/[slug]/page.tsx',
+    'src/app/custom-opengraph-image.tsx',
+    'src/components/opengraph-image.tsx',
+  ];
+
+  for (const rel of nonExemptPaths) {
+    assert.deepEqual(rulesOf(rel, satoriCard), [
+      'astryx-boundaries',
+      'astryx-boundaries',
+      'astryx-boundaries',
+      'astryx-boundaries',
+    ]);
+  }
+
+  const satoriWithViolations = [
+    '// forbidden comment',
+    'export default function Image(data: any) {',
+    '  return <div style={{ color: "#81131e" }}>{data.commissionPercent}</div>;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    rulesOf('src/app/reservar/[slug]/opengraph-image.tsx', satoriWithViolations),
+    ['no-comments', 'no-type-escapes', 'no-internal-dto-in-public-ui'],
+  );
+  assert.deepEqual(
+    rulesOf('src/app/opengraph-image.tsx', satoriWithViolations),
+    ['no-comments', 'no-type-escapes', 'no-internal-dto-in-public-ui'],
+  );
+});
+
 test('dependency-graph: enforces pure domain boundaries for booking/, public-dto.ts, sanitize.ts, availability/, loyalty/, payments/, notifications/, qr.ts, and contrast.ts', () => {
   const forbiddenPaths = [
     'src/lib/contracts/bookings.ts',

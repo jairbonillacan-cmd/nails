@@ -346,16 +346,16 @@ export interface UseCopyToClipboardResult {
 
 | Dimension | Metric | Wave 1 Baseline | Target (End of Wave 6) | Wave 2 | Wave 3 | Wave 4 | Wave 5 | Wave 6 Final |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| **Monoliths** | UI/API prod files `> 400` LOC (excl. DB repos/seed/types/qr) | 38 files (50 total) | `0` target UI/API monoliths `> 400` LOC | **0 UI/API** (14 `src/lib/` total) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Atomic UI** | Components in `src/components/ui/` | 0 (6 partial in `AdminConfigPrimitives`) | 10 Astryx-native modules + `useCopyToClipboard` | **11 modules** + `useCopyToClipboard` (`AdminConfigPrimitives` deleted) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Contracts** | Unvalidated admin POST routes (`team`, `operations`) | 2 unvalidated | 0 unvalidated (`src/lib/contracts/` pure domain) | **0 unvalidated** (9 pure modules in `src/lib/contracts/`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **CSS** | `globals.css` / `admin.css` raw KB (dead selectors) | 62.1 / 45.2 KB (9 dead) | Route-scoped `globals.css <= 20 KB` (0 dead) | _Wave 3_ (62.1 / 45.2 KB) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Media** | `public/` total MB (orphaned MB) | 15.82 MB (12.89 MB orphaned) | `<= 1.8 MB` (0 MB orphaned) | _Wave 3_ (15.82 MB) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Bundle** | `next/dynamic` boundaries / `React.memo` usages | 11 / 0 | `>= 22` / `>= 5` hot components | 12 / 0 (_Wave 4_) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **A11y** | High contrast defects / Mobile `<44px` targets (`/` & `/admin/reportes`) | 1 HIGH / 22 & 5 (`20px` seg) | 0 HIGH / `0` primary CTA/control `<44px` | `/admin/reportes` period **`44px`** (`FilterPillBar`); `/` _Wave 5_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **SEO** | Routes with `og:image` + `twitter:image` + `metadataBase` / Private routes with `noindex` | 0% / 1 of 3 groups (`/mis-citas` only) | 100% public routes / 100% private routes (`/admin*`, `/cita/*`, `/mis-citas`) | _Wave 5/6_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Security** | Open HIGH / MEDIUM findings (`SEC-01`..`SEC-07`) | 4 HIGH, 3 MEDIUM | **0 HIGH, 0 MEDIUM** (verified by tests + guardrails) | **0 HIGH, 0 MEDIUM** (`SEC-01`..`SEC-07` closed; `SEC-08` LOW open) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| **Gatekeeper** | `npm run verify` errors / warnings | 0 / 0 | 0 / 0 | **0 / 0** (314/314 Vitest, 25/25 doctor, 0 knip) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| **Monoliths** | UI/API prod files `> 400` LOC (excl. DB repos/seed/types/qr) | 38 files (50 total) | `0` target UI/API monoliths `> 400` LOC | **0 UI/API** (14 `src/lib/` total) | Unchanged (0 UI/API) | _TBD_ | _TBD_ | _TBD_ |
+| **Atomic UI** | Components in `src/components/ui/` | 0 (6 partial in `AdminConfigPrimitives`) | 10 Astryx-native modules + `useCopyToClipboard` | **11 modules** + `useCopyToClipboard` (`AdminConfigPrimitives` deleted) | Unchanged (11 modules) | _TBD_ | _TBD_ | _TBD_ |
+| **Contracts** | Unvalidated admin POST routes (`team`, `operations`) | 2 unvalidated | 0 unvalidated (`src/lib/contracts/` pure domain) | **0 unvalidated** (9 pure modules in `src/lib/contracts/`) | Unchanged (0 unvalidated) | _TBD_ | _TBD_ | _TBD_ |
+| **CSS** | `globals.css` / `admin.css` raw KB (dead selectors) | 62.1 / 45.2 KB (9 dead) | Route-scoped `globals.css <= 20 KB` (0 dead) | _Wave 3_ (62.1 / 45.2 KB) | _Deferred to Perf Wave_ | _TBD_ | _TBD_ | _TBD_ |
+| **Media** | `public/` total MB (orphaned MB) | 15.82 MB (12.89 MB orphaned) | `<= 1.8 MB` (0 MB orphaned) | _Wave 3_ (15.82 MB) | _Deferred to Perf Wave_ (PWA icons wired in `manifest.ts`/`layout.tsx`) | _TBD_ | _TBD_ | _TBD_ |
+| **Bundle** | `next/dynamic` boundaries / `React.memo` usages | 11 / 0 | `>= 22` / `>= 5` hot components | 12 / 0 (_Wave 4_) | Unchanged (12 / 0) | _TBD_ | _TBD_ | _TBD_ |
+| **A11y** | High contrast defects / Mobile `<44px` targets (`/` & `/admin/reportes`) | 1 HIGH / 22 & 5 (`20px` seg) | 0 HIGH / `0` primary CTA/control `<44px` | `/admin/reportes` period **`44px`** (`FilterPillBar`); `/` _Wave 5_ | `/` portfolio `alt` (4/4 fixed) + decorative `aria-hidden` + `#preguntas` accordion; CTA/hamburger _Wave 5_ | _TBD_ | _TBD_ | _TBD_ |
+| **SEO** | Routes with `og:image` + `twitter:image` + `metadataBase` / Private routes with `noindex` | 0% / 1 of 3 groups (`/mis-citas` only) | 100% public routes / 100% private routes (`/admin*`, `/cita/*`, `/mis-citas`) | _Wave 3_ | **100% public** (root + per-service OG/Twitter PNGs, `metadataBase`, HTTPS `robots`/`sitemap`, `@graph` JSON-LD + FAQ) / **3 of 3 private** (`/admin*`, `/cita/*`, `/mis-citas` `noindex, nofollow`) | _TBD_ | _TBD_ | _TBD_ |
+| **Security** | Open HIGH / MEDIUM findings (`SEC-01`..`SEC-07`) | 4 HIGH, 3 MEDIUM | **0 HIGH, 0 MEDIUM** (verified by tests + guardrails) | **0 HIGH, 0 MEDIUM** (`SEC-01`..`SEC-07` closed; `SEC-08` LOW open) | **0 HIGH, 0 MEDIUM** (private services excluded from sitemap/OG/JSON-LD; XSS-escaped JSON-LD; 0 PII/commission leaks) | _TBD_ | _TBD_ | _TBD_ |
+| **Gatekeeper** | `npm run verify` errors / warnings | 0 / 0 | 0 / 0 | **0 / 0** (314/314 Vitest, 25/25 doctor, 0 knip) | **0 / 0** (330/330 Vitest across 51 files, 22/22 guardrail tests, 25/25 doctor, 0 knip) | _TBD_ | _TBD_ | _TBD_ |
 
 ### 9.3 Security Remediation Checklist (Tracked Across Waves 2–6)
 - [x] **SEC-01 (HIGH):** Sanitize `POST /api/bookings` response (`toPublicStaffDTO`, `toPublicServiceDTO`, strip `internalNotes` & `client.notes`) + test (`Wave 2`).
@@ -366,3 +366,25 @@ export interface UseCopyToClipboardResult {
 - [x] **SEC-06 (MEDIUM):** Add rate limiting to `/api/admin/session`, Owner PIN endpoints, `/api/bookings/manage/[token]`, and `/api/availability` + test (`Wave 2`).
 - [x] **SEC-07 (MEDIUM):** Reject arbitrary external `http(s)://` URLs in public `persistBookingMediaField` calls + test (`Wave 2`).
 - [ ] **SEC-08 (LOW):** Tighten CSP `img-src` / `connect-src` origins in `next.config.ts`.
+
+### 9.4 Wave 3 Verification Notes (Dynamic OG/Twitter, Local Puebla JSON-LD, FAQ, Canonicals & Private `noindex`)
+- **Dynamic Social Cards (`1200×630` PNG, edge-safe Satori `ImageResponse`):**
+  - `GET /opengraph-image` & `GET /twitter-image`: HTTP `200`, `image/png`, **91.91 KB** (`94,113` B), valid PNG signature.
+  - `GET /reservar/rubber/opengraph-image` & `GET /reservar/rubber/twitter-image`: HTTP `200`, `image/png`, **105.33 KB** (`107,862` B), per-service pricing/duration/category card; private or missing slugs fall back to generic studio booking card without leaking service details.
+  - Narrow Satori guardrail exemption added for `/(?:opengraph|twitter)-image\.tsx$/` in `scripts/check-guardrails.mjs` (still enforces `no-comments`, `no-type-escapes`, `no-product-effects`, and `no-internal-dto-in-public-ui`), covered by `22/22` guardrail tests.
+- **Technical SEO, Canonicals, Crawlability & Icons (`src/lib/seo/site-url.ts`):**
+  - `metadataBase` resolves to validated public origin (`https://laikonanails.com` fallback, stripping loopback/localhost).
+  - `GET /robots.txt`: HTTP `200`, `Sitemap: https://laikonanails.com/sitemap.xml` (zero `localhost:3000`), disallows `/admin`, `/admin/`, `/api/`, `/cita/`, `/mis-citas`.
+  - `GET /sitemap.xml`: HTTP `200`, 13 absolute `https://laikonanails.com` URLs (zero `localhost:3000`, excludes `isPrivate` services).
+  - `GET /manifest.webmanifest` & `layout.tsx` wire verified PNG/ICO icons (`laikona-app-192.png`, `laikona-app-512.png`, `laikona-apple-touch.png`, `laikona-favicon.ico`).
+  - Verified live SSR + Chromium (`1440×900` & `390×844`) across `/`, `/reservar`, `/reservar/rubber`, `/links`, `/aviso-de-privacidad`: 100% absolute canonicals, `og:image`, `twitter:image`, and `twitter:card="summary_large_image"` (patched explicit `openGraph.images`/`twitter.images` on `/reservar`, `/links`, `/aviso-de-privacidad` after Next.js segment merge check).
+- **Rich Structured Data (`src/lib/seo/structured-data.ts`, XSS-escaped via `serializeJsonLd`):**
+  - `/`: single `@graph` JSON-LD block containing `["NailSalon", "BeautySalon"]` (Puebla `PostalAddress`, `GeoCoordinates`, `OpeningHoursSpecification`, 9-service public `OfferCatalog`, `AggregateRating`), `WebSite`, and `FAQPage` (6 Q&As synced 1:1 with visible FAQ) — zero duplicate `NailSalon` blocks.
+  - `/reservar`: `BreadcrumbList` (`Inicio` -> `Reservar`).
+  - `/reservar/rubber`: `Service` + `Offer` (MXN `InStock`) + `AggregateRating` + 3-level `BreadcrumbList`; suppressed if `isPrivate`.
+- **Visible Editorial FAQ (`#preguntas`) & Image/Heading Audit:**
+  - `LandingFaq.tsx` (100% Astryx `CollapsibleGroup`/`Collapsible` accordion) verified live on desktop (`1440×900`) and mobile (`390×844`): opens/closes cleanly, `0px` horizontal overflow, `0` console/page/network errors.
+  - Fixed all 4 missing portfolio `alt` texts in `LandingConnect.tsx` and marked decorative strokes/watermarks `aria-hidden="true"`.
+- **Private Route `noindex, nofollow` Enforcement:**
+  - Verified `<meta name="robots" content="noindex, nofollow">` live in SSR HTML and Chromium DOM on `/cita/demo-token-sofia-1042`, `/mis-citas`, and `/admin/login` (inherited from Server Component `src/app/admin/layout.tsx`).
+  - Confirmed zero `commissionPercent` or `ownerPinHash` strings in SSR HTML and hydrated DOM across all 8 verified routes.

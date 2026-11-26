@@ -42,6 +42,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
         className="lk-watermark"
         src={LANDING_ASSETS.cherriesWhite}
         alt=""
+        aria-hidden="true"
         width={488}
         height={572}
         loading="lazy"
@@ -78,7 +79,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                     <Image
                       className="lk-artist-photo"
                       src={avatarSrc}
-                      alt=""
+                      alt={`Retrato de ${person.name}, ${person.roleTitle} en LAIKONA NAILS`}
                       width={220}
                       height={220}
                       sizes="(max-width: 47.5rem) 60vw, 13.75rem"
@@ -89,7 +90,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                     <img
                       className="lk-artist-photo"
                       src={avatarSrc}
-                      alt=""
+                      alt={`Retrato de ${person.name}, ${person.roleTitle} en LAIKONA NAILS`}
                       width={220}
                       height={220}
                       loading="lazy"

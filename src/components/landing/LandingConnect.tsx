@@ -21,6 +21,7 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
             className="lk-pop"
             src={LANDING_ASSETS.cherriesCereza}
             alt=""
+            aria-hidden="true"
             width={52}
             height={61}
             loading="lazy"
@@ -39,11 +40,11 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               href={instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Ver ${instagramHandle} en Instagram`}
+              aria-label={`Ver diseño French minimal en Instagram de ${instagramHandle}`}
             >
               <Image
                 src={leftTop}
-                alt=""
+                alt="Diseño de uñas French minimal con base Rubber hecho en LAIKONA NAILS Puebla"
                 width={400}
                 height={500}
                 sizes="(max-width: 47.5rem) 46vw, 24vw"
@@ -57,11 +58,11 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               href={instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Ver ${instagramHandle} en Instagram`}
+              aria-label={`Ver diseño Milky almendra en Instagram de ${instagramHandle}`}
             >
               <Image
                 src={leftBottom}
-                alt=""
+                alt="Set de uñas Milky almendra en Softgel natural de LAIKONA NAILS en Puebla"
                 width={400}
                 height={400}
                 sizes="(max-width: 47.5rem) 46vw, 24vw"
@@ -88,6 +89,7 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               <img
                 src={LANDING_ASSETS.cherriesWhite}
                 alt=""
+                aria-hidden="true"
                 width={64}
                 height={75}
                 loading="lazy"
@@ -109,6 +111,7 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               <img
                 src={LANDING_ASSETS.strokePorcelain}
                 alt=""
+                aria-hidden="true"
                 width={240}
                 height={41}
                 loading="lazy"
@@ -135,6 +138,7 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
                 <img
                   src={LANDING_ASSETS.iconInstagram}
                   alt=""
+                  aria-hidden="true"
                   width={20}
                   height={20}
                   loading="lazy"
@@ -152,11 +156,11 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               href={instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Ver ${instagramHandle} en Instagram`}
+              aria-label={`Ver diseño Nude brillante en Instagram de ${instagramHandle}`}
             >
               <Image
                 src={rightTop}
-                alt=""
+                alt="Manicure Nude brillante con nivelación Rubber de LAIKONA NAILS en Puebla"
                 width={400}
                 height={400}
                 sizes="(max-width: 47.5rem) 46vw, 24vw"
@@ -170,11 +174,11 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               href={instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Ver ${instagramHandle} en Instagram`}
+              aria-label={`Ver diseño Acabado cristal en Instagram de ${instagramHandle}`}
             >
               <Image
                 src={rightBottom}
-                alt=""
+                alt="Uñas de acrílico escultural con acabado cristal hechas en LAIKONA NAILS Puebla"
                 width={400}
                 height={500}
                 sizes="(max-width: 47.5rem) 46vw, 24vw"

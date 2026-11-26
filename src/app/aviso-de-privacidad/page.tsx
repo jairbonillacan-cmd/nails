@@ -26,11 +26,36 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata(): Promise<Metadata> {
   const db = getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
+  const title = 'Aviso de Privacidad';
+  const description = `Aviso de Privacidad Integral de ${settings.name} conforme a la LFPDPPP en Puebla, México. Consulta finalidades, conservación y ejercicio de derechos ARCO.`;
+  const socialTitle = `${title} · ${settings.name}`;
 
   return {
-    title: 'Aviso de Privacidad',
-    description: `Aviso de Privacidad Integral de ${settings.name} conforme a la LFPDPPP en Puebla, México. Consulta finalidades, conservación y ejercicio de derechos ARCO.`,
+    title,
+    description,
     alternates: { canonical: '/aviso-de-privacidad' },
+    openGraph: {
+      title: socialTitle,
+      description,
+      url: '/aviso-de-privacidad',
+      siteName: settings.name,
+      locale: 'es_MX',
+      type: 'website',
+      images: [
+        {
+          url: '/opengraph-image',
+          width: 1200,
+          height: 630,
+          alt: socialTitle,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: socialTitle,
+      description,
+      images: ['/twitter-image'],
+    },
   };
 }
 

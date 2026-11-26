@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { getSnapshot } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {
@@ -5,10 +6,45 @@ import {
   toPublicSettingsDTO,
   toPublicStaffDTO,
 } from '@/lib/public-dto';
+import { getSiteOrigin } from '@/lib/seo/site-url';
 import type { BookingLayoutView } from '@/lib/types';
 import { BookingWidget } from '@/components/BookingWidget';
 
 export const dynamic = 'force-dynamic';
+
+const RESERVAR_TITLE = 'Reservar cita en línea';
+const RESERVAR_DESCRIPTION =
+  'Agenda tu cita de manicure, rubber, acrílico, softgel o pedicure en Puebla. Consulta horarios en vivo, elige especialista y aparta en LAIKONA NAILS.';
+const RESERVAR_OG_ALT =
+  'LAIKONA NAILS — Reserva tu cita de manicure, rubber y nail art en Puebla';
+
+export const metadata: Metadata = {
+  title: RESERVAR_TITLE,
+  description: RESERVAR_DESCRIPTION,
+  alternates: { canonical: '/reservar' },
+  openGraph: {
+    title: `${RESERVAR_TITLE} · LAIKONA NAILS`,
+    description: RESERVAR_DESCRIPTION,
+    url: '/reservar',
+    siteName: 'LAIKONA NAILS',
+    locale: 'es_MX',
+    type: 'website',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: RESERVAR_OG_ALT,
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${RESERVAR_TITLE} · LAIKONA NAILS`,
+    description: RESERVAR_DESCRIPTION,
+    images: ['/twitter-image'],
+  },
+};
 
 interface ReservarSearchParams {
   servicio?: string;
@@ -54,6 +90,7 @@ export default async function ReservarPage({
 }) {
   const params = await searchParams;
   const db = getSnapshot();
+  const siteOrigin = getSiteOrigin();
   const initialTodayKey = getDateKeyInTimezone(
     new Date(),
     db.settings.timezone || 'America/Mexico_City',
@@ -92,6 +129,8 @@ export default async function ReservarPage({
       initialLayout={parseLayoutParam(params.layout)}
       initialSlot={params.slot?.trim() || undefined}
       initialInspoNote={params.inspo?.trim() || undefined}
+      siteOrigin={siteOrigin}
+      emitBookingBreadcrumb
     />
   );
 }

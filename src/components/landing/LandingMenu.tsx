@@ -65,6 +65,7 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
                     <img
                       src={addonIcon(addon.name)}
                       alt=""
+                      aria-hidden="true"
                       width={30}
                       height={30}
                       loading="lazy"
@@ -98,6 +99,7 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
                     <img
                       src={shape.icon}
                       alt=""
+                      aria-hidden="true"
                       width={26}
                       height={26}
                       loading="lazy"
@@ -135,7 +137,7 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
                         <Image
                           className="lk-thumb"
                           src={photoSrc}
-                          alt=""
+                          alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
                           width={112}
                           height={112}
                           sizes="(max-width: 47.5rem) 5.5rem, 7.5rem"
@@ -147,7 +149,7 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
                         <img
                           className="lk-thumb"
                           src={photoSrc}
-                          alt=""
+                          alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
                           width={112}
                           height={112}
                           loading="lazy"
@@ -177,6 +179,7 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
                             <img
                               src={LANDING_ASSETS.iconClock}
                               alt=""
+                              aria-hidden="true"
                               width={16}
                               height={16}
                               loading="lazy"

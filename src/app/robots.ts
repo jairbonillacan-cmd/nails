@@ -1,16 +1,16 @@
 import type { MetadataRoute } from 'next';
-import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { getSiteOrigin } from '@/lib/seo/site-url';
 
 export const dynamic = 'force-dynamic';
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = getRuntimeIntegrationStatus().appUrl.replace(/\/+$/, '');
+  const origin = getSiteOrigin();
   return {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin/', '/api/', '/cita/'],
+      disallow: ['/admin', '/admin/', '/api/', '/cita/', '/mis-citas'],
     },
-    sitemap: `${baseUrl}/sitemap.xml`,
+    sitemap: `${origin}/sitemap.xml`,
   };
 }

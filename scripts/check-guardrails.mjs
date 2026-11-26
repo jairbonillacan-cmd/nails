@@ -16,6 +16,8 @@ const ASTRYX_BOUNDARY_EXEMPT = new Set([
   'src/app/manifest.ts',
 ]);
 
+const SATORI_OG_IMAGE_RE = /^src\/app\/(?:.+\/)?(?:opengraph|twitter)-image\.tsx$/;
+
 const PURE_DOMAIN_FILES = new Set([
   'src/lib/types.ts',
   'src/lib/format.ts',
@@ -192,11 +194,16 @@ function isProductUiFile(rel) {
   return rel.startsWith('src/app/') || rel.startsWith('src/components/');
 }
 
+function isAstryxBoundaryExempt(rel) {
+  return ASTRYX_BOUNDARY_EXEMPT.has(rel) || SATORI_OG_IMAGE_RE.test(rel);
+}
+
 function isPublicUiDtoBoundaryFile(rel) {
   if (isTestFile(rel)) return false;
   return (
     PUBLIC_UI_DTO_BOUNDARY_FILES.has(rel) ||
-    rel.startsWith('src/app/reservar/')
+    rel.startsWith('src/app/reservar/') ||
+    SATORI_OG_IMAGE_RE.test(rel)
   );
 }
 
@@ -1102,7 +1109,7 @@ export function checkSourceText(rawRel, text) {
 
   const testFile = isTestFile(rel);
   const productUi = isProductUiFile(rel);
-  const checkAstryx = productUi && !ASTRYX_BOUNDARY_EXEMPT.has(rel);
+  const checkAstryx = productUi && !isAstryxBoundaryExempt(rel);
   const pureDomain = isPureDomainFile(rel);
   const inComponents = rel.startsWith('src/components/');
   const inLib = rel.startsWith('src/lib/');
