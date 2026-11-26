@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readClientPortalSession } from '@/lib/auth/client-portal-otp';
 import { ClientPortalSnapshotDTOSchema } from '@/lib/public-dto';
-import { getClientPortalSnapshotByPhone } from '@/lib/repositories/db';
+import { getClientPortalSnapshotByPhoneAsync } from '@/lib/repositories/db';
 
 export async function GET(request: NextRequest) {
   const session = await readClientPortalSession(request);
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const rawSnapshot = getClientPortalSnapshotByPhone(session.phoneE164);
+  const rawSnapshot = await getClientPortalSnapshotByPhoneAsync(session.phoneE164);
   const safeSnapshot = ClientPortalSnapshotDTOSchema.parse(rawSnapshot);
 
   return NextResponse.json(

@@ -9,8 +9,8 @@ import {
 import {
   assignClientPackage,
   cancelClientPackage,
-  listClientPackages,
-  listServicePackages,
+  listClientPackagesAsync,
+  listServicePackagesAsync,
   PolicyError,
   redeemClientPackageSession,
   toggleServicePackage,
@@ -26,8 +26,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId')?.trim() || undefined;
   return NextResponse.json({
-    servicePackages: listServicePackages(),
-    clientPackages: listClientPackages(clientId),
+    servicePackages: await listServicePackagesAsync(),
+    clientPackages: await listClientPackagesAsync(clientId),
   });
 }
 

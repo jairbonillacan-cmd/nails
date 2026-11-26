@@ -317,7 +317,11 @@ export interface SalonRepository {
     retryAfterMs?: number,
   ): Promise<void>;
 
-  updateSalonSettings(patch: Partial<SalonSettings>): Promise<SalonSettings>;
+  updateSalonSettings(
+    patch: Partial<Omit<SalonSettings, 'landingContent'>> & {
+      landingContent?: Partial<SalonSettings['landingContent']>;
+    },
+  ): Promise<SalonSettings>;
   upsertService(
     input: Partial<Service> & {
       name: string;
@@ -365,17 +369,15 @@ export interface SalonRepository {
     input: Omit<GalleryItem, 'id' | 'displayOrder'> & { id?: string },
   ): Promise<GalleryItem>;
   deleteGalleryItem(id: string): Promise<void>;
-  recordPaymentSplits?(params: RecordPaymentSplitsInput): Promise<PaymentSplit[]>;
-  upsertRecurringBlock?(
+  recordPaymentSplits(params: RecordPaymentSplitsInput): Promise<PaymentSplit[]>;
+  upsertRecurringBlock(
     input: Omit<RecurringBlock, 'id'> & { id?: string },
   ): Promise<RecurringBlock>;
-  deleteRecurringBlock?(id: string): Promise<void>;
-  upsertLoyaltyProgram?(
-    input: Omit<LoyaltyProgram, 'id'> & { id?: string },
-  ): Promise<LoyaltyProgram>;
-  awardLoyaltyStamp?(params: AwardLoyaltyStampInput): Promise<LoyaltyStamp>;
-  recordConsent?(params: RecordConsentInput): Promise<ConsentRecord>;
-  writeAuditLog?(params: WriteAuditLogInput): Promise<AuditLogEntry>;
+  deleteRecurringBlock(id: string): Promise<void>;
+  upsertLoyaltyProgram(patch: Partial<LoyaltyProgram>): Promise<LoyaltyProgram>;
+  awardLoyaltyStamp(params: AwardLoyaltyStampInput): Promise<LoyaltyStamp>;
+  recordConsent(params: RecordConsentInput): Promise<ConsentRecord>;
+  writeAuditLog(params: WriteAuditLogInput): Promise<AuditLogEntry>;
 
   registerMediaAsset(input: RegisterMediaAssetInput): Promise<MediaAssetRecord>;
   getMediaAccessOwner(storagePath: string): Promise<MediaAccessOwner | null>;

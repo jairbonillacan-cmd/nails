@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import {
   toPublicServiceDTO,
@@ -10,7 +10,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const integration = getRuntimeIntegrationStatus();
 
   return NextResponse.json({

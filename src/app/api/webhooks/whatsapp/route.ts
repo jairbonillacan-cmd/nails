@@ -10,7 +10,7 @@ import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
 import { logError, logInfo, logWarn } from '@/lib/logger';
 import {
   claimWebhookEventIdempotent,
-  getSnapshot,
+  getRepository,
   incrementWhatsAppMonthlyUsage,
 } from '@/lib/repositories/db';
 
@@ -108,7 +108,7 @@ const flowPayloadSchema = z.object({
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   if (searchParams.get('schema') === '1') {
-    return NextResponse.json(buildWhatsAppFlowJsonSchema());
+    return NextResponse.json(await buildWhatsAppFlowJsonSchema());
   }
 
   const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
@@ -160,7 +160,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, parsed: false });
   }
 
-  const tz = getSnapshot().settings.timezone || 'America/Mexico_City';
+  const snapshot = await getRepository().getSnapshot();
+  const tz = snapshot.settings.timezone || 'America/Mexico_City';
   const monthKey = getWhatsAppMonthKey(new Date(), tz);
 
   let messagesProcessed = 0;

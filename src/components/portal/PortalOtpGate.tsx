@@ -30,6 +30,7 @@ export function PortalOtpGate({
   const [phoneInput, setPhoneInput] = useState('');
   const [verifiedPhoneE164, setVerifiedPhoneE164] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [otpChannel, setOtpChannel] = useState<'whatsapp' | 'sms' | 'email'>('whatsapp');
   const [demoCode, setDemoCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -109,6 +110,7 @@ export function PortalOtpGate({
       const data = (await res.json()) as {
         ok?: boolean;
         phoneE164?: string;
+        channel?: 'whatsapp' | 'sms' | 'email';
         demoCode?: string;
         error?: string;
       };
@@ -116,11 +118,19 @@ export function PortalOtpGate({
         setErrorMessage(data.error || 'No pudimos enviar tu código. Intenta de nuevo.');
         return;
       }
+      const nextChannel = data.channel ?? 'whatsapp';
       setVerifiedPhoneE164(data.phoneE164 || phoneInput);
+      setOtpChannel(nextChannel);
       setDemoCode(data.demoCode ?? null);
       setOtpDigits(['', '', '', '', '', '']);
       setAuthStep('code');
-      onSetInfo('Te enviamos un código de 6 dígitos por WhatsApp (válido 5 minutos).');
+      onSetInfo(
+        nextChannel === 'email'
+          ? 'Te enviamos un código de 6 dígitos al correo registrado con tu número (válido 5 minutos).'
+          : nextChannel === 'sms'
+            ? 'Te enviamos un código de 6 dígitos por SMS (válido 5 minutos).'
+            : 'Te enviamos un código de 6 dígitos por WhatsApp (válido 5 minutos).',
+      );
     } catch {
       setErrorMessage('Error de conexión al enviar el código. Revisa tu internet.');
     } finally {
@@ -192,7 +202,9 @@ export function PortalOtpGate({
         subtitle={
           authStep === 'phone'
             ? 'Sin contraseñas. Te mandamos un código temporal de 6 dígitos para proteger tu historial.'
-            : `Enviamos un código de 6 dígitos al ${verifiedPhoneE164}.`
+            : otpChannel === 'email'
+              ? 'Enviamos un código de 6 dígitos al correo asociado a tu número.'
+              : `Enviamos un código de 6 dígitos al ${verifiedPhoneE164}.`
         }
         icon={<ShieldCheck size={20} aria-hidden="true" className="lk-cereza-text" />}
         padded

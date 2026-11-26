@@ -251,4 +251,47 @@ describe('client-portal-otp auth', () => {
     const prodJson = (await prodRequestRes.json()) as { demoCode?: string };
     expect(prodJson.demoCode).toBeUndefined();
   });
+
+  it('falls back to email OTP via Resend when WhatsApp Cloud is unconfigured and client has an email', async () => {
+    vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-portal-secret-email-fallback');
+    vi.stubEnv('RESEND_API_KEY', 're_test_key_123');
+    vi.stubEnv('RESEND_FROM_EMAIL', 'LAIKONA NAILS <citas@laikona.devand.net>');
+    vi.stubEnv('WHATSAPP_ACCESS_TOKEN', '');
+    vi.stubEnv('WHATSAPP_PHONE_NUMBER_ID', '');
+
+    const notifModule = await import('@/lib/integrations/notifications');
+    const spy = vi.spyOn(notifModule, 'dispatchWhatsAppNotification').mockResolvedValue({
+      status: 'sent',
+      providerMessageId: 'resend-fallback-test',
+      errorMessage: null,
+      deliveryMode: 'fallback_email_wame',
+    });
+
+    try {
+      const res = await postPortalOtp(
+        new NextRequest('http://localhost:3000/api/client-portal/otp', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': '203.0.113.44',
+          },
+          body: JSON.stringify({
+            action: 'request',
+            phone: '+522224123987',
+          }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const rawText = await res.text();
+      expect(rawText).not.toContain('sofia.ramirez@ejemplo.mx');
+      const json = JSON.parse(rawText) as { ok: boolean; channel: string };
+      expect(json.ok).toBe(true);
+      expect(json.channel).toBe('email');
+      expect(spy).toHaveBeenCalledTimes(1);
+      const firstCall = spy.mock.calls[0]?.[0];
+      expect(firstCall?.fallbackEmail?.to).toBe('sofia.ramirez@ejemplo.mx');
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

@@ -1,10 +1,13 @@
 import type { MetadataRoute } from 'next';
 import { toPublicSettingsDTO } from '@/lib/public-dto';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { DEFAULT_BRAND_ACCENT_LIGHT } from '@/lib/theme-presets';
 
-export default function manifest(): MetadataRoute.Manifest {
-  const settings = toPublicSettingsDTO(getSnapshot().settings);
+export const dynamic = 'force-dynamic';
+
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const db = await getRepository().getSnapshot();
+  const settings = toPublicSettingsDTO(db.settings);
   return {
     name: `${settings.name} — Agenda y Estudio de Uñas`,
     short_name: settings.name,

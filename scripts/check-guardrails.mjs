@@ -1613,6 +1613,32 @@ export function checkSourceText(rawRel, text) {
     checkSnapshotMutation(rel, sf, addViolation);
   }
 
+  if (rel.startsWith('src/app/') && !testFile) {
+    for (const stmt of sf.statements) {
+      if (
+        ts.isImportDeclaration(stmt) &&
+        ts.isStringLiteral(stmt.moduleSpecifier) &&
+        stmt.moduleSpecifier.text === '@/lib/repositories/db' &&
+        stmt.importClause?.namedBindings &&
+        ts.isNamedImports(stmt.importClause.namedBindings)
+      ) {
+        for (const el of stmt.importClause.namedBindings.elements) {
+          const importedName = el.propertyName?.text ?? el.name.text;
+          if (importedName === 'getSnapshot') {
+            const { line, col } = getLineCol(sf, el.getStart(sf));
+            addViolation(
+              rel,
+              line,
+              col,
+              'no-sync-snapshot-in-app',
+              'Prohibido importar getSnapshot() síncrono en src/app/**. Usa "await getRepository().getSnapshot()" para garantizar persistencia en Supabase/Workers.',
+            );
+          }
+        }
+      }
+    }
+  }
+
   if (isNotificationsFile) {
     checkRawHtmlInterpolation(rel, sf, addViolation);
   }

@@ -4,7 +4,7 @@ import { requireAdmin } from '@/lib/auth/admin-session';
 import { OnboardingPostSchema } from '@/lib/contracts';
 import { toAdminSettingsDTO } from '@/lib/public-dto';
 import {
-  getSnapshot,
+  getRepository,
   PolicyError,
   saveOnboardingSetup,
 } from '@/lib/repositories/db';
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   return NextResponse.json({
     onboarding: {
       businessType: db.settings.businessType ?? '',

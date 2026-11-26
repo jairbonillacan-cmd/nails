@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { buildWhatsAppLink } from '@/lib/format';
 import { toPublicSettingsDTO } from '@/lib/public-dto';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { PublicShell } from '@/components/PublicShell';
 import { LANDING_ASSETS } from '@/components/landing/landingContent';
 import { normalizeInstagramHandle } from '@/components/booking/bookingHelpers';
@@ -25,7 +25,7 @@ import { normalizeInstagramHandle } from '@/components/booking/bookingHelpers';
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const title = 'Aviso de Privacidad';
   const description = `Aviso de Privacidad Integral de ${settings.name} conforme a la LFPDPPP en Puebla, México. Consulta finalidades, conservación y ejercicio de derechos ARCO.`;
@@ -60,8 +60,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function AvisoDePrivacidadPage() {
-  const db = getSnapshot();
+export default async function AvisoDePrivacidadPage() {
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
 
   const responsibleName =

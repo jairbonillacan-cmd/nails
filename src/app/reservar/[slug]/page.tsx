@@ -9,7 +9,7 @@ import {
   toPublicStaffDTO,
   type PublicReviewDTO,
 } from '@/lib/public-dto';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 import type { BookingLayoutView } from '@/lib/types';
 import { formatServicePrice } from '@/components/booking/bookingHelpers';
@@ -56,7 +56,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const service = db.services.find(
@@ -133,7 +133,7 @@ export default async function ReservarServicioPage({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const timezone = settings.timezone || 'America/Mexico_City';
   const initialTodayKey = getDateKeyInTimezone(new Date(), timezone);

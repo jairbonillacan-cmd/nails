@@ -3,7 +3,7 @@ import { buildExecutiveReport, type ReportPeriod } from '@/lib/analytics/reports
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { ReportPeriodSchema } from '@/lib/contracts';
 import { roleCanAccess } from '@/lib/rbac';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   }
 
   const period: ReportPeriod = parsedPeriod.data;
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const now = new Date();
   const tz = db.settings.timezone || 'America/Mexico_City';
   const isSpecialist = session.user.role === 'specialist';

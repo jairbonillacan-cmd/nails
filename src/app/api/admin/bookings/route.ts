@@ -11,15 +11,14 @@ import {
 import {
   createBookingAtomic,
   createRecurringBookingSeries,
-  getBookingsWithRelations,
-  getSnapshot,
+  getRepository,
   PolicyError,
   recordBookingCheckoutAtomic,
   requestBookingReschedule,
   sendManualBookingReminder,
   SlotConflictError,
   updateBookingStatus,
-  verifyStoredOwnerPin,
+  verifyStoredOwnerPinAsync,
 } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
@@ -29,19 +28,19 @@ export async function GET(request: NextRequest) {
   if (session.user.role === 'specialist' && !session.user.staffMemberId) {
     return NextResponse.json({ bookings: [] });
   }
-  const bookings = getBookingsWithRelations(
+  const bookings = await getRepository().getBookingsWithRelations(
     session.user.role,
     session.user.staffMemberId,
   );
   return NextResponse.json({ bookings });
 }
 
-function checkOwnerPinGate(
+async function checkOwnerPinGate(
   request: NextRequest,
   actorId: string,
   bodyPin?: string,
-): NextResponse | null {
-  const db = getSnapshot();
+): Promise<NextResponse | null> {
+  const db = await getRepository().getSnapshot();
   const providedPin = bodyPin ?? request.headers.get('x-owner-pin') ?? undefined;
   const gateActive = Boolean(
     (db.settings.ownerPinEnabled && db.settings.ownerPinHash) || providedPin?.trim(),
@@ -71,7 +70,7 @@ function checkOwnerPinGate(
     }
   }
 
-  const check = verifyStoredOwnerPin(providedPin);
+  const check = await verifyStoredOwnerPinAsync(providedPin);
   if (!check.required || check.valid) return null;
   const hasAttempt = Boolean(providedPin?.trim());
   return NextResponse.json(
@@ -110,7 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (typeof parsed.customPriceCents === 'number') {
-      const db = getSnapshot();
+      const db = await getRepository().getSnapshot();
       const baseService = db.services.find((s) => s.id === parsed.serviceId);
       const extras = db.services.filter((s) => parsed.extraServiceIds.includes(s.id));
       const addons = db.addons.filter(
@@ -122,7 +121,7 @@ export async function POST(request: NextRequest) {
           addons.reduce((sum, a) => sum + a.extraPriceCents, 0)
         : -1;
       if (parsed.customPriceCents !== catalogSubtotal) {
-        const pinDenied = checkOwnerPinGate(request, session.user.id, parsed.ownerPin);
+        const pinDenied = await checkOwnerPinGate(request, session.user.id, parsed.ownerPin);
         if (pinDenied) return pinDenied;
       }
     }
@@ -215,7 +214,7 @@ export async function PATCH(request: NextRequest) {
       const reminderReq = SendReminderSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
-        const db = getSnapshot();
+        const db = await getRepository().getSnapshot();
         const target = db.bookings.find((b) => b.id === reminderReq.bookingId);
         if (
           !session.user.staffMemberId ||
@@ -246,7 +245,7 @@ export async function PATCH(request: NextRequest) {
       const rescheduleReq = RequestRescheduleSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
-        const db = getSnapshot();
+        const db = await getRepository().getSnapshot();
         const target = db.bookings.find((b) => b.id === rescheduleReq.bookingId);
         if (
           !session.user.staffMemberId ||
@@ -275,7 +274,7 @@ export async function PATCH(request: NextRequest) {
       const checkoutReq = CheckoutSplitSchema.parse(raw);
 
       if (session.user.role === 'specialist') {
-        const db = getSnapshot();
+        const db = await getRepository().getSnapshot();
         const target = db.bookings.find((b) => b.id === checkoutReq.bookingId);
         if (
           !session.user.staffMemberId ||
@@ -304,7 +303,7 @@ export async function PATCH(request: NextRequest) {
     const body = AdminPatchBookingStatusSchema.parse(raw);
 
     if (session.user.role === 'specialist') {
-      const db = getSnapshot();
+      const db = await getRepository().getSnapshot();
       const target = db.bookings.find((b) => b.id === body.bookingId);
       if (
         !session.user.staffMemberId ||
@@ -319,7 +318,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (body.status === 'canceled') {
-      const pinDenied = checkOwnerPinGate(request, session.user.id, body.ownerPin);
+      const pinDenied = await checkOwnerPinGate(request, session.user.id, body.ownerPin);
       if (pinDenied) return pinDenied;
     }
 

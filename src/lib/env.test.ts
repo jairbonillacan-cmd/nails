@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import robots from '@/app/robots';
 import {
   EnvSchema,
   assertProductionEnvValid,
@@ -8,6 +9,7 @@ import {
   getRuntimeIntegrationStatus,
   getWhatsAppTemplateNameOverrides,
   isR2S3Configured,
+  isSiteNoIndexEnabled,
   isWhatsAppCoexistenceEnabled,
   parseEnv,
 } from './env';
@@ -20,6 +22,27 @@ const BASE_PROD_SECRETS = {
 };
 
 describe('Strict Environment Validation (M5 + Wave 6 Production Hardening)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('supports SITE_NOINDEX flag and blocks crawlers in robots() when enabled', () => {
+    expect(isSiteNoIndexEnabled({})).toBe(false);
+    expect(isSiteNoIndexEnabled({ SITE_NOINDEX: 'false' })).toBe(false);
+    expect(isSiteNoIndexEnabled({ SITE_NOINDEX: '0' })).toBe(false);
+    expect(isSiteNoIndexEnabled({ SITE_NOINDEX: 'true' })).toBe(true);
+    expect(isSiteNoIndexEnabled({ SITE_NOINDEX: '1' })).toBe(true);
+
+    vi.stubEnv('SITE_NOINDEX', 'true');
+    const stagingRobots = robots();
+    expect(stagingRobots.rules).toEqual({ userAgent: '*', disallow: '/' });
+    expect(stagingRobots.sitemap).toBeUndefined();
+
+    vi.stubEnv('SITE_NOINDEX', 'false');
+    const prodRobots = robots();
+    expect(prodRobots.sitemap).toContain('/sitemap.xml');
+  });
+
   it('parses clean env objects, normalizes empty strings, and validates URLs/emails/quotas', () => {
     const parsed = parseEnv({
       NODE_ENV: 'test',

@@ -26,7 +26,7 @@ import {
   toPublicSettingsDTO,
   toPublicStaffDTO,
 } from '@/lib/public-dto';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { PublicShell } from '@/components/PublicShell';
 import { LANDING_ASSETS, servicePhoto } from '@/components/landing/landingContent';
 import {
@@ -59,7 +59,7 @@ function resolveSafeExternalUrl(value: string | null | undefined, fallback: stri
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
@@ -96,8 +96,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function LinksPage() {
-  const db = getSnapshot();
+export default async function LinksPage() {
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const landing = resolveLandingContent(settings);
   const activeStaff = db.staff

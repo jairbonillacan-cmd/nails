@@ -1,6 +1,44 @@
 # Guía de Despliegue a Producción — LAIKONA NAILS (Cloudflare Workers + R2 + Supabase + Resend + Meta WhatsApp Coexistence)
 
-Runbook paso a paso para operar **LAIKONA NAILS BY KARLA** en producción con arquitectura serverless de costo mínimo, almacenamiento privado de comprobantes con retención automática de 12 meses, respaldos diarios de PostgreSQL en Cloudflare R2 y mensajería oficial vía Meta WhatsApp Coexistence.
+Runbook paso a paso para operar **LAIKONA NAILS BY KARLA** en producción o pre-producción (`https://laikona.devand.net`) con arquitectura serverless de costo mínimo, almacenamiento privado de comprobantes con retención automática de 12 meses, respaldos diarios de PostgreSQL en Cloudflare R2 y mensajería oficial vía Meta WhatsApp Coexistence.
+
+---
+
+## 0. Despliegue Rápido en Pre-Producción (`laikona.devand.net` con cuenta Gmail)
+
+Usa esta lista corta para lanzar **`https://laikona.devand.net`** con servicios reales antes de comprar el dominio definitivo:
+
+1. **Cloudflare (`devand.net`):**
+   - `wrangler.jsonc` ya tiene configurada la ruta personalizada `laikona.devand.net` (`custom_domain: true`).
+   - Autentícate y crea el bucket R2:
+     ```bash
+     npx wrangler login
+     npx wrangler r2 bucket create laikona-nails-media
+     npx wrangler r2 bucket create laikona-nails-media-preview
+     ```
+2. **Supabase Free (creado con tu Gmail):**
+   - Ejecuta las migraciones `supabase/migrations/0001` a `0008` en el SQL Editor y luego `supabase/seed.sql`.
+   - En **Authentication → Users** crea el usuario con tu Gmail y contraseña, y vincúlalo como `owner`:
+     ```sql
+     INSERT INTO public.admin_users (auth_user_id, email, full_name, role, is_active)
+     VALUES ('<UUID-DE-AUTH-USERS>', '<tu-correo>@gmail.com', 'Karla', 'owner', true)
+     ON CONFLICT (email) DO UPDATE
+       SET auth_user_id = EXCLUDED.auth_user_id, role = 'owner', is_active = true;
+     ```
+   - En **Authentication → URL Configuration**, configura **Site URL**: `https://laikona.devand.net`.
+3. **Resend Free (cuenta con el mismo Gmail):**
+   - Verifica el subdominio **`laikona.devand.net`** en **Resend → Domains** (Resend no permite enviar desde `@gmail.com`, pero Cloudflare agrega los registros SPF/DKIM en ~1 minuto).
+   - Define `RESEND_FROM_EMAIL="LAIKONA NAILS <citas@laikona.devand.net>"` y `RETENTION_NOTICE_EMAIL="<tu-correo>@gmail.com"`.
+   - Sin Meta WhatsApp Cloud API, `/mis-citas` usa automáticamente **Resend** para enviar el código OTP de 6 dígitos al correo registrado de la clienta.
+4. **Google Cloud Console (opcional, mismo Gmail):**
+   - Habilita **Google Calendar API**, crea credenciales OAuth 2.0 Web con Redirect URI `https://laikona.devand.net/api/integrations/google/callback`.
+5. **Variables/Secretos en Workers (`SITE_NOINDEX=true` mientras sea pruebas):**
+   - Exporta en `.env.production.local` (ignorado por Git) las 3 variables públicas antes de compilar:
+     `NEXT_PUBLIC_APP_URL=https://laikona.devand.net`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+   - Sube secretos con `npx wrangler secret put <NOMBRE>`: `NEXT_PUBLIC_APP_URL`, `SITE_NOINDEX` (`true`), `ADMIN_SESSION_SECRET`, `CLIENT_SESSION_SECRET`, `CRON_SECRET`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RETENTION_NOTICE_EMAIL` (y opcionales `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_WEBHOOK_TOKEN`).
+   - Compila y despliega: `npm run cf:deploy`.
+6. **Cambio futuro al dominio definitivo (sin migrar DB ni R2):**
+   - Cambia `routes` en `wrangler.jsonc`, actualiza `NEXT_PUBLIC_APP_URL`, elimina `SITE_NOINDEX`, verifica el nuevo dominio en Resend (`RESEND_FROM_EMAIL`) y agrega el nuevo Redirect URI en Google OAuth + Supabase Site URL.
 
 ---
 

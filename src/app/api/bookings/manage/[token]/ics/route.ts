@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBookingByToken, getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { generateBookingIcs } from '@/lib/ics';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 
@@ -8,11 +8,12 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params;
-  const booking = getBookingByToken(token);
+  const repo = getRepository();
+  const booking = await repo.getBookingByToken(token);
   if (!booking) {
     return NextResponse.json({ error: 'Cita no encontrada' }, { status: 404 });
   }
-  const db = getSnapshot();
+  const db = await repo.getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const ics = generateBookingIcs(
     booking,

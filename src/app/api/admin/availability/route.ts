@@ -16,7 +16,7 @@ import {
   addDateOverrideRange,
   deleteDateOverride,
   deleteRecurringBlock,
-  getSnapshot,
+  getRepository,
   PolicyError,
   preloadMexicoHolidays,
   saveStaffSchedule,
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get('mode');
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const requestedStaffId = searchParams.get('staffId')?.trim() || '';
 
   const allBlocks = db.recurringBlocks ?? [];
@@ -188,7 +188,8 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
         }
         if (parsed.id) {
-          const existing = (getSnapshot().recurringBlocks ?? []).find(
+          const snapshot = await getRepository().getSnapshot();
+          const existing = (snapshot.recurringBlocks ?? []).find(
             (b) => b.id === parsed.id,
           );
           if (!existing || existing.staffId !== session.user.staffMemberId) {
@@ -214,7 +215,8 @@ export async function POST(request: NextRequest) {
     if (rawKind === 'recurring_block_toggle') {
       const parsed = ToggleRecurringBlockSchema.parse(raw);
       if (session.user.role === 'specialist') {
-        const target = (getSnapshot().recurringBlocks ?? []).find((b) => b.id === parsed.id);
+        const snapshot = await getRepository().getSnapshot();
+        const target = (snapshot.recurringBlocks ?? []).find((b) => b.id === parsed.id);
         if (
           !session.user.staffMemberId ||
           !target ||
@@ -310,7 +312,8 @@ export async function DELETE(request: NextRequest) {
   const blockId = searchParams.get('blockId')?.trim();
   if (blockId) {
     if (session.user.role === 'specialist') {
-      const target = (getSnapshot().recurringBlocks ?? []).find((b) => b.id === blockId);
+      const snapshot = await getRepository().getSnapshot();
+      const target = (snapshot.recurringBlocks ?? []).find((b) => b.id === blockId);
       if (
         !session.user.staffMemberId ||
         !target ||
@@ -326,7 +329,8 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get('id');
   if (id) {
     if (session.user.role === 'specialist') {
-      const target = getSnapshot().dateOverrides.find((o) => o.id === id);
+      const snapshot = await getRepository().getSnapshot();
+      const target = snapshot.dateOverrides.find((o) => o.id === id);
       if (
         !session.user.staffMemberId ||
         !target ||

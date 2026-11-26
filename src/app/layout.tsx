@@ -2,7 +2,8 @@ import { Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { defaultThemeSlug } from '@/astryx-themes';
-import { getSnapshot } from '@/lib/repositories/db';
+import { isSiteNoIndexEnabled } from '@/lib/env';
+import { getRepository } from '@/lib/repositories/db';
 import { toPublicSettingsDTO, type PublicSettingsDTO } from '@/lib/public-dto';
 import { getSiteMetadataBase } from '@/lib/seo/site-url';
 import {
@@ -46,10 +47,12 @@ function resolveInitialThemeName(settings: PublicSettingsDTO): string {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { settings } = getSnapshot();
+  const { settings } = await getRepository().getSnapshot();
   const socialTitle = `${settings.name} — Agenda tu cita en línea`;
+  const noIndex = isSiteNoIndexEnabled();
   return {
     metadataBase: getSiteMetadataBase(),
+    ...(noIndex ? { robots: { index: false, follow: false } } : {}),
     title: {
       default: `${settings.name} — ${settings.tagline}`,
       template: `%s · ${settings.name}`,
@@ -92,7 +95,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export async function generateViewport(): Promise<Viewport> {
-  const { settings } = getSnapshot();
+  const { settings } = await getRepository().getSnapshot();
   const mode = settings.defaultPublicMode || 'light';
   return {
     themeColor: normalizeHexColor(
@@ -105,12 +108,12 @@ export async function generateViewport(): Promise<Viewport> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { settings } = getSnapshot();
+  const { settings } = await getRepository().getSnapshot();
   const publicSettings = toPublicSettingsDTO(settings);
   const initialMode = publicSettings.defaultPublicMode || 'light';
   const initialThemeName = resolveInitialThemeName(publicSettings);

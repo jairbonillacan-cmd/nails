@@ -10,9 +10,8 @@ import {
   toAdminSettingsDTO,
 } from '@/lib/public-dto';
 import {
-  getBookingsWithRelations,
-  getNearRewardClients,
-  getSnapshot,
+  getNearRewardClientsAsync,
+  getRepository,
   getWhatsAppMonthlyUsage,
   getWhatsAppTemplates,
 } from '@/lib/repositories/db';
@@ -35,14 +34,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
   }
 
-  const db = getSnapshot();
+  const repo = getRepository();
+  const db = await repo.getSnapshot();
   const integration = getRuntimeIntegrationStatus();
   const isSpecialist = session.user.role === 'specialist';
   const ownStaffId = isSpecialist ? session.user.staffMemberId : null;
   const bookings =
     isSpecialist && !ownStaffId
       ? []
-      : getBookingsWithRelations(session.user.role, session.user.staffMemberId);
+      : await repo.getBookingsWithRelations(session.user.role, session.user.staffMemberId);
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -299,7 +299,7 @@ export async function GET(request: NextRequest) {
     ? allLoyaltyStamps.filter((st) => visibleClientIds.has(st.clientId))
     : allLoyaltyStamps;
 
-  const allNearRewardClients = getNearRewardClients();
+  const allNearRewardClients = await getNearRewardClientsAsync();
   const nearRewardClients = isSpecialist
     ? allNearRewardClients.filter((c) => visibleClientIds.has(c.clientId))
     : allNearRewardClients;

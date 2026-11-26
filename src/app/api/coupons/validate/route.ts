@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ValidateCouponSchema } from '@/lib/contracts';
-import { validateCouponCode } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export async function POST(request: NextRequest) {
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = ValidateCouponSchema.parse(await request.json());
-    const result = validateCouponCode(body.code, body.subtotalCents);
+    const result = await getRepository().validateCouponCode(body.code, body.subtotalCents);
     if (!result.valid) {
       return NextResponse.json(
         { valid: false, error: result.error },

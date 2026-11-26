@@ -6,7 +6,7 @@ import {
   requireAdmin,
 } from '@/lib/auth/admin-session';
 import { buildGoogleOAuthUrl } from '@/lib/integrations/google-calendar';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Falta especificar staffId.' }, { status: 400 });
   }
 
-  const staffExists = getSnapshot().staff.some((s) => s.id === staffId);
+  const snapshot = await getRepository().getSnapshot();
+  const staffExists = snapshot.staff.some((s) => s.id === staffId);
   if (!staffExists) {
     return NextResponse.json({ error: 'Especialista no encontrada.' }, { status: 404 });
   }

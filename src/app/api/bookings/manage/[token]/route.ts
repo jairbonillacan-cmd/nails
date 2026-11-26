@@ -6,9 +6,8 @@ import { buildCalendarAddLinks } from '@/lib/ics';
 import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
 import { toPublicBookingDTO, toPublicSettingsDTO } from '@/lib/public-dto';
 import {
-  getBookingByToken,
-  getClientLoyaltySummary,
-  getSnapshot,
+  getClientLoyaltySummaryAsync,
+  getRepository,
   manageClientBookingAction,
   PolicyError,
   SlotConflictError,
@@ -49,17 +48,18 @@ export async function GET(
   }
 
   const { token } = await context.params;
-  const booking = getBookingByToken(token);
+  const repo = getRepository();
+  const booking = await repo.getBookingByToken(token);
   if (!booking) {
     return NextResponse.json(
       { error: 'Cita no encontrada' },
       { status: 404, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
     );
   }
-  const db = getSnapshot();
+  const db = await repo.getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
-  const loyaltySummary = getClientLoyaltySummary(booking.clientId);
+  const loyaltySummary = await getClientLoyaltySummaryAsync(booking.clientId);
 
   return NextResponse.json(
     {
@@ -92,7 +92,7 @@ export async function PATCH(
     const { token } = await context.params;
     const body = ManageBookingPatchSchema.parse(await request.json());
     const booking = await manageClientBookingAction({ token, ...body });
-    const db = getSnapshot();
+    const db = await getRepository().getSnapshot();
     const env = getRuntimeIntegrationStatus();
     const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
     return NextResponse.json(

@@ -10,7 +10,6 @@ import { toPublicBookingDTO } from '@/lib/public-dto';
 import {
   createBookingWithExtras,
   getRepository,
-  getSnapshot,
   MaxActiveBookingsError,
   persistBookingMediaField,
   PolicyError,
@@ -95,7 +94,7 @@ export async function POST(request: NextRequest) {
       manageUrl: `${env.appUrl}${manageUrl}`,
     });
 
-    const snapshot = getSnapshot();
+    const snapshot = await repo.getSnapshot();
     const snapshotSettings = snapshot.settings;
     const noShowPolicy = evaluateClientNoShowPolicy({
       noShowCount: booking.client.noShowCount,

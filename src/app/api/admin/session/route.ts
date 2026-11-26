@@ -8,7 +8,7 @@ import {
   isLocalDemoAuthEnabled,
 } from '@/lib/auth/admin-session';
 import { DemoLoginSchema, SupabaseLoginSchema } from '@/lib/contracts';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import {
   createSupabaseServerClient,
   isSupabaseEnabled,
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       ? 'demo'
       : 'disabled';
   const availableDemoUsers = demoEnabled
-    ? getSnapshot().adminUsers.filter((u) => u.isActive)
+    ? (await getRepository().getSnapshot()).adminUsers.filter((u) => u.isActive)
     : [];
 
   return NextResponse.json({
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
   }
 
   const email = parsed.data.email.toLowerCase();
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const user = db.adminUsers.find(
     (u) => u.email.toLowerCase() === email && u.isActive,
   );

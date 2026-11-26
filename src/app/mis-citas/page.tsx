@@ -7,8 +7,8 @@ import {
   type ClientPortalSnapshotDTO,
 } from '@/lib/public-dto';
 import {
-  getClientPortalSnapshotByPhone,
-  getSnapshot,
+  getClientPortalSnapshotByPhoneAsync,
+  getRepository,
 } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 import { ClientPortalView } from '@/components/portal/ClientPortalView';
@@ -16,7 +16,7 @@ import { ClientPortalView } from '@/components/portal/ClientPortalView';
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { settings } = getSnapshot();
+  const { settings } = await getRepository().getSnapshot();
   return {
     title: 'Mis citas',
     description: `Consulta tus próximas citas, historial, sellos de fidelidad y paquetes en ${settings.name}.`,
@@ -25,14 +25,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function MisCitasPage() {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const session = await readClientPortalSession();
 
   let initialSnapshot: ClientPortalSnapshotDTO | null = null;
   if (session) {
     initialSnapshot = ClientPortalSnapshotDTOSchema.parse(
-      getClientPortalSnapshotByPhone(session.phoneE164),
+      await getClientPortalSnapshotByPhoneAsync(session.phoneE164),
     );
   }
 

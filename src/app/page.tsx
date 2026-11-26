@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { preload } from 'react-dom';
 import './landing.css';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import {
   toPublicGalleryItemDTO,
   toPublicReviewDTO,
@@ -17,7 +17,7 @@ import { LandingView } from '@/components/LandingView';
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const title = `${settings.name} — Manicure, Rubber y Nail Art en ${cityShort}`;
@@ -44,8 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function HomePage() {
-  const db = getSnapshot();
+export default async function HomePage() {
+  const db = await getRepository().getSnapshot();
   const siteOrigin = getSiteOrigin();
   const publicSettings = toPublicSettingsDTO(db.settings);
   const resolvedLanding = resolveLandingContent(publicSettings);

@@ -2,8 +2,7 @@ import { Buffer } from 'node:buffer';
 import crypto from 'node:crypto';
 import {
   createBookingAtomic,
-  getSnapshot,
-  queryAvailability,
+  getRepository,
   SlotConflictError,
 } from '../repositories/db';
 import { formatDateLongInTimezone, formatTimeInTimezone, getDateKeyInTimezone } from '../format';
@@ -85,7 +84,8 @@ export interface WhatsAppBookingActionInput {
 }
 
 export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInput) {
-  const db = getSnapshot();
+  const repo = getRepository();
+  const db = await repo.getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const tz = db.settings.timezone || 'America/Mexico_City';
 
@@ -93,9 +93,8 @@ export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInp
   let targetStaffId = input.staffId || null;
 
   if (!targetStartAt) {
-
     const todayKey = getDateKeyInTimezone(new Date(), tz);
-    const avail = queryAvailability({
+    const avail = await repo.queryAvailability({
       serviceId: input.serviceId,
       addonIds: input.addonIds ?? [],
       staffId: targetStaffId,
@@ -161,8 +160,8 @@ export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInp
   }
 }
 
-export function buildWhatsAppFlowJsonSchema() {
-  const db = getSnapshot();
+export async function buildWhatsAppFlowJsonSchema() {
+  const db = await getRepository().getSnapshot();
   return {
     version: '6.0',
     data_api_version: '3.0',

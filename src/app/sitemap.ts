@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { toPublicServiceDTO } from '@/lib/public-dto';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 
 export const dynamic = 'force-dynamic';
@@ -10,9 +10,9 @@ function resolveLastModified(value: string): Date {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = getSiteOrigin();
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const lastModified = resolveLastModified(db.settings.updatedAt);
 
   const staticEntries: MetadataRoute.Sitemap = [

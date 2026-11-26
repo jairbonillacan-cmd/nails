@@ -42,6 +42,16 @@ vi.mock('../repositories/db', () => ({
   SlotConflictError: class SlotConflictError extends Error {
     suggestedSlots: Array<{ startAt: string; localTime12: string }> = [];
   },
+  getRepository: () => ({
+    getSnapshot: async () => ({
+      settings: {
+        name: 'Laikona Nails by Karla',
+        timezone: 'America/Mexico_City',
+      },
+      services: [],
+    }),
+    queryAvailability: async (...args: unknown[]) => mockQueryAvailability(...args),
+  }),
   getSnapshot: () => ({
     settings: {
       name: 'Laikona Nails by Karla',

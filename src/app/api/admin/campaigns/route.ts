@@ -11,7 +11,7 @@ import {
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { buildWhatsAppLink, getDateKeyInTimezone } from '@/lib/format';
 import {
-  getSnapshot,
+  getRepository,
   listCampaignDispatches,
   logCampaignDispatch,
 } from '@/lib/repositories/db';
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const { searchParams } = new URL(request.url);
   const birthdayWindowDays = parseBoundedInt(
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     inactiveDays,
     birthdays,
     reactivation,
-    recentDispatches: listCampaignDispatches(50),
+    recentDispatches: await listCampaignDispatches(50),
   });
 }
 
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const parsed = DispatchCampaignSchema.parse(await request.json());
-    const db = getSnapshot();
+    const db = await getRepository().getSnapshot();
     const client = db.clients.find((c) => c.id === parsed.clientId);
     if (!client) {
       return NextResponse.json({ error: 'Clienta no encontrada.' }, { status: 404 });

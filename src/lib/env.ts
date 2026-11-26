@@ -42,6 +42,7 @@ export const EnvSchema = z.object({
     z.enum(['development', 'test', 'production']).default('development'),
   ),
   NEXT_PUBLIC_APP_URL: optionalUrl,
+  SITE_NOINDEX: optionalBooleanFlag,
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
@@ -128,6 +129,13 @@ export function isWhatsAppCoexistenceEnabled(
   raw: Record<string, string | undefined> = process.env,
 ): boolean {
   const value = raw.WHATSAPP_COEXISTENCE_ENABLED?.trim().toLowerCase();
+  return value === 'true' || value === '1';
+}
+
+export function isSiteNoIndexEnabled(
+  raw: Record<string, string | undefined> = process.env,
+): boolean {
+  const value = raw.SITE_NOINDEX?.trim().toLowerCase();
   return value === 'true' || value === '1';
 }
 

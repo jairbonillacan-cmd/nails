@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import { toPublicServiceDTO, toPublicSettingsDTO } from '@/lib/public-dto';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +47,7 @@ export default async function Image({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
   const studioName = (settings.name || 'LAIKONA NAILS').toUpperCase();
   const instagramHandle = settings.instagramHandle || '@laikona.nailsss';

@@ -4,7 +4,7 @@ import { fetchGoogleFreeBusy } from '@/lib/integrations/google-calendar';
 import { logError, logWarn } from '@/lib/logger';
 import { publishRealtimeEvent } from '@/lib/realtime';
 import {
-  getSnapshot,
+  getRepository,
   syncCalendarConnectionBusyBlocks,
 } from '@/lib/repositories/db';
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, matched: false });
   }
 
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const connection = db.calendarConnections.find(
     (c) => c.watchChannelId === channelId && c.isConnected,
   );

@@ -502,14 +502,14 @@ test('§8 no-snapshot-mutation: catches direct and derived mutations on getSnaps
   ]);
 
   const badDerived = [
-    'import { getSnapshot } from "@/lib/repositories/db";',
-    'export function cronRun() {',
-    '  const db = getSnapshot();',
+    'import { getRepository } from "@/lib/repositories/db";',
+    'export async function cronRun() {',
+    '  const db = await getRepository().getSnapshot();',
     '  const due = db.notifications.filter((n) => n.status === "pending");',
     '  for (const item of due) {',
     '    item.status = "sent";',
     '  }',
-    '  const { bookings } = getSnapshot();',
+    '  const { bookings } = await getRepository().getSnapshot();',
     '  bookings.push({});',
     '}',
   ].join('\n');
@@ -801,10 +801,10 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
   const badDirectSecrets = [
     'import { NextResponse } from "next/server";',
     'import { requireAdmin } from "@/lib/auth/admin-session";',
-    'import { getSnapshot } from "@/lib/repositories/db";',
+    'import { getRepository } from "@/lib/repositories/db";',
     'export async function GET() {',
     '  await requireAdmin();',
-    '  const db = getSnapshot();',
+    '  const db = await getRepository().getSnapshot();',
     '  const pin = db.settings.ownerPinHash;',
     '  const conn = db.calendarConnections[0];',
     '  return NextResponse.json({',
@@ -827,11 +827,11 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
   const badRawModels = [
     'import { NextResponse } from "next/server";',
     'import { requireAdmin } from "@/lib/auth/admin-session";',
-    'import { getSnapshot, updateSalonSettings, updateCalendarConnection, saveOnboardingSetup } from "@/lib/repositories/db";',
+    'import { getRepository, updateSalonSettings, updateCalendarConnection, saveOnboardingSetup } from "@/lib/repositories/db";',
     'function scopeByStaff<T>(items: T[]) { return items; }',
     'export async function POST() {',
     '  await requireAdmin();',
-    '  const db = getSnapshot();',
+    '  const db = await getRepository().getSnapshot();',
     '  const updatedSettings = await updateSalonSettings({});',
     '  const updatedConn = await updateCalendarConnection("s1", {});',
     '  const scopedConns = scopeByStaff(db.calendarConnections);',
@@ -861,11 +861,11 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
     'import { NextResponse } from "next/server";',
     'import { requireAdmin } from "@/lib/auth/admin-session";',
     'import { toAdminCalendarConnectionDTO, toAdminSettingsDTO, toPublicSettingsDTO } from "@/lib/public-dto";',
-    'import { getSnapshot, saveOnboardingSetup, updateCalendarConnection, updateSalonSettings } from "@/lib/repositories/db";',
+    'import { getRepository, saveOnboardingSetup, updateCalendarConnection, updateSalonSettings } from "@/lib/repositories/db";',
     'function scopeByStaff<T>(items: T[]) { return items; }',
     'export async function POST() {',
     '  await requireAdmin();',
-    '  const db = getSnapshot();',
+    '  const db = await getRepository().getSnapshot();',
     '  const pinGate = Boolean(db.settings.ownerPinEnabled && db.settings.ownerPinHash);',
     '  const baseSettings = toAdminSettingsDTO(db.settings);',
     '  const safeSettings = { ...baseSettings, defaultCommissionPercent: 0 };',
@@ -895,4 +895,29 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
     rulesOf('src/app/api/security.test.ts', badDirectSecrets),
     [],
   );
+});
+
+test('no-sync-snapshot-in-app: blocks sync getSnapshot import in src/app/** and allows getRepository().getSnapshot()', () => {
+  const badSyncImport = [
+    'import { getSnapshot } from "@/lib/repositories/db";',
+    'export async function GET() {',
+    '  const db = getSnapshot();',
+    '  return Response.json({ count: db.services.length });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/app/api/public/bootstrap/route.ts', badSyncImport), [
+    'no-sync-snapshot-in-app',
+  ]);
+  assert.deepEqual(rulesOf('src/app/api/security.test.ts', badSyncImport), []);
+
+  const goodAsyncImport = [
+    'import { getRepository } from "@/lib/repositories/db";',
+    'export async function GET() {',
+    '  const db = await getRepository().getSnapshot();',
+    '  return Response.json({ count: db.services.length });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/app/api/public/bootstrap/route.ts', goodAsyncImport), []);
 });

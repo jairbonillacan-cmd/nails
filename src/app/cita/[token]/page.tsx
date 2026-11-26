@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import '../../cita.css';
 import { notFound } from 'next/navigation';
-import { getBookingByToken, getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { buildCalendarAddLinks } from '@/lib/ics';
 import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
@@ -23,7 +23,7 @@ export async function generateMetadata({
   params: Promise<{ token: string }>;
 }): Promise<Metadata> {
   const { token } = await params;
-  const booking = getBookingByToken(token);
+  const booking = await getRepository().getBookingByToken(token);
   if (!booking) {
     notFound();
   }
@@ -44,11 +44,12 @@ export default async function ManageBookingPage({
 }) {
   const { token } = await params;
   const query = await searchParams;
-  const booking = getBookingByToken(token);
+  const repo = getRepository();
+  const booking = await repo.getBookingByToken(token);
   if (!booking) {
     notFound();
   }
-  const db = getSnapshot();
+  const db = await repo.getSnapshot();
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
   const initialAction: 'reschedule' | 'cancel' | undefined =

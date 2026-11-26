@@ -6,14 +6,14 @@ import { toAdminCalendarConnectionDTO } from '@/lib/public-dto';
 import {
   addCashEntry,
   adjustInventoryItem,
-  getSnapshot,
+  getRepository,
   PolicyError,
   recordAuditEvent,
   updateCalendarConnection,
   updateWaitlistStatus,
   updateWorkflow,
   upsertCoupon,
-  verifyStoredOwnerPin,
+  verifyStoredOwnerPinAsync,
 } from '@/lib/repositories/db';
 import { serializeCsv } from '@/lib/sanitize';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   if (searchParams.get('export') === 'csv') {
-    const db = getSnapshot();
+    const db = await getRepository().getSnapshot();
     const providedPin = request.headers.get('x-owner-pin') ?? undefined;
     const ownerPinGateActive = Boolean(
       (db.settings.ownerPinEnabled && db.settings.ownerPinHash) || providedPin?.trim(),
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const pinCheck = verifyStoredOwnerPin(providedPin);
+    const pinCheck = await verifyStoredOwnerPinAsync(providedPin);
     if (pinCheck.required && !pinCheck.valid) {
       const hasAttempt = Boolean(providedPin?.trim());
       return NextResponse.json(

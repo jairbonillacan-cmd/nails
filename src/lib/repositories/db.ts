@@ -99,7 +99,7 @@ import { isSafeBrandMediaPath } from '../landing-config';
 import { MediaValidationError, storeMediaUpload } from '../storage/media';
 import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
 import { parseDemoDatabase } from './schema';
-import { isSupabaseEnabled } from './supabase-client';
+import { createSupabaseAdminClient, isSupabaseEnabled } from './supabase-client';
 import { createSupabaseRepository } from './supabase-repo';
 import {
   PolicyError,
@@ -344,7 +344,7 @@ export function getSnapshot(): DemoDatabase {
   return db;
 }
 
-function hydrateBooking(db: DemoDatabase, booking: Booking): BookingWithRelations {
+function hydrateBooking(db: Readonly<DemoDatabase>, booking: Booking): BookingWithRelations {
   const service: Service = db.services.find((s) => s.id === booking.serviceId) ??
     db.services[0] ?? {
       id: booking.serviceId,
@@ -394,7 +394,7 @@ function hydrateBooking(db: DemoDatabase, booking: Booking): BookingWithRelation
   return { ...booking, service, staff, client, review };
 }
 
-export function getBookingsWithRelations(role?: AdminRole, staffMemberId?: string | null): BookingWithRelations[] {
+function getBookingsWithRelations(role?: AdminRole, staffMemberId?: string | null): BookingWithRelations[] {
   const db = getSnapshot();
   const filtered =
     role === 'specialist' && staffMemberId
@@ -435,7 +435,7 @@ export function normalizeInstagramHandle(
 }
 
 function resolveExtraServices(
-  db: DemoDatabase,
+  db: Readonly<DemoDatabase>,
   primaryServiceId: string,
   extraServiceIds?: string[],
 ): Service[] {
@@ -688,6 +688,17 @@ export async function recordAuditEvent(params: {
   entityId: string;
   metadata?: Record<string, string | number | boolean | null>;
 }): Promise<AuditLogEntry> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().writeAuditLog({
+      actorId: params.actor.id,
+      actorEmail: params.actor.email,
+      actorRole: params.actor.role,
+      action: params.action,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      metadata: params.metadata,
+    });
+  }
   return withWriteLock((db) => appendAuditLog(db, params));
 }
 
@@ -906,9 +917,26 @@ async function dispatchWaitlistPriorityOffer(
     createdAt: nowIso,
   };
 
-  await withWriteLock((liveDb) => {
-    liveDb.notifications.unshift(log);
-  });
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseAdminClient();
+    await supabase.from('scheduled_notifications').insert({
+      booking_id: log.bookingId,
+      workflow_id: log.workflowId,
+      channel: log.channel,
+      recipient: log.recipient,
+      scheduled_for: log.scheduledFor,
+      status: log.status,
+      subject: log.subject,
+      preview_text: log.previewText,
+      provider_message_id: log.providerMessageId,
+      error_message: log.errorMessage,
+      sent_at: log.sentAt,
+    });
+  } else {
+    await withWriteLock((liveDb) => {
+      liveDb.notifications.unshift(log);
+    });
+  }
   publishRealtimeEvent('waitlist_updated');
 }
 
@@ -979,17 +1007,19 @@ export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
   };
 }
 
-export function quickSearchAvailability(params: {
-  serviceId: string;
-  extraServiceIds?: string[];
-  addonIds: string[];
-  staffId?: string | null;
-  startDate: string;
-  days: number;
-  limit?: number;
-  sessionToken?: string | null;
-}) {
-  const db = getSnapshot();
+function computeQuickSearchAvailability(
+  db: Readonly<DemoDatabase>,
+  params: {
+    serviceId: string;
+    extraServiceIds?: string[];
+    addonIds: string[];
+    staffId?: string | null;
+    startDate: string;
+    days: number;
+    limit?: number;
+    sessionToken?: string | null;
+  },
+) {
   const service = db.services.find((s) => s.id === params.serviceId && s.isActive);
   if (!service) {
     throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado.');
@@ -1030,6 +1060,33 @@ export function quickSearchAvailability(params: {
     totals,
     slots,
   };
+}
+
+export function quickSearchAvailability(params: {
+  serviceId: string;
+  extraServiceIds?: string[];
+  addonIds: string[];
+  staffId?: string | null;
+  startDate: string;
+  days: number;
+  limit?: number;
+  sessionToken?: string | null;
+}) {
+  return computeQuickSearchAvailability(getSnapshot(), params);
+}
+
+export async function quickSearchAvailabilityAsync(params: {
+  serviceId: string;
+  extraServiceIds?: string[];
+  addonIds: string[];
+  staffId?: string | null;
+  startDate: string;
+  days: number;
+  limit?: number;
+  sessionToken?: string | null;
+}) {
+  const db = await getRepository().getSnapshot();
+  return computeQuickSearchAvailability(db, params);
 }
 
 export async function queryAvailabilityWithExtras(
@@ -1463,6 +1520,9 @@ interface ExtendedCreateSlotHoldInput extends CreateSlotHoldInput {
 export async function createOrRefreshSlotHold(
   params: ExtendedCreateSlotHoldInput,
 ): Promise<SlotHoldResult> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().createOrRefreshSlotHold(params);
+  }
   const created = await withWriteLock((db) => {
     const service = db.services.find((s) => s.id === params.serviceId);
     if (!service || !service.isActive) {
@@ -1522,6 +1582,9 @@ export async function createOrRefreshSlotHoldWithExtras(
 }
 
 export async function releaseSlotHold(sessionToken: string): Promise<void> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().releaseSlotHold(sessionToken);
+  }
   const released = await withWriteLock((db) => {
     const before = db.slotHolds.length;
     db.slotHolds = db.slotHolds.filter((h) => h.sessionToken !== sessionToken);
@@ -1538,6 +1601,9 @@ export async function releaseSlotHold(sessionToken: string): Promise<void> {
 export async function createBookingAtomic(
   params: ExtendedCreateBookingAtomicInput,
 ): Promise<BookingWithRelations> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().createBookingAtomic(params);
+  }
   const normalizedInstagram = normalizeInstagramHandle(params.clientInstagram);
   const storedInspoPhotoUrl = await persistBookingMediaField(
     params.inspoPhotoUrl,
@@ -1970,6 +2036,24 @@ export async function updateBookingStatus(params: {
   recordedBy?: string;
   actor?: AuditActor;
 }): Promise<BookingWithRelations> {
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    if (params.actor) {
+      const snapshot = await repo.getSnapshot();
+      const target = snapshot.bookings.find((b) => b.id === params.bookingId);
+      if (target) {
+        const isPast = new Date(target.endAt).getTime() < Date.now();
+        const pastLockActive = snapshot.settings.lockPastBookings !== false;
+        if (pastLockActive && isPast && params.actor.role !== 'owner') {
+          throw new PolicyError(
+            'PAST_BOOKING_LOCKED',
+            'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
+          );
+        }
+      }
+    }
+    return repo.updateBookingStatus(params);
+  }
   const committed = await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     const booking = db.bookings.find((b) => b.id === params.bookingId);
@@ -2111,6 +2195,110 @@ export async function confirmBookingDepositFromWebhook(params: {
   const trimmedPaymentId = params.providerPaymentId.trim();
   const trimmedRef = params.bookingReference.trim();
   const normalizedRef = trimmedRef.toUpperCase();
+
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseAdminClient();
+    const repo = createSupabaseRepository();
+    const existingRes = await supabase
+      .from('booking_payments')
+      .select('booking_id')
+      .eq('provider', params.provider)
+      .eq('provider_payment_id', trimmedPaymentId)
+      .eq('status', 'paid')
+      .maybeSingle();
+    if (existingRes.data?.booking_id) {
+      return {
+        status: 'ok',
+        idempotent: true,
+        bookingId: existingRes.data.booking_id,
+      };
+    }
+
+    const snapshot = await repo.getSnapshot();
+    const booking = snapshot.bookings.find(
+      (b) => b.bookingCode.toUpperCase() === normalizedRef || b.id === trimmedRef,
+    );
+    if (!booking) {
+      return { status: 'not_found' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const effectiveAmountCents =
+      params.amountCents > 0 ? params.amountCents : booking.depositAmountCents;
+
+    await supabase.from('booking_payments').insert({
+      booking_id: booking.id,
+      provider: params.provider,
+      amount_cents: effectiveAmountCents,
+      currency: params.currency,
+      status: 'paid',
+      paid_at: nowIso,
+      provider_payment_id: trimmedPaymentId,
+      checkout_url: booking.checkoutUrl ?? null,
+    });
+
+    if (
+      booking.status === 'pending_payment' ||
+      booking.status === 'pending_confirmation'
+    ) {
+      await repo.updateBookingStatus({
+        bookingId: booking.id,
+        status: 'confirmed',
+        recordedBy: 'Mercado Pago Webhook',
+      });
+    }
+    await supabase
+      .from('bookings')
+      .update({ confirmed_via: 'payment', updated_at: nowIso })
+      .eq('id', booking.id);
+
+    if (effectiveAmountCents > 0) {
+      await repo.recordPaymentSplits({
+        bookingId: booking.id,
+        splits: [
+          {
+            method: 'online',
+            amountCents: effectiveAmountCents,
+            tipCents: 0,
+            tipStaffId: null,
+            reference: `${params.provider.toUpperCase()}-${trimmedPaymentId}`,
+          },
+        ],
+      });
+      await repo.addCashEntry({
+        bookingId: booking.id,
+        staffId: booking.staffId,
+        entryType: 'deposit',
+        description: `Anticipo en línea ${booking.bookingCode} (${params.provider})`,
+        amountCents: effectiveAmountCents,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'card',
+        recordedBy: 'Mercado Pago Webhook',
+      });
+    }
+
+    await repo.writeAuditLog({
+      actorId: 'system-mercadopago',
+      actorEmail: 'webhook@mercadopago.system',
+      actorRole: 'owner',
+      action: 'deposit_approved',
+      entityType: 'booking',
+      entityId: booking.id,
+      metadata: {
+        bookingCode: booking.bookingCode,
+        provider: params.provider,
+        providerPaymentId: trimmedPaymentId,
+        amountCents: effectiveAmountCents,
+      },
+    });
+
+    return {
+      status: 'ok',
+      idempotent: false,
+      bookingId: booking.id,
+    };
+  }
 
   const committed = await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
@@ -2270,6 +2458,253 @@ export async function recordBookingCheckoutAtomic(params: {
   stampAwarded: LoyaltyStamp | null;
   redeemedPackage?: ClientPackage | null;
 }> {
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const supabase = createSupabaseAdminClient();
+    const snapshot = await repo.getSnapshot();
+    const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    if (booking.status === 'canceled' || booking.status === 'no_show') {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'No se puede registrar cobro en una cita cancelada o no-show.',
+      );
+    }
+
+    const isPast = new Date(booking.endAt).getTime() < Date.now();
+    const pastLockActive = snapshot.settings.lockPastBookings !== false;
+    if (pastLockActive && isPast && params.actor.role !== 'owner') {
+      throw new PolicyError(
+        'PAST_BOOKING_LOCKED',
+        'Las citas pasadas están bloqueadas; solo la Dueña puede cobrarlas o modificarlas.',
+      );
+    }
+
+    let extraInventoryItem: InventoryItem | null = null;
+    let extraRetailTotalCents = 0;
+    if (params.extraItem) {
+      const found = snapshot.inventory.find(
+        (i) => i.id === params.extraItem?.inventoryItemId && i.isActive,
+      );
+      if (!found) {
+        throw new PolicyError('ITEM_NOT_FOUND', 'Producto de reventa no encontrado.');
+      }
+      extraInventoryItem = found;
+      extraRetailTotalCents = Math.round(
+        found.retailPriceCents * params.extraItem.quantity,
+      );
+    }
+
+    const effectiveTotalCents = booking.totalPriceCents + extraRetailTotalCents;
+    const validation = validatePaymentSplits(params.splits, effectiveTotalCents);
+    if (!validation.ok) {
+      throw new PolicyError(validation.code, validation.message);
+    }
+
+    let loyaltyProgramForRedemption: LoyaltyProgram | null = null;
+    if (params.redeemLoyaltyReward) {
+      const activeProgram = (snapshot.loyaltyPrograms ?? []).find((p) => p.isActive);
+      if (!activeProgram) {
+        throw new PolicyError(
+          'LOYALTY_NOT_READY',
+          'No hay un programa de lealtad activo.',
+        );
+      }
+      const rewardServiceName = activeProgram.rewardServiceId
+        ? snapshot.services.find((s) => s.id === activeProgram.rewardServiceId)?.name ?? null
+        : null;
+      const clientLoyalty = computeClientLoyaltySummary(
+        activeProgram,
+        snapshot.loyaltyStamps ?? [],
+        booking.clientId,
+        rewardServiceName,
+      );
+      if (!clientLoyalty.isRewardReady) {
+        throw new PolicyError(
+          'LOYALTY_NOT_READY',
+          'La clienta aún no alcanza los sellos requeridos para canjear recompensa.',
+        );
+      }
+      loyaltyProgramForRedemption = activeProgram;
+    }
+
+    const recordedBy = params.actor.fullName || params.actor.email;
+    if (pastLockActive && isPast && params.actor.role === 'owner') {
+      await repo.writeAuditLog({
+        actorId: params.actor.id,
+        actorEmail: params.actor.email,
+        actorRole: params.actor.role,
+        action: 'past_booking_override',
+        entityType: 'booking',
+        entityId: booking.id,
+        metadata: {
+          bookingCode: booking.bookingCode,
+          operation: 'checkout_split',
+        },
+      });
+    }
+
+    if (extraInventoryItem && params.extraItem) {
+      await repo.adjustInventoryItem({
+        itemId: extraInventoryItem.id,
+        delta: -params.extraItem.quantity,
+        reason: 'retail_sale',
+        notes: `Checkout cita ${booking.bookingCode}`,
+        createdBy: recordedBy,
+      });
+      await supabase
+        .from('bookings')
+        .update({
+          subtotal_cents: booking.subtotalCents + extraRetailTotalCents,
+          total_price_cents: effectiveTotalCents,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', booking.id);
+    }
+
+    const createdSplits = await repo.recordPaymentSplits({
+      bookingId: booking.id,
+      splits: params.splits.map((s) => ({
+        method: s.method,
+        amountCents: s.amountCents,
+        tipCents: s.tipCents ?? 0,
+        tipStaffId:
+          s.tipStaffId !== undefined
+            ? s.tipStaffId
+            : (s.tipCents ?? 0) > 0
+              ? booking.staffId
+              : null,
+        reference: s.reference ?? null,
+      })),
+    });
+
+    const hydratedBeforeCash = hydrateBooking(snapshot, booking);
+    const extraSuffix =
+      extraInventoryItem && params.extraItem
+        ? ` + ${extraInventoryItem.name} (x${params.extraItem.quantity})`
+        : '';
+    const serviceStaffMember = snapshot.staff.find((st) => st.id === booking.staffId);
+    const commissionPct =
+      serviceStaffMember?.commissionPercent ?? snapshot.settings.defaultCommissionPercent;
+
+    for (const splitRecord of createdSplits) {
+      if (splitRecord.amountCents === 0 && splitRecord.tipCents === 0) continue;
+      const commissionCents = Math.round((splitRecord.amountCents * commissionPct) / 100);
+      const isCrossStaffTip =
+        splitRecord.tipCents > 0 &&
+        Boolean(splitRecord.tipStaffId) &&
+        splitRecord.tipStaffId !== booking.staffId;
+
+      await repo.addCashEntry({
+        bookingId: booking.id,
+        staffId: booking.staffId,
+        entryType: 'service_income',
+        description: `${hydratedBeforeCash.service.name}${extraSuffix} — ${hydratedBeforeCash.client.fullName}`,
+        amountCents: splitRecord.amountCents,
+        tipCents: isCrossStaffTip ? 0 : splitRecord.tipCents,
+        commissionCents,
+        paymentMethod: mapSplitMethodToCashMethod(splitRecord.method),
+        recordedBy,
+      });
+
+      if (isCrossStaffTip && splitRecord.tipStaffId) {
+        await repo.addCashEntry({
+          bookingId: booking.id,
+          staffId: splitRecord.tipStaffId,
+          entryType: 'service_income',
+          description: `Propina (${hydratedBeforeCash.service.name} — ${hydratedBeforeCash.client.fullName})`,
+          amountCents: 0,
+          tipCents: splitRecord.tipCents,
+          commissionCents: 0,
+          paymentMethod: mapSplitMethodToCashMethod(splitRecord.method),
+          recordedBy,
+        });
+      }
+    }
+
+    if (loyaltyProgramForRedemption) {
+      const requiredCount = Math.max(
+        1,
+        Math.floor(loyaltyProgramForRedemption.stampsRequired),
+      );
+      const eligibleStamps = (snapshot.loyaltyStamps ?? [])
+        .filter(
+          (s) =>
+            s.clientId === booking.clientId &&
+            s.programId === loyaltyProgramForRedemption?.id,
+        )
+        .toSorted((a, b) => {
+          const dateCmp = a.stampedDate.localeCompare(b.stampedDate);
+          return dateCmp !== 0 ? dateCmp : a.createdAt.localeCompare(b.createdAt);
+        });
+      const consumedIds = eligibleStamps.slice(0, requiredCount).map((s) => s.id);
+      if (consumedIds.length > 0) {
+        await supabase.from('loyalty_stamps').delete().in('id', consumedIds);
+      }
+      await repo.writeAuditLog({
+        actorId: params.actor.id,
+        actorEmail: params.actor.email,
+        actorRole: params.actor.role,
+        action: 'loyalty_redeemed',
+        entityType: 'client',
+        entityId: booking.clientId,
+        metadata: {
+          bookingId: booking.id,
+          bookingCode: booking.bookingCode,
+          programId: loyaltyProgramForRedemption.id,
+          stampsConsumed: consumedIds.length,
+        },
+      });
+    }
+
+    const shouldComplete =
+      params.markCompleted !== false && booking.status !== 'completed';
+    const hydratedFinal = shouldComplete
+      ? await repo.updateBookingStatus({
+          bookingId: booking.id,
+          status: 'completed',
+          recordedBy,
+        })
+      : (await repo.getBookingByToken(booking.manageToken)) ?? hydratedBeforeCash;
+
+    let stampAwarded: LoyaltyStamp | null = null;
+    if (hydratedFinal.status === 'completed') {
+      const activeProgram = (snapshot.loyaltyPrograms ?? []).find((p) => p.isActive);
+      if (activeProgram) {
+        const stampedDate = getDateKeyInTimezone(
+          new Date(hydratedFinal.startAt),
+          snapshot.settings.timezone || 'America/Mexico_City',
+        );
+        try {
+          stampAwarded = await repo.awardLoyaltyStamp({
+            clientId: hydratedFinal.clientId,
+            bookingId: hydratedFinal.id,
+            programId: activeProgram.id,
+            stampedDate,
+          });
+        } catch {
+          stampAwarded = null;
+        }
+      }
+    }
+
+    const refreshedSnapshot = await repo.getSnapshot();
+    const allBookingSplits = (refreshedSnapshot.paymentSplits ?? []).filter(
+      (s) => s.bookingId === booking.id,
+    );
+    const summary = computeBookingPaymentSummary(
+      hydratedFinal.totalPriceCents,
+      allBookingSplits,
+    );
+
+    return {
+      booking: hydratedFinal,
+      splits: createdSplits,
+      summary,
+      stampAwarded,
+    };
+  }
+
   const committed = await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     const booking = db.bookings.find((b) => b.id === params.bookingId);
@@ -2600,6 +3035,9 @@ export async function manageClientBookingAction(params: {
   newStaffId?: string;
   paymentProofUrl?: string;
 }): Promise<BookingWithRelations> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().manageClientBookingAction(params);
+  }
   if (params.action === 'upload_proof') {
     const rawProof = params.paymentProofUrl?.trim() ?? '';
     if (!rawProof) {
@@ -2813,7 +3251,7 @@ export async function sendManualBookingReminder(params: {
   messagePreview: string;
   logs: ScheduledNotification[];
 }> {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const booking = db.bookings.find((b) => b.id === params.bookingId);
   if (!booking) {
     throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
@@ -2901,9 +3339,30 @@ export async function sendManualBookingReminder(params: {
     }
   }
 
-  await withWriteLock((liveDb) => {
-    liveDb.notifications.unshift(...createdLogs);
-  });
+  if (isSupabaseEnabled()) {
+    if (createdLogs.length > 0) {
+      const supabase = createSupabaseAdminClient();
+      await supabase.from('scheduled_notifications').insert(
+        createdLogs.map((item) => ({
+          booking_id: item.bookingId,
+          workflow_id: item.workflowId,
+          channel: item.channel,
+          recipient: item.recipient,
+          scheduled_for: item.scheduledFor,
+          status: item.status,
+          subject: item.subject,
+          preview_text: item.previewText,
+          provider_message_id: item.providerMessageId,
+          error_message: item.errorMessage,
+          sent_at: item.sentAt,
+        })),
+      );
+    }
+  } else {
+    await withWriteLock((liveDb) => {
+      liveDb.notifications.unshift(...createdLogs);
+    });
+  }
 
   return {
     ok: true,
@@ -2926,7 +3385,7 @@ export async function requestBookingReschedule(params: {
   waMeUrl: string;
   messagePreview: string;
 }> {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const booking = db.bookings.find((b) => b.id === params.bookingId);
   if (!booking) {
     throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
@@ -2978,9 +3437,26 @@ export async function requestBookingReschedule(params: {
     createdAt: nowIso,
   };
 
-  await withWriteLock((liveDb) => {
-    liveDb.notifications.unshift(log);
-  });
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseAdminClient();
+    await supabase.from('scheduled_notifications').insert({
+      booking_id: log.bookingId,
+      workflow_id: log.workflowId,
+      channel: log.channel,
+      recipient: log.recipient,
+      scheduled_for: log.scheduledFor,
+      status: log.status,
+      subject: log.subject,
+      preview_text: log.previewText,
+      provider_message_id: log.providerMessageId,
+      error_message: log.errorMessage,
+      sent_at: log.sentAt,
+    });
+  } else {
+    await withWriteLock((liveDb) => {
+      liveDb.notifications.unshift(log);
+    });
+  }
 
   return {
     ok: true,
@@ -2996,6 +3472,9 @@ export async function updateSalonSettings(
     landingContent?: Partial<SalonSettings['landingContent']>;
   },
 ): Promise<SalonSettings> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateSalonSettings(patch);
+  }
   return withWriteLock((db) => {
     const existingHash = db.settings.ownerPinHash ?? null;
     const nextHash =
@@ -3044,6 +3523,28 @@ export function verifyStoredOwnerPin(pin: string | null | undefined): {
   };
 }
 
+export async function verifyStoredOwnerPinAsync(pin: string | null | undefined): Promise<{
+  required: boolean;
+  valid: boolean;
+}> {
+  if (!isSupabaseEnabled()) {
+    return verifyStoredOwnerPin(pin);
+  }
+  const db = await createSupabaseRepository().getSnapshot();
+  const storedHash = db.settings.ownerPinHash ?? null;
+  const required = Boolean(db.settings.ownerPinEnabled && storedHash);
+  if (!required) {
+    return { required: false, valid: true };
+  }
+  if (!pin || !pin.trim()) {
+    return { required: true, valid: false };
+  }
+  return {
+    required: true,
+    valid: verifyOwnerPin(pin, storedHash),
+  };
+}
+
 export function getClientNoShowPolicyStatus(phone: string): NoShowPolicyEvaluation {
   const db = getSnapshot();
   const normalized = normalizePhoneE164(phone);
@@ -3072,7 +3573,7 @@ export async function createRecurringBookingSeries(
     code: string;
   }>;
 }> {
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const tz = db.settings.timezone || 'America/Mexico_City';
   let occurrences: ReturnType<typeof generateRecurrenceDates>;
   try {
@@ -3137,10 +3638,10 @@ export async function createRecurringBookingSeries(
   };
 }
 
-export function getClientPortalSnapshotByPhone(
+function computeClientPortalSnapshotByPhone(
+  db: Readonly<DemoDatabase>,
   phoneE164: string,
 ): ClientPortalSnapshotDTO {
-  const db = getSnapshot();
   const normalized = normalizePhoneE164(phoneE164);
   const client = normalized
     ? db.clients.find((c) => c.phoneE164 === normalized)
@@ -3223,13 +3724,31 @@ export function getClientPortalSnapshotByPhone(
     clientId: client.id,
     clientName: client.fullName,
     bookings: portalBookings,
-    loyaltySummary: getClientLoyaltySummary(client.id),
+    loyaltySummary: computeClientLoyaltySummaryFromDb(db, client.id),
     packages,
   });
 }
 
+export function getClientPortalSnapshotByPhone(
+  phoneE164: string,
+): ClientPortalSnapshotDTO {
+  return computeClientPortalSnapshotByPhone(getSnapshot(), phoneE164);
+}
+
+export async function getClientPortalSnapshotByPhoneAsync(
+  phoneE164: string,
+): Promise<ClientPortalSnapshotDTO> {
+  const db = await getRepository().getSnapshot();
+  return computeClientPortalSnapshotByPhone(db, phoneE164);
+}
+
 export function listServicePackages(): ServicePackage[] {
   const db = getSnapshot();
+  return [...(db.servicePackages ?? [])];
+}
+
+export async function listServicePackagesAsync(): Promise<ServicePackage[]> {
+  const db = await getRepository().getSnapshot();
   return [...(db.servicePackages ?? [])];
 }
 
@@ -3296,7 +3815,10 @@ export async function toggleServicePackage(
   });
 }
 
-export function listClientPackages(clientId?: string): Array<
+function listClientPackagesFromDb(
+  db: Readonly<DemoDatabase>,
+  clientId?: string,
+): Array<
   ClientPackage & {
     clientName: string;
     serviceName: string;
@@ -3304,7 +3826,6 @@ export function listClientPackages(clientId?: string): Array<
     isExpired: boolean;
   }
 > {
-  const db = getSnapshot();
   const nowMs = Date.now();
   const clientById = new Map(db.clients.map((c) => [c.id, c]));
   const serviceById = new Map(db.services.map((s) => [s.id, s]));
@@ -3325,6 +3846,31 @@ export function listClientPackages(clientId?: string): Array<
         isExpired: balance.isExpired,
       };
     });
+}
+
+export function listClientPackages(clientId?: string): Array<
+  ClientPackage & {
+    clientName: string;
+    serviceName: string;
+    remainingSessions: number;
+    isExpired: boolean;
+  }
+> {
+  return listClientPackagesFromDb(getSnapshot(), clientId);
+}
+
+export async function listClientPackagesAsync(clientId?: string): Promise<
+  Array<
+    ClientPackage & {
+      clientName: string;
+      serviceName: string;
+      remainingSessions: number;
+      isExpired: boolean;
+    }
+  >
+> {
+  const db = await getRepository().getSnapshot();
+  return listClientPackagesFromDb(db, clientId);
 }
 
 export async function assignClientPackage(params: {
@@ -3444,8 +3990,8 @@ export async function logCampaignDispatch(
   });
 }
 
-export function listCampaignDispatches(limit = 50): CampaignDispatchLog[] {
-  const db = getSnapshot();
+export async function listCampaignDispatches(limit = 50): Promise<CampaignDispatchLog[]> {
+  const db = await getRepository().getSnapshot();
   return (db.campaignDispatches ?? []).slice(0, Math.max(1, Math.min(limit, 200)));
 }
 
@@ -3465,6 +4011,40 @@ export async function saveOnboardingSetup(params: {
     isStartingPrice?: boolean;
   };
 }): Promise<{ settings: SalonSettings; starterService: Service | null }> {
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const settings = await repo.updateSalonSettings({
+      ...(params.salonName?.trim() ? { name: params.salonName.trim() } : {}),
+      ...(params.businessType !== undefined ? { businessType: params.businessType } : {}),
+      ...(params.teamSizeTier !== undefined ? { teamSizeTier: params.teamSizeTier } : {}),
+      ...(params.serviceMode !== undefined ? { serviceMode: params.serviceMode } : {}),
+      ...(params.address !== undefined ? { address: params.address } : {}),
+      ...(params.soundAlertsEnabled !== undefined
+        ? { soundAlertsEnabled: params.soundAlertsEnabled }
+        : {}),
+      ...(params.onboardingCompleted !== undefined
+        ? { onboardingCompleted: params.onboardingCompleted }
+        : {}),
+    });
+    let starterService: Service | null = null;
+    if (params.starterService) {
+      const depositCents = settings.depositAmountCents ?? 20000;
+      starterService = await repo.upsertService({
+        ...(params.starterService.id ? { id: params.starterService.id } : {}),
+        name: params.starterService.name,
+        priceCents: params.starterService.priceCents,
+        durationMinutes: params.starterService.durationMinutes,
+        isStartingPrice: params.starterService.isStartingPrice ?? false,
+        requiresConfirmation: depositCents > 0,
+        depositRequired: depositCents > 0,
+        depositAmountCents: depositCents,
+        allowInspoPhoto: true,
+        isActive: true,
+        isFeatured: true,
+      });
+    }
+    return { settings, starterService };
+  }
   return withWriteLock((db) => {
     const nowIso = new Date().toISOString();
     const existingHash = db.settings.ownerPinHash ?? null;
@@ -3541,6 +4121,9 @@ export async function saveOnboardingSetup(params: {
 export async function upsertService(
   input: Partial<Service> & { name: string; durationMinutes: number; priceCents: number },
 ): Promise<Service> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertService(input);
+  }
   return withWriteLock((db) => {
     const existing = input.id ? db.services.find((s) => s.id === input.id) : null;
     if (existing) {
@@ -3581,6 +4164,9 @@ export async function upsertService(
 export async function upsertAddon(
   input: Partial<ServiceAddon> & { name: string; extraMinutes: number; extraPriceCents: number },
 ): Promise<ServiceAddon> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertAddon(input);
+  }
   return withWriteLock((db) => {
     const existing = input.id ? db.addons.find((a) => a.id === input.id) : null;
     if (existing) {
@@ -3607,6 +4193,9 @@ export async function saveStaffSchedule(
   staffId: string,
   rules: AvailabilityRule[],
 ): Promise<void> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().saveStaffSchedule(staffId, rules);
+  }
   await withWriteLock((db) => {
     let sched = db.schedules.find((s) => s.staffId === staffId && s.isDefault);
     if (!sched) {
@@ -3653,6 +4242,9 @@ function validateOverrideStaffAndRedirect(
 export async function addDateOverride(
   override: Omit<DateOverride, 'id'>,
 ): Promise<DateOverride> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().addDateOverride(override);
+  }
   return withWriteLock((db) => {
     const validatedRedirect = validateOverrideStaffAndRedirect(
       db,
@@ -3701,6 +4293,26 @@ export async function addDateOverrideRange(params: {
     );
   }
 
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const cleanPublicNote = params.publicNote?.trim();
+    const created: DateOverride[] = [];
+    for (const overrideDate of dates) {
+      const record = await repo.addDateOverride({
+        staffId: params.staffId,
+        overrideDate,
+        isUnavailable: params.isUnavailable,
+        startTime: params.isUnavailable ? null : params.startTime,
+        endTime: params.isUnavailable ? null : params.endTime,
+        reason: params.reason,
+        ...(cleanPublicNote ? { publicNote: cleanPublicNote } : {}),
+        redirectStaffId: params.redirectStaffId ?? null,
+      });
+      created.push(record);
+    }
+    return created;
+  }
+
   return withWriteLock((db) => {
     const validatedRedirect = validateOverrideStaffAndRedirect(
       db,
@@ -3745,6 +4357,44 @@ export async function preloadMexicoHolidays(params: {
       'INVALID_YEAR',
       err instanceof Error ? err.message : 'Año inválido.',
     );
+  }
+
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const snapshot = await repo.getSnapshot();
+    const tz = snapshot.settings.timezone || 'America/Mexico_City';
+    const todayKey = getDateKeyInTimezone(new Date(), tz);
+    const created: DateOverride[] = [];
+    const skippedDates: string[] = [];
+
+    for (const holiday of holidays) {
+      if (holiday.date < todayKey) continue;
+      const alreadyExists = snapshot.dateOverrides.some(
+        (o) => o.staffId === params.staffId && o.overrideDate === holiday.date,
+      );
+      if (alreadyExists) {
+        skippedDates.push(holiday.date);
+        continue;
+      }
+      const cleanNote = params.publicNote?.trim() || `Cerrado por ${holiday.name}`;
+      const record = await repo.addDateOverride({
+        staffId: params.staffId,
+        overrideDate: holiday.date,
+        isUnavailable: true,
+        startTime: null,
+        endTime: null,
+        reason: `Festivo MX: ${holiday.name}`,
+        publicNote: cleanNote,
+        redirectStaffId: params.redirectStaffId ?? null,
+      });
+      created.push(record);
+    }
+
+    return {
+      created,
+      skippedDates,
+      year: params.year,
+    };
   }
 
   return withWriteLock((db) => {
@@ -3796,6 +4446,9 @@ export async function preloadMexicoHolidays(params: {
 }
 
 export async function deleteDateOverride(id: string): Promise<void> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().deleteDateOverride(id);
+  }
   await withWriteLock((db) => {
     db.dateOverrides = db.dateOverrides.filter((o) => o.id !== id);
     publishRealtimeEvent('availability_updated');
@@ -3805,6 +4458,9 @@ export async function deleteDateOverride(id: string): Promise<void> {
 export async function upsertRecurringBlock(
   input: Omit<RecurringBlock, 'id'> & { id?: string },
 ): Promise<RecurringBlock> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertRecurringBlock(input);
+  }
   return withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     if (!db.staff.some((s) => s.id === input.staffId)) {
@@ -3835,6 +4491,15 @@ export async function toggleRecurringBlock(
   id: string,
   isActive: boolean,
 ): Promise<RecurringBlock> {
+  if (isSupabaseEnabled()) {
+    const repo = createSupabaseRepository();
+    const snapshot = await repo.getSnapshot();
+    const block = (snapshot.recurringBlocks ?? []).find((b) => b.id === id);
+    if (!block) {
+      throw new PolicyError('BLOCK_NOT_FOUND', 'Bloqueo recurrente no encontrado.');
+    }
+    return repo.upsertRecurringBlock({ ...block, isActive });
+  }
   return withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     const block = cols.recurringBlocks.find((b) => b.id === id);
@@ -3848,6 +4513,9 @@ export async function toggleRecurringBlock(
 }
 
 export async function deleteRecurringBlock(id: string): Promise<void> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().deleteRecurringBlock(id);
+  }
   await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     cols.recurringBlocks = cols.recurringBlocks.filter((b) => b.id !== id);
@@ -3859,6 +4527,9 @@ export async function deleteRecurringBlock(id: string): Promise<void> {
 export async function upsertLoyaltyProgram(
   patch: Partial<LoyaltyProgram>,
 ): Promise<LoyaltyProgram> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertLoyaltyProgram(patch);
+  }
   return withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
     const existing = patch.id
@@ -3893,8 +4564,10 @@ export async function upsertLoyaltyProgram(
   });
 }
 
-export function getClientLoyaltySummary(clientId: string): PublicLoyaltySummaryDTO | null {
-  const db = getSnapshot();
+function computeClientLoyaltySummaryFromDb(
+  db: Readonly<DemoDatabase>,
+  clientId: string,
+): PublicLoyaltySummaryDTO | null {
   const activeProgram = (db.loyaltyPrograms ?? []).find((p) => p.isActive);
   if (!activeProgram) return null;
   const rewardServiceName = activeProgram.rewardServiceId
@@ -3909,14 +4582,24 @@ export function getClientLoyaltySummary(clientId: string): PublicLoyaltySummaryD
   return PublicLoyaltySummarySchema.parse(summary);
 }
 
-export function getNearRewardClients(): Array<{
+export function getClientLoyaltySummary(clientId: string): PublicLoyaltySummaryDTO | null {
+  return computeClientLoyaltySummaryFromDb(getSnapshot(), clientId);
+}
+
+export async function getClientLoyaltySummaryAsync(
+  clientId: string,
+): Promise<PublicLoyaltySummaryDTO | null> {
+  const db = await getRepository().getSnapshot();
+  return computeClientLoyaltySummaryFromDb(db, clientId);
+}
+
+function computeNearRewardClientsFromDb(db: Readonly<DemoDatabase>): Array<{
   clientId: string;
   fullName: string;
   phoneE164: string;
   instagramHandle: string | null;
   summary: PublicLoyaltySummaryDTO;
 }> {
-  const db = getSnapshot();
   const activeProgram = (db.loyaltyPrograms ?? []).find((p) => p.isActive);
   if (!activeProgram) return [];
   const rewardServiceName = activeProgram.rewardServiceId
@@ -3953,7 +4636,33 @@ export function getNearRewardClients(): Array<{
   });
 }
 
-export function getInactiveClients(inactiveDays: number): Array<{
+export function getNearRewardClients(): Array<{
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  summary: PublicLoyaltySummaryDTO;
+}> {
+  return computeNearRewardClientsFromDb(getSnapshot());
+}
+
+export async function getNearRewardClientsAsync(): Promise<
+  Array<{
+    clientId: string;
+    fullName: string;
+    phoneE164: string;
+    instagramHandle: string | null;
+    summary: PublicLoyaltySummaryDTO;
+  }>
+> {
+  const db = await getRepository().getSnapshot();
+  return computeNearRewardClientsFromDb(db);
+}
+
+function computeInactiveClientsFromDb(
+  db: Readonly<DemoDatabase>,
+  inactiveDays: number,
+): Array<{
   clientId: string;
   fullName: string;
   phoneE164: string;
@@ -3962,7 +4671,6 @@ export function getInactiveClients(inactiveDays: number): Array<{
   daysSinceLastVisit: number | null;
   totalVisits: number;
 }> {
-  const db = getSnapshot();
   const nowMs = Date.now();
   const cutoffMs = nowMs - inactiveDays * 86_400_000;
 
@@ -4017,8 +4725,34 @@ export function getInactiveClients(inactiveDays: number): Array<{
   });
 }
 
-export function getClientArcoExport(clientId: string) {
-  const db = getSnapshot();
+export function getInactiveClients(inactiveDays: number): Array<{
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
+  totalVisits: number;
+}> {
+  return computeInactiveClientsFromDb(getSnapshot(), inactiveDays);
+}
+
+export async function getInactiveClientsAsync(inactiveDays: number): Promise<
+  Array<{
+    clientId: string;
+    fullName: string;
+    phoneE164: string;
+    instagramHandle: string | null;
+    lastVisitAt: string | null;
+    daysSinceLastVisit: number | null;
+    totalVisits: number;
+  }>
+> {
+  const db = await getRepository().getSnapshot();
+  return computeInactiveClientsFromDb(db, inactiveDays);
+}
+
+function computeClientArcoExportFromDb(db: Readonly<DemoDatabase>, clientId: string) {
   const client = db.clients.find((c) => c.id === clientId);
   if (!client) return null;
 
@@ -4043,7 +4777,7 @@ export function getClientArcoExport(clientId: string) {
     }));
   const bookingIds = new Set(bookings.map((b) => b.id));
   const consents = (db.consents ?? []).filter((c) => c.clientId === client.id);
-  const loyaltySummary = getClientLoyaltySummary(client.id);
+  const loyaltySummary = computeClientLoyaltySummaryFromDb(db, client.id);
   const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
     bookingIds.has(s.bookingId),
   );
@@ -4059,9 +4793,21 @@ export function getClientArcoExport(clientId: string) {
   };
 }
 
+export function getClientArcoExport(clientId: string) {
+  return computeClientArcoExportFromDb(getSnapshot(), clientId);
+}
+
+export async function getClientArcoExportAsync(clientId: string) {
+  const db = await getRepository().getSnapshot();
+  return computeClientArcoExportFromDb(db, clientId);
+}
+
 export async function upsertStaffMember(
   input: Partial<StaffMember> & { name: string },
 ): Promise<StaffMember> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertStaffMember(input);
+  }
   return withWriteLock((db) => {
     const existing = input.id ? db.staff.find((s) => s.id === input.id) : null;
     if (existing) {
@@ -4103,6 +4849,9 @@ export async function upsertStaffMember(
 export async function upsertAdminUser(
   input: Omit<AdminUser, 'id' | 'createdAt'> & { id?: string },
 ): Promise<AdminUser> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertAdminUser(input);
+  }
   return withWriteLock((db) => {
     const existing = input.id
       ? db.adminUsers.find((u) => u.id === input.id)
@@ -4134,6 +4883,47 @@ export async function createClientProfile(params: {
   notes?: string;
 }): Promise<ClientProfile> {
   const normalizedInstagram = normalizeInstagramHandle(params.instagramHandle);
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseAdminClient();
+    const phoneE164 = normalizePhoneE164(params.phone);
+    const { data, error } = await supabase
+      .from('clients')
+      .insert({
+        full_name: params.fullName.trim(),
+        phone_e164: phoneE164,
+        email: params.email?.trim() || null,
+        ...(normalizedInstagram ? { instagram_handle: normalizedInstagram } : {}),
+        birthday: params.birthday?.trim() || null,
+        notes: params.notes?.trim() || '',
+        no_show_count: 0,
+      })
+      .select('*')
+      .single();
+    if (error || !data) {
+      if (error?.code === '23505') {
+        throw new PolicyError(
+          'CLIENT_EXISTS',
+          'Ya existe una clienta registrada con ese número de teléfono.',
+        );
+      }
+      throw new PolicyError(
+        'CLIENT_CREATE_FAILED',
+        error?.message ?? 'No se pudo registrar a la clienta.',
+      );
+    }
+    return {
+      id: data.id,
+      fullName: data.full_name,
+      phoneE164: data.phone_e164,
+      email: data.email,
+      ...(data.instagram_handle ? { instagramHandle: data.instagram_handle } : {}),
+      birthday: data.birthday,
+      notes: data.notes,
+      noShowCount: data.no_show_count,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  }
   return withWriteLock((db) => {
     const phoneE164 = normalizePhoneE164(params.phone);
     const existing = db.clients.find((c) => c.phoneE164 === phoneE164);
@@ -4168,6 +4958,9 @@ export async function updateClientNotes(params: {
   email?: string | null;
   instagramHandle?: string | null;
 }): Promise<ClientProfile> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateClientNotes(params);
+  }
   const hasInstagramUpdate = params.instagramHandle !== undefined;
   const normalizedInstagram = hasInstagramUpdate
     ? normalizeInstagramHandle(params.instagramHandle)
@@ -4189,6 +4982,9 @@ export async function updateClientNotes(params: {
 export async function addWaitlistEntry(
   input: Omit<WaitlistEntry, 'id' | 'status' | 'notifiedAt' | 'createdAt'>,
 ): Promise<WaitlistEntry> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().addWaitlistEntry(input);
+  }
   return withWriteLock((db) => {
     const entry: WaitlistEntry = {
       ...input,
@@ -4208,6 +5004,9 @@ export async function updateWaitlistStatus(
   id: string,
   status: WaitlistEntry['status'],
 ): Promise<WaitlistEntry> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateWaitlistStatus(id, status);
+  }
   return withWriteLock((db) => {
     const entry = db.waitlist.find((w) => w.id === id);
     if (!entry) throw new PolicyError('WAITLIST_NOT_FOUND', 'Registro no encontrado.');
@@ -4224,6 +5023,9 @@ export async function submitBookingReview(params: {
   comment: string;
   clickedGoogleReview?: boolean;
 }): Promise<BookingReview> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().submitBookingReview(params);
+  }
   return withWriteLock((db) => {
     const booking = db.bookings.find((b) => b.manageToken === params.manageToken);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
@@ -4252,6 +5054,9 @@ export async function submitBookingReview(params: {
 export async function upsertCoupon(
   input: Omit<Coupon, 'id' | 'usedCount' | 'createdAt'> & { id?: string },
 ): Promise<Coupon> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertCoupon(input);
+  }
   return withWriteLock((db) => {
     const existing = input.id ? db.coupons.find((c) => c.id === input.id) : null;
     if (existing) {
@@ -4280,6 +5085,9 @@ export async function adjustInventoryItem(params: {
   notes?: string;
   createdBy?: string;
 }): Promise<InventoryItem> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().adjustInventoryItem(params);
+  }
   return withWriteLock((db) => {
     const nowIso = new Date().toISOString();
     if (params.newItem) {
@@ -4333,6 +5141,9 @@ export async function adjustInventoryItem(params: {
 export async function addCashEntry(
   input: Omit<CashRegisterEntry, 'id' | 'occurredAt'>,
 ): Promise<CashRegisterEntry> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().addCashEntry(input);
+  }
   return withWriteLock((db) => {
     const created: CashRegisterEntry = {
       ...input,
@@ -4348,6 +5159,9 @@ export async function updateWorkflow(
   id: string,
   patch: Partial<NotificationWorkflow>,
 ): Promise<NotificationWorkflow> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateWorkflow(id, patch);
+  }
   return withWriteLock((db) => {
     const wf = db.workflows.find((w) => w.id === id);
     if (!wf) throw new PolicyError('WORKFLOW_NOT_FOUND', 'Workflow no encontrado.');
@@ -4360,6 +5174,9 @@ export async function updateCalendarConnection(
   staffId: string,
   patch: Partial<CalendarConnection>,
 ): Promise<CalendarConnection> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateCalendarConnection(staffId, patch);
+  }
   return withWriteLock((db) => {
     let conn = db.calendarConnections.find((c) => c.staffId === staffId);
     if (!conn) {
@@ -4389,6 +5206,19 @@ export async function syncCalendarConnectionBusyBlocks(params: {
   refreshedAccessTokenEncrypted?: string;
   refreshedTokenExpiresAt?: string;
 }): Promise<void> {
+  if (isSupabaseEnabled()) {
+    await createSupabaseRepository().updateCalendarConnection(params.staffId, {
+      externalBusyBlocks: params.busyBlocks,
+      lastSyncedAt: new Date().toISOString(),
+      ...(params.refreshedAccessTokenEncrypted
+        ? { accessTokenEncrypted: params.refreshedAccessTokenEncrypted }
+        : {}),
+      ...(params.refreshedTokenExpiresAt
+        ? { tokenExpiresAt: params.refreshedTokenExpiresAt }
+        : {}),
+    });
+    return;
+  }
   await withWriteLock((db) => {
     const conn = db.calendarConnections.find((c) => c.staffId === params.staffId);
     if (!conn) return;
@@ -4407,6 +5237,9 @@ export async function syncCalendarConnectionBusyBlocks(params: {
 export async function upsertGalleryItem(
   input: Omit<GalleryItem, 'id' | 'displayOrder'> & { id?: string },
 ): Promise<GalleryItem> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertGalleryItem(input);
+  }
   return withWriteLock((db) => {
     const existing = input.id ? db.gallery.find((g) => g.id === input.id) : null;
     if (existing) {
@@ -4424,6 +5257,9 @@ export async function upsertGalleryItem(
 }
 
 export async function deleteGalleryItem(id: string): Promise<void> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().deleteGalleryItem(id);
+  }
   await withWriteLock((db) => {
     db.gallery = db.gallery.filter((g) => g.id !== id);
   });
@@ -4447,6 +5283,13 @@ export async function processDueScheduledNotifications(
   canceledCount: number;
   skippedCount: number;
 }> {
+  if (isSupabaseEnabled()) {
+    const result = await createSupabaseRepository().processDueScheduledNotifications(
+      dispatcher,
+      nowMs,
+    );
+    return { ...result, skippedCount: 0 };
+  }
   return withWriteLock(async (db) => {
     const due = db.notifications.filter(
       (n) => n.status === 'pending' && new Date(n.scheduledFor).getTime() <= nowMs,

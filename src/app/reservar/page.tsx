@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import '../booking.css';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {
   toPublicServiceDTO,
@@ -90,7 +90,7 @@ export default async function ReservarPage({
   searchParams: Promise<ReservarSearchParams>;
 }) {
   const params = await searchParams;
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const siteOrigin = getSiteOrigin();
   const initialTodayKey = getDateKeyInTimezone(
     new Date(),

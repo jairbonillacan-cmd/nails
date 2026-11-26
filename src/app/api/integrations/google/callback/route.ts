@@ -15,7 +15,7 @@ import {
   fetchGoogleFreeBusy,
   registerGoogleCalendarWatch,
 } from '@/lib/integrations/google-calendar';
-import { getSnapshot, updateCalendarConnection } from '@/lib/repositories/db';
+import { getRepository, updateCalendarConnection } from '@/lib/repositories/db';
 import type { CalendarConnection } from '@/lib/types';
 
 function clearOAuthCookie(response: NextResponse): NextResponse {
@@ -95,7 +95,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const staffExists = getSnapshot().staff.some((s) => s.id === statePayload.staffId);
+  const snapshot = await getRepository().getSnapshot();
+  const staffExists = snapshot.staff.some((s) => s.id === statePayload.staffId);
   if (!staffExists) {
     return clearOAuthCookie(
       NextResponse.json({ error: 'Especialista no encontrada.' }, { status: 400 }),

@@ -6,7 +6,7 @@ import {
   getRepository,
   PolicyError,
   queryAvailabilityWithExtras,
-  quickSearchAvailability,
+  quickSearchAvailabilityAsync,
 } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
     if (query.mode === 'quick_search') {
       const days = Math.min(query.days ?? 14, 45);
       const limit = query.limit ?? 12;
-      const quickResult = quickSearchAvailability({
+      const quickResult = await quickSearchAvailabilityAsync({
         serviceId,
         extraServiceIds: query.extraServiceIds.filter((id) => id !== serviceId),
         addonIds: query.addonIds,

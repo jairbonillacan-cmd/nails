@@ -2761,7 +2761,9 @@ export function createSupabaseRepository(
     },
 
     async updateSalonSettings(
-      patch: Partial<SalonSettings>,
+      patch: Partial<Omit<SalonSettings, 'landingContent'>> & {
+        landingContent?: Partial<SalonSettings['landingContent']>;
+      },
     ): Promise<SalonSettings> {
       const supabase = getClient();
       const dbPatch: Tables['salon_settings']['Update'] = {
@@ -3838,24 +3840,39 @@ export function createSupabaseRepository(
     },
 
     async upsertLoyaltyProgram(
-      input: Omit<LoyaltyProgram, 'id'> & { id?: string },
+      patch: Partial<LoyaltyProgram>,
     ): Promise<LoyaltyProgram> {
       const supabase = getClient();
+      const existingQuery = patch.id
+        ? supabase.from('loyalty_programs').select('*').eq('id', patch.id).maybeSingle()
+        : supabase
+            .from('loyalty_programs')
+            .select('*')
+            .order('is_active', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+      const existingRes = await existingQuery;
+      const existing = existingRes.data ? mapLoyaltyProgramRow(existingRes.data) : null;
+
       const payload = {
-        is_active: input.isActive,
-        name: input.name,
-        stamps_required: input.stampsRequired,
-        reward_type: input.rewardType,
-        reward_service_id: input.rewardServiceId,
-        discount_percent: input.discountPercent,
-        max_discount_cents: input.maxDiscountCents,
-        valid_days: input.validDays,
+        is_active: patch.isActive ?? existing?.isActive ?? true,
+        name: patch.name ?? existing?.name ?? 'Tarjeta de Sellos',
+        stamps_required: patch.stampsRequired ?? existing?.stampsRequired ?? 8,
+        reward_type: patch.rewardType ?? existing?.rewardType ?? 'percent_discount',
+        reward_service_id:
+          patch.rewardServiceId !== undefined
+            ? patch.rewardServiceId
+            : (existing?.rewardServiceId ?? null),
+        discount_percent: patch.discountPercent ?? existing?.discountPercent ?? 50,
+        max_discount_cents: patch.maxDiscountCents ?? existing?.maxDiscountCents ?? 25000,
+        valid_days: patch.validDays ?? existing?.validDays ?? 90,
       };
-      const query = input.id
+      const targetId = patch.id ?? existing?.id;
+      const query = targetId
         ? supabase
             .from('loyalty_programs')
             .update(payload)
-            .eq('id', input.id)
+            .eq('id', targetId)
             .select('*')
             .single()
         : supabase.from('loyalty_programs').insert(payload).select('*').single();

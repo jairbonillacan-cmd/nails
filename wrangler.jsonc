@@ -20,16 +20,12 @@
   },
   "observability": {
     "enabled": true
-  }
-  // Custom domain route (uncomment once DNS is proxied on Cloudflare with SSL/TLS Full (Strict)):
-  // "routes": [
-  //   {
-  //     "pattern": "laikonanails.com",
-  //     "custom_domain": true
-  //   },
-  //   {
-  //     "pattern": "www.laikonanails.com",
-  //     "custom_domain": true
-  //   }
-  // ]
+  },
+  // Custom domain route (Cloudflare DNS proxied + SSL/TLS Full Strict; swap to final domain when ready):
+  "routes": [
+    {
+      "pattern": "laikona.devand.net",
+      "custom_domain": true
+    }
+  ]
 }

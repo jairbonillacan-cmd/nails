@@ -4,10 +4,10 @@ import { requireAdmin } from '@/lib/auth/admin-session';
 import { CreateClientSchema, PatchClientSchema } from '@/lib/contracts';
 import {
   createClientProfile,
-  getClientArcoExport,
-  getInactiveClients,
-  getNearRewardClients,
-  getSnapshot,
+  getClientArcoExportAsync,
+  getInactiveClientsAsync,
+  getNearRewardClientsAsync,
+  getRepository,
   PolicyError,
   updateClientNotes,
 } from '@/lib/repositories/db';
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const exportClientId = searchParams.get('exportClientId')?.trim();
   if (exportClientId) {
-    const exported = getClientArcoExport(exportClientId);
+    const exported = await getClientArcoExportAsync(exportClientId);
     if (!exported) {
       return NextResponse.json({ error: 'Clienta no encontrada' }, { status: 404 });
     }
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const nearRewardClients = getNearRewardClients();
+  const nearRewardClients = await getNearRewardClientsAsync();
   const inactiveDaysParam = searchParams.get('inactiveDays')?.trim();
   if (inactiveDaysParam) {
     const parsedDays = Number(inactiveDaysParam);
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    const inactiveClients = getInactiveClients(parsedDays);
+    const inactiveClients = await getInactiveClientsAsync(parsedDays);
     return NextResponse.json({
       inactiveDays: parsedDays,
       clients: inactiveClients,
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   return NextResponse.json({
     clients: db.clients,
     nearRewardClients,

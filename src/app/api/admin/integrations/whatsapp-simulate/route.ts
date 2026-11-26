@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
 import { executeWhatsAppBookingFlow } from '@/lib/integrations/whatsapp-booking';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 
 const simulateSchema = z.object({
   clientName: z.string().trim().min(1).max(120).optional(),
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const db = getSnapshot();
+  const db = await getRepository().getSnapshot();
   const serviceId = parsed.data.serviceId ?? db.services.find((s) => s.isActive)?.id;
   if (!serviceId) {
     return NextResponse.json(

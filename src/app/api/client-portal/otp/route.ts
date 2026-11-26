@@ -8,12 +8,13 @@ import {
   verifyClientPortalOtp,
 } from '@/lib/auth/client-portal-otp';
 import { ClientPortalOtpActionSchema } from '@/lib/contracts';
+import { getRuntimeIntegrationStatus } from '@/lib/env';
 import {
   dispatchSmsNotification,
   dispatchWhatsAppNotification,
 } from '@/lib/integrations/notifications';
 import { logInfo, logWarn } from '@/lib/logger';
-import { getSnapshot } from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
@@ -75,15 +76,44 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const { settings } = getSnapshot();
+      const db = await getRepository().getSnapshot();
+      const { settings } = db;
+      const env = getRuntimeIntegrationStatus();
+      const matchedClient = db.clients.find((c) => c.phoneE164 === challenge.phoneE164);
+      const fallbackEmail =
+        matchedClient?.email && env.resendConfigured
+          ? {
+              to: matchedClient.email,
+              subject: `Tu código de verificación · ${settings.name}`,
+              settings,
+              appUrl: env.appUrl,
+            }
+          : undefined;
       const messageBody = `Tu código de verificación de ${settings.name} es ${challenge.code}. Válido por 5 minutos. No lo compartas con nadie.`;
 
-      let channel: 'whatsapp' | 'sms' = 'whatsapp';
-      const waResult = await dispatchWhatsAppNotification({
-        toPhoneE164: challenge.phoneE164,
-        bodyText: messageBody,
-      });
-      if (waResult.status !== 'sent' && settings.smsRemindersEnabled) {
+      let channel: 'whatsapp' | 'sms' | 'email' = 'whatsapp';
+      if (env.whatsappCloudConfigured) {
+        const waResult = await dispatchWhatsAppNotification({
+          toPhoneE164: challenge.phoneE164,
+          bodyText: messageBody,
+          fallbackEmail,
+        });
+        if (waResult.status !== 'sent' && settings.smsRemindersEnabled) {
+          const smsResult = await dispatchSmsNotification({
+            toPhoneE164: challenge.phoneE164,
+            bodyText: messageBody,
+          });
+          if (smsResult.status === 'sent') {
+            channel = 'sms';
+          }
+        } else if (
+          waResult.deliveryMode === 'fallback_email_wame' &&
+          fallbackEmail &&
+          waResult.status === 'sent'
+        ) {
+          channel = 'email';
+        }
+      } else if (settings.smsRemindersEnabled && env.twilioSmsConfigured) {
         const smsResult = await dispatchSmsNotification({
           toPhoneE164: challenge.phoneE164,
           bodyText: messageBody,
@@ -91,6 +121,20 @@ export async function POST(request: NextRequest) {
         if (smsResult.status === 'sent') {
           channel = 'sms';
         }
+      } else if (fallbackEmail) {
+        const emailResult = await dispatchWhatsAppNotification({
+          toPhoneE164: challenge.phoneE164,
+          bodyText: messageBody,
+          fallbackEmail,
+        });
+        if (emailResult.status === 'sent') {
+          channel = 'email';
+        }
+      } else {
+        await dispatchWhatsAppNotification({
+          toPhoneE164: challenge.phoneE164,
+          bodyText: messageBody,
+        });
       }
 
       const allowDemoCode =
