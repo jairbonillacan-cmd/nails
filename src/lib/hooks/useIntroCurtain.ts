@@ -3,7 +3,8 @@
 import { useEffect, type RefObject } from 'react';
 import { INTRO_COOKIE } from '@/lib/intro';
 
-const HOLD_MS = 2100;
+const MAX_HOLD_MS = 3200;
+const SETTLE_MS = 300;
 const EXIT_MS = 700;
 
 function measureFlight(logo: Element, target: Element): Record<string, string> | null {
@@ -59,7 +60,16 @@ export function useIntroCurtain(ref: RefObject<HTMLElement | null>): void {
       doneTimer = window.setTimeout(finish, EXIT_MS);
     };
 
-    holdTimer = window.setTimeout(exit, Math.max(0, HOLD_MS - performance.now()));
+    holdTimer = window.setTimeout(exit, MAX_HOLD_MS);
+    const logoAnimations = root.querySelector('.lk-curtain-logo')?.getAnimations({ subtree: true }) ?? [];
+    void Promise.all(logoAnimations.map((animation) => animation.finished)).then(
+      () => {
+        if (root.dataset.phase) return;
+        window.clearTimeout(holdTimer);
+        holdTimer = window.setTimeout(exit, SETTLE_MS);
+      },
+      () => undefined,
+    );
     root.addEventListener('pointerdown', exit);
     window.addEventListener('keydown', exit);
     window.addEventListener('wheel', exit, { passive: true });
