@@ -4,7 +4,6 @@ import React, { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
@@ -289,7 +288,7 @@ export function NewBookingDialog({
         onOpenChange={onOpenChange}
       />
       <form onSubmit={handleSubmit}>
-        <VStack gap={3} paddingBlockStart={4}>
+        <VStack gap={3} paddingBlockStart={4} className="fx-sheet-in">
           {formError ? (
             <Banner
               status="error"
@@ -353,31 +352,38 @@ export function NewBookingDialog({
             </Grid>
           </VStack>
 
-          <Card variant="muted" padding={3}>
-            <VStack gap={2}>
-              <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                <HStack gap={1.5} align="center">
-                  <StatusDot
-                    variant={selectedSlot ? 'success' : 'warning'}
-                    label={
-                      selectedSlot
-                        ? 'Primer horario libre disponible'
-                        : 'Sin horarios libres cercanos'
-                    }
-                  />
-                  <Text weight="semibold" size="sm">
-                    {loadingSlots
-                      ? 'Buscando horarios reales...'
-                      : selectedSlot
-                        ? `Primer horario libre disponible: ${formatDateShortInTimezone(
-                            selectedSlot.startAt,
-                            timezone,
-                          )} · ${selectedSlot.localTime12} (${selectedSlot.staffName})`
-                        : 'No encontramos horarios libres en los próximos 14 días.'}
-                  </Text>
-                </HStack>
+          <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={2}>
+            <HStack justify="between" align="center" wrap="wrap" gap={2}>
+              <HStack gap={1.5} align="center">
+                <StatusDot
+                  variant={selectedSlot ? 'success' : 'warning'}
+                  label={
+                    selectedSlot
+                      ? 'Primer horario libre disponible'
+                      : 'Sin horarios libres cercanos'
+                  }
+                />
+                <Text weight="semibold" size="sm" hasTabularNumbers>
+                  {loadingSlots
+                    ? 'Buscando horarios reales...'
+                    : selectedSlot
+                      ? `Primer horario libre disponible: ${formatDateShortInTimezone(
+                          selectedSlot.startAt,
+                          timezone,
+                        )} · ${selectedSlot.localTime12} (${selectedSlot.staffName})`
+                      : 'No encontramos horarios libres en los próximos 14 días.'}
+                </Text>
               </HStack>
+            </HStack>
 
+            {loadingSlots ? (
+              <HStack gap={1.5} wrap="wrap" aria-hidden="true">
+                <VStack className="ad-skeleton" data-size="pill" />
+                <VStack className="ad-skeleton" data-size="pill" />
+                <VStack className="ad-skeleton" data-size="pill" />
+                <VStack className="ad-skeleton" data-size="pill" />
+              </HStack>
+            ) : (
               <HStack gap={1.5} wrap="wrap">
                 {slots.map((slot) => (
                   <Button
@@ -395,53 +401,51 @@ export function NewBookingDialog({
                   />
                 ))}
               </HStack>
-            </VStack>
-          </Card>
+            )}
+          </VStack>
 
-          <Card variant="muted" padding={3}>
-            <VStack gap={2}>
-              <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                <Switch
-                  label="Personalizar duración / precio para esta cita"
-                  size="sm"
-                  value={useCustomOverride}
-                  onChange={handleToggleCustomOverride}
-                />
-                <Text type="supporting" color="secondary" hasTabularNumbers>
-                  Del catálogo: {formatDuration(catalogDurationMinutes)} ·{' '}
-                  {formatCurrency(catalogPriceCents, currency)}
-                </Text>
-              </HStack>
+          <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={2}>
+            <HStack justify="between" align="center" wrap="wrap" gap={2}>
+              <Switch
+                label="Personalizar duración / precio para esta cita"
+                size="sm"
+                value={useCustomOverride}
+                onChange={handleToggleCustomOverride}
+              />
+              <Text type="supporting" color="secondary" hasTabularNumbers>
+                Del catálogo: {formatDuration(catalogDurationMinutes)} ·{' '}
+                {formatCurrency(catalogPriceCents, currency)}
+              </Text>
+            </HStack>
 
-              {useCustomOverride ? (
-                <VStack gap={2}>
-                  <Grid columns={2} gap={3}>
-                    <NumberInput
-                      label="Duración personalizada (min)"
-                      value={customDuration}
-                      min={15}
-                      max={480}
-                      onChange={setCustomDuration}
-                    />
-                    <NumberInput
-                      label={`Precio personalizado (${currency})`}
-                      value={customPriceMxn}
-                      min={0}
-                      onChange={setCustomPriceMxn}
-                    />
-                  </Grid>
-                  {selectedSlot && computedEndIso ? (
-                    <Text type="supporting" color="secondary">
-                      La hora de inicio se mantiene:{' '}
-                      {formatTimeInTimezone(selectedSlot.startAt, timezone)} –{' '}
-                      {formatTimeInTimezone(computedEndIso, timezone)} (
-                      {formatDuration(activeDurationMinutes)})
-                    </Text>
-                  ) : null}
-                </VStack>
-              ) : null}
-            </VStack>
-          </Card>
+            {useCustomOverride ? (
+              <VStack gap={2}>
+                <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+                  <NumberInput
+                    label="Duración personalizada (min)"
+                    value={customDuration}
+                    min={15}
+                    max={480}
+                    onChange={setCustomDuration}
+                  />
+                  <NumberInput
+                    label={`Precio personalizado (${currency})`}
+                    value={customPriceMxn}
+                    min={0}
+                    onChange={setCustomPriceMxn}
+                  />
+                </Grid>
+                {selectedSlot && computedEndIso ? (
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    La hora de inicio se mantiene:{' '}
+                    {formatTimeInTimezone(selectedSlot.startAt, timezone, true)} –{' '}
+                    {formatTimeInTimezone(computedEndIso, timezone, true)} (
+                    {formatDuration(activeDurationMinutes)})
+                  </Text>
+                ) : null}
+              </VStack>
+            ) : null}
+          </VStack>
 
           <Grid columns={{ minWidth: 200, max: 3 }} gap={3}>
             <TextInput

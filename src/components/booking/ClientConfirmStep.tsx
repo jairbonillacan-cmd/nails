@@ -43,6 +43,7 @@ interface ClientConfirmStepProps {
   couponInput: string;
   appliedCoupon: AppliedCouponState | null;
   couponError: string | null;
+  couponLoading: boolean;
   clientName: string;
   clientPhone: string;
   clientInstagram: string;
@@ -61,6 +62,7 @@ interface ClientConfirmStepProps {
   activeBookings: ActiveBookingSummary[];
   onChangeCouponInput: (value: string) => void;
   onApplyCoupon: () => void;
+  onRemoveCoupon: () => void;
   onChangeClientName: (value: string) => void;
   onChangeClientPhone: (value: string) => void;
   onChangeClientInstagram: (value: string) => void;
@@ -94,6 +96,7 @@ export function ClientConfirmStep({
   couponInput,
   appliedCoupon,
   couponError,
+  couponLoading,
   clientName,
   clientPhone,
   clientInstagram,
@@ -112,6 +115,7 @@ export function ClientConfirmStep({
   activeBookings,
   onChangeCouponInput,
   onApplyCoupon,
+  onRemoveCoupon,
   onChangeClientName,
   onChangeClientPhone,
   onChangeClientInstagram,
@@ -142,7 +146,7 @@ export function ClientConfirmStep({
 
   return (
     <form id={formId} onSubmit={handleFormSubmit} noValidate>
-      <VStack gap={5} className="rb-enter">
+      <VStack gap={5} className="fx-step-in">
         <VStack gap={0.5}>
           <Heading level={2} className="lk-serif rb-h2">
             Casi lista
@@ -151,12 +155,14 @@ export function ClientConfirmStep({
         </VStack>
 
         {showFormBanner ? (
-          <Banner
-            status="error"
-            title={resolveErrorTitle(formErrorCode)}
-            description={formError ?? ''}
-            icon={<ShieldAlert size={18} aria-hidden="true" />}
-          />
+          <VStack className="fx-fade-up">
+            <Banner
+              status="error"
+              title={resolveErrorTitle(formErrorCode)}
+              description={formError ?? ''}
+              icon={<ShieldAlert size={18} aria-hidden="true" />}
+            />
+          </VStack>
         ) : null}
 
         {activeBookings.length > 0 ? (
@@ -248,7 +254,7 @@ export function ClientConfirmStep({
           className="rb-fold"
           defaultIsOpen={false}
           trigger={
-            <HStack justify="between" gap={2} width="100%">
+            <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
               <Text weight="semibold">Detalles para tu artista</Text>
               <Text type="supporting" color="secondary">
                 Opcional
@@ -319,7 +325,11 @@ export function ClientConfirmStep({
         <Collapsible
           className="rb-fold"
           defaultIsOpen={Boolean(appliedCoupon)}
-          trigger={<Text weight="semibold">¿Tienes cupón o Gift Card?</Text>}
+          trigger={
+            <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
+              <Text weight="semibold">¿Tienes cupón o Gift Card?</Text>
+            </HStack>
+          }
         >
           <VStack gap={2} className="rb-fold-body">
             <HStack gap={2} align="end">
@@ -333,17 +343,34 @@ export function ClientConfirmStep({
                   onEnter={onApplyCoupon}
                 />
               </VStack>
-              <Button label="Aplicar" variant="secondary" onClick={onApplyCoupon} />
+              <Button
+                label="Aplicar"
+                variant="secondary"
+                className="fx-press"
+                isLoading={couponLoading}
+                isDisabled={!couponInput.trim()}
+                onClick={onApplyCoupon}
+              />
             </HStack>
             {couponError ? (
-              <Text type="supporting" color="secondary" role="status">
+              <Text type="supporting" color="secondary" role="status" aria-live="polite">
                 {couponError}
               </Text>
             ) : null}
             {appliedCoupon ? (
-              <Text type="supporting" color="accent" weight="semibold" role="status">
-                {appliedCoupon.code} aplicado: −{formatCurrency(appliedCoupon.discountCents, settings.currency)}
-              </Text>
+              <HStack justify="between" align="center" gap={2} wrap="wrap" className="fx-pop">
+                <Text type="supporting" color="accent" weight="semibold" role="status" aria-live="polite" hasTabularNumbers>
+                  {appliedCoupon.code} aplicado: −{formatCurrency(appliedCoupon.discountCents, settings.currency)}
+                </Text>
+                <Button
+                  type="button"
+                  label="Quitar"
+                  variant="ghost"
+                  size="sm"
+                  className="fx-press"
+                  onClick={onRemoveCoupon}
+                />
+              </HStack>
             ) : null}
           </VStack>
         </Collapsible>

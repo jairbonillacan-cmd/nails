@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { AdminProvider } from '@/components/admin/AdminProvider';
 import { AdminShell } from '@/components/admin/AdminShell';
 
@@ -10,8 +10,10 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AdminProvider>
-      <AdminShell>{children}</AdminShell>
-    </AdminProvider>
+    <Suspense fallback={null}>
+      <AdminProvider>
+        <AdminShell>{children}</AdminShell>
+      </AdminProvider>
+    </Suspense>
   );
 }

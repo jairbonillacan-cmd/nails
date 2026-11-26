@@ -6,7 +6,6 @@ import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Badge } from '@astryxdesign/core/Badge';
@@ -298,7 +297,7 @@ export function CheckoutDrawerDialog({
         content={
           <LayoutContent>
             {completedState ? (
-              <VStack gap={4}>
+              <VStack gap={4} className="fx-drawer-in">
                 <Banner
                   status="success"
                   role="status"
@@ -317,49 +316,55 @@ export function CheckoutDrawerDialog({
                 />
 
                 {completedState.stampAwarded ? (
-                  <Card variant="muted" padding={3}>
-                    <HStack justify="between" align="center" gap={2}>
-                      <HStack gap={2} align="center">
-                        <Sparkles size={15} aria-hidden="true" />
-                        <Text weight="semibold">
-                          Sello de fidelidad otorgado (+1)
-                        </Text>
-                      </HStack>
-                      <Badge variant="success" label="+1 sello" />
+                  <HStack
+                    className="ad-surface fx-pop"
+                    data-tone="accent"
+                    data-padded="true"
+                    justify="between"
+                    align="center"
+                    gap={2}
+                  >
+                    <HStack gap={2} align="center">
+                      <Sparkles size={15} aria-hidden="true" />
+                      <Text weight="semibold">Sello de fidelidad otorgado (+1)</Text>
                     </HStack>
-                  </Card>
+                    <Badge variant="success" label="+1 sello" />
+                  </HStack>
                 ) : null}
 
                 {completedState.redeemedReward ? (
-                  <Card variant="muted" padding={3}>
-                    <HStack justify="between" align="center" gap={2}>
-                      <Text weight="semibold">Premio de tarjeta de sellos canjeado</Text>
-                      <Badge variant="info" label="Auditado" />
-                    </HStack>
-                  </Card>
+                  <HStack
+                    className="ad-surface fx-pop"
+                    data-tone="subtle"
+                    data-padded="true"
+                    justify="between"
+                    align="center"
+                    gap={2}
+                  >
+                    <Text weight="semibold">Premio de tarjeta de sellos canjeado</Text>
+                    <Badge variant="info" label="Auditado" />
+                  </HStack>
                 ) : null}
 
-                <Card variant="muted" padding={4}>
-                  <VStack gap={2}>
-                    <Text weight="semibold">¿Deseas asegurar el siguiente retoque?</Text>
-                    <Text type="supporting" color="secondary">
-                      Abre la agenda prellenada para {booking.client.fullName} con{' '}
-                      {booking.staff.name} en +21 días sin recapturar datos.
-                    </Text>
-                    <Button
-                      type="button"
-                      label="Agendar siguiente retoque (+21 días)"
-                      variant="primary"
-                      width="100%"
-                      icon={<CalendarPlus size={15} />}
-                      onClick={() => onScheduleRetouch(booking)}
-                    />
-                  </VStack>
-                </Card>
+                <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={2}>
+                  <Text weight="semibold">¿Deseas asegurar el siguiente retoque?</Text>
+                  <Text type="supporting" color="secondary">
+                    Abre la agenda prellenada para {booking.client.fullName} con{' '}
+                    {booking.staff.name} en +21 días sin recapturar datos.
+                  </Text>
+                  <Button
+                    type="button"
+                    label="Agendar siguiente retoque (+21 días)"
+                    variant="primary"
+                    width="100%"
+                    icon={<CalendarPlus size={15} />}
+                    onClick={() => onScheduleRetouch(booking)}
+                  />
+                </VStack>
               </VStack>
             ) : (
               <form id="checkout-split-form" onSubmit={handleSubmit}>
-                <VStack gap={4}>
+                <VStack gap={4} className="fx-drawer-in">
                   {errorText ? (
                     <Banner
                       status="error"
@@ -370,55 +375,55 @@ export function CheckoutDrawerDialog({
                     />
                   ) : null}
 
-                  <Card variant="muted" padding={3}>
-                    <VStack gap={1.5}>
-                      <HStack justify="between" align="center">
-                        <Text type="supporting" color="secondary">
-                          Total servicio{selectedExtraItem ? ' + producto' : ''}
-                        </Text>
-                        <Text weight="semibold" hasTabularNumbers>
-                          {formatCurrency(effectiveTotalCents, currency)}
-                        </Text>
+                  <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={2}>
+                    <HStack justify="between" align="center" className="ad-cash-row">
+                      <Text type="supporting" color="secondary">
+                        Total servicio{selectedExtraItem ? ' + producto' : ''}
+                      </Text>
+                      <Text weight="semibold" hasTabularNumbers>
+                        {formatCurrency(effectiveTotalCents, currency)}
+                      </Text>
+                    </HStack>
+                    <HStack justify="between" align="center" className="ad-cash-row">
+                      <Text type="supporting" color="secondary">
+                        Anticipo / pagos previos
+                      </Text>
+                      <Text weight="medium" hasTabularNumbers>
+                        {formatCurrency(initialSummary?.paidCents ?? 0, currency)}
+                      </Text>
+                    </HStack>
+                    {existingSplits.length > 0 ? (
+                      <HStack gap={1.5} wrap="wrap">
+                        {existingSplits.map((split) => (
+                          <Token
+                            key={split.id}
+                            size="sm"
+                            color="green"
+                            label={`${METHOD_LABELS[split.method]} ${formatCurrency(
+                              split.amountCents,
+                              currency,
+                            )}`}
+                          />
+                        ))}
                       </HStack>
-                      <HStack justify="between" align="center">
-                        <Text type="supporting" color="secondary">
-                          Anticipo / pagos previos
-                        </Text>
-                        <Text weight="medium" hasTabularNumbers>
-                          {formatCurrency(initialSummary?.paidCents ?? 0, currency)}
-                        </Text>
-                      </HStack>
-                      {existingSplits.length > 0 ? (
-                        <HStack gap={1.5} wrap="wrap">
-                          {existingSplits.map((split) => (
-                            <Token
-                              key={split.id}
-                              size="sm"
-                              color="green"
-                              label={`${METHOD_LABELS[split.method]} ${formatCurrency(
-                                split.amountCents,
-                                currency,
-                              )}`}
-                            />
-                          ))}
-                        </HStack>
-                      ) : null}
-                      <Divider />
-                      <HStack justify="between" align="center">
-                        <Text weight="semibold">Saldo restante</Text>
-                        <Badge
-                          variant={combinedSummary.isFullyPaid ? 'success' : 'warning'}
-                          label={
-                            combinedSummary.isFullyPaid
-                              ? combinedSummary.changeCents > 0
-                                ? `Cambio ${formatCurrency(combinedSummary.changeCents, currency)}`
-                                : 'Liquidado'
-                              : formatCurrency(combinedSummary.remainingCents, currency)
-                          }
-                        />
-                      </HStack>
-                    </VStack>
-                  </Card>
+                    ) : null}
+                    <Divider />
+                    <HStack justify="between" align="center">
+                      <Text weight="semibold">Saldo restante</Text>
+                      <Text
+                        color="inherit"
+                        className="ad-chip"
+                        data-tone={combinedSummary.isFullyPaid ? 'success' : 'warning'}
+                        hasTabularNumbers
+                      >
+                        {combinedSummary.isFullyPaid
+                          ? combinedSummary.changeCents > 0
+                            ? `Cambio ${formatCurrency(combinedSummary.changeCents, currency)}`
+                            : 'Liquidado'
+                          : formatCurrency(combinedSummary.remainingCents, currency)}
+                      </Text>
+                    </HStack>
+                  </VStack>
 
                   <VStack gap={3}>
                     <HStack justify="between" align="center">
@@ -434,140 +439,146 @@ export function CheckoutDrawerDialog({
                     </HStack>
 
                     {rows.map((row, idx) => (
-                      <Card key={row.id} variant="muted" padding={3}>
-                        <VStack gap={2}>
-                          <HStack justify="between" align="center">
-                            <Text type="supporting" weight="semibold" color="secondary">
-                              Pago #{idx + 1}
-                            </Text>
-                            {rows.length > 1 ? (
-                              <Button
-                                type="button"
-                                label="Quitar pago"
-                                isIconOnly
-                                size="sm"
-                                variant="ghost"
-                                icon={<Trash2 size={14} />}
-                                onClick={() => handleRemoveRow(row.id)}
-                              />
-                            ) : null}
-                          </HStack>
-                          <Grid columns={2} gap={2}>
-                            <Selector
-                              label="Método de pago"
-                              value={row.method}
-                              onChange={(val) =>
-                                val &&
-                                handleUpdateRow(row.id, {
-                                  method: val as PaymentSplitMethod,
-                                })
-                              }
-                              options={SPLIT_METHOD_OPTIONS}
+                      <VStack
+                        key={row.id}
+                        className="ad-surface"
+                        data-tone="subtle"
+                        data-padded="true"
+                        gap={2}
+                      >
+                        <HStack justify="between" align="center">
+                          <Text type="supporting" weight="semibold" color="secondary">
+                            Pago #{idx + 1}
+                          </Text>
+                          {rows.length > 1 ? (
+                            <Button
+                              type="button"
+                              label="Quitar pago"
+                              isIconOnly
+                              size="sm"
+                              variant="ghost"
+                              icon={<Trash2 size={14} />}
+                              onClick={() => handleRemoveRow(row.id)}
                             />
-                            <NumberInput
-                              label={`Monto (${currency})`}
-                              value={row.amountMxn}
-                              min={0}
-                              onChange={(val) =>
-                                handleUpdateRow(row.id, { amountMxn: val || 0 })
-                              }
-                            />
-                          </Grid>
-                          <TextInput
-                            label="Referencia / folio (opcional)"
-                            placeholder="Ej. Folio Clip 4021 o SPEI"
-                            value={row.reference}
-                            autoCapitalize="none"
-                            hasAutoCorrect={false}
-                            hasSpellCheck={false}
-                            onChange={(val) => handleUpdateRow(row.id, { reference: val })}
+                          ) : null}
+                        </HStack>
+                        <Grid columns={{ minWidth: 160, max: 2 }} gap={2}>
+                          <Selector
+                            label="Método de pago"
+                            value={row.method}
+                            onChange={(val) =>
+                              val &&
+                              handleUpdateRow(row.id, {
+                                method: val as PaymentSplitMethod,
+                              })
+                            }
+                            options={SPLIT_METHOD_OPTIONS}
                           />
-                        </VStack>
-                      </Card>
+                          <NumberInput
+                            label={`Monto (${currency})`}
+                            value={row.amountMxn}
+                            min={0}
+                            onChange={(val) =>
+                              handleUpdateRow(row.id, { amountMxn: val || 0 })
+                            }
+                          />
+                        </Grid>
+                        <TextInput
+                          label="Referencia / folio (opcional)"
+                          placeholder="Ej. Folio Clip 4021 o SPEI"
+                          value={row.reference}
+                          autoCapitalize="none"
+                          hasAutoCorrect={false}
+                          hasSpellCheck={false}
+                          onChange={(val) => handleUpdateRow(row.id, { reference: val })}
+                        />
+                      </VStack>
                     ))}
                   </VStack>
 
-                  <Card variant="muted" padding={3}>
-                    <VStack gap={2}>
-                      <Text weight="semibold">Propina universal</Text>
-                      <Grid columns={2} gap={2}>
-                        <NumberInput
-                          label={`Propina (${currency})`}
-                          value={tipMxn}
-                          min={0}
-                          onChange={(val) => setTipMxn(val || 0)}
-                        />
-                        <Selector
-                          label="Asignar propina a"
-                          value={tipStaffId || booking.staffId}
-                          onChange={(val) => val && setTipStaffId(val)}
-                          options={activeStaff.map((s) => ({
-                            value: s.id,
-                            label: s.name,
-                          }))}
-                        />
-                      </Grid>
-                    </VStack>
-                  </Card>
+                  <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={2}>
+                    <Text weight="semibold">Propina universal</Text>
+                    <Grid columns={{ minWidth: 160, max: 2 }} gap={2}>
+                      <NumberInput
+                        label={`Propina (${currency})`}
+                        value={tipMxn}
+                        min={0}
+                        onChange={(val) => setTipMxn(val || 0)}
+                      />
+                      <Selector
+                        label="Asignar propina a"
+                        value={tipStaffId || booking.staffId}
+                        onChange={(val) => val && setTipStaffId(val)}
+                        options={activeStaff.map((s) => ({
+                          value: s.id,
+                          label: s.name,
+                        }))}
+                      />
+                    </Grid>
+                  </VStack>
 
                   {retailItems.length > 0 ? (
-                    <Card variant="muted" padding={3}>
-                      <VStack gap={2}>
-                        <Text weight="semibold">Producto extra rápido (opcional)</Text>
-                        <Grid columns={selectedExtraItem ? 2 : 1} gap={2}>
-                          <Selector
-                            label="Producto de reventa"
-                            value={extraItemId}
-                            onChange={(val) => val && handleExtraItemChange(val)}
-                            options={[
-                              { value: 'none', label: 'Sin producto adicional' },
-                              ...retailItems.map((item) => ({
-                                value: item.id,
-                                label: `${item.name} · ${formatCurrency(
-                                  item.retailPriceCents,
-                                  currency,
-                                )} (Stock: ${item.stockQuantity})`,
-                              })),
-                            ]}
+                    <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={2}>
+                      <Text weight="semibold">Producto extra rápido (opcional)</Text>
+                      <Grid
+                        columns={selectedExtraItem ? { minWidth: 160, max: 2 } : 1}
+                        gap={2}
+                      >
+                        <Selector
+                          label="Producto de reventa"
+                          value={extraItemId}
+                          onChange={(val) => val && handleExtraItemChange(val)}
+                          options={[
+                            { value: 'none', label: 'Sin producto adicional' },
+                            ...retailItems.map((item) => ({
+                              value: item.id,
+                              label: `${item.name} · ${formatCurrency(
+                                item.retailPriceCents,
+                                currency,
+                              )} (Stock: ${item.stockQuantity})`,
+                            })),
+                          ]}
+                        />
+                        {selectedExtraItem ? (
+                          <NumberInput
+                            label="Cantidad"
+                            value={extraQuantity}
+                            min={1}
+                            max={50}
+                            onChange={(val) => setExtraQuantity(val || 1)}
                           />
-                          {selectedExtraItem ? (
-                            <NumberInput
-                              label="Cantidad"
-                              value={extraQuantity}
-                              min={1}
-                              max={50}
-                              onChange={(val) => setExtraQuantity(val || 1)}
-                            />
-                          ) : null}
-                        </Grid>
-                      </VStack>
-                    </Card>
+                        ) : null}
+                      </Grid>
+                    </VStack>
                   ) : null}
 
                   {loyaltySummary ? (
-                    <Card variant="muted" padding={3}>
-                      <VStack gap={2}>
-                        <HStack justify="between" align="center">
-                          <Text weight="semibold">{loyaltySummary.programName}</Text>
-                          <Badge
-                            variant={loyaltySummary.isRewardReady ? 'success' : 'info'}
-                            label={`${loyaltySummary.currentStamps} / ${loyaltySummary.stampsRequired} sellos`}
-                          />
-                        </HStack>
-                        {loyaltySummary.isRewardReady ? (
-                          <Switch
-                            label="Canjear premio de sellos"
-                            description={`Consume ${loyaltySummary.stampsRequired} sellos: ${loyaltySummary.rewardLabel}`}
-                            value={redeemLoyaltyReward}
-                            onChange={setRedeemLoyaltyReward}
-                          />
-                        ) : (
-                          <Text type="supporting" color="secondary">
-                            Al completar esta cita se otorgará automáticamente 1 sello (máx. 1 por día).
-                          </Text>
-                        )}
-                      </VStack>
-                    </Card>
+                    <VStack
+                      className="ad-surface"
+                      data-tone={loyaltySummary.isRewardReady ? 'accent' : 'subtle'}
+                      data-padded="true"
+                      gap={2}
+                    >
+                      <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                        <Text weight="semibold">{loyaltySummary.programName}</Text>
+                        <Badge
+                          variant={loyaltySummary.isRewardReady ? 'success' : 'info'}
+                          label={`${loyaltySummary.currentStamps} / ${loyaltySummary.stampsRequired} sellos`}
+                        />
+                      </HStack>
+                      {loyaltySummary.isRewardReady ? (
+                        <Switch
+                          label="Canjear premio de sellos"
+                          description={`Consume ${loyaltySummary.stampsRequired} sellos: ${loyaltySummary.rewardLabel}`}
+                          value={redeemLoyaltyReward}
+                          onChange={setRedeemLoyaltyReward}
+                        />
+                      ) : (
+                        <Text type="supporting" color="secondary">
+                          Al completar esta cita se otorgará automáticamente 1 sello (máx. 1 por día).
+                        </Text>
+                      )}
+                    </VStack>
                   ) : null}
                 </VStack>
               </form>

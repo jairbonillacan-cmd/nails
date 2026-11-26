@@ -2,13 +2,12 @@
 
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
 import NextLink from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { MobileNav } from '@astryxdesign/core/MobileNav';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Selector } from '@astryxdesign/core/Selector';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
 import {
   BellRing,
@@ -101,6 +100,7 @@ function getDisplayBookingHost(appUrl: string): string {
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data, loading, bookingEventSeq, switchDemoUser, logout } = useAdminData();
   const { mode, setMode } = useSalonAppearance();
   const copyFeedback = useEphemeralMessage(2200);
@@ -111,6 +111,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, toggleSidebarCollapsed] = useSidebarCollapsed();
 
   const isLoginRoute = pathname === '/admin/login';
+  const currentTabParam = searchParams.get('tab');
   const soundConfigured = data?.settings.soundAlertsEnabled ?? true;
   const { playBookingChime, isMuted, toggleMute } = useBookingAlertSound({
     enabled: Boolean(data) && !isLoginRoute && soundConfigured,
@@ -145,11 +146,46 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (loading || !data) {
     return (
-      <VStack className="ad-shell" padding={8} gap={3}>
-        <VStack gap={3} maxWidth={480} width="100%" style={{ marginInline: 'auto' }}>
-          <Text weight="semibold">Cargando panel de administración...</Text>
-          <ProgressBar label="Cargando" isIndeterminate />
-        </VStack>
+      <VStack className="ad-shell" gap={0} role="status" aria-busy="true">
+        <Text className="rb-sr-only">Cargando panel de administración...</Text>
+        <HStack className="ad-frame" gap={0} align="stretch">
+          <VStack className="ad-side" gap={4} aria-hidden="true">
+            <VStack className="ad-skeleton" data-size="button" />
+            <VStack className="ad-skeleton" data-size="row" />
+            <VStack gap={2}>
+              <VStack className="ad-skeleton" data-size="line" data-width="short" />
+              <VStack className="ad-skeleton" data-size="line" data-width="long" />
+              <VStack className="ad-skeleton" data-size="line" data-width="mid" />
+              <VStack className="ad-skeleton" data-size="line" data-width="long" />
+            </VStack>
+            <VStack gap={2}>
+              <VStack className="ad-skeleton" data-size="line" data-width="short" />
+              <VStack className="ad-skeleton" data-size="line" data-width="mid" />
+              <VStack className="ad-skeleton" data-size="line" data-width="long" />
+            </VStack>
+          </VStack>
+          <VStack className="ad-main-wrap" gap={0}>
+            <VStack className="ad-sheet" gap={5} aria-hidden="true">
+              <VStack gap={5} width="100%" className="ad-content-inner">
+                <VStack gap={2}>
+                  <VStack className="ad-skeleton" data-size="line" data-width="short" />
+                  <VStack className="ad-skeleton" data-size="title" />
+                  <VStack className="ad-skeleton" data-size="line" data-width="mid" />
+                </VStack>
+                <VStack className="ad-kpi-grid" data-cols="4" gap={0}>
+                  <VStack className="ad-skeleton" data-size="kpi" />
+                  <VStack className="ad-skeleton" data-size="kpi" />
+                  <VStack className="ad-skeleton" data-size="kpi" />
+                  <VStack className="ad-skeleton" data-size="kpi" />
+                </VStack>
+                <VStack className="ad-split" gap={0}>
+                  <VStack className="ad-skeleton" data-size="card" />
+                  <VStack className="ad-skeleton" data-size="card" />
+                </VStack>
+              </VStack>
+            </VStack>
+          </VStack>
+        </HStack>
       </VStack>
     );
   }
@@ -326,7 +362,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       >
         <button
           type="button"
-          className="ad-rail-btn"
+          className="ad-rail-btn fx-press"
           aria-label="Copiar enlace de página de citas"
           onClick={() => void copyBookingLink()}
         >
@@ -337,7 +373,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <VStack gap={1}>
         <button
           type="button"
-          className="ad-link-box"
+          className="ad-link-box fx-press"
           aria-label="Copiar enlace de página de citas"
           onClick={() => void copyBookingLink()}
         >
@@ -349,7 +385,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               {bookingDisplayLink}
             </Text>
           </VStack>
-          <Text color="accent" weight="bold" size="sm">
+          <Text
+            color="accent"
+            weight="bold"
+            size="sm"
+            className={copyFeedback.message ? 'fx-pop' : undefined}
+          >
             {copyFeedback.message ? '¡Copiado!' : 'Copiar'}
           </Text>
         </button>
@@ -371,12 +412,20 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           ) : null}
           <VStack as="ul" gap={0.5} className="ad-nav-list">
             {group.items.map((item) => {
-              const isSelected = pathname === item.matchPath;
+              const isCommissionsSub =
+                pathname === '/admin/caja' &&
+                (currentTabParam === 'comisiones' || currentTabParam === 'cupones');
+              const isSelected =
+                item.id === 'commissions'
+                  ? isCommissionsSub
+                  : item.id === 'cash'
+                    ? pathname === '/admin/caja' && !isCommissionsSub
+                    : pathname === item.matchPath;
               const tooltipText = item.badge ? `${item.label} (${item.badge})` : item.label;
               const linkNode = (
                 <NextLink
                   href={item.href}
-                  className={isCompactRail ? 'ad-nav ad-nav-compact' : 'ad-nav'}
+                  className={isCompactRail ? 'ad-nav ad-nav-compact fx-press' : 'ad-nav fx-press'}
                   data-on={isSelected ? 'true' : 'false'}
                   aria-current={isSelected ? 'page' : undefined}
                   aria-label={isCompactRail ? tooltipText : undefined}
@@ -549,7 +598,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <HStack gap={1.5} align="center">
           <button
             type="button"
-            className="ad-pill ad-foot-pill"
+            className="ad-pill ad-foot-pill fx-press"
             aria-pressed={soundActive}
             onClick={toggleMute}
           >
@@ -564,7 +613,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </button>
           <button
             type="button"
-            className="ad-pill ad-icon-pill"
+            className="ad-pill ad-icon-pill fx-press"
             aria-label="Probar sonido de alerta"
             title="Probar sonido de alerta"
             onClick={() => void handleTestSound()}
@@ -573,7 +622,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </button>
           <button
             type="button"
-            className="ad-pill ad-foot-pill"
+            className="ad-pill ad-foot-pill fx-press"
             aria-pressed={isDark}
             onClick={() => setMode(isDark ? 'light' : 'dark')}
           >
@@ -805,7 +854,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
           <NextLink
             href="/admin/citas?new=1"
-            className="ad-bottom-plus"
+            className="ad-bottom-plus fx-press"
             aria-label="Nueva cita"
           >
             <Plus size={24} aria-hidden="true" />

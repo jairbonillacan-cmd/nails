@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
@@ -20,11 +20,21 @@ import { Divider } from '@astryxdesign/core/Divider';
 import { Link } from '@astryxdesign/core/Link';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Token } from '@astryxdesign/core/Token';
-import { AlertTriangle, Check, CreditCard, Download, ExternalLink, Gift, Plus } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  CreditCard,
+  Download,
+  ExternalLink,
+  Gift,
+  Plus,
+  Wallet,
+} from 'lucide-react';
 import {
   useAdminData,
   type AdminOverviewPayload,
 } from '@/components/admin/AdminProvider';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
   formatCurrency,
   formatDateShortInTimezone,
@@ -121,18 +131,36 @@ function isSafeProofHref(url: string | null): url is string {
   return url.startsWith('/api/media/') || url.startsWith('https://');
 }
 
+function resolveInitialCajaRoute(param: string | null): {
+  section: SectionTab;
+  salesView: SalesSubView;
+} {
+  if (param === 'comisiones' || param === 'commissions') {
+    return { section: 'commissions', salesView: 'cash' };
+  }
+  if (param === 'cupones' || param === 'coupons') {
+    return { section: 'coupons', salesView: 'cash' };
+  }
+  if (param === 'sin-cobrar' || param === 'uncollected') {
+    return { section: 'sales', salesView: 'uncollected' };
+  }
+  if (param === 'anticipos' || param === 'receivable') {
+    return { section: 'sales', salesView: 'receivable' };
+  }
+  if (param === 'vendido' || param === 'sold') {
+    return { section: 'sales', salesView: 'sold' };
+  }
+  return { section: 'sales', salesView: 'cash' };
+}
+
 export default function AdminCashPage() {
   const { data, refresh } = useAdminData();
-  const [sectionTab, setSectionTab] = useState<SectionTab>('sales');
-  const [salesView, setSalesView] = useState<SalesSubView>(() => {
-    if (typeof window !== 'undefined') {
-      const param = new URLSearchParams(window.location.search).get('tab');
-      if (param === 'sin-cobrar' || param === 'uncollected') return 'uncollected';
-      if (param === 'anticipos' || param === 'receivable') return 'receivable';
-      if (param === 'vendido' || param === 'sold') return 'sold';
-    }
-    return 'cash';
-  });
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const initialRoute = resolveInitialCajaRoute(tabParam);
+
+  const [sectionTab, setSectionTab] = useState<SectionTab>(initialRoute.section);
+  const [salesView, setSalesView] = useState<SalesSubView>(initialRoute.salesView);
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('all');
   const [countedCashMxn, setCountedCashMxn] = useState<number>(0);
   const [msg, setMsg] = useState<string | null>(null);
@@ -153,6 +181,16 @@ export default function AdminCashPage() {
   );
   const [cpValue, setCpValue] = useState(15);
   const [cpRecipient, setCpRecipient] = useState('');
+
+  const lastTabParamRef = useRef<string | null>(tabParam);
+
+  useExternalSync(`caja-tab|${tabParam ?? ''}`, async (signal) => {
+    if (signal.aborted || lastTabParamRef.current === tabParam) return;
+    lastTabParamRef.current = tabParam;
+    const next = resolveInitialCajaRoute(tabParam);
+    setSectionTab(next.section);
+    setSalesView(next.salesView);
+  });
 
   const pendingDeposits = useMemo<PendingDepositRow[]>(
     () => (data ? data.pendingDeposits : []),
@@ -420,12 +458,21 @@ export default function AdminCashPage() {
     await refresh();
   };
 
+  const showUncollectedNotice =
+    uncollectedBookings.length > 0 &&
+    (sectionTab !== 'sales' || salesView !== 'uncollected');
+  const showPendingDepositsNotice =
+    pendingDeposits.length > 0 &&
+    (sectionTab !== 'sales' || salesView !== 'receivable');
+
   return (
-    <VStack gap={5}>
-      <HStack justify="between" align="center" wrap="wrap" gap={3}>
-        <VStack gap={0.5}>
-          <Heading level={1}>Ventas, Caja y Anticipos</Heading>
-          <Text color="secondary">
+    <VStack gap={5} className="ad-page fx-fade-up">
+      <HStack as="header" className="ad-page-head" justify="between" align="end" wrap="wrap" gap={3}>
+        <VStack gap={1} className="ad-head-copy">
+          <Heading level={1} className="ad-page-title">
+            Ventas, caja y anticipos
+          </Heading>
+          <Text className="ad-page-sub">
             Control de ventas, fuga de ingresos sin cobrar, pagos divididos, arqueo, anticipos SPEI ({defaultDepositLabel}) y comisiones.
           </Text>
         </VStack>
@@ -465,94 +512,138 @@ export default function AdminCashPage() {
         />
       ) : null}
 
-      {uncollectedBookings.length > 0 &&
-      (sectionTab !== 'sales' || salesView !== 'uncollected') ? (
-        <Banner
-          status="error"
-          icon={<AlertTriangle size={18} />}
-          title={`Citas sin cobrar (Fuga de ingresos): ${uncollectedBookings.length} cita(s) por ${formatCurrency(uncollectedTotalCents, currency)}`}
-          description="Hay citas terminadas o pasadas con saldo pendiente por registrar en caja. Cobra el saldo en 1 clic."
-          endContent={
-            <Button
-              label="Ver citas sin cobrar"
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setSectionTab('sales');
-                setSalesView('uncollected');
-              }}
-            />
-          }
-        />
+      {showUncollectedNotice || showPendingDepositsNotice ? (
+        <VStack className="ad-surface" data-tone="warning" gap={0}>
+          <VStack className="ad-row-list" gap={0}>
+            {showUncollectedNotice ? (
+              <HStack className="ad-row-item" justify="between" align="center" wrap="wrap" gap={3}>
+                <HStack gap={3} align="center" className="rb-grow">
+                  <VStack
+                    className="ad-task-icon"
+                    data-tone="accent"
+                    align="center"
+                    justify="center"
+                    aria-hidden="true"
+                  >
+                    <AlertTriangle size={17} />
+                  </VStack>
+                  <VStack gap={0} className="rb-grow">
+                    <Text weight="semibold" size="sm" hasTabularNumbers>
+                      Citas sin cobrar (Fuga de ingresos): {uncollectedBookings.length} cita
+                      {uncollectedBookings.length === 1 ? '' : 's'} por{' '}
+                      {formatCurrency(uncollectedTotalCents, currency)}
+                    </Text>
+                    <Text type="supporting" color="secondary">
+                      Citas terminadas o pasadas con saldo pendiente por registrar en caja.
+                    </Text>
+                  </VStack>
+                </HStack>
+                <Button
+                  label="Ver citas sin cobrar"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setSectionTab('sales');
+                    setSalesView('uncollected');
+                  }}
+                />
+              </HStack>
+            ) : null}
+
+            {showPendingDepositsNotice ? (
+              <HStack className="ad-row-item" justify="between" align="center" wrap="wrap" gap={3}>
+                <HStack gap={3} align="center" className="rb-grow">
+                  <VStack
+                    className="ad-task-icon"
+                    data-tone="warning"
+                    align="center"
+                    justify="center"
+                    aria-hidden="true"
+                  >
+                    <Wallet size={17} />
+                  </VStack>
+                  <VStack gap={0} className="rb-grow">
+                    <Text weight="semibold" size="sm" hasTabularNumbers>
+                      {pendingDeposits.length} anticipo{pendingDeposits.length === 1 ? '' : 's'}{' '}
+                      pendiente{pendingDeposits.length === 1 ? '' : 's'} por validar (
+                      {formatCurrency(pendingDepositsTotalCents, currency)})
+                    </Text>
+                    <Text type="supporting" color="secondary">
+                      Revisa comprobantes web o de Instagram DM y confirma cada cita en 1 clic.
+                    </Text>
+                  </VStack>
+                </HStack>
+                <Button
+                  label="Revisar anticipos"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setSectionTab('sales');
+                    setSalesView('receivable');
+                  }}
+                />
+              </HStack>
+            ) : null}
+          </VStack>
+        </VStack>
       ) : null}
 
-      {pendingDeposits.length > 0 && (sectionTab !== 'sales' || salesView !== 'receivable') ? (
-        <Banner
-          status="warning"
-          title={`Tienes ${pendingDeposits.length} anticipo(s) pendiente(s) por validar (${formatCurrency(pendingDepositsTotalCents, currency)})`}
-          description="Revisa comprobantes web o de Instagram DM y confirma cada cita en 1 clic."
-          endContent={
-            <Button
-              label="Revisar anticipos"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setSectionTab('sales');
-                setSalesView('receivable');
-              }}
-            />
-          }
-        />
-      ) : null}
-
-      <Grid columns={{ minWidth: 180, max: 4 }} gap={4}>
-        <Card padding={4}>
-          <VStack gap={0.5}>
-            <Text type="label" color="secondary">
-              Ingresos brutos
-            </Text>
-            <Heading level={2}>
-              {formatCurrency(data.kpis.totalRevenueCents, currency)}
-            </Heading>
-          </VStack>
-        </Card>
-        <Card padding={4}>
-          <VStack gap={0.5}>
-            <Text type="label" color="secondary">
-              Propinas universales
-            </Text>
-            <Heading level={2}>
-              {formatCurrency(data.kpis.totalTipsCents, currency)}
-            </Heading>
-          </VStack>
-        </Card>
-        <Card padding={4}>
-          <VStack gap={0.5}>
-            <Text type="label" color="secondary">
-              Sin cobrar / Anticipos
-            </Text>
-            <Heading level={2}>
-              {formatCurrency(uncollectedTotalCents + pendingDepositsTotalCents, currency)}
-            </Heading>
-            <Text type="supporting" color="secondary">
-              {uncollectedBookings.length} sin cobrar · {pendingDeposits.length} anticipos
-            </Text>
-          </VStack>
-        </Card>
-        <Card padding={4} variant="muted">
-          <VStack gap={0.5}>
-            <Text type="label" color="accent">
-              Balance neto
-            </Text>
-            <Heading level={2}>
-              {formatCurrency(data.kpis.netCashCents, currency)}
-            </Heading>
-            <Text type="supporting" color="secondary">
-              Egresos: {formatCurrency(data.kpis.totalExpensesCents, currency)}
-            </Text>
-          </VStack>
-        </Card>
-      </Grid>
+      <section aria-label="Resumen financiero" className="ad-kpi-grid fx-stagger" data-cols="4">
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Ingresos brutos
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" hasTabularNumbers>
+            {formatCurrency(data.kpis.totalRevenueCents, currency)}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Total registrado
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Propinas universales
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" hasTabularNumbers>
+            {formatCurrency(data.kpis.totalTipsCents, currency)}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Para el equipo
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Sin cobrar / Anticipos
+          </Text>
+          <Text
+            className="lk-serif ad-kpi-val fx-tabular"
+            data-tone={
+              uncollectedTotalCents + pendingDepositsTotalCents > 0 ? 'warning' : 'success'
+            }
+            hasTabularNumbers
+          >
+            {formatCurrency(uncollectedTotalCents + pendingDepositsTotalCents, currency)}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub" hasTabularNumbers>
+            {uncollectedBookings.length} sin cobrar · {pendingDeposits.length} anticipos
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Balance neto
+          </Text>
+          <Text
+            className="lk-serif ad-kpi-val fx-tabular"
+            data-tone={data.kpis.netCashCents >= 0 ? 'success' : 'warning'}
+            hasTabularNumbers
+          >
+            {formatCurrency(data.kpis.netCashCents, currency)}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub" hasTabularNumbers>
+            Egresos: {formatCurrency(data.kpis.totalExpensesCents, currency)}
+          </Text>
+        </VStack>
+      </section>
 
       <TabList
         value={sectionTab}
@@ -565,10 +656,11 @@ export default function AdminCashPage() {
       </TabList>
 
       {sectionTab === 'sales' ? (
-        <VStack gap={4}>
-          <HStack justify="between" align="center" wrap="wrap" gap={3}>
+        <VStack gap={4} key={`sales-${salesView}`} className="fx-step-in">
+          <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={3}>
             <SegmentedControl
               label="Vista de ventas y caja"
+              size="sm"
               value={salesView}
               onChange={(v) => setSalesView(v as SalesSubView)}
             >
@@ -594,11 +686,12 @@ export default function AdminCashPage() {
                     { id: 'pending', label: 'Pendientes' },
                   ] as const
                 ).map((pill) => (
-                  <Button
+                  <button
                     key={pill.id}
-                    label={pill.label}
-                    size="sm"
-                    variant={ledgerFilter === pill.id ? 'primary' : 'secondary'}
+                    type="button"
+                    className="ad-pill fx-press"
+                    data-on={ledgerFilter === pill.id ? 'true' : 'false'}
+                    aria-pressed={ledgerFilter === pill.id}
                     onClick={() => {
                       if (pill.id === 'pending' && salesView === 'cash') {
                         setSalesView('receivable');
@@ -606,37 +699,39 @@ export default function AdminCashPage() {
                       }
                       setLedgerFilter(pill.id);
                     }}
-                  />
+                  >
+                    {pill.label}
+                  </button>
                 ))}
               </HStack>
             ) : null}
           </HStack>
 
           {salesView === 'uncollected' ? (
-            <Card padding={5}>
-              <VStack gap={4}>
-                <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <VStack gap={0.5}>
-                    <Heading level={2}>
-                      Citas sin cobrar (Fuga de ingresos)
-                    </Heading>
-                    <Text type="supporting" color="secondary">
-                      Citas completadas o con horario ya vencido cuyo cobro total aún no cubre el servicio. Total pendiente:{' '}
-                      <Text weight="semibold" hasTabularNumbers>
-                        {formatCurrency(uncollectedTotalCents, currency)}
-                      </Text>
+            <VStack className="ad-surface" gap={0}>
+              <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
+                <VStack gap={0.5} className="rb-grow">
+                  <Heading level={2} className="lk-serif ad-h2">
+                    Citas sin cobrar (Fuga de ingresos)
+                  </Heading>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    Citas completadas o con horario ya vencido cuyo cobro total aún no cubre el servicio. Total pendiente:{' '}
+                    <Text weight="semibold" hasTabularNumbers>
+                      {formatCurrency(uncollectedTotalCents, currency)}
                     </Text>
-                  </VStack>
-                  <Button
-                    label="Abrir agenda de citas"
-                    variant="secondary"
-                    size="sm"
-                    icon={<ExternalLink size={14} />}
-                    href="/admin/citas"
-                  />
-                </HStack>
+                  </Text>
+                </VStack>
+                <Button
+                  label="Abrir agenda de citas"
+                  variant="secondary"
+                  size="sm"
+                  icon={<ExternalLink size={14} />}
+                  href="/admin/citas"
+                />
+              </HStack>
 
-                {uncollectedBookings.length === 0 ? (
+              {uncollectedBookings.length === 0 ? (
+                <VStack className="ad-empty" gap={2}>
                   <EmptyState
                     isCompact
                     title="Cero fugas de ingresos"
@@ -650,7 +745,9 @@ export default function AdminCashPage() {
                       />
                     }
                   />
-                ) : (
+                </VStack>
+              ) : (
+                <VStack className="ad-table-scroll" gap={0}>
                   <Table
                     idKey="bookingId"
                     hasHover
@@ -688,9 +785,9 @@ export default function AdminCashPage() {
                               {row.serviceName} ({row.bookingCode})
                             </Text>
                             <HStack gap={2} wrap="wrap" align="center">
-                              <Text type="supporting" color="secondary">
+                              <Text type="supporting" color="secondary" hasTabularNumbers>
                                 {formatDateShortInTimezone(row.startAt, tz)} ·{' '}
-                                {formatTimeInTimezone(row.startAt, tz)} · {row.staffName}
+                                {formatTimeInTimezone(row.startAt, tz, true)} · {row.staffName}
                               </Text>
                               <Badge
                                 variant={row.status === 'completed' ? 'error' : 'warning'}
@@ -745,48 +842,32 @@ export default function AdminCashPage() {
                       },
                     ]}
                   />
-                )}
-              </VStack>
-            </Card>
+                </VStack>
+              )}
+            </VStack>
           ) : salesView === 'receivable' ? (
             <VStack gap={4}>
-              {uncollectedBookings.length > 0 ? (
-                <Banner
-                  status="error"
-                  title={`${uncollectedBookings.length} cita(s) completada(s) o pasada(s) siguen sin cobrar (${formatCurrency(uncollectedTotalCents, currency)})`}
-                  description="Además de los anticipos pendientes, tienes saldo por cobrar de citas ya atendidas."
-                  endContent={
-                    <Button
-                      label="Abrir Citas sin cobrar"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setSalesView('uncollected')}
-                    />
-                  }
-                />
-              ) : null}
+              <VStack className="ad-surface" gap={0}>
+                <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
+                  <VStack gap={0.5} className="rb-grow">
+                    <Heading level={2} className="lk-serif ad-h2">
+                      Anticipos pendientes ({defaultDepositLabel} MXN)
+                    </Heading>
+                    <Text type="supporting" color="secondary">
+                      Valida transferencias SPEI a {data.settings.depositBankName} ({data.settings.depositClabe}) recibidas en web o por DM en {data.settings.instagramHandle}.
+                    </Text>
+                  </VStack>
+                  <Button
+                    label="Abrir agenda de citas"
+                    variant="secondary"
+                    size="sm"
+                    icon={<ExternalLink size={14} />}
+                    href="/admin/citas"
+                  />
+                </HStack>
 
-              <Card padding={5}>
-                <VStack gap={4}>
-                  <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                    <VStack gap={0.5}>
-                      <Heading level={2}>
-                        Anticipos pendientes ({defaultDepositLabel} MXN)
-                      </Heading>
-                      <Text type="supporting" color="secondary">
-                        Valida transferencias SPEI a {data.settings.depositBankName} ({data.settings.depositClabe}) recibidas en web o por DM en {data.settings.instagramHandle}.
-                      </Text>
-                    </VStack>
-                    <Button
-                      label="Abrir agenda de citas"
-                      variant="secondary"
-                      size="sm"
-                      icon={<ExternalLink size={14} />}
-                      href="/admin/citas"
-                    />
-                  </HStack>
-
-                  {pendingDeposits.length === 0 ? (
+                {pendingDeposits.length === 0 ? (
+                  <VStack className="ad-empty" gap={2}>
                     <EmptyState
                       isCompact
                       title="Sin anticipos pendientes"
@@ -800,7 +881,9 @@ export default function AdminCashPage() {
                         />
                       }
                     />
-                  ) : (
+                  </VStack>
+                ) : (
+                  <VStack className="ad-table-scroll" gap={0}>
                     <Table
                       idKey="bookingId"
                       hasHover
@@ -837,9 +920,9 @@ export default function AdminCashPage() {
                               <Text weight="medium">
                                 {dep.serviceName} ({dep.bookingCode})
                               </Text>
-                              <Text type="supporting" color="secondary">
+                              <Text type="supporting" color="secondary" hasTabularNumbers>
                                 {formatDateShortInTimezone(dep.startAt, tz)} ·{' '}
-                                {formatTimeInTimezone(dep.startAt, tz)} · {dep.staffName}
+                                {formatTimeInTimezone(dep.startAt, tz, true)} · {dep.staffName}
                               </Text>
                             </VStack>
                           ),
@@ -900,54 +983,59 @@ export default function AdminCashPage() {
                                 label="Ver cita"
                                 variant="ghost"
                                 size="sm"
-                                href="/admin/citas"
+                                href={`/admin/citas?q=${encodeURIComponent(dep.bookingCode)}`}
                               />
                             </HStack>
                           ),
                         },
                       ]}
                     />
-                  )}
-                </VStack>
-              </Card>
+                  </VStack>
+                )}
+              </VStack>
             </VStack>
           ) : salesView === 'sold' ? (
             <VStack gap={4}>
               {splitSummaryByMethod.length > 0 ? (
-                <Card padding={5}>
-                  <VStack gap={3}>
-                    <VStack gap={0.5}>
-                      <Heading level={3}>Desglose por método de pago (Cobros divididos)</Heading>
-                      <Text type="supporting" color="secondary">
-                        Resumen real de pagos divididos registrados en cobro de citas ({data.paymentSplits.length} movimiento(s)).
-                      </Text>
-                    </VStack>
-                    <Grid columns={{ minWidth: 160, max: 5 }} gap={3}>
-                      {splitSummaryByMethod.map((item) => (
-                        <Card key={item.method} padding={3} variant="muted">
-                          <VStack gap={1}>
-                            <Token
-                              size="sm"
-                              color={splitMethodTokenColor(item.method)}
-                              label={item.label}
-                            />
-                            <Text weight="bold" hasTabularNumbers>
-                              {formatCurrency(item.amountCents, currency)}
-                            </Text>
-                            <Text type="supporting" color="secondary" hasTabularNumbers>
-                              {item.count} cobro(s) · Propina: {formatCurrency(item.tipCents, currency)}
-                            </Text>
-                          </VStack>
-                        </Card>
-                      ))}
-                    </Grid>
+                <VStack className="ad-surface" data-padded="true" gap={3}>
+                  <VStack gap={0.5}>
+                    <Heading level={3} className="lk-serif ad-h3">
+                      Desglose por método de pago (Cobros divididos)
+                    </Heading>
+                    <Text type="supporting" color="secondary" hasTabularNumbers>
+                      Resumen real de pagos divididos registrados en cobro de citas ({data.paymentSplits.length} movimiento{data.paymentSplits.length === 1 ? '' : 's'}).
+                    </Text>
                   </VStack>
-                </Card>
+                  <Grid columns={{ minWidth: 160, max: 5 }} gap={3}>
+                    {splitSummaryByMethod.map((item) => (
+                      <VStack
+                        key={item.method}
+                        className="ad-surface"
+                        data-tone="subtle"
+                        data-padded="true"
+                        gap={1}
+                      >
+                        <Token
+                          size="sm"
+                          color={splitMethodTokenColor(item.method)}
+                          label={item.label}
+                        />
+                        <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
+                          {formatCurrency(item.amountCents, currency)}
+                        </Text>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {item.count} cobro{item.count === 1 ? '' : 's'} · Propina:{' '}
+                          {formatCurrency(item.tipCents, currency)}
+                        </Text>
+                      </VStack>
+                    ))}
+                  </Grid>
+                </VStack>
               ) : null}
 
-              <Card padding={0}>
+              <VStack className="ad-surface" gap={0}>
                 {salesLedger.length === 0 ? (
-                  <VStack padding={5}>
+                  <VStack className="ad-empty" gap={2}>
                     <EmptyState
                       isCompact
                       title="Sin movimientos con este filtro"
@@ -955,59 +1043,68 @@ export default function AdminCashPage() {
                     />
                   </VStack>
                 ) : (
-                  <Table
-                    idKey="id"
-                    hasHover
-                    data={salesLedger}
-                    columns={[
-                      {
-                        key: 'dateIso',
-                        header: 'Fecha',
-                        renderCell: (row) => (
-                          <Text type="supporting">
-                            {formatDateShortInTimezone(row.dateIso, tz)}
-                          </Text>
-                        ),
-                      },
-                      {
-                        key: 'title',
-                        header: 'Concepto',
-                        renderCell: (row) => (
-                          <VStack gap={0}>
-                            <Text weight="medium">{row.title}</Text>
-                            <Text type="supporting" color="secondary">
-                              {row.subtitle}
+                  <VStack className="ad-table-scroll" gap={0}>
+                    <Table
+                      idKey="id"
+                      hasHover
+                      data={salesLedger}
+                      columns={[
+                        {
+                          key: 'dateIso',
+                          header: 'Fecha',
+                          renderCell: (row) => (
+                            <Text type="supporting" hasTabularNumbers>
+                              {formatDateShortInTimezone(row.dateIso, tz)}
                             </Text>
-                          </VStack>
-                        ),
-                      },
-                      {
-                        key: 'statusLabel',
-                        header: 'Estado',
-                        renderCell: (row) => (
-                          <Badge variant={row.statusVariant} label={row.statusLabel} />
-                        ),
-                      },
-                      {
-                        key: 'amountCents',
-                        header: 'Monto',
-                        align: 'end',
-                        renderCell: (row) => (
-                          <Text weight="semibold" hasTabularNumbers>
-                            {row.isExpense ? '-' : '+'}
-                            {formatCurrency(row.amountCents, currency)}
-                          </Text>
-                        ),
-                      },
-                    ]}
-                  />
+                          ),
+                        },
+                        {
+                          key: 'title',
+                          header: 'Concepto',
+                          renderCell: (row) => (
+                            <VStack gap={0}>
+                              <Text weight="medium">{row.title}</Text>
+                              <Text type="supporting" color="secondary">
+                                {row.subtitle}
+                              </Text>
+                            </VStack>
+                          ),
+                        },
+                        {
+                          key: 'statusLabel',
+                          header: 'Estado',
+                          renderCell: (row) => (
+                            <Badge variant={row.statusVariant} label={row.statusLabel} />
+                          ),
+                        },
+                        {
+                          key: 'amountCents',
+                          header: 'Monto',
+                          align: 'end',
+                          renderCell: (row) => (
+                            <Text weight="semibold" hasTabularNumbers>
+                              {row.isExpense ? '−' : '+'}
+                              {formatCurrency(row.amountCents, currency)}
+                            </Text>
+                          ),
+                        },
+                      ]}
+                    />
+                  </VStack>
                 )}
-              </Card>
+              </VStack>
 
               {splitDetails.length > 0 ? (
-                <Card padding={5}>
-                  <VStack gap={3}>
-                    <Heading level={3}>Detalle de pagos divididos ({splitDetails.length})</Heading>
+                <VStack className="ad-surface" gap={0}>
+                  <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+                    <Heading level={3} className="lk-serif ad-h3">
+                      Detalle de pagos divididos
+                    </Heading>
+                    <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                      {splitDetails.length}
+                    </Text>
+                  </HStack>
+                  <VStack className="ad-table-scroll" gap={0}>
                     <Table
                       idKey="id"
                       hasHover
@@ -1017,7 +1114,7 @@ export default function AdminCashPage() {
                           key: 'createdAt',
                           header: 'Fecha',
                           renderCell: (row) => (
-                            <Text type="supporting">
+                            <Text type="supporting" hasTabularNumbers>
                               {formatDateShortInTimezone(row.createdAt, tz)}
                             </Text>
                           ),
@@ -1076,43 +1173,129 @@ export default function AdminCashPage() {
                       ]}
                     />
                   </VStack>
-                </Card>
+                </VStack>
               ) : null}
             </VStack>
           ) : (
-            <Grid columns={{ minWidth: 320, max: 3 }} gap={5} align="start">
-              <VStack gap={4}>
-                <Card padding={5}>
-                  <VStack gap={3}>
-                    <Heading level={3}>Arqueo de efectivo en caja</Heading>
-                    <Text type="supporting" color="secondary">
-                      Efectivo esperado por sistema:{' '}
-                      <Text weight="semibold">
-                        {formatCurrency(cashOnlyExpectedCents, currency)}
-                      </Text>
-                    </Text>
-                    <NumberInput
-                      label="Efectivo contado físicamente (MXN)"
-                      value={countedCashMxn}
-                      min={0}
-                      onChange={setCountedCashMxn}
-                    />
-                    <Badge
-                      variant={cashDiffCents === 0 ? 'success' : 'warning'}
-                      label={
-                        cashDiffCents === 0
-                          ? 'Caja cuadrada'
-                          : `Diferencia: ${formatCurrency(cashDiffCents, currency)}`
-                      }
+            <VStack className="ad-split" gap={0}>
+              <VStack className="ad-surface" gap={0}>
+                <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+                  <Heading level={3} className="lk-serif ad-h3">
+                    Movimientos de caja
+                  </Heading>
+                  <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                    {filteredCashEntries.length} movimiento{filteredCashEntries.length === 1 ? '' : 's'}
+                  </Text>
+                </HStack>
+
+                {filteredCashEntries.length === 0 ? (
+                  <VStack className="ad-empty" gap={2}>
+                    <EmptyState
+                      isCompact
+                      title="Sin movimientos con este filtro"
+                      description="Cambia el filtro o registra un ingreso o egreso en el panel derecho."
                     />
                   </VStack>
-                </Card>
+                ) : (
+                  <VStack className="ad-table-scroll" gap={0}>
+                    <Table
+                      idKey="id"
+                      hasHover
+                      data={filteredCashEntries}
+                      columns={[
+                        {
+                          key: 'occurredAt',
+                          header: 'Fecha',
+                          renderCell: (e) => (
+                            <Text type="supporting" hasTabularNumbers>
+                              {formatDateShortInTimezone(e.occurredAt, tz)}
+                            </Text>
+                          ),
+                        },
+                        {
+                          key: 'description',
+                          header: 'Concepto',
+                          renderCell: (e) => (
+                            <VStack gap={0}>
+                              <Text weight="medium">{e.description}</Text>
+                              <Text type="supporting" color="secondary">
+                                {e.paymentMethod} · {e.recordedBy}
+                              </Text>
+                            </VStack>
+                          ),
+                        },
+                        {
+                          key: 'amountCents',
+                          header: 'Monto',
+                          align: 'end',
+                          renderCell: (e) => (
+                            <Text weight="semibold" hasTabularNumbers>
+                              {e.entryType === 'expense' ? '−' : '+'}
+                              {formatCurrency(Math.abs(e.amountCents), currency)}
+                            </Text>
+                          ),
+                        },
+                        {
+                          key: 'tipCents',
+                          header: 'Propina / Com.',
+                          align: 'end',
+                          renderCell: (e) => (
+                            <VStack gap={0} align="end">
+                              <Text type="supporting" hasTabularNumbers>
+                                Prop: {formatCurrency(e.tipCents, currency)}
+                              </Text>
+                              <Text type="supporting" color="secondary" hasTabularNumbers>
+                                Com: {formatCurrency(e.commissionCents, currency)}
+                              </Text>
+                            </VStack>
+                          ),
+                        },
+                      ]}
+                    />
+                  </VStack>
+                )}
+              </VStack>
+
+              <VStack gap={4}>
+                <VStack className="ad-surface" data-padded="true" gap={3}>
+                  <Heading level={3} className="lk-serif ad-h3">
+                    Arqueo de efectivo en caja
+                  </Heading>
+                  <HStack justify="between" align="center" className="ad-cash-row">
+                    <Text type="supporting" color="secondary">
+                      Efectivo esperado por sistema
+                    </Text>
+                    <Text weight="semibold" hasTabularNumbers>
+                      {formatCurrency(cashOnlyExpectedCents, currency)}
+                    </Text>
+                  </HStack>
+                  <NumberInput
+                    label="Efectivo contado físicamente (MXN)"
+                    value={countedCashMxn}
+                    min={0}
+                    onChange={setCountedCashMxn}
+                  />
+                  <HStack justify="start">
+                    <Text
+                      color="inherit"
+                      className="ad-chip"
+                      data-tone={cashDiffCents === 0 ? 'success' : 'warning'}
+                      hasTabularNumbers
+                    >
+                      {cashDiffCents === 0
+                        ? 'Caja cuadrada'
+                        : `Diferencia: ${formatCurrency(cashDiffCents, currency)}`}
+                    </Text>
+                  </HStack>
+                </VStack>
 
                 {data.session.user.role !== 'specialist' ? (
-                  <Card padding={5}>
+                  <VStack className="ad-surface" data-padded="true" gap={3}>
                     <form onSubmit={submitCashEntry}>
                       <VStack gap={3}>
-                        <Heading level={3}>Registrar movimiento</Heading>
+                        <Heading level={3} className="lk-serif ad-h3">
+                          Registrar movimiento
+                        </Heading>
                         <Selector
                           label="Tipo"
                           value={entryType}
@@ -1135,7 +1318,7 @@ export default function AdminCashPage() {
                           onChange={setDesc}
                           isRequired
                         />
-                        <Grid columns={2} gap={2}>
+                        <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
                           <NumberInput
                             label="Monto (MXN)"
                             value={amountMxn}
@@ -1162,206 +1345,197 @@ export default function AdminCashPage() {
                         />
                       </VStack>
                     </form>
-                  </Card>
+                  </VStack>
                 ) : null}
               </VStack>
-
-              <Card padding={0}>
-                <Table
-                  idKey="id"
-                  hasHover
-                  data={filteredCashEntries}
-                  columns={[
-                    {
-                      key: 'occurredAt',
-                      header: 'Fecha',
-                      renderCell: (e) => (
-                        <Text type="supporting">
-                          {formatDateShortInTimezone(e.occurredAt, tz)}
-                        </Text>
-                      ),
-                    },
-                    {
-                      key: 'description',
-                      header: 'Descripción',
-                      renderCell: (e) => (
-                        <VStack gap={0}>
-                          <Text weight="medium">{e.description}</Text>
-                          <Text type="supporting" color="secondary">
-                            {e.paymentMethod} · {e.recordedBy}
-                          </Text>
-                        </VStack>
-                      ),
-                    },
-                    {
-                      key: 'amountCents',
-                      header: 'Monto',
-                      align: 'end',
-                      renderCell: (e) => (
-                        <Text weight="semibold" hasTabularNumbers>
-                          {e.entryType === 'expense' ? '-' : '+'}
-                          {formatCurrency(Math.abs(e.amountCents), currency)}
-                        </Text>
-                      ),
-                    },
-                    {
-                      key: 'tipCents',
-                      header: 'Propina / Com.',
-                      align: 'end',
-                      renderCell: (e) => (
-                        <Text type="supporting" hasTabularNumbers>
-                          Prop: {formatCurrency(e.tipCents, currency)} · Com:{' '}
-                          {formatCurrency(e.commissionCents, currency)}
-                        </Text>
-                      ),
-                    },
-                  ]}
-                />
-              </Card>
-            </Grid>
+            </VStack>
           )}
         </VStack>
       ) : sectionTab === 'commissions' ? (
-        <VStack gap={4}>
-          <Card padding={0}>
-            <Table
-              idKey="id"
-              hasHover
-              data={commissionsByStaff}
-              columns={[
-                { key: 'name', header: 'Manicurista' },
-                {
-                  key: 'percent',
-                  header: '% Comisión',
-                  renderCell: (r) => <Badge variant="info" label={`${r.percent}%`} />,
-                },
-                { key: 'servicesCount', header: 'Servicios / Ventas' },
-                {
-                  key: 'sales',
-                  header: 'Venta generada',
-                  align: 'end',
-                  renderCell: (r) => (
-                    <Text hasTabularNumbers>{formatCurrency(r.sales, currency)}</Text>
-                  ),
-                },
-                {
-                  key: 'commission',
-                  header: 'Comisión',
-                  align: 'end',
-                  renderCell: (r) => (
-                    <Text hasTabularNumbers>{formatCurrency(r.commission, currency)}</Text>
-                  ),
-                },
-                {
-                  key: 'tips',
-                  header: 'Propinas (universales)',
-                  align: 'end',
-                  renderCell: (r) => (
-                    <VStack gap={0} align="end">
-                      <Text hasTabularNumbers>{formatCurrency(r.tips, currency)}</Text>
-                      {r.splitTipsCount > 0 ? (
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {r.splitTipsCount} en cobro dividido ({formatCurrency(r.splitTipsCents, currency)})
-                        </Text>
-                      ) : null}
-                    </VStack>
-                  ),
-                },
-                {
-                  key: 'totalPayout',
-                  header: 'Total a pagar',
-                  align: 'end',
-                  renderCell: (r) => (
-                    <Text weight="bold" hasTabularNumbers>
-                      {formatCurrency(r.totalPayout, currency)}
-                    </Text>
-                  ),
-                },
-              ]}
-            />
-          </Card>
+        <VStack gap={4} key="commissions" className="fx-step-in">
+          <VStack className="ad-surface" gap={0}>
+            <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+              <Heading level={2} className="lk-serif ad-h2">
+                Comisiones y propinas por manicurista
+              </Heading>
+              <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                {commissionsByStaff.length} especialista{commissionsByStaff.length === 1 ? '' : 's'}
+              </Text>
+            </HStack>
+            <VStack className="ad-table-scroll" gap={0}>
+              <Table
+                idKey="id"
+                hasHover
+                data={commissionsByStaff}
+                columns={[
+                  { key: 'name', header: 'Manicurista' },
+                  {
+                    key: 'percent',
+                    header: '% Comisión',
+                    renderCell: (r) => (
+                      <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                        {r.percent}%
+                      </Text>
+                    ),
+                  },
+                  {
+                    key: 'servicesCount',
+                    header: 'Servicios / Ventas',
+                    renderCell: (r) => <Text hasTabularNumbers>{r.servicesCount}</Text>,
+                  },
+                  {
+                    key: 'sales',
+                    header: 'Venta generada',
+                    align: 'end',
+                    renderCell: (r) => (
+                      <Text hasTabularNumbers>{formatCurrency(r.sales, currency)}</Text>
+                    ),
+                  },
+                  {
+                    key: 'commission',
+                    header: 'Comisión',
+                    align: 'end',
+                    renderCell: (r) => (
+                      <Text hasTabularNumbers>{formatCurrency(r.commission, currency)}</Text>
+                    ),
+                  },
+                  {
+                    key: 'tips',
+                    header: 'Propinas (universales)',
+                    align: 'end',
+                    renderCell: (r) => (
+                      <VStack gap={0} align="end">
+                        <Text hasTabularNumbers>{formatCurrency(r.tips, currency)}</Text>
+                        {r.splitTipsCount > 0 ? (
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {r.splitTipsCount} en cobro dividido ({formatCurrency(r.splitTipsCents, currency)})
+                          </Text>
+                        ) : null}
+                      </VStack>
+                    ),
+                  },
+                  {
+                    key: 'totalPayout',
+                    header: 'Total a pagar',
+                    align: 'end',
+                    renderCell: (r) => (
+                      <Text weight="bold" hasTabularNumbers>
+                        {formatCurrency(r.totalPayout, currency)}
+                      </Text>
+                    ),
+                  },
+                ]}
+              />
+            </VStack>
+          </VStack>
 
           {splitSummaryByMethod.length > 0 ? (
-            <Card padding={5}>
-              <VStack gap={3}>
-                <Heading level={3}>Resumen de cobros divididos y propinas por método</Heading>
-                <Grid columns={{ minWidth: 160, max: 5 }} gap={3}>
-                  {splitSummaryByMethod.map((item) => (
-                    <Card key={item.method} padding={3} variant="muted">
-                      <VStack gap={1}>
-                        <Token
-                          size="sm"
-                          color={splitMethodTokenColor(item.method)}
-                          label={item.label}
-                        />
-                        <Text weight="bold" hasTabularNumbers>
-                          {formatCurrency(item.amountCents, currency)}
-                        </Text>
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          Propinas: {formatCurrency(item.tipCents, currency)}
-                        </Text>
-                      </VStack>
-                    </Card>
-                  ))}
-                </Grid>
-              </VStack>
-            </Card>
+            <VStack className="ad-surface" data-padded="true" gap={3}>
+              <Heading level={3} className="lk-serif ad-h3">
+                Resumen de cobros divididos y propinas por método
+              </Heading>
+              <Grid columns={{ minWidth: 160, max: 5 }} gap={3}>
+                {splitSummaryByMethod.map((item) => (
+                  <VStack
+                    key={item.method}
+                    className="ad-surface"
+                    data-tone="subtle"
+                    data-padded="true"
+                    gap={1}
+                  >
+                    <Token
+                      size="sm"
+                      color={splitMethodTokenColor(item.method)}
+                      label={item.label}
+                    />
+                    <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
+                      {formatCurrency(item.amountCents, currency)}
+                    </Text>
+                    <Text type="supporting" color="secondary" hasTabularNumbers>
+                      Propinas: {formatCurrency(item.tipCents, currency)}
+                    </Text>
+                  </VStack>
+                ))}
+              </Grid>
+            </VStack>
           ) : null}
         </VStack>
       ) : (
-        <Grid columns={{ minWidth: 300, max: 2 }} gap={5} align="start">
-          <Card padding={0}>
-            <Table
-              idKey="id"
-              hasHover
-              data={data.coupons}
-              columns={[
-                {
-                  key: 'code',
-                  header: 'Código',
-                  renderCell: (c) => (
-                    <HStack gap={1.5} align="center">
-                      <Gift size={14} aria-hidden="true" />
-                      <Text type="code" weight="semibold">
-                        {c.code}
+        <VStack className="ad-split fx-step-in" key="coupons" gap={0}>
+          <VStack className="ad-surface" gap={0}>
+            <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+              <Heading level={2} className="lk-serif ad-h2">
+                Cupones y Gift Cards activos
+              </Heading>
+              <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                {data.coupons.length}
+              </Text>
+            </HStack>
+            <VStack className="ad-table-scroll" gap={0}>
+              <Table
+                idKey="id"
+                hasHover
+                data={data.coupons}
+                columns={[
+                  {
+                    key: 'code',
+                    header: 'Código',
+                    renderCell: (c) => (
+                      <HStack gap={1.5} align="center">
+                        <Gift size={14} aria-hidden="true" />
+                        <Text type="code" weight="semibold">
+                          {c.code}
+                        </Text>
+                      </HStack>
+                    ),
+                  },
+                  {
+                    key: 'kind',
+                    header: 'Tipo',
+                    renderCell: (c) => (
+                      <Text
+                        color="inherit"
+                        className="ad-chip"
+                        data-tone={c.kind === 'gift_card' ? 'accent' : 'neutral'}
+                      >
+                        {c.kind === 'gift_card' ? 'Gift Card' : 'Cupón'}
                       </Text>
-                    </HStack>
-                  ),
-                },
-                {
-                  key: 'kind',
-                  header: 'Tipo',
-                  renderCell: (c) => (
-                    <Badge
-                      variant={c.kind === 'gift_card' ? 'purple' : 'info'}
-                      label={c.kind === 'gift_card' ? 'Gift Card' : 'Cupón'}
-                    />
-                  ),
-                },
-                {
-                  key: 'discountValue',
-                  header: 'Valor / Saldo',
-                  renderCell: (c) =>
-                    c.kind === 'gift_card'
-                      ? `Saldo: ${formatCurrency(c.remainingBalanceCents ?? 0, currency)}`
-                      : c.discountType === 'percent'
-                        ? `${c.discountValue}%`
-                        : formatCurrency(c.discountValue, currency),
-                },
-                {
-                  key: 'usedCount',
-                  header: 'Usos',
-                  renderCell: (c) =>
-                    `${c.usedCount}${c.maxUses ? ` / ${c.maxUses}` : ''}`,
-                },
-              ]}
-            />
-          </Card>
+                    ),
+                  },
+                  {
+                    key: 'discountValue',
+                    header: 'Valor / Saldo',
+                    renderCell: (c) => (
+                      <Text hasTabularNumbers>
+                        {c.kind === 'gift_card'
+                          ? `Saldo: ${formatCurrency(c.remainingBalanceCents ?? 0, currency)}`
+                          : c.discountType === 'percent'
+                            ? `${c.discountValue}%`
+                            : formatCurrency(c.discountValue, currency)}
+                      </Text>
+                    ),
+                  },
+                  {
+                    key: 'usedCount',
+                    header: 'Usos',
+                    renderCell: (c) => (
+                      <Text hasTabularNumbers>
+                        {c.usedCount}
+                        {c.maxUses ? ` / ${c.maxUses}` : ''}
+                      </Text>
+                    ),
+                  },
+                ]}
+              />
+            </VStack>
+          </VStack>
 
-          <Card padding={5}>
+          <VStack className="ad-surface" data-padded="true" gap={3}>
             <form onSubmit={submitCoupon}>
               <VStack gap={3}>
-                <Heading level={3}>Crear Cupón o Gift Card digital</Heading>
+                <Heading level={3} className="lk-serif ad-h3">
+                  Crear Cupón o Gift Card digital
+                </Heading>
                 <TextInput
                   label="Código"
                   placeholder="Ej. CUMPLE20 o REGALO500"
@@ -1415,8 +1589,8 @@ export default function AdminCashPage() {
                 />
               </VStack>
             </form>
-          </Card>
-        </Grid>
+          </VStack>
+        </VStack>
       )}
     </VStack>
   );

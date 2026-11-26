@@ -53,7 +53,16 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
   return (
     <VStack as="section" id="equipo" aria-labelledby="equipo-t" className="lk-cereza">
       <WaveTop />
-      <img className="lk-watermark" src={LANDING_ASSETS.cherriesWhite} alt="" width={580} height={580} style={{ left: '-6%', top: '10%', width: '40%', opacity: 0.06 }} />
+      <img
+        className="lk-watermark"
+        src={LANDING_ASSETS.cherriesWhite}
+        alt=""
+        width={580}
+        height={580}
+        loading="lazy"
+        decoding="async"
+        style={{ left: '-6%', top: '10%', width: '40%', opacity: 0.06 }}
+      />
       <VStack gap={10} className="lk-wrap" paddingBlockStart={6} paddingBlockEnd={10} style={{ position: 'relative' }}>
         <SectionHeading
           id="equipo-t"
@@ -66,11 +75,19 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
             <VStack role="listitem" key={person.id} className="lk-pop">
               <button
                 type="button"
-                className="lk-artist"
+                className="lk-artist fx-press"
                 aria-haspopup="dialog"
                 onClick={() => openProfile(person.id)}
               >
-                <img className="lk-artist-photo" src={staffAvatar(person.avatarUrl, index)} alt="" width={220} height={220} />
+                <img
+                  className="lk-artist-photo"
+                  src={staffAvatar(person.avatarUrl, index)}
+                  alt=""
+                  width={220}
+                  height={220}
+                  loading="lazy"
+                  decoding="async"
+                />
                 <Text className="lk-artist-chip" color="inherit">
                   ✿ {person.roleTitle}
                 </Text>
@@ -78,7 +95,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                   {person.name}
                 </Heading>
                 {getStaffScheduleLabel(person) ? (
-                  <Text type="supporting" color="inherit" className="lk-soft">
+                  <Text type="supporting" color="inherit" className="lk-soft" hasTabularNumbers>
                     {getStaffScheduleLabel(person)}
                   </Text>
                 ) : null}
@@ -99,11 +116,18 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
         padding={0}
       >
         {member ? (
-          <VStack gap={0} height="100%" className="lk-portal">
+          <VStack gap={0} height="100%" className="lk-portal fx-sheet-in">
             <VStack gap={4} padding={6} paddingBlockEnd={4}>
               <HStack gap={3} align="center">
-                <img src={staffAvatar(member.avatarUrl, openIndex)} alt="" width={56} height={56} style={{ borderRadius: 'var(--radius-full)' }} />
-                <VStack gap={0.5} style={{ flex: '1 1 auto' }}>
+                <img
+                  src={staffAvatar(member.avatarUrl, openIndex)}
+                  alt=""
+                  width={56}
+                  height={56}
+                  decoding="async"
+                  style={{ borderRadius: 'var(--radius-full)', objectFit: 'cover', flex: '0 0 auto' }}
+                />
+                <VStack gap={0.5} style={{ flex: '1 1 auto', minWidth: 0 }}>
                   <Heading level={2} className="lk-serif" style={{ fontSize: '1.9rem' }}>
                     {member.name}
                   </Heading>
@@ -111,7 +135,14 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                     {member.roleTitle}
                   </Text>
                 </VStack>
-                <Button label="Cerrar" variant="ghost" isIconOnly icon={<X size={18} />} onClick={() => setOpenId(null)} />
+                <Button
+                  label="Cerrar"
+                  variant="ghost"
+                  className="fx-press"
+                  isIconOnly
+                  icon={<X size={18} aria-hidden="true" />}
+                  onClick={() => setOpenId(null)}
+                />
               </HStack>
               <TabList
                 value={tab}
@@ -128,27 +159,41 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
 
             <VStack gap={4} padding={6} isScrollable style={{ flex: '1 1 auto', maxHeight: '52dvh', background: 'var(--lk-rosa)' }}>
               {tab === 'perfil' ? (
-                <VStack gap={4}>
+                <VStack key="perfil" gap={4} className="fx-step-in">
                   <Text textWrap="pretty">{member.bio}</Text>
                   <VStack gap={2} padding={5} className="lk-card">
-                    <HStack justify="between" gap={4}>
+                    <HStack justify="between" gap={4} wrap="wrap">
                       <Text color="secondary">Horarios</Text>
                       <Text hasTabularNumbers>{schedule ?? 'Lunes a sábado'}</Text>
                     </HStack>
-                    <HStack justify="between" gap={4}>
+                    <HStack justify="between" gap={4} wrap="wrap">
                       <Text color="secondary">Servicios</Text>
-                      <Text>{memberServices.length}</Text>
+                      <Text hasTabularNumbers>{memberServices.length}</Text>
                     </HStack>
                   </VStack>
                 </VStack>
               ) : null}
               {tab === 'servicios' ? (
-                <VStack as="ul" gap={2} style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                <VStack
+                  key="servicios"
+                  as="ul"
+                  gap={2}
+                  className="fx-step-in fx-stagger"
+                  style={{ listStyle: 'none', margin: 0, padding: 0 }}
+                >
                   {memberServices.map((service) => (
-                    <HStack as="li" key={service.id} justify="between" align="center" gap={3} padding={4} className="lk-card">
-                      <VStack gap={0.5}>
+                    <HStack
+                      as="li"
+                      key={service.id}
+                      justify="between"
+                      align="center"
+                      gap={3}
+                      padding={4}
+                      className="lk-card fx-card-lift"
+                    >
+                      <VStack gap={0.5} style={{ minWidth: 0 }}>
                         <Text weight="semibold">{service.name}</Text>
-                        <Text type="supporting" color="secondary">
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
                           {formatDuration(service.durationMinutes)} ·{' '}
                           {formatServicePrice(service.priceCents, service.isStartingPrice, currency)}
                         </Text>
@@ -156,6 +201,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                       <Button
                         label="Reservar"
                         size="sm"
+                        className="fx-press"
                         href={`/reservar/${service.slug}?staff=${encodeURIComponent(member.bookingSlug)}`}
                       />
                     </HStack>
@@ -163,11 +209,27 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                 </VStack>
               ) : null}
               {tab === 'portafolio' ? (
-                <Grid columns={3} gap={2}>
-                  {staffPortfolio(openIndex).map((src) => (
-                    <img key={src} src={src} alt="Set de uñas" width={200} height={200} loading="lazy" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 'var(--radius-container)' }} />
-                  ))}
-                </Grid>
+                <VStack key="portafolio" className="fx-step-in" width="100%">
+                  <Grid columns={3} gap={2} className="fx-stagger">
+                    {staffPortfolio(openIndex).map((src, idx) => (
+                      <img
+                        key={src}
+                        src={src}
+                        alt={`Set ${idx + 1} de ${member.name}`}
+                        width={200}
+                        height={200}
+                        loading="lazy"
+                        decoding="async"
+                        style={{
+                          width: '100%',
+                          aspectRatio: '1',
+                          objectFit: 'cover',
+                          borderRadius: 'var(--radius-container)',
+                        }}
+                      />
+                    ))}
+                  </Grid>
+                </VStack>
               ) : null}
             </VStack>
 
@@ -177,6 +239,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
                 variant="primary"
                 size="lg"
                 width="100%"
+                className="fx-press"
                 href={`/reservar?staff=${encodeURIComponent(member.bookingSlug)}`}
               />
             </VStack>

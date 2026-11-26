@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import NextLink from 'next/link';
+import { usePathname } from 'next/navigation';
 import Script from 'next/script';
 import {
   defineTheme,
@@ -18,6 +19,7 @@ import {
   DEFAULT_BRAND_ACCENT_DARK,
   DEFAULT_BRAND_ACCENT_LIGHT,
 } from '@/lib/theme-presets';
+import { usePersistedThemeMode } from '@/lib/hooks/usePersistedThemeMode';
 import type { SalonSettings, ThemeModePreference } from '@/lib/types';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 
@@ -148,10 +150,19 @@ export function SalonThemeProvider({
   initialSettings: AppearanceSettings;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
   const [settings, setSettingsOverride] = useState<AppearanceSettings>(initialSettings);
-  const [mode, setMode] = useState<ThemeModePreference>(
-    initialSettings.defaultPublicMode || 'light',
-  );
+  const defaultMode = initialSettings.defaultPublicMode || 'light';
+  const [mode, setMode] = usePersistedThemeMode(defaultMode);
+
+  const safePathname = pathname ?? '';
+  const isLightLockedPublicRoute =
+    safePathname === '/' ||
+    safePathname.startsWith('/reservar') ||
+    safePathname.startsWith('/cita') ||
+    safePathname === '/links' ||
+    safePathname === '/aviso-de-privacidad';
+  const effectiveMode: ThemeModePreference = isLightLockedPublicRoute ? 'light' : mode;
 
   const resolvedTheme = useMemo(() => resolveSalonTheme(settings), [settings]);
   const safeGa4Id = sanitizeGa4MeasurementId(settings.ga4MeasurementId);
@@ -159,7 +170,7 @@ export function SalonThemeProvider({
 
   const contextValue = useMemo(
     () => ({ mode, setMode, settings, setSettingsOverride }),
-    [mode, settings],
+    [mode, setMode, settings],
   );
 
   return (
@@ -171,7 +182,7 @@ export function SalonThemeProvider({
               {resolvedTheme.ssrCss}
             </style>
           ) : null}
-          <Theme theme={resolvedTheme.theme} mode={mode}>
+          <Theme theme={resolvedTheme.theme} mode={effectiveMode}>
             {safeGa4Id ? (
               <>
                 <Script

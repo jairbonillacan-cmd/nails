@@ -25,16 +25,49 @@ export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, y
   return (
     <VStack as="footer" className="lk-cereza">
       <WaveTop />
-      <img className="lk-watermark" src={LANDING_ASSETS.cherriesPorcelain} alt="" width={480} height={480} style={{ right: '-4%', bottom: '-10%', width: '34%', opacity: 0.08 }} />
+      <img
+        className="lk-watermark"
+        src={LANDING_ASSETS.cherriesPorcelain}
+        alt=""
+        width={480}
+        height={480}
+        loading="lazy"
+        decoding="async"
+        style={{ right: '-4%', bottom: '-10%', width: '34%', opacity: 0.08 }}
+      />
       <VStack gap={8} className="lk-wrap" paddingBlockStart={8} paddingBlockEnd={6} style={{ position: 'relative' }}>
         <HStack justify="between" align="end" wrap="wrap" gap={6} paddingBlockEnd={8} className="lk-reveal lk-rule-b">
           <VStack gap={3}>
-            <img src={LANDING_ASSETS.logoWhite} alt={salonName} width={440} height={186} style={{ width: 'min(27.5rem, 80vw)', height: 'auto' }} />
-            <img src={LANDING_ASSETS.curvePorcelain} alt="" width={200} height={40} style={{ width: '12.5rem', height: 'auto', opacity: 0.6 }} />
+            <img
+              src={LANDING_ASSETS.logoWhite}
+              alt={salonName}
+              width={440}
+              height={186}
+              loading="lazy"
+              decoding="async"
+              style={{ width: 'min(27.5rem, 80vw)', height: 'auto' }}
+            />
+            <img
+              src={LANDING_ASSETS.curvePorcelain}
+              alt=""
+              width={200}
+              height={40}
+              loading="lazy"
+              decoding="async"
+              style={{ width: '12.5rem', height: 'auto', opacity: 0.6 }}
+            />
           </VStack>
           <HStack gap={2} wrap="wrap">
-            <Button label="Agendar cita" variant="secondary" size="lg" className="lk-btn-light" href="/reservar" />
-            <Button label="WhatsApp" variant="secondary" size="lg" className="lk-btn-outline" href={whatsappUrl} />
+            <Button label="Agendar cita" variant="secondary" size="lg" className="lk-btn-light fx-press" href="/reservar" />
+            <Button
+              label="WhatsApp"
+              variant="secondary"
+              size="lg"
+              className="lk-btn-outline fx-press"
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
           </HStack>
         </HStack>
 
@@ -58,11 +91,18 @@ export function LandingFooter({ salonName, address, instagramUrl, whatsappUrl, y
           </VStack>
           <VStack gap={0}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Síguenos</Text>
-            <a className="lk-footer-link" href={instagramUrl}>
-              <img src={LANDING_ASSETS.iconInstagramLight} alt="" width={18} height={18} />
+            <a className="lk-footer-link" href={instagramUrl} target="_blank" rel="noopener noreferrer">
+              <img
+                src={LANDING_ASSETS.iconInstagramLight}
+                alt=""
+                width={18}
+                height={18}
+                loading="lazy"
+                decoding="async"
+              />
               Instagram
             </a>
-            <a className="lk-footer-link" href={whatsappUrl}>
+            <a className="lk-footer-link" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
               WhatsApp
             </a>
           </VStack>

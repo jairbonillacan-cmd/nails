@@ -31,30 +31,36 @@ export function LandingReviews({ reviews, summary, reviewUrl }: LandingReviewsPr
           tone="cereza"
         />
         <HStack gap={6} align="center" wrap="wrap" className="lk-reveal">
-          <VStack gap={1} align="center" style={{ flex: '1 1 13rem', textAlign: 'center' }}>
+          <VStack gap={1} align="center" style={{ flex: '1 1 13rem', minWidth: 0, textAlign: 'center' }}>
             <Text weight="bold" size="xl">EXCELENTE</Text>
             <VStack className="lk-cereza-text">
               <Text size="3xl" color="inherit" aria-label={`${average} de 5 estrellas`}>★★★★★</Text>
             </VStack>
-            <Text>
-              {average} · <Text weight="bold">{summary.count} {summary.count === 1 ? 'reseña' : 'reseñas'}</Text> en Google
+            <Text hasTabularNumbers>
+              {average} · <Text weight="bold" hasTabularNumbers>{summary.count} {summary.count === 1 ? 'reseña' : 'reseñas'}</Text> en Google
             </Text>
             <Link href={reviewUrl} isExternalLink>
               Escribir una reseña
             </Link>
           </VStack>
           {reviews.length > 0 ? (
-            <VStack style={{ flex: '999 1 36rem', minWidth: 0 }}>
+            <VStack style={{ flex: '999 1 28rem', minWidth: 0, maxWidth: '100%' }}>
               <Carousel gap={4} hasSnap aria-label="Reseñas de clientas">
                 {reviews.map((review) => (
-                  <VStack key={review.id} gap={3} padding={6} className="lk-card lk-review" style={{ width: 'min(20rem, 78vw)' }}>
+                  <VStack
+                    key={review.id}
+                    gap={3}
+                    padding={6}
+                    className="lk-card lk-review fx-card-lift"
+                    style={{ width: 'min(20rem, 78vw)' }}
+                  >
                     <HStack gap={3} align="center">
                       <VStack className="lk-initial" aria-hidden="true">
                         {review.clientFirstName.slice(0, 1).toUpperCase()}
                       </VStack>
-                      <VStack gap={0}>
+                      <VStack gap={0} style={{ minWidth: 0 }}>
                         <Text weight="semibold">{review.clientFirstName}</Text>
-                        <Text type="supporting" color="secondary">
+                        <Text type="supporting" color="secondary" className="rb-first-upper">
                           {formatReviewDate(review.createdAt)}
                         </Text>
                       </VStack>

@@ -4,7 +4,6 @@ import { useMemo } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
@@ -143,6 +142,14 @@ export function VisualScheduleGrid({
     [staff],
   );
 
+  const staffColorIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    activeStaff.forEach((st, idx) => {
+      map.set(st.id, idx % 4);
+    });
+    return map;
+  }, [activeStaff]);
+
   const dayBookings = useMemo(
     () =>
       bookings
@@ -180,143 +187,179 @@ export function VisualScheduleGrid({
   }, [activeStaff, schedules, dow]);
 
   const formattedDate = formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone);
+  const tomorrowKey = shiftDateKey(todayKey, 1);
 
   return (
-    <VStack gap={4}>
-      <Card padding={4}>
-        <HStack justify="between" align="center" wrap="wrap" gap={3}>
-          <HStack gap={2} align="center" wrap="wrap">
-            <Button
-              label="Día anterior"
-              isIconOnly
-              size="sm"
-              variant="secondary"
-              icon={<ChevronLeft size={15} />}
-              onClick={() => onChangeDate(shiftDateKey(dateKey, -1))}
-            />
-            <Heading level={3}>{formattedDate}</Heading>
-            <Button
-              label="Día siguiente"
-              isIconOnly
-              size="sm"
-              variant="secondary"
-              icon={<ChevronRight size={15} />}
-              onClick={() => onChangeDate(shiftDateKey(dateKey, 1))}
-            />
-            <Button
-              label="Hoy"
-              size="sm"
-              variant={dateKey === todayKey ? 'primary' : 'ghost'}
-              onClick={() => onChangeDate(todayKey)}
-            />
-            <Button
-              label="Mañana"
-              size="sm"
-              variant={dateKey === shiftDateKey(todayKey, 1) ? 'primary' : 'ghost'}
-              onClick={() => onChangeDate(shiftDateKey(todayKey, 1))}
-            />
-          </HStack>
-
-          <HStack gap={2} align="center">
-            <Badge variant="info" label={String(dayBookings.length)} />
-            <Text type="supporting" color="secondary">
-              citas en esta fecha
-            </Text>
-          </HStack>
+    <VStack gap={4} key={dateKey} className="fx-step-in">
+      <HStack className="ad-surface" data-padded="true" justify="between" align="center" wrap="wrap" gap={3}>
+        <HStack gap={2} align="center" wrap="wrap">
+          <Button
+            label="Día anterior"
+            isIconOnly
+            size="sm"
+            variant="secondary"
+            icon={<ChevronLeft size={15} />}
+            onClick={() => onChangeDate(shiftDateKey(dateKey, -1))}
+          />
+          <Heading level={2} className="lk-serif ad-h2">
+            {formattedDate}
+          </Heading>
+          <Button
+            label="Día siguiente"
+            isIconOnly
+            size="sm"
+            variant="secondary"
+            icon={<ChevronRight size={15} />}
+            onClick={() => onChangeDate(shiftDateKey(dateKey, 1))}
+          />
+          <button
+            type="button"
+            className="ad-pill fx-press"
+            data-on={dateKey === todayKey ? 'true' : 'false'}
+            aria-pressed={dateKey === todayKey}
+            onClick={() => onChangeDate(todayKey)}
+          >
+            Hoy
+          </button>
+          <button
+            type="button"
+            className="ad-pill fx-press"
+            data-on={dateKey === tomorrowKey ? 'true' : 'false'}
+            aria-pressed={dateKey === tomorrowKey}
+            onClick={() => onChangeDate(tomorrowKey)}
+          >
+            Mañana
+          </button>
         </HStack>
-      </Card>
 
-      <Grid columns={{ minWidth: 240, max: Math.max(1, activeStaff.length) }} gap={3}>
+        <HStack gap={2} align="center">
+          <Text
+            color="inherit"
+            className="ad-chip"
+            data-tone={dayBookings.length > 0 ? 'accent' : 'neutral'}
+            hasTabularNumbers
+          >
+            {dayBookings.length} {dayBookings.length === 1 ? 'cita' : 'citas'}
+          </Text>
+        </HStack>
+      </HStack>
+
+      <Grid
+        className="fx-stagger"
+        columns={{ minWidth: 210, max: Math.max(1, activeStaff.length) }}
+        gap={3}
+      >
         {activeStaff.map((st) => {
           const staffDayCount = dayBookings.filter((b) => b.staffId === st.id).length;
           const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
           const staffDayBlocks = activeBlocksByStaff.get(st.id) ?? [];
+          const colorIdx = staffColorIndex.get(st.id) ?? 0;
           return (
-            <Card key={st.id} variant="muted" padding={3}>
-              <VStack gap={1.5}>
-                <HStack justify="between" align="center" gap={2}>
-                  <VStack gap={0.5}>
-                    <HStack gap={1.5} align="center">
-                      <Heading level={4}>{st.name}</Heading>
-                      <Badge variant="neutral" label={String(staffDayCount)} />
-                    </HStack>
-                    <Text type="supporting" color="secondary">
-                      {fixedTimes.length > 0
-                        ? `Turnos: ${fixedTimes.join(' · ')}`
-                        : st.roleTitle}
+            <VStack
+              key={st.id}
+              className="ad-surface"
+              data-padded="true"
+              data-tone="subtle"
+              gap={1.5}
+            >
+              <HStack justify="between" align="center" gap={2}>
+                <VStack gap={0.5} className="rb-grow">
+                  <HStack gap={1.5} align="center">
+                    <Text className="ad-dot" data-idx={String(colorIdx)} aria-hidden="true">
+                      {'\u200B'}
                     </Text>
-                  </VStack>
-                  <Button
-                    label={`Agendar con ${st.name}`}
-                    isIconOnly
-                    size="sm"
-                    variant="secondary"
-                    icon={<Plus size={14} />}
-                    onClick={() => onOpenNewForStaff(st.id)}
-                  />
-                </HStack>
-                {staffDayBlocks.length > 0 ? (
-                  <HStack gap={1} wrap="wrap">
-                    {staffDayBlocks.map((blk) => (
-                      <Token
-                        key={blk.id}
-                        size="sm"
-                        color="orange"
-                        icon={<Ban size={11} />}
-                        label={`${blk.startTime}–${blk.endTime} ${blk.reason}`}
-                      />
-                    ))}
+                    <Heading level={3} className="lk-serif ad-h3">
+                      {st.name}
+                    </Heading>
+                    <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                      {staffDayCount}
+                    </Text>
                   </HStack>
-                ) : null}
-              </VStack>
-            </Card>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {fixedTimes.length > 0
+                      ? `Turnos: ${fixedTimes.join(' · ')}`
+                      : st.roleTitle}
+                  </Text>
+                </VStack>
+                <Button
+                  label={`Agendar con ${st.name}`}
+                  isIconOnly
+                  size="sm"
+                  variant="secondary"
+                  icon={<Plus size={14} />}
+                  onClick={() => onOpenNewForStaff(st.id)}
+                />
+              </HStack>
+              {staffDayBlocks.length > 0 ? (
+                <HStack gap={1} wrap="wrap">
+                  {staffDayBlocks.map((blk) => (
+                    <Token
+                      key={blk.id}
+                      size="sm"
+                      color="orange"
+                      icon={<Ban size={11} />}
+                      label={`${blk.startTime}–${blk.endTime} ${blk.reason}`}
+                    />
+                  ))}
+                </HStack>
+              ) : null}
+            </VStack>
           );
         })}
       </Grid>
 
-      <VStack gap={2}>
-        {TIMELINE_HOURS.map((hour) => {
-          const hourLabel = `${String(hour).padStart(2, '0')}:00`;
-          const bookingsAtHour = dayBookings.filter(
-            (b) => getLocalHourInTimezone(b.startAt, timezone) === hour,
-          );
-          const hasFixedAtHour = activeStaff.some((st) =>
-            (fixedTimesByStaff.get(st.id) ?? []).some((t) => Number(t.slice(0, 2)) === hour),
-          );
-          const hasBlockAtHour = activeStaff.some((st) =>
-            (activeBlocksByStaff.get(st.id) ?? []).some((blk) =>
-              doesBlockOverlapHour(blk, hour),
-            ),
-          );
+      <VStack className="ad-surface" gap={0}>
+        <VStack className="ad-row-list" gap={0}>
+          {TIMELINE_HOURS.map((hour) => {
+            const hourLabel = `${String(hour).padStart(2, '0')}:00`;
+            const bookingsAtHour = dayBookings.filter(
+              (b) => getLocalHourInTimezone(b.startAt, timezone) === hour,
+            );
+            const hasFixedAtHour = activeStaff.some((st) =>
+              (fixedTimesByStaff.get(st.id) ?? []).some((t) => Number(t.slice(0, 2)) === hour),
+            );
+            const hasBlockAtHour = activeStaff.some((st) =>
+              (activeBlocksByStaff.get(st.id) ?? []).some((blk) =>
+                doesBlockOverlapHour(blk, hour),
+              ),
+            );
+            const isQuietHour =
+              bookingsAtHour.length === 0 && !hasFixedAtHour && !hasBlockAtHour;
 
-          return (
-            <Card
-              key={hour}
-              variant={bookingsAtHour.length > 0 ? 'default' : 'muted'}
-              padding={3}
-            >
-              <VStack gap={2}>
-                <HStack justify="between" align="center" gap={2} wrap="wrap">
+            return (
+              <VStack
+                key={hour}
+                className="ad-row-item"
+                data-muted={isQuietHour ? 'true' : undefined}
+                gap={2}
+                align="stretch"
+              >
+                <HStack justify="between" align="center" gap={2} wrap="wrap" width="100%">
                   <HStack gap={1.5} align="center">
                     <Clock size={14} aria-hidden="true" />
-                    <Text weight="semibold" hasTabularNumbers>
+                    <Text weight="bold" hasTabularNumbers>
                       {hourLabel}
                     </Text>
                   </HStack>
                   <HStack gap={1.5} wrap="wrap">
                     {hasFixedAtHour ? (
-                      <Token size="sm" color="default" label="Bloque de turno fijo" />
+                      <Text color="inherit" className="ad-chip" data-tone="neutral">
+                        Turno fijo
+                      </Text>
                     ) : null}
                     {hasBlockAtHour ? (
-                      <Token size="sm" color="orange" label="Bloqueo recurrente" />
+                      <Text color="inherit" className="ad-chip" data-tone="warning">
+                        Bloqueo recurrente
+                      </Text>
                     ) : null}
                   </HStack>
                 </HStack>
 
                 <Grid
-                  columns={{ minWidth: 240, max: Math.max(1, activeStaff.length) }}
+                  columns={{ minWidth: 210, max: Math.max(1, activeStaff.length) }}
                   gap={2}
                   align="start"
+                  width="100%"
                 >
                   {activeStaff.map((st) => {
                     const cellBookings = bookingsAtHour.filter((b) => b.staffId === st.id);
@@ -326,13 +369,27 @@ export function VisualScheduleGrid({
                     const cellBlocks = (activeBlocksByStaff.get(st.id) ?? []).filter(
                       (blk) => doesBlockOverlapHour(blk, hour),
                     );
+                    const colorIdx = staffColorIndex.get(st.id) ?? 0;
 
                     if (cellBookings.length === 0) {
                       return (
-                        <Card key={st.id} variant="transparent" padding={2}>
-                          <VStack gap={1}>
-                            <HStack justify="between" align="center" gap={2}>
-                              <Text type="supporting" color="secondary">
+                        <VStack
+                          key={st.id}
+                          className="ad-surface"
+                          data-tone="subtle"
+                          data-padded="true"
+                          gap={1.5}
+                        >
+                          <HStack justify="between" align="center" gap={2}>
+                            <HStack gap={1.5} align="center" className="rb-grow">
+                              <Text
+                                className="ad-dot"
+                                data-idx={String(colorIdx)}
+                                aria-hidden="true"
+                              >
+                                {'\u200B'}
+                              </Text>
+                              <Text type="supporting" color="secondary" hasTabularNumbers>
                                 {st.name}:{' '}
                                 {cellBlocks.length > 0
                                   ? 'Bloqueado'
@@ -340,26 +397,26 @@ export function VisualScheduleGrid({
                                     ? `Libre (${staffFixedInHour.join(', ')})`
                                     : 'Sin citas'}
                               </Text>
-                              {cellBlocks.length === 0 && staffFixedInHour.length > 0 ? (
-                                <Button
-                                  label="Agendar"
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => onOpenNewForStaff(st.id)}
-                                />
-                              ) : null}
                             </HStack>
-                            {cellBlocks.map((blk) => (
-                              <Token
-                                key={blk.id}
+                            {cellBlocks.length === 0 && staffFixedInHour.length > 0 ? (
+                              <Button
+                                label="Agendar"
                                 size="sm"
-                                color="orange"
-                                icon={<Ban size={11} />}
-                                label={`${blk.startTime}–${blk.endTime} · ${blk.reason}`}
+                                variant="ghost"
+                                onClick={() => onOpenNewForStaff(st.id)}
                               />
-                            ))}
-                          </VStack>
-                        </Card>
+                            ) : null}
+                          </HStack>
+                          {cellBlocks.map((blk) => (
+                            <Token
+                              key={blk.id}
+                              size="sm"
+                              color="orange"
+                              icon={<Ban size={11} />}
+                              label={`${blk.startTime}–${blk.endTime} · ${blk.reason}`}
+                            />
+                          ))}
+                        </VStack>
                       );
                     }
 
@@ -396,25 +453,52 @@ export function VisualScheduleGrid({
                             (b.status === 'completed' && paymentSummary.isUncollected);
 
                           return (
-                            <Card key={b.id} padding={3} elevation="low">
-                              <VStack gap={1.5}>
-                                <HStack justify="between" align="center" gap={1.5} wrap="wrap">
-                                  <Text weight="semibold" size="sm" hasTabularNumbers>
-                                    {formatTimeInTimezone(b.startAt, timezone)} –{' '}
-                                    {formatTimeInTimezone(b.endAt, timezone)}
+                            <VStack
+                              key={b.id}
+                              as="article"
+                              className="ad-surface fx-card-lift"
+                              data-padded="true"
+                              gap={2}
+                            >
+                              <HStack justify="between" align="center" gap={1.5} wrap="wrap">
+                                <HStack gap={1.5} align="center">
+                                  <Text
+                                    className="ad-dot"
+                                    data-idx={String(colorIdx)}
+                                    aria-hidden="true"
+                                  >
+                                    {'\u200B'}
                                   </Text>
-                                  <Badge
-                                    variant={statusMeta.variant}
-                                    label={statusMeta.label}
-                                  />
+                                  <Text weight="semibold" size="sm" hasTabularNumbers>
+                                    {formatTimeInTimezone(b.startAt, timezone, true)} –{' '}
+                                    {formatTimeInTimezone(b.endAt, timezone, true)}
+                                  </Text>
                                 </HStack>
-
-                                <Button
-                                  label={b.client.fullName}
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => onSelectBooking(b)}
+                                <Badge
+                                  variant={statusMeta.variant}
+                                  label={statusMeta.label}
                                 />
+                              </HStack>
+
+                              <VStack gap={0.5} align="start">
+                                <button
+                                  type="button"
+                                  className="ad-inline-link fx-press"
+                                  onClick={() => onSelectBooking(b)}
+                                  style={{
+                                    border: 0,
+                                    background: 'transparent',
+                                    padding: 0,
+                                    font: 'inherit',
+                                    textAlign: 'start',
+                                    cursor: 'pointer',
+                                    color: 'var(--color-text-primary)',
+                                  }}
+                                >
+                                  <Text weight="semibold" size="base">
+                                    {b.client.fullName}
+                                  </Text>
+                                </button>
 
                                 <Text type="supporting" color="secondary">
                                   {b.service.name}
@@ -423,75 +507,73 @@ export function VisualScheduleGrid({
                                     : ''}{' '}
                                   · {st.name}
                                 </Text>
+                              </VStack>
 
-                                <HStack gap={1.5} align="center" wrap="wrap">
-                                  {igHandle && igUrl ? (
-                                    <HStack gap={1} align="center">
-                                      <AtSign size={12} aria-hidden="true" />
-                                      <Link href={igUrl} isExternalLink size="sm">
-                                        {igHandle}
-                                      </Link>
-                                    </HStack>
-                                  ) : null}
-                                  {proofMeta ? (
-                                    <Token
-                                      size="sm"
-                                      color={proofMeta.color}
-                                      label={proofMeta.label}
-                                    />
-                                  ) : null}
-                                  {b.status !== 'canceled' &&
-                                  b.status !== 'no_show' &&
-                                  paymentSummary.isUncollected ? (
-                                    <Token
-                                      size="sm"
-                                      color="orange"
-                                      label="Por cobrar"
-                                    />
-                                  ) : null}
-                                </HStack>
+                              <HStack gap={1.5} align="center" wrap="wrap">
+                                {igHandle && igUrl ? (
+                                  <HStack gap={1} align="center">
+                                    <AtSign size={12} aria-hidden="true" />
+                                    <Link href={igUrl} isExternalLink size="sm">
+                                      {igHandle}
+                                    </Link>
+                                  </HStack>
+                                ) : null}
+                                {proofMeta ? (
+                                  <Token
+                                    size="sm"
+                                    color={proofMeta.color}
+                                    label={proofMeta.label}
+                                  />
+                                ) : null}
+                                {b.status !== 'canceled' &&
+                                b.status !== 'no_show' &&
+                                paymentSummary.isUncollected ? (
+                                  <Text color="inherit" className="ad-chip" data-tone="warning">
+                                    Por cobrar
+                                  </Text>
+                                ) : null}
+                              </HStack>
 
-                                <Divider />
+                              <Divider />
 
-                                <HStack gap={1} wrap="wrap">
+                              <HStack gap={1.5} wrap="wrap">
+                                <Button
+                                  label="Gestionar"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => onSelectBooking(b)}
+                                />
+                                {b.status === 'pending_confirmation' ||
+                                b.status === 'pending_payment' ? (
                                   <Button
-                                    label="Gestionar"
+                                    label="Confirmar"
+                                    size="sm"
+                                    variant="primary"
+                                    icon={<Check size={13} />}
+                                    onClick={() => onUpdateStatus(b.id, 'confirmed')}
+                                  />
+                                ) : null}
+                                {canCollect ? (
+                                  <Button
+                                    label="Cobrar"
+                                    size="sm"
+                                    variant="primary"
+                                    icon={<DollarSign size={13} aria-hidden="true" />}
+                                    onClick={() => onOpenCheckout(b)}
+                                  />
+                                ) : null}
+                                {canRemind ? (
+                                  <Button
+                                    label="Recordatorio"
                                     size="sm"
                                     variant="secondary"
-                                    onClick={() => onSelectBooking(b)}
+                                    icon={<Bell size={13} />}
+                                    isLoading={remindingBookingId === b.id}
+                                    onClick={() => onSendReminder(b.id)}
                                   />
-                                  {b.status === 'pending_confirmation' ||
-                                  b.status === 'pending_payment' ? (
-                                    <Button
-                                      label="Confirmar"
-                                      size="sm"
-                                      variant="primary"
-                                      icon={<Check size={13} />}
-                                      onClick={() => onUpdateStatus(b.id, 'confirmed')}
-                                    />
-                                  ) : null}
-                                  {canCollect ? (
-                                    <Button
-                                      label="$ Cobrar"
-                                      size="sm"
-                                      variant="primary"
-                                      icon={<DollarSign size={13} />}
-                                      onClick={() => onOpenCheckout(b)}
-                                    />
-                                  ) : null}
-                                  {canRemind ? (
-                                    <Button
-                                      label="Recordatorio"
-                                      size="sm"
-                                      variant="secondary"
-                                      icon={<Bell size={13} />}
-                                      isLoading={remindingBookingId === b.id}
-                                      onClick={() => onSendReminder(b.id)}
-                                    />
-                                  ) : null}
-                                </HStack>
-                              </VStack>
-                            </Card>
+                                ) : null}
+                              </HStack>
+                            </VStack>
                           );
                         })}
                       </VStack>
@@ -499,9 +581,9 @@ export function VisualScheduleGrid({
                   })}
                 </Grid>
               </VStack>
-            </Card>
-          );
-        })}
+            );
+          })}
+        </VStack>
       </VStack>
     </VStack>
   );

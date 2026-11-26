@@ -406,67 +406,94 @@ export function ManageBookingView({
 
       <VStack as="main" gap={4} className="rb-wrap rb-main ck-wrap">
         {actionSuccess ? (
-          <Banner
-            status="success"
-            title={actionSuccess}
-            isDismissable
-            onDismiss={() => setActionSuccess(null)}
-          />
+          <VStack className="fx-fade-up">
+            <Banner
+              status="success"
+              title={actionSuccess}
+              isDismissable
+              onDismiss={() => setActionSuccess(null)}
+            />
+          </VStack>
         ) : null}
-        {actionError ? (
-          <Banner
-            status="error"
-            title="Aviso sobre tu cita"
-            description={actionError}
-            isDismissable
-            onDismiss={() => setActionError(null)}
-          />
+        {actionError && !rescheduleOpen && !cancelOpen ? (
+          <VStack className="fx-fade-up">
+            <Banner
+              status="error"
+              title="Aviso sobre tu cita"
+              description={actionError}
+              isDismissable
+              onDismiss={() => setActionError(null)}
+            />
+          </VStack>
         ) : null}
 
         <VStack className="ck-layout">
           <VStack gap={4} className="ck-main-col">
-            <CitaDepositSection
-              booking={booking}
-              settings={settings}
-              timezone={tz}
-              isUploading={uploadingProof}
-              onUploadProof={handleUploadProof}
-            />
-
-            <CitaActionsPanel
-              booking={booking}
-              settings={settings}
-              calendarLinks={calendarLinks}
-              whatsappUrl={whatsappUrl}
-              manageUrl={manageUrl}
-              canModify={canModify}
-              onOpenReschedule={openReschedule}
-              onOpenCancel={() => {
-                setActionError(null);
-                setCancelOpen(true);
-              }}
-            />
-
-            {loyaltySummary ? (
-              <LoyaltyStampCard
-                loyaltySummary={loyaltySummary}
-                studioName={settings.name}
-              />
-            ) : null}
-
             {booking.status === 'completed' ? (
-              <CitaReviewCard
-                salonName={settings.name}
-                googleReviewUrl={settings.googleReviewUrl}
-                rating={rating}
-                reviewComment={reviewComment}
-                reviewSaved={reviewSaved}
-                busy={busy}
-                onChangeRating={setRating}
-                onChangeComment={setReviewComment}
-                onSubmit={(e) => void handleSubmitReview(e)}
-              />
-            ) : null}
+              <>
+                <CitaReviewCard
+                  salonName={settings.name}
+                  googleReviewUrl={settings.googleReviewUrl}
+                  rating={rating}
+                  reviewComment={reviewComment}
+                  reviewSaved={reviewSaved}
+                  busy={busy}
+                  onChangeRating={setRating}
+                  onChangeComment={setReviewComment}
+                  onSubmit={(e) => void handleSubmitReview(e)}
+                />
+                {loyaltySummary ? (
+                  <LoyaltyStampCard
+                    loyaltySummary={loyaltySummary}
+                    studioName={settings.name}
+                  />
+                ) : null}
+                <CitaActionsPanel
+                  booking={booking}
+                  settings={settings}
+                  calendarLinks={calendarLinks}
+                  whatsappUrl={whatsappUrl}
+                  manageUrl={manageUrl}
+                  canModify={canModify}
+                  onOpenReschedule={openReschedule}
+                  onOpenCancel={() => {
+                    setActionError(null);
+                    setCancelOpen(true);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <CitaDepositSection
+                  booking={booking}
+                  settings={settings}
+                  timezone={tz}
+                  isUploading={uploadingProof}
+                  onUploadProof={handleUploadProof}
+                />
+
+                <CitaActionsPanel
+                  booking={booking}
+                  settings={settings}
+                  calendarLinks={calendarLinks}
+                  whatsappUrl={whatsappUrl}
+                  manageUrl={manageUrl}
+                  canModify={canModify}
+                  onOpenReschedule={openReschedule}
+                  onOpenCancel={() => {
+                    setActionError(null);
+                    setCancelOpen(true);
+                  }}
+                />
+
+                {loyaltySummary ? (
+                  <LoyaltyStampCard
+                    loyaltySummary={loyaltySummary}
+                    studioName={settings.name}
+                  />
+                ) : null}
+              </>
+            )}
           </VStack>
 
           <VStack as="aside" className="ck-aside" aria-labelledby="ck-summary-aside">
@@ -510,6 +537,7 @@ export function ManageBookingView({
         timezone={tz}
         minCancelHours={settings.minCancelHours}
         busy={busy}
+        errorMessage={actionError}
         rescheduleOpen={rescheduleOpen}
         rescheduleReasonChoice={rescheduleReasonChoice}
         rescheduleReason={rescheduleReason}
@@ -518,11 +546,17 @@ export function ManageBookingView({
         cancelOpen={cancelOpen}
         cancelReasonChoice={cancelReasonChoice}
         cancelReason={cancelReason}
-        onRescheduleOpenChange={setRescheduleOpen}
+        onRescheduleOpenChange={(open) => {
+          if (!open) setActionError(null);
+          setRescheduleOpen(open);
+        }}
         onSelectRescheduleChip={handleSelectRescheduleChip}
         onChangeRescheduleReason={setRescheduleReason}
         onConfirmReschedule={(slot) => void handleConfirmReschedule(slot)}
-        onCancelOpenChange={setCancelOpen}
+        onCancelOpenChange={(open) => {
+          if (!open) setActionError(null);
+          setCancelOpen(open);
+        }}
         onSelectCancelChip={handleSelectCancelChip}
         onChangeCancelReason={setCancelReason}
         onConfirmCancel={() => void handleConfirmCancel()}

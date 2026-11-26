@@ -122,7 +122,8 @@ export function DepositCard({
 
       <button
         type="button"
-        className="rb-clabe"
+        className="rb-clabe fx-press"
+        data-copied={clabeFeedback.message && clabeCopyOk ? 'true' : 'false'}
         aria-label={`Copiar CLABE ${settings.depositClabe}`}
         onClick={() => void handleCopyClabe()}
       >
@@ -135,15 +136,23 @@ export function DepositCard({
           </Text>
         </VStack>
         <Text color="inherit" weight="semibold" className="rb-clabe-action">
-          {clabeFeedback.message && clabeCopyOk ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+          {clabeFeedback.message && clabeCopyOk ? (
+            <Check size={14} aria-hidden="true" className="fx-pop" />
+          ) : (
+            <Copy size={14} aria-hidden="true" />
+          )}
           {clabeFeedback.message && clabeCopyOk ? 'Copiada' : 'Copiar'}
         </Text>
       </button>
-      {clabeFeedback.message && !clabeCopyOk ? (
-        <Text type="supporting" color="secondary" role="status">
-          {clabeFeedback.message}
-        </Text>
-      ) : null}
+      <Text
+        type="supporting"
+        color={clabeCopyOk ? 'accent' : 'secondary'}
+        role="status"
+        aria-live="polite"
+        className={clabeFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
+      >
+        {clabeFeedback.message ?? ''}
+      </Text>
 
         <RadioList
           label="¿Cómo nos mandas tu comprobante?"
@@ -196,20 +205,24 @@ export function DepositCard({
               <HStack gap={2} wrap="wrap">
                 <Button
                   variant="secondary"
-                  size="sm"
-                  icon={<ExternalLink size={14} />}
+                  size="md"
+                  className="fx-press"
+                  icon={<ExternalLink size={15} aria-hidden="true" />}
                   label={`Abrir ${instagramHandle}`}
                   href={instagramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 />
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="md"
+                  className="fx-press"
                   icon={
                     dmFeedback.message && dmCopyOk ? (
-                      <Check size={14} />
+                      <Check size={15} aria-hidden="true" className="fx-pop" />
                     ) : (
-                      <Copy size={14} />
+                      <Copy size={15} aria-hidden="true" />
                     )
                   }
                   label={
@@ -224,6 +237,8 @@ export function DepositCard({
                 type="supporting"
                 color={dmCopyOk ? 'accent' : 'secondary'}
                 role="status"
+                aria-live="polite"
+                className={dmFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
               >
                 {dmFeedback.message ?? ''}
               </Text>

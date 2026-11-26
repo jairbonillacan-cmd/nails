@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
 import { Button } from '@astryxdesign/core/Button';
-import { Card } from '@astryxdesign/core/Card';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { List, ListItem } from '@astryxdesign/core/List';
-import { Section } from '@astryxdesign/core/Section';
 import { Text } from '@astryxdesign/core/Text';
 import { Token } from '@astryxdesign/core/Token';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -28,6 +26,7 @@ import {
 } from '@/lib/public-dto';
 import { getSnapshot } from '@/lib/repositories/db';
 import { PublicShell } from '@/components/PublicShell';
+import { LANDING_ASSETS, servicePhoto } from '@/components/landing/landingContent';
 import {
   formatServicePrice,
   normalizeInstagramHandle,
@@ -95,67 +94,94 @@ export default function LinksPage() {
   const depositCents = settings.depositAmountCents ?? 20000;
   const depositLabel = `${formatCurrency(depositCents, settings.currency)} ${settings.currency}`;
   const staffSummary = formatSpanishList(activeStaff.map((member) => member.name));
-  const badgeSrc = settings.logoUrl?.trim() || '/laikona-logo.svg';
 
   return (
     <PublicShell>
-      <Section variant="muted" paddingBlock={8} paddingInline={4}>
-        <VStack
-          gap={5}
-          maxWidth={540}
-          width="100%"
-          align="center"
-          style={{ marginInline: 'auto' }}
-        >
-          <Card padding={6} elevation="low" width="100%">
-            <VStack gap={5} align="center" width="100%">
-              <VStack gap={2} align="center" width="100%">
-                <img
-                  src={badgeSrc}
-                  alt={settings.name}
-                  style={{
-                    height: '4.5rem',
-                    width: 'auto',
-                    display: 'block',
-                    borderRadius: 'var(--radius-md)',
-                  }}
-                />
-                <Heading level={1} justify="center" textWrap="balance">
-                  {settings.name}
-                </Heading>
-                <Text type="supporting" color="accent" weight="semibold" justify="center">
-                  {instagramHandle}
-                </Text>
-                <HStack gap={1.5} align="center" justify="center" wrap="wrap">
-                  <MapPin size={14} aria-hidden="true" />
-                  <Text type="supporting" color="secondary" justify="center">
-                    {settings.address}
-                  </Text>
-                </HStack>
-                <Text type="supporting" color="secondary" justify="center" textWrap="pretty">
-                  {settings.tagline}
-                </Text>
-              </VStack>
+      <VStack gap={0} width="100%">
+        <VStack as="section" className="rb-hero ck-hero" aria-labelledby="links-title">
+          <img
+            className="rb-hero-cherries"
+            src={LANDING_ASSETS.cherriesWhite}
+            alt=""
+            width={340}
+            height={340}
+            decoding="async"
+          />
+          <VStack gap={3} align="center" className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={560} style={{ textAlign: 'center' }}>
+            <img
+              src={LANDING_ASSETS.logoWhite}
+              alt={settings.name}
+              width={200}
+              height={84}
+              fetchPriority="high"
+              decoding="async"
+              style={{ height: '3.5rem', width: 'auto', display: 'block' }}
+            />
+            <VStack gap={1.5} align="center">
+              <Heading level={1} id="links-title" color="inherit" justify="center" textWrap="balance" className="lk-serif rb-hero-title">
+                {settings.name}
+              </Heading>
+              <img
+                className="rb-hero-stroke"
+                src={LANDING_ASSETS.strokePorcelain}
+                alt=""
+                width={180}
+                height={20}
+                decoding="async"
+              />
+            </VStack>
+            <Text color="inherit" weight="semibold" justify="center">
+              {instagramHandle}
+            </Text>
+            <HStack gap={1.5} align="center" justify="center" wrap="wrap" className="lk-soft">
+              <MapPin size={15} aria-hidden="true" />
+              <Text type="supporting" color="inherit" justify="center" textWrap="pretty">
+                {settings.address}
+              </Text>
+            </HStack>
+            <Text type="supporting" color="inherit" justify="center" textWrap="pretty" className="ck-hero-sub">
+              {settings.tagline}
+            </Text>
+          </VStack>
+          <svg
+            className="rb-hero-wave"
+            viewBox="0 0 1440 40"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <path d="M0 40h1440V22c-120-14-240-20-360-12S840 34 720 34 480 14 360 10 120 20 0 26Z" />
+          </svg>
+        </VStack>
 
+        <VStack paddingBlock={6} paddingInline={4} width="100%">
+          <VStack
+            gap={5}
+            maxWidth={560}
+            width="100%"
+            align="center"
+            style={{ marginInline: 'auto' }}
+          >
+            <VStack gap={5} align="center" width="100%" className="ck-panel fx-fade-up">
               <HStack gap={2} justify="center" wrap="wrap">
                 <Token
                   label={`Turnos fijos con ${staffSummary}`}
-                  size="sm"
+                  size="md"
                   icon={<Clock size={14} aria-hidden="true" />}
                 />
                 <Token
                   label={`Anticipo ${depositLabel}`}
-                  size="sm"
+                  size="md"
                   icon={<Sparkles size={14} aria-hidden="true" />}
                 />
               </HStack>
 
-              <VStack gap={3} width="100%">
+              <VStack gap={3} width="100%" className="fx-stagger">
                 <Button
                   label="Agendar mi cita ahora"
                   variant="primary"
                   size="lg"
                   width="100%"
+                  className="fx-press"
                   icon={<CalendarCheck size={18} aria-hidden="true" />}
                   href="/reservar"
                 />
@@ -164,6 +190,7 @@ export default function LinksPage() {
                   variant="secondary"
                   size="lg"
                   width="100%"
+                  className="fx-press"
                   icon={<Sparkles size={18} aria-hidden="true" />}
                   href="/#servicios"
                 />
@@ -172,6 +199,7 @@ export default function LinksPage() {
                   variant="secondary"
                   size="lg"
                   width="100%"
+                  className="fx-press"
                   icon={<ImageIcon size={18} aria-hidden="true" />}
                   href="/#galeria"
                 />
@@ -180,6 +208,7 @@ export default function LinksPage() {
                   variant="secondary"
                   size="lg"
                   width="100%"
+                  className="fx-press"
                   icon={<MessageCircle size={18} aria-hidden="true" />}
                   href={whatsappUrl}
                   target="_blank"
@@ -190,6 +219,7 @@ export default function LinksPage() {
                   variant="secondary"
                   size="lg"
                   width="100%"
+                  className="fx-press"
                   icon={<AtSign size={18} aria-hidden="true" />}
                   href={instagramUrl}
                   target="_blank"
@@ -200,6 +230,7 @@ export default function LinksPage() {
                   variant="secondary"
                   size="lg"
                   width="100%"
+                  className="fx-press"
                   icon={<MapPin size={18} aria-hidden="true" />}
                   href={mapsUrl}
                   target="_blank"
@@ -212,28 +243,49 @@ export default function LinksPage() {
               <Button
                 label="Aviso de privacidad"
                 variant="ghost"
-                size="md"
+                size="lg"
                 width="100%"
+                className="fx-press"
                 icon={<ShieldCheck size={16} aria-hidden="true" />}
                 href="/aviso-de-privacidad"
               />
             </VStack>
-          </Card>
 
-          {featuredServices.length > 0 ? (
-            <Card padding={5} width="100%">
-              <VStack gap={3} width="100%">
-                <Heading level={2} justify="center">
-                  Reserva directo por servicio
-                </Heading>
+            {featuredServices.length > 0 ? (
+              <VStack gap={3} width="100%" className="ck-panel fx-fade-up">
+                <VStack gap={0.5} align="center">
+                  <Heading level={2} justify="center" className="lk-serif ck-h3">
+                    Reserva directo por servicio
+                  </Heading>
+                  <Text type="supporting" color="secondary" justify="center">
+                    Elige tu favorito y entra directo a elegir día y hora.
+                  </Text>
+                </VStack>
                 <List hasDividers density="balanced">
                   {featuredServices.map((service) => (
                     <ListItem
                       key={service.id}
                       href={`/reservar/${encodeURIComponent(service.slug)}`}
                       label={service.name}
+                      startContent={
+                        <img
+                          src={servicePhoto(service.slug, service.imageUrl)}
+                          alt=""
+                          width={48}
+                          height={48}
+                          loading="lazy"
+                          decoding="async"
+                          style={{
+                            width: '3rem',
+                            height: '3rem',
+                            objectFit: 'cover',
+                            borderRadius: '0.75rem',
+                            display: 'block',
+                          }}
+                        />
+                      }
                       description={
-                        <Text type="supporting" color="secondary">
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
                           {formatDuration(service.durationMinutes)} ·{' '}
                           {formatServicePrice(
                             service.priceCents,
@@ -247,10 +299,10 @@ export default function LinksPage() {
                   ))}
                 </List>
               </VStack>
-            </Card>
-          ) : null}
+            ) : null}
+          </VStack>
         </VStack>
-      </Section>
+      </VStack>
     </PublicShell>
   );
 }

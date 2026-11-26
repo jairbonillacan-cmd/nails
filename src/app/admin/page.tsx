@@ -79,7 +79,7 @@ export default function AdminOverviewPage() {
   };
 
   return (
-    <VStack gap={6} className="ad-dashboard">
+    <VStack gap={6} className="ad-dashboard fx-fade-up">
       <HStack
         as="header"
         justify="between"
@@ -100,7 +100,7 @@ export default function AdminOverviewPage() {
                 touchTrigger="tap"
                 hasHoverIndication={false}
               >
-                <button type="button" className="ad-demo-chip">
+                <button type="button" className="ad-demo-chip fx-press">
                   Modo demo
                 </button>
               </Tooltip>
@@ -118,7 +118,7 @@ export default function AdminOverviewPage() {
         <HStack gap={2} align="center" wrap="wrap">
           <button
             type="button"
-            className="ad-search-btn ad-hide-s"
+            className="ad-search-btn ad-hide-s fx-press"
             onClick={openQuickSearch}
           >
             <HStack gap={2} align="center">

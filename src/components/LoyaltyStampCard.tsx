@@ -34,7 +34,7 @@ export function LoyaltyStampCard({
       : `¡Te faltan solo ${loyaltySummary.remainingForReward} visitas para tu premio!`;
 
   return (
-    <VStack as="section" gap={4} className="ck-panel" width="100%" aria-labelledby="ck-loyalty-title">
+    <VStack as="section" gap={4} className="ck-panel fx-fade-up" width="100%" aria-labelledby="ck-loyalty-title">
       <VStack gap={4} width="100%">
         <HStack justify="between" align="start" wrap="wrap" gap={2} width="100%">
           <VStack gap={0.5}>
@@ -49,13 +49,15 @@ export function LoyaltyStampCard({
             </Heading>
           </VStack>
 
-          <Badge
-            variant={loyaltySummary.isRewardReady ? 'success' : 'info'}
-            label={`${loyaltySummary.currentStamps} / ${loyaltySummary.stampsRequired}`}
-          />
+          <VStack className={loyaltySummary.isRewardReady ? 'fx-pop' : undefined}>
+            <Badge
+              variant={loyaltySummary.isRewardReady ? 'success' : 'info'}
+              label={`${loyaltySummary.currentStamps} / ${loyaltySummary.stampsRequired}`}
+            />
+          </VStack>
         </HStack>
 
-        <Grid columns={{ minWidth: 64, max: 4 }} gap={2} width="100%">
+        <Grid columns={{ minWidth: 64, max: 4 }} gap={2} width="100%" className="fx-stagger">
           {slots.map((slotNumber) => {
             const isFilled = slotNumber <= loyaltySummary.currentStamps;
             const isRewardSlot = slotNumber === loyaltySummary.stampsRequired;
@@ -66,12 +68,23 @@ export function LoyaltyStampCard({
               : 'muted';
 
             return (
-              <Card key={slotNumber} padding={2} variant={slotVariant}>
-                <VStack gap={1} align="center" justify="center">
+              <Card
+                key={slotNumber}
+                padding={2}
+                variant={slotVariant}
+                elevation={isFilled ? 'low' : 'none'}
+                className={isFilled ? 'fx-pop' : undefined}
+              >
+                <VStack
+                  gap={1}
+                  align="center"
+                  justify="center"
+                  aria-label={`Sello ${slotNumber}: ${isFilled ? 'obtenido' : isRewardSlot ? 'premio' : 'pendiente'}`}
+                >
                   {isFilled ? (
-                    <Check size={16} aria-hidden="true" />
+                    <Check size={16} aria-hidden="true" className="lk-cereza-text" />
                   ) : isRewardSlot ? (
-                    <Gift size={16} aria-hidden="true" />
+                    <Gift size={16} aria-hidden="true" className="lk-cereza-text" />
                   ) : (
                     <Sparkles size={14} aria-hidden="true" />
                   )}
@@ -98,7 +111,7 @@ export function LoyaltyStampCard({
           variant={loyaltySummary.isRewardReady ? 'success' : 'accent'}
         />
 
-        <VStack gap={2} align="start" width="100%">
+        <VStack gap={2} align="start" width="100%" className={loyaltySummary.isRewardReady ? 'fx-pop' : undefined}>
           <Text
             type="body"
             weight="semibold"

@@ -49,24 +49,31 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
         </HStack>
 
         {isArt ? (
-          <VStack gap={4}>
-            <Grid columns={{ minWidth: 220, max: 5 }} gap={3}>
+          <VStack key={selected} gap={4} className="fx-step-in">
+            <Grid columns={{ minWidth: 220, max: 5 }} gap={3} className="fx-stagger">
               {addons.map((addon) => (
-                <VStack key={addon.id} gap={3} padding={5} className="lk-card lk-pop">
+                <VStack key={addon.id} gap={3} padding={5} className="lk-card fx-card-lift">
                   <VStack className="lk-icon-chip">
-                    <img src={addonIcon(addon.name)} alt="" width={30} height={30} />
+                    <img
+                      src={addonIcon(addon.name)}
+                      alt=""
+                      width={30}
+                      height={30}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </VStack>
                   <Heading level={3} color="inherit" className="lk-serif lk-h3">
                     {addon.name}
                   </Heading>
-                  <Text type="supporting" color="secondary">
+                  <Text type="supporting" color="secondary" textWrap="pretty">
                     {addon.description}
                   </Text>
                   <HStack justify="between" gap={2} style={{ marginTop: 'auto' }}>
                     <Text weight="bold" color="accent" hasTabularNumbers>
                       +{formatCurrency(addon.extraPriceCents, currency)}
                     </Text>
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" hasTabularNumbers>
                       +{addon.extraMinutes} min
                     </Text>
                   </HStack>
@@ -80,7 +87,14 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
               <HStack as="ul" gap={2} wrap="wrap" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {NAIL_SHAPES.map((shape) => (
                   <li key={shape.name} className="lk-chip">
-                    <img src={shape.icon} alt="" width={26} height={26} />
+                    <img
+                      src={shape.icon}
+                      alt=""
+                      width={26}
+                      height={26}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <Text>{shape.name}</Text>
                   </li>
                 ))}
@@ -88,45 +102,72 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
             </HStack>
           </VStack>
         ) : (
-          <Grid role="list" columns={{ minWidth: 380, max: 2 }} gap={3}>
-            {categoryServices.map((service) => (
-              <VStack role="listitem" key={service.id} className="lk-pop">
-                <a
-                  href={`/reservar/${service.slug}`}
-                  className="lk-card"
-                  style={{ display: 'flex', gap: '1.1rem', alignItems: 'center', padding: '0.75rem', color: 'inherit', textDecoration: 'none' }}
-                >
-                  <img className="lk-thumb" src={servicePhoto(service.slug, service.imageUrl)} alt="" width={112} height={112} loading="lazy" />
-                  <VStack gap={1} style={{ flex: '1 1 auto', minWidth: 0, paddingInlineEnd: '0.6rem' }}>
-                    <HStack justify="between" align="start" gap={3}>
-                      <Heading level={3} color="inherit" className="lk-serif lk-h3">
-                        {service.name}
-                      </Heading>
-                      <Text weight="bold" color="accent" hasTabularNumbers textWrap="nowrap">
-                        {formatServicePrice(service.priceCents, service.isStartingPrice, currency)}
+          <VStack key={selected} className="fx-step-in" width="100%">
+            <Grid role="list" columns={{ minWidth: 280, max: 2 }} gap={3} className="fx-stagger">
+              {categoryServices.map((service) => (
+                <VStack role="listitem" key={service.id}>
+                  <a
+                    href={`/reservar/${service.slug}`}
+                    className="lk-card fx-card-lift fx-press"
+                    style={{
+                      display: 'flex',
+                      gap: '1.1rem',
+                      alignItems: 'center',
+                      padding: '0.75rem',
+                      color: 'inherit',
+                      textDecoration: 'none',
+                      minWidth: 0,
+                      width: '100%',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <img
+                      className="lk-thumb"
+                      src={servicePhoto(service.slug, service.imageUrl)}
+                      alt=""
+                      width={112}
+                      height={112}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <VStack gap={1} style={{ flex: '1 1 auto', minWidth: 0, paddingInlineEnd: '0.6rem' }}>
+                      <HStack justify="between" align="start" gap={3}>
+                        <Heading level={3} color="inherit" className="lk-serif lk-h3">
+                          {service.name}
+                        </Heading>
+                        <Text weight="bold" color="accent" hasTabularNumbers textWrap="nowrap">
+                          {formatServicePrice(service.priceCents, service.isStartingPrice, currency)}
+                        </Text>
+                      </HStack>
+                      <Text type="supporting" color="secondary" maxLines={2}>
+                        {service.description}
                       </Text>
-                    </HStack>
-                    <Text type="supporting" color="secondary" maxLines={2}>
-                      {service.description}
-                    </Text>
-                    <HStack gap={1.5} align="center">
-                      <img src={LANDING_ASSETS.iconClock} alt="" width={16} height={16} />
-                      <Text type="supporting" color="secondary">
-                        {formatDuration(service.durationMinutes)}
-                      </Text>
-                    </HStack>
-                  </VStack>
-                </a>
-              </VStack>
-            ))}
-          </Grid>
+                      <HStack gap={1.5} align="center">
+                        <img
+                          src={LANDING_ASSETS.iconClock}
+                          alt=""
+                          width={16}
+                          height={16}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {formatDuration(service.durationMinutes)}
+                        </Text>
+                      </HStack>
+                    </VStack>
+                  </a>
+                </VStack>
+              ))}
+            </Grid>
+          </VStack>
         )}
 
         <HStack justify="between" align="center" wrap="wrap" gap={4} className="lk-banner lk-reveal">
-          <Text type="large" color="inherit">
+          <Text type="large" color="inherit" textWrap="pretty">
             Todos los servicios admiten foto de inspiración · Apartas con {depositLabel}
           </Text>
-          <Button label="Agendar cita" variant="secondary" size="lg" className="lk-btn-light" href="/reservar" />
+          <Button label="Agendar cita" variant="secondary" size="lg" className="lk-btn-light fx-press" href="/reservar" />
         </HStack>
       </VStack>
     </VStack>

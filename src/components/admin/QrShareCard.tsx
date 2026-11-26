@@ -1,15 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Card } from '@astryxdesign/core/Card';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
-import { Token } from '@astryxdesign/core/Token';
-import { Copy, Download, ExternalLink, QrCode } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, QrCode } from 'lucide-react';
+import {
+  AdminConfigChip,
+  AdminConfigSection,
+} from '@/components/admin/config/AdminConfigPrimitives';
 import { generateQrSvg } from '@/lib/qr';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 
@@ -30,6 +31,7 @@ function sanitizeFilenameSegment(value: string): string {
 
 export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
   const [target, setTarget] = useState<QrTargetMode>('reservar');
+  const [lastAction, setLastAction] = useState<'copy' | 'svg' | 'png' | null>(null);
   const feedback = useEphemeralMessage(2600);
 
   const baseOrigin = (
@@ -69,6 +71,7 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
   const handleDownloadSvg = () => {
     const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
     triggerBlobDownload(blob, `${filePrefix}.svg`);
+    setLastAction('svg');
     feedback.show('SVG descargado listo para impresión.');
   };
 
@@ -91,6 +94,7 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
           return;
         }
         triggerBlobDownload(blob, `${filePrefix}.png`);
+        setLastAction('png');
         feedback.show('PNG 1024x1024 descargado.');
       }, 'image/png');
     };
@@ -103,97 +107,116 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(targetUrl);
+      setLastAction('copy');
       feedback.show('Enlace copiado al portapapeles.');
     } catch {
       feedback.show(`Copia manualmente: ${targetUrl}`);
     }
   };
 
+  const isCopyActive = lastAction === 'copy' && Boolean(feedback.message);
+  const isSvgActive = lastAction === 'svg' && Boolean(feedback.message);
+  const isPngActive = lastAction === 'png' && Boolean(feedback.message);
+
   return (
-    <Card padding={5}>
-      <VStack gap={4}>
-        <HStack justify="between" align="center" wrap="wrap" gap={2}>
-          <HStack gap={2} align="center">
-            <QrCode size={18} aria-hidden="true" />
-            <Heading level={3}>Código QR para mostrador e Instagram</Heading>
-          </HStack>
-          <Token size="sm" label={relativePath} />
-        </HStack>
-
-        <Text type="supporting" color="secondary">
-          Descarga el QR en vector SVG o PNG de alta resolución para tu espejo, tarjetas o recepción.
+    <AdminConfigSection
+      id="qr-share-heading"
+      icon={<QrCode size={16} aria-hidden="true" />}
+      title="Código QR para mostrador"
+      subtitle="Descarga en SVG vectorial o PNG 1024×1024 para espejo, tarjetas o recepción."
+      badge={<AdminConfigChip label={relativePath} tone="accent" />}
+      footer={
+        <Text type="supporting" color="secondary" role="status" aria-live="polite">
+          {feedback.message ?? 'Escaneable desde cámara iOS y Android sin apps externas.'}
         </Text>
-
+      }
+    >
+      <VStack gap={4} className="ad-card-body" paddingBlockStart={4}>
         <SegmentedControl
           label="Destino del código QR"
           layout="fill"
+          size="sm"
           value={target}
           onChange={(val) => setTarget(val === 'links' ? 'links' : 'reservar')}
         >
-          <SegmentedControlItem value="reservar" label="Agenda directa (/reservar)" />
-          <SegmentedControlItem value="links" label="Bio-Link Instagram (/links)" />
+          <SegmentedControlItem value="reservar" label="Agenda (/reservar)" />
+          <SegmentedControlItem value="links" label="Bio-Link (/links)" />
         </SegmentedControl>
 
-        <Card variant="muted" padding={4}>
-          <VStack gap={2} align="center">
+        <VStack className="ad-subpanel" gap={3} align="center">
+          <VStack className="ad-qr-stage" align="center" justify="center">
             <img
               src={svgDataUri}
               alt={qrLabel}
-              width={220}
-              height={220}
+              width={200}
+              height={200}
               style={{
                 display: 'block',
                 maxWidth: '100%',
                 height: 'auto',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: 'var(--radius-sm)',
               }}
             />
-            <Text type="code" color="secondary">
-              {targetUrl}
-            </Text>
           </VStack>
-        </Card>
+          <Text className="ad-code-pill" color="secondary">
+            {targetUrl}
+          </Text>
+        </VStack>
 
         <HStack gap={2} wrap="wrap">
           <Button
             type="button"
-            label="Descargar SVG"
+            label={isSvgActive ? 'SVG listo' : 'Descargar SVG'}
             variant="primary"
             size="sm"
-            icon={<Download size={14} />}
+            icon={
+              isSvgActive ? (
+                <Check size={14} aria-hidden="true" className="fx-pop" />
+              ) : (
+                <Download size={14} aria-hidden="true" />
+              )
+            }
             onClick={handleDownloadSvg}
           />
           <Button
             type="button"
-            label="Descargar PNG"
+            label={isPngActive ? 'PNG listo' : 'Descargar PNG'}
             variant="secondary"
             size="sm"
-            icon={<Download size={14} />}
+            icon={
+              isPngActive ? (
+                <Check size={14} aria-hidden="true" className="fx-pop" />
+              ) : (
+                <Download size={14} aria-hidden="true" />
+              )
+            }
             onClick={handleDownloadPng}
           />
           <Button
             type="button"
-            label="Copiar enlace"
-            variant="secondary"
+            label={isCopyActive ? 'Copiado' : 'Copiar enlace'}
+            variant={isCopyActive ? 'primary' : 'secondary'}
             size="sm"
-            icon={<Copy size={14} />}
+            icon={
+              isCopyActive ? (
+                <Check size={14} aria-hidden="true" className="fx-pop" />
+              ) : (
+                <Copy size={14} aria-hidden="true" />
+              )
+            }
             onClick={() => void handleCopyUrl()}
           />
           <Button
             label="Abrir"
             variant="ghost"
             size="sm"
-            icon={<ExternalLink size={14} />}
+            icon={<ExternalLink size={14} aria-hidden="true" />}
             href={relativePath}
             target="_blank"
             rel="noopener noreferrer"
           />
         </HStack>
-
-        <Text type="supporting" color="secondary" role="status" aria-live="polite">
-          {feedback.message ?? 'Escaneable desde cámara iOS y Android sin apps externas.'}
-        </Text>
       </VStack>
-    </Card>
+    </AdminConfigSection>
   );
 }

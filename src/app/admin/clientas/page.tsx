@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
@@ -12,7 +12,6 @@ import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
-import { List, ListItem } from '@astryxdesign/core/List';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
@@ -20,7 +19,6 @@ import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Switch } from '@astryxdesign/core/Switch';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
-import { Token } from '@astryxdesign/core/Token';
 import { Divider } from '@astryxdesign/core/Divider';
 import {
   Award,
@@ -76,22 +74,23 @@ function getInitialLetter(fullName: string): string {
   return /^[A-Z]$/.test(first) ? first : '#';
 }
 
+function resolveTabParam(param: string | null): ClientsTab | null {
+  if (param === 'retencion' || param === 'retention') return 'retention';
+  if (param === 'premios' || param === 'rewards') return 'rewards';
+  if (param === 'directorio' || param === 'directory') return 'directory';
+  return null;
+}
+
 export default function AdminClientsPage() {
   const { data, refresh } = useAdminData();
-  const [activeTab, setActiveTab] = useState<ClientsTab>(() => {
-    if (typeof window !== 'undefined') {
-      const tab = new URLSearchParams(window.location.search).get('tab');
-      if (tab === 'retencion' || tab === 'retention') return 'retention';
-      if (tab === 'premios' || tab === 'rewards') return 'rewards';
-    }
-    return 'directory';
-  });
-  const [query, setQuery] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('q')?.trim() ?? '';
-    }
-    return '';
-  });
+  const searchParams = useSearchParams();
+  const paramTab = searchParams.get('tab');
+  const paramQuery = searchParams.get('q')?.trim() ?? '';
+
+  const [activeTab, setActiveTab] = useState<ClientsTab>(
+    () => resolveTabParam(paramTab) ?? 'directory',
+  );
+  const [query, setQuery] = useState<string>(() => paramQuery);
   const [onlyBirthdays, setOnlyBirthdays] = useState(false);
 
   const [inactiveDays, setInactiveDays] = useState<number>(21);
@@ -122,10 +121,21 @@ export default function AdminClientsPage() {
   const [creating, setCreating] = useState(false);
 
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
+  const lastUrlKeyRef = useRef(`${paramTab ?? ''}|${paramQuery}`);
 
   const canManageClients = Boolean(
     data && (data.session.user.role === 'owner' || data.session.user.role === 'admin'),
   );
+
+  useExternalSync(`clients-url|${paramTab ?? ''}|${paramQuery}`, async (signal) => {
+    if (signal.aborted) return;
+    const key = `${paramTab ?? ''}|${paramQuery}`;
+    if (lastUrlKeyRef.current === key) return;
+    lastUrlKeyRef.current = key;
+    const nextTab = resolveTabParam(paramTab);
+    if (nextTab) setActiveTab(nextTab);
+    if (paramQuery) setQuery(paramQuery);
+  });
 
   useExternalSync(
     activeTab === 'retention' && canManageClients
@@ -359,19 +369,21 @@ export default function AdminClientsPage() {
   };
 
   return (
-    <VStack gap={5}>
-      <HStack justify="between" align="center" wrap="wrap" gap={3}>
-        <VStack gap={0.5}>
-          <Heading level={1}>Directorio de Clientas</Heading>
-          <Text color="secondary">
-            Directorio A–Z, filtro inverso de retoques/reactivación, sellos de fidelidad y exportación LFPDPPP (ARCO).
+    <VStack gap={5} className="ad-page fx-fade-up">
+      <HStack as="header" className="ad-page-head" justify="between" align="end" wrap="wrap" gap={3}>
+        <VStack gap={1} className="ad-head-copy">
+          <Heading level={1} className="ad-page-title">
+            Directorio de clientas
+          </Heading>
+          <Text className="ad-page-sub">
+            Directorio A–Z, filtro inverso de retoques y reactivación, sellos de fidelidad y exportación LFPDPPP (ARCO).
           </Text>
         </VStack>
 
         <HStack gap={2} align="center" wrap="wrap">
           {canManageClients ? (
             <Button
-              label="+ Nueva clienta"
+              label="Nueva clienta"
               variant="primary"
               size="sm"
               icon={<UserPlus size={15} />}
@@ -383,6 +395,57 @@ export default function AdminClientsPage() {
           ) : null}
         </HStack>
       </HStack>
+
+      <section aria-label="Indicadores de clientas" className="ad-kpi-grid fx-stagger" data-cols="4">
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Total clientas
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" hasTabularNumbers>
+            {data.clients.length}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Directorio activo
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Recurrentes (2+)
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" data-tone="success" hasTabularNumbers>
+            {retention.returningClientsCount}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Con 2 o más visitas
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Sin reserva ({inactiveDays}+ d)
+          </Text>
+          <Text
+            className="lk-serif ad-kpi-val fx-tabular"
+            data-tone={displayedInactiveClients.length > 0 ? 'warning' : 'success'}
+            hasTabularNumbers
+          >
+            {displayedInactiveClients.length}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Oportunidad de retoque
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Cerca de premio
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" hasTabularNumbers>
+            {nearRewardClients.length}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Tarjeta de sellos
+          </Text>
+        </VStack>
+      </section>
 
       {bannerMsg ? (
         <Banner
@@ -410,14 +473,17 @@ export default function AdminClientsPage() {
       </TabList>
 
       {activeTab === 'directory' ? (
-        <VStack gap={4}>
-          <HStack justify="between" align="center" wrap="wrap" gap={3}>
+        <VStack gap={4} key="directory" className="fx-step-in">
+          <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={3}>
             <TextInput
+              type="search"
               label="Buscar clienta"
               isLabelHidden
-              placeholder="Nombre, WhatsApp, @instagram o nota..."
+              placeholder="Buscar clienta, WhatsApp o @ig..."
               startIcon={<Search size={14} />}
               size="sm"
+              width="min(21rem, 100%)"
+              hasClear
               value={query}
               onChange={setQuery}
             />
@@ -430,225 +496,249 @@ export default function AdminClientsPage() {
           </HStack>
 
           {groupedByLetter.length === 0 ? (
-            <Card padding={5}>
-              <EmptyState
-                isCompact
-                title="No se encontraron clientas"
-                description="Ajusta la búsqueda o registra una nueva clienta manualmente."
-                actions={
-                  canManageClients ? (
-                    <Button
-                      label="+ Nueva clienta"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        resetCreateForm();
-                        setCreateOpen(true);
-                      }}
-                    />
-                  ) : undefined
-                }
-              />
-            </Card>
+            <VStack className="ad-surface" gap={0}>
+              <VStack className="ad-empty" gap={2}>
+                <EmptyState
+                  isCompact
+                  title="No se encontraron clientas"
+                  description="Ajusta la búsqueda o registra una nueva clienta manualmente."
+                  actions={
+                    canManageClients ? (
+                      <Button
+                        label="Nueva clienta"
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          resetCreateForm();
+                          setCreateOpen(true);
+                        }}
+                      />
+                    ) : undefined
+                  }
+                />
+              </VStack>
+            </VStack>
           ) : (
-            <VStack gap={4}>
+            <VStack gap={4} className="fx-stagger">
               {groupedByLetter.map(([letter, clientsInGroup]) => (
-                <VStack key={letter} gap={2}>
-                  <HStack gap={2} align="center">
-                    <Badge variant="info" label={letter} />
-                    <Text type="supporting" color="secondary">
-                      {clientsInGroup.length} clienta(s)
-                    </Text>
+                <VStack key={letter} className="ad-surface" gap={0}>
+                  <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+                    <HStack gap={2} align="center">
+                      <Text className="lk-serif ad-h3">{letter}</Text>
+                      <Text
+                        color="inherit"
+                        className="ad-chip"
+                        data-tone="neutral"
+                        hasTabularNumbers
+                      >
+                        {clientsInGroup.length} {clientsInGroup.length === 1 ? 'clienta' : 'clientas'}
+                      </Text>
+                    </HStack>
                   </HStack>
-                  <Card padding={0}>
-                    <List hasDividers>
-                      {clientsInGroup.map((c) => {
-                        const visits = visitCountByClient.get(c.id) ?? 0;
-                        const loyalty = loyaltyByClientId.get(c.id) ?? null;
-                        return (
-                          <ListItem
-                            key={c.id}
-                            startContent={<Avatar name={c.fullName} size="sm" />}
-                            label={c.fullName}
-                            description={
-                              <VStack gap={0.5}>
-                                <HStack gap={2} wrap="wrap" align="center">
-                                  <Text
+
+                  <VStack className="ad-row-list" gap={0}>
+                    {clientsInGroup.map((c) => {
+                      const visits = visitCountByClient.get(c.id) ?? 0;
+                      const loyalty = loyaltyByClientId.get(c.id) ?? null;
+                      return (
+                        <HStack
+                          key={c.id}
+                          className="ad-row-item"
+                          justify="between"
+                          align="center"
+                          wrap="wrap"
+                          gap={3}
+                        >
+                          <HStack gap={3} align="center" className="rb-grow">
+                            <Avatar name={c.fullName} size="sm" />
+                            <VStack gap={0.5} className="rb-grow">
+                              <Text weight="semibold">{c.fullName}</Text>
+                              <HStack gap={2} wrap="wrap" align="center">
+                                <Text
+                                  type="supporting"
+                                  color="secondary"
+                                  hasTabularNumbers
+                                >
+                                  {c.phoneE164}
+                                </Text>
+                                {c.instagramHandle ? (
+                                  <Link
+                                    href={formatInstagramUrl(c.instagramHandle)}
+                                    isExternalLink
                                     type="supporting"
-                                    color="secondary"
-                                    hasTabularNumbers
                                   >
-                                    {c.phoneE164}
-                                  </Text>
-                                  {c.instagramHandle ? (
-                                    <Link
-                                      href={formatInstagramUrl(c.instagramHandle)}
-                                      isExternalLink
-                                      type="supporting"
-                                    >
-                                      {formatInstagramDisplay(c.instagramHandle)}
-                                    </Link>
-                                  ) : null}
-                                  {c.birthday ? (
-                                    <HStack gap={1} align="center">
-                                      <Cake size={13} aria-hidden="true" />
-                                      <Text type="supporting" color="secondary">
-                                        {c.birthday}
-                                      </Text>
-                                    </HStack>
-                                  ) : null}
-                                </HStack>
-                                {c.notes ? (
-                                  <Text type="supporting" color="secondary" maxLines={2}>
-                                    {c.notes}
-                                  </Text>
+                                    {formatInstagramDisplay(c.instagramHandle)}
+                                  </Link>
                                 ) : null}
-                              </VStack>
-                            }
-                            endContent={
-                              <HStack gap={1.5} align="center" wrap="wrap">
-                                <Badge variant="neutral" label={`${visits} citas`} />
-                                {loyalty && loyalty.currentStamps > 0 ? (
-                                  <Token
-                                    size="sm"
-                                    color={loyalty.isRewardReady ? 'green' : 'purple'}
-                                    label={`${loyalty.currentStamps} / ${loyalty.stampsRequired} sellos`}
-                                  />
+                                {c.birthday ? (
+                                  <HStack gap={1} align="center">
+                                    <Cake size={13} aria-hidden="true" />
+                                    <Text type="supporting" color="secondary" hasTabularNumbers>
+                                      {c.birthday}
+                                    </Text>
+                                  </HStack>
                                 ) : null}
-                                {c.noShowCount > 0 ? (
-                                  <Badge
-                                    variant="error"
-                                    label={`${c.noShowCount} no-show`}
-                                  />
-                                ) : null}
-                                <Button
-                                  label="Ficha"
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => openNotes(c)}
-                                />
-                                <Button
-                                  label="WhatsApp"
-                                  size="sm"
-                                  variant="ghost"
-                                  icon={<MessageCircle size={14} />}
-                                  href={buildWhatsAppLink(
-                                    c.phoneE164,
-                                    `Hola ${c.fullName}, te saludamos de ${data.settings.name}!`,
-                                  )}
-                                />
                               </HStack>
-                            }
-                          />
-                        );
-                      })}
-                    </List>
-                  </Card>
+                              {c.notes ? (
+                                <Text type="supporting" color="secondary" maxLines={2}>
+                                  {c.notes}
+                                </Text>
+                              ) : null}
+                            </VStack>
+                          </HStack>
+
+                          <HStack gap={1.5} align="center" wrap="wrap">
+                            <Text
+                              color="inherit"
+                              className="ad-chip"
+                              data-tone="neutral"
+                              hasTabularNumbers
+                            >
+                              {visits} {visits === 1 ? 'cita' : 'citas'}
+                            </Text>
+                            {loyalty && loyalty.currentStamps > 0 ? (
+                              <Text
+                                color="inherit"
+                                className="ad-chip"
+                                data-tone={loyalty.isRewardReady ? 'success' : 'accent'}
+                                hasTabularNumbers
+                              >
+                                {loyalty.currentStamps} / {loyalty.stampsRequired} sellos
+                              </Text>
+                            ) : null}
+                            {c.noShowCount > 0 ? (
+                              <Badge
+                                variant="error"
+                                label={`${c.noShowCount} no-show`}
+                              />
+                            ) : null}
+                            <Button
+                              label="Ficha"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openNotes(c)}
+                            />
+                            <Button
+                              label="WhatsApp"
+                              size="sm"
+                              variant="ghost"
+                              icon={<MessageCircle size={14} />}
+                              href={buildWhatsAppLink(
+                                c.phoneE164,
+                                `Hola ${c.fullName}, te saludamos de ${data.settings.name}!`,
+                              )}
+                            />
+                          </HStack>
+                        </HStack>
+                      );
+                    })}
+                  </VStack>
                 </VStack>
               ))}
             </VStack>
           )}
         </VStack>
       ) : activeTab === 'retention' ? (
-        <VStack gap={5}>
-          <Grid columns={{ minWidth: 200, max: 3 }} gap={4}>
-            <Card padding={4}>
-              <VStack gap={0.5}>
-                <Text type="label" color="secondary">
-                  Clientas recurrentes (2+ visitas)
-                </Text>
-                <Heading level={2}>{retention.returningClientsCount}</Heading>
-              </VStack>
-            </Card>
-            <Card padding={4}>
-              <VStack gap={0.5}>
-                <Text type="label" color="secondary">
-                  Sin reserva en {inactiveDays}+ días
-                </Text>
-                <Heading level={2}>{displayedInactiveClients.length}</Heading>
-              </VStack>
-            </Card>
-            <Card padding={4} variant="muted">
-              <VStack gap={0.5}>
-                <Text type="label" color="accent">
-                  Cerca de su premio
-                </Text>
-                <Heading level={2}>{nearRewardClients.length}</Heading>
-              </VStack>
-            </Card>
-          </Grid>
-
+        <VStack gap={5} key="retention" className="fx-step-in">
           {nearRewardClients.length > 0 ? (
-            <Banner
-              status="info"
-              icon={<Sparkles size={18} />}
-              title={`${nearRewardClients.length} clienta(s) están cerca o listas para canjear su premio de sellos`}
-              description="Envíales un recordatorio personalizado para impulsar su próxima visita."
-              endContent={
-                <Button
-                  label="Ver clientas cerca de premio"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setActiveTab('rewards')}
-                />
-              }
-            />
-          ) : null}
-
-          <Card padding={5}>
-            <VStack gap={4}>
-              <HStack justify="between" align="center" wrap="wrap" gap={3}>
-                <VStack gap={0.5}>
-                  <Heading level={2}>
-                    Sin reserva en los últimos {inactiveDays} días
-                  </Heading>
+            <HStack
+              className="ad-surface"
+              data-tone="accent"
+              data-padded="true"
+              justify="between"
+              align="center"
+              wrap="wrap"
+              gap={3}
+            >
+              <HStack gap={3} align="center" className="rb-grow">
+                <Sparkles size={17} aria-hidden="true" />
+                <VStack gap={0.5} className="rb-grow">
+                  <Text weight="semibold">
+                    {nearRewardClients.length} clienta{nearRewardClients.length === 1 ? '' : 's'} cerca o lista para canjear su premio de sellos
+                  </Text>
                   <Text type="supporting" color="secondary">
-                    Filtro inverso para detectar retoques vencidos (21 días) o clientas inactivas (45–60 días) sin cita próxima y reactivarlas por WhatsApp.
+                    Envíales un recordatorio personalizado para impulsar su próxima visita.
                   </Text>
                 </VStack>
-                <HStack gap={1.5} wrap="wrap">
-                  {INACTIVE_DAY_PRESETS.map((preset) => (
-                    <Button
-                      key={preset.days}
-                      label={preset.label}
-                      size="sm"
-                      variant={inactiveDays === preset.days ? 'primary' : 'secondary'}
-                      onClick={() => setInactiveDays(preset.days)}
-                    />
-                  ))}
-                </HStack>
               </HStack>
+              <Button
+                label="Ver clientas cerca de premio"
+                variant="secondary"
+                size="sm"
+                onClick={() => setActiveTab('rewards')}
+              />
+            </HStack>
+          ) : null}
 
-              {inactiveError ? (
+          <VStack className="ad-surface" gap={0}>
+            <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={3}>
+              <VStack gap={0.5} className="rb-grow">
+                <Heading level={2} className="lk-serif ad-h2">
+                  Sin reserva en los últimos {inactiveDays} días
+                </Heading>
+                <Text type="supporting" color="secondary">
+                  Filtro inverso para detectar retoques vencidos (21 días) o clientas inactivas (45–60 días) sin cita próxima y reactivarlas por WhatsApp.
+                </Text>
+              </VStack>
+              <HStack gap={1.5} wrap="wrap">
+                {INACTIVE_DAY_PRESETS.map((preset) => (
+                  <button
+                    key={preset.days}
+                    type="button"
+                    className="ad-pill fx-press"
+                    data-on={inactiveDays === preset.days ? 'true' : 'false'}
+                    aria-pressed={inactiveDays === preset.days}
+                    onClick={() => setInactiveDays(preset.days)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </HStack>
+            </HStack>
+
+            {inactiveError ? (
+              <VStack padding={4}>
                 <Banner status="error" title={inactiveError} />
-              ) : null}
+              </VStack>
+            ) : null}
 
-              {inactiveLoading ? (
-                <ProgressBar
-                  label="Consultando clientas sin reserva"
-                  isIndeterminate
-                />
-              ) : displayedInactiveClients.length === 0 ? (
+            {inactiveLoading ? (
+              <VStack padding={4} gap={2} role="status" aria-busy="true">
+                <Text className="rb-sr-only">Consultando clientas sin reserva...</Text>
+                <VStack className="ad-skeleton" data-size="row" aria-hidden="true" />
+                <VStack className="ad-skeleton" data-size="row" aria-hidden="true" />
+                <VStack className="ad-skeleton" data-size="row" aria-hidden="true" />
+              </VStack>
+            ) : displayedInactiveClients.length === 0 ? (
+              <VStack className="ad-empty" gap={2}>
                 <EmptyState
                   isCompact
                   title={`Sin clientas inactivas en los últimos ${inactiveDays} días`}
                   description="Todas tus clientas ya tienen visita reciente o una cita próxima agendada en ese periodo."
                 />
-              ) : (
-                <List hasDividers>
-                  {displayedInactiveClients.map((item) => {
-                    const comebackMsg =
-                      item.daysSinceLastVisit !== null
-                        ? inactiveDays <= 21
-                          ? `Hola ${item.fullName}, te saludamos de ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última cita — ¿te apartamos horario para tu retoque?`
-                          : `Hola ${item.fullName}, te extrañamos en ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última visita. ¿Te apartamos horario para tu nuevo set o retoque?`
-                        : `Hola ${item.fullName}, te saludamos de ${data.settings.name}! ¿Te gustaría agendar tu próxima cita con nosotras?`;
-                    return (
-                      <ListItem
-                        key={item.clientId}
-                        startContent={<Avatar name={item.fullName} size="sm" />}
-                        label={item.fullName}
-                        description={
+              </VStack>
+            ) : (
+              <VStack className="ad-row-list fx-stagger" gap={0}>
+                {displayedInactiveClients.map((item) => {
+                  const comebackMsg =
+                    item.daysSinceLastVisit !== null
+                      ? inactiveDays <= 21
+                        ? `Hola ${item.fullName}, te saludamos de ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última cita — ¿te apartamos horario para tu retoque?`
+                        : `Hola ${item.fullName}, te extrañamos en ${data.settings.name}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última visita. ¿Te apartamos horario para tu nuevo set o retoque?`
+                      : `Hola ${item.fullName}, te saludamos de ${data.settings.name}! ¿Te gustaría agendar tu próxima cita con nosotras?`;
+                  return (
+                    <HStack
+                      key={item.clientId}
+                      className="ad-row-item"
+                      justify="between"
+                      align="center"
+                      wrap="wrap"
+                      gap={3}
+                    >
+                      <HStack gap={3} align="center" className="rb-grow">
+                        <Avatar name={item.fullName} size="sm" />
+                        <VStack gap={0.5} className="rb-grow">
+                          <Text weight="semibold">{item.fullName}</Text>
                           <HStack gap={2} wrap="wrap" align="center">
                             <Text type="supporting" color="secondary" hasTabularNumbers>
                               {item.phoneE164}
@@ -662,60 +752,74 @@ export default function AdminClientsPage() {
                                 {formatInstagramDisplay(item.instagramHandle)}
                               </Link>
                             ) : null}
-                            <Text type="supporting" color="secondary">
+                            <Text type="supporting" color="secondary" hasTabularNumbers>
                               {item.lastVisitAt
                                 ? `Última visita: ${formatDateShortInTimezone(item.lastVisitAt, tz)}`
                                 : 'Sin visitas completadas aún'}
                             </Text>
                           </HStack>
-                        }
-                        endContent={
-                          <HStack gap={2} align="center" wrap="wrap">
-                            <Badge
-                              variant={
-                                item.daysSinceLastVisit !== null &&
-                                item.daysSinceLastVisit >= 45
-                                  ? 'error'
-                                  : 'warning'
-                              }
-                              label={
-                                item.daysSinceLastVisit !== null
-                                  ? `Hace ${item.daysSinceLastVisit} días`
-                                  : 'Sin visita'
-                              }
-                            />
-                            <Button
-                              label="Enviar mensaje de regreso (WhatsApp)"
-                              variant="primary"
-                              size="sm"
-                              icon={<MessageCircle size={14} />}
-                              href={buildWhatsAppLink(item.phoneE164, comebackMsg)}
-                            />
-                          </HStack>
-                        }
-                      />
-                    );
-                  })}
-                </List>
-              )}
-            </VStack>
-          </Card>
+                        </VStack>
+                      </HStack>
 
-          <Card padding={5}>
-            <VStack gap={3}>
-              <Heading level={3}>Clientas frecuentes ({returningClients.length})</Heading>
-              {returningClients.length === 0 ? (
+                      <HStack gap={2} align="center" wrap="wrap">
+                        <Badge
+                          variant={
+                            item.daysSinceLastVisit !== null &&
+                            item.daysSinceLastVisit >= 45
+                              ? 'error'
+                              : 'warning'
+                          }
+                          label={
+                            item.daysSinceLastVisit !== null
+                              ? `Hace ${item.daysSinceLastVisit} días`
+                              : 'Sin visita'
+                          }
+                        />
+                        <Button
+                          label="Enviar mensaje de regreso (WhatsApp)"
+                          variant="primary"
+                          size="sm"
+                          icon={<MessageCircle size={14} />}
+                          href={buildWhatsAppLink(item.phoneE164, comebackMsg)}
+                        />
+                      </HStack>
+                    </HStack>
+                  );
+                })}
+              </VStack>
+            )}
+          </VStack>
+
+          <VStack className="ad-surface" gap={0}>
+            <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+              <Heading level={3} className="lk-serif ad-h3">
+                Clientas frecuentes
+              </Heading>
+              <Text color="inherit" className="ad-chip" data-tone="success" hasTabularNumbers>
+                {returningClients.length}
+              </Text>
+            </HStack>
+            {returningClients.length === 0 ? (
+              <VStack className="ad-empty" gap={1}>
                 <Text type="supporting" color="secondary">
                   Aquí aparecerán tus clientas con 2 o más citas completadas o confirmadas.
                 </Text>
-              ) : (
-                <List hasDividers>
-                  {returningClients.map(({ client, visits }) => (
-                    <ListItem
-                      key={client.id}
-                      startContent={<Avatar name={client.fullName} size="sm" />}
-                      label={client.fullName}
-                      description={
+              </VStack>
+            ) : (
+              <VStack className="ad-row-list" gap={0}>
+                {returningClients.map(({ client, visits }) => (
+                  <HStack
+                    key={client.id}
+                    className="ad-row-item"
+                    justify="between"
+                    align="center"
+                    wrap="wrap"
+                    gap={3}
+                  >
+                    <HStack gap={3} align="center" className="rb-grow">
+                      <Avatar name={client.fullName} size="sm" />
+                      <VStack gap={0.5} className="rb-grow">
+                        <Text weight="semibold">{client.fullName}</Text>
                         <HStack gap={2} wrap="wrap">
                           <Text type="supporting" color="secondary" hasTabularNumbers>
                             {client.phoneE164}
@@ -730,116 +834,139 @@ export default function AdminClientsPage() {
                             </Link>
                           ) : null}
                         </HStack>
-                      }
-                      endContent={
-                        <Badge variant="success" label={`${visits} visitas`} />
-                      }
-                    />
-                  ))}
-                </List>
-              )}
-            </VStack>
-          </Card>
+                      </VStack>
+                    </HStack>
+                    <Text color="inherit" className="ad-chip" data-tone="success" hasTabularNumbers>
+                      {visits} visitas
+                    </Text>
+                  </HStack>
+                ))}
+              </VStack>
+            )}
+          </VStack>
         </VStack>
       ) : (
-        <VStack gap={4}>
-          <Card padding={5}>
-            <VStack gap={4}>
-              <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                <VStack gap={0.5}>
-                  <Heading level={2}>
-                    Clientas cerca de su premio
-                  </Heading>
-                  <Text type="supporting" color="secondary">
-                    {data.loyaltyProgram
-                      ? `${data.loyaltyProgram.name} (${data.loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a completar o canjear su beneficio.`
-                      : 'Activa tu Tarjeta de Sellos en Marca y Políticas para seguir el progreso de fidelidad.'}
-                  </Text>
-                </VStack>
-                <Badge
-                  variant="purple"
-                  label={`${nearRewardClients.length} clienta(s)`}
-                />
-              </HStack>
+        <VStack gap={4} key="rewards" className="fx-step-in">
+          <VStack className="ad-surface" gap={0}>
+            <HStack className="ad-section-head" justify="between" align="center" wrap="wrap" gap={2}>
+              <VStack gap={0.5} className="rb-grow">
+                <Heading level={2} className="lk-serif ad-h2">
+                  Clientas cerca de su premio
+                </Heading>
+                <Text type="supporting" color="secondary">
+                  {data.loyaltyProgram
+                    ? `${data.loyaltyProgram.name} (${data.loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a completar o canjear su beneficio.`
+                    : 'Activa tu Tarjeta de Sellos en Marca y Políticas para seguir el progreso de fidelidad.'}
+                </Text>
+              </VStack>
+              <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
+                {nearRewardClients.length} {nearRewardClients.length === 1 ? 'clienta' : 'clientas'}
+              </Text>
+            </HStack>
 
-              {nearRewardClients.length === 0 ? (
+            {nearRewardClients.length === 0 ? (
+              <VStack className="ad-empty" gap={2}>
                 <EmptyState
                   isCompact
                   title="Sin clientas cerca de su premio aún"
                   description="Cuando una clienta esté a 2 visitas o menos de llenar su tarjeta aparecerá aquí automáticamente."
                 />
-              ) : (
-                <List hasDividers>
-                  {nearRewardClients.map((entry) => {
-                    const nudgeMsg = entry.summary.isRewardReady
-                      ? `Hola ${entry.fullName}! Ya juntaste ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${data.settings.name}. Tienes listo tu premio (${entry.summary.rewardLabel}) para tu próxima cita!`
-                      : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${data.settings.name}. Te faltan solo ${entry.summary.remainingForReward} visita(s) para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
-                    return (
-                      <ListItem
-                        key={entry.clientId}
-                        startContent={<Avatar name={entry.fullName} size="sm" />}
-                        label={entry.fullName}
-                        description={
-                          <VStack gap={1.5}>
-                            <HStack gap={2} wrap="wrap" align="center">
-                              <Text type="supporting" color="secondary" hasTabularNumbers>
-                                {entry.phoneE164}
-                              </Text>
-                              {entry.instagramHandle ? (
-                                <Link
-                                  href={formatInstagramUrl(entry.instagramHandle)}
-                                  isExternalLink
-                                  type="supporting"
-                                >
-                                  {formatInstagramDisplay(entry.instagramHandle)}
-                                </Link>
-                              ) : null}
-                              <Text type="supporting" color="secondary">
-                                Beneficio: {entry.summary.rewardLabel}
-                              </Text>
-                            </HStack>
-                            <ProgressBar
-                              label={`${entry.summary.currentStamps} / ${entry.summary.stampsRequired} sellos`}
-                              value={entry.summary.currentStamps}
-                              max={entry.summary.stampsRequired}
-                              variant={entry.summary.isRewardReady ? 'success' : 'accent'}
-                              hasValueLabel
-                              formatValueLabel={(val, max) => `${val} / ${max} sellos`}
-                            />
-                          </VStack>
-                        }
-                        endContent={
-                          <HStack gap={1.5} align="center" wrap="wrap">
-                            <Badge
-                              variant={entry.summary.isRewardReady ? 'success' : 'purple'}
-                              label={
-                                entry.summary.isRewardReady
-                                  ? '¡Premio listo!'
-                                  : `Faltan ${entry.summary.remainingForReward}`
-                              }
-                            />
-                            <Button
-                              label="Ficha"
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => openClientById(entry.clientId)}
-                            />
-                            <Button
-                              label="Recordar por WhatsApp"
-                              size="sm"
-                              variant="primary"
-                              icon={<MessageCircle size={14} />}
-                              href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
-                            />
+              </VStack>
+            ) : (
+              <VStack className="ad-row-list fx-stagger" gap={0}>
+                {nearRewardClients.map((entry) => {
+                  const required = Math.max(1, entry.summary.stampsRequired);
+                  const totalSlots = Math.min(12, required);
+                  const filledSlots = Math.min(
+                    totalSlots,
+                    Math.round((entry.summary.currentStamps / required) * totalSlots),
+                  );
+                  const nudgeMsg = entry.summary.isRewardReady
+                    ? `Hola ${entry.fullName}! Ya juntaste ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${data.settings.name}. Tienes listo tu premio (${entry.summary.rewardLabel}) para tu próxima cita!`
+                    : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${data.settings.name}. Te faltan solo ${entry.summary.remainingForReward} visita(s) para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
+                  return (
+                    <HStack
+                      key={entry.clientId}
+                      className="ad-row-item"
+                      justify="between"
+                      align="center"
+                      wrap="wrap"
+                      gap={3}
+                    >
+                      <HStack gap={3} align="start" className="rb-grow">
+                        <Avatar name={entry.fullName} size="sm" />
+                        <VStack gap={1.5} className="rb-grow">
+                          <HStack gap={2} align="center" wrap="wrap">
+                            <Text weight="semibold">{entry.fullName}</Text>
+                            <Text
+                              color="inherit"
+                              className="ad-chip"
+                              data-tone={entry.summary.isRewardReady ? 'success' : 'accent'}
+                              hasTabularNumbers
+                            >
+                              {entry.summary.currentStamps} / {entry.summary.stampsRequired} sellos
+                            </Text>
                           </HStack>
-                        }
-                      />
-                    );
-                  })}
-                </List>
-              )}
-            </VStack>
-          </Card>
+                          <HStack gap={2} wrap="wrap" align="center">
+                            <Text type="supporting" color="secondary" hasTabularNumbers>
+                              {entry.phoneE164}
+                            </Text>
+                            {entry.instagramHandle ? (
+                              <Link
+                                href={formatInstagramUrl(entry.instagramHandle)}
+                                isExternalLink
+                                type="supporting"
+                              >
+                                {formatInstagramDisplay(entry.instagramHandle)}
+                              </Link>
+                            ) : null}
+                            <Text type="supporting" color="secondary">
+                              Beneficio: {entry.summary.rewardLabel}
+                            </Text>
+                          </HStack>
+                          <ul className="ad-stamps" aria-hidden="true">
+                            {Array.from({ length: totalSlots }, (_, idx) => (
+                              <li
+                                key={idx}
+                                className="ad-stamp"
+                                data-on={idx < filledSlots ? 'true' : 'false'}
+                              />
+                            ))}
+                          </ul>
+                        </VStack>
+                      </HStack>
+
+                      <HStack gap={1.5} align="center" wrap="wrap">
+                        <Text
+                          color="inherit"
+                          className="ad-chip"
+                          data-tone={entry.summary.isRewardReady ? 'success' : 'neutral'}
+                          hasTabularNumbers
+                        >
+                          {entry.summary.isRewardReady
+                            ? '¡Premio listo!'
+                            : `Faltan ${entry.summary.remainingForReward}`}
+                        </Text>
+                        <Button
+                          label="Ficha"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openClientById(entry.clientId)}
+                        />
+                        <Button
+                          label="Recordar por WhatsApp"
+                          size="sm"
+                          variant="primary"
+                          icon={<MessageCircle size={14} />}
+                          href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
+                        />
+                      </HStack>
+                    </HStack>
+                  );
+                })}
+              </VStack>
+            )}
+          </VStack>
         </VStack>
       )}
 
@@ -858,7 +985,7 @@ export default function AdminClientsPage() {
           onOpenChange={setCreateOpen}
         />
         <form onSubmit={handleCreateClient}>
-          <VStack gap={3} paddingBlockStart={4}>
+          <VStack gap={3} paddingBlockStart={4} className="fx-sheet-in">
             {createError ? (
               <Banner
                 status={createConflict ? 'warning' : 'error'}
@@ -877,7 +1004,7 @@ export default function AdminClientsPage() {
               onChange={setNewName}
               isRequired
             />
-            <Grid columns={{ minWidth: 180, max: 2 }} gap={3}>
+            <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
               <TextInput
                 label="Teléfono / WhatsApp"
                 type="tel"
@@ -894,7 +1021,7 @@ export default function AdminClientsPage() {
                 isOptional
               />
             </Grid>
-            <Grid columns={{ minWidth: 180, max: 2 }} gap={3}>
+            <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
               <TextInput
                 label="Correo electrónico"
                 type="email"
@@ -941,36 +1068,43 @@ export default function AdminClientsPage() {
           subtitle={selected?.phoneE164}
           onOpenChange={() => setSelected(null)}
         />
-        <VStack gap={3} paddingBlockStart={4}>
+        <VStack gap={3} paddingBlockStart={4} className="fx-sheet-in">
           {editError ? <Banner status="error" title={editError} /> : null}
 
           {selectedLoyalty ? (
-            <Card padding={3} variant="muted">
-              <VStack gap={2}>
-                <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <HStack gap={1.5} align="center">
-                    <Award size={15} aria-hidden="true" />
-                    <Text weight="semibold">{selectedLoyalty.programName}</Text>
-                  </HStack>
-                  <Badge
-                    variant={selectedLoyalty.isRewardReady ? 'success' : 'purple'}
-                    label={`${selectedLoyalty.currentStamps} / ${selectedLoyalty.stampsRequired} sellos`}
-                  />
+            <VStack
+              className="ad-surface"
+              data-tone={selectedLoyalty.isRewardReady ? 'accent' : 'subtle'}
+              data-padded="true"
+              gap={2}
+            >
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <HStack gap={1.5} align="center">
+                  <Award size={15} aria-hidden="true" />
+                  <Text weight="semibold">{selectedLoyalty.programName}</Text>
                 </HStack>
-                <ProgressBar
-                  label="Sellos de fidelidad"
-                  isLabelHidden
-                  value={selectedLoyalty.currentStamps}
-                  max={selectedLoyalty.stampsRequired}
-                  variant={selectedLoyalty.isRewardReady ? 'success' : 'accent'}
-                />
-                <Text type="supporting" color="secondary">
-                  {selectedLoyalty.isRewardReady
-                    ? `¡Premio listo para canjear! (${selectedLoyalty.rewardLabel})`
-                    : `Faltan ${selectedLoyalty.remainingForReward} visita(s) para: ${selectedLoyalty.rewardLabel}`}
+                <Text
+                  color="inherit"
+                  className="ad-chip"
+                  data-tone={selectedLoyalty.isRewardReady ? 'success' : 'accent'}
+                  hasTabularNumbers
+                >
+                  {selectedLoyalty.currentStamps} / {selectedLoyalty.stampsRequired} sellos
                 </Text>
-              </VStack>
-            </Card>
+              </HStack>
+              <ProgressBar
+                label="Sellos de fidelidad"
+                isLabelHidden
+                value={selectedLoyalty.currentStamps}
+                max={selectedLoyalty.stampsRequired}
+                variant={selectedLoyalty.isRewardReady ? 'success' : 'accent'}
+              />
+              <Text type="supporting" color="secondary">
+                {selectedLoyalty.isRewardReady
+                  ? `¡Premio listo para canjear! (${selectedLoyalty.rewardLabel})`
+                  : `Faltan ${selectedLoyalty.remainingForReward} visita(s) para: ${selectedLoyalty.rewardLabel}`}
+              </Text>
+            </VStack>
           ) : null}
 
           {selected?.instagramHandle ? (
@@ -994,7 +1128,7 @@ export default function AdminClientsPage() {
             onChange={setInstagramDraft}
             isOptional
           />
-          <Grid columns={{ minWidth: 180, max: 2 }} gap={3}>
+          <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
             <TextInput
               label="Correo electrónico"
               type="email"

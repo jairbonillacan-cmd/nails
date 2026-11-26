@@ -37,8 +37,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   experimental: {
-    optimizePackageImports: ['@astryxdesign/core'],
+    optimizePackageImports: ['@astryxdesign/core', 'lucide-react'],
   },
   images: {
     unoptimized: true,

@@ -205,7 +205,12 @@ export function DashboardAttentionCard({
 
         {visibleTasks.length === 0 ? (
           <HStack className="ad-task ad-enter" align="center" gap={3}>
-            <VStack className="ad-done-circle" align="center" justify="center" aria-hidden="true">
+            <VStack
+              className="ad-done-circle fx-pop"
+              align="center"
+              justify="center"
+              aria-hidden="true"
+            >
               <Check size={18} />
             </VStack>
             <VStack gap={0.5} className="rb-grow">
@@ -216,7 +221,7 @@ export function DashboardAttentionCard({
             </VStack>
           </HStack>
         ) : (
-          <VStack gap={0}>
+          <VStack gap={0} className="fx-stagger">
             {visibleTasks.map((task) => (
               <HStack key={task.id} className="ad-task" align="center" gap={3} wrap="wrap">
                 <VStack

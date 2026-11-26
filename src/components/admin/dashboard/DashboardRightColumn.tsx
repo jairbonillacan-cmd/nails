@@ -112,7 +112,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
         />
 
         <HStack gap={2} align="center" className="ad-cherry-layer">
-          <Text className="ad-live-dot" aria-hidden="true">
+          <Text className="ad-live-dot fx-pulse-dot" aria-hidden="true">
             {'\u200B'}
           </Text>
           <Text color="inherit" weight="bold" size="sm" className="ad-live-label">
@@ -140,7 +140,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
           </Text>
           <button
             type="button"
-            className="ad-cherry-copy"
+            className="ad-cherry-copy fx-press"
             onClick={() => void handleCopyBookingLink()}
           >
             {shareFeedback.message ? '¡Copiado!' : 'Copiar'}
@@ -162,7 +162,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             href="/reservar"
             target="_blank"
             rel="noopener noreferrer"
-            className="ad-cherry-chip"
+            className="ad-cherry-chip fx-press"
           >
             Ver página
           </NextLink>
@@ -170,18 +170,18 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             href="/links"
             target="_blank"
             rel="noopener noreferrer"
-            className="ad-cherry-chip"
+            className="ad-cherry-chip fx-press"
           >
             Bio-link /links
           </NextLink>
           {roleCanAccess(role, 'brand') ? (
-            <NextLink href="/admin/marca" className="ad-cherry-chip">
+            <NextLink href="/admin/marca" className="ad-cherry-chip fx-press">
               Código QR
             </NextLink>
           ) : null}
           <button
             type="button"
-            className="ad-cherry-chip"
+            className="ad-cherry-chip fx-press"
             onClick={() => void handleShareBookingLink()}
           >
             Compartir

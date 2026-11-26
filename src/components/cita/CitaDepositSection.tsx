@@ -188,11 +188,22 @@ export function CitaDepositSection({
         status={fileError ? { type: 'error', message: fileError } : undefined}
         onChange={(f) => void handleSelectProofFile(f)}
       />
+      {proofDataUrl ? (
+        <AspectRatio ratio={16 / 9} fit="cover">
+          <img
+            src={proofDataUrl}
+            alt="Vista previa del comprobante seleccionado"
+            decoding="async"
+            className="ck-proof-img fx-fade-up"
+          />
+        </AspectRatio>
+      ) : null}
       <Button
         type="button"
         variant="primary"
         size="md"
         width="100%"
+        className="fx-press"
         icon={<Upload size={16} aria-hidden="true" />}
         label={submitLabel}
         isLoading={isUploading}
@@ -204,11 +215,11 @@ export function CitaDepositSection({
 
   if (hasExistingProof) {
     return (
-      <VStack as="section" className="ck-panel" aria-labelledby="ck-deposit-title">
+      <VStack as="section" className="ck-panel fx-fade-up" aria-labelledby="ck-deposit-title">
         <VStack gap={3} padding={4} className="rb-deposit">
           <HStack justify="between" align="center" wrap="wrap" gap={2}>
             <HStack gap={2} align="center">
-              <CheckCircle2 size={20} aria-hidden="true" className="lk-cereza-text" />
+              <CheckCircle2 size={20} aria-hidden="true" className="lk-cereza-text fx-pop" />
               <Heading level={2} id="ck-deposit-title" className="lk-serif rb-deposit-title">
                 Comprobante recibido
               </Heading>
@@ -225,6 +236,8 @@ export function CitaDepositSection({
               <img
                 src={booking.paymentProofUrl}
                 alt="Comprobante de anticipo adjunto"
+                loading="lazy"
+                decoding="async"
                 className="ck-proof-img"
               />
             </AspectRatio>
@@ -232,7 +245,11 @@ export function CitaDepositSection({
           <Collapsible
             className="rb-fold"
             defaultIsOpen={false}
-            trigger={<Text weight="semibold">¿Necesitas subir otro comprobante?</Text>}
+            trigger={
+              <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
+                <Text weight="semibold">¿Necesitas subir otro comprobante?</Text>
+              </HStack>
+            }
           >
             <VStack gap={3} className="rb-fold-body">
               {renderUploadBlock('Actualizar comprobante')}
@@ -244,7 +261,7 @@ export function CitaDepositSection({
   }
 
   return (
-    <VStack as="section" className="ck-panel" aria-labelledby="ck-deposit-title">
+    <VStack as="section" className="ck-panel fx-fade-up" aria-labelledby="ck-deposit-title">
       <VStack gap={3} padding={4} className="rb-deposit">
         <HStack justify="between" align="end" wrap="wrap" gap={1}>
           <Heading level={2} id="ck-deposit-title" className="lk-serif rb-deposit-title">
@@ -265,6 +282,7 @@ export function CitaDepositSection({
               variant="primary"
               size="lg"
               width="100%"
+              className="fx-press"
               icon={<CreditCard size={16} aria-hidden="true" />}
               href={safeCheckoutUrl}
               target="_blank"
@@ -281,7 +299,8 @@ export function CitaDepositSection({
 
             <button
               type="button"
-              className="rb-clabe"
+              className="rb-clabe fx-press"
+              data-copied={clabeFeedback.message && clabeCopyOk ? 'true' : 'false'}
               aria-label={`Copiar CLABE ${settings.depositClabe}`}
               onClick={() => void handleCopyClabe()}
             >
@@ -295,7 +314,7 @@ export function CitaDepositSection({
               </VStack>
               <Text color="inherit" weight="semibold" className="rb-clabe-action">
                 {clabeFeedback.message && clabeCopyOk ? (
-                  <Check size={14} aria-hidden="true" />
+                  <Check size={14} aria-hidden="true" className="fx-pop" />
                 ) : (
                   <Copy size={14} aria-hidden="true" />
                 )}
@@ -307,7 +326,7 @@ export function CitaDepositSection({
               color={clabeCopyOk ? 'accent' : 'secondary'}
               role="status"
               aria-live="polite"
-              className={clabeFeedback.message ? undefined : 'rb-sr-only'}
+              className={clabeFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
             >
               {clabeFeedback.message ?? ''}
             </Text>
@@ -334,15 +353,16 @@ export function CitaDepositSection({
             {deliveryMethod === 'web_upload' ? (
               renderUploadBlock('Subir comprobante')
             ) : (
-              <VStack gap={2} padding={3} className="rb-card">
+              <VStack gap={2} padding={3} className="rb-card fx-fade-up">
                 <Text type="supporting" color="secondary" textWrap="pretty">
                   Envía tu captura junto con el código {booking.bookingCode} a {instagramHandle} para validar tu anticipo.
                 </Text>
                 <HStack gap={2} wrap="wrap">
                   <Button
                     variant="secondary"
-                    size="sm"
-                    icon={<ExternalLink size={14} aria-hidden="true" />}
+                    size="md"
+                    className="fx-press"
+                    icon={<ExternalLink size={15} aria-hidden="true" />}
                     label={`Abrir ${instagramHandle}`}
                     href={instagramUrl}
                     target="_blank"
@@ -351,12 +371,13 @@ export function CitaDepositSection({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
+                    size="md"
+                    className="fx-press"
                     icon={
                       dmFeedback.message && dmCopyOk ? (
-                        <Check size={14} aria-hidden="true" />
+                        <Check size={15} aria-hidden="true" className="fx-pop" />
                       ) : (
-                        <Copy size={14} aria-hidden="true" />
+                        <Copy size={15} aria-hidden="true" />
                       )
                     }
                     label={
@@ -372,6 +393,7 @@ export function CitaDepositSection({
                   color={dmCopyOk ? 'accent' : 'secondary'}
                   role="status"
                   aria-live="polite"
+                  className={dmFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
                 >
                   {dmFeedback.message ?? ''}
                 </Text>

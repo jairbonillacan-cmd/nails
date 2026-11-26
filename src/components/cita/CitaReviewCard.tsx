@@ -37,7 +37,7 @@ export function CitaReviewCard({
   const safeGoogleReviewUrl = resolveSafeHttpUrl(googleReviewUrl);
 
   return (
-    <VStack as="section" gap={4} className="ck-panel" aria-labelledby="ck-review-title">
+    <VStack as="section" gap={4} className="ck-panel fx-fade-up" aria-labelledby="ck-review-title">
       <VStack gap={0.5}>
         <Heading level={2} id="ck-review-title" className="lk-serif rb-h2">
           ¿Cómo quedaron tus uñas?
@@ -48,7 +48,7 @@ export function CitaReviewCard({
       </VStack>
 
       {reviewSaved ? (
-        <VStack gap={3}>
+        <VStack gap={3} className="fx-pop">
           <Banner
             status="success"
             title="¡Gracias por calificarnos!"
@@ -66,7 +66,8 @@ export function CitaReviewCard({
                 <Button
                   label="Dejar reseña en Google"
                   variant="primary"
-                  size="sm"
+                  size="md"
+                  className="fx-press"
                   icon={<ExternalLink size={15} aria-hidden="true" />}
                   href={safeGoogleReviewUrl}
                   target="_blank"
@@ -79,15 +80,17 @@ export function CitaReviewCard({
       ) : (
         <form onSubmit={onSubmit}>
           <VStack gap={3}>
-            <HStack gap={2} wrap="wrap">
+            <HStack gap={2} wrap="wrap" role="group" aria-label="Calificación con estrellas">
               {([1, 2, 3, 4, 5] as const).map((star) => (
                 <Button
                   key={star}
                   type="button"
                   label={`${star} ★`}
                   variant={rating === star ? 'primary' : 'secondary'}
-                  size="sm"
-                  icon={<Star size={14} aria-hidden="true" />}
+                  size="md"
+                  className="fx-press fx-tabular"
+                  aria-pressed={rating === star}
+                  icon={<Star size={15} aria-hidden="true" />}
                   onClick={() => onChangeRating(star)}
                 />
               ))}
@@ -103,6 +106,7 @@ export function CitaReviewCard({
                 type="submit"
                 label="Enviar mi calificación"
                 variant="primary"
+                className="fx-press"
                 isLoading={busy}
               />
             </HStack>

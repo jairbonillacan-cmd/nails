@@ -119,15 +119,16 @@ export function CitaHero({
         alt=""
         width={340}
         height={340}
+        decoding="async"
       />
-      <VStack gap={3} className="rb-wrap rb-hero-inner">
+      <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up">
         <HStack gap={2} align="center" wrap="wrap" className="ck-hero-meta">
-          <Text color="inherit" className="ck-status-pill" data-tone={copy.tone}>
+          <Text color="inherit" className="ck-status-pill fx-pop" data-tone={copy.tone}>
             {copy.statusLabel}
           </Text>
           <button
             type="button"
-            className="ck-code-btn"
+            className="ck-code-btn fx-press"
             aria-label={`Copiar código de reserva ${bookingCode}`}
             onClick={() => void handleCopyCode()}
           >
@@ -135,7 +136,7 @@ export function CitaHero({
               {bookingCode}
             </Text>
             {copyFeedback.message && copyOk ? (
-              <Check size={14} aria-hidden="true" />
+              <Check size={14} aria-hidden="true" className="fx-pop" />
             ) : (
               <Copy size={14} aria-hidden="true" />
             )}
@@ -167,6 +168,7 @@ export function CitaHero({
             alt=""
             width={180}
             height={20}
+            decoding="async"
           />
         </VStack>
 

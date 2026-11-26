@@ -78,26 +78,40 @@ export function LandingView({
 
       <VStack as="section" id="inicio" aria-labelledby="hero-t" padding={3} paddingBlockEnd={0}>
         <VStack gap={6} justify="end" className="lk-hero">
-          <Heading level={1} id="hero-t" color="inherit" className="lk-serif lk-h1 lk-intro">
-            El arte está en tus uñas
-          </Heading>
-          <VStack className="lk-hero-sub lk-intro-2" style={{ maxWidth: '27rem' }}>
-            <Text type="large" color="inherit" textWrap="pretty">
-              Acrílico escultural, Softgel y Rubber en {settings.city || 'Puebla'}. Tú traes la idea.
-            </Text>
-          </VStack>
-          <HStack gap={3} wrap="wrap" className="lk-hero-actions lk-intro-3">
-            <Button label="Agendar cita" variant="primary" size="lg" href="/reservar" />
-            <Button label="Ver creaciones" variant="secondary" size="lg" className="lk-btn-outline" href="#galeria" />
-          </HStack>
-          {reviewsSummary.count > 0 ? (
-            <HStack gap={2} align="center" className="lk-hero-sub lk-intro-3">
-              <Text color="inherit" className="lk-stars" aria-hidden="true">★★★★★</Text>
-              <Text color="inherit">
-                {ratingLabel} en Google · {reviewsSummary.count} {reviewsSummary.count === 1 ? 'reseña' : 'reseñas'}
+          <picture className="lk-hero-media" aria-hidden="true">
+            <source media="(max-width: 47.5rem)" srcSet="/landing/hero-movil.webp" />
+            <img
+              src="/landing/hero-escritorio.webp"
+              alt=""
+              width={1600}
+              height={900}
+              fetchPriority="high"
+              decoding="async"
+            />
+          </picture>
+          <VStack className="lk-hero-scrim" aria-hidden="true" />
+          <VStack gap={6} className="lk-hero-content">
+            <Heading level={1} id="hero-t" color="inherit" className="lk-serif lk-h1 lk-intro">
+              El arte está en tus uñas
+            </Heading>
+            <VStack className="lk-hero-sub lk-intro-2" style={{ maxWidth: '27rem' }}>
+              <Text type="large" color="inherit" textWrap="pretty">
+                Acrílico escultural, Softgel y Rubber en {settings.city || 'Puebla'}. Tú traes la idea.
               </Text>
+            </VStack>
+            <HStack gap={3} wrap="wrap" className="lk-hero-actions lk-intro-3">
+              <Button label="Agendar cita" variant="primary" size="lg" className="fx-press" href="/reservar" />
+              <Button label="Ver creaciones" variant="secondary" size="lg" className="lk-btn-outline fx-press" href="#galeria" />
             </HStack>
-          ) : null}
+            {reviewsSummary.count > 0 ? (
+              <HStack gap={2} align="center" className="lk-hero-sub lk-intro-3">
+                <Text color="inherit" className="lk-stars" aria-hidden="true">★★★★★</Text>
+                <Text color="inherit" hasTabularNumbers>
+                  {ratingLabel} en Google · {reviewsSummary.count} {reviewsSummary.count === 1 ? 'reseña' : 'reseñas'}
+                </Text>
+              </HStack>
+            ) : null}
+          </VStack>
         </VStack>
       </VStack>
 

@@ -11,6 +11,9 @@ import { SalonThemeProvider } from '@/components/SalonThemeProvider';
 
 export const dynamic = 'force-dynamic';
 
+const ADMIN_THEME_BOOT_SCRIPT =
+  "(function(){try{if(!location.pathname.startsWith('/admin'))return;var m=localStorage.getItem('laikona.themeMode');if(m==='dark'||m==='light'){document.documentElement.dataset.theme=m;}}catch(e){}})();";
+
 const SAFE_HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 function normalizeHexColor(value: string | undefined | null, fallback: string): string {
@@ -93,6 +96,9 @@ export default function RootLayout({
       data-theme={initialMode === 'system' ? undefined : initialMode}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: ADMIN_THEME_BOOT_SCRIPT }} />
+      </head>
       <body>
         <SalonThemeProvider initialSettings={publicSettings}>
           {children}

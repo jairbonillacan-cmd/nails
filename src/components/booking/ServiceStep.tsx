@@ -57,7 +57,7 @@ export function ServiceStep({
   const extraCount = selectedExtraServiceIds.length;
 
   return (
-    <VStack gap={5} className="rb-enter">
+    <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">
           ¿Qué te hacemos?
@@ -66,13 +66,13 @@ export function ServiceStep({
       </VStack>
 
       {tabs.length > 1 ? (
-        <HStack gap={1} role="tablist" aria-label="Categorías" className="rb-scroll">
+        <HStack gap={1} role="tablist" aria-label="Categorías" className="rb-scroll" data-fade="true">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               role="tab"
-              className="rb-pill"
+              className="rb-pill fx-press"
               aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
             >
@@ -82,14 +82,14 @@ export function ServiceStep({
         </HStack>
       ) : null}
 
-      <ul className="rb-services" aria-label="Servicios">
-        {visibleServices.map((service) => {
+      <ul key={activeTab} className="rb-services fx-step-in fx-stagger" aria-label="Servicios">
+        {visibleServices.map((service, index) => {
           const isSelected = service.id === selectedService?.id;
           return (
             <li key={service.id}>
               <button
                 type="button"
-                className="rb-opt rb-service"
+                className="rb-opt rb-service fx-card-lift fx-press"
                 aria-pressed={isSelected}
                 onClick={() => onSelectService(service.id)}
               >
@@ -99,7 +99,9 @@ export function ServiceStep({
                   alt=""
                   width={240}
                   height={180}
-                  loading="lazy"
+                  loading={index < 3 ? 'eager' : 'lazy'}
+                  fetchPriority={index < 3 ? 'high' : undefined}
+                  decoding="async"
                 />
                 <VStack gap={0} className="rb-service-body">
                   <Text weight="medium" className="lk-serif rb-service-name">
@@ -138,14 +140,21 @@ export function ServiceStep({
                 <li key={addon.id}>
                   <button
                     type="button"
-                    className="rb-opt rb-row"
+                    className="rb-opt rb-row fx-press"
                     aria-pressed={isOn}
                     onClick={() => onToggleAddon(addon.id, !isOn)}
                   >
                     <Text color="inherit" className="rb-check" data-on={isOn ? 'true' : 'false'} aria-hidden="true">
                       <Check size={14} />
                     </Text>
-                    <img src={addonIcon(addon.name)} alt="" width={22} height={22} />
+                    <img
+                      src={addonIcon(addon.name)}
+                      alt=""
+                      width={22}
+                      height={22}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <Text className="rb-grow">{addon.name}</Text>
                     <Text type="supporting" color="secondary" hasTabularNumbers>
                       +{formatCurrency(addon.extraPriceCents, currency)}
@@ -163,9 +172,9 @@ export function ServiceStep({
           className="rb-fold"
           defaultIsOpen={extraCount > 0}
           trigger={
-            <HStack justify="between" gap={2} width="100%">
+            <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
               <Text weight="semibold">¿Algo más en la misma visita?</Text>
-              <Text type="supporting" color="secondary">
+              <Text type="supporting" color="secondary" hasTabularNumbers>
                 {extraCount > 0 ? `${extraCount} agregado${extraCount > 1 ? 's' : ''}` : 'Opcional'}
               </Text>
             </HStack>
@@ -178,7 +187,7 @@ export function ServiceStep({
                 <li key={service.id}>
                   <button
                     type="button"
-                    className="rb-opt rb-row"
+                    className="rb-opt rb-row fx-press"
                     aria-pressed={isOn}
                     onClick={() => onToggleExtraService(service.id, !isOn)}
                   >

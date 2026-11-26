@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
@@ -66,6 +66,7 @@ interface FeedbackState {
 
 export default function AdminBookingsPage() {
   const { data, refresh } = useAdminData();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState('upcoming');
   const [viewMode, setViewMode] = useState<'visual' | 'list' | 'calendar'>('visual');
   const [search, setSearch] = useState('');
@@ -91,30 +92,54 @@ export default function AdminBookingsPage() {
   const [blockDate, setBlockDate] = useState('');
   const [blockReason, setBlockReason] = useState('Bloqueo rápido');
 
-  const handledUrlParamsRef = useRef(false);
+  const lastHandledUrlKeyRef = useRef('');
 
   const tz = data?.settings.timezone || 'America/Mexico_City';
+  const paramCollect = searchParams.get('collect')?.trim() ?? '';
+  const paramNew = searchParams.get('new')?.trim() ?? '';
+  const paramQuery = searchParams.get('q')?.trim() ?? '';
+  const urlSyncKey = data
+    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}`
+    : 'citas-loading';
 
-  useExternalSync(data ? 'citas-ready' : 'citas-loading', async (signal, key) => {
-    if (signal.aborted || key !== 'citas-ready' || !data || typeof window === 'undefined') return;
-    if (handledUrlParamsRef.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const collectId = params.get('collect')?.trim();
-    if (collectId) {
-      const target = data.bookings.find((b) => b.id === collectId);
+  useExternalSync(urlSyncKey, async (signal, key) => {
+    if (signal.aborted || !key.startsWith('citas-ready') || !data) return;
+    if (lastHandledUrlKeyRef.current === key) return;
+    lastHandledUrlKeyRef.current = key;
+
+    if (paramCollect) {
+      const target = data.bookings.find((b) => b.id === paramCollect);
       if (target) {
-        handledUrlParamsRef.current = true;
         setCheckoutBookingId(target.id);
         setCheckoutSessionKey((prev) => prev + 1);
         return;
       }
     }
-    if (params.get('new') === '1') {
-      handledUrlParamsRef.current = true;
+    if (paramNew === '1') {
       setManualInitStaffId('any');
       setManualPrefill(null);
       setManualSessionKey((prev) => prev + 1);
       setManualOpen(true);
+      return;
+    }
+    if (paramQuery) {
+      setSearch(paramQuery);
+      const qLower = paramQuery.toLowerCase();
+      const matched = data.bookings.find(
+        (b) =>
+          b.bookingCode.toLowerCase() === qLower ||
+          b.client.fullName.toLowerCase().includes(qLower),
+      );
+      if (matched) {
+        if (matched.status === 'completed' || matched.status === 'no_show') {
+          setTab('past');
+        } else if (matched.status === 'canceled') {
+          setTab('canceled');
+        } else {
+          setTab('upcoming');
+        }
+        setViewMode('list');
+      }
     }
   });
 
@@ -372,11 +397,13 @@ export default function AdminBookingsPage() {
   };
 
   return (
-    <VStack gap={5}>
-      <HStack justify="between" align="center" wrap="wrap" gap={3}>
-        <VStack gap={0.5}>
-          <Heading level={1}>Citas y Agenda</Heading>
-          <Text color="secondary">
+    <VStack gap={5} className="ad-page fx-fade-up">
+      <HStack as="header" className="ad-page-head" justify="between" align="end" wrap="wrap" gap={3}>
+        <VStack gap={1} className="ad-head-copy">
+          <Heading level={1} className="ad-page-title">
+            Citas y agenda
+          </Heading>
+          <Text className="ad-page-sub">
             Agenda visual por especialista, búsqueda rápida de hora, pago dividido y retoque en 1 clic.
           </Text>
         </VStack>
@@ -404,6 +431,61 @@ export default function AdminBookingsPage() {
           />
         </HStack>
       </HStack>
+
+      <section aria-label="Resumen de citas" className="ad-kpi-grid fx-stagger" data-cols="4">
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Citas hoy
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" hasTabularNumbers>
+            {data.kpis.todayBookingsCount}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Agenda activa del día
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Por confirmar
+          </Text>
+          <Text
+            className="lk-serif ad-kpi-val fx-tabular"
+            data-tone={data.kpis.pendingConfirmationsCount > 0 ? 'warning' : 'success'}
+            hasTabularNumbers
+          >
+            {data.kpis.pendingConfirmationsCount}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            {data.kpis.pendingConfirmationsCount > 0 ? 'Anticipos por validar' : 'Todo confirmado'}
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Sin cobrar
+          </Text>
+          <Text
+            className="lk-serif ad-kpi-val fx-tabular"
+            data-tone={data.uncollectedBookings.length > 0 ? 'warning' : 'success'}
+            hasTabularNumbers
+          >
+            {data.uncollectedBookings.length}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            {data.uncollectedBookings.length > 0 ? 'Con saldo pendiente' : 'Cero fugas'}
+          </Text>
+        </VStack>
+        <VStack as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
+          <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
+            Lista de espera
+          </Text>
+          <Text className="lk-serif ad-kpi-val fx-tabular" hasTabularNumbers>
+            {data.kpis.waitlistCount}
+          </Text>
+          <Text type="supporting" color="secondary" className="ad-kpi-sub">
+            Clientas esperando lugar
+          </Text>
+        </VStack>
+      </section>
 
       {feedback ? (
         <Banner
@@ -445,7 +527,7 @@ export default function AdminBookingsPage() {
         />
       ) : null}
 
-      <HStack justify="between" align="center" wrap="wrap" gap={3}>
+      <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={3}>
         <TabList value={tab} onChange={setTab}>
           <Tab value="upcoming" label="Próximas" />
           <Tab
@@ -478,9 +560,11 @@ export default function AdminBookingsPage() {
             type="search"
             label="Buscar cita"
             isLabelHidden
-            placeholder="Clienta, @instagram, código..."
+            placeholder="Buscar clienta o código..."
             startIcon={<Search size={14} />}
             size="sm"
+            width="min(16rem, 100%)"
+            hasClear
             autoCapitalize="none"
             hasAutoCorrect={false}
             hasSpellCheck={false}
@@ -516,31 +600,52 @@ export default function AdminBookingsPage() {
       </HStack>
 
       {tab === 'waitlist' ? (
-        <VStack gap={3}>
+        <VStack className="ad-surface fx-step-in" key="waitlist" gap={0}>
+          <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+            <Heading level={2} className="lk-serif ad-h3">
+              Lista de espera
+            </Heading>
+            <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+              {data.waitlist.length} registro{data.waitlist.length === 1 ? '' : 's'}
+            </Text>
+          </HStack>
           {data.waitlist.length === 0 ? (
-            <EmptyState
-              title="Sin personas en lista de espera"
-              description="Cuando un día esté lleno, tus clientas podrán apuntarse desde el calendario público."
-            />
+            <VStack className="ad-empty" gap={2}>
+              <EmptyState
+                isCompact
+                title="Sin personas en lista de espera"
+                description="Cuando un día esté lleno, tus clientas podrán apuntarse desde el calendario público."
+              />
+            </VStack>
           ) : (
-            data.waitlist.map((w) => {
-              const srv = data.services.find((s) => s.id === w.serviceId);
-              const waHref = buildWhatsAppLink(
-                w.clientPhoneE164,
-                `Hola ${w.clientName}, se abrió un lugar en ${data.settings.name} para ${srv?.name || 'tu servicio'} el ${w.desiredDate}. ¿Te gustaría agendarlo?`,
-              );
-              return (
-                <Card key={w.id} padding={4}>
-                  <HStack justify="between" align="center" wrap="wrap" gap={3}>
-                    <VStack gap={0.5}>
-                      <HStack gap={2} align="center">
+            <VStack className="ad-row-list fx-stagger" gap={0}>
+              {data.waitlist.map((w) => {
+                const srv = data.services.find((s) => s.id === w.serviceId);
+                const waHref = buildWhatsAppLink(
+                  w.clientPhoneE164,
+                  `Hola ${w.clientName}, se abrió un lugar en ${data.settings.name} para ${srv?.name || 'tu servicio'} el ${w.desiredDate}. ¿Te gustaría agendarlo?`,
+                );
+                return (
+                  <HStack
+                    key={w.id}
+                    className="ad-row-item"
+                    justify="between"
+                    align="center"
+                    wrap="wrap"
+                    gap={3}
+                  >
+                    <VStack gap={0.5} className="rb-grow">
+                      <HStack gap={2} align="center" wrap="wrap">
                         <Text weight="semibold">{w.clientName}</Text>
-                        <Badge
-                          variant={w.status === 'waiting' ? 'warning' : 'success'}
-                          label={w.status === 'waiting' ? 'En espera' : w.status}
-                        />
+                        <Text
+                          color="inherit"
+                          className="ad-chip"
+                          data-tone={w.status === 'waiting' ? 'warning' : 'success'}
+                        >
+                          {w.status === 'waiting' ? 'En espera' : w.status}
+                        </Text>
                       </HStack>
-                      <Text type="supporting" color="secondary">
+                      <Text type="supporting" color="secondary" hasTabularNumbers>
                         {srv?.name} · Fecha deseada: {w.desiredDate} ({w.preferredWindow}) ·{' '}
                         {w.clientPhoneE164}
                       </Text>
@@ -574,9 +679,9 @@ export default function AdminBookingsPage() {
                       />
                     </HStack>
                   </HStack>
-                </Card>
-              );
-            })
+                );
+              })}
+            </VStack>
           )}
         </VStack>
       ) : viewMode === 'visual' ? (
@@ -599,19 +704,25 @@ export default function AdminBookingsPage() {
           onSendReminder={(id) => void sendReminder(id)}
         />
       ) : filteredBookings.length === 0 ? (
-        <EmptyState
-          title="No hay citas en esta vista"
-          description="Puedes crear una cita manual o compartir tu link público."
-          actions={
-            <Button
-              label="Nueva cita manual"
-              variant="primary"
-              onClick={() => openManualModal()}
+        <VStack className="ad-surface fx-step-in" key={`${tab}-empty`} gap={0}>
+          <VStack className="ad-empty" gap={2}>
+            <EmptyState
+              isCompact
+              title="No hay citas en esta vista"
+              description="Puedes crear una cita manual o compartir tu link público."
+              actions={
+                <Button
+                  label="Nueva cita manual"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => openManualModal()}
+                />
+              }
             />
-          }
-        />
+          </VStack>
+        </VStack>
       ) : viewMode === 'list' ? (
-        <VStack gap={3}>
+        <VStack gap={3} key={`${tab}-list`} className="fx-step-in">
           {filteredBookings.map((b) => (
             <BookingCard
               key={b.id}
@@ -632,53 +743,61 @@ export default function AdminBookingsPage() {
           ))}
         </VStack>
       ) : (
-        <Grid columns={{ minWidth: 300, max: 3 }} gap={4} align="start">
+        <Grid
+          key={`${tab}-cal`}
+          className="fx-step-in"
+          columns={{ minWidth: 280, max: 3 }}
+          gap={4}
+          align="start"
+        >
           {groupedByDate.map(([dateKey, items]) => (
-            <Card key={dateKey} variant="muted" padding={4}>
-              <VStack gap={3}>
-                <HStack justify="between" align="center">
-                  <Heading level={3}>
-                    {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, tz)}
-                  </Heading>
-                  <Badge variant="neutral" label={String(items.length)} />
-                </HStack>
+            <VStack key={dateKey} className="ad-surface" gap={0}>
+              <HStack className="ad-section-head" justify="between" align="center" gap={2}>
+                <Heading level={3} className="lk-serif ad-h3">
+                  {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, tz)}
+                </Heading>
+                <Text color="inherit" className="ad-chip" data-tone="neutral" hasTabularNumbers>
+                  {items.length}
+                </Text>
+              </HStack>
+              <VStack className="ad-row-list" gap={0}>
                 {items.map((b) => (
-                  <Card key={b.id} padding={3}>
-                    <VStack gap={1.5}>
-                      <HStack justify="between" align="center">
-                        <Text weight="semibold" hasTabularNumbers>
-                          {formatTimeInTimezone(b.startAt, tz)}
-                        </Text>
-                        <Badge
-                          variant={BOOKING_STATUS_BADGE[b.status].variant}
-                          label={BOOKING_STATUS_BADGE[b.status].label}
-                        />
-                      </HStack>
-                      <Text weight="medium">{b.client.fullName}</Text>
-                      <Text type="supporting" color="secondary">
-                        {b.service.name} · {b.staff.name}
+                  <VStack key={b.id} className="ad-row-item" gap={2} align="stretch">
+                    <HStack justify="between" align="center" gap={2} width="100%">
+                      <Text weight="bold" hasTabularNumbers>
+                        {formatTimeInTimezone(b.startAt, tz, true)}
                       </Text>
-                      <HStack gap={1.5}>
-                        <Button
-                          label="Gestionar"
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setPopoverBookingId(b.id)}
-                        />
-                        {b.status === 'confirmed' ? (
-                          <Button
-                            label="$ Cobrar"
-                            size="sm"
-                            variant="primary"
-                            onClick={() => openCheckoutDrawer(b)}
-                          />
-                        ) : null}
-                      </HStack>
+                      <Badge
+                        variant={BOOKING_STATUS_BADGE[b.status].variant}
+                        label={BOOKING_STATUS_BADGE[b.status].label}
+                      />
+                    </HStack>
+                    <VStack gap={0.5} width="100%">
+                      <Text weight="semibold">{b.client.fullName}</Text>
+                      <Text type="supporting" color="secondary">
+                        {b.service.name} · con {b.staff.name}
+                      </Text>
                     </VStack>
-                  </Card>
+                    <HStack gap={1.5} wrap="wrap" width="100%">
+                      <Button
+                        label="Gestionar"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setPopoverBookingId(b.id)}
+                      />
+                      {b.status === 'confirmed' ? (
+                        <Button
+                          label="Cobrar"
+                          size="sm"
+                          variant="primary"
+                          onClick={() => openCheckoutDrawer(b)}
+                        />
+                      ) : null}
+                    </HStack>
+                  </VStack>
                 ))}
               </VStack>
-            </Card>
+            </VStack>
           ))}
         </Grid>
       )}
@@ -689,7 +808,7 @@ export default function AdminBookingsPage() {
           subtitle="Elige una acción rápida para tu agenda."
           onOpenChange={setQuickAddOpen}
         />
-        <VStack gap={3} paddingBlockStart={4}>
+        <VStack gap={3} paddingBlockStart={4} className="fx-sheet-in">
           <Button
             label="Nueva cita (manual / DM / walk-in)"
             variant="primary"

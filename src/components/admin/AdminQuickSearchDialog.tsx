@@ -8,10 +8,10 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
-import { Badge } from '@astryxdesign/core/Badge';
 import { CalendarDays, Search, Sparkles, Users } from 'lucide-react';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
+import type { BookingStatus } from '@/lib/types';
 import type { AdminOverviewPayload } from './AdminProvider';
 
 interface AdminQuickSearchDialogProps {
@@ -26,6 +26,19 @@ interface QuickNavTarget {
   href: string;
   keywords: string;
   visible: boolean;
+}
+
+function getSearchStatusMeta(status: BookingStatus): {
+  label: string;
+  tone: 'neutral' | 'warning' | 'accent' | 'success';
+} {
+  if (status === 'confirmed') return { label: 'Confirmada', tone: 'success' };
+  if (status === 'pending_confirmation' || status === 'pending_payment') {
+    return { label: 'Por confirmar', tone: 'warning' };
+  }
+  if (status === 'completed') return { label: 'Completada', tone: 'neutral' };
+  if (status === 'no_show') return { label: 'No asistió', tone: 'warning' };
+  return { label: 'Cancelada', tone: 'neutral' };
 }
 
 export function AdminQuickSearchDialog({
@@ -133,7 +146,7 @@ export function AdminQuickSearchDialog({
     if (!normalized) return data.bookings.slice(0, 4);
     return data.bookings
       .filter((b) => {
-        const haystack = `${b.bookingCode} ${b.client.fullName} ${b.client.phoneE164} ${b.service.name} ${b.staff.name}`.toLowerCase();
+        const haystack = `${b.bookingCode} ${b.client.fullName} ${b.client.phoneE164} ${b.clientInstagram ?? b.client.instagramHandle ?? ''} ${b.service.name} ${b.staff.name}`.toLowerCase();
         return haystack.includes(normalized);
       })
       .slice(0, 5);
@@ -182,11 +195,11 @@ export function AdminQuickSearchDialog({
         subtitle="Encuentra clientas, citas por código o salta directo a cualquier sección."
         onOpenChange={onOpenChange}
       />
-      <VStack gap={4} paddingBlockStart={3}>
+      <VStack gap={4} paddingBlockStart={3} className="fx-sheet-in">
         <TextInput
           label="Buscar en el panel"
           isLabelHidden
-          placeholder="Nombre de clienta, código NL-..., servicio o sección..."
+          placeholder="Nombre de clienta, @instagram, código NL-..., servicio o sección..."
           value={query}
           onChange={setQuery}
           startIcon={<Search size={16} aria-hidden="true" />}
@@ -195,44 +208,70 @@ export function AdminQuickSearchDialog({
         />
 
         {!hasResults ? (
-          <Text color="secondary" role="status">
-            No encontramos resultados para «{query}».
-          </Text>
+          <VStack className="ad-empty" gap={1} role="status">
+            <Text weight="semibold">Sin coincidencias</Text>
+            <Text type="supporting" color="secondary">
+              No encontramos resultados para «{query}». Prueba con un nombre, teléfono o sección.
+            </Text>
+          </VStack>
         ) : (
           <VStack gap={3}>
             {matchedBookings.length > 0 ? (
-              <VStack gap={1}>
-                <HStack gap={1.5} align="center">
-                  <CalendarDays size={14} aria-hidden="true" />
-                  <Text type="label" color="secondary" weight="semibold">
-                    Citas
+              <VStack className="ad-surface" gap={0}>
+                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                  <HStack gap={1.5} align="center">
+                    <CalendarDays size={14} aria-hidden="true" />
+                    <Text type="label" color="secondary" weight="semibold">
+                      Citas
+                    </Text>
+                  </HStack>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {matchedBookings.length}
                   </Text>
                 </HStack>
                 <List hasDividers density="compact">
-                  {matchedBookings.map((b) => (
-                    <ListItem
-                      key={b.id}
-                      label={`${b.client.fullName} — ${b.service.name}`}
-                      description={
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {b.bookingCode} · {formatDateShortInTimezone(b.startAt, tz)} ·{' '}
-                          {formatTimeInTimezone(b.startAt, tz)} · {b.staff.name}
-                        </Text>
-                      }
-                      endContent={<Badge variant="neutral" label={b.bookingCode} />}
-                      onClick={() => handleNavigate('/admin/citas')}
-                    />
-                  ))}
+                  {matchedBookings.map((b) => {
+                    const statusMeta = getSearchStatusMeta(b.status);
+                    return (
+                      <ListItem
+                        key={b.id}
+                        label={`${b.client.fullName} — ${b.service.name}`}
+                        description={
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {b.bookingCode} · {formatDateShortInTimezone(b.startAt, tz)} ·{' '}
+                            {formatTimeInTimezone(b.startAt, tz, true)} · {b.staff.name}
+                          </Text>
+                        }
+                        endContent={
+                          <Text
+                            color="inherit"
+                            className="ad-chip"
+                            data-tone={statusMeta.tone}
+                          >
+                            {statusMeta.label}
+                          </Text>
+                        }
+                        onClick={() =>
+                          handleNavigate(`/admin/citas?q=${encodeURIComponent(b.bookingCode)}`)
+                        }
+                      />
+                    );
+                  })}
                 </List>
               </VStack>
             ) : null}
 
             {matchedClients.length > 0 ? (
-              <VStack gap={1}>
-                <HStack gap={1.5} align="center">
-                  <Users size={14} aria-hidden="true" />
-                  <Text type="label" color="secondary" weight="semibold">
-                    Clientas
+              <VStack className="ad-surface" gap={0}>
+                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                  <HStack gap={1.5} align="center">
+                    <Users size={14} aria-hidden="true" />
+                    <Text type="label" color="secondary" weight="semibold">
+                      Clientas
+                    </Text>
+                  </HStack>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {matchedClients.length}
                   </Text>
                 </HStack>
                 <List hasDividers density="compact">
@@ -256,8 +295,8 @@ export function AdminQuickSearchDialog({
             ) : null}
 
             {matchedNav.length > 0 ? (
-              <VStack gap={1}>
-                <HStack gap={1.5} align="center">
+              <VStack className="ad-surface" gap={0}>
+                <HStack gap={1.5} align="center" className="ad-section-head">
                   <Sparkles size={14} aria-hidden="true" />
                   <Text type="label" color="secondary" weight="semibold">
                     Accesos del panel
@@ -281,6 +320,21 @@ export function AdminQuickSearchDialog({
             ) : null}
           </VStack>
         )}
+
+        <HStack justify="between" align="center" gap={2} wrap="wrap">
+          <HStack gap={1.5} align="center">
+            <kbd className="ad-kbd">Ctrl K</kbd>
+            <Text type="supporting" color="secondary">
+              abrir o cerrar búsqueda
+            </Text>
+          </HStack>
+          <HStack gap={1.5} align="center">
+            <kbd className="ad-kbd">Esc</kbd>
+            <Text type="supporting" color="secondary">
+              salir
+            </Text>
+          </HStack>
+        </HStack>
       </VStack>
     </Dialog>
   );

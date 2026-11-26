@@ -49,6 +49,8 @@ const PERIOD_LABELS: ReadonlyArray<{ period: DayPeriod; label: string }> = [
 ];
 
 const STRIP_DAYS = 21;
+const SKELETON_DAY_KEYS = [0, 1, 2, 3, 4, 5, 6] as const;
+const SKELETON_SLOT_KEYS = [0, 1, 2, 3, 4, 5] as const;
 
 const weekdayFormatter = new Intl.DateTimeFormat('es-MX', { weekday: 'short', timeZone: 'UTC' });
 const monthFormatter = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -117,41 +119,48 @@ export function ScheduleStep({
     />
   );
 
-  const strip = (
-    <HStack gap={1} className="rb-scroll" role="listbox" aria-label="Próximos días">
-      {stripDays.map((day) => {
-        const date = plainDate(day.date);
-        const isOn = day.date === selectedDate;
-        return (
-          <button
-            key={day.date}
-            type="button"
-            role="option"
-            className="rb-day"
-            aria-selected={isOn}
-            disabled={!day.hasSlots}
-            aria-label={`${formatDateLongInTimezone(`${day.date}T18:00:00Z`, timezone)}, ${
-              day.hasSlots ? `${day.slotCount} horarios` : 'sin lugares'
-            }`}
-            onClick={() => onSelectDate(day.date)}
-          >
-            <Text color="inherit" type="supporting" className="rb-day-wd">
-              {weekdayFormatter.format(date).replace('.', '')}
-            </Text>
-            <Text color="inherit" weight="bold" size="xl" hasTabularNumbers>
-              {date.getUTCDate()}
-            </Text>
-            <Text color="inherit" type="supporting" className="rb-day-count rb-d">
-              {day.hasSlots ? `${day.slotCount} libres` : 'sin lugar'}
-            </Text>
-          </button>
-        );
-      })}
-    </HStack>
-  );
+  const strip =
+    loadingAvail && stripDays.length === 0 ? (
+      <HStack gap={1} className="rb-scroll" data-fade="true" aria-hidden="true">
+        {SKELETON_DAY_KEYS.map((item) => (
+          <VStack key={item} className="rb-day-skeleton fx-shimmer" />
+        ))}
+      </HStack>
+    ) : (
+      <HStack gap={1} className="rb-scroll" data-fade="true" role="listbox" aria-label="Próximos días">
+        {stripDays.map((day) => {
+          const date = plainDate(day.date);
+          const isOn = day.date === selectedDate;
+          return (
+            <button
+              key={day.date}
+              type="button"
+              role="option"
+              className="rb-day fx-press fx-tabular"
+              aria-selected={isOn}
+              disabled={!day.hasSlots}
+              aria-label={`${formatDateLongInTimezone(`${day.date}T18:00:00Z`, timezone)}, ${
+                day.hasSlots ? `${day.slotCount} horarios` : 'sin lugares'
+              }`}
+              onClick={() => onSelectDate(day.date)}
+            >
+              <Text color="inherit" type="supporting" className="rb-day-wd">
+                {weekdayFormatter.format(date).replace('.', '')}
+              </Text>
+              <Text color="inherit" weight="bold" size="xl" hasTabularNumbers>
+                {date.getUTCDate()}
+              </Text>
+              <Text color="inherit" type="supporting" className="rb-day-count rb-d" hasTabularNumbers>
+                {day.hasSlots ? `${day.slotCount} libres` : 'sin lugar'}
+              </Text>
+            </button>
+          );
+        })}
+      </HStack>
+    );
 
   return (
-    <VStack gap={4} className="rb-enter">
+    <VStack gap={4} className="fx-step-in">
       <HStack justify="between" align="end" wrap="wrap" gap={3}>
         <VStack gap={0.5}>
           <Heading level={2} className="lk-serif rb-h2">
@@ -189,7 +198,7 @@ export function ScheduleStep({
           <Text>
             Estás viendo solo los horarios de <Text weight="semibold">{pinnedStaffName}</Text>.
           </Text>
-          <Button label="Ver todo el equipo" variant="secondary" size="sm" onClick={onShowAllStaff} />
+          <Button label="Ver todo el equipo" variant="secondary" size="md" className="fx-press" onClick={onShowAllStaff} />
         </HStack>
       ) : null}
 
@@ -207,7 +216,8 @@ export function ScheduleStep({
             redirectStaffId && redirectStaffName ? (
               <Button
                 variant="primary"
-                size="sm"
+                size="md"
+                className="fx-press"
                 label={`Ver horarios de ${redirectStaffName}`}
                 onClick={() => onRedirectStaff(redirectStaffId)}
               />
@@ -223,9 +233,9 @@ export function ScheduleStep({
             Revisa el próximo mes o anótate en la lista de espera y te avisamos si se libera algo.
           </Text>
           <HStack gap={2} wrap="wrap">
-            {canAdvanceMonth ? <Button label="Ver próximo mes" variant="primary" onClick={onAdvanceMonth} /> : null}
-            <Button label="Lista de espera" variant="secondary" onClick={onOpenWaitlist} />
-            {isViewingFutureWindow ? <Button label="Volver a hoy" variant="ghost" onClick={onReturnToToday} /> : null}
+            {canAdvanceMonth ? <Button label="Ver próximo mes" variant="primary" className="fx-press" onClick={onAdvanceMonth} /> : null}
+            <Button label="Lista de espera" variant="secondary" className="fx-press" onClick={onOpenWaitlist} />
+            {isViewingFutureWindow ? <Button label="Volver a hoy" variant="ghost" className="fx-press" onClick={onReturnToToday} /> : null}
           </HStack>
         </VStack>
       ) : (
@@ -238,7 +248,8 @@ export function ScheduleStep({
               <Button
                 label={isMonthOpen ? 'Ocultar mes' : 'Ver mes'}
                 variant="secondary"
-                size="sm"
+                size="md"
+                className="fx-press"
                 aria-expanded={isMonthOpen}
                 onClick={() => setIsMonthOpen((open) => !open)}
               />
@@ -252,10 +263,10 @@ export function ScheduleStep({
                 {calendar}
                 <HStack gap={2} justify="center" wrap="wrap">
                   {isViewingFutureWindow ? (
-                    <Button label="Mes actual" variant="ghost" size="sm" onClick={onReturnToToday} />
+                    <Button label="Mes actual" variant="ghost" size="md" className="fx-press" onClick={onReturnToToday} />
                   ) : null}
                   {canAdvanceMonth ? (
-                    <Button label="Próximo mes" variant="ghost" size="sm" onClick={onAdvanceMonth} />
+                    <Button label="Próximo mes" variant="ghost" size="md" className="fx-press" onClick={onAdvanceMonth} />
                   ) : null}
                 </HStack>
               </VStack>
@@ -268,9 +279,16 @@ export function ScheduleStep({
               </Text>
 
               {loadingAvail ? (
-                <ProgressBar label="Buscando horarios libres" isIndeterminate />
+                <VStack gap={3} aria-busy="true">
+                  <ProgressBar label="Buscando horarios libres" isIndeterminate />
+                  <VStack className="rb-skeleton-slots" aria-hidden="true">
+                    {SKELETON_SLOT_KEYS.map((item) => (
+                      <VStack key={item} className="rb-slot-skeleton fx-shimmer" />
+                    ))}
+                  </VStack>
+                </VStack>
               ) : slots.length > 0 ? (
-                <VStack gap={3}>
+                <VStack key={selectedDate} gap={3} className="fx-step-in">
                   {PERIOD_LABELS.map(({ period, label }) => {
                     const periodSlots = slots.filter((slot) => slot.period === period);
                     if (periodSlots.length === 0) return null;
@@ -279,7 +297,7 @@ export function ScheduleStep({
                         <Text type="supporting" color="secondary" weight="semibold">
                           {label}
                         </Text>
-                        <ul className="rb-slots" aria-label={`Horarios de la ${label.toLowerCase()}`}>
+                        <ul className="rb-slots fx-stagger" aria-label={`Horarios de la ${label.toLowerCase()}`}>
                           {periodSlots.map((slot) => {
                             const time = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
                             const isOn =
@@ -290,7 +308,7 @@ export function ScheduleStep({
                               <li key={`${slot.staffId}-${slot.startAt}`}>
                                 <button
                                   type="button"
-                                  className="rb-slot"
+                                  className="rb-slot fx-press fx-tabular"
                                   aria-pressed={isOn}
                                   disabled={isBusy}
                                   aria-label={`${time}${who ? `, ${who} libres` : ''}`}
@@ -316,7 +334,7 @@ export function ScheduleStep({
                     <Text type="supporting" color="secondary">
                       ¿No ves la hora que buscas?
                     </Text>
-                    <Button label="Lista de espera" variant="ghost" size="sm" onClick={onOpenWaitlist} />
+                    <Button label="Lista de espera" variant="ghost" size="md" className="fx-press" onClick={onOpenWaitlist} />
                   </HStack>
                 </VStack>
               ) : (

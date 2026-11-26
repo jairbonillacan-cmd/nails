@@ -25,27 +25,55 @@ export function LandingVisit({ address, mapsUrl, whatsappUrl, instagramHandle }:
   return (
     <VStack as="section" id="visitanos" aria-labelledby="visita-t" className="lk-section">
       <HStack gap={5} wrap="wrap" align="stretch" className="lk-wrap">
-        <VStack gap={6} padding={8} className="lk-card lk-reveal" style={{ flex: '1 1 22rem', borderRadius: '2rem' }}>
+        <VStack
+          gap={6}
+          padding={8}
+          className="lk-card lk-reveal"
+          style={{ flex: '1 1 20rem', minWidth: 0, maxWidth: '100%', borderRadius: '2rem', boxSizing: 'border-box' }}
+        >
           <SectionHeading id="visita-t" title="Visítanos" align="start" />
           <VStack as="dl" gap={5} style={{ margin: 0 }}>
             {rows.map((row) => (
               <HStack key={row.label} gap={3} align="start">
                 <dt>
-                  <img src={row.icon} alt={row.label} width={26} height={26} />
+                  <img
+                    src={row.icon}
+                    alt={row.label}
+                    width={26}
+                    height={26}
+                    loading="lazy"
+                    decoding="async"
+                  />
                 </dt>
-                <VStack as="dd" gap={0.5} style={{ margin: 0 }}>
-                  <Text size="lg">{row.title}</Text>
+                <VStack as="dd" gap={0.5} style={{ margin: 0, minWidth: 0 }}>
+                  <Text size="lg" textWrap="pretty">{row.title}</Text>
                   {row.detail ? <Text color="secondary">{row.detail}</Text> : null}
                 </VStack>
               </HStack>
             ))}
           </VStack>
           <HStack gap={2} wrap="wrap" style={{ marginTop: 'auto' }}>
-            <Button label="Cómo llegar" variant="primary" size="lg" href={mapsUrl} />
-            <Button label="WhatsApp" variant="secondary" size="lg" href={whatsappUrl} />
+            <Button
+              label="Cómo llegar"
+              variant="primary"
+              size="lg"
+              className="fx-press"
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+            <Button
+              label="WhatsApp"
+              variant="secondary"
+              size="lg"
+              className="fx-press"
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
           </HStack>
         </VStack>
-        <VStack className="lk-reveal-2" style={{ flex: '2 1 32rem' }}>
+        <VStack className="lk-reveal-2" style={{ flex: '2 1 24rem', minWidth: 0, maxWidth: '100%' }}>
           <iframe
             className="lk-map"
             src={buildMapEmbedUrl(address)}

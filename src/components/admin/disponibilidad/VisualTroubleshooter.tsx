@@ -4,20 +4,21 @@ import { useCallback, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { ClickableCard } from '@astryxdesign/core/ClickableCard';
-import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
 import { Token } from '@astryxdesign/core/Token';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Selector } from '@astryxdesign/core/Selector';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Calendar, type ISODateString } from '@astryxdesign/core/Calendar';
 import { Clock, RefreshCw, Search } from 'lucide-react';
+import {
+  AdminConfigChip,
+  AdminConfigEmpty,
+  AdminConfigSection,
+} from '@/components/admin/config/AdminConfigPrimitives';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import type { SlotDiagnosis } from '@/lib/availability/engine';
 import type { Service, StaffMember } from '@/lib/types';
@@ -161,20 +162,174 @@ export function VisualTroubleshooter({
   };
 
   return (
-    <Grid columns={{ minWidth: 300, max: 2 }} gap={5} align="start">
-      <Card padding={5}>
-        <VStack gap={4}>
-          <VStack gap={0.5}>
-            <HStack gap={2} align="center">
-              <Search size={17} aria-hidden="true" />
-              <Heading level={3}>Selector de diagnóstico</Heading>
+    <VStack className="ad-split" gap={5}>
+      <AdminConfigSection
+        id="troubleshooter-results-heading"
+        title={`${diagDate} · ${selectedStaff?.name ?? 'Especialista'}`}
+        subtitle={selectedService?.name ?? 'Servicio seleccionado'}
+        actions={
+          <Button
+            type="button"
+            label="Actualizar"
+            variant="secondary"
+            size="sm"
+            icon={<RefreshCw size={14} aria-hidden="true" />}
+            isLoading={loading}
+            onClick={() => setReloadCounter((prev) => prev + 1)}
+          />
+        }
+      >
+        <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={2}>
+          <HStack gap={3} align="center" wrap="wrap">
+            <HStack gap={1.5} align="center">
+              <StatusDot variant="success" label="Disponibles" />
+              <Text type="label" className="fx-tabular" hasTabularNumbers>
+                {availableCount} libres
+              </Text>
             </HStack>
-            <Text type="supporting" color="secondary">
-              Elige fecha, servicio y especialista para inspeccionar por qué cada horario está disponible o bloqueado ({timezone}).
-            </Text>
-          </VStack>
+            <HStack gap={1.5} align="center">
+              <StatusDot variant="error" label="Bloqueados" />
+              <Text type="label" className="fx-tabular" hasTabularNumbers>
+                {blockedCount} bloqueados
+              </Text>
+            </HStack>
+          </HStack>
 
-          <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+          <SegmentedControl
+            label="Filtrar horarios diagnosticados"
+            size="sm"
+            value={filterMode}
+            onChange={(val) => {
+              if (val === 'all' || val === 'available' || val === 'blocked') {
+                setFilterMode(val);
+              }
+            }}
+          >
+            <SegmentedControlItem value="all" label="Todos" />
+            <SegmentedControlItem value="available" label="Libres" />
+            <SegmentedControlItem value="blocked" label="Bloqueados" />
+          </SegmentedControl>
+        </HStack>
+
+        <VStack gap={4} padding={5}>
+          {inspectedSlot ? (
+            <VStack
+              className="ad-surface fx-fade-up"
+              data-tone={inspectedSlot.isAvailable ? 'subtle' : 'warning'}
+              data-padded="true"
+              gap={1.5}
+              role="status"
+              aria-live="polite"
+            >
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <HStack gap={2} align="center" wrap="wrap">
+                  <StatusDot
+                    variant={inspectedSlot.isAvailable ? 'success' : 'error'}
+                    label={inspectedSlot.isAvailable ? 'Disponible' : 'Bloqueado'}
+                  />
+                  <Text weight="bold" className="fx-tabular" hasTabularNumbers>
+                    {inspectedSlot.time24} hrs
+                  </Text>
+                  <Token size="sm" label={inspectedSlot.staffName} />
+                </HStack>
+                <AdminConfigChip
+                  tone={inspectedSlot.isAvailable ? 'success' : 'warning'}
+                  label={inspectedSlot.isAvailable ? 'Disponible' : 'Bloqueado'}
+                />
+              </HStack>
+              <Text type="supporting" weight="medium">
+                Motivo exacto: {inspectedSlot.reason}
+              </Text>
+            </VStack>
+          ) : null}
+
+          <Divider />
+
+          {loading ? (
+            <VStack
+              className="rb-skeleton-slots"
+              role="status"
+              aria-label="Calculando diagnóstico de horarios"
+              gap={2}
+            >
+              {Array.from({ length: 8 }, (_, idx) => (
+                <Text key={idx} className="ad-skeleton" data-size="slot" aria-hidden="true">
+                  {'\u200B'}
+                </Text>
+              ))}
+            </VStack>
+          ) : groups.length === 0 ? (
+            <AdminConfigEmpty
+              icon={<Clock size={22} aria-hidden="true" />}
+              title="No hay horarios en este filtro"
+              description="Cambia a Todos o elige otra fecha en el calendario para inspeccionar la disponibilidad."
+            />
+          ) : (
+            <VStack gap={4}>
+              {groups.map((group) => (
+                <VStack key={group.key} gap={2}>
+                  <HStack gap={1.5} align="center">
+                    <Clock size={14} aria-hidden="true" />
+                    <Text
+                      type="label"
+                      weight="semibold"
+                      color="secondary"
+                      className="fx-tabular"
+                      hasTabularNumbers
+                    >
+                      {group.label} ({group.items.length})
+                    </Text>
+                  </HStack>
+                  <section aria-label={group.label} className="ad-slot-grid">
+                    {group.items.map((slot) => {
+                      const isInspected = inspectedSlot?.time24 === slot.time24;
+                      return (
+                        <ClickableCard
+                          key={slot.time24}
+                          label={`${slot.time24} hrs — ${slot.isAvailable ? 'Disponible' : 'Bloqueado'}: ${slot.reason}`}
+                          padding={2}
+                          variant={isInspected ? 'muted' : 'default'}
+                          elevation={isInspected ? 'low' : 'none'}
+                          onClick={() => setInspectedTime(slot.time24)}
+                        >
+                          <HStack justify="between" align="center" gap={1.5}>
+                            <HStack gap={1.5} align="center">
+                              <StatusDot
+                                variant={slot.isAvailable ? 'success' : 'error'}
+                                label={slot.isAvailable ? 'Disponible' : 'Bloqueado'}
+                              />
+                              <Text
+                                weight="semibold"
+                                className="fx-tabular"
+                                hasTabularNumbers
+                              >
+                                {slot.time24}
+                              </Text>
+                            </HStack>
+                            {isInspected ? (
+                              <AdminConfigChip label="Ver" tone="accent" />
+                            ) : null}
+                          </HStack>
+                        </ClickableCard>
+                      );
+                    })}
+                  </section>
+                </VStack>
+              ))}
+            </VStack>
+          )}
+        </VStack>
+      </AdminConfigSection>
+
+      <AdminConfigSection
+        id="troubleshooter-picker-heading"
+        icon={<Search size={16} aria-hidden="true" />}
+        title="Selector de diagnóstico"
+        subtitle={`Inspecciona por qué cada horario está libre o bloqueado (${timezone}).`}
+        padded
+      >
+        <VStack gap={4}>
+          <Grid columns={{ minWidth: 150, max: 2 }} gap={3}>
             <Selector
               label="Servicio"
               value={serviceId}
@@ -201,20 +356,25 @@ export function VisualTroubleshooter({
             ) : null}
           </Grid>
 
-          <HStack gap={1.5} wrap="wrap">
-            {quickDates.map((item) => (
-              <Button
-                key={item.label}
-                type="button"
-                size="sm"
-                variant={diagDate === item.date ? 'primary' : 'secondary'}
-                label={item.label}
-                onClick={() => handleSelectDate(item.date)}
-              />
-            ))}
+          <HStack gap={1.5} wrap="wrap" role="group" aria-label="Fechas rápidas">
+            {quickDates.map((item) => {
+              const isSelected = diagDate === item.date;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="ad-pill fx-press"
+                  data-on={isSelected ? 'true' : 'false'}
+                  aria-pressed={isSelected}
+                  onClick={() => handleSelectDate(item.date)}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </HStack>
 
-          <VStack gap={1.5} align="center">
+          <VStack className="ad-table-scroll" align="center">
             <Calendar
               mode="single"
               weekStartsOn="mon"
@@ -227,145 +387,7 @@ export function VisualTroubleshooter({
             />
           </VStack>
         </VStack>
-      </Card>
-
-      <Card padding={5}>
-        <VStack gap={4}>
-          <HStack justify="between" align="center" wrap="wrap" gap={2}>
-            <VStack gap={0.5}>
-              <Heading level={3} style={{ fontVariantNumeric: 'tabular-nums' }}>
-                {diagDate} · {selectedStaff?.name ?? 'Especialista'}
-              </Heading>
-              <Text type="supporting" color="secondary">
-                {selectedService?.name ?? 'Servicio'}
-              </Text>
-            </VStack>
-            <Button
-              type="button"
-              label="Actualizar"
-              variant="secondary"
-              size="sm"
-              icon={<RefreshCw size={14} />}
-              isLoading={loading}
-              onClick={() => setReloadCounter((prev) => prev + 1)}
-            />
-          </HStack>
-
-          <HStack justify="between" align="center" wrap="wrap" gap={2}>
-            <HStack gap={3} align="center" wrap="wrap">
-              <HStack gap={1.5} align="center">
-                <StatusDot variant="success" label="Disponibles" />
-                <Text type="label" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {availableCount} disponibles
-                </Text>
-              </HStack>
-              <HStack gap={1.5} align="center">
-                <StatusDot variant="error" label="Bloqueados" />
-                <Text type="label" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {blockedCount} bloqueados
-                </Text>
-              </HStack>
-            </HStack>
-
-            <SegmentedControl
-              label="Filtrar horarios diagnosticados"
-              size="sm"
-              value={filterMode}
-              onChange={(val) => {
-                if (val === 'all' || val === 'available' || val === 'blocked') {
-                  setFilterMode(val);
-                }
-              }}
-            >
-              <SegmentedControlItem value="all" label="Todos" />
-              <SegmentedControlItem value="available" label="Libres" />
-              <SegmentedControlItem value="blocked" label="Bloqueados" />
-            </SegmentedControl>
-          </HStack>
-
-          {inspectedSlot ? (
-            <Card variant="muted" padding={4}>
-              <VStack gap={1.5} role="status" aria-live="polite">
-                <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <HStack gap={2} align="center">
-                    <StatusDot
-                      variant={inspectedSlot.isAvailable ? 'success' : 'error'}
-                      label={inspectedSlot.isAvailable ? 'Disponible' : 'Bloqueado'}
-                    />
-                    <Text weight="bold" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {inspectedSlot.time24} hrs
-                    </Text>
-                    <Token size="sm" label={inspectedSlot.staffName} />
-                  </HStack>
-                  <Badge
-                    variant={inspectedSlot.isAvailable ? 'success' : 'error'}
-                    label={inspectedSlot.isAvailable ? 'Disponible' : 'Bloqueado'}
-                  />
-                </HStack>
-                <Text type="supporting" weight="medium">
-                  Motivo exacto: {inspectedSlot.reason}
-                </Text>
-              </VStack>
-            </Card>
-          ) : null}
-
-          <Divider />
-
-          {loading ? (
-            <ProgressBar label="Calculando diagnóstico de horarios" isIndeterminate />
-          ) : groups.length === 0 ? (
-            <Text type="supporting" color="secondary">
-              No hay horarios en este filtro para la fecha seleccionada.
-            </Text>
-          ) : (
-            <VStack gap={4}>
-              {groups.map((group) => (
-                <VStack key={group.key} gap={2}>
-                  <HStack gap={1.5} align="center">
-                    <Clock size={14} aria-hidden="true" />
-                    <Text type="label" weight="semibold" color="secondary">
-                      {group.label} ({group.items.length})
-                    </Text>
-                  </HStack>
-                  <Grid columns={{ minWidth: 112, max: 4 }} gap={2}>
-                    {group.items.map((slot) => {
-                      const isInspected = inspectedSlot?.time24 === slot.time24;
-                      return (
-                        <ClickableCard
-                          key={slot.time24}
-                          label={`${slot.time24} hrs — ${slot.isAvailable ? 'Disponible' : 'Bloqueado'}: ${slot.reason}`}
-                          padding={2}
-                          variant={isInspected ? 'muted' : 'default'}
-                          elevation={isInspected ? 'low' : 'none'}
-                          onClick={() => setInspectedTime(slot.time24)}
-                        >
-                          <HStack justify="between" align="center" gap={1.5}>
-                            <HStack gap={1.5} align="center">
-                              <StatusDot
-                                variant={slot.isAvailable ? 'success' : 'error'}
-                                label={slot.isAvailable ? 'Disponible' : 'Bloqueado'}
-                              />
-                              <Text
-                                weight="semibold"
-                                style={{ fontVariantNumeric: 'tabular-nums' }}
-                              >
-                                {slot.time24}
-                              </Text>
-                            </HStack>
-                            {isInspected ? (
-                              <Badge variant="info" label="Ver" />
-                            ) : null}
-                          </HStack>
-                        </ClickableCard>
-                      );
-                    })}
-                  </Grid>
-                </VStack>
-              ))}
-            </VStack>
-          )}
-        </VStack>
-      </Card>
-    </Grid>
+      </AdminConfigSection>
+    </VStack>
   );
 }

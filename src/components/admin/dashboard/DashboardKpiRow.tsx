@@ -92,14 +92,14 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
   ];
 
   return (
-    <section aria-label="Números de hoy" className="ad-kpis">
+    <section aria-label="Números de hoy" className="ad-kpis fx-stagger">
       {items.map((kpi) => (
-        <VStack key={kpi.id} as="article" className="ad-card ad-kpi-card" gap={1}>
+        <VStack key={kpi.id} as="article" className="ad-card ad-kpi-card fx-card-lift" gap={1}>
           <Text type="supporting" color="secondary" weight="medium" className="ad-kpi-label">
             {kpi.label}
           </Text>
           <Text
-            className="lk-serif ad-kpi-val"
+            className="lk-serif ad-kpi-val fx-tabular"
             data-tone={kpi.tone}
             hasTabularNumbers
           >

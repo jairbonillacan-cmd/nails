@@ -6,6 +6,7 @@ import { Grid } from '@astryxdesign/core/Grid';
 import { Card } from '@astryxdesign/core/Card';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
@@ -15,10 +16,13 @@ import {
 } from '@/lib/notifications/cascade';
 import { formatDateShortInTimezone } from '@/lib/format';
 
+const SKELETON_CARD_KEYS = [0, 1, 2, 3] as const;
+
 interface CitaDialogsProps {
   timezone: string;
   minCancelHours: number;
   busy: boolean;
+  errorMessage?: string | null;
   rescheduleOpen: boolean;
   rescheduleReasonChoice: string | null;
   rescheduleReason: string;
@@ -41,6 +45,7 @@ export function CitaDialogs({
   timezone,
   minCancelHours,
   busy,
+  errorMessage = null,
   rescheduleOpen,
   rescheduleReasonChoice,
   rescheduleReason,
@@ -64,16 +69,23 @@ export function CitaDialogs({
         isOpen={rescheduleOpen}
         onOpenChange={onRescheduleOpenChange}
         purpose="form"
-        width={560}
+        width="min(35rem, 94vw)"
+        maxHeight="85dvh"
         padding={5}
       >
-        <VStack className="lk-portal">
+        <VStack className="lk-portal fx-sheet-in">
           <DialogHeader
             title="Reagendar tu cita"
             subtitle="Elige un nuevo horario libre; tu servicio y extras se mantienen."
             onOpenChange={onRescheduleOpenChange}
           />
           <VStack gap={3} paddingBlockStart={4}>
+            {errorMessage ? (
+              <VStack className="fx-fade-up">
+                <Banner status="error" title="No se pudo reagendar" description={errorMessage} />
+              </VStack>
+            ) : null}
+
             <VStack gap={1.5}>
               <Text type="label" weight="semibold">
                 Motivo del cambio (opcional)
@@ -84,7 +96,9 @@ export function CitaDialogs({
                     key={option}
                     type="button"
                     label={option}
-                    size="sm"
+                    size="md"
+                    className="fx-press"
+                    aria-pressed={rescheduleReasonChoice === option}
                     variant={rescheduleReasonChoice === option ? 'primary' : 'secondary'}
                     onClick={() => onSelectRescheduleChip(option)}
                   />
@@ -101,15 +115,22 @@ export function CitaDialogs({
             </VStack>
 
             {loadingSlots ? (
-              <Text color="secondary" role="status" aria-live="polite">
-                Cargando horarios disponibles...
-              </Text>
+              <VStack gap={2} aria-busy="true">
+                <Text type="supporting" color="secondary" role="status" aria-live="polite">
+                  Cargando horarios disponibles...
+                </Text>
+                <Grid columns={{ minWidth: 190, max: 2 }} gap={3} aria-hidden="true">
+                  {SKELETON_CARD_KEYS.map((item) => (
+                    <VStack key={item} className="ad-skeleton fx-shimmer" data-size="kpi" />
+                  ))}
+                </Grid>
+              </VStack>
             ) : rescheduleDays.length === 0 ? (
               <Text color="secondary">
                 No hay horarios próximos libres en los siguientes 14 días.
               </Text>
             ) : (
-              <Grid columns={{ minWidth: 210, max: 2 }} gap={3}>
+              <Grid columns={{ minWidth: 190, max: 2 }} gap={3} className="fx-stagger">
                 {rescheduleDays.map((day) => (
                   <Card key={day.date} variant="muted" padding={3}>
                     <VStack gap={2}>
@@ -123,8 +144,8 @@ export function CitaDialogs({
                             type="button"
                             label={slot.localTime12}
                             variant="secondary"
-                            size="sm"
-                            style={{ fontVariantNumeric: 'tabular-nums' }}
+                            size="md"
+                            className="fx-press fx-tabular"
                             isDisabled={busy}
                             onClick={() => onConfirmReschedule(slot)}
                           />
@@ -143,16 +164,23 @@ export function CitaDialogs({
         isOpen={cancelOpen}
         onOpenChange={onCancelOpenChange}
         purpose="form"
-        width={480}
+        width="min(30rem, 94vw)"
+        maxHeight="85dvh"
         padding={5}
       >
-        <VStack className="lk-portal">
+        <VStack className="lk-portal fx-sheet-in">
           <DialogHeader
             title="¿Cancelar esta cita?"
             subtitle={`Política: mínimo ${minCancelHours} h antes de tu horario.`}
             onOpenChange={onCancelOpenChange}
           />
           <VStack gap={3} paddingBlockStart={4}>
+            {errorMessage ? (
+              <VStack className="fx-fade-up">
+                <Banner status="error" title="No se pudo cancelar" description={errorMessage} />
+              </VStack>
+            ) : null}
+
             <VStack gap={1.5}>
               <Text type="label" weight="semibold">
                 ¿Cuál es el motivo?
@@ -163,7 +191,9 @@ export function CitaDialogs({
                     key={option}
                     type="button"
                     label={option}
-                    size="sm"
+                    size="md"
+                    className="fx-press"
+                    aria-pressed={cancelReasonChoice === option}
                     variant={cancelReasonChoice === option ? 'primary' : 'secondary'}
                     onClick={() => onSelectCancelChip(option)}
                   />
@@ -182,12 +212,14 @@ export function CitaDialogs({
                 type="button"
                 label="Conservar cita"
                 variant="secondary"
+                className="fx-press"
                 onClick={() => onCancelOpenChange(false)}
               />
               <Button
                 type="button"
                 label="Sí, cancelar cita"
                 variant="destructive"
+                className="fx-press"
                 isLoading={busy}
                 onClick={onConfirmCancel}
               />

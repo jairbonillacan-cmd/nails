@@ -52,7 +52,7 @@ export function CitaActionsPanel({
 }: CitaActionsPanelProps) {
   const linkFeedback = useEphemeralMessage(2400);
   const lastFeedbackRef = useRef('');
-  const [copyOk, setCopyOk] = useState(false);
+  const [feedbackKind, setFeedbackKind] = useState<'copied' | 'downloaded' | 'error' | null>(null);
 
   const mapsUrl = resolveSafeHttpUrl(settings.mapsUrl);
   const showInspo = isDisplayableMediaUrl(booking.inspoPhotoUrl);
@@ -79,10 +79,10 @@ export function CitaActionsPanel({
   const handleCopyManageUrl = async () => {
     try {
       await navigator.clipboard.writeText(manageUrl);
-      setCopyOk(true);
+      setFeedbackKind('copied');
       announce('Enlace de tu cita copiado');
     } catch {
-      setCopyOk(false);
+      setFeedbackKind('error');
       announce('No se pudo copiar automáticamente; copia la dirección del navegador.');
     }
   };
@@ -97,14 +97,17 @@ export function CitaActionsPanel({
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(objectUrl);
-    setCopyOk(true);
+    setFeedbackKind('downloaded');
     announce('Código QR descargado');
   };
 
+  const isCopiedActive = Boolean(linkFeedback.message && feedbackKind === 'copied');
+  const isDownloadedActive = Boolean(linkFeedback.message && feedbackKind === 'downloaded');
+
   return (
     <VStack gap={4}>
-      {booking.status !== 'canceled' ? (
-        <VStack as="section" gap={3} className="ck-panel" aria-labelledby="ck-calendar-title">
+      {booking.status !== 'canceled' && booking.status !== 'completed' ? (
+        <VStack as="section" gap={3} className="ck-panel fx-fade-up" aria-labelledby="ck-calendar-title">
           <VStack gap={0.5}>
             <Heading level={2} id="ck-calendar-title" className="lk-serif rb-h2">
               Guarda tu cita
@@ -119,6 +122,7 @@ export function CitaActionsPanel({
               label="Google Calendar"
               variant="secondary"
               size="md"
+              className="fx-press"
               icon={<CalendarPlus size={16} aria-hidden="true" />}
               href={calendarLinks.google}
               target="_blank"
@@ -128,6 +132,7 @@ export function CitaActionsPanel({
               label="Apple / iPhone (.ics)"
               variant="secondary"
               size="md"
+              className="fx-press"
               icon={<Download size={16} aria-hidden="true" />}
               href={calendarLinks.icsDownload}
             />
@@ -135,6 +140,7 @@ export function CitaActionsPanel({
               label="Outlook"
               variant="secondary"
               size="md"
+              className="fx-press"
               icon={<CalendarPlus size={16} aria-hidden="true" />}
               href={calendarLinks.outlook}
               target="_blank"
@@ -144,6 +150,7 @@ export function CitaActionsPanel({
               label="Enviar por WhatsApp"
               variant="primary"
               size="md"
+              className="fx-press"
               icon={<MessageCircle size={16} aria-hidden="true" />}
               href={whatsappUrl}
               target="_blank"
@@ -153,7 +160,7 @@ export function CitaActionsPanel({
         </VStack>
       ) : null}
 
-      <VStack as="section" gap={4} className="ck-panel" aria-labelledby="ck-location-title">
+      <VStack as="section" gap={4} className="ck-panel fx-fade-up" aria-labelledby="ck-location-title">
         <VStack gap={0.5}>
           <Heading level={2} id="ck-location-title" className="lk-serif rb-h2">
             Ubicación y detalles
@@ -164,9 +171,17 @@ export function CitaActionsPanel({
         </VStack>
 
         <HStack gap={3} align="start">
-          <img src={LANDING_ASSETS.iconPin} alt="" width={24} height={24} className="ck-icon" />
+          <img
+            src={LANDING_ASSETS.iconPin}
+            alt=""
+            width={24}
+            height={24}
+            loading="lazy"
+            decoding="async"
+            className="ck-icon"
+          />
           <VStack gap={0.5} className="rb-grow">
-            <Text weight="semibold">{settings.address}</Text>
+            <Text weight="semibold" textWrap="pretty">{settings.address}</Text>
             {settings.bookingInstructionsText ? (
               <Text type="supporting" color="secondary" textWrap="pretty">
                 {settings.bookingInstructionsText}
@@ -181,6 +196,7 @@ export function CitaActionsPanel({
               label="Abrir en Google Maps"
               variant="primary"
               size="md"
+              className="fx-press"
               icon={<MapPin size={16} aria-hidden="true" />}
               href={mapsUrl}
               target="_blank"
@@ -191,6 +207,7 @@ export function CitaActionsPanel({
             label="WhatsApp del salón"
             variant="secondary"
             size="md"
+            className="fx-press"
             icon={<MessageCircle size={16} aria-hidden="true" />}
             href={whatsappUrl}
             target="_blank"
@@ -203,7 +220,7 @@ export function CitaActionsPanel({
             <Text type="supporting" color="secondary">
               Clienta
             </Text>
-            <Text weight="semibold">
+            <Text weight="semibold" style={{ overflowWrap: 'anywhere' }}>
               {booking.client.fullName}
               {booking.clientInstagram ? ` · ${booking.clientInstagram}` : ''}
             </Text>
@@ -219,7 +236,9 @@ export function CitaActionsPanel({
               <Text type="supporting" color="secondary">
                 Notas para tu artista
               </Text>
-              <Text textWrap="pretty">{booking.clientNotes}</Text>
+              <Text textWrap="pretty" style={{ overflowWrap: 'anywhere' }}>
+                {booking.clientNotes}
+              </Text>
             </VStack>
           ) : null}
         </VStack>
@@ -233,6 +252,8 @@ export function CitaActionsPanel({
               <img
                 src={booking.inspoPhotoUrl}
                 alt="Referencia de diseño"
+                loading="lazy"
+                decoding="async"
                 className="ck-proof-img"
               />
             </AspectRatio>
@@ -241,7 +262,7 @@ export function CitaActionsPanel({
       </VStack>
 
       {booking.status !== 'canceled' ? (
-        <VStack as="section" gap={3} className="ck-panel" aria-labelledby="ck-qr-title">
+        <VStack as="section" gap={3} className="ck-panel fx-fade-up" aria-labelledby="ck-qr-title">
           <HStack gap={4} align="center" className="ck-qr-wrap">
             <VStack className="ck-qr-box" align="center" justify="center">
               <img
@@ -249,6 +270,8 @@ export function CitaActionsPanel({
                 alt={qrLabel}
                 width={120}
                 height={120}
+                loading="lazy"
+                decoding="async"
                 className="ck-qr-img"
               />
             </VStack>
@@ -265,33 +288,41 @@ export function CitaActionsPanel({
               <HStack gap={2} wrap="wrap">
                 <Button
                   type="button"
-                  label={linkFeedback.message && copyOk ? 'Enlace copiado' : 'Copiar enlace'}
+                  label={isCopiedActive ? 'Enlace copiado' : 'Copiar enlace'}
                   variant="secondary"
-                  size="sm"
+                  size="md"
+                  className="fx-press"
                   icon={
-                    linkFeedback.message && copyOk ? (
-                      <Check size={14} aria-hidden="true" />
+                    isCopiedActive ? (
+                      <Check size={15} aria-hidden="true" className="fx-pop" />
                     ) : (
-                      <Copy size={14} aria-hidden="true" />
+                      <Copy size={15} aria-hidden="true" />
                     )
                   }
                   onClick={() => void handleCopyManageUrl()}
                 />
                 <Button
                   type="button"
-                  label="Descargar QR"
+                  label={isDownloadedActive ? 'QR descargado' : 'Descargar QR'}
                   variant="ghost"
-                  size="sm"
-                  icon={<Download size={14} aria-hidden="true" />}
+                  size="md"
+                  className="fx-press"
+                  icon={
+                    isDownloadedActive ? (
+                      <Check size={15} aria-hidden="true" className="fx-pop" />
+                    ) : (
+                      <Download size={15} aria-hidden="true" />
+                    )
+                  }
                   onClick={handleDownloadQrSvg}
                 />
               </HStack>
               <Text
                 type="supporting"
-                color={copyOk ? 'accent' : 'secondary'}
+                color={feedbackKind === 'error' ? 'secondary' : 'accent'}
                 role="status"
                 aria-live="polite"
-                className={linkFeedback.message ? undefined : 'rb-sr-only'}
+                className={linkFeedback.message ? 'fx-fade-up' : 'rb-sr-only'}
               >
                 {linkFeedback.message ?? ''}
               </Text>
@@ -301,7 +332,7 @@ export function CitaActionsPanel({
       ) : null}
 
       {canModify ? (
-        <VStack as="section" gap={3} className="ck-panel" aria-labelledby="ck-manage-title">
+        <VStack as="section" gap={3} className="ck-panel fx-fade-up" aria-labelledby="ck-manage-title">
           <VStack gap={0.5}>
             <Heading level={2} id="ck-manage-title" className="lk-serif rb-h2">
               ¿Necesitas hacer un cambio?
@@ -317,6 +348,7 @@ export function CitaActionsPanel({
               label="Reagendar"
               variant="secondary"
               size="md"
+              className="fx-press"
               icon={<RefreshCw size={15} aria-hidden="true" />}
               onClick={onOpenReschedule}
             />
@@ -325,21 +357,30 @@ export function CitaActionsPanel({
               label="Cancelar cita"
               variant="ghost"
               size="md"
+              className="fx-press"
               icon={<XCircle size={15} aria-hidden="true" />}
               onClick={onOpenCancel}
             />
           </HStack>
         </VStack>
-      ) : booking.status === 'canceled' ? (
-        <VStack as="section" gap={3} className="ck-panel" aria-labelledby="ck-rebook-title">
+      ) : booking.status === 'canceled' || booking.status === 'completed' ? (
+        <VStack as="section" gap={3} className="ck-panel fx-fade-up" aria-labelledby="ck-rebook-title">
           <Heading level={2} id="ck-rebook-title" className="lk-serif rb-h2">
-            ¿Quieres agendar otro día?
+            {booking.status === 'completed'
+              ? '¿Lista para tu próximo retoque?'
+              : '¿Quieres agendar otro día?'}
           </Heading>
           <Text color="secondary" textWrap="pretty">
             Puedes elegir un nuevo horario en línea en cualquier momento.
           </Text>
           <HStack>
-            <Button label="Agendar nueva cita" variant="primary" size="lg" href="/reservar" />
+            <Button
+              label="Agendar nueva cita"
+              variant="primary"
+              size="lg"
+              className="fx-press"
+              href="/reservar"
+            />
           </HStack>
         </VStack>
       ) : null}

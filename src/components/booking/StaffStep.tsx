@@ -4,6 +4,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Check, Sparkles } from 'lucide-react';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
@@ -40,24 +41,35 @@ export function StaffStep({
   const isFree = (staffId: string) => freeIds.has(staffId) && !takenStaffIds.has(staffId);
 
   return (
-    <VStack gap={5} className="rb-enter">
+    <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">
           ¿Con quién?
         </Heading>
         <Text color="secondary">
           Libres el {formatDateLongInTimezone(slot.startAt, timezone)} a las{' '}
-          {time}. Tu horario ya está apartado.
+          <Text color="inherit" weight="semibold" hasTabularNumbers>
+            {time}
+          </Text>
+          . Tu horario ya está apartado.
         </Text>
       </VStack>
 
-      {errorMessage ? <Banner status="warning" title="Esa artista ya no está libre" description={errorMessage} /> : null}
+      {isBusy ? (
+        <ProgressBar label="Actualizando tu apartado con la artista elegida" isIndeterminate />
+      ) : null}
 
-      <ul className="rb-artists" aria-label="Artista">
+      {errorMessage ? (
+        <VStack className="fx-fade-up">
+          <Banner status="warning" title="Esa artista ya no está libre" description={errorMessage} />
+        </VStack>
+      ) : null}
+
+      <ul className="rb-artists fx-stagger" aria-label="Artista">
         <li>
           <button
             type="button"
-            className="rb-opt rb-artist"
+            className="rb-opt rb-artist fx-card-lift fx-press"
             aria-pressed={chosenStaffId === 'any'}
             disabled={isBusy}
             onClick={() => onPickStaff('any')}
@@ -89,7 +101,7 @@ export function StaffStep({
             <li key={member.id}>
               <button
                 type="button"
-                className="rb-opt rb-artist"
+                className="rb-opt rb-artist fx-card-lift fx-press"
                 aria-pressed={isOn}
                 disabled={!free || isBusy}
                 onClick={() => onPickStaff(member.id)}
@@ -100,6 +112,8 @@ export function StaffStep({
                   alt=""
                   width={68}
                   height={68}
+                  loading="lazy"
+                  decoding="async"
                 />
                 <VStack gap={0} className="rb-grow">
                   <Text weight="medium" className="lk-serif rb-artist-name">

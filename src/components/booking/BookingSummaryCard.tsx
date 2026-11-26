@@ -51,7 +51,15 @@ export function BookingSummaryCard({
 
   return (
     <VStack gap={4} className="rb-summary">
-      <img className="rb-summary-cherries" src={LANDING_ASSETS.cherriesWhite} alt="" width={280} height={280} />
+      <img
+        className="rb-summary-cherries"
+        src={LANDING_ASSETS.cherriesWhite}
+        alt=""
+        width={280}
+        height={280}
+        loading="lazy"
+        decoding="async"
+      />
       <HStack justify="between" align="center" gap={2} wrap="wrap">
         <Heading level={2} id={headingId} color="inherit" className="lk-serif rb-summary-title">
           Tu cita
@@ -118,7 +126,7 @@ export function BookingSummaryCard({
       </VStack>
 
       {holdRemainingSec > 0 ? (
-        <VStack gap={1.5} className="rb-summary-hold">
+        <VStack gap={1.5} className="rb-summary-hold fx-fade-up">
           <HStack justify="between">
             <Text color="inherit" type="supporting">
               Te guardamos el horario

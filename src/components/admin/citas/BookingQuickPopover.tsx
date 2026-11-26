@@ -2,7 +2,6 @@
 
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Card } from '@astryxdesign/core/Card';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Badge } from '@astryxdesign/core/Badge';
@@ -138,7 +137,7 @@ export function BookingQuickPopover({
         }}
       />
 
-      <VStack gap={3} paddingBlockStart={4}>
+      <VStack gap={3} paddingBlockStart={4} className="fx-sheet-in">
         <HStack gap={2} align="center" wrap="wrap">
           <Badge variant={statusMeta.variant} label={statusMeta.label} />
           <Token size="sm" label={booking.bookingCode} />
@@ -153,55 +152,61 @@ export function BookingQuickPopover({
           ) : null}
         </HStack>
 
-        <Card variant="muted" padding={3}>
-          <VStack gap={1.5}>
-            <Text weight="semibold">
-              {booking.service.name}
-              {extraServiceNames.length > 0 ? ` + ${extraServiceNames.join(' + ')}` : ''}
+        <VStack className="ad-surface" data-tone="subtle" data-padded="true" gap={1.5}>
+          <Text weight="semibold">
+            {booking.service.name}
+            {extraServiceNames.length > 0 ? ` + ${extraServiceNames.join(' + ')}` : ''}
+          </Text>
+          <Text type="supporting" color="secondary" hasTabularNumbers>
+            {formatDateShortInTimezone(booking.startAt, timezone)} ·{' '}
+            {formatTimeInTimezone(booking.startAt, timezone, true)} –{' '}
+            {formatTimeInTimezone(booking.endAt, timezone, true)} (
+            {formatDuration(booking.totalDurationMinutes)})
+          </Text>
+          {booking.addons.length > 0 ? (
+            <Text type="supporting" color="secondary">
+              Extras: {booking.addons.map((a) => a.name).join(', ')}
             </Text>
+          ) : null}
+          <HStack gap={2} align="center" wrap="wrap">
             <Text type="supporting" color="secondary" hasTabularNumbers>
-              {formatDateShortInTimezone(booking.startAt, timezone)} ·{' '}
-              {formatTimeInTimezone(booking.startAt, timezone)} –{' '}
-              {formatTimeInTimezone(booking.endAt, timezone)} (
-              {formatDuration(booking.totalDurationMinutes)})
+              WhatsApp: {booking.client.phoneE164}
             </Text>
-            {booking.addons.length > 0 ? (
-              <Text type="supporting" color="secondary">
-                Extras: {booking.addons.map((a) => a.name).join(', ')}
-              </Text>
+            {proofMeta ? (
+              <Token size="sm" color={proofMeta.color} label={proofMeta.label} />
             ) : null}
-            <HStack gap={2} align="center" wrap="wrap">
-              <Text type="supporting" color="secondary" hasTabularNumbers>
-                WhatsApp: {booking.client.phoneE164}
-              </Text>
-              {proofMeta ? (
-                <Token size="sm" color={proofMeta.color} label={proofMeta.label} />
-              ) : null}
-            </HStack>
-          </VStack>
-        </Card>
-
-        <Card variant="muted" padding={3}>
-          <HStack justify="between" align="center" wrap="wrap" gap={2}>
-            <VStack gap={0.5}>
-              <Text type="supporting" color="secondary">
-                Total / Anticipo / Saldo
-              </Text>
-              <Text weight="semibold" hasTabularNumbers>
-                Total {formatCurrency(paymentSummary.totalPriceCents, currency)} · Pagado{' '}
-                {formatCurrency(paymentSummary.paidCents, currency)}
-              </Text>
-            </VStack>
-            <Badge
-              variant={paymentSummary.isFullyPaid ? 'success' : 'warning'}
-              label={
-                paymentSummary.isFullyPaid
-                  ? 'Pagado completo'
-                  : `Saldo ${formatCurrency(paymentSummary.remainingCents, currency)}`
-              }
-            />
           </HStack>
-        </Card>
+        </VStack>
+
+        <HStack
+          className="ad-surface"
+          data-tone={paymentSummary.isFullyPaid ? 'subtle' : 'warning'}
+          data-padded="true"
+          justify="between"
+          align="center"
+          wrap="wrap"
+          gap={2}
+        >
+          <VStack gap={0.5}>
+            <Text type="supporting" color="secondary">
+              Total / Anticipo / Saldo
+            </Text>
+            <Text weight="semibold" hasTabularNumbers>
+              Total {formatCurrency(paymentSummary.totalPriceCents, currency)} · Pagado{' '}
+              {formatCurrency(paymentSummary.paidCents, currency)}
+            </Text>
+          </VStack>
+          <Text
+            color="inherit"
+            className="ad-chip"
+            data-tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
+            hasTabularNumbers
+          >
+            {paymentSummary.isFullyPaid
+              ? 'Pagado completo'
+              : `Saldo ${formatCurrency(paymentSummary.remainingCents, currency)}`}
+          </Text>
+        </HStack>
 
         {booking.clientNotes ? (
           <Text type="supporting" color="secondary">
@@ -232,10 +237,10 @@ export function BookingQuickPopover({
 
           {canCollect ? (
             <Button
-              label="$ Cobrar"
+              label="Cobrar"
               variant="primary"
               size="sm"
-              icon={<DollarSign size={14} />}
+              icon={<DollarSign size={14} aria-hidden="true" />}
               onClick={() => {
                 onClose();
                 onOpenCheckout(booking);

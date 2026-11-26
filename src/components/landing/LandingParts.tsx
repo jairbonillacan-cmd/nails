@@ -50,6 +50,8 @@ export function SectionHeading({
         alt=""
         width={460}
         height={40}
+        loading="lazy"
+        decoding="async"
         style={{ width: isCentered ? 'min(30rem, 78%)' : 'min(18rem, 70%)', height: 'auto' }}
       />
       {subtitle ? (

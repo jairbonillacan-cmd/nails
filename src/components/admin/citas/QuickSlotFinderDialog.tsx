@@ -4,11 +4,9 @@ import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
 import { Token } from '@astryxdesign/core/Token';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Selector } from '@astryxdesign/core/Selector';
@@ -16,7 +14,7 @@ import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Clock, Sparkles } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import type { Service, StaffMember } from '@/lib/types';
@@ -195,7 +193,7 @@ export function QuickSlotFinderDialog({
         onOpenChange={onOpenChange}
       />
 
-      <VStack gap={4} paddingBlockStart={4}>
+      <VStack gap={4} paddingBlockStart={4} className="fx-sheet-in">
         <Grid columns={{ minWidth: 220, max: 2 }} gap={3}>
           <Selector
             label="Servicio principal"
@@ -278,32 +276,50 @@ export function QuickSlotFinderDialog({
         ) : null}
 
         {loading ? (
-          <Card variant="muted" padding={4}>
-            <HStack gap={2} align="center">
-              <Sparkles size={15} aria-hidden="true" />
-              <Text color="secondary">Buscando los horarios libres más cercanos...</Text>
-            </HStack>
-          </Card>
+          <VStack
+            className="ad-surface"
+            data-tone="subtle"
+            data-padded="true"
+            gap={3}
+            role="status"
+            aria-busy="true"
+          >
+            <Text className="rb-sr-only">Buscando los horarios libres más cercanos...</Text>
+            <VStack className="ad-skeleton" data-size="line" data-width="short" aria-hidden="true" />
+            <VStack className="rb-skeleton-slots" gap={0} aria-hidden="true">
+              <VStack className="ad-skeleton" data-size="slot" />
+              <VStack className="ad-skeleton" data-size="slot" />
+              <VStack className="ad-skeleton" data-size="slot" />
+              <VStack className="ad-skeleton" data-size="slot" />
+              <VStack className="ad-skeleton" data-size="slot" />
+              <VStack className="ad-skeleton" data-size="slot" />
+            </VStack>
+          </VStack>
         ) : groupedSlots.length === 0 ? (
-          <EmptyState
-            title="Sin horarios libres en este rango"
-            description="Prueba ampliando el horizonte a 30 días o eligiendo Sin preferencia de especialista."
-          />
+          <VStack className="ad-empty" gap={2}>
+            <EmptyState
+              isCompact
+              title="Sin horarios libres en este rango"
+              description="Prueba ampliando el horizonte a 30 días o eligiendo Sin preferencia de especialista."
+            />
+          </VStack>
         ) : (
-          <VStack gap={3}>
+          <VStack gap={3} className="fx-stagger">
             {groupedSlots.map(([dateKey, periods]) => {
               const totalInDay =
                 periods.Mañana.length + periods.Tarde.length + periods.Noche.length;
               return (
-                <Card key={dateKey} variant="muted" padding={3}>
-                  <VStack gap={2}>
-                    <HStack justify="between" align="center">
-                      <Heading level={4}>
-                        {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)}
-                      </Heading>
-                      <Badge variant="info" label={String(totalInDay)} />
-                    </HStack>
+                <VStack key={dateKey} className="ad-surface" gap={0}>
+                  <HStack className="ad-section-head" justify="between" align="center">
+                    <Heading level={4} className="lk-serif ad-h3">
+                      {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)}
+                    </Heading>
+                    <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
+                      {totalInDay} {totalInDay === 1 ? 'horario' : 'horarios'}
+                    </Text>
+                  </HStack>
 
+                  <VStack padding={4} gap={3}>
                     {(['Mañana', 'Tarde', 'Noche'] as const).map((period) => {
                       const periodSlots = periods[period];
                       if (periodSlots.length === 0) return null;
@@ -340,7 +356,7 @@ export function QuickSlotFinderDialog({
                       );
                     })}
                   </VStack>
-                </Card>
+                </VStack>
               );
             })}
           </VStack>

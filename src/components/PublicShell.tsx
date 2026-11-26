@@ -1,181 +1,70 @@
 'use client';
 
-import React from 'react';
-import { usePathname } from 'next/navigation';
-import { AppShell } from '@astryxdesign/core/AppShell';
-import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
-import { Button } from '@astryxdesign/core/Button';
+import type React from 'react';
+import NextLink from 'next/link';
 import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
-import { Section } from '@astryxdesign/core/Section';
 import { Text } from '@astryxdesign/core/Text';
-import { Link } from '@astryxdesign/core/Link';
-import { Divider } from '@astryxdesign/core/Divider';
-import { CalendarDays, Moon, Sun } from 'lucide-react';
-import { useSalonAppearance } from './SalonThemeProvider';
 import { buildWhatsAppLink } from '@/lib/format';
-
-const DEFAULT_INSTAGRAM_HANDLE = '@laikona.nailsss';
-
-function normalizeInstagramHandle(value: string | null | undefined, fallback: string): string {
-  const cleaned = value?.trim() ?? '';
-  if (!cleaned) return fallback;
-  return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
-}
-
-function buildInstagramUrl(handle: string): string {
-  const slug = handle.replace(/^@+/, '').replace(/[^a-zA-Z0-9._]/g, '');
-  return `https://www.instagram.com/${encodeURIComponent(slug || 'laikona.nailsss')}/`;
-}
+import { useSalonAppearance } from './SalonThemeProvider';
+import { BookingHeader } from './booking/BookingChrome';
+import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
 
 export function PublicShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const { mode, setMode, settings } = useSalonAppearance();
-  const logo = settings.logoUrl?.trim() || '/brand/laikona-logo-instagram.svg';
-  const logoColorScheme = mode === 'system' ? 'light dark' : mode;
-
-  const toggleMode = () => {
-    setMode(mode === 'dark' ? 'light' : 'dark');
-  };
-
+  const { settings } = useSalonAppearance();
   const whatsappDirect = buildWhatsAppLink(
     settings.whatsappNumber,
     `Hola ${settings.name}, tengo una consulta sobre citas.`,
   );
-  const instagramHandle = normalizeInstagramHandle(
-    settings.instagramHandle,
-    DEFAULT_INSTAGRAM_HANDLE,
-  );
-  const instagramUrl = buildInstagramUrl(instagramHandle);
+  const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
+  const instagramUrl = resolveInstagramUrl(settings);
+  const year = settings.updatedAt.slice(0, 4);
 
   return (
-    <AppShell
-      height="auto"
-      variant="surface"
-      contentPadding={0}
-      topNav={
-        <TopNav
-          label="Navegación principal del salón"
-          heading={
-            <TopNavHeading
-              headingHref="/"
-              logoLabel={`${settings.name} — Inicio`}
-              logo={
-                <img
-                  src={logo}
-                  alt=""
-                  style={{ height: '2.25rem', width: 'auto', display: 'block', colorScheme: logoColorScheme }}
-                />
-              }
-            />
-          }
-          startContent={
-            <>
-              <TopNavItem label="Inicio" href="/" isSelected={pathname === '/'} />
-              <TopNavItem label="Servicios" href="/#servicios" />
-              <TopNavItem label="Galería" href="/#galeria" />
-              <TopNavItem
-                label="Reservar"
-                href="/reservar"
-                isSelected={pathname.startsWith('/reservar')}
-              />
-            </>
-          }
-          endContent={
-            <HStack gap={2} align="center">
-              <Button
-                label={mode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                variant="ghost"
-                size="sm"
-                isIconOnly
-                icon={mode === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-                onClick={toggleMode}
-                tooltip={mode === 'dark' ? 'Modo claro' : 'Modo oscuro'}
-              />
-              <Button
-                label="Panel"
-                variant="ghost"
-                size="sm"
-                href="/admin"
-              />
-              <Button
-                label="Agendar cita"
-                variant="primary"
-                size="sm"
-                icon={<CalendarDays size={16} />}
-                href="/reservar"
-              />
-            </HStack>
-          }
-        />
-      }
-    >
-      <VStack gap={0} width="100%">
+    <VStack className="lk-root rb-root" gap={0} width="100%">
+      <BookingHeader salonName={settings.name} whatsappUrl={whatsappDirect} />
+
+      <VStack as="main" gap={0} width="100%" style={{ flex: '1 1 auto' }}>
         {children}
-
-        <Section variant="muted" paddingBlock={6} paddingInline={4} dividers={['top']}>
-          <VStack gap={4} maxWidth={1160} width="100%" style={{ marginInline: 'auto' }}>
-            <HStack gap={6} justify="between" align="start" wrap="wrap">
-              <VStack gap={2} maxWidth={380} align="start">
-                <img
-                  src={logo}
-                  alt={settings.name}
-                  style={{ height: '3rem', width: 'auto', display: 'block', colorScheme: logoColorScheme }}
-                />
-                <Text type="supporting" color="secondary">
-                  {settings.tagline}
-                </Text>
-                <Text type="supporting" color="secondary">
-                  {settings.address}
-                </Text>
-              </VStack>
-
-              <HStack gap={6} wrap="wrap">
-                <VStack gap={1.5}>
-                  <Text type="label" weight="semibold">
-                    Reservas
-                  </Text>
-                  <Link href="/reservar" type="supporting">
-                    Agendar en tiempo real
-                  </Link>
-                  <Link href="/#servicios" type="supporting">
-                    Catálogo y precios
-                  </Link>
-                  <Link href="/#politicas" type="supporting">
-                    Políticas y anticipos
-                  </Link>
-                </VStack>
-
-                <VStack gap={1.5}>
-                  <Text type="label" weight="semibold">
-                    Contacto
-                  </Text>
-                  <Link href={instagramUrl} isExternalLink type="supporting">
-                    Instagram ({instagramHandle})
-                  </Link>
-                  <Link href={whatsappDirect} isExternalLink type="supporting">
-                    WhatsApp ({settings.whatsappNumber})
-                  </Link>
-                  <Link href={settings.mapsUrl} isExternalLink type="supporting">
-                    Cómo llegar (Google Maps)
-                  </Link>
-                </VStack>
-              </HStack>
-            </HStack>
-
-            <Divider />
-
-            <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <Text type="supporting" color="secondary">
-                © {settings.updatedAt.slice(0, 4)} {settings.name} · {settings.city || 'Puebla, México'}
-              </Text>
-              <Link href="/admin" type="supporting" color="secondary">
-                Acceso para equipo y administración
-              </Link>
-            </HStack>
-          </VStack>
-        </Section>
       </VStack>
-    </AppShell>
+
+      <VStack as="footer" className="ck-footer">
+        <HStack justify="between" align="center" wrap="wrap" gap={3} className="rb-wrap">
+          <Text type="supporting" color="secondary" textWrap="pretty">
+            © {year} {settings.name} · {settings.address}
+          </Text>
+          <HStack gap={4} wrap="wrap">
+            <NextLink className="ck-footer-link" href="/">
+              Inicio
+            </NextLink>
+            <NextLink className="ck-footer-link" href="/reservar">
+              Agendar cita
+            </NextLink>
+            <NextLink className="ck-footer-link" href="/links">
+              Accesos rápidos
+            </NextLink>
+            <a
+              className="ck-footer-link"
+              href={instagramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {instagramHandle}
+            </a>
+            <a
+              className="ck-footer-link"
+              href={whatsappDirect}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              WhatsApp
+            </a>
+            <NextLink className="ck-footer-link" href="/aviso-de-privacidad">
+              Aviso de privacidad
+            </NextLink>
+          </HStack>
+        </HStack>
+      </VStack>
+    </VStack>
   );
 }

@@ -113,7 +113,6 @@ export function BookingWidget({
 }: BookingWidgetProps) {
   const router = useRouter();
   const [flow, dispatch] = useReducer(bookingReducer, undefined, createInitialBookingFlowState);
-  const panelRef = useRef<HTMLElement>(null);
   const timezone = settings.timezone || 'America/Mexico_City';
   const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
@@ -182,6 +181,7 @@ export function BookingWidget({
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCouponState | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -387,9 +387,8 @@ export function BookingWidget({
   ]);
 
   const revealPanel = () => {
-    const panel = panelRef.current;
-    if (panel && panel.getBoundingClientRect().top < 0) {
-      panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (typeof window !== 'undefined' && window.scrollY > 0) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -454,6 +453,7 @@ export function BookingWidget({
     setIsBusy(false);
     if (!result.ok) {
       dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
+      revealPanel();
       void fetchAvailability();
       return;
     }
@@ -504,15 +504,29 @@ export function BookingWidget({
   };
 
   const handleApplyCoupon = async () => {
-    if (!couponInput.trim()) return;
+    if (!couponInput.trim() || couponLoading) return;
     setCouponError(null);
-    const result = await validateCouponCode(couponInput, subtotalCents);
-    if (!result.valid) {
+    setCouponLoading(true);
+    try {
+      const result = await validateCouponCode(couponInput, subtotalCents);
+      if (!result.valid) {
+        setAppliedCoupon(null);
+        setCouponError(result.error);
+        return;
+      }
+      setAppliedCoupon(result.coupon);
+    } catch {
       setAppliedCoupon(null);
-      setCouponError(result.error);
-      return;
+      setCouponError('Error de conexión al validar el cupón. Intenta de nuevo.');
+    } finally {
+      setCouponLoading(false);
     }
-    setAppliedCoupon(result.coupon);
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError(null);
+    setCouponInput('');
   };
 
   const fieldErrors = hasTriedSubmit ? validateClientFields(clientName, clientPhone) : EMPTY_FIELD_ERRORS;
@@ -565,6 +579,7 @@ export function BookingWidget({
 
       if (result.kind === 'conflict') {
         dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
+        revealPanel();
         void fetchAvailability();
         return;
       }
@@ -575,6 +590,7 @@ export function BookingWidget({
           code: result.code ?? null,
           activeBookings: result.activeBookings,
         });
+        revealPanel();
         return;
       }
       dispatch({ type: 'SUBMIT_CONFIRMED', manageUrl: result.manageUrl });
@@ -690,7 +706,7 @@ export function BookingWidget({
         label={nextLabel}
         width={fullWidth ? '100%' : undefined}
         isLoading={flow.phase === 'submitting'}
-        className="rb-cta"
+        className="rb-cta fx-press"
       />
     ) : (
       <Button
@@ -701,7 +717,7 @@ export function BookingWidget({
         isDisabled={!canContinue || isBusy}
         isLoading={isBusy && step === 'staff'}
         onClick={handleNext}
-        className="rb-cta"
+        className="rb-cta fx-press"
       />
     );
 
@@ -722,31 +738,35 @@ export function BookingWidget({
 
       <VStack as="main" className="rb-wrap rb-main">
         <VStack className="rb-layout">
-          <VStack as="section" ref={panelRef} className="rb-panel" aria-label={STEP_LABELS[step]}>
+          <VStack as="section" className="rb-panel" aria-label={STEP_LABELS[step]}>
             {flow.conflict ? (
-              <Banner
-                status="warning"
-                title="Ese horario se acaba de ocupar"
-                description={flow.conflict.message}
-                isDismissable
-                onDismiss={() => dispatch({ type: 'DISMISS_CONFLICT' })}
-              >
-                {flow.conflict.suggestions.length > 0 ? (
-                  <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
-                    {flow.conflict.suggestions.slice(0, 3).map((alt) => (
-                      <Button
-                        key={`${alt.staffId}-${alt.startAt}`}
-                        variant="secondary"
-                        size="sm"
-                        label={`${formatDateShortInTimezone(alt.startAt, timezone)} · ${
-                          timeFormat === '24h' ? alt.localTime24 : alt.localTime12
-                        }`}
-                        onClick={() => void handleSelectSlot(alt)}
-                      />
-                    ))}
-                  </HStack>
-                ) : null}
-              </Banner>
+              <VStack className="fx-fade-up">
+                <Banner
+                  status="warning"
+                  title="Ese horario se acaba de ocupar"
+                  description={flow.conflict.message}
+                  isDismissable
+                  onDismiss={() => dispatch({ type: 'DISMISS_CONFLICT' })}
+                >
+                  {flow.conflict.suggestions.length > 0 ? (
+                    <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
+                      {flow.conflict.suggestions.slice(0, 3).map((alt) => (
+                        <Button
+                          key={`${alt.staffId}-${alt.startAt}`}
+                          variant="secondary"
+                          size="md"
+                          className="fx-press fx-tabular"
+                          isDisabled={isBusy}
+                          label={`${formatDateShortInTimezone(alt.startAt, timezone)} · ${
+                            timeFormat === '24h' ? alt.localTime24 : alt.localTime12
+                          }`}
+                          onClick={() => void handleSelectSlot(alt)}
+                        />
+                      ))}
+                    </HStack>
+                  ) : null}
+                </Banner>
+              </VStack>
             ) : null}
 
             {step === 'service' ? (
@@ -843,6 +863,7 @@ export function BookingWidget({
                 couponInput={couponInput}
                 appliedCoupon={appliedCoupon}
                 couponError={couponError}
+                couponLoading={couponLoading}
                 clientName={clientName}
                 clientPhone={clientPhone}
                 clientInstagram={clientInstagram}
@@ -861,6 +882,7 @@ export function BookingWidget({
                 activeBookings={flow.activeBookings}
                 onChangeCouponInput={setCouponInput}
                 onApplyCoupon={() => void handleApplyCoupon()}
+                onRemoveCoupon={handleRemoveCoupon}
                 onChangeClientName={setClientName}
                 onChangeClientPhone={setClientPhone}
                 onChangeClientInstagram={setClientInstagram}
@@ -887,6 +909,7 @@ export function BookingWidget({
                 label="Atrás"
                 variant="secondary"
                 size="lg"
+                className="fx-press"
                 isDisabled={!backTarget}
                 onClick={() => {
                   if (backTarget) goToStep(backTarget);
@@ -912,14 +935,14 @@ export function BookingWidget({
       <HStack justify="between" align="center" gap={3} className="rb-bottom rb-m">
         <button
           type="button"
-          className="rb-bottom-summary"
+          className="rb-bottom-summary fx-press"
           aria-haspopup="dialog"
           onClick={() => setSummaryOpen(true)}
         >
           <Text className="lk-serif rb-bottom-total" hasTabularNumbers>
             {formatServicePrice(totalPriceCents, hasStartingPrice, settings.currency)}
           </Text>
-          <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint">
+          <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint" hasTabularNumbers>
             {formatDuration(totalDurationMinutes)} · Ver resumen
             <ChevronUp size={14} aria-hidden="true" />
           </Text>
@@ -928,7 +951,7 @@ export function BookingWidget({
       </HStack>
 
       <BottomSheet isOpen={summaryOpen} onOpenChange={setSummaryOpen} label="Resumen de tu cita" padding={0} height="hug">
-        <VStack className="lk-portal rb-sheet">
+        <VStack className="lk-portal rb-sheet fx-sheet-in">
           <BookingSummaryCard {...summaryProps} headingId="rb-summary-sheet" />
         </VStack>
       </BottomSheet>

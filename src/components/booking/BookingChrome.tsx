@@ -43,14 +43,14 @@ export function BookingHeader({
       <nav className="rb-header-bar" aria-label="Reserva">
         <HStack align="center">
           {onBack ? (
-            <button type="button" className="rb-ghost" onClick={onBack} aria-label="Paso anterior">
+            <button type="button" className="rb-ghost fx-press" onClick={onBack} aria-label="Paso anterior">
               <ChevronLeft size={20} aria-hidden="true" />
               <Text color="inherit" weight="semibold" className="rb-d">
                 Atrás
               </Text>
             </button>
           ) : (
-            <NextLink className="rb-ghost" href="/" aria-label="Volver al inicio">
+            <NextLink className="rb-ghost fx-press" href="/" aria-label="Volver al inicio">
               <ChevronLeft size={20} aria-hidden="true" />
               <Text color="inherit" weight="semibold" className="rb-d">
                 Inicio
@@ -59,16 +59,36 @@ export function BookingHeader({
           )}
         </HStack>
         <NextLink href="/" aria-label={`${salonName}, inicio`} className="rb-logo-link">
-          <img className="rb-logo" src={LANDING_ASSETS.logoBlack} alt={salonName} width={120} height={50} />
+          <img
+            className="rb-logo"
+            src={LANDING_ASSETS.logoBlack}
+            alt={salonName}
+            width={120}
+            height={50}
+            fetchPriority="high"
+            decoding="async"
+          />
         </NextLink>
         <HStack align="center" justify="end" gap={1}>
           {holdRemainingSec > 0 ? (
-            <p className="rb-timer" role="timer" aria-label="Tiempo restante de apartado">
+            <p
+              className="rb-timer fx-tabular fx-pop"
+              role="timer"
+              aria-live="off"
+              aria-label="Tiempo restante de apartado"
+              data-urgent={holdRemainingSec <= 60 ? 'true' : 'false'}
+            >
               <Timer size={14} aria-hidden="true" />
               {formatHoldClock(holdRemainingSec)}
             </p>
           ) : null}
-          <a className="rb-ghost" href={whatsappUrl} aria-label="Ayuda por WhatsApp" target="_blank" rel="noopener noreferrer">
+          <a
+            className="rb-ghost fx-press"
+            href={whatsappUrl}
+            aria-label="Ayuda por WhatsApp"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <MessageCircle size={20} aria-hidden="true" />
             <Text color="inherit" weight="semibold" className="rb-d">
               Ayuda
@@ -99,14 +119,28 @@ export function BookingHero({ step, completedSteps, onGoToStep }: BookingHeroPro
 
   return (
     <VStack as="section" className="rb-hero" aria-labelledby="rb-title">
-      <img className="rb-hero-cherries" src={LANDING_ASSETS.cherriesWhite} alt="" width={340} height={340} />
+      <img
+        className="rb-hero-cherries"
+        src={LANDING_ASSETS.cherriesWhite}
+        alt=""
+        width={340}
+        height={340}
+        decoding="async"
+      />
       <VStack gap={4} className="rb-wrap rb-hero-inner">
         <HStack justify="between" align="end" wrap="wrap" gap={2}>
           <VStack gap={1}>
             <Heading level={1} id="rb-title" color="inherit" className="lk-serif rb-hero-title">
               Reserva tu cita
             </Heading>
-            <img className="rb-hero-stroke" src={LANDING_ASSETS.strokePorcelain} alt="" width={180} height={20} />
+            <img
+              className="rb-hero-stroke"
+              src={LANDING_ASSETS.strokePorcelain}
+              alt=""
+              width={180}
+              height={20}
+              decoding="async"
+            />
           </VStack>
           <Text color="inherit" className="rb-live rb-d">
             Horarios en tiempo real
@@ -122,7 +156,7 @@ export function BookingHero({ step, completedSteps, onGoToStep }: BookingHeroPro
               <li key={item}>
                 <button
                   type="button"
-                  className="rb-step"
+                  className="rb-step fx-press"
                   data-current={isCurrent ? 'true' : 'false'}
                   aria-current={isCurrent ? 'step' : undefined}
                   disabled={!isReachable}

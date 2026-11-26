@@ -191,7 +191,7 @@ export function DashboardAgendaCard({
             aria-selected={day === 'hoy'}
             aria-controls="ad-agenda-panel"
             tabIndex={day === 'hoy' ? 0 : -1}
-            className="ad-tab"
+            className="ad-tab fx-press"
             onClick={() => setDay('hoy')}
             onKeyDown={handleTabKeyDown}
           >
@@ -204,7 +204,7 @@ export function DashboardAgendaCard({
             aria-selected={day === 'manana'}
             aria-controls="ad-agenda-panel"
             tabIndex={day === 'manana' ? 0 : -1}
-            className="ad-tab"
+            className="ad-tab fx-press"
             onClick={() => setDay('manana')}
             onKeyDown={handleTabKeyDown}
           >
@@ -217,7 +217,7 @@ export function DashboardAgendaCard({
         <HStack gap={2} wrap="wrap" className="ad-filter-bar" aria-label="Filtrar por artista">
           <button
             type="button"
-            className="ad-pill ad-artist-pill"
+            className="ad-pill ad-artist-pill fx-press"
             data-on={effectiveStaffId === 'all' ? 'true' : 'false'}
             aria-pressed={effectiveStaffId === 'all'}
             onClick={() => setSelectedStaffId('all')}
@@ -236,7 +236,7 @@ export function DashboardAgendaCard({
               <button
                 key={member.id}
                 type="button"
-                className="ad-pill ad-artist-pill"
+                className="ad-pill ad-artist-pill fx-press"
                 data-on={isSelected ? 'true' : 'false'}
                 aria-pressed={isSelected}
                 onClick={() => setSelectedStaffId(member.id)}
@@ -254,9 +254,11 @@ export function DashboardAgendaCard({
       ) : null}
 
       <VStack
+        key={`${day}-${effectiveStaffId}`}
         id="ad-agenda-panel"
         role="tabpanel"
         aria-labelledby={day === 'hoy' ? 'ad-tab-hoy' : 'ad-tab-manana'}
+        className="fx-step-in"
         gap={0}
       >
         {filteredBookings.length === 0 ? (
