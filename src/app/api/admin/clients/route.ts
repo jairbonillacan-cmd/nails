@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const nearRewardClients = await getNearRewardClientsAsync();
+  const db = await getRepository().getSnapshot();
+  const nearRewardClients = await getNearRewardClientsAsync(db);
   const inactiveDaysParam = searchParams.get('inactiveDays')?.trim();
   if (inactiveDaysParam) {
     const parsedDays = Number(inactiveDaysParam);
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    const inactiveClients = await getInactiveClientsAsync(parsedDays);
+    const inactiveClients = await getInactiveClientsAsync(parsedDays, db);
     return NextResponse.json({
       inactiveDays: parsedDays,
       clients: inactiveClients,
@@ -56,7 +57,6 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const db = await getRepository().getSnapshot();
   return NextResponse.json({
     clients: db.clients,
     nearRewardClients,

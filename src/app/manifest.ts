@@ -6,8 +6,7 @@ import { DEFAULT_BRAND_ACCENT_LIGHT } from '@/lib/theme-presets';
 export const dynamic = 'force-dynamic';
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const settings = toPublicSettingsDTO(await getRepository().getSalonSettings());
   return {
     name: `${settings.name} — Agenda y Estudio de Uñas`,
     short_name: settings.name,

@@ -17,8 +17,7 @@ import { LandingView } from '@/components/LandingView';
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const settings = toPublicSettingsDTO(await getRepository().getSalonSettings());
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const title = `${settings.name} — Manicure, Rubber y Nail Art en ${cityShort}`;
   const description = `Manicure, rubber, acrílico escultural, softgel y nail art en ${cityShort}. Consulta precios, horarios en vivo y agenda tu cita en línea en ${settings.name}.`;

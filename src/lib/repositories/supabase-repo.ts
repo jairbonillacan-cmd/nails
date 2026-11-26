@@ -21,6 +21,7 @@ import {
   getWhatsAppTemplateNameOverrides,
 } from '../env';
 import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
+import { logError } from '../logger';
 import {
   toPublicServiceDTO,
   toPublicSettingsDTO,
@@ -1241,37 +1242,32 @@ export function createSupabaseRepository(
       ),
     );
 
-    const [
-      settingsRes,
-      servicesRes,
-      extraServicesRes,
-      addonsRes,
-      staffRes,
-      staffServicesRes,
-      schedulesRes,
-      rulesRes,
-      publicOverridesRes,
-      recurringBlocksRes,
-      busyIntervalsRes,
-      holdsRes,
-      calRes,
-    ] = await Promise.all([
-      supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
-      supabase.from('services').select('*').eq('id', params.serviceId).maybeSingle(),
-      uniqueExtraIds.length > 0
-        ? supabase.from('services').select('*').in('id', uniqueExtraIds).eq('is_active', true)
-        : Promise.resolve({ data: [] as Tables['services']['Row'][] }),
-      supabase.from('service_addons').select('*').eq('is_active', true),
-      supabase.from('staff_members').select('*').eq('is_active', true),
-      supabase.from('staff_services').select('*'),
-      supabase.from('availability_schedules').select('*'),
-      supabase.from('availability_rules').select('*'),
-      supabase.from('public_busy_overrides').select('*'),
-      supabase.from('recurring_blocks').select('*').eq('is_active', true),
-      supabase.from('public_busy_intervals').select('*'),
-      supabase.from('slot_holds').select('*').gt('expires_at', nowIso),
-      supabase.from('calendar_connections').select('*').eq('is_connected', true),
-    ]);
+    const [settingsRes, servicesRes, extraServicesRes, addonsRes, staffRes] =
+      await Promise.all([
+        supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('services').select('*').eq('id', params.serviceId).maybeSingle(),
+        uniqueExtraIds.length > 0
+          ? supabase.from('services').select('*').in('id', uniqueExtraIds).eq('is_active', true)
+          : Promise.resolve({ data: [] as Tables['services']['Row'][] }),
+        supabase.from('service_addons').select('*').eq('is_active', true),
+        supabase.from('staff_members').select('*').eq('is_active', true),
+      ]);
+
+    const [staffServicesRes, schedulesRes, rulesRes, publicOverridesRes] =
+      await Promise.all([
+        supabase.from('staff_services').select('*'),
+        supabase.from('availability_schedules').select('*'),
+        supabase.from('availability_rules').select('*'),
+        supabase.from('public_busy_overrides').select('*'),
+      ]);
+
+    const [recurringBlocksRes, busyIntervalsRes, holdsRes, calRes] =
+      await Promise.all([
+        supabase.from('recurring_blocks').select('*').eq('is_active', true),
+        supabase.from('public_busy_intervals').select('*'),
+        supabase.from('slot_holds').select('*').gt('expires_at', nowIso),
+        supabase.from('calendar_connections').select('*').eq('is_connected', true),
+      ]);
 
     if (!settingsRes.data) {
       throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
@@ -1371,6 +1367,27 @@ export function createSupabaseRepository(
     return { settings, service, extraServices, addons, eligibleStaff, ctx };
   }
 
+  async function getSalonSettings(): Promise<SalonSettings> {
+    const supabase = getClient();
+    const settingsRes = await supabase
+      .from('salon_settings')
+      .select('*')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (!settingsRes.data) {
+      if (settingsRes.error) {
+        logError('supabase_salon_settings_error', {
+          code: settingsRes.error.code,
+          message: settingsRes.error.message,
+        });
+      }
+      throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+    }
+
+    return mapSettingsRow(settingsRes.data);
+  }
+
   async function getSnapshot(): Promise<Readonly<DemoDatabase>> {
     const supabase = getClient();
     const nowIso = clock.now().toISOString();
@@ -1382,35 +1399,6 @@ export function createSupabaseRepository(
       adminUsersRes,
       categoriesRes,
       servicesRes,
-      addonsRes,
-      schedulesRes,
-      rulesRes,
-      overridesRes,
-      calendarsRes,
-      clientsRes,
-      holdsRes,
-      bookingsRes,
-      bookingAddonsRes,
-      workflowsRes,
-      notificationsRes,
-      galleryRes,
-      couponsRes,
-      waitlistRes,
-      reviewsRes,
-      inventoryRes,
-      movementsRes,
-      cashRes,
-      paymentSplitsRes,
-      recurringBlocksRes,
-      loyaltyProgramsRes,
-      loyaltyStampsRes,
-      couponRedemptionsRes,
-      consentsRes,
-      auditLogsRes,
-      bookingPaymentsRes,
-      mediaAssetsRes,
-      whatsappTemplatesRes,
-      whatsappMonthlyUsageRes,
     ] = await Promise.all([
       supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
       supabase.from('staff_members').select('*'),
@@ -1418,40 +1406,95 @@ export function createSupabaseRepository(
       supabase.from('admin_users').select('*'),
       supabase.from('service_categories').select('*'),
       supabase.from('services').select('*'),
+    ]);
+
+    if (!settingsRes.data) {
+      if (settingsRes.error) {
+        logError('supabase_snapshot_settings_error', {
+          code: settingsRes.error.code,
+          message: settingsRes.error.message,
+        });
+      }
+      throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+    }
+
+    const [
+      addonsRes,
+      schedulesRes,
+      rulesRes,
+      overridesRes,
+      calendarsRes,
+      clientsRes,
+    ] = await Promise.all([
       supabase.from('service_addons').select('*'),
       supabase.from('availability_schedules').select('*'),
       supabase.from('availability_rules').select('*'),
       supabase.from('date_overrides').select('*'),
       supabase.from('calendar_connections').select('*'),
       supabase.from('clients').select('*'),
+    ]);
+
+    const [
+      holdsRes,
+      bookingsRes,
+      bookingAddonsRes,
+      workflowsRes,
+      notificationsRes,
+      galleryRes,
+    ] = await Promise.all([
       supabase.from('slot_holds').select('*').gt('expires_at', nowIso),
       supabase.from('bookings').select('*'),
       supabase.from('booking_addons').select('*'),
       supabase.from('notification_workflows').select('*'),
       supabase.from('scheduled_notifications').select('*'),
       supabase.from('gallery_items').select('*'),
+    ]);
+
+    const [
+      couponsRes,
+      waitlistRes,
+      reviewsRes,
+      inventoryRes,
+      movementsRes,
+      cashRes,
+    ] = await Promise.all([
       supabase.from('coupons').select('*'),
       supabase.from('waitlist_entries').select('*'),
       supabase.from('booking_reviews').select('*'),
       supabase.from('inventory_items').select('*'),
       supabase.from('inventory_movements').select('*'),
       supabase.from('cash_register_entries').select('*'),
+    ]);
+
+    const [
+      paymentSplitsRes,
+      recurringBlocksRes,
+      loyaltyProgramsRes,
+      loyaltyStampsRes,
+      couponRedemptionsRes,
+      consentsRes,
+    ] = await Promise.all([
       supabase.from('payment_splits').select('*'),
       supabase.from('recurring_blocks').select('*'),
       supabase.from('loyalty_programs').select('*'),
       supabase.from('loyalty_stamps').select('*'),
       supabase.from('coupon_redemptions').select('*'),
       supabase.from('consents').select('*'),
+    ]);
+
+    const [
+      auditLogsRes,
+      bookingPaymentsRes,
+      mediaAssetsRes,
+      whatsappTemplatesRes,
+      whatsappMonthlyUsageRes,
+    ] = await Promise.all([
       supabase.from('audit_logs').select('*'),
       supabase.from('booking_payments').select('*'),
       supabase.from('media_assets').select('*'),
       supabase.from('whatsapp_templates').select('*'),
       supabase.from('whatsapp_monthly_usage').select('*'),
     ]);
-
-    if (!settingsRes.data) {
-      throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
-    }
 
     const staffLinks = staffServicesRes.data ?? [];
     const ruleRows = rulesRes.data ?? [];
@@ -1669,24 +1712,18 @@ export function createSupabaseRepository(
   }
 
   return {
+    getSalonSettings,
     getSnapshot,
 
     async getPublicBootstrap(): Promise<PublicBootstrapData> {
       const supabase = getClient();
-      const [
-        settingsRes,
-        categoriesRes,
-        servicesRes,
-        addonsRes,
-        staffRes,
-        staffServicesRes,
-        galleryRes,
-        reviewsRes,
-      ] = await Promise.all([
+      const [settingsRes, categoriesRes, servicesRes, addonsRes] = await Promise.all([
         supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
         supabase.from('service_categories').select('*'),
         supabase.from('services').select('*').eq('is_active', true),
         supabase.from('service_addons').select('*').eq('is_active', true),
+      ]);
+      const [staffRes, staffServicesRes, galleryRes, reviewsRes] = await Promise.all([
         supabase.from('staff_members').select('*').eq('is_active', true),
         supabase.from('staff_services').select('*'),
         supabase.from('gallery_items').select('*'),

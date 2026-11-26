@@ -276,6 +276,7 @@ export interface CleanupExpiredSlotHoldsResult {
 }
 
 export interface SalonRepository {
+  getSalonSettings(): Promise<SalonSettings>;
   getSnapshot(): Promise<Readonly<DemoDatabase>>;
   getPublicBootstrap(): Promise<PublicBootstrapData>;
   getBookingsWithRelations(

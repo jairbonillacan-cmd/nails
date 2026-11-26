@@ -14,6 +14,7 @@ import {
   getRepository,
   getWhatsAppMonthlyUsage,
   getWhatsAppTemplates,
+  hydrateBookingsWithRelationsFromDb,
 } from '@/lib/repositories/db';
 import type { PaymentSplit } from '@/lib/types';
 
@@ -42,7 +43,11 @@ export async function GET(request: NextRequest) {
   const bookings =
     isSpecialist && !ownStaffId
       ? []
-      : await repo.getBookingsWithRelations(session.user.role, session.user.staffMemberId);
+      : hydrateBookingsWithRelationsFromDb(
+          db,
+          session.user.role,
+          session.user.staffMemberId,
+        );
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -299,7 +304,7 @@ export async function GET(request: NextRequest) {
     ? allLoyaltyStamps.filter((st) => visibleClientIds.has(st.clientId))
     : allLoyaltyStamps;
 
-  const allNearRewardClients = await getNearRewardClientsAsync();
+  const allNearRewardClients = await getNearRewardClientsAsync(db);
   const nearRewardClients = isSpecialist
     ? allNearRewardClients.filter((c) => visibleClientIds.has(c.clientId))
     : allNearRewardClients;

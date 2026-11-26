@@ -394,15 +394,22 @@ function hydrateBooking(db: Readonly<DemoDatabase>, booking: Booking): BookingWi
   return { ...booking, service, staff, client, review };
 }
 
-function getBookingsWithRelations(role?: AdminRole, staffMemberId?: string | null): BookingWithRelations[] {
-  const db = getSnapshot();
+export function hydrateBookingsWithRelationsFromDb(
+  db: Readonly<DemoDatabase>,
+  role?: AdminRole,
+  staffMemberId?: string | null,
+): BookingWithRelations[] {
   const filtered =
     role === 'specialist' && staffMemberId
       ? db.bookings.filter((b) => b.staffId === staffMemberId)
       : db.bookings;
   return filtered
     .map((b) => hydrateBooking(db, b))
-    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+    .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+}
+
+function getBookingsWithRelations(role?: AdminRole, staffMemberId?: string | null): BookingWithRelations[] {
+  return hydrateBookingsWithRelationsFromDb(getSnapshot(), role, staffMemberId);
 }
 
 export function getBookingByToken(token: string): BookingWithRelations | null {
@@ -4646,7 +4653,9 @@ export function getNearRewardClients(): Array<{
   return computeNearRewardClientsFromDb(getSnapshot());
 }
 
-export async function getNearRewardClientsAsync(): Promise<
+export async function getNearRewardClientsAsync(
+  snapshot?: Readonly<DemoDatabase>,
+): Promise<
   Array<{
     clientId: string;
     fullName: string;
@@ -4655,7 +4664,7 @@ export async function getNearRewardClientsAsync(): Promise<
     summary: PublicLoyaltySummaryDTO;
   }>
 > {
-  const db = await getRepository().getSnapshot();
+  const db = snapshot ?? (await getRepository().getSnapshot());
   return computeNearRewardClientsFromDb(db);
 }
 
@@ -4737,7 +4746,10 @@ export function getInactiveClients(inactiveDays: number): Array<{
   return computeInactiveClientsFromDb(getSnapshot(), inactiveDays);
 }
 
-export async function getInactiveClientsAsync(inactiveDays: number): Promise<
+export async function getInactiveClientsAsync(
+  inactiveDays: number,
+  snapshot?: Readonly<DemoDatabase>,
+): Promise<
   Array<{
     clientId: string;
     fullName: string;
@@ -4748,7 +4760,7 @@ export async function getInactiveClientsAsync(inactiveDays: number): Promise<
     totalVisits: number;
   }>
 > {
-  const db = await getRepository().getSnapshot();
+  const db = snapshot ?? (await getRepository().getSnapshot());
   return computeInactiveClientsFromDb(db, inactiveDays);
 }
 
@@ -5768,6 +5780,9 @@ function getDemoOutboxStore(): OutboxEventRecord[] {
 
 function createDemoRepository(clock: Clock = systemClock): SalonRepository {
   return {
+    async getSalonSettings() {
+      return getSnapshot().settings;
+    },
     async getSnapshot() {
       return getSnapshot();
     },

@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import '../portal.css';
 import { readClientPortalSession } from '@/lib/auth/client-portal-otp';
@@ -15,8 +16,10 @@ import { ClientPortalView } from '@/components/portal/ClientPortalView';
 
 export const dynamic = 'force-dynamic';
 
+const getPortalSettings = cache(async () => getRepository().getSalonSettings());
+
 export async function generateMetadata(): Promise<Metadata> {
-  const { settings } = await getRepository().getSnapshot();
+  const settings = await getPortalSettings();
   return {
     title: 'Mis citas',
     description: `Consulta tus próximas citas, historial, sellos de fidelidad y paquetes en ${settings.name}.`,
@@ -25,8 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function MisCitasPage() {
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const settings = toPublicSettingsDTO(await getPortalSettings());
   const session = await readClientPortalSession();
 
   let initialSnapshot: ClientPortalSnapshotDTO | null = null;

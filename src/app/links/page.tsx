@@ -59,8 +59,7 @@ function resolveSafeExternalUrl(value: string | null | undefined, fallback: stri
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const settings = toPublicSettingsDTO(await getRepository().getSalonSettings());
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const title = 'Enlaces rápidos y citas';

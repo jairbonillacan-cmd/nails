@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { cache, Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { defaultThemeSlug } from '@/astryx-themes';
@@ -46,8 +46,10 @@ function resolveInitialThemeName(settings: PublicSettingsDTO): string {
   return `salon-${cornerStyle}-${accentLight.slice(1).toLowerCase()}-${accentDark.slice(1).toLowerCase()}`;
 }
 
+const getLayoutSettings = cache(async () => getRepository().getSalonSettings());
+
 export async function generateMetadata(): Promise<Metadata> {
-  const { settings } = await getRepository().getSnapshot();
+  const settings = await getLayoutSettings();
   const socialTitle = `${settings.name} — Agenda tu cita en línea`;
   const noIndex = isSiteNoIndexEnabled();
   return {
@@ -95,7 +97,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export async function generateViewport(): Promise<Viewport> {
-  const { settings } = await getRepository().getSnapshot();
+  const settings = await getLayoutSettings();
   const mode = settings.defaultPublicMode || 'light';
   return {
     themeColor: normalizeHexColor(
@@ -113,7 +115,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { settings } = await getRepository().getSnapshot();
+  const settings = await getLayoutSettings();
   const publicSettings = toPublicSettingsDTO(settings);
   const initialMode = publicSettings.defaultPublicMode || 'light';
   const initialThemeName = resolveInitialThemeName(publicSettings);
