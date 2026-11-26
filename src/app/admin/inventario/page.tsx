@@ -17,7 +17,6 @@ import { InventoryLowStockAlert } from '@/components/admin/inventario/InventoryL
 import {
   adjustInventoryRequest,
   applyDeltaMap,
-  buildInventoryKpiItems,
   createInventoryItemRequest,
   removeKey,
 } from '@/components/admin/inventario/inventoryActions';
@@ -25,50 +24,16 @@ import {
   ActionRow,
   EmptyStateCard,
   FilterPillBar,
-  MetricGrid,
   PageHeader,
   PageSkeleton,
   StatusTag,
   SurfaceCard,
   type FilterPillOption,
 } from '@/components/ui';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatUnitCount } from '@/lib/format';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 type InventoryFilter = 'all' | 'low' | 'retail' | 'cabin';
-
-const INVARIANT_STOCK_UNITS = new Set([
-  'ml',
-  'l',
-  'lt',
-  'g',
-  'gr',
-  'kg',
-  'mg',
-  'oz',
-  'cm',
-  'mm',
-  'm',
-  'ud',
-  'uds',
-]);
-
-function pluralizeSpanishUnit(unit: string, quantity: number): string {
-  const trimmed = unit.trim();
-  if (!trimmed) return quantity === 1 ? 'pieza' : 'piezas';
-  if (quantity === 1) return trimmed;
-  const lower = trimmed.toLowerCase();
-  if (INVARIANT_STOCK_UNITS.has(lower)) return trimmed;
-  if (lower.endsWith('s') || lower.endsWith('x')) return trimmed;
-  if (lower.endsWith('z')) return `${trimmed.slice(0, -1)}ces`;
-  if (/[aeiouáéíóú]$/.test(lower)) return `${trimmed}s`;
-  if (/(?:set|kit|tip|pad|clip|pack)$/.test(lower)) return `${trimmed}s`;
-  return `${trimmed}es`;
-}
-
-function formatStockLabel(quantity: number, unit: string): string {
-  return `${quantity} ${pluralizeSpanishUnit(unit, quantity)}`;
-}
 
 export default function AdminInventoryPage() {
   const { data, loading, refresh } = useAdminData();
@@ -79,7 +44,7 @@ export default function AdminInventoryPage() {
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
 
   if (loading || !data) {
-    return <PageSkeleton kpiCount={4} withSplit ariaLabel="Cargando inventario" />;
+    return <PageSkeleton kpiCount={0} withSplit ariaLabel="Cargando inventario" />;
   }
 
   const currency = data.settings.currency;
@@ -93,12 +58,6 @@ export default function AdminInventoryPage() {
     (i) => i.isActive && i.stockQuantity <= i.minStockAlert,
   );
   const retailCount = effectiveInventory.filter((i) => i.isActive && i.isForRetail).length;
-  const kpiItems = buildInventoryKpiItems(
-    effectiveInventory,
-    lowStock.length,
-    retailCount,
-    currency,
-  );
 
   const filterOptions: FilterPillOption<InventoryFilter>[] = [
     { value: 'all', label: 'Todos', count: data.inventory.length },
@@ -151,19 +110,13 @@ export default function AdminInventoryPage() {
   return (
     <VStack className="ad-page" gap={5}>
       <PageHeader
-        eyebrow="Tu salón"
         title="Inventario"
-        subtitle="Geles, acrílicos, tips y productos de venta. Te avisamos cuando algo se esté acabando."
+        subtitle="Te avisamos cuando algo se esté acabando."
         actions={<InventoryItemForm onCreateItem={handleCreateItem} />}
       />
 
-      <MetricGrid ariaLabel="Resumen de inventario" items={kpiItems} cols={4} />
-
       <InventoryLowStockAlert
-        lowStock={lowStock.map((item) => ({
-          ...item,
-          unit: pluralizeSpanishUnit(item.unit, item.stockQuantity),
-        }))}
+        lowStock={lowStock}
         isFilteredLow={filterMode === 'low'}
         busyByItem={busyByItem}
         optimisticDeltas={optimisticDeltas}
@@ -258,7 +211,7 @@ export default function AdminInventoryPage() {
                         <Text weight="semibold">{item.name}</Text>
                         <StatusTag
                           tone={isLow ? 'warning' : 'success'}
-                          label={formatStockLabel(item.stockQuantity, item.unit)}
+                          label={formatUnitCount(item.stockQuantity, item.unit)}
                           hasTabularNumbers
                         />
                         {pendingDelta !== 0 ? (

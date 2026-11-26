@@ -6,14 +6,11 @@ import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Check } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
-import { MetricGrid, PageHeader, PageSkeleton } from '@/components/ui';
+import { PageHeader, PageSkeleton } from '@/components/ui';
 import { GoogleCalendarSection } from '@/components/admin/integraciones/GoogleCalendarSection';
 import { WhatsAppSection } from '@/components/admin/integraciones/WhatsAppSection';
 import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/PaymentsAnalyticsSection';
-import {
-  buildIntegrationKpis,
-  buildWhatsAppCopyTemplates,
-} from '@/components/admin/integraciones/integrationsHelpers';
+import { buildWhatsAppCopyTemplates } from '@/components/admin/integraciones/integrationsHelpers';
 import { formatCurrency } from '@/lib/format';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { summarizeCascadeMetrics } from '@/lib/notifications/cascade';
@@ -123,7 +120,7 @@ export default function AdminIntegrationsPage() {
   if (loading || !data) {
     return (
       <PageSkeleton
-        kpiCount={3}
+        kpiCount={0}
         withSplit={false}
         ariaLabel="Cargando conexiones e integraciones"
       />
@@ -137,7 +134,6 @@ export default function AdminIntegrationsPage() {
   const normalizedAppUrl = integration.appUrl.replace(/\/+$/, '');
   const mercadoPagoTechUrl = `${normalizedAppUrl}/api/webhooks/mercadopago`;
   const googleCalendarTechUrl = `${normalizedAppUrl}/api/webhooks/google-calendar`;
-  const connectedCalendarsCount = displayCalendarConnections.filter((c) => c.isConnected).length;
   const whatsappUsage = data.whatsappUsage ?? {
     monthKey: data.serverTodayKey.slice(0, 7),
     sentCount: 0,
@@ -147,14 +143,6 @@ export default function AdminIntegrationsPage() {
     warned80At: null,
     warned100At: null,
   };
-
-  const kpiItems = buildIntegrationKpis({
-    connectedCalendarsCount,
-    totalStaffCount: data.staff.length,
-    whatsappUsage,
-    settings,
-    depositLabel,
-  });
 
   const isAnyMutationBusy =
     savingSettings || Boolean(busyWorkflowId) || Boolean(busyCalendarStaffId);
@@ -334,9 +322,8 @@ export default function AdminIntegrationsPage() {
   return (
     <VStack className="ad-page">
       <PageHeader
-        eyebrow="Herramientas del salón"
         title="Conexiones"
-        subtitle="Conecta tu calendario, automatiza recordatorios por WhatsApp y elige cómo cobrar anticipos."
+        subtitle="Calendario, avisos por WhatsApp y cobro de anticipos."
         meta={
           isAnyMutationBusy ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -350,8 +337,6 @@ export default function AdminIntegrationsPage() {
           ) : undefined
         }
       />
-
-      <MetricGrid ariaLabel="Resumen de conexiones" items={kpiItems} cols={3} />
 
       {msg ? (
         <Banner
@@ -386,6 +371,8 @@ export default function AdminIntegrationsPage() {
         gap={0}
       >
         <WhatsAppSection
+          salonName={settings.name}
+          salonAddress={settings.address}
           whatsappBookingEnabled={settings.whatsappBookingEnabled}
           whatsappUsage={whatsappUsage}
           reminderSummary={reminderSummary}

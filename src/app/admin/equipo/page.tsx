@@ -8,10 +8,8 @@ import { Check } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
   ConfirmActionDialog,
-  MetricGrid,
   PageHeader,
   PageSkeleton,
-  type MetricTileItem,
 } from '@/components/ui';
 import { StaffEditorSection } from '@/components/admin/equipo/StaffEditorSection';
 import {
@@ -58,36 +56,10 @@ export default function AdminTeamPage() {
   );
 
   if (loading || !data) {
-    return <PageSkeleton kpiCount={3} withSplit ariaLabel="Cargando equipo y accesos" />;
+    return <PageSkeleton kpiCount={0} withSplit ariaLabel="Cargando equipo y accesos" />;
   }
 
   const isOwner = data.session.user.role === 'owner';
-  const activeStaffCount = displayStaff.filter((s) => s.isActive).length;
-  const activeAdminCount = displayAdminUsers.filter((u) => u.isActive).length;
-
-  const kpiItems: MetricTileItem[] = [
-    {
-      id: 'active-staff',
-      label: 'Profesionales activas',
-      value: String(activeStaffCount),
-      sub: `de ${displayStaff.length} en tu salón`,
-    },
-    {
-      id: 'web-mode',
-      label: 'Al reservar',
-      value: activeStaffCount <= 1 ? 'Directa' : 'Por profesional',
-      sub:
-        activeStaffCount <= 1
-          ? 'Se asigna en automático'
-          : 'La clienta elige o toma "Cualquier profesional"',
-    },
-    {
-      id: 'panel-access',
-      label: 'Personas con acceso',
-      value: String(activeAdminCount),
-      sub: `de ${displayAdminUsers.length} cuentas activas`,
-    },
-  ];
 
   const applyToggleStaffActive = async (st: StaffMember, checked: boolean) => {
     if (busyId) return;
@@ -172,9 +144,8 @@ export default function AdminTeamPage() {
   return (
     <VStack className="ad-page">
       <PageHeader
-        eyebrow="Tu equipo"
         title="Equipo"
-        subtitle="Administra a tus profesionales, sus comisiones y quién puede entrar al panel del salón."
+        subtitle="Tus profesionales y quién puede entrar al panel."
         meta={
           busyId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -188,8 +159,6 @@ export default function AdminTeamPage() {
           ) : undefined
         }
       />
-
-      <MetricGrid ariaLabel="Resumen del equipo" items={kpiItems} cols={3} />
 
       {msg ? (
         <Banner

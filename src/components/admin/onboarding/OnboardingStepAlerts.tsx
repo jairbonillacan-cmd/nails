@@ -215,7 +215,7 @@ export function OnboardingStepAlerts({
       >
         <VStack gap={4}>
           <DialogHeader
-            title="Entérate al instante cuando agenden"
+            title="Entérate cuando alguien agende"
             subtitle="Recibe avisos suaves mientras trabajas en mesa"
             onOpenChange={onSetNotifDialogOpen}
           />
@@ -233,7 +233,7 @@ export function OnboardingStepAlerts({
               label="Anticipos listos para revisar"
               description={
                 <Text type="supporting" color="secondary">
-                  Ve al instante cuando una clienta sube su comprobante SPEI.
+                  Te avisamos cuando una clienta sube su comprobante.
                 </Text>
               }
               startContent={<Bell size={17} aria-hidden="true" />}

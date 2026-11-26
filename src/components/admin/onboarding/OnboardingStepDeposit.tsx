@@ -46,7 +46,7 @@ export function OnboardingStepDeposit({
           2. Configura tu anticipo SPEI
         </Heading>
         <Text color="secondary">
-          Así evitas cancelaciones de último minuto y tus clientas copian tu CLABE en un toque.
+          Así evitas cancelaciones de último minuto.
         </Text>
       </VStack>
 

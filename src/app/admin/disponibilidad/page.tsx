@@ -12,11 +12,9 @@ import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Check } from 'lucide-react';
 import {
   FilterPillBar,
-  MetricGrid,
   PageHeader,
   PageSkeleton,
   SkeletonBlock,
-  type MetricTileItem,
 } from '@/components/ui';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { WeeklyScheduleEditor } from '@/components/admin/disponibilidad/WeeklyScheduleEditor';
@@ -68,7 +66,7 @@ export default function AdminAvailabilityPage() {
   if (loading || !data) {
     return (
       <PageSkeleton
-        kpiCount={3}
+        kpiCount={0}
         withSplit={false}
         ariaLabel="Cargando disponibilidad y horarios"
       />
@@ -101,34 +99,6 @@ export default function AdminAvailabilityPage() {
   const staffRecurringBlocks = data.recurringBlocks.filter((b) => b.staffId === staffId);
   const activeRecurringCount = staffRecurringBlocks.filter((b) => b.isActive).length;
   const totalBreaksBadge = activeRecurringCount + activeOverrides.length;
-  const activeDaysCount = new Set(currentScheduleRules.map((r) => r.dayOfWeek)).size;
-
-  const kpiItems: MetricTileItem[] = [
-    {
-      id: 'work-days',
-      label: 'Días que trabaja',
-      value: `${activeDaysCount} de 7`,
-      sub: activeStaffMember?.name ?? 'Profesional',
-    },
-    {
-      id: 'recurring-count',
-      label: 'Descansos fijos',
-      value: String(activeRecurringCount),
-      sub:
-        activeRecurringCount === 1
-          ? '1 descanso activo'
-          : `${activeRecurringCount} descansos activos`,
-    },
-    {
-      id: 'upcoming-overrides',
-      label: 'Vacaciones y cierres',
-      value: String(activeOverrides.length),
-      sub:
-        activeOverrides.length === 1
-          ? '1 fecha próxima'
-          : `${activeOverrides.length} fechas próximas`,
-    },
-  ];
 
   const handleSelectStaff = (nextId: string) => {
     setSelectedStaffId(nextId);
@@ -138,9 +108,8 @@ export default function AdminAvailabilityPage() {
   return (
     <VStack className="ad-page" gap={5}>
       <PageHeader
-        eyebrow="Agenda del equipo"
         title="Horarios"
-        subtitle="Elige los turnos fijos de cada profesional, sus descansos y días cerrados."
+        subtitle="Cuándo atiende cada profesional."
         meta={
           savingWeekly ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -185,8 +154,6 @@ export default function AdminAvailabilityPage() {
           ) : undefined
         }
       />
-
-      <MetricGrid ariaLabel="Resumen de horarios" items={kpiItems} cols={3} />
 
       {msg ? (
         <Banner

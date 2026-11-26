@@ -117,7 +117,7 @@ export function CajaSummaryTab({
           id="citas-sin-cobrar"
           title="Citas sin cobrar"
           count={uncollectedBookings.length}
-          subtitle={`Citas terminadas o pasadas con saldo pendiente: ${formatCurrency(uncollectedTotalCents, currency)}`}
+          subtitle={`Faltan ${formatCurrency(uncollectedTotalCents, currency)} por cobrar.`}
           tone={highlightUncollected ? 'accent' : 'warning'}
           icon={
             <VStack
@@ -229,7 +229,7 @@ export function CajaSummaryTab({
                   confirmar ({formatCurrency(pendingDepositsTotalCents, currency)})
                 </Text>
                 <Text type="supporting" color="secondary">
-                  Revisa la foto del comprobante y confirma cada cita en un toque.
+                  Revisa la foto del comprobante y confirma la cita.
                 </Text>
               </VStack>
             </HStack>

@@ -14,7 +14,6 @@ import {
   Bell,
   CheckCircle2,
   MessageCircle,
-  Sparkles,
 } from 'lucide-react';
 import {
   ActionRow,
@@ -23,6 +22,11 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
+import {
+  buildTemplatePreview,
+  describeWorkflowMoment,
+  type TemplatePreviewSegment,
+} from '@/lib/notifications/template-preview';
 import type { summarizeCascadeMetrics } from '@/lib/notifications/cascade';
 import type {
   NotificationChannel,
@@ -47,6 +51,8 @@ interface BookingMetaItem {
 }
 
 interface WhatsAppSectionProps {
+  salonName: string;
+  salonAddress: string;
   whatsappBookingEnabled: boolean;
   whatsappUsage: WhatsAppMonthlyUsageSummary;
   reminderSummary: CascadeSummary | null;
@@ -95,7 +101,31 @@ const FRIENDLY_WHATSAPP_TEMPLATE_LABELS: Record<
   },
 };
 
+function TemplatePreview({ segments }: { segments: readonly TemplatePreviewSegment[] }) {
+  return (
+    <Text type="supporting" color="secondary" textWrap="pretty" className="ad-msg-preview">
+      {segments.map((segment, idx) =>
+        segment.kind === 'text' ? (
+          segment.text
+        ) : (
+          <Text
+            key={`${segment.kind}-${idx}`}
+            as="span"
+            type="supporting"
+            weight="semibold"
+            className={segment.kind === 'link' ? 'ad-msg-link' : 'ad-msg-value'}
+          >
+            {segment.text}
+          </Text>
+        ),
+      )}
+    </Text>
+  );
+}
+
 export function WhatsAppSection({
+  salonName,
+  salonAddress,
   whatsappBookingEnabled,
   whatsappUsage,
   reminderSummary,
@@ -117,7 +147,7 @@ export function WhatsAppSection({
       id="whatsapp-reminders-heading"
       icon={<MessageCircle size={18} aria-hidden="true" />}
       title="Recordatorios por WhatsApp"
-      subtitle="Envía avisos automáticos 24 h y 2 h antes de cada cita para reducir faltas sin escribir uno por uno."
+      subtitle="Mensajes que se mandan solos para que no falten a su cita."
       badge={
         <StatusTag
           tone={activeRemindersCount > 0 ? 'success' : 'neutral'}
@@ -184,7 +214,7 @@ export function WhatsAppSection({
               status="warning"
               role="status"
               title={`Ya usaste el ${whatsappUsage.percentUsed}% de tus mensajes de WhatsApp de este mes`}
-              description={`Te quedan ${whatsappRemaining} avisos automáticos. Si llegas a ${whatsappUsage.quotaLimit}, las confirmaciones seguirán llegando por correo y podrás abrir WhatsApp en un toque.`}
+              description={`Te quedan ${whatsappRemaining} avisos automáticos. Si llegas a ${whatsappUsage.quotaLimit}, las confirmaciones seguirán llegando por correo y también podrás abrir WhatsApp tú misma.`}
             />
           ) : null}
 
@@ -256,8 +286,15 @@ export function WhatsAppSection({
             {workflows.map((wf) => (
               <li key={wf.id}>
                 <ActionRow
-                  title={wf.name}
-                  subtitle={wf.messageTemplate}
+                  title={describeWorkflowMoment(wf)}
+                  subtitle={
+                    <TemplatePreview
+                      segments={buildTemplatePreview(wf.messageTemplate, {
+                        salonName,
+                        address: salonAddress,
+                      })}
+                    />
+                  }
                   isMuted={!wf.isEnabled}
                   meta={
                     <HStack gap={4} wrap="wrap" paddingBlockStart={1}>
@@ -281,7 +318,7 @@ export function WhatsAppSection({
                   }
                   actions={
                     <Switch
-                      label={`Activar ${wf.name}`}
+                      label={`Enviar mensaje: ${describeWorkflowMoment(wf)}`}
                       isLabelHidden
                       size="sm"
                       value={wf.isEnabled}
@@ -299,9 +336,9 @@ export function WhatsAppSection({
           defaultIsOpen={false}
           trigger={
             <HStack gap={2} align="center">
-              <Sparkles size={14} aria-hidden="true" />
+              <MessageCircle size={14} aria-hidden="true" />
               <Text weight="semibold" size="sm">
-                Mensajes de WhatsApp listos para copiar ({copyableTemplates.length})
+                Mensajes para mandar tú misma ({copyableTemplates.length})
               </Text>
             </HStack>
           }
@@ -336,13 +373,12 @@ export function WhatsAppSection({
                 <HStack gap={2} align="center">
                   <CheckCircle2 size={14} aria-hidden="true" />
                   <Text weight="semibold" size="sm">
-                    Plantillas oficiales aprobadas de WhatsApp ({activeOfficialCount})
+                    Mensajes que WhatsApp ya aprobó
                   </Text>
                 </HStack>
-                <StatusTag
-                  tone={activeOfficialCount > 0 ? 'success' : 'neutral'}
-                  label="Español (México)"
-                />
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  {activeOfficialCount} de {officialTemplates.length} activos
+                </Text>
               </HStack>
             }
           >

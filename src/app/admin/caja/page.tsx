@@ -286,7 +286,7 @@ export default function AdminCashPage() {
     <VStack gap={5} className="ad-page fx-fade-up">
       <PageHeader
         title="Caja"
-        subtitle="Cobra citas pendientes, valida anticipos, haz tu corte de caja y consulta comisiones."
+        subtitle="Lo que ya cobraste y lo que falta por cobrar."
         actions={
           <>
             <Button
@@ -380,9 +380,6 @@ export default function AdminCashPage() {
         <CajaDepositsTab
           pendingDeposits={pendingDeposits}
           defaultDepositLabel={defaultDepositLabel}
-          depositBankName={data.settings.depositBankName}
-          depositClabe={data.settings.depositClabe}
-          instagramHandle={data.settings.instagramHandle}
           tz={tz}
           currency={currency}
           approvingId={approvingId}

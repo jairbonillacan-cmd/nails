@@ -295,7 +295,7 @@ export function VisualTroubleshooter({
         id="slot-help-picker-heading"
         icon={<HelpCircle size={16} aria-hidden="true" />}
         title="¿Qué día quieres revisar?"
-        subtitle="Elige un servicio y una fecha para ver en segundos por qué una hora aparece libre o no."
+        subtitle="Elige un servicio y una fecha para ver por qué una hora aparece libre o no."
         padded
       >
         <VStack gap={4}>

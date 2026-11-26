@@ -242,7 +242,7 @@ export function DashboardAttentionCard({
     </Text>
   ) : (
     <Text type="supporting" color="secondary" className="ad-hide-s">
-      Resuélvelo aquí mismo en un toque
+      Lo que necesita tu atención hoy
     </Text>
   );
 

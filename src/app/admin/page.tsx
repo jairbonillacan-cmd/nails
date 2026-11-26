@@ -182,7 +182,7 @@ export default function AdminOverviewPage() {
     <>
       {data.integration.mode === 'demo' ? (
         <Tooltip
-          content="Modo de prueba: todo se guarda solo aquí para que explores sin miedo."
+          content="Modo de prueba: lo que hagas aquí no afecta a clientas reales."
           placement="below"
           touchTrigger="tap"
           hasHoverIndication={false}

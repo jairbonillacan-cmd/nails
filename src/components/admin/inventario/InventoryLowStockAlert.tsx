@@ -34,7 +34,7 @@ export function InventoryLowStockAlert({
       padded
       icon={<AlertTriangle size={16} aria-hidden="true" />}
       title={`${lowStock.length} ${lowStock.length === 1 ? 'producto por acabarse' : 'productos por acabarse'}`}
-      subtitle="Repón en un toque o filtra la lista para ver qué falta comprar."
+      subtitle="Toca «+1 Reponer» cuando compres más."
       actions={
         <Button
           type="button"

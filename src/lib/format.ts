@@ -15,14 +15,23 @@ export function formatDuration(minutes: number): string {
   return mins === 0 ? `${hrs} h` : `${hrs} h ${mins} min`;
 }
 
+const INVARIANT_UNITS = new Set(['ml', 'l', 'lt', 'g', 'gr', 'kg', 'mg', 'oz', 'cm', 'mm', 'm', 'ud', 'uds']);
+
+function pluralizeUnit(unit: string, count: number): string {
+  const trimmed = unit.trim();
+  if (!trimmed) return count === 1 ? 'pieza' : 'piezas';
+  if (count === 1) return trimmed;
+  const lower = trimmed.toLowerCase();
+  if (INVARIANT_UNITS.has(lower) || lower.endsWith('.')) return trimmed;
+  if (lower.endsWith('s') || lower.endsWith('x')) return trimmed;
+  if (lower.endsWith('z')) return `${trimmed.slice(0, -1)}ces`;
+  if (/[aeiouáéíóú]$/.test(lower)) return `${trimmed}s`;
+  if (/(?:set|kit|tip|pad|clip|pack)$/.test(lower)) return `${trimmed}s`;
+  return `${trimmed}es`;
+}
+
 export function formatUnitCount(count: number, unit: string): string {
-  const base = unit.trim();
-  if (count === 1 || base.length < 3 || !/[a-záéíóúñ]$/i.test(base) || /s$/i.test(base)) {
-    return `${count} ${base}`;
-  }
-  if (/[aeiouáéó]$/i.test(base)) return `${count} ${base}s`;
-  if (/z$/i.test(base)) return `${count} ${base.slice(0, -1)}ces`;
-  return `${count} ${base}es`;
+  return `${count} ${pluralizeUnit(unit, count)}`;
 }
 
 export function formatPhoneDisplay(phoneE164: string): string {

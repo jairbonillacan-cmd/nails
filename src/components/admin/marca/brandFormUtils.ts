@@ -1,6 +1,4 @@
-import { formatCurrency } from '@/lib/format';
 import { resolveLandingContent } from '@/lib/landing-config';
-import type { MetricTileItem } from '@/components/ui';
 import type { LandingContent, LoyaltyProgram, SalonSettings, Service } from '@/lib/types';
 
 export const DEFAULT_LOYALTY_PROGRAM: LoyaltyProgram = {
@@ -133,65 +131,6 @@ export function countVisibleLandingSections(settings: SalonSettings): number {
     sections.showVisit,
   ];
   return toggles.filter(Boolean).length;
-}
-
-export function buildBrandKpis(params: {
-  colorsReadable: boolean;
-  isDepositEnabled: boolean;
-  depositAmountCents: number;
-  draft: SalonSettings;
-  loyaltyDraft: LoyaltyProgram;
-  customGalleryCount: number;
-}): MetricTileItem[] {
-  const {
-    colorsReadable,
-    isDepositEnabled,
-    depositAmountCents,
-    draft,
-    loyaltyDraft,
-    customGalleryCount,
-  } = params;
-  const visibleSections = countVisibleLandingSections(draft);
-  const resolved = resolveLandingContent(draft);
-
-  return [
-    {
-      id: 'sections',
-      label: 'Secciones activas',
-      value: `${visibleSections} de 8`,
-      sub: colorsReadable ? 'Colores con buena lectura' : 'Revisa el contraste en Estilo',
-      tone: colorsReadable ? 'success' : 'warning',
-    },
-    {
-      id: 'gallery',
-      label: 'Galería propia',
-      value: customGalleryCount === 1 ? '1 foto' : `${customGalleryCount} fotos`,
-      sub:
-        resolved.galleryMode === 'custom_only'
-          ? 'Mostrando solo tus fotos'
-          : 'Tus fotos + galería base',
-      tone: customGalleryCount > 0 ? 'accent' : 'default',
-    },
-    {
-      id: 'deposit',
-      label: 'Anticipo SPEI',
-      value: isDepositEnabled
-        ? formatCurrency(depositAmountCents, draft.currency)
-        : 'Desactivado',
-      sub: isDepositEnabled ? draft.depositBankName || 'Transferencia' : 'Reserva directa',
-    },
-    {
-      id: 'loyalty',
-      label: 'Tarjeta de sellos',
-      value: loyaltyDraft.isActive ? `${loyaltyDraft.stampsRequired} sellos` : 'Pausada',
-      sub: loyaltyDraft.isActive
-        ? loyaltyDraft.rewardType === 'free_service'
-          ? 'Premio: servicio gratis'
-          : `Premio: ${loyaltyDraft.discountPercent ?? 50}% desc.`
-        : 'Actívala en Negocio',
-      tone: loyaltyDraft.isActive ? 'accent' : 'default',
-    },
-  ];
 }
 
 export function buildBrandPatchPayload(params: {

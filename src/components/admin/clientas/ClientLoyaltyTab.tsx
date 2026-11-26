@@ -208,7 +208,7 @@ export function ClientLoyaltyTab({
       <VStack className="ad-split" gap={0}>
         <SurfaceCard
           title="Paquetes de sesiones"
-          subtitle="Lleva el control de sesiones usadas y disponibles; también se descuentan al cobrar en Agenda."
+          subtitle="Sesiones usadas y disponibles de cada clienta."
           count={activeClientPackagesCount}
         >
           {packagesLoading && clientPackages.length === 0 ? (

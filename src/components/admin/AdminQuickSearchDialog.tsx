@@ -120,7 +120,7 @@ export function AdminQuickSearchDialog({
     >
       <DialogHeader
         title="Búsqueda y comandos"
-        subtitle="Busca clienta por nombre o teléfono, escribe una fecha (ej. mañana, 15 dic, 2026-12-01) o crea una cita."
+        subtitle="Escribe un nombre, un teléfono o una fecha como «mañana» o «15 dic»."
         onOpenChange={onOpenChange}
       />
       <VStack gap={4} paddingBlockStart={3} className="fx-sheet-in">

@@ -123,7 +123,7 @@ export function ClientRetentionTab({
       {canManageClients ? (
         <SurfaceCard
           title="Cumpleaños de esta semana"
-          subtitle="Felicítalas por WhatsApp en un toque para consentirlas en su semana."
+          subtitle="Mándales felicidades por WhatsApp."
           icon={<Cake size={16} aria-hidden="true" />}
           count={campaigns?.birthdays.length ?? 0}
         >
@@ -197,7 +197,7 @@ export function ClientRetentionTab({
 
       <SurfaceCard
         title="Clientas que no vienen hace tiempo"
-        subtitle="Elige cuántos días llevan sin agendar y mándales un saludo por WhatsApp para su retoque o nuevo set."
+        subtitle="Clientas que no han vuelto. Mándales un saludo por WhatsApp."
         actions={
           <FilterPillBar
             ariaLabel="Días sin visita"

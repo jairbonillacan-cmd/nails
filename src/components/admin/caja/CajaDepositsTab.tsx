@@ -29,9 +29,6 @@ import {
 interface CajaDepositsTabProps {
   pendingDeposits: readonly PendingDepositRow[];
   defaultDepositLabel: string;
-  depositBankName: string;
-  depositClabe: string;
-  instagramHandle: string;
   tz: string;
   currency: 'MXN' | 'USD';
   approvingId: string | null;
@@ -43,9 +40,6 @@ interface CajaDepositsTabProps {
 export function CajaDepositsTab({
   pendingDeposits,
   defaultDepositLabel,
-  depositBankName,
-  depositClabe,
-  instagramHandle,
   tz,
   currency,
   approvingId,
@@ -59,7 +53,7 @@ export function CajaDepositsTab({
     <VStack gap={4} className="fx-step-in">
       <SurfaceCard
         title={`Anticipos por validar (${defaultDepositLabel})`}
-        subtitle={`Revisa los comprobantes SPEI a ${depositBankName} (${depositClabe}) recibidos en la página o por Instagram (${instagramHandle}).`}
+        subtitle="Comprobantes de transferencia que llegaron por tu página o por Instagram."
         count={pendingDeposits.length > 0 ? pendingDeposits.length : undefined}
         actions={
           <Button

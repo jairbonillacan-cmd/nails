@@ -63,7 +63,7 @@ export function OnboardingStepProfile({
           1. Cuéntanos de tu salón
         </Heading>
         <Text color="secondary">
-          Estos datos aparecen en tu página de reservas para que tus clientas te reconozcan al instante.
+          Estos datos aparecen en tu página de reservas.
         </Text>
       </VStack>
 

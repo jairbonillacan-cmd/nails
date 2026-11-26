@@ -35,7 +35,7 @@ export function GoogleCalendarSection({
       id="gcal-heading"
       icon={<Calendar size={18} aria-hidden="true" />}
       title="Google Calendar"
-      subtitle="Conecta tu calendario para que tus compromisos personales y las citas del salón nunca se encimen."
+      subtitle="Para que tus pendientes personales y las citas no se encimen."
       badge={
         <StatusTag
           tone={connectedCount > 0 ? 'success' : 'neutral'}

@@ -23,7 +23,7 @@ import type {
   ClientPackageRow,
   ClientsTab,
 } from '@/components/admin/clientas/clientasTypes';
-import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
+import { PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
 import { invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import type { ClientProfile } from '@/lib/types';
 
@@ -91,7 +91,6 @@ export default function AdminClientsPage() {
     dispatchedTodayKeys,
     comebackCount,
     loyaltyHighlightsCount,
-    kpiItems,
     visitCountByClient,
     noShowStatsByClient,
     loyaltyByClientId,
@@ -120,7 +119,7 @@ export default function AdminClientsPage() {
   const [redeemingPkgId, setRedeemingPkgId] = useState<string | null>(null);
 
   if (!data || !data.retention) {
-    return <PageSkeleton kpiCount={3} withSplit={false} ariaLabel="Cargando clientas" />;
+    return <PageSkeleton kpiCount={0} withSplit={false} ariaLabel="Cargando clientas" />;
   }
 
   const tz = data.settings.timezone || 'America/Mexico_City';
@@ -221,7 +220,7 @@ export default function AdminClientsPage() {
     <VStack gap={5} className="ad-page fx-fade-up">
       <PageHeader
         title="Clientas"
-        subtitle="Busca tus clientas, revisa sus sellos y paquetes, y escribe a quienes no han vuelto."
+        subtitle="Todas tus clientas y a quién conviene escribirle."
         actions={
           canManageClients ? (
             <Button
@@ -235,8 +234,6 @@ export default function AdminClientsPage() {
           ) : undefined
         }
       />
-
-      <MetricGrid ariaLabel="Resumen de clientas" cols={3} items={kpiItems} />
 
       {bannerMsg ? (
         <Banner

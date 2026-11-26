@@ -90,7 +90,7 @@ export function PaymentsAnalyticsSection({
         id="payments-heading"
         icon={<CreditCard size={18} aria-hidden="true" />}
         title="Cobro en línea"
-        subtitle={`Elige si cobras tu anticipo de ${depositLabel} por transferencia SPEI o con pago automático en Mercado Pago.`}
+        subtitle={`Cómo te pagan el anticipo de ${depositLabel}.`}
         badge={<StatusTag tone={payBadge.tone} label={payBadge.label} showDot />}
       >
         <VStack

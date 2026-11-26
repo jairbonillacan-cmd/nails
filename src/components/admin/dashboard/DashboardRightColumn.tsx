@@ -4,14 +4,9 @@ import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
-import { Button } from '@astryxdesign/core/Button';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
-import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { List, ListItem } from '@astryxdesign/core/List';
-import { CheckCircle2, Circle } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
-import { StatusTag, SurfaceCard } from '@/components/ui';
+import { SurfaceCard } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import type { DashboardMetrics } from './dashboardMetrics';
 import { DashboardShareCard } from './DashboardShareCard';
@@ -22,15 +17,10 @@ interface DashboardRightColumnProps {
 }
 
 export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProps) {
-  const { settings, onboardingChecklist, nearRewardClients, retention } = data;
+  const { settings, nearRewardClients } = data;
   const role = data.session.user.role;
   const currency = settings.currency;
   const canCash = roleCanAccess(role, 'cash');
-  const isSpecialist = role === 'specialist';
-
-  const checklistComplete =
-    onboardingChecklist.completedCount >= onboardingChecklist.totalCount;
-  const nextStep = onboardingChecklist.steps.find((step) => !step.done) ?? null;
 
   const maxDailyRevenue = Math.max(
     1,
@@ -167,127 +157,21 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
 
       <SurfaceCard
         id="ad-loy"
-        title={!isSpecialist ? 'Equipo y fidelidad' : 'Cerca de su premio'}
-        subtitle={
-          !isSpecialist
-            ? `${metrics.activeStaff.length} profesionales activas · ${retention.returningClientsCount} clientas frecuentes`
-            : `${retention.returningClientsCount} clientas que regresan`
-        }
+        title="Cerca de su premio"
+        subtitle="Clientas a las que les faltan pocos sellos."
         headingLevel={3}
         padded
         className="ad-card"
         footer={
-          <>
-            {roleCanAccess(role, 'clients') ? (
-              <NextLink href="/admin/clientas" className="ad-inline-link">
-                Ver clientas ›
-              </NextLink>
-            ) : null}
-            {roleCanAccess(role, 'team') ? (
-              <NextLink href="/admin/equipo" className="ad-inline-link-muted">
-                Equipo ({metrics.activeStaff.length}) ›
-              </NextLink>
-            ) : null}
-          </>
+          roleCanAccess(role, 'clients') ? (
+            <NextLink href="/admin/clientas" className="ad-inline-link">
+              Ver clientas ›
+            </NextLink>
+          ) : undefined
         }
       >
         <VStack gap={4}>
-          {!checklistComplete && nextStep ? (
-            <VStack gap={2} className="ad-inline-setup">
-              <HStack justify="between" align="center" gap={2}>
-                <Text weight="semibold" size="sm">
-                  Configuración del salón
-                </Text>
-                <Text color="accent" weight="semibold" size="sm" hasTabularNumbers>
-                  {onboardingChecklist.completedCount} / {onboardingChecklist.totalCount}
-                </Text>
-              </HStack>
-              <ProgressBar
-                label="Pasos completados"
-                isLabelHidden
-                value={onboardingChecklist.completedCount}
-                max={onboardingChecklist.totalCount}
-                variant="accent"
-              />
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary" className="rb-grow">
-                  Falta: {nextStep.label}
-                </Text>
-                <Button label="Terminar" variant="secondary" size="sm" href={nextStep.href} />
-              </HStack>
-              <Collapsible
-                defaultIsOpen={false}
-                trigger={
-                  <Text type="supporting" color="secondary" weight="semibold">
-                    Ver los {onboardingChecklist.totalCount} pasos
-                  </Text>
-                }
-              >
-                <List hasDividers density="compact">
-                  {onboardingChecklist.steps.map((step) => (
-                    <ListItem
-                      key={step.id}
-                      label={step.label}
-                      href={step.href}
-                      startContent={
-                        step.done ? (
-                          <CheckCircle2 size={15} aria-hidden="true" />
-                        ) : (
-                          <Circle size={15} aria-hidden="true" />
-                        )
-                      }
-                      endContent={
-                        <StatusTag
-                          tone={step.done ? 'success' : 'neutral'}
-                          label={step.done ? 'Listo' : 'Pendiente'}
-                        />
-                      }
-                    />
-                  ))}
-                </List>
-              </Collapsible>
-            </VStack>
-          ) : null}
-
-          {!isSpecialist && metrics.staffTodayLoad.length > 0 ? (
-            <VStack gap={3}>
-              <Text type="supporting" color="secondary" weight="medium" className="ad-sub-kicker">
-                Citas de hoy por profesional
-              </Text>
-              {metrics.staffTodayLoad.map((member) => (
-                <VStack key={member.id} gap={1}>
-                  <HStack justify="between" align="center" gap={2}>
-                    <Text size="sm" weight="medium">
-                      {member.name}
-                    </Text>
-                    <Text size="sm" weight="semibold" hasTabularNumbers>
-                      {member.todayCount}
-                    </Text>
-                  </HStack>
-                  <HStack align="center" gap={2}>
-                    <VStack className="ad-thin-track rb-grow">
-                      <Text
-                        className="ad-thin-fill"
-                        data-accent={member.todayCount > 0 ? 'true' : 'false'}
-                        style={{ width: `${Math.max(member.todayCount > 0 ? 10 : 0, member.sharePercent)}%` }}
-                        aria-hidden="true"
-                      >
-                        {'\u200B'}
-                      </Text>
-                    </VStack>
-                    <Text type="supporting" color="secondary" className="ad-thin-pct" hasTabularNumbers>
-                      {member.sharePercent}%
-                    </Text>
-                  </HStack>
-                </VStack>
-              ))}
-            </VStack>
-          ) : null}
-
           <VStack gap={3}>
-            <Text type="supporting" color="secondary" weight="medium" className="ad-sub-kicker">
-              Cerca de su premio
-            </Text>
             {nearRewardClients.length === 0 ? (
               <Text type="supporting" color="secondary">
                 Cuando tus clientas acumulen sellos cerca del objetivo aparecerán aquí.

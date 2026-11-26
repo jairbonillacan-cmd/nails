@@ -30,7 +30,7 @@ export function LoyaltySettingsSection({
       id="brand-loyalty-heading"
       icon={<Award size={16} aria-hidden="true" />}
       title="Tarjeta de sellos"
-      subtitle="Suma 1 sello al cobrar cada cita; tus clientas la ven en su celular sin bajar ninguna app."
+      subtitle="Cada cita cobrada suma un sello."
       badge={
         <StatusTag
           tone={loyaltyDraft.isActive ? 'accent' : 'neutral'}

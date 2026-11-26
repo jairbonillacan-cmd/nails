@@ -245,7 +245,7 @@ export function NewBookingDialog({
     <Dialog isOpen={isOpen} onOpenChange={handleOpenChange} width={620} padding={5}>
       <DialogHeader
         title="Nueva cita"
-        subtitle="Completa los 3 pasos para apartar el horario en segundos."
+        subtitle="Clienta, servicio y horario."
         onOpenChange={handleOpenChange}
       />
       <form

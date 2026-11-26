@@ -51,7 +51,7 @@ export function BrandGallerySection({
       padded
       icon={<Sparkles size={16} aria-hidden="true" />}
       title="Vista previa en vivo"
-      subtitle="Refleja al instante tu portada, textos, secciones y cobro."
+      subtitle="Así se ve tu página con los cambios que estás haciendo."
       actions={
         <Button
           label="Abrir"

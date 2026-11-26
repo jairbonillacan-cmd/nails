@@ -202,7 +202,7 @@ export function LandingContentEditorSection({
         id="landing-hero-heading"
         icon={<ImageIcon size={16} aria-hidden="true" />}
         title="Portada principal"
-        subtitle="Cambia el título, el subtítulo, los botones y la foto principal que ven tus clientas al entrar."
+        subtitle="Lo primero que ven tus clientas al entrar."
         badge={
           <StatusTag
             tone={customDesktopHero ? 'accent' : 'neutral'}
@@ -406,7 +406,7 @@ export function LandingContentEditorSection({
         id="landing-marquee-heading"
         icon={<Megaphone size={16} aria-hidden="true" />}
         title="Cinta superior de avisos"
-        subtitle="La franja cereza que recorre la parte de arriba con promociones, horarios o recordatorios."
+        subtitle="La franja de arriba con promociones u horarios."
       >
         <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
           <Switch
@@ -492,7 +492,7 @@ export function LandingContentEditorSection({
         id="landing-sections-heading"
         icon={<LayoutGrid size={16} aria-hidden="true" />}
         title="Secciones visibles en tu página"
-        subtitle="Prende o apaga cualquier bloque con un toque. Los enlaces del menú se ajustan solos."
+        subtitle="Apaga lo que no quieras mostrar. El menú se ajusta solo."
       >
         <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
           <Grid columns={{ minWidth: 210, max: 2 }} gap={3}>

@@ -11,11 +11,9 @@ import { Check, Plus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
   ConfirmActionDialog,
-  MetricGrid,
   PageHeader,
   PageSkeleton,
   SkeletonBlock,
-  type MetricTileItem,
 } from '@/components/ui';
 import { FormDialog } from '@/components/ui/FormDialog';
 import { ServiceCatalogSection } from '@/components/admin/servicios/ServiceCatalogSection';
@@ -24,7 +22,6 @@ import {
   isServiceDraftDirty,
 } from '@/components/admin/servicios/ServiceThumbnail';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
-import { formatCurrency } from '@/lib/format';
 import {
   FORM_SUBMIT_OK,
   formSubmitError,
@@ -100,7 +97,7 @@ export default function AdminServicesPage() {
   );
 
   if (loading || !data) {
-    return <PageSkeleton kpiCount={3} withSplit ariaLabel="Cargando servicios y extras" />;
+    return <PageSkeleton kpiCount={0} withSplit ariaLabel="Cargando servicios y extras" />;
   }
 
   const currency = data.settings.currency;
@@ -117,34 +114,6 @@ export default function AdminServicesPage() {
       : (activeDraft.bufferBeforeMinutes ?? 0) > 0 ||
         (activeDraft.bufferAfterMinutes ?? 0) > 0;
   const isServiceDirty = isServiceDraftDirty(activeDraft, originalService);
-
-  const activeServicesCount = displayServices.filter((s) => s.isActive).length;
-  const privateServicesCount = displayServices.filter((s) => s.isPrivate).length;
-  const activeAddonsCount = data.addons.filter((a) => a.isActive).length;
-
-  const kpiItems: MetricTileItem[] = [
-    {
-      id: 'active-services',
-      label: 'Servicios activos',
-      value: String(activeServicesCount),
-      sub:
-        privateServicesCount > 0
-          ? `de ${data.services.length} · ${privateServicesCount} con link privado`
-          : `de ${data.services.length} en tu menú`,
-    },
-    {
-      id: 'active-addons',
-      label: 'Extras y diseños',
-      value: String(activeAddonsCount),
-      sub: `de ${data.addons.length} disponibles`,
-    },
-    {
-      id: 'base-deposit',
-      label: 'Anticipo del salón',
-      value: formatCurrency(defaultDepositCents, currency),
-      sub: data.settings.depositBankName || 'Transferencia SPEI',
-    },
-  ];
 
   const startEditingService = (srv: Service) => {
     setSection('services');
@@ -238,9 +207,8 @@ export default function AdminServicesPage() {
   return (
     <VStack className="ad-page">
       <PageHeader
-        eyebrow="Tu catálogo"
         title="Servicios"
-        subtitle="Edita tus precios, duraciones y extras tal como los ven tus clientas al agendar."
+        subtitle="Precios y duraciones tal como los ven tus clientas."
         meta={
           togglingId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -264,8 +232,6 @@ export default function AdminServicesPage() {
           />
         }
       />
-
-      <MetricGrid ariaLabel="Resumen de servicios" items={kpiItems} cols={3} />
 
       {savedMsg ? (
         <Banner

@@ -26,6 +26,8 @@ import type {
   ScheduledNotification,
   Service,
 } from '@/lib/types';
+import { formatPhoneDisplay } from '@/lib/format';
+import { describeWorkflowMoment } from '@/lib/notifications/template-preview';
 
 interface TechnicalSettingsSectionProps {
   settings: SalonSettings;
@@ -130,7 +132,7 @@ export function TechnicalSettingsSection({
           id="analytics-heading"
           icon={<BarChart3 size={16} aria-hidden="true" />}
           title="Anuncios y reseñas de Google"
-          subtitle="Mide tus anuncios de Instagram y facilita que tus clientas dejen reseñas en Google."
+          subtitle="Si no sabes qué es alguno de estos datos, déjalo vacío: todo funciona igual."
         >
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
             <TextInput
@@ -221,7 +223,7 @@ export function TechnicalSettingsSection({
           {workflows.map((wf) => (
             <HStack key={wf.id} justify="between" align="center" gap={2} wrap="wrap">
               <Text size="sm" weight="medium">
-                {wf.name}
+                {describeWorkflowMoment(wf)}
               </Text>
               <CheckboxInput
                 size="sm"
@@ -259,7 +261,7 @@ export function TechnicalSettingsSection({
                 return (
                   <li key={n.id}>
                     <ActionRow
-                      title={`${friendlyChannelName(n.channel)} → ${n.recipient}`}
+                      title={`${friendlyChannelName(n.channel)} a ${formatPhoneDisplay(n.recipient)}`}
                       subtitle={n.previewText}
                       status={<StatusTag tone={statusMeta.tone} label={statusMeta.label} />}
                     />

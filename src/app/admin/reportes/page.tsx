@@ -218,7 +218,7 @@ export default function AdminReportsPage() {
             <SurfaceCard
               id="reports-funnel-heading"
               title="Embudo de reservas"
-              subtitle="Sesiones únicas que avanzaron paso a paso en /reservar (sin datos personales)."
+              subtitle="Cuántas personas avanzaron en cada paso de la reserva."
               badge={
                 <StatusTag
                   tone={report.funnel.overallConversionPercent >= 25 ? 'success' : 'accent'}

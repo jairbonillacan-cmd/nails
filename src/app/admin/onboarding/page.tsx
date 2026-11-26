@@ -175,9 +175,9 @@ export default function AdminOnboardingPage() {
   return (
     <VStack className="ad-page ad-wizard-shell">
       <PageHeader
-        eyebrow={`En 2 minutos · Paso ${stepIndex + 1} de ${WIZARD_STEPS.length}`}
+        eyebrow={`Paso ${stepIndex + 1} de ${WIZARD_STEPS.length}`}
         title="Guía inicial"
-        subtitle="Cuatro pasos cortitos para dejar listo tu salón y empezar a compartir tu link."
+        subtitle="Cuatro pasos para dejar listo tu salón."
         actions={
           <Button
             label="Ir al inicio"

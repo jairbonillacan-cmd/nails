@@ -9,7 +9,6 @@ import {
 } from '@/lib/hooks/useAdminCache';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import type { ServicePackage } from '@/lib/types';
-import type { MetricTileItem } from '@/components/ui';
 import {
   buildLoyaltyByClientId,
   buildNoShowStatsByClient,
@@ -185,42 +184,6 @@ export function useClientasData(
   const loyaltyHighlightsCount =
     (data?.nearRewardClients.length ?? 0) + activeClientPackages.length;
 
-  const hasLoadedCampaigns = campaignsQuery.data !== undefined;
-  const hasLoadedPackages = packagesQuery.data !== undefined;
-  const kpiItems: MetricTileItem[] =
-    data && data.retention
-      ? [
-          {
-            id: 'clients',
-            label: 'Clientas',
-            value: String(data.clients.length),
-            sub: `${data.retention.returningClientsCount} frecuentes (2+ visitas)`,
-            interactive: true,
-          },
-          {
-            id: 'comeback',
-            label: 'Para invitar de vuelta',
-            value: String(comebackCount),
-            sub: !canManageClients
-              ? `${displayedInactiveClients.length} sin cita (${inactiveDays}+ días)`
-              : hasLoadedCampaigns
-                ? `${campaigns?.birthdays.length ?? 0} cumpleaños · ${displayedInactiveClients.length} sin cita (${inactiveDays}+ días)`
-                : `${displayedInactiveClients.length} sin cita reciente · revisa cumpleaños`,
-            tone: comebackCount > 0 ? 'warning' : 'success',
-            interactive: true,
-          },
-          {
-            id: 'loyalty',
-            label: 'Sellos y paquetes',
-            value: String(loyaltyHighlightsCount),
-            sub: hasLoadedPackages
-              ? `${data.nearRewardClients.length} cerca de premio · ${activeClientPackages.length} paquetes activos`
-              : `${data.nearRewardClients.length} cerca de premio · ver paquetes`,
-            interactive: true,
-          },
-        ]
-      : [];
-
   return {
     data,
     canManageClients,
@@ -240,7 +203,6 @@ export function useClientasData(
     dispatchedTodayKeys,
     comebackCount,
     loyaltyHighlightsCount,
-    kpiItems,
     visitCountByClient,
     noShowStatsByClient,
     loyaltyByClientId,

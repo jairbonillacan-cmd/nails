@@ -19,7 +19,6 @@ import {
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
   FilterPillBar,
-  MetricGrid,
   PageHeader,
   PageSkeleton,
   SkeletonBlock,
@@ -33,7 +32,6 @@ import { LandingContentEditorSection } from '@/components/admin/marca/LandingCon
 import {
   areLoyaltyProgramsEqual,
   areSettingsEqual,
-  buildBrandKpis,
   buildBrandPatchPayload,
   DEFAULT_LOYALTY_PROGRAM,
 } from '@/components/admin/marca/brandFormUtils';
@@ -100,7 +98,7 @@ export default function AdminBrandPage() {
   if (loading || !data) {
     return (
       <PageSkeleton
-        kpiCount={4}
+        kpiCount={0}
         withSplit
         ariaLabel="Cargando configuración de página y marca"
       />
@@ -131,20 +129,10 @@ export default function AdminBrandPage() {
     accentLight: draft.brandAccentLight,
     accentDark: draft.brandAccentDark,
   });
-  const colorsReadable = colorReadability.lightPassesAA && colorReadability.darkPassesAA;
 
   const isBrandDirty =
     !areSettingsEqual(draft, baseSettings) ||
     !areLoyaltyProgramsEqual(loyaltyDraft, baseLoyalty);
-
-  const kpiItems = buildBrandKpis({
-    colorsReadable,
-    isDepositEnabled,
-    depositAmountCents,
-    draft,
-    loyaltyDraft,
-    customGalleryCount: data.gallery.length,
-  });
 
   const updateDraft = (patch: Partial<SalonSettings>) => {
     const next = { ...draft, ...patch };
@@ -194,9 +182,8 @@ export default function AdminBrandPage() {
   return (
     <VStack className="ad-page">
       <PageHeader
-        eyebrow="Tu salón en internet"
         title="Mi página"
-        subtitle="Edita tu portada, fotos, secciones, preguntas, colores y cobro de anticipo en un solo lugar."
+        subtitle="Lo que ven tus clientas al entrar a tu página."
         meta={
           saving ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -237,8 +224,6 @@ export default function AdminBrandPage() {
           )
         }
       />
-
-      <MetricGrid ariaLabel="Resumen de tu página" items={kpiItems} cols={4} />
 
       <FilterPillBar<BrandEditorTab>
         ariaLabel="Secciones del editor de Mi página"
