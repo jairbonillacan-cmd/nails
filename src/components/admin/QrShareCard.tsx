@@ -153,7 +153,7 @@ export function QrShareCard({ appUrl, salonName }: QrShareCardProps) {
                 display: 'block',
                 maxWidth: '100%',
                 height: 'auto',
-                borderRadius: 'var(--radius-sm)',
+                borderRadius: 'var(--radius-inner)',
               }}
             />
           </VStack>

@@ -84,7 +84,7 @@ export function ServiceThumbnail({
     width: dim,
     height: dim,
     aspectRatio: '1 / 1',
-    borderRadius: 'var(--radius-md)',
+    borderRadius: 'var(--radius-element)',
     objectFit: 'cover',
     flexShrink: 0,
     display: 'block',

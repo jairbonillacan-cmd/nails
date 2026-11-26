@@ -52,7 +52,9 @@ export function WeeklyScheduleEditor({
   const [newFixedByRule, setNewFixedByRule] = useState<Record<string, string>>({});
   const [savingWeekly, setSavingWeekly] = useState(false);
   const [savingOptimize, setSavingOptimize] = useState(false);
+  const [optimisticOptimize, setOptimisticOptimize] = useState<boolean | null>(null);
 
+  const effectiveOptimizeContinuous = optimisticOptimize ?? optimizeContinuousSlots;
   const rules = rulesDraft ?? currentScheduleRules;
   const isScheduleDirty =
     rulesDraft !== null &&
@@ -105,6 +107,7 @@ export function WeeklyScheduleEditor({
   const handleToggleOptimizeContinuous = async (nextVal: boolean) => {
     if (!isOwner || savingOptimize) return;
     setSavingOptimize(true);
+    setOptimisticOptimize(nextVal);
     onSavingStateChange(true);
     onMessage(null);
     try {
@@ -120,8 +123,11 @@ export function WeeklyScheduleEditor({
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         onMessage({ status: 'error', text: errJson?.error || 'No se pudo actualizar esta opción.' });
       }
+    } catch {
+      onMessage({ status: 'error', text: 'Sin conexión. No se pudo actualizar esta opción.' });
     } finally {
       setSavingOptimize(false);
+      setOptimisticOptimize(null);
       onSavingStateChange(false);
     }
   };
@@ -238,14 +244,14 @@ export function WeeklyScheduleEditor({
             <Switch
               label="Aprovechar huecos en horario libre"
               isLabelHidden
-              value={optimizeContinuousSlots}
+              value={effectiveOptimizeContinuous}
               isLoading={savingOptimize}
               onChange={(checked) => void handleToggleOptimizeContinuous(checked)}
             />
           ) : (
             <StatusTag
-              tone={optimizeContinuousSlots ? 'success' : 'neutral'}
-              label={optimizeContinuousSlots ? 'Activado' : 'Desactivado'}
+              tone={effectiveOptimizeContinuous ? 'success' : 'neutral'}
+              label={effectiveOptimizeContinuous ? 'Activado' : 'Desactivado'}
             />
           )}
         </HStack>

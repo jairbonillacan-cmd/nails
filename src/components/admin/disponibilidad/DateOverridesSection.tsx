@@ -69,13 +69,16 @@ export function DateOverridesSection({
         method: 'DELETE',
       });
       if (res.ok) {
-        setPendingDelete(null);
         await onRefresh();
         onSavedNotice(`Fecha ${target.overrideDate} eliminada`);
       } else {
-        onMessage({ status: 'error', text: 'No se pudo eliminar esa fecha.' });
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        onMessage({ status: 'error', text: errJson?.error || 'No se pudo eliminar esa fecha.' });
       }
+    } catch {
+      onMessage({ status: 'error', text: 'Sin conexión. No se pudo eliminar esa fecha.' });
     } finally {
+      setPendingDelete(null);
       setBusyOverrideId(null);
     }
   };
@@ -116,6 +119,8 @@ export function DateOverridesSection({
           text: errJson?.error || 'No se pudieron marcar los días festivos.',
         });
       }
+    } catch {
+      onMessage({ status: 'error', text: 'Sin conexión. No se pudieron marcar los días festivos.' });
     } finally {
       setPreloadingHolidays(false);
     }

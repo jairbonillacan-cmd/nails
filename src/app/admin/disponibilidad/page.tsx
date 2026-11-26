@@ -15,13 +15,34 @@ import {
   MetricGrid,
   PageHeader,
   PageSkeleton,
+  SkeletonBlock,
   type MetricTileItem,
 } from '@/components/ui';
 import { useAdminData } from '@/components/admin/AdminProvider';
-import { DateOverridesSection } from '@/components/admin/disponibilidad/DateOverridesSection';
-import { RecurringBlocksSection } from '@/components/admin/disponibilidad/RecurringBlocksSection';
 import { WeeklyScheduleEditor } from '@/components/admin/disponibilidad/WeeklyScheduleEditor';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+
+const DateOverridesSection = dynamic(
+  () =>
+    import('@/components/admin/disponibilidad/DateOverridesSection').then(
+      (mod) => mod.DateOverridesSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="16rem" radius={3} />,
+  },
+);
+
+const RecurringBlocksSection = dynamic(
+  () =>
+    import('@/components/admin/disponibilidad/RecurringBlocksSection').then(
+      (mod) => mod.RecurringBlocksSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="14rem" radius={3} />,
+  },
+);
 
 const VisualTroubleshooter = dynamic(
   () =>

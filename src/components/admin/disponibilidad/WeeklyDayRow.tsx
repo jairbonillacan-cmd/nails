@@ -48,11 +48,16 @@ export function WeeklyDayRow({
 
   return (
     <li className="ad-row-item" data-muted={!enabled ? 'true' : undefined}>
-      <VStack gap={3} width="100%">
-        <HStack justify="between" align="center" wrap="wrap" gap={3}>
-          <Switch label={label} value={enabled} onChange={(checked) => onToggleDay(dow, checked)} />
+      <VStack gap={2} width="100%">
+        <HStack justify="between" align="center" wrap="wrap" gap={2}>
+          <Switch
+            size="sm"
+            label={label}
+            value={enabled}
+            onChange={(checked) => onToggleDay(dow, checked)}
+          />
           {enabled ? (
-            <HStack gap={2} align="center" wrap="wrap">
+            <HStack gap={1.5} align="center" wrap="wrap">
               <FilterPillBar<'fixed' | 'continuous'>
                 ariaLabel={`Tipo de horario para ${label}`}
                 mode="segmented"
@@ -79,8 +84,8 @@ export function WeeklyDayRow({
         </HStack>
 
         {enabled ? (
-          <VStack gap={3}>
-            {dayRules.map((rule) => {
+          <VStack gap={1.5}>
+            {dayRules.map((rule, ruleIndex) => {
               const fixedList = rule.fixedStartTimes ?? [];
               const windowOptions = FIXED_TIME_OPTIONS.filter(
                 (opt) =>
@@ -93,25 +98,29 @@ export function WeeklyDayRow({
                 selectedForRule && windowOptions.some((o) => o.value === selectedForRule)
                   ? selectedForRule
                   : (windowOptions[0]?.value ?? '');
+              const isLastRule = ruleIndex === dayRules.length - 1;
 
               return (
-                <VStack key={rule.id} gap={2}>
+                <VStack key={rule.id} gap={1.5}>
                   {isFixedMode ? (
-                    <VStack gap={2}>
-                      <HStack gap={1.5} align="center" wrap="wrap">
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <HStack
+                        gap={1}
+                        align="center"
+                        wrap="wrap"
+                        style={{ flex: '1 1 16rem', minWidth: 0 }}
+                      >
                         {fixedList.map((time) => (
                           <Token
                             key={time}
-                            size="md"
-                            icon={<Clock size={12} aria-hidden="true" />}
+                            size="sm"
+                            icon={<Clock size={11} aria-hidden="true" />}
                             label={time}
                             onRemove={() => onRemoveFixedTime(rule.id, time)}
                           />
                         ))}
-                      </HStack>
-                      <HStack gap={2} align="center" wrap="wrap">
                         {windowOptions.length > 0 ? (
-                          <>
+                          <HStack gap={1} align="center">
                             <Selector
                               label={`Elegir hora para ${label}`}
                               isLabelHidden
@@ -122,90 +131,91 @@ export function WeeklyDayRow({
                             />
                             <Button
                               type="button"
-                              label="+ Agregar hora"
+                              label="Agregar"
                               size="sm"
                               variant="secondary"
+                              icon={<Plus size={13} aria-hidden="true" />}
                               onClick={() => onAddFixedTime(rule.id, pendingFixed)}
                             />
-                          </>
+                          </HStack>
                         ) : null}
-                        <HStack gap={1.5} align="center" wrap="wrap">
-                          <Text type="supporting" color="secondary" size="sm">
-                            Jornada:
-                          </Text>
-                          <Selector
-                            label={`Apertura ${label}`}
-                            isLabelHidden
-                            size="sm"
-                            value={rule.startTime}
-                            onChange={(val) => val && onUpdateBoundary(rule.id, 'startTime', val)}
-                            options={TIME_OPTIONS}
-                          />
-                          <Text color="secondary" size="sm">
-                            a
-                          </Text>
-                          <Selector
-                            label={`Cierre ${label}`}
-                            isLabelHidden
-                            size="sm"
-                            value={rule.endTime}
-                            onChange={(val) => val && onUpdateBoundary(rule.id, 'endTime', val)}
-                            options={TIME_OPTIONS}
-                          />
-                        </HStack>
                       </HStack>
-                    </VStack>
+
+                      <HStack gap={1} align="center" wrap="wrap">
+                        <Text type="supporting" color="secondary" size="sm">
+                          Jornada
+                        </Text>
+                        <Selector
+                          label={`Apertura ${label}`}
+                          isLabelHidden
+                          size="sm"
+                          value={rule.startTime}
+                          onChange={(val) => val && onUpdateBoundary(rule.id, 'startTime', val)}
+                          options={TIME_OPTIONS}
+                        />
+                        <Text color="secondary" size="sm">
+                          –
+                        </Text>
+                        <Selector
+                          label={`Cierre ${label}`}
+                          isLabelHidden
+                          size="sm"
+                          value={rule.endTime}
+                          onChange={(val) => val && onUpdateBoundary(rule.id, 'endTime', val)}
+                          options={TIME_OPTIONS}
+                        />
+                      </HStack>
+                    </HStack>
                   ) : (
-                    <HStack gap={2} align="center" wrap="wrap">
-                      <Text type="supporting" color="secondary" size="sm">
-                        De
-                      </Text>
-                      <Selector
-                        label={`Inicio ${label}`}
-                        isLabelHidden
-                        size="sm"
-                        value={rule.startTime}
-                        onChange={(val) => val && onUpdateBoundary(rule.id, 'startTime', val)}
-                        options={TIME_OPTIONS}
-                      />
-                      <Text color="secondary" size="sm">
-                        a
-                      </Text>
-                      <Selector
-                        label={`Fin ${label}`}
-                        isLabelHidden
-                        size="sm"
-                        value={rule.endTime}
-                        onChange={(val) => val && onUpdateBoundary(rule.id, 'endTime', val)}
-                        options={TIME_OPTIONS}
-                      />
-                      <Button
-                        type="button"
-                        label="Quitar tramo"
-                        isIconOnly
-                        size="sm"
-                        variant="ghost"
-                        icon={<Trash2 size={14} aria-hidden="true" />}
-                        onClick={() => onRemoveRule(rule.id)}
-                      />
+                    <HStack justify="between" align="center" gap={1.5} wrap="wrap">
+                      <HStack gap={1.5} align="center" wrap="wrap">
+                        <Text type="supporting" color="secondary" size="sm">
+                          De
+                        </Text>
+                        <Selector
+                          label={`Inicio ${label}`}
+                          isLabelHidden
+                          size="sm"
+                          value={rule.startTime}
+                          onChange={(val) => val && onUpdateBoundary(rule.id, 'startTime', val)}
+                          options={TIME_OPTIONS}
+                        />
+                        <Text color="secondary" size="sm">
+                          a
+                        </Text>
+                        <Selector
+                          label={`Fin ${label}`}
+                          isLabelHidden
+                          size="sm"
+                          value={rule.endTime}
+                          onChange={(val) => val && onUpdateBoundary(rule.id, 'endTime', val)}
+                          options={TIME_OPTIONS}
+                        />
+                        <Button
+                          type="button"
+                          label="Quitar tramo"
+                          isIconOnly
+                          size="sm"
+                          variant="ghost"
+                          icon={<Trash2 size={14} aria-hidden="true" />}
+                          onClick={() => onRemoveRule(rule.id)}
+                        />
+                      </HStack>
+                      {isLastRule ? (
+                        <Button
+                          type="button"
+                          label="Agregar tramo"
+                          size="sm"
+                          variant="secondary"
+                          icon={<Plus size={13} aria-hidden="true" />}
+                          onClick={() => onAddSplitShift(dow)}
+                        />
+                      ) : null}
                     </HStack>
                   )}
                 </VStack>
               );
             })}
-
-            {!isFixedMode ? (
-              <HStack gap={1.5}>
-                <Button
-                  type="button"
-                  label="+ Agregar otro tramo"
-                  size="sm"
-                  variant="secondary"
-                  icon={<Plus size={13} aria-hidden="true" />}
-                  onClick={() => onAddSplitShift(dow)}
-                />
-              </HStack>
-            ) : null}
           </VStack>
         ) : null}
       </VStack>

@@ -105,25 +105,29 @@ export function StaffEditorSection({
       return formSubmitError('Elige al menos un servicio que haga.');
     }
     const existing = editingStaffId ? staff.find((item) => item.id === editingStaffId) : null;
-    const res = await fetch('/api/admin/team', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'staff',
-        data: {
-          ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
-          name: sName.trim(),
-          roleTitle: sRoleTitle.trim() || 'Profesional',
-          bio: sBio.trim(),
-          commissionPercent: sCommission,
-          serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
-        },
-      }),
-    });
-    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar a la profesional.');
-    await onRefresh();
-    onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
-    return FORM_SUBMIT_OK;
+    try {
+      const res = await fetch('/api/admin/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'staff',
+          data: {
+            ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
+            name: sName.trim(),
+            roleTitle: sRoleTitle.trim() || 'Profesional',
+            bio: sBio.trim(),
+            commissionPercent: sCommission,
+            serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
+          },
+        }),
+      });
+      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar a la profesional.');
+      await onRefresh();
+      onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo guardar a la profesional.');
+    }
   };
 
   const handleCopyStaffLink = async (slug: string, name: string) => {
@@ -216,6 +220,7 @@ export function StaffEditorSection({
                           size="sm"
                           value={st.isActive}
                           isLoading={isRowBusy}
+                          isDisabled={Boolean(busyId) && !isRowBusy}
                           onChange={(checked) => onRequestToggleStaffActive(st, checked)}
                         />
                       </HStack>

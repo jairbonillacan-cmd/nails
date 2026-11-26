@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -30,23 +30,47 @@ export default function AdminTeamPage() {
   const { data, loading, refresh } = useAdminData();
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [optimisticStaffActive, setOptimisticStaffActive] = useState<Record<string, boolean>>({});
+  const [optimisticAccessActive, setOptimisticAccessActive] = useState<Record<string, boolean>>({});
   const [pendingDeactivate, setPendingDeactivate] = useState<PendingDeactivateTarget>(null);
   const saveNotice = useEphemeralMessage(3200);
+
+  const displayStaff = useMemo(
+    () =>
+      data
+        ? data.staff.map((st) => {
+            const override = optimisticStaffActive[st.id];
+            return override !== undefined ? { ...st, isActive: override } : st;
+          })
+        : [],
+    [data, optimisticStaffActive],
+  );
+
+  const displayAdminUsers = useMemo(
+    () =>
+      data
+        ? data.adminUsers.map((u) => {
+            const override = optimisticAccessActive[u.id];
+            return override !== undefined ? { ...u, isActive: override } : u;
+          })
+        : [],
+    [data, optimisticAccessActive],
+  );
 
   if (loading || !data) {
     return <PageSkeleton kpiCount={3} withSplit ariaLabel="Cargando equipo y accesos" />;
   }
 
   const isOwner = data.session.user.role === 'owner';
-  const activeStaffCount = data.staff.filter((s) => s.isActive).length;
-  const activeAdminCount = data.adminUsers.filter((u) => u.isActive).length;
+  const activeStaffCount = displayStaff.filter((s) => s.isActive).length;
+  const activeAdminCount = displayAdminUsers.filter((u) => u.isActive).length;
 
   const kpiItems: MetricTileItem[] = [
     {
       id: 'active-staff',
       label: 'Profesionales activas',
       value: String(activeStaffCount),
-      sub: `de ${data.staff.length} en tu salón`,
+      sub: `de ${displayStaff.length} en tu salón`,
     },
     {
       id: 'web-mode',
@@ -61,13 +85,14 @@ export default function AdminTeamPage() {
       id: 'panel-access',
       label: 'Personas con acceso',
       value: String(activeAdminCount),
-      sub: `de ${data.adminUsers.length} cuentas activas`,
+      sub: `de ${displayAdminUsers.length} cuentas activas`,
     },
   ];
 
   const applyToggleStaffActive = async (st: StaffMember, checked: boolean) => {
     if (busyId) return;
     setBusyId(st.id);
+    setOptimisticStaffActive((prev) => ({ ...prev, [st.id]: checked }));
     setMsg(null);
     try {
       const res = await fetch('/api/admin/team', {
@@ -79,16 +104,23 @@ export default function AdminTeamPage() {
         await refresh();
         saveNotice.show(checked ? `${st.name} activada` : `${st.name} pausada`);
       } else {
-        setMsg({ status: 'error', text: 'No se pudo actualizar el estado.' });
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({ status: 'error', text: errJson?.error || 'No se pudo actualizar el estado.' });
       }
+    } catch {
+      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el estado.' });
     } finally {
       setBusyId(null);
+      setOptimisticStaffActive((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== st.id)),
+      );
     }
   };
 
   const applyToggleAccessActive = async (user: AdminUser, checked: boolean) => {
     if (!isOwner || user.id === data.session.user.id || busyId) return;
     setBusyId(user.id);
+    setOptimisticAccessActive((prev) => ({ ...prev, [user.id]: checked }));
     setMsg(null);
     try {
       const res = await fetch('/api/admin/team', {
@@ -113,10 +145,16 @@ export default function AdminTeamPage() {
           checked ? `Acceso reactivado · ${displayName}` : `Acceso pausado · ${displayName}`,
         );
       } else {
-        setMsg({ status: 'error', text: 'No se pudo actualizar el acceso.' });
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsg({ status: 'error', text: errJson?.error || 'No se pudo actualizar el acceso.' });
       }
+    } catch {
+      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el acceso.' });
     } finally {
       setBusyId(null);
+      setOptimisticAccessActive((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== user.id)),
+      );
     }
   };
 
@@ -165,7 +203,7 @@ export default function AdminTeamPage() {
 
       <VStack className="ad-config-grid-equal" gap={5}>
         <StaffEditorSection
-          staff={data.staff}
+          staff={displayStaff}
           services={data.services}
           appUrl={data.integration.appUrl}
           defaultCommissionPercent={data.settings.defaultCommissionPercent || 35}
@@ -182,8 +220,8 @@ export default function AdminTeamPage() {
         />
 
         <AdminAccessSection
-          adminUsers={data.adminUsers}
-          staff={data.staff}
+          adminUsers={displayAdminUsers}
+          staff={displayStaff}
           currentUserId={data.session.user.id}
           isOwner={isOwner}
           busyId={busyId}

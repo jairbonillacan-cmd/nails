@@ -42,6 +42,7 @@ export function AddonsManagerSection({
   const [addonPrice, setAddonPrice] = useState(100);
   const [savingAddon, setSavingAddon] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
 
   const startEditingAddon = (addon: ServiceAddon) => {
     setEditingAddonId(addon.id);
@@ -91,6 +92,8 @@ export function AddonsManagerSection({
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         onError(errJson?.error || 'No se pudo guardar el extra.');
       }
+    } catch {
+      onError('Sin conexión. No se pudo guardar el extra.');
     } finally {
       setSavingAddon(false);
     }
@@ -99,6 +102,7 @@ export function AddonsManagerSection({
   const handleToggleAddonActive = async (addon: ServiceAddon, checked: boolean) => {
     if (togglingId) return;
     setTogglingId(addon.id);
+    setOptimisticActiveById((prev) => ({ ...prev, [addon.id]: checked }));
     try {
       const res = await fetch('/api/admin/services', {
         method: 'POST',
@@ -109,10 +113,16 @@ export function AddonsManagerSection({
         await onRefresh();
         onNotice(checked ? `${addon.name} activado` : `${addon.name} pausado`);
       } else {
-        onError('No se pudo actualizar el estado del extra.');
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        onError(errJson?.error || 'No se pudo actualizar el estado del extra.');
       }
+    } catch {
+      onError('Sin conexión. No se pudo actualizar el extra.');
     } finally {
       setTogglingId(null);
+      setOptimisticActiveById((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== addon.id)),
+      );
     }
   };
 
@@ -138,17 +148,19 @@ export function AddonsManagerSection({
           <VStack as="ul" className="ad-row-list" gap={0}>
             {addons.map((addon) => {
               const isEditingThis = editingAddonId === addon.id;
+              const effectiveIsActive = optimisticActiveById[addon.id] ?? addon.isActive;
+              const isRowBusy = togglingId === addon.id;
               return (
                 <li
                   key={addon.id}
-                  className={togglingId === addon.id ? 'fx-busy' : undefined}
-                  aria-busy={togglingId === addon.id || undefined}
+                  className={isRowBusy ? 'fx-busy' : undefined}
+                  aria-busy={isRowBusy || undefined}
                 >
                   <ActionRow
                     title={addon.name}
                     subtitle={addon.description || undefined}
                     isSelected={isEditingThis}
-                    isMuted={!addon.isActive}
+                    isMuted={!effectiveIsActive}
                     onClick={() => startEditingAddon(addon)}
                     status={
                       <StatusTag
@@ -171,8 +183,9 @@ export function AddonsManagerSection({
                           label={`Activar ${addon.name}`}
                           isLabelHidden
                           size="sm"
-                          value={addon.isActive}
-                          isLoading={togglingId === addon.id}
+                          value={effectiveIsActive}
+                          isLoading={isRowBusy}
+                          isDisabled={Boolean(togglingId) && !isRowBusy}
                           onChange={(checked) => void handleToggleAddonActive(addon, checked)}
                         />
                       </HStack>

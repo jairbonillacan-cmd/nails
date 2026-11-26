@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
@@ -13,13 +14,11 @@ import {
   MetricGrid,
   PageHeader,
   PageSkeleton,
+  SkeletonBlock,
   type MetricTileItem,
 } from '@/components/ui';
 import { FormDialog } from '@/components/ui/FormDialog';
 import { ServiceCatalogSection } from '@/components/admin/servicios/ServiceCatalogSection';
-import { ServiceLivePreview } from '@/components/admin/servicios/ServiceLivePreview';
-import { ServiceEditorPanel } from '@/components/admin/servicios/ServiceEditorPanel';
-import { AddonsManagerSection } from '@/components/admin/servicios/AddonsManagerSection';
 import {
   buildNewServiceDraft,
   isServiceDraftDirty,
@@ -28,10 +27,44 @@ import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { formatCurrency } from '@/lib/format';
 import {
   FORM_SUBMIT_OK,
+  formSubmitError,
   formSubmitResultFromResponse,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
 import type { Service } from '@/lib/types';
+
+const ServiceLivePreview = dynamic(
+  () =>
+    import('@/components/admin/servicios/ServiceLivePreview').then(
+      (mod) => mod.ServiceLivePreview,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="10rem" radius={3} />,
+  },
+);
+
+const ServiceEditorPanel = dynamic(
+  () =>
+    import('@/components/admin/servicios/ServiceEditorPanel').then(
+      (mod) => mod.ServiceEditorPanel,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="20rem" radius={3} />,
+  },
+);
+
+const AddonsManagerSection = dynamic(
+  () =>
+    import('@/components/admin/servicios/AddonsManagerSection').then(
+      (mod) => mod.AddonsManagerSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="20rem" radius={3} />,
+  },
+);
 
 export default function AdminServicesPage() {
   const { data, loading, refresh } = useAdminData();
@@ -39,6 +72,7 @@ export default function AdminServicesPage() {
   const [editing, setEditing] = useState<Partial<Service> | null>(null);
   const [cleanupEnabledOverride, setCleanupEnabledOverride] = useState<boolean | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
   const [pendingPauseService, setPendingPauseService] = useState<Service | null>(null);
   const saveNotice = useEphemeralMessage(3200);
   const [savedMsg, setSavedMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(
@@ -53,6 +87,17 @@ export default function AdminServicesPage() {
     }
     return map;
   }, [data]);
+
+  const displayServices = useMemo(
+    () =>
+      data
+        ? data.services.map((srv) => {
+            const override = optimisticActiveById[srv.id];
+            return override !== undefined ? { ...srv, isActive: override } : srv;
+          })
+        : [],
+    [data, optimisticActiveById],
+  );
 
   if (loading || !data) {
     return <PageSkeleton kpiCount={3} withSplit ariaLabel="Cargando servicios y extras" />;
@@ -73,8 +118,8 @@ export default function AdminServicesPage() {
         (activeDraft.bufferAfterMinutes ?? 0) > 0;
   const isServiceDirty = isServiceDraftDirty(activeDraft, originalService);
 
-  const activeServicesCount = data.services.filter((s) => s.isActive).length;
-  const privateServicesCount = data.services.filter((s) => s.isPrivate).length;
+  const activeServicesCount = displayServices.filter((s) => s.isActive).length;
+  const privateServicesCount = displayServices.filter((s) => s.isPrivate).length;
   const activeAddonsCount = data.addons.filter((a) => a.isActive).length;
 
   const kpiItems: MetricTileItem[] = [
@@ -128,22 +173,27 @@ export default function AdminServicesPage() {
       bufferAfterMinutes: hasCleanupTime ? (activeDraft.bufferAfterMinutes ?? 0) : 0,
       isPrivate: Boolean(activeDraft.isPrivate),
     };
-    const res = await fetch('/api/admin/services', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
-    });
-    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el servicio.');
-    await refresh();
-    saveNotice.show(
-      wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
-    );
-    return FORM_SUBMIT_OK;
+    try {
+      const res = await fetch('/api/admin/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
+      });
+      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el servicio.');
+      await refresh();
+      saveNotice.show(
+        wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
+      );
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo guardar el servicio.');
+    }
   };
 
   const applyToggleServiceActive = async (srv: Service, checked: boolean) => {
     if (togglingId) return;
     setTogglingId(srv.id);
+    setOptimisticActiveById((prev) => ({ ...prev, [srv.id]: checked }));
     setSavedMsg(null);
     try {
       const res = await fetch('/api/admin/services', {
@@ -155,12 +205,19 @@ export default function AdminServicesPage() {
         await refresh();
         saveNotice.show(checked ? `${srv.name} activado` : `${srv.name} pausado`);
       } else {
-        setSavedMsg({ status: 'error', text: 'No se pudo actualizar el estado del servicio.' });
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        setSavedMsg({
+          status: 'error',
+          text: errJson?.error || 'No se pudo actualizar el estado del servicio.',
+        });
       }
     } catch {
       setSavedMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el servicio.' });
     } finally {
       setTogglingId(null);
+      setOptimisticActiveById((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== srv.id)),
+      );
     }
   };
 
@@ -228,7 +285,7 @@ export default function AdminServicesPage() {
       {section === 'services' ? (
         <VStack key="tab-services" className="fx-step-in" gap={5}>
           <ServiceCatalogSection
-            services={data.services}
+            services={displayServices}
             categories={data.categories}
             categoryNameById={categoryNameById}
             currency={currency}

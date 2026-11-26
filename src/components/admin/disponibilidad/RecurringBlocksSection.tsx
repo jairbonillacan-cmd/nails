@@ -77,29 +77,33 @@ function RecurringBreakFormBody({
     if (recStartTime >= recEndTime) {
       return formSubmitError('La hora de inicio debe ser antes que la hora de fin.');
     }
-    const res = await fetch('/api/admin/availability', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'recurring_block',
-        staffId,
-        reason: recReason.trim() || 'Descanso',
-        frequency: recFrequency,
-        weekdays: recFrequency === 'weekly' ? recWeekdays : [],
-        dayOfMonth:
-          recFrequency === 'monthly'
-            ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1)))
-            : null,
-        startTime: recStartTime,
-        endTime: recEndTime,
-        untilDate: recUntilDate.trim() || null,
-        isActive: true,
-      }),
-    });
-    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el descanso.');
-    await onRefresh();
-    onSavedNotice('Descanso guardado');
-    return FORM_SUBMIT_OK;
+    try {
+      const res = await fetch('/api/admin/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'recurring_block',
+          staffId,
+          reason: recReason.trim() || 'Descanso',
+          frequency: recFrequency,
+          weekdays: recFrequency === 'weekly' ? recWeekdays : [],
+          dayOfMonth:
+            recFrequency === 'monthly'
+              ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1)))
+              : null,
+          startTime: recStartTime,
+          endTime: recEndTime,
+          untilDate: recUntilDate.trim() || null,
+          isActive: true,
+        }),
+      });
+      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el descanso.');
+      await onRefresh();
+      onSavedNotice('Descanso guardado');
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo guardar el descanso.');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -215,11 +219,14 @@ export function RecurringBlocksSection({
   onMessage,
 }: RecurringBlocksSectionProps) {
   const [busyBlockId, setBusyBlockId] = useState<string | null>(null);
+  const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
   const [pendingDelete, setPendingDelete] = useState<RecurringBlock | null>(null);
 
   const handleToggleRecurringBlock = async (block: RecurringBlock) => {
     if (busyBlockId) return;
+    const nextIsActive = !block.isActive;
     setBusyBlockId(block.id);
+    setOptimisticActiveById((prev) => ({ ...prev, [block.id]: nextIsActive }));
     onMessage(null);
     try {
       const res = await fetch('/api/admin/availability', {
@@ -228,7 +235,7 @@ export function RecurringBlocksSection({
         body: JSON.stringify({
           kind: 'recurring_block_toggle',
           id: block.id,
-          isActive: !block.isActive,
+          isActive: nextIsActive,
         }),
       });
       if (res.ok) {
@@ -241,8 +248,13 @@ export function RecurringBlocksSection({
           text: errJson?.error || 'No se pudo actualizar este descanso.',
         });
       }
+    } catch {
+      onMessage({ status: 'error', text: 'Sin conexión. No se pudo actualizar este descanso.' });
     } finally {
       setBusyBlockId(null);
+      setOptimisticActiveById((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== block.id)),
+      );
     }
   };
 
@@ -257,7 +269,6 @@ export function RecurringBlocksSection({
         { method: 'DELETE' },
       );
       if (res.ok) {
-        setPendingDelete(null);
         await onRefresh();
         onSavedNotice('Descanso eliminado');
       } else {
@@ -267,7 +278,10 @@ export function RecurringBlocksSection({
           text: errJson?.error || 'No se pudo eliminar este descanso.',
         });
       }
+    } catch {
+      onMessage({ status: 'error', text: 'Sin conexión. No se pudo eliminar este descanso.' });
     } finally {
+      setPendingDelete(null);
       setBusyBlockId(null);
     }
   };
@@ -311,19 +325,20 @@ export function RecurringBlocksSection({
           <VStack as="ul" className="ad-row-list" gap={0}>
             {recurringBlocks.map((block) => {
               const isBusy = busyBlockId === block.id;
+              const effectiveIsActive = optimisticActiveById[block.id] ?? block.isActive;
               return (
                 <li
                   key={block.id}
                   className={isBusy ? 'ad-row-item fx-busy' : 'ad-row-item'}
-                  data-muted={!block.isActive ? 'true' : undefined}
+                  data-muted={!effectiveIsActive ? 'true' : undefined}
                   aria-busy={isBusy || undefined}
                 >
                   <VStack gap={1} className="rb-grow">
                     <HStack gap={2} align="center" wrap="wrap">
                       <Text weight="semibold">{block.reason}</Text>
                       <StatusTag
-                        tone={block.isActive ? 'success' : 'neutral'}
-                        label={block.isActive ? 'Activo' : 'Pausado'}
+                        tone={effectiveIsActive ? 'success' : 'neutral'}
+                        label={effectiveIsActive ? 'Activo' : 'Pausado'}
                       />
                     </HStack>
                     <Text type="supporting" color="secondary" hasTabularNumbers>
@@ -334,11 +349,11 @@ export function RecurringBlocksSection({
                   <HStack gap={1.5} align="center">
                     <Button
                       type="button"
-                      label={isBusy ? 'Guardando...' : block.isActive ? 'Pausar' : 'Activar'}
+                      label={isBusy ? 'Guardando...' : effectiveIsActive ? 'Pausar' : 'Activar'}
                       variant="secondary"
                       size="sm"
                       icon={
-                        block.isActive ? (
+                        effectiveIsActive ? (
                           <Pause size={13} aria-hidden="true" />
                         ) : (
                           <Play size={13} aria-hidden="true" />

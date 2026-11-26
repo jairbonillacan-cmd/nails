@@ -148,6 +148,7 @@ export function BrandGallerySection({
                 copiedLabel="Copiada"
                 feedbackMessage="CLABE copiada al portapapeles."
                 monospace
+                layout="stacked"
               />
             </VStack>
           ) : null}

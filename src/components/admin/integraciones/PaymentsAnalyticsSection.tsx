@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -8,11 +10,11 @@ import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { CreditCard, SlidersHorizontal } from 'lucide-react';
 import {
   CopyableField,
+  SkeletonBlock,
   StatusTag,
   SurfaceCard,
   type StatusTagTone,
 } from '@/components/ui';
-import { TechnicalSettingsSection } from '@/components/admin/integraciones/TechnicalSettingsSection';
 import type {
   NotificationChannel,
   NotificationWorkflow,
@@ -21,6 +23,17 @@ import type {
   ScheduledNotification,
   Service,
 } from '@/lib/types';
+
+const TechnicalSettingsSection = dynamic(
+  () =>
+    import('@/components/admin/integraciones/TechnicalSettingsSection').then(
+      (mod) => mod.TechnicalSettingsSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="18rem" radius={3} />,
+  },
+);
 
 interface PaymentsAnalyticsSectionProps {
   settings: SalonSettings;
@@ -67,6 +80,8 @@ export function PaymentsAnalyticsSection({
   onRefresh,
   onBanner,
 }: PaymentsAnalyticsSectionProps) {
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [hasOpenedMore, setHasOpenedMore] = useState(false);
   const payBadge = paymentModeChip(settings.paymentMode);
 
   return (
@@ -78,7 +93,12 @@ export function PaymentsAnalyticsSection({
         subtitle={`Elige si cobras tu anticipo de ${depositLabel} por transferencia SPEI o con pago automático en Mercado Pago.`}
         badge={<StatusTag tone={payBadge.tone} label={payBadge.label} showDot />}
       >
-        <VStack gap={4} className="ad-card-body" paddingBlockStart={4}>
+        <VStack
+          gap={4}
+          className={savingSettings ? 'ad-card-body fx-busy' : 'ad-card-body'}
+          aria-busy={savingSettings || undefined}
+          paddingBlockStart={4}
+        >
           <Selector
             label="Cómo apartan sus citas tus clientas"
             value={settings.paymentMode}
@@ -154,7 +174,11 @@ export function PaymentsAnalyticsSection({
 
       <Collapsible
         className="ad-disclosure"
-        defaultIsOpen={false}
+        isOpen={isMoreOpen}
+        onOpenChange={(next) => {
+          setIsMoreOpen(next);
+          if (next) setHasOpenedMore(true);
+        }}
         trigger={
           <HStack justify="between" align="center" gap={2} width="100%" wrap="wrap">
             <HStack gap={2} align="center">
@@ -172,19 +196,21 @@ export function PaymentsAnalyticsSection({
           </HStack>
         }
       >
-        <TechnicalSettingsSection
-          settings={settings}
-          googleCalendarTechUrl={googleCalendarTechUrl}
-          mercadoPagoTechUrl={mercadoPagoTechUrl}
-          services={services}
-          workflows={workflows}
-          notifications={notifications}
-          savingSettings={savingSettings}
-          onSaveSettingsPatch={onSaveSettingsPatch}
-          onToggleSmsChannel={onToggleSmsChannel}
-          onRefresh={onRefresh}
-          onBanner={onBanner}
-        />
+        {hasOpenedMore ? (
+          <TechnicalSettingsSection
+            settings={settings}
+            googleCalendarTechUrl={googleCalendarTechUrl}
+            mercadoPagoTechUrl={mercadoPagoTechUrl}
+            services={services}
+            workflows={workflows}
+            notifications={notifications}
+            savingSettings={savingSettings}
+            onSaveSettingsPatch={onSaveSettingsPatch}
+            onToggleSmsChannel={onToggleSmsChannel}
+            onRefresh={onRefresh}
+            onBanner={onBanner}
+          />
+        ) : null}
       </Collapsible>
     </VStack>
   );

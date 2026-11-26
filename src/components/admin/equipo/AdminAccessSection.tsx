@@ -21,6 +21,7 @@ import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import {
   FORM_SUBMIT_OK,
+  formSubmitError,
   formSubmitResultFromResponse,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
@@ -78,24 +79,28 @@ function AccessFormBody({
   const { isSubmitting } = controls;
 
   const addAccess = async (): Promise<FormSubmitResult> => {
-    const res = await fetch('/api/admin/team', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'admin_user',
-        data: {
-          fullName: aName.trim(),
-          email: aEmail.trim(),
-          role: aRole,
-          staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
-          isActive: true,
-        },
-      }),
-    });
-    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo dar acceso a esta persona.');
-    await onRefresh();
-    onNotice('Acceso creado');
-    return FORM_SUBMIT_OK;
+    try {
+      const res = await fetch('/api/admin/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'admin_user',
+          data: {
+            fullName: aName.trim(),
+            email: aEmail.trim(),
+            role: aRole,
+            staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
+            isActive: true,
+          },
+        }),
+      });
+      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo dar acceso a esta persona.');
+      await onRefresh();
+      onNotice('Acceso creado');
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo dar acceso a esta persona.');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -236,6 +241,7 @@ export function AdminAccessSection({
                         size="sm"
                         value={u.isActive}
                         isLoading={isRowBusy}
+                        isDisabled={Boolean(busyId) && !isRowBusy}
                         onChange={(checked) => onRequestToggleAccessActive(u, checked)}
                       />
                     ) : undefined

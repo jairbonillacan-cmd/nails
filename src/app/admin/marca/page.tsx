@@ -26,13 +26,10 @@ import {
   StatusTag,
 } from '@/components/ui';
 import { BrandIdentitySection } from '@/components/admin/marca/BrandIdentitySection';
-import { BookingAppearanceSection } from '@/components/admin/marca/BookingAppearanceSection';
 import { DepositSettingsSection } from '@/components/admin/marca/DepositSettingsSection';
 import { LoyaltySettingsSection } from '@/components/admin/marca/LoyaltySettingsSection';
 import { BrandGallerySection } from '@/components/admin/marca/BrandGallerySection';
-import { AdvancedPoliciesSection } from '@/components/admin/marca/AdvancedPoliciesSection';
 import { LandingContentEditorSection } from '@/components/admin/marca/LandingContentEditorSection';
-import { LandingGalleryFaqSection } from '@/components/admin/marca/LandingGalleryFaqSection';
 import {
   areLoyaltyProgramsEqual,
   areSettingsEqual,
@@ -45,6 +42,39 @@ import { useSalonAppearance } from '@/components/SalonThemeProvider';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { checkThemeAccentContrast } from '@/lib/contrast';
 import type { LoyaltyProgram, SalonSettings } from '@/lib/types';
+
+const LandingGalleryFaqSection = dynamic(
+  () =>
+    import('@/components/admin/marca/LandingGalleryFaqSection').then(
+      (mod) => mod.LandingGalleryFaqSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="24rem" radius={3} />,
+  },
+);
+
+const BookingAppearanceSection = dynamic(
+  () =>
+    import('@/components/admin/marca/BookingAppearanceSection').then(
+      (mod) => mod.BookingAppearanceSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="20rem" radius={3} />,
+  },
+);
+
+const AdvancedPoliciesSection = dynamic(
+  () =>
+    import('@/components/admin/marca/AdvancedPoliciesSection').then(
+      (mod) => mod.AdvancedPoliciesSection,
+    ),
+  {
+    ssr: false,
+    loading: () => <SkeletonBlock width="100%" height="5rem" radius={3} />,
+  },
+);
 
 const QrShareCard = dynamic(
   () => import('@/components/admin/QrShareCard').then((mod) => mod.QrShareCard),
