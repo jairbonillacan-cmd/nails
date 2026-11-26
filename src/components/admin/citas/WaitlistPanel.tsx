@@ -5,6 +5,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { MessageCircle } from 'lucide-react';
 import {
   ActionRow,
@@ -36,10 +37,12 @@ export function WaitlistPanel({
   onNotified,
 }: WaitlistPanelProps) {
   const [notifyingId, setNotifyingId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleNotifyWaitlist = async (waitlistId: string) => {
     if (notifyingId === waitlistId) return;
     setNotifyingId(waitlistId);
+    setErrorMessage(null);
     try {
       const res = await fetch('/api/admin/operations', {
         method: 'POST',
@@ -52,7 +55,16 @@ export function WaitlistPanel({
       });
       if (res.ok) {
         await onNotified();
+      } else {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        setErrorMessage(
+          json?.error || 'No se pudo marcar a la clienta como avisada. Inténtalo de nuevo.',
+        );
       }
+    } catch {
+      setErrorMessage(
+        'Error de conexión al actualizar la lista de espera. Revisa tu conexión e inténtalo de nuevo.',
+      );
     } finally {
       setNotifyingId(null);
     }
@@ -71,6 +83,17 @@ export function WaitlistPanel({
         />
       }
     >
+      {errorMessage ? (
+        <VStack paddingInline={5} paddingBlockStart={3} gap={0}>
+          <Banner
+            status="error"
+            role="alert"
+            title={errorMessage}
+            isDismissable
+            onDismiss={() => setErrorMessage(null)}
+          />
+        </VStack>
+      ) : null}
       {waitlist.length === 0 ? (
         <EmptyStateCard
           framed={false}

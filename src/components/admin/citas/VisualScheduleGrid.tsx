@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -57,7 +57,12 @@ import {
   getLocalMinutesInTimezone,
   parseTimeMinutes,
   shiftDateKey,
+  type CalendarOpenSlot,
 } from './scheduleGridGeometry';
+
+const EMPTY_PAYMENT_SPLITS: readonly PaymentSplit[] = [];
+const EMPTY_BOOKINGS: readonly BookingWithRelations[] = [];
+const EMPTY_OPEN_SLOTS: readonly CalendarOpenSlot[] = [];
 
 interface VisualScheduleGridProps {
   rangeMode: 'day' | 'week';
@@ -76,6 +81,8 @@ interface VisualScheduleGridProps {
   busyBookingId?: string | null;
   busyStatus?: BookingStatus | null;
   reschedulingBookingId?: string | null;
+  rangeControls?: ReactNode;
+  staffControls?: ReactNode;
   onChangeDate: (nextDateKey: string) => void;
   onJumpToDay: (nextDateKey: string) => void;
   onOpenNewForStaff: (
@@ -112,6 +119,8 @@ export function VisualScheduleGrid({
   busyBookingId = null,
   busyStatus = null,
   reschedulingBookingId = null,
+  rangeControls,
+  staffControls,
   onChangeDate,
   onJumpToDay,
   onOpenNewForStaff,
@@ -150,6 +159,68 @@ export function VisualScheduleGrid({
     () => buildFixedTimesByStaff(activeStaff, schedules, dow),
     [activeStaff, schedules, dow],
   );
+
+  const splitsByBookingId = useMemo(() => {
+    const map = new Map<string, PaymentSplit[]>();
+    for (const split of paymentSplits) {
+      const existing = map.get(split.bookingId);
+      if (existing) {
+        existing.push(split);
+      } else {
+        map.set(split.bookingId, [split]);
+      }
+    }
+    return map;
+  }, [paymentSplits]);
+
+  const serviceNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const service of allServices) {
+      map.set(service.id, service.name);
+    }
+    return map;
+  }, [allServices]);
+
+  const dayBookingsByStaffId = useMemo(() => {
+    const map = new Map<string, BookingWithRelations[]>();
+    for (const booking of dayBookings) {
+      const existing = map.get(booking.staffId);
+      if (existing) {
+        existing.push(booking);
+      } else {
+        map.set(booking.staffId, [booking]);
+      }
+    }
+    return map;
+  }, [dayBookings]);
+
+  const activeBookingCountByStaffId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const booking of dayBookings) {
+      if (booking.status === 'canceled') continue;
+      map.set(booking.staffId, (map.get(booking.staffId) ?? 0) + 1);
+    }
+    return map;
+  }, [dayBookings]);
+
+  const openSlotsByStaffId = useMemo(() => {
+    const map = new Map<string, CalendarOpenSlot[]>();
+    for (const st of activeStaff) {
+      const staffBookings = dayBookingsByStaffId.get(st.id) ?? EMPTY_BOOKINGS;
+      const staffBlocks = activeBlocksByStaff.get(st.id) ?? [];
+      const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
+      map.set(
+        st.id,
+        buildStaffOpenSlots({
+          fixedTimes,
+          staffBookings,
+          staffBlocks,
+          timezone,
+        }),
+      );
+    }
+    return map;
+  }, [activeStaff, dayBookingsByStaffId, activeBlocksByStaff, fixedTimesByStaff, timezone]);
 
   const nowIndicator = useMemo(
     () => computeNowIndicator(nowMs, dateKey, todayKey, timezone),
@@ -264,13 +335,13 @@ export function VisualScheduleGrid({
       booking.status === 'pending_confirmation' || booking.status === 'pending_payment';
     const paymentSummary = computeBookingPaymentSummary(
       booking.totalPriceCents,
-      paymentSplits.filter((s) => s.bookingId === booking.id),
+      splitsByBookingId.get(booking.id) ?? EMPTY_PAYMENT_SPLITS,
     );
     const canCollect =
       booking.status === 'confirmed' ||
       (booking.status === 'completed' && paymentSummary.isUncollected);
     const extraNames = (booking.extraServiceIds ?? [])
-      .map((id) => allServices.find((s) => s.id === id)?.name)
+      .map((id) => serviceNameById.get(id))
       .filter((n): n is string => Boolean(n));
 
     return (
@@ -286,7 +357,7 @@ export function VisualScheduleGrid({
           height: `${geo.heightPct}%`,
         }}
         onPointerDown={(event) => {
-          if (!canDrag || event.button !== 0) return;
+          if (!canDrag || event.button !== 0 || event.pointerType === 'touch') return;
           if ((event.target as HTMLElement).closest('button[data-no-drag="true"]')) return;
           const colEl = event.currentTarget.closest<HTMLElement>('.ad-cal-col-body');
           if (!colEl) return;
@@ -408,38 +479,47 @@ export function VisualScheduleGrid({
     );
   };
 
+  const visibleBookingsCount =
+    rangeMode === 'week'
+      ? weekDays.reduce((sum, day) => sum + day.items.length, 0)
+      : dayBookings.length;
+
   return (
-    <VStack gap={3} className="ad-cal-shell">
+    <VStack gap={2} className="ad-cal-shell">
       <HStack
         className="ad-cal-bar"
         justify="between"
         align="center"
         wrap="wrap"
-        gap={3}
+        gap={2}
       >
         <HStack gap={2} align="center" wrap="wrap">
-          <Button
-            type="button"
-            label={rangeMode === 'week' ? 'Semana anterior' : 'Día anterior'}
-            isIconOnly
-            size="sm"
-            variant="secondary"
-            icon={<ChevronLeft size={15} aria-hidden="true" />}
-            onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? -7 : -1))}
-          />
-          <Heading level={2} className="lk-serif ad-cal-heading">
-            {rangeMode === 'week' ? formattedWeekRange : formattedDay}
-          </Heading>
-          <Button
-            type="button"
-            label={rangeMode === 'week' ? 'Semana siguiente' : 'Día siguiente'}
-            isIconOnly
-            size="sm"
-            variant="secondary"
-            icon={<ChevronRight size={15} aria-hidden="true" />}
-            onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? 7 : 1))}
-          />
-          {dateKey !== todayKey ? (
+          <HStack gap={1.5} align="center">
+            <Button
+              type="button"
+              label={rangeMode === 'week' ? 'Semana anterior' : 'Día anterior'}
+              isIconOnly
+              size="sm"
+              variant="secondary"
+              icon={<ChevronLeft size={15} aria-hidden="true" />}
+              onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? -7 : -1))}
+            />
+            <Heading level={2} className="lk-serif ad-cal-heading">
+              {rangeMode === 'week' ? formattedWeekRange : formattedDay}
+            </Heading>
+            <Button
+              type="button"
+              label={rangeMode === 'week' ? 'Semana siguiente' : 'Día siguiente'}
+              isIconOnly
+              size="sm"
+              variant="secondary"
+              icon={<ChevronRight size={15} aria-hidden="true" />}
+              onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? 7 : 1))}
+            />
+          </HStack>
+          {rangeControls ? (
+            rangeControls
+          ) : dateKey !== todayKey ? (
             <Button
               type="button"
               label="Hoy"
@@ -451,16 +531,10 @@ export function VisualScheduleGrid({
         </HStack>
 
         <HStack gap={2} align="center" wrap="wrap">
-          <Text type="supporting" color="secondary" className="ad-hide-s">
-            Arrastra una cita para moverla o estira su borde inferior para ajustar duración
-          </Text>
+          {staffControls}
           <Badge
             variant="neutral"
-            label={String(
-              rangeMode === 'week'
-                ? weekDays.reduce((sum, day) => sum + day.items.length, 0)
-                : dayBookings.length,
-            )}
+            label={`${visibleBookingsCount} ${visibleBookingsCount === 1 ? 'cita' : 'citas'}`}
           />
         </HStack>
       </HStack>
@@ -482,9 +556,7 @@ export function VisualScheduleGrid({
                 </Text>
               </VStack>
               {activeStaff.map((st) => {
-                const count = dayBookings.filter(
-                  (b) => b.staffId === st.id && b.status !== 'canceled',
-                ).length;
+                const count = activeBookingCountByStaffId.get(st.id) ?? 0;
                 const colorIdx = allStaffColorIndex.get(st.id) ?? 0;
                 const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
                 return (
@@ -544,15 +616,9 @@ export function VisualScheduleGrid({
               </VStack>
 
               {activeStaff.map((st) => {
-                const staffBookings = dayBookings.filter((b) => b.staffId === st.id);
+                const staffBookings = dayBookingsByStaffId.get(st.id) ?? EMPTY_BOOKINGS;
                 const staffBlocks = activeBlocksByStaff.get(st.id) ?? [];
-                const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
-                const openSlots = buildStaffOpenSlots({
-                  fixedTimes,
-                  staffBookings,
-                  staffBlocks,
-                  timezone,
-                });
+                const openSlots = openSlotsByStaffId.get(st.id) ?? EMPTY_OPEN_SLOTS;
                 const isDropTarget =
                   Boolean(drag.activeDrag?.isDragging) &&
                   drag.activeDrag?.targetStaffId === st.id &&
@@ -814,6 +880,10 @@ export function VisualScheduleGrid({
           </VStack>
         )}
       </VStack>
+
+      <Text type="supporting" color="secondary" className="ad-hide-s">
+        Arrastra una cita para moverla, estira su borde inferior para ajustar duración o haz clic en un hueco libre.
+      </Text>
 
       <ConfirmActionDialog
         isOpen={Boolean(pendingProposal)}

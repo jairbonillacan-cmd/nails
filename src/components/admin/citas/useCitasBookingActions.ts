@@ -29,14 +29,12 @@ interface UseCitasBookingActionsParams {
   data: AdminOverviewPayload | null;
   hasActiveOwnerPin: boolean;
   refresh: () => Promise<void>;
-  revalidateBookings: () => Promise<void>;
 }
 
 export function useCitasBookingActions({
   data,
   hasActiveOwnerPin,
   refresh,
-  revalidateBookings,
 }: UseCitasBookingActionsParams) {
   const [feedback, setFeedback] = useState<CitasFeedbackState | null>(null);
   const [busyAction, setBusyAction] = useState<{
@@ -113,7 +111,6 @@ export function useCitasBookingActions({
         invalidateAdminCache('/api/admin/reports');
         inlineNotice.show(`Estado: ${BOOKING_STATUS_BADGE[status].label}`);
         void refresh();
-        void revalidateBookings();
         return true;
       }
 
@@ -159,6 +156,7 @@ export function useCitasBookingActions({
   const sendReminder = async (bookingId: string) => {
     if (remindingId === bookingId) return;
     setRemindingId(bookingId);
+    setFeedback(null);
     try {
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
@@ -188,6 +186,11 @@ export function useCitasBookingActions({
           title: json?.error || 'No se pudo enviar el recordatorio.',
         });
       }
+    } catch {
+      setFeedback({
+        status: 'error',
+        title: 'Error de conexión al enviar el recordatorio.',
+      });
     } finally {
       setRemindingId(null);
     }
@@ -196,6 +199,7 @@ export function useCitasBookingActions({
   const requestReschedule = async (bookingId: string) => {
     if (requestingRescheduleId === bookingId) return;
     setRequestingRescheduleId(bookingId);
+    setFeedback(null);
     try {
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
@@ -231,6 +235,11 @@ export function useCitasBookingActions({
               : json?.error || 'No se pudo generar el enlace para reagendar.',
         });
       }
+    } catch {
+      setFeedback({
+        status: 'error',
+        title: 'Error de conexión al generar el enlace para reagendar.',
+      });
     } finally {
       setRequestingRescheduleId(null);
     }
@@ -308,7 +317,6 @@ export function useCitasBookingActions({
         invalidateAdminCache('/api/admin/reports');
         inlineNotice.show(params.summaryLabel);
         void refresh();
-        void revalidateBookings();
         return true;
       }
       rollback();

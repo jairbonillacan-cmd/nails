@@ -74,7 +74,6 @@ interface CitasDialogsHostProps {
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
   onRefresh: () => Promise<void>;
-  onRevalidateBookings: () => Promise<void>;
   onShowNotice: (text: string) => void;
   onSetFeedback: (feedback: CitasFeedbackState | null) => void;
 }
@@ -116,7 +115,6 @@ export function CitasDialogsHost({
   onSendReminder,
   onRequestReschedule,
   onRefresh,
-  onRevalidateBookings,
   onShowNotice,
   onSetFeedback,
 }: CitasDialogsHostProps) {
@@ -184,7 +182,6 @@ export function CitasDialogsHost({
           onCreated={async (message, description) => {
             invalidateAdminCache('/api/admin/reports');
             await onRefresh();
-            void onRevalidateBookings();
             if (description) {
               onSetFeedback({ status: 'success', title: message, description });
             } else {
@@ -209,7 +206,6 @@ export function CitasDialogsHost({
             invalidateAdminCache('/api/admin/reports');
             invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
             await onRefresh();
-            void onRevalidateBookings();
           }}
           onScheduleRetouch={onScheduleRetouch}
         />

@@ -12,6 +12,7 @@ import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialog } from '@/components/ui/FormDialog';
 import {
   FORM_SUBMIT_OK,
+  formSubmitError,
   formSubmitResultFromResponse,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
@@ -61,21 +62,27 @@ function BlockDayFormBody({
   const { isSubmitting } = controls;
 
   const blockDay = async (): Promise<FormSubmitResult> => {
-    const res = await fetch('/api/admin/availability', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        staffId: blockStaffId,
-        overrideDate: blockDate,
-        isUnavailable: true,
-        startTime: null,
-        endTime: null,
-        reason: blockReason.trim() || 'Día libre',
-      }),
-    });
-    if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo bloquear esa fecha.');
-    await onBlocked(blockDate);
-    return FORM_SUBMIT_OK;
+    try {
+      const res = await fetch('/api/admin/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staffId: blockStaffId,
+          overrideDate: blockDate,
+          isUnavailable: true,
+          startTime: null,
+          endTime: null,
+          reason: blockReason.trim() || 'Día libre',
+        }),
+      });
+      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo bloquear esa fecha.');
+      await onBlocked(blockDate);
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError(
+        'Error de conexión al bloquear esa fecha. Revisa tu conexión e inténtalo de nuevo.',
+      );
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {

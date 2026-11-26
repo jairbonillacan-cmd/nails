@@ -23,7 +23,7 @@ import type { NewBookingPrefill } from './NewBookingDialog';
 import { shiftDateKey } from './scheduleGridGeometry';
 
 export function useCitasWorkspace() {
-  const { data: providerData, bookingEventSeq, refresh } = useAdminData();
+  const { data: providerData, refresh } = useAdminData();
   const searchParams = useSearchParams();
 
   const overviewQuery = useAdminCachedQuery<AdminOverviewPayload>(
@@ -33,34 +33,34 @@ export function useCitasWorkspace() {
       enabled: Boolean(providerData),
       initialData: providerData ?? undefined,
       staleTimeMs: 30_000,
-      revalidateKey: bookingEventSeq,
     },
   );
 
-  const bookingsQuery = useAdminCachedQuery<{ bookings: BookingWithRelations[] }>(
-    providerData ? ADMIN_CACHE_KEYS.bookings : null,
-    (signal) =>
-      fetchAdminJson<{ bookings: BookingWithRelations[] }>(ADMIN_CACHE_KEYS.bookings, signal),
-    {
-      enabled: Boolean(providerData),
-      initialData: providerData ? { bookings: providerData.bookings } : undefined,
-      staleTimeMs: 30_000,
-      revalidateKey: bookingEventSeq,
-    },
-  );
+  const data = overviewQuery.data ?? providerData;
 
-  const baseOverview = overviewQuery.data ?? providerData;
-  const data = useMemo<AdminOverviewPayload | null>(() => {
-    if (!baseOverview) return null;
-    const cachedBookings = bookingsQuery.data?.bookings;
-    if (!cachedBookings || cachedBookings === baseOverview.bookings) return baseOverview;
-    return { ...baseOverview, bookings: cachedBookings };
-  }, [baseOverview, bookingsQuery.data]);
+  const paramCollect = searchParams.get('collect')?.trim() ?? '';
+  const paramNew = searchParams.get('new')?.trim() ?? '';
+  const paramQuery = searchParams.get('q')?.trim() ?? '';
+  const paramDate = searchParams.get('date')?.trim() ?? '';
+  const paramStaff = searchParams.get('staff')?.trim() ?? '';
 
   const [tab, setTab] = useState('upcoming');
   const [viewMode, setViewMode] = useState<'schedule' | 'list'>('schedule');
   const [agendaRange, setAgendaRange] = useState<AgendaRange>('today');
-  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>(() => {
+    if (
+      paramStaff &&
+      providerData &&
+      !(
+        providerData.session.user.role === 'specialist' &&
+        providerData.session.user.staffMemberId
+      ) &&
+      providerData.staff.some((s) => s.isActive && s.id === paramStaff)
+    ) {
+      return paramStaff;
+    }
+    return 'all';
+  });
   const [search, setSearch] = useState('');
   const [selectedVisualDate, setSelectedVisualDate] = useState<string | null>(null);
   const [quickFinderOpen, setQuickFinderOpen] = useState(false);
@@ -74,20 +74,30 @@ export function useCitasWorkspace() {
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockSessionKey, setBlockSessionKey] = useState(0);
   const lastHandledUrlKeyRef = useRef('');
+  const lastParamStaffRef = useRef(paramStaff);
 
   const tz = data?.settings.timezone || 'America/Mexico_City';
-  const paramCollect = searchParams.get('collect')?.trim() ?? '';
-  const paramNew = searchParams.get('new')?.trim() ?? '';
-  const paramQuery = searchParams.get('q')?.trim() ?? '';
-  const paramDate = searchParams.get('date')?.trim() ?? '';
   const urlSyncKey = data
-    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}|${paramDate}`
+    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}|${paramDate}|${paramStaff}`
     : 'citas-loading';
 
   useExternalSync(urlSyncKey, async (signal, key) => {
     if (signal.aborted || !key.startsWith('citas-ready') || !data) return;
     if (lastHandledUrlKeyRef.current === key) return;
     lastHandledUrlKeyRef.current = key;
+
+    const isSpecialist =
+      data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
+    if (!isSpecialist) {
+      if (paramStaff && data.staff.some((s) => s.isActive && s.id === paramStaff)) {
+        setSelectedStaffFilter(paramStaff);
+        setTab((prev) => (prev === 'waitlist' ? 'upcoming' : prev));
+      } else if (paramStaff === 'all' || (lastParamStaffRef.current && !paramStaff)) {
+        setSelectedStaffFilter('all');
+      }
+    }
+    lastParamStaffRef.current = paramStaff;
+
     if (paramDate && /^\d{4}-\d{2}-\d{2}$/.test(paramDate)) {
       setSelectedVisualDate(paramDate);
       setTab('upcoming');
@@ -240,9 +250,6 @@ export function useCitasWorkspace() {
     tabFilteredBookings,
     listBookings,
     refresh,
-    revalidateBookings: async () => {
-      await bookingsQuery.revalidate();
-    },
     tab,
     setTab,
     viewMode,

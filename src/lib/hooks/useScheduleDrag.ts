@@ -49,6 +49,14 @@ interface UseScheduleDragOptions {
   onComplete: (proposal: ScheduleDragProposal) => void;
 }
 
+interface CachedColumnRect {
+  value: string;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 interface InternalDragSession {
   mode: 'move' | 'resize';
   booking: BookingWithRelations;
@@ -61,6 +69,12 @@ interface InternalDragSession {
   columnHeight: number;
   columnTop: number;
   pointerOffsetMinutes: number;
+  scrollContainer: HTMLElement | null;
+  initialScrollLeft: number;
+  initialScrollTop: number;
+  initialWindowScrollX: number;
+  initialWindowScrollY: number;
+  columnRects: CachedColumnRect[];
   hasMoved: boolean;
   targetDateKey: string;
   targetStaffId: string;
@@ -87,24 +101,87 @@ export function useScheduleDrag({
   onComplete,
 }: UseScheduleDragOptions) {
   const [activeDrag, setActiveDrag] = useState<ActiveScheduleDrag | null>(null);
+  const activeDragRef = useRef<ActiveScheduleDrag | null>(null);
   const sessionRef = useRef<InternalDragSession | null>(null);
   const onCompleteRef = useRef(onComplete);
   const justDraggedRef = useRef(false);
+
+  const totalMinutes = Math.max(60, dayEndMinutes - dayStartMinutes);
+  const optionsRef = useRef({
+    dayStartMinutes,
+    dayEndMinutes,
+    snapMinutes,
+    minDurationMinutes,
+    maxDurationMinutes,
+    columnAttribute,
+    allowCrossColumn,
+    totalMinutes,
+  });
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
-  const totalMinutes = Math.max(60, dayEndMinutes - dayStartMinutes);
+  useEffect(() => {
+    optionsRef.current = {
+      dayStartMinutes,
+      dayEndMinutes,
+      snapMinutes,
+      minDurationMinutes,
+      maxDurationMinutes,
+      columnAttribute,
+      allowCrossColumn,
+      totalMinutes,
+    };
+  }, [
+    allowCrossColumn,
+    columnAttribute,
+    dayEndMinutes,
+    dayStartMinutes,
+    maxDurationMinutes,
+    minDurationMinutes,
+    snapMinutes,
+    totalMinutes,
+  ]);
+
+  const updateActiveDrag = useCallback((next: ActiveScheduleDrag | null) => {
+    activeDragRef.current = next;
+    setActiveDrag(next);
+  }, []);
 
   const startDrag = useCallback(
     (input: StartDragInput) => {
       const rect = input.columnContainer.getBoundingClientRect();
       if (rect.height <= 0) return;
 
+      const opts = optionsRef.current;
       const pointerMinutes =
-        dayStartMinutes + ((input.pointerY - rect.top) / rect.height) * totalMinutes;
+        opts.dayStartMinutes + ((input.pointerY - rect.top) / rect.height) * opts.totalMinutes;
       const pointerOffsetMinutes = pointerMinutes - input.originStartMinutes;
+
+      const scrollContainer = input.columnContainer.closest<HTMLElement>('.ad-cal-scroll');
+      const columnRects: CachedColumnRect[] = [];
+      if (opts.allowCrossColumn) {
+        const rowRoot =
+          input.columnContainer.closest('.ad-cal-body-row') ??
+          input.columnContainer.parentElement ??
+          (typeof document !== 'undefined' ? document : null);
+        if (rowRoot) {
+          const nodes = rowRoot.querySelectorAll<HTMLElement>(`[${opts.columnAttribute}]`);
+          for (const el of nodes) {
+            const value = el.getAttribute(opts.columnAttribute)?.trim();
+            if (!value) continue;
+            const colRect = el.getBoundingClientRect();
+            columnRects.push({
+              value,
+              left: colRect.left,
+              right: colRect.right,
+              top: colRect.top,
+              bottom: colRect.bottom,
+            });
+          }
+        }
+      }
 
       sessionRef.current = {
         mode: input.mode,
@@ -118,6 +195,12 @@ export function useScheduleDrag({
         columnHeight: rect.height,
         columnTop: rect.top,
         pointerOffsetMinutes,
+        scrollContainer,
+        initialScrollLeft: scrollContainer?.scrollLeft ?? 0,
+        initialScrollTop: scrollContainer?.scrollTop ?? 0,
+        initialWindowScrollX: typeof window !== 'undefined' ? window.scrollX : 0,
+        initialWindowScrollY: typeof window !== 'undefined' ? window.scrollY : 0,
+        columnRects,
         hasMoved: false,
         targetDateKey: input.originDateKey,
         targetStaffId: input.originStaffId,
@@ -126,7 +209,7 @@ export function useScheduleDrag({
       };
       justDraggedRef.current = false;
 
-      setActiveDrag({
+      updateActiveDrag({
         mode: input.mode,
         bookingId: input.booking.id,
         targetDateKey: input.originDateKey,
@@ -136,15 +219,29 @@ export function useScheduleDrag({
         isDragging: false,
       });
     },
-    [dayStartMinutes, totalMinutes],
+    [updateActiveDrag],
   );
 
+  const isDragSessionActive = activeDrag !== null;
+
   useEffect(() => {
-    if (!activeDrag) return;
+    if (!isDragSessionActive) return;
 
     const handlePointerMove = (event: PointerEvent) => {
       const session = sessionRef.current;
       if (!session) return;
+
+      const opts = optionsRef.current;
+      const scrollDeltaX =
+        (session.scrollContainer
+          ? session.scrollContainer.scrollLeft - session.initialScrollLeft
+          : 0) +
+        (window.scrollX - session.initialWindowScrollX);
+      const scrollDeltaY =
+        (session.scrollContainer
+          ? session.scrollContainer.scrollTop - session.initialScrollTop
+          : 0) +
+        (window.scrollY - session.initialWindowScrollY);
 
       const dx = event.clientX - session.startPointerX;
       const dy = event.clientY - session.startPointerY;
@@ -153,30 +250,33 @@ export function useScheduleDrag({
       }
       session.hasMoved = true;
 
+      const alreadyDragging = Boolean(activeDragRef.current?.isDragging);
+
       if (session.mode === 'move') {
         const pointerMinutes =
-          dayStartMinutes +
-          ((event.clientY - session.columnTop) / session.columnHeight) * totalMinutes;
+          opts.dayStartMinutes +
+          ((event.clientY + scrollDeltaY - session.columnTop) / session.columnHeight) *
+            opts.totalMinutes;
         const rawStart = pointerMinutes - session.pointerOffsetMinutes;
-        const maxStart = dayEndMinutes - session.originDurationMinutes;
+        const maxStart = opts.dayEndMinutes - session.originDurationMinutes;
         const nextStart = clamp(
-          snapTo(rawStart, snapMinutes),
-          dayStartMinutes,
-          Math.max(dayStartMinutes, maxStart),
+          snapTo(rawStart, opts.snapMinutes),
+          opts.dayStartMinutes,
+          Math.max(opts.dayStartMinutes, maxStart),
         );
 
         let nextStaffId = session.originStaffId;
         let nextDateKey = session.originDateKey;
-        if (allowCrossColumn && typeof document !== 'undefined') {
-          const hovered = document
-            .elementFromPoint(event.clientX, event.clientY)
-            ?.closest(`[${columnAttribute}]`);
-          const attrValue = hovered?.getAttribute(columnAttribute)?.trim();
-          if (attrValue) {
-            if (columnAttribute === 'data-cal-staff') {
-              nextStaffId = attrValue;
-            } else {
-              nextDateKey = attrValue;
+        if (opts.allowCrossColumn && session.columnRects.length > 0) {
+          const adjustedX = event.clientX + scrollDeltaX;
+          for (const col of session.columnRects) {
+            if (adjustedX >= col.left && adjustedX <= col.right) {
+              if (opts.columnAttribute === 'data-cal-staff') {
+                nextStaffId = col.value;
+              } else {
+                nextDateKey = col.value;
+              }
+              break;
             }
           }
         }
@@ -185,12 +285,12 @@ export function useScheduleDrag({
           nextStart !== session.targetStartMinutes ||
           nextStaffId !== session.targetStaffId ||
           nextDateKey !== session.targetDateKey ||
-          !activeDrag.isDragging
+          !alreadyDragging
         ) {
           session.targetStartMinutes = nextStart;
           session.targetStaffId = nextStaffId;
           session.targetDateKey = nextDateKey;
-          setActiveDrag({
+          updateActiveDrag({
             mode: 'move',
             bookingId: session.booking.id,
             targetDateKey: nextDateKey,
@@ -201,20 +301,20 @@ export function useScheduleDrag({
           });
         }
       } else {
-        const deltaMinutes = (dy / session.columnHeight) * totalMinutes;
+        const deltaMinutes = ((dy + scrollDeltaY) / session.columnHeight) * opts.totalMinutes;
         const maxAllowed = Math.min(
-          maxDurationMinutes,
-          dayEndMinutes - session.originStartMinutes,
+          opts.maxDurationMinutes,
+          opts.dayEndMinutes - session.originStartMinutes,
         );
         const nextDuration = clamp(
-          snapTo(session.originDurationMinutes + deltaMinutes, snapMinutes),
-          minDurationMinutes,
-          Math.max(minDurationMinutes, maxAllowed),
+          snapTo(session.originDurationMinutes + deltaMinutes, opts.snapMinutes),
+          opts.minDurationMinutes,
+          Math.max(opts.minDurationMinutes, maxAllowed),
         );
 
-        if (nextDuration !== session.targetDurationMinutes || !activeDrag.isDragging) {
+        if (nextDuration !== session.targetDurationMinutes || !alreadyDragging) {
           session.targetDurationMinutes = nextDuration;
-          setActiveDrag({
+          updateActiveDrag({
             mode: 'resize',
             bookingId: session.booking.id,
             targetDateKey: session.originDateKey,
@@ -230,7 +330,7 @@ export function useScheduleDrag({
     const finishDrag = (cancelled: boolean) => {
       const session = sessionRef.current;
       sessionRef.current = null;
-      setActiveDrag(null);
+      updateActiveDrag(null);
       if (!session || cancelled || !session.hasMoved) return;
 
       justDraggedRef.current = true;
@@ -268,17 +368,7 @@ export function useScheduleDrag({
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerCancel);
     };
-  }, [
-    activeDrag,
-    allowCrossColumn,
-    columnAttribute,
-    dayEndMinutes,
-    dayStartMinutes,
-    maxDurationMinutes,
-    minDurationMinutes,
-    snapMinutes,
-    totalMinutes,
-  ]);
+  }, [isDragSessionActive, updateActiveDrag]);
 
   const consumeJustDragged = useCallback(() => {
     if (justDraggedRef.current) {

@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -9,7 +10,11 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Ban, Check, Copy, MessageCircle, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PageSkeleton, SkeletonBlock } from '@/components/ui/SkeletonBlock';
-import { BookingsFiltersBar } from '@/components/admin/citas/BookingsFiltersBar';
+import {
+  AgendaRangeControls,
+  AgendaStaffControls,
+  BookingsFiltersBar,
+} from '@/components/admin/citas/BookingsFiltersBar';
 import { BookingsListView } from '@/components/admin/citas/BookingsListView';
 import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
 import { useCitasBookingActions } from '@/components/admin/citas/useCitasBookingActions';
@@ -42,7 +47,6 @@ export default function AdminBookingsPage() {
     data: ws.data,
     hasActiveOwnerPin,
     refresh: ws.refresh,
-    revalidateBookings: ws.revalidateBookings,
   });
 
   if (!ws.data) {
@@ -81,161 +85,179 @@ export default function AdminBookingsPage() {
     !ws.search.trim() &&
     (ws.viewMode === 'schedule' || ws.viewMode === 'list');
 
+  const isScheduleView = ws.tab !== 'waitlist' && ws.viewMode === 'schedule';
+
   return (
-    <VStack gap={4} className="ad-page fx-fade-up">
-      <PageHeader
-        title="Agenda"
-        subtitle="Calendario por profesional: arrastra para mover, ajusta duración o haz clic en un hueco libre."
-        meta={
-          actions.busyAction || actions.reschedulingId ? (
-            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Actualizando...
-            </Text>
-          ) : actions.inlineNotice.message ? (
-            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-              <Check size={12} aria-hidden="true" />
-              {actions.inlineNotice.message}
-            </Text>
-          ) : undefined
-        }
-        actions={
-          <>
-            <Button
-              type="button"
-              label="Buscar hora libre"
-              variant="secondary"
-              size="sm"
-              icon={<Sparkles size={14} aria-hidden="true" />}
-              onClick={() => ws.setQuickFinderOpen(true)}
-            />
-            <Button
-              type="button"
-              label="Bloquear día"
-              variant="ghost"
-              size="sm"
-              icon={<Ban size={14} aria-hidden="true" />}
-              onClick={ws.openBlockModal}
-            />
-          </>
-        }
-      />
-
-      <HStack className="ad-cal-kpi-strip" gap={4} align="center" wrap="wrap" aria-label="Resumen de agenda">
-        <HStack gap={1.5} align="center" className="ad-cal-strip-item">
-          <Text className="lk-serif ad-cal-strip-num" hasTabularNumbers>
-            {data.kpis.todayBookingsCount}
-          </Text>
-          <Text type="supporting" color="secondary">
-            {data.kpis.todayBookingsCount === 1 ? 'cita hoy' : 'citas hoy'}
-          </Text>
-        </HStack>
-        <Text color="secondary" aria-hidden="true">·</Text>
-        <button
-          type="button"
-          className="ad-cal-strip-btn"
-          onClick={() => {
-            ws.setTab('unconfirmed');
-            ws.setViewMode('list');
-          }}
-        >
-          <Text
-            className="lk-serif ad-cal-strip-num"
-            color={data.kpis.pendingConfirmationsCount > 0 ? 'accent' : 'primary'}
-            hasTabularNumbers
-          >
-            {data.kpis.pendingConfirmationsCount}
-          </Text>
-          <Text type="supporting" color="secondary">
-            por confirmar
-          </Text>
-        </button>
-        <Text color="secondary" aria-hidden="true">·</Text>
-        <HStack gap={1.5} align="center" className="ad-cal-strip-item">
-          <Text className="lk-serif ad-cal-strip-num" hasTabularNumbers>
-            {data.uncollectedBookings.length}
-          </Text>
-          <Text type="supporting" color="secondary">
-            falta cobrar
-          </Text>
-        </HStack>
-      </HStack>
-
-      {actions.feedback ? (
-        <Banner
-          status={actions.feedback.status}
-          role={actions.feedback.status === 'error' ? 'alert' : 'status'}
-          title={actions.feedback.title}
-          description={actions.feedback.description}
-          endContent={
-            actions.feedback.waMeUrl || actions.feedback.rescheduleUrl ? (
-              <HStack gap={1.5} wrap="wrap">
-                {actions.feedback.waMeUrl ? (
-                  <Button
-                    label="Abrir WhatsApp"
-                    variant="primary"
-                    size="sm"
-                    icon={<MessageCircle size={14} aria-hidden="true" />}
-                    href={actions.feedback.waMeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                ) : null}
-                {actions.feedback.rescheduleUrl ? (
-                  <Button
-                    label={actions.rescheduleCopy.feedback ?? 'Copiar enlace'}
-                    variant="secondary"
-                    size="sm"
-                    icon={<Copy size={14} aria-hidden="true" />}
-                    onClick={() =>
-                      actions.feedback?.rescheduleUrl &&
-                      void actions.rescheduleCopy.copy(
-                        actions.feedback.rescheduleUrl,
-                        'Enlace copiado',
-                        'Copia el enlace manualmente',
-                      )
-                    }
-                  />
-                ) : null}
-              </HStack>
+    <VStack gap={3} className="ad-page fx-fade-up">
+      <VStack gap={2} style={{ minWidth: 0, width: '100%' }}>
+        <PageHeader
+          title="Agenda"
+          meta={
+            actions.busyAction || actions.reschedulingId ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Actualizando...
+              </Text>
+            ) : actions.inlineNotice.message ? (
+              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                <Check size={12} aria-hidden="true" />
+                {actions.inlineNotice.message}
+              </Text>
             ) : undefined
           }
-          isDismissable
-          onDismiss={() => actions.setFeedback(null)}
-        />
-      ) : null}
-
-      <BookingsFiltersBar
-        tab={ws.tab}
-        viewMode={ws.viewMode}
-        agendaRange={ws.agendaRange}
-        selectedStaffFilter={ws.selectedStaffFilter}
-        search={ws.search}
-        pendingConfirmationsCount={data.kpis.pendingConfirmationsCount}
-        waitlistCount={data.kpis.waitlistCount}
-        isDateRangeActive={isDateRangeActive}
-        isTodaySelected={ws.agendaRange === 'today' && activeVisualDate === ws.todayKey}
-        isTomorrowSelected={ws.agendaRange === 'tomorrow' && activeVisualDate === ws.tomorrowKey}
-        listCount={ws.listBookings.length}
-        isSpecialistOnly={ws.isSpecialistOnly}
-        visibleStaff={visibleStaff}
-        allStaffColorIndex={ws.allStaffColorIndex}
-        flaggedBookings={flaggedBookings}
-        noShowThreshold={noShowThreshold}
-        onChangeTab={(nextTab) => {
-          ws.setTab(nextTab);
-          if (nextTab === 'past' || nextTab === 'canceled' || nextTab === 'unconfirmed') {
-            ws.setViewMode('list');
+          actions={
+            <>
+              <Button
+                type="button"
+                label="Buscar hora libre"
+                variant="secondary"
+                size="sm"
+                icon={<Sparkles size={14} aria-hidden="true" />}
+                onClick={() => ws.setQuickFinderOpen(true)}
+              />
+              <Button
+                type="button"
+                label="Bloquear día"
+                variant="ghost"
+                size="sm"
+                icon={<Ban size={14} aria-hidden="true" />}
+                onClick={ws.openBlockModal}
+              />
+            </>
           }
-        }}
-        onChangeSearch={(val) => {
-          ws.setSearch(val);
-          if (val.trim() && ws.viewMode === 'schedule') ws.setViewMode('list');
-        }}
-        onChangeViewMode={ws.setViewMode}
-        onSelectRange={ws.handleSelectRange}
-        onChangeStaffFilter={ws.setSelectedStaffFilter}
-        onInspectFlaggedBooking={ws.setPopoverBookingId}
-      />
+        />
+
+        <HStack
+          className="ad-cal-kpi-strip"
+          gap={2}
+          align="center"
+          wrap="wrap"
+          aria-label="Resumen de agenda"
+        >
+          <HStack gap={1.5} align="center" className="ad-cal-strip-item">
+            <Text className="lk-serif ad-cal-strip-num" hasTabularNumbers>
+              {data.kpis.todayBookingsCount}
+            </Text>
+            <Text type="supporting" color="secondary">
+              {data.kpis.todayBookingsCount === 1 ? 'cita hoy' : 'citas hoy'}
+            </Text>
+          </HStack>
+          <Text color="secondary" aria-hidden="true">·</Text>
+          <button
+            type="button"
+            className="ad-cal-strip-btn"
+            onClick={() => {
+              ws.setTab('unconfirmed');
+              ws.setViewMode('list');
+            }}
+          >
+            <Text
+              className="lk-serif ad-cal-strip-num"
+              color={data.kpis.pendingConfirmationsCount > 0 ? 'accent' : 'primary'}
+              hasTabularNumbers
+            >
+              {data.kpis.pendingConfirmationsCount}
+            </Text>
+            <Text type="supporting" color="secondary">
+              por confirmar
+            </Text>
+          </button>
+          <Text color="secondary" aria-hidden="true">·</Text>
+          <NextLink
+            href="/admin/caja?tab=sin-cobrar"
+            className="ad-cal-strip-btn"
+            style={{ textDecoration: 'none' }}
+          >
+            <Text
+              className="lk-serif ad-cal-strip-num"
+              color={data.uncollectedBookings.length > 0 ? 'accent' : 'primary'}
+              hasTabularNumbers
+            >
+              {data.uncollectedBookings.length}
+            </Text>
+            <Text type="supporting" color="secondary">
+              falta cobrar
+            </Text>
+          </NextLink>
+        </HStack>
+
+        {actions.feedback ? (
+          <Banner
+            status={actions.feedback.status}
+            role={actions.feedback.status === 'error' ? 'alert' : 'status'}
+            title={actions.feedback.title}
+            description={actions.feedback.description}
+            endContent={
+              actions.feedback.waMeUrl || actions.feedback.rescheduleUrl ? (
+                <HStack gap={1.5} wrap="wrap">
+                  {actions.feedback.waMeUrl ? (
+                    <Button
+                      label="Abrir WhatsApp"
+                      variant="primary"
+                      size="sm"
+                      icon={<MessageCircle size={14} aria-hidden="true" />}
+                      href={actions.feedback.waMeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  ) : null}
+                  {actions.feedback.rescheduleUrl ? (
+                    <Button
+                      label={actions.rescheduleCopy.feedback ?? 'Copiar enlace'}
+                      variant="secondary"
+                      size="sm"
+                      icon={<Copy size={14} aria-hidden="true" />}
+                      onClick={() =>
+                        actions.feedback?.rescheduleUrl &&
+                        void actions.rescheduleCopy.copy(
+                          actions.feedback.rescheduleUrl,
+                          'Enlace copiado',
+                          'Copia el enlace manualmente',
+                        )
+                      }
+                    />
+                  ) : null}
+                </HStack>
+              ) : undefined
+            }
+            isDismissable
+            onDismiss={() => actions.setFeedback(null)}
+          />
+        ) : null}
+
+        <BookingsFiltersBar
+          tab={ws.tab}
+          viewMode={ws.viewMode}
+          agendaRange={ws.agendaRange}
+          selectedStaffFilter={ws.selectedStaffFilter}
+          search={ws.search}
+          pendingConfirmationsCount={data.kpis.pendingConfirmationsCount}
+          waitlistCount={data.kpis.waitlistCount}
+          isDateRangeActive={isDateRangeActive}
+          isTodaySelected={ws.agendaRange === 'today' && activeVisualDate === ws.todayKey}
+          isTomorrowSelected={ws.agendaRange === 'tomorrow' && activeVisualDate === ws.tomorrowKey}
+          listCount={ws.listBookings.length}
+          isSpecialistOnly={ws.isSpecialistOnly}
+          visibleStaff={visibleStaff}
+          allStaffColorIndex={ws.allStaffColorIndex}
+          flaggedBookings={flaggedBookings}
+          noShowThreshold={noShowThreshold}
+          showSecondaryRow={!isScheduleView}
+          onChangeTab={(nextTab) => {
+            ws.setTab(nextTab);
+            if (nextTab === 'past' || nextTab === 'canceled' || nextTab === 'unconfirmed') {
+              ws.setViewMode('list');
+            }
+          }}
+          onChangeSearch={(val) => {
+            ws.setSearch(val);
+            if (val.trim() && ws.viewMode === 'schedule') ws.setViewMode('list');
+          }}
+          onChangeViewMode={ws.setViewMode}
+          onSelectRange={ws.handleSelectRange}
+          onChangeStaffFilter={ws.setSelectedStaffFilter}
+          onInspectFlaggedBooking={ws.setPopoverBookingId}
+        />
+      </VStack>
 
       {ws.tab === 'waitlist' ? (
         <WaitlistPanel
@@ -265,6 +287,29 @@ export default function AdminBookingsPage() {
           busyBookingId={actions.busyAction?.bookingId ?? null}
           busyStatus={actions.busyAction?.status ?? null}
           reschedulingBookingId={actions.reschedulingId}
+          rangeControls={
+            isDateRangeActive || ws.search.trim() ? (
+              <AgendaRangeControls
+                agendaRange={ws.agendaRange}
+                isDateRangeActive={isDateRangeActive}
+                isTodaySelected={ws.agendaRange === 'today' && activeVisualDate === ws.todayKey}
+                isTomorrowSelected={
+                  ws.agendaRange === 'tomorrow' && activeVisualDate === ws.tomorrowKey
+                }
+                search={ws.search}
+                onSelectRange={ws.handleSelectRange}
+              />
+            ) : undefined
+          }
+          staffControls={
+            <AgendaStaffControls
+              isSpecialistOnly={ws.isSpecialistOnly}
+              visibleStaff={visibleStaff}
+              allStaffColorIndex={ws.allStaffColorIndex}
+              selectedStaffFilter={ws.selectedStaffFilter}
+              onChangeStaffFilter={ws.setSelectedStaffFilter}
+            />
+          }
           onChangeDate={(nextDateKey) => {
             ws.setSelectedVisualDate(nextDateKey);
             if (ws.agendaRange !== 'week') {
@@ -358,7 +403,6 @@ export default function AdminBookingsPage() {
         onSendReminder={(id) => void actions.sendReminder(id)}
         onRequestReschedule={(id) => void actions.requestReschedule(id)}
         onRefresh={ws.refresh}
-        onRevalidateBookings={ws.revalidateBookings}
         onShowNotice={actions.inlineNotice.show}
         onSetFeedback={actions.setFeedback}
       />

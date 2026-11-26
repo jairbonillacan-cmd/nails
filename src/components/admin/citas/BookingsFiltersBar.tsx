@@ -13,6 +13,121 @@ import type { BookingWithRelations, StaffMember } from '@/lib/types';
 
 export type AgendaRange = 'today' | 'tomorrow' | 'week';
 
+interface AgendaRangeControlsProps {
+  agendaRange: AgendaRange;
+  isDateRangeActive: boolean;
+  isTodaySelected: boolean;
+  isTomorrowSelected: boolean;
+  search: string;
+  listCount?: number;
+  onSelectRange: (range: AgendaRange) => void;
+}
+
+export function AgendaRangeControls({
+  agendaRange,
+  isDateRangeActive,
+  isTodaySelected,
+  isTomorrowSelected,
+  search,
+  listCount,
+  onSelectRange,
+}: AgendaRangeControlsProps) {
+  const activeRangeValue: AgendaRange | '' = isTodaySelected
+    ? 'today'
+    : isTomorrowSelected
+      ? 'tomorrow'
+      : agendaRange === 'week'
+        ? 'week'
+        : '';
+
+  if (isDateRangeActive) {
+    return (
+      <FilterPillBar<AgendaRange | ''>
+        ariaLabel="Rango de fechas"
+        mode="pills"
+        size="sm"
+        value={activeRangeValue}
+        onChange={(next) => {
+          if (next === 'today' || next === 'tomorrow' || next === 'week') {
+            onSelectRange(next);
+          }
+        }}
+        options={[
+          { value: 'today', label: 'Hoy' },
+          { value: 'tomorrow', label: 'Mañana' },
+          { value: 'week', label: 'Semana' },
+        ]}
+      />
+    );
+  }
+
+  if (search.trim()) {
+    return <StatusTag label="Buscando en todas las fechas" tone="neutral" />;
+  }
+
+  if (typeof listCount === 'number') {
+    return (
+      <Text type="supporting" color="secondary" hasTabularNumbers>
+        {listCount} {listCount === 1 ? 'cita encontrada' : 'citas encontradas'}
+      </Text>
+    );
+  }
+
+  return null;
+}
+
+interface AgendaStaffControlsProps {
+  isSpecialistOnly: boolean;
+  visibleStaff: StaffMember[];
+  allStaffColorIndex: ReadonlyMap<string, number>;
+  selectedStaffFilter: string;
+  onChangeStaffFilter: (staffId: string) => void;
+}
+
+export function AgendaStaffControls({
+  isSpecialistOnly,
+  visibleStaff,
+  allStaffColorIndex,
+  selectedStaffFilter,
+  onChangeStaffFilter,
+}: AgendaStaffControlsProps) {
+  if (isSpecialistOnly || visibleStaff.length <= 1) return null;
+
+  return (
+    <FilterPillBar<string>
+      ariaLabel="Filtrar por profesional"
+      mode="pills"
+      size="sm"
+      value={selectedStaffFilter}
+      onChange={onChangeStaffFilter}
+      options={[
+        {
+          value: 'all',
+          label: 'Todas',
+          icon: (
+            <Text className="ad-dot" data-idx="all" aria-hidden="true">
+              {'\u200B'}
+            </Text>
+          ),
+        },
+        ...visibleStaff.map((st) => ({
+          value: st.id,
+          label: st.name,
+          icon: (
+            <Text
+              className="ad-dot"
+              data-idx={String(allStaffColorIndex.get(st.id) ?? 0)}
+              aria-hidden="true"
+            >
+              {'\u200B'}
+            </Text>
+          ),
+        })),
+      ]}
+    />
+  );
+}
+
 interface BookingsFiltersBarProps {
   tab: string;
   viewMode: 'schedule' | 'list';
@@ -30,6 +145,7 @@ interface BookingsFiltersBarProps {
   allStaffColorIndex: ReadonlyMap<string, number>;
   flaggedBookings: BookingWithRelations[];
   noShowThreshold: number;
+  showSecondaryRow?: boolean;
   onChangeTab: (nextTab: string) => void;
   onChangeSearch: (value: string) => void;
   onChangeViewMode: (mode: 'schedule' | 'list') => void;
@@ -55,6 +171,7 @@ export function BookingsFiltersBar({
   allStaffColorIndex,
   flaggedBookings,
   noShowThreshold,
+  showSecondaryRow = true,
   onChangeTab,
   onChangeSearch,
   onChangeViewMode,
@@ -62,16 +179,8 @@ export function BookingsFiltersBar({
   onChangeStaffFilter,
   onInspectFlaggedBooking,
 }: BookingsFiltersBarProps) {
-  const activeRangeValue: AgendaRange | '' = isTodaySelected
-    ? 'today'
-    : isTomorrowSelected
-      ? 'tomorrow'
-      : agendaRange === 'week'
-        ? 'week'
-        : '';
-
   return (
-    <VStack gap={3}>
+    <VStack gap={2}>
       {flaggedBookings.length > 0 && tab !== 'waitlist' ? (
         <SurfaceCard tone="warning" padded>
           <HStack justify="between" align="center" wrap="wrap" gap={2}>
@@ -99,7 +208,7 @@ export function BookingsFiltersBar({
         </SurfaceCard>
       ) : null}
 
-      <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={3}>
+      <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={2}>
         <TabList value={tab} onChange={onChangeTab}>
           <Tab value="upcoming" label="Próximas" />
           <Tab
@@ -124,7 +233,12 @@ export function BookingsFiltersBar({
           />
         </TabList>
 
-        <HStack gap={2} align="center" wrap="wrap">
+        <HStack
+          gap={2}
+          align="center"
+          wrap="wrap"
+          style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '100%' }}
+        >
           <TextInput
             type="search"
             label="Buscar cita"
@@ -132,7 +246,8 @@ export function BookingsFiltersBar({
             placeholder="Buscar clienta o código..."
             startIcon={<Search size={14} aria-hidden="true" />}
             size="sm"
-            width="min(16rem, 100%)"
+            width="13.5rem"
+            containerStyle={{ flex: '1 1 13.5rem', minWidth: 0, maxWidth: '100%' }}
             hasClear
             autoCapitalize="none"
             hasAutoCorrect={false}
@@ -157,66 +272,24 @@ export function BookingsFiltersBar({
         </HStack>
       </HStack>
 
-      {tab !== 'waitlist' ? (
+      {tab !== 'waitlist' && showSecondaryRow ? (
         <HStack justify="between" align="center" wrap="wrap" gap={2}>
-          {isDateRangeActive ? (
-            <FilterPillBar<AgendaRange | ''>
-              ariaLabel="Rango de fechas"
-              mode="pills"
-              size="sm"
-              value={activeRangeValue}
-              onChange={(next) => {
-                if (next === 'today' || next === 'tomorrow' || next === 'week') {
-                  onSelectRange(next);
-                }
-              }}
-              options={[
-                { value: 'today', label: 'Hoy' },
-                { value: 'tomorrow', label: 'Mañana' },
-                { value: 'week', label: 'Semana' },
-              ]}
-            />
-          ) : search.trim() ? (
-            <StatusTag label="Buscando en todas las fechas" tone="neutral" />
-          ) : (
-            <Text type="supporting" color="secondary" hasTabularNumbers>
-              {listCount} {listCount === 1 ? 'cita encontrada' : 'citas encontradas'}
-            </Text>
-          )}
-
-          {!isSpecialistOnly && visibleStaff.length > 1 ? (
-            <FilterPillBar<string>
-              ariaLabel="Filtrar por profesional"
-              mode="pills"
-              size="sm"
-              value={selectedStaffFilter}
-              onChange={onChangeStaffFilter}
-              options={[
-                {
-                  value: 'all',
-                  label: 'Todas',
-                  icon: (
-                    <Text className="ad-dot" data-idx="all" aria-hidden="true">
-                      {'\u200B'}
-                    </Text>
-                  ),
-                },
-                ...visibleStaff.map((st) => ({
-                  value: st.id,
-                  label: st.name,
-                  icon: (
-                    <Text
-                      className="ad-dot"
-                      data-idx={String(allStaffColorIndex.get(st.id) ?? 0)}
-                      aria-hidden="true"
-                    >
-                      {'\u200B'}
-                    </Text>
-                  ),
-                })),
-              ]}
-            />
-          ) : null}
+          <AgendaRangeControls
+            agendaRange={agendaRange}
+            isDateRangeActive={isDateRangeActive}
+            isTodaySelected={isTodaySelected}
+            isTomorrowSelected={isTomorrowSelected}
+            search={search}
+            listCount={listCount}
+            onSelectRange={onSelectRange}
+          />
+          <AgendaStaffControls
+            isSpecialistOnly={isSpecialistOnly}
+            visibleStaff={visibleStaff}
+            allStaffColorIndex={allStaffColorIndex}
+            selectedStaffFilter={selectedStaffFilter}
+            onChangeStaffFilter={onChangeStaffFilter}
+          />
         </HStack>
       ) : null}
     </VStack>
