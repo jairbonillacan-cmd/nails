@@ -1,17 +1,86 @@
 'use client';
 
 import type React from 'react';
+import dynamic from 'next/dynamic';
+import { VStack } from '@astryxdesign/core/VStack';
+import { SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import type { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
 import type { BookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { ServiceCategory } from '@/lib/types';
-import { ClientConfirmStep } from './ClientConfirmStep';
-import { ExtrasStep } from './ExtrasStep';
-import { ScheduleStep } from './ScheduleStep';
 import { ServiceStep } from './ServiceStep';
-import { StaffStep } from './StaffStep';
-import type { BookingFlowAction, BookingFlowState } from './bookingMachine';
+import type { BookingFlowAction, BookingFlowState, BookingStep } from './bookingMachine';
+
+function BookingStepFallback() {
+  return (
+    <VStack
+      gap={4}
+      role="status"
+      aria-live="polite"
+      aria-label="Cargando siguiente paso"
+      className="fx-step-in"
+    >
+      <VStack gap={1.5} aria-hidden="true">
+        <SkeletonBlock width="min(100%, 14rem)" height="1.75rem" radius={2} index={0} />
+        <SkeletonBlock width="min(100%, 22rem)" height="1rem" radius={1} index={1} />
+      </VStack>
+      <SkeletonBlock width="100%" height="6rem" radius={3} index={2} />
+      <SkeletonBlock width="100%" height="6rem" radius={3} index={3} />
+    </VStack>
+  );
+}
+
+const ExtrasStep = dynamic(
+  () => import('./ExtrasStep').then((mod) => mod.ExtrasStep),
+  { ssr: false, loading: BookingStepFallback },
+);
+
+const ScheduleStep = dynamic(
+  () => import('./ScheduleStep').then((mod) => mod.ScheduleStep),
+  { ssr: false, loading: BookingStepFallback },
+);
+
+const StaffStep = dynamic(
+  () => import('./StaffStep').then((mod) => mod.StaffStep),
+  { ssr: false, loading: BookingStepFallback },
+);
+
+const ClientConfirmStep = dynamic(
+  () => import('./ClientConfirmStep').then((mod) => mod.ClientConfirmStep),
+  { ssr: false, loading: BookingStepFallback },
+);
+
+let prefetchedExtras = false;
+let prefetchedSchedule = false;
+let prefetchedConfirm = false;
+
+export function prefetchBookingNextStep(
+  step: BookingStep,
+  hasExtrasOptions: boolean,
+): void {
+  if (step === 'service') {
+    if (hasExtrasOptions && !prefetchedExtras) {
+      prefetchedExtras = true;
+      void import('./ExtrasStep');
+    }
+    if (!prefetchedSchedule) {
+      prefetchedSchedule = true;
+      void import('./ScheduleStep');
+    }
+    return;
+  }
+  if (step === 'extras' && !prefetchedSchedule) {
+    prefetchedSchedule = true;
+    void import('./ScheduleStep');
+    return;
+  }
+  if (step === 'schedule' && !prefetchedConfirm) {
+    prefetchedConfirm = true;
+    void import('./StaffStep');
+    void import('./ClientConfirmStep');
+  }
+}
 
 type BookingActions = ReturnType<typeof useBookingFlowActions>;
 
@@ -23,6 +92,8 @@ interface ScheduleRouterState {
   selectedDaySummary: DayAvailabilitySummary | null;
   loadingAvail: boolean;
   isRevalidatingAvail: boolean;
+  availabilityError: string | null;
+  onRetryAvailability: () => void;
   onPrefetchService: (serviceId: string) => void;
   onSelectDate: (date: string) => void;
   onAdvanceMonth: () => void;
@@ -68,12 +139,16 @@ export function BookingStepRouter({
         services={services}
         selectedService={selection.selectedService}
         onSelectService={(serviceId) => {
+          prefetchBookingNextStep('service', selection.hasExtrasOptions);
           if (serviceId === selection.selectedService?.id) return;
           selection.setSelectedServiceId(serviceId);
           selection.setSelectedExtraServiceIds((prev) => prev.filter((id) => id !== serviceId));
           actions.resetSelection();
         }}
-        onPrefetchService={schedule.onPrefetchService}
+        onPrefetchService={(serviceId) => {
+          prefetchBookingNextStep('service', selection.hasExtrasOptions);
+          schedule.onPrefetchService(serviceId);
+        }}
       />
     );
   }
@@ -88,6 +163,7 @@ export function BookingStepRouter({
         compatibleAddons={selection.compatibleAddons}
         selectedAddonIds={selection.selectedAddonIds}
         onToggleExtraService={(serviceId, checked) => {
+          prefetchBookingNextStep('extras', selection.hasExtrasOptions);
           const nextIds = checked
             ? Array.from(new Set([...selection.selectedExtraServiceIds, serviceId])).slice(0, 8)
             : selection.selectedExtraServiceIds.filter((id) => id !== serviceId);
@@ -96,6 +172,7 @@ export function BookingStepRouter({
           actions.resetSelection();
         }}
         onToggleAddon={(addonId, checked) => {
+          prefetchBookingNextStep('extras', selection.hasExtrasOptions);
           const nextIds = checked
             ? Array.from(new Set([...selection.selectedAddonIds, addonId]))
             : selection.selectedAddonIds.filter((id) => id !== addonId);
@@ -125,12 +202,20 @@ export function BookingStepRouter({
         isBusy={actions.isBusy}
         loadingAvail={schedule.loadingAvail}
         isRevalidating={schedule.isRevalidatingAvail}
+        availabilityError={schedule.availabilityError}
+        onRetryAvailability={schedule.onRetryAvailability}
         canAdvanceMonth={selection.canAdvanceMonth}
         isViewingFutureWindow={selection.windowStartDate > schedule.todayKey}
         onChangeLayoutView={selection.setLayoutView}
         onChangeTimeFormat={selection.setTimeFormat}
-        onSelectDate={schedule.onSelectDate}
-        onSelectSlot={(next: AvailableSlot) => void actions.handleSelectSlot(next)}
+        onSelectDate={(nextDate) => {
+          prefetchBookingNextStep('schedule', selection.hasExtrasOptions);
+          schedule.onSelectDate(nextDate);
+        }}
+        onSelectSlot={(next: AvailableSlot) => {
+          prefetchBookingNextStep('schedule', selection.hasExtrasOptions);
+          void actions.handleSelectSlot(next);
+        }}
         onShowAllStaff={() => {
           if (selection.pinnedStaffId === 'any') return;
           selection.setPinnedStaffId('any');

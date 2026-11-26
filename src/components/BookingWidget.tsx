@@ -6,11 +6,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { buildWhatsAppLink } from '@/lib/format';
-import {
-  isAvailabilityRealtimeEvent,
-  useBookingAvailability,
-} from '@/lib/hooks/useBookingAvailability';
+import { isAvailabilityRealtimeEvent, useBookingAvailability } from '@/lib/hooks/useBookingAvailability';
+import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
 import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
 import { useBookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
 import { useBookingUrlSync } from '@/lib/hooks/useBookingUrlSync';
@@ -23,7 +22,7 @@ import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/typ
 import { JsonLdScript } from './seo/JsonLdScript';
 import { BookingHeader, BookingHero, STEP_LABELS } from './booking/BookingChrome';
 import { BookingConflictBanner } from './booking/BookingConflictBanner';
-import { BookingStepRouter } from './booking/BookingStepRouter';
+import { BookingStepRouter, prefetchBookingNextStep } from './booking/BookingStepRouter';
 import { BookingDesktopActions, BookingStickyBar } from './booking/BookingStickyBar';
 import { BookingSummaryCard } from './booking/BookingSummaryCard';
 import { resolveEffectiveSelectedDate } from './booking/bookingHelpers';
@@ -63,14 +62,9 @@ const FORM_ID = 'rb-details-form';
 
 export function BookingWidget(props: BookingWidgetProps) {
   const {
-    settings,
-    categories,
-    services,
-    staff,
-    initialTodayKey,
-    initialSlot,
-    siteOrigin,
-    emitBookingBreadcrumb,
+    settings, categories, services, addons, staff, initialTodayKey,
+    initialServiceSlug, initialExtraServiceSlugs, initialAddonIds,
+    initialSlot, initialInspoNote, siteOrigin, emitBookingBreadcrumb,
   } = props;
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,21 +79,35 @@ export function BookingWidget(props: BookingWidgetProps) {
   const [hasOpenedWaitlist, setHasOpenedWaitlist] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
+  const validServiceIds = useMemo(() => services.map((s) => s.id), [services]);
+  const validAddonIds = useMemo(() => addons.map((a) => a.id), [addons]);
+  const defaultServiceId = services[0]?.id ?? '';
+
+  const bookingDraft = useBookingDraft({
+    selection,
+    defaultServiceId,
+    validServiceIds,
+    validAddonIds,
+    urlOverrides: {
+      service: Boolean(initialServiceSlug),
+      extras: Boolean(initialExtraServiceSlugs?.length),
+      addons: Boolean(initialAddonIds?.length),
+      notes: Boolean(initialInspoNote),
+    },
+    phase: flow.phase,
+  });
+
   const {
-    days: availabilityDays,
-    isLoading: loadingAvail,
-    isRevalidating: isRevalidatingAvail,
-    prefetchWindow,
-    invalidateFromRealtime,
-    revalidateActive,
+    days: availabilityDays, isLoading: loadingAvail, isRevalidating: isRevalidatingAvail,
+    error: availabilityError, retry: retryAvailability,
+    prefetchWindow, invalidateFromRealtime, revalidateActive,
   } = useBookingAvailability({
     serviceId: selection.selectedService?.id ?? null,
     extraServiceIds: selection.activeExtraServiceIds,
     addonIds: selection.activeAddonIds,
     staffId: selection.pinnedStaffId,
     windowStartDate: selection.windowStartDate,
-    nextWindowStartDate:
-      flow.step === 'schedule' && selection.canAdvanceMonth ? selection.nextMonthStartKey : null,
+    nextWindowStartDate: flow.step === 'schedule' && selection.canAdvanceMonth ? selection.nextMonthStartKey : null,
   });
 
   const effectiveSelectedDate = useMemo(
@@ -121,10 +129,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   useRealtimeSubscription(
     useCallback(
       (evt) => {
-        if (
-          isAvailabilityRealtimeEvent(evt.type) &&
-          invalidateFromRealtime({ staffId: evt.staffId, date: evt.date })
-        ) {
+        if (isAvailabilityRealtimeEvent(evt.type) && invalidateFromRealtime({ staffId: evt.staffId, date: evt.date })) {
           realtimePing.show('Disponibilidad actualizada en tiempo real');
         }
       },
@@ -161,6 +166,12 @@ export function BookingWidget(props: BookingWidgetProps) {
     revalidateActive,
     navigateToManageUrl: (url) => router.push(url),
   });
+
+  const handleStartFresh = () => {
+    bookingDraft.resetDraft();
+    actions.resetSelection();
+    actions.goToStep('service');
+  };
 
   const discountCents = actions.appliedCoupon?.discountCents ?? 0;
   const totalPriceCents = Math.max(0, selection.subtotalCents - discountCents);
@@ -209,55 +220,44 @@ export function BookingWidget(props: BookingWidgetProps) {
     nav.backTarget && !actions.isSubmittingBooking ? () => actions.goToStep(nav.backTarget!) : null;
 
   const handleNext = () => {
+    prefetchBookingNextStep(flow.step, selection.hasExtrasOptions);
     if (flow.step === 'service') actions.goToStep(selection.hasExtrasOptions ? 'extras' : 'schedule');
     else if (flow.step === 'extras') actions.goToStep('schedule');
     else if (flow.step === 'schedule' && flow.selectedSlot) actions.goToStep(skipsStaffForSlot ? 'details' : 'staff');
     else if (flow.step === 'staff') void actions.handlePickStaff(actions.chosenStaffId);
   };
 
-  const summaryProps = {
-    currency: settings.currency,
-    rows: buildSummaryRows({
-      selectedService: selection.selectedService,
-      selectedExtraServices: selection.selectedExtraServices,
-      activeSelectedAddons: selection.activeSelectedAddons,
-      flow,
-      timeFormat: selection.timeFormat,
-      timezone,
-      address: settings.address,
-      chosenStaffId: actions.chosenStaffId,
-      isPinned: selection.isPinned,
-      skipsStaffForSlot,
-      totalDurationMinutes: selection.totalDurationMinutes,
-    }),
-    totalPriceCents,
-    hasStartingPrice: selection.hasStartingPrice,
-    discountCents,
-    depositAmountCents: selection.showsDeposit ? selection.depositAmountCents || 20000 : 0,
-    holdRemainingSec,
-    holdTotalSec,
-    isHoldExpired: flow.holdExpired,
-  };
-
-  const whatsappUrl = buildWhatsAppLink(
-    settings.whatsappNumber,
-    `Hola ${settings.name}, tengo una duda para agendar mi cita.`,
+  const summaryRows = useMemo(
+    () =>
+      buildSummaryRows({
+        selectedService: selection.selectedService,
+        selectedExtraServices: selection.selectedExtraServices,
+        activeSelectedAddons: selection.activeSelectedAddons,
+        flow,
+        timeFormat: selection.timeFormat,
+        timezone,
+        address: settings.address,
+        chosenStaffId: actions.chosenStaffId,
+        isPinned: selection.isPinned,
+        skipsStaffForSlot,
+        totalDurationMinutes: selection.totalDurationMinutes,
+      }),
+    [selection.selectedService, selection.selectedExtraServices, selection.activeSelectedAddons, flow, selection.timeFormat, timezone, settings.address, actions.chosenStaffId, selection.isPinned, skipsStaffForSlot, selection.totalDurationMinutes],
   );
-  const ctaProps = {
-    step: flow.step,
-    formId: FORM_ID,
-    nextLabel: nav.nextLabel,
-    canContinue: nav.canContinue,
-    isBusy: actions.isBusy,
-    isSubmittingBooking: actions.isSubmittingBooking,
-    holdExpired: flow.holdExpired,
-    onNext: handleNext,
-  };
 
+  const summaryProps = {
+    currency: settings.currency, rows: summaryRows, totalPriceCents,
+    hasStartingPrice: selection.hasStartingPrice, discountCents,
+    depositAmountCents: selection.showsDeposit ? selection.depositAmountCents || 20000 : 0,
+    holdRemainingSec, holdTotalSec, isHoldExpired: flow.holdExpired,
+  };
+  const whatsappUrl = buildWhatsAppLink(settings.whatsappNumber, `Hola ${settings.name}, tengo una duda para agendar mi cita.`);
+  const ctaProps = {
+    step: flow.step, formId: FORM_ID, nextLabel: nav.nextLabel, canContinue: nav.canContinue,
+    isBusy: actions.isBusy, isSubmittingBooking: actions.isSubmittingBooking, holdExpired: flow.holdExpired, onNext: handleNext,
+  };
   const bookingBreadcrumbData =
-    emitBookingBreadcrumb && !isEmbed
-      ? buildBookingBreadcrumbStructuredData({ siteOrigin })
-      : null;
+    emitBookingBreadcrumb && !isEmbed ? buildBookingBreadcrumbStructuredData({ siteOrigin }) : null;
 
   return (
     <VStack className={isEmbed ? 'lk-root rb-root rb-embed' : 'lk-root rb-root'}>
@@ -278,6 +278,17 @@ export function BookingWidget(props: BookingWidgetProps) {
               <HStack justify="start" className="rb-m">
                 <Button type="button" variant="ghost" size="md" label="Paso anterior" style={{ minHeight: '2.75rem' }} onClick={handleBack} />
               </HStack>
+            ) : null}
+
+            {bookingDraft.hasRestoredDraft ? (
+              <Banner
+                status="info"
+                title="Retomamos tu avance"
+                description="Recuperamos tus datos guardados para que no empieces de cero."
+                endContent={<Button type="button" variant="secondary" size="sm" label="Empezar de nuevo" onClick={handleStartFresh} />}
+                isDismissable
+                onDismiss={bookingDraft.dismissRestoredBanner}
+              />
             ) : null}
 
             <BookingConflictBanner
@@ -311,6 +322,8 @@ export function BookingWidget(props: BookingWidgetProps) {
                 selectedDaySummary,
                 loadingAvail,
                 isRevalidatingAvail,
+                availabilityError,
+                onRetryAvailability: retryAvailability,
                 onPrefetchService: (serviceId) => {
                   if (!serviceId || serviceId === selection.selectedService?.id) return;
                   prefetchWindow({
@@ -322,11 +335,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   });
                 },
                 onSelectDate: (nextDate) =>
-                  selection.selectDateWithinWindow(
-                    nextDate,
-                    availabilityDays[0]?.date,
-                    availabilityDays[availabilityDays.length - 1]?.date,
-                  ),
+                  selection.selectDateWithinWindow(nextDate, availabilityDays[0]?.date, availabilityDays[availabilityDays.length - 1]?.date),
                 onAdvanceMonth: () => selection.advanceMonthWindow(loadingAvail),
                 onPrefetchNextMonth: () => {
                   if (!selection.selectedService || !selection.canAdvanceMonth || selection.nextMonthStartKey === selection.windowStartDate) return;
@@ -350,9 +359,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               {...ctaProps}
               canGoBack={Boolean(nav.backTarget)}
               nextHint={nav.nextHint}
-              onBack={() => {
-                if (nav.backTarget) actions.goToStep(nav.backTarget);
-              }}
+              onBack={() => { if (nav.backTarget) actions.goToStep(nav.backTarget); }}
             />
           </VStack>
 

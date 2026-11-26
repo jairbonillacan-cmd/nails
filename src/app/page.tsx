@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import './landing.css';
 import { getSnapshot } from '@/lib/repositories/db';
 import {
   toPublicReviewDTO,

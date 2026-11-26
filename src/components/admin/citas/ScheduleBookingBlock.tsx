@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -51,7 +51,7 @@ const PROOF_COLOR_TO_TONE: Record<'green' | 'orange' | 'purple' | 'gray', Status
   gray: 'neutral',
 };
 
-export function ScheduleBookingBlock({
+export const ScheduleBookingBlock = memo(function ScheduleBookingBlock({
   booking: b,
   variant,
   colorIdx,
@@ -250,4 +250,4 @@ export function ScheduleBookingBlock({
       </HStack>
     </VStack>
   );
-}
+});

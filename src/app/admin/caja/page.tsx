@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
@@ -8,11 +9,7 @@ import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Download, ExternalLink } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
-import { OwnerPinDialog } from '@/components/admin/config/OwnerPinDialog';
 import { CajaSummaryTab } from '@/components/admin/caja/CajaSummaryTab';
-import { CajaDepositsTab } from '@/components/admin/caja/CajaDepositsTab';
-import { CajaCommissionsTab } from '@/components/admin/caja/CajaCommissionsTab';
-import { CajaPromosTab } from '@/components/admin/caja/CajaPromosTab';
 import {
   approveCajaDeposit,
   createCajaCoupon,
@@ -23,9 +20,43 @@ import {
 } from '@/components/admin/caja/cajaActions';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
 import type { CajaTab, ServicePackageCatalogRow } from '@/components/admin/caja/cajaTypes';
-import { MetricGrid, PageHeader, PageSkeleton } from '@/components/ui';
+import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
 import type { PaymentMethod } from '@/lib/types';
+
+function CajaTabFallback() {
+  return (
+    <VStack gap={3} role="status" aria-live="polite" aria-label="Cargando sección de caja">
+      <SkeletonBlock width="100%" height="5rem" radius={3} index={0} />
+      <SkeletonBlock width="100%" height="10rem" radius={3} index={1} />
+    </VStack>
+  );
+}
+
+const CajaDepositsTab = dynamic(
+  () =>
+    import('@/components/admin/caja/CajaDepositsTab').then((mod) => mod.CajaDepositsTab),
+  { ssr: false, loading: CajaTabFallback },
+);
+
+const CajaCommissionsTab = dynamic(
+  () =>
+    import('@/components/admin/caja/CajaCommissionsTab').then(
+      (mod) => mod.CajaCommissionsTab,
+    ),
+  { ssr: false, loading: CajaTabFallback },
+);
+
+const CajaPromosTab = dynamic(
+  () =>
+    import('@/components/admin/caja/CajaPromosTab').then((mod) => mod.CajaPromosTab),
+  { ssr: false, loading: CajaTabFallback },
+);
+
+const OwnerPinDialog = dynamic(
+  () => import('@/components/admin/config/OwnerPinDialog').then((mod) => mod.OwnerPinDialog),
+  { ssr: false },
+);
 
 export default function AdminCashPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
@@ -322,19 +353,21 @@ export default function AdminCashPage() {
         />
       )}
 
-      <OwnerPinDialog
-        isOpen={csvPinOpen}
-        onOpenChange={(open) => {
-          setCsvPinOpen(open);
-          if (!open) setCsvPinError(null);
-        }}
-        title="Autorizar descarga en Excel (CSV)"
-        description="Para descargar el archivo de caja necesitas ingresar el PIN de dueña."
-        actionLabel="Autorizar y descargar"
-        isSubmitting={exportingCsv}
-        error={csvPinError}
-        onConfirm={(pin) => handleExportCsv(pin)}
-      />
+      {csvPinOpen ? (
+        <OwnerPinDialog
+          isOpen={csvPinOpen}
+          onOpenChange={(open) => {
+            setCsvPinOpen(open);
+            if (!open) setCsvPinError(null);
+          }}
+          title="Autorizar descarga en Excel (CSV)"
+          description="Para descargar el archivo de caja necesitas ingresar el PIN de dueña."
+          actionLabel="Autorizar y descargar"
+          isSubmitting={exportingCsv}
+          error={csvPinError}
+          onConfirm={(pin) => handleExportCsv(pin)}
+        />
+      ) : null}
     </VStack>
   );
 }

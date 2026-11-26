@@ -1,10 +1,6 @@
 'use client';
 
-import {
-  createClient,
-  type RealtimeChannel,
-  type SupabaseClient,
-} from '@supabase/supabase-js';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { useEffect, useRef } from 'react';
 import type { PublicRealtimeEventType, RealtimeEvent } from '../realtime';
 
@@ -167,10 +163,11 @@ export function createRealtimeDebouncer(
 }
 
 interface SharedSupabaseRealtimeHub {
-  client: SupabaseClient;
-  channel: RealtimeChannel;
+  client: SupabaseClient | null;
+  channel: RealtimeChannel | null;
   listeners: Set<(event: RealtimeEvent) => void>;
   isConnected: boolean;
+  disposed: boolean;
 }
 
 const sharedSupabaseHubs = new Map<string, SharedSupabaseRealtimeHub>();
@@ -184,12 +181,6 @@ export function subscribeSupabasePublicSlots(
   let hub = sharedSupabaseHubs.get(hubKey);
 
   if (!hub) {
-    const client = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
     const listeners = new Set<(event: RealtimeEvent) => void>();
     const emitToAll = (event: RealtimeEvent) => {
       for (const listener of listeners) {
@@ -201,52 +192,74 @@ export function subscribeSupabasePublicSlots(
       }
     };
 
-    const channel = client
-      .channel(SUPABASE_PUBLIC_SLOTS_CHANNEL)
-      .on('broadcast', { event: 'slot_changed' }, (msg) => {
-        emitToAll(mapBroadcastPayloadToRealtimeEvent('slot_changed', msg.payload));
-      })
-      .on('broadcast', { event: 'hold_changed' }, (msg) => {
-        emitToAll(mapBroadcastPayloadToRealtimeEvent('hold_changed', msg.payload));
-      })
-      .on('broadcast', { event: 'schedule_changed' }, (msg) => {
-        emitToAll(mapBroadcastPayloadToRealtimeEvent('schedule_changed', msg.payload));
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'public_busy_intervals',
-        },
-        (payload) => {
-          emitToAll(
-            mapPostgresChangeToRealtimeEvent({
-              new: isRecord(payload.new) ? payload.new : null,
-              old: isRecord(payload.old) ? payload.old : null,
-            }),
-          );
-        },
-      );
-
     hub = {
-      client,
-      channel,
+      client: null,
+      channel: null,
       listeners,
       isConnected: false,
+      disposed: false,
     };
     sharedSupabaseHubs.set(hubKey, hub);
 
     const activeHub = hub;
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        activeHub.isConnected = true;
-        emitToAll({
-          type: 'connected',
-          timestamp: new Date().toISOString(),
+    void import('@supabase/supabase-js')
+      .then(({ createClient }) => {
+        if (activeHub.disposed || activeHub.listeners.size === 0) {
+          return;
+        }
+        const client = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
         });
-      }
-    });
+        const channel = client
+          .channel(SUPABASE_PUBLIC_SLOTS_CHANNEL)
+          .on('broadcast', { event: 'slot_changed' }, (msg) => {
+            emitToAll(mapBroadcastPayloadToRealtimeEvent('slot_changed', msg.payload));
+          })
+          .on('broadcast', { event: 'hold_changed' }, (msg) => {
+            emitToAll(mapBroadcastPayloadToRealtimeEvent('hold_changed', msg.payload));
+          })
+          .on('broadcast', { event: 'schedule_changed' }, (msg) => {
+            emitToAll(mapBroadcastPayloadToRealtimeEvent('schedule_changed', msg.payload));
+          })
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'public_busy_intervals',
+            },
+            (payload) => {
+              emitToAll(
+                mapPostgresChangeToRealtimeEvent({
+                  new: isRecord(payload.new) ? payload.new : null,
+                  old: isRecord(payload.old) ? payload.old : null,
+                }),
+              );
+            },
+          );
+
+        activeHub.client = client;
+        activeHub.channel = channel;
+
+        channel.subscribe((status) => {
+          if (activeHub.disposed) return;
+          if (status === 'SUBSCRIBED') {
+            activeHub.isConnected = true;
+            emitToAll({
+              type: 'connected',
+              timestamp: new Date().toISOString(),
+            });
+          }
+        });
+      })
+      .catch(() => {
+        if (sharedSupabaseHubs.get(hubKey) === activeHub && activeHub.listeners.size === 0) {
+          sharedSupabaseHubs.delete(hubKey);
+        }
+      });
   }
 
   hub.listeners.add(onEvent);
@@ -261,8 +274,15 @@ export function subscribeSupabasePublicSlots(
   return () => {
     currentHub.listeners.delete(onEvent);
     if (currentHub.listeners.size === 0) {
+      currentHub.disposed = true;
       sharedSupabaseHubs.delete(hubKey);
-      void currentHub.client.removeChannel(currentHub.channel);
+      if (currentHub.client && currentHub.channel) {
+        const client = currentHub.client;
+        const channel = currentHub.channel;
+        currentHub.client = null;
+        currentHub.channel = null;
+        void client.removeChannel(channel);
+      }
     }
   };
 }

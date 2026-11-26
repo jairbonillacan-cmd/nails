@@ -2,13 +2,21 @@
 
 import dynamic from 'next/dynamic';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
-import { OwnerPinDialog } from '@/components/admin/config/OwnerPinDialog';
 import { ADMIN_CACHE_KEYS, invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import type { BookingStatus, BookingWithRelations, StaffMember } from '@/lib/types';
 import { BlockDayDialog } from './BlockDayDialog';
-import { BookingQuickPopover } from './BookingQuickPopover';
 import type { NewBookingPrefill } from './NewBookingDialog';
 import type { CitasFeedbackState } from './useCitasBookingActions';
+
+const BookingQuickPopover = dynamic(
+  () => import('./BookingQuickPopover').then((mod) => mod.BookingQuickPopover),
+  { ssr: false },
+);
+
+const OwnerPinDialog = dynamic(
+  () => import('@/components/admin/config/OwnerPinDialog').then((mod) => mod.OwnerPinDialog),
+  { ssr: false },
+);
 
 const NewBookingDialog = dynamic(
   () => import('./NewBookingDialog').then((mod) => mod.NewBookingDialog),
@@ -132,26 +140,26 @@ export function CitasDialogsHost({
         />
       ) : null}
 
-      <BookingQuickPopover
-        booking={popoverBooking}
-        allServices={data.services}
-        paymentSplits={data.paymentSplits}
-        salonName={data.settings.name}
-        currency={data.settings.currency}
-        timezone={tz}
-        busyStatus={
-          popoverBooking && busyAction?.bookingId === popoverBooking.id ? busyAction.status : null
-        }
-        isReminding={Boolean(popoverBooking && remindingId === popoverBooking.id)}
-        isRequestingReschedule={Boolean(
-          popoverBooking && requestingRescheduleId === popoverBooking.id,
-        )}
-        onClose={onClosePopover}
-        onUpdateStatus={(id, status) => onUpdateStatus(id, status)}
-        onOpenCheckout={onOpenCheckout}
-        onSendReminder={onSendReminder}
-        onRequestReschedule={onRequestReschedule}
-      />
+      {popoverBooking ? (
+        <BookingQuickPopover
+          booking={popoverBooking}
+          allServices={data.services}
+          paymentSplits={data.paymentSplits}
+          salonName={data.settings.name}
+          currency={data.settings.currency}
+          timezone={tz}
+          busyStatus={
+            busyAction?.bookingId === popoverBooking.id ? busyAction.status : null
+          }
+          isReminding={remindingId === popoverBooking.id}
+          isRequestingReschedule={requestingRescheduleId === popoverBooking.id}
+          onClose={onClosePopover}
+          onUpdateStatus={(id, status) => onUpdateStatus(id, status)}
+          onOpenCheckout={onOpenCheckout}
+          onSendReminder={onSendReminder}
+          onRequestReschedule={onRequestReschedule}
+        />
+      ) : null}
 
       {manualOpen ? (
         <NewBookingDialog
@@ -220,25 +228,22 @@ export function CitasDialogsHost({
         />
       ) : null}
 
-      <OwnerPinDialog
-        isOpen={Boolean(pendingCancelBooking)}
-        onOpenChange={(open) => {
-          if (!open) onDismissCancelPin();
-        }}
-        title="Autorizar cancelación"
-        description={
-          pendingCancelBooking
-            ? `Cancelar la cita ${pendingCancelBooking.bookingCode} de ${pendingCancelBooking.client.fullName} requiere el PIN de autorización de Dueña.`
-            : 'Cancelar esta cita requiere el PIN de autorización de Dueña.'
-        }
-        actionLabel="Confirmar cancelación"
-        isSubmitting={pinSubmitting}
-        error={pinError}
-        onConfirm={async (pin) => {
-          if (!pendingCancelBooking) return;
-          await onUpdateStatus(pendingCancelBooking.id, 'canceled', pin);
-        }}
-      />
+      {pendingCancelBooking ? (
+        <OwnerPinDialog
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) onDismissCancelPin();
+          }}
+          title="Autorizar cancelación"
+          description={`Cancelar la cita ${pendingCancelBooking.bookingCode} de ${pendingCancelBooking.client.fullName} requiere el PIN de autorización de Dueña.`}
+          actionLabel="Confirmar cancelación"
+          isSubmitting={pinSubmitting}
+          error={pinError}
+          onConfirm={async (pin) => {
+            await onUpdateStatus(pendingCancelBooking.id, 'canceled', pin);
+          }}
+        />
+      ) : null}
     </>
   );
 }

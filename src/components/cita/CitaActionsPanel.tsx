@@ -15,7 +15,8 @@ import {
   MessageCircle,
   Sparkles,
 } from 'lucide-react';
-import { BookingStatusTag, SurfaceCard } from '@/components/ui';
+import { BookingStatusTag } from '@/components/ui/StatusTag';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { CitaLocationCard } from './CitaLocationCard';

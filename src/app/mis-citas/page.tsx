@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../portal.css';
 import { readClientPortalSession } from '@/lib/auth/client-portal-otp';
 import {
   ClientPortalSnapshotDTOSchema,

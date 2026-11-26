@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -87,7 +88,7 @@ interface BookingCardProps {
   onRequestReschedule?: (bookingId: string) => void;
 }
 
-export function BookingCard({
+export const BookingCard = memo(function BookingCard({
   booking: b,
   allServices,
   paymentSplits = [],
@@ -340,4 +341,4 @@ export function BookingCard({
       </HStack>
     </VStack>
   );
-}
+});

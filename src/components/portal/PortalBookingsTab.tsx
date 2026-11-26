@@ -5,7 +5,9 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { ArrowRight, RefreshCw, Sparkles } from 'lucide-react';
-import { BookingStatusTag, EmptyStateCard, SurfaceCard } from '@/components/ui';
+import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
+import { BookingStatusTag } from '@/components/ui/StatusTag';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import {
   formatCurrency,
   formatDateLongInTimezone,

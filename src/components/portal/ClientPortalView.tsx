@@ -10,12 +10,9 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
 import { CalendarCheck, LogOut, RefreshCw, WifiOff } from 'lucide-react';
-import {
-  FilterPillBar,
-  PageHeader,
-  SurfaceCard,
-  type FilterPillOption,
-} from '@/components/ui';
+import { FilterPillBar, type FilterPillOption } from '@/components/ui/FilterPillBar';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { buildWhatsAppLink } from '@/lib/format';
 import { useServiceWorker } from '@/lib/hooks/useServiceWorker';
 import type {
@@ -142,14 +139,6 @@ export function ClientPortalView({
       <BookingHeader salonName={settings.name} whatsappUrl={whatsappUrl} />
 
       <VStack as="section" className="rb-hero ck-hero" aria-labelledby="pt-hero-title">
-        <img
-          className="rb-hero-cherries"
-          src={LANDING_ASSETS.cherriesWhite}
-          alt=""
-          width={340}
-          height={340}
-          decoding="async"
-        />
         <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up">
           <VStack gap={1}>
             {snapshot ? (

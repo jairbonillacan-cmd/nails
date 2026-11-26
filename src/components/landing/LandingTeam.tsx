@@ -47,6 +47,7 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
         height={572}
         loading="lazy"
         decoding="async"
+        fetchPriority="low"
         style={{ left: '-6%', top: '10%', width: '40%', opacity: 0.06 }}
       />
       <VStack

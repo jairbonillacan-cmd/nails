@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
@@ -9,10 +10,6 @@ import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { MessageCircle, UserPlus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { ClientDirectoryTab } from '@/components/admin/clientas/ClientDirectoryTab';
-import { ClientRetentionTab } from '@/components/admin/clientas/ClientRetentionTab';
-import { ClientLoyaltyTab } from '@/components/admin/clientas/ClientLoyaltyTab';
-import { ClientProfileDialog } from '@/components/admin/clientas/ClientProfileDialog';
-import { NewClientDialog } from '@/components/admin/clientas/NewClientDialog';
 import {
   assignClientPackageRequest,
   createClientProfileRequest,
@@ -26,9 +23,50 @@ import type {
   ClientPackageRow,
   ClientsTab,
 } from '@/components/admin/clientas/clientasTypes';
-import { MetricGrid, PageHeader, PageSkeleton } from '@/components/ui';
+import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
 import { invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import type { ClientProfile } from '@/lib/types';
+
+function ClientsTabFallback() {
+  return (
+    <VStack gap={3} role="status" aria-live="polite" aria-label="Cargando sección">
+      <SkeletonBlock width="100%" height="5rem" radius={3} index={0} />
+      <SkeletonBlock width="100%" height="10rem" radius={3} index={1} />
+    </VStack>
+  );
+}
+
+const ClientRetentionTab = dynamic(
+  () =>
+    import('@/components/admin/clientas/ClientRetentionTab').then(
+      (mod) => mod.ClientRetentionTab,
+    ),
+  { ssr: false, loading: ClientsTabFallback },
+);
+
+const ClientLoyaltyTab = dynamic(
+  () =>
+    import('@/components/admin/clientas/ClientLoyaltyTab').then(
+      (mod) => mod.ClientLoyaltyTab,
+    ),
+  { ssr: false, loading: ClientsTabFallback },
+);
+
+const ClientProfileDialog = dynamic(
+  () =>
+    import('@/components/admin/clientas/ClientProfileDialog').then(
+      (mod) => mod.ClientProfileDialog,
+    ),
+  { ssr: false },
+);
+
+const NewClientDialog = dynamic(
+  () =>
+    import('@/components/admin/clientas/NewClientDialog').then(
+      (mod) => mod.NewClientDialog,
+    ),
+  { ssr: false },
+);
 
 export default function AdminClientsPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
@@ -300,30 +338,34 @@ export default function AdminClientsPage() {
         />
       )}
 
-      <NewClientDialog
-        isOpen={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreateClient={handleCreateClient}
-      />
+      {createOpen ? (
+        <NewClientDialog
+          isOpen={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreateClient={handleCreateClient}
+        />
+      ) : null}
 
-      <ClientProfileDialog
-        key={selected?.id ?? 'none'}
-        client={selected}
-        onClose={() => setSelected(null)}
-        salonName={data.settings.name}
-        tz={tz}
-        noShowThreshold={noShowThreshold}
-        canManageClients={canManageClients}
-        loyalty={selected ? (loyaltyByClientId.get(selected.id) ?? null) : null}
-        clientPackages={selected ? (packagesByClientId.get(selected.id) ?? []) : []}
-        activeCatalogPackages={activeCatalogPackages}
-        bookings={data.bookings}
-        assigningPkg={assigningPkg}
-        redeemingPkgId={redeemingPkgId}
-        onSaveClient={handleSaveClient}
-        onAssignPackage={handleAssignPackage}
-        onRedeemPackageSession={handleRedeemPackageSession}
-      />
+      {selected ? (
+        <ClientProfileDialog
+          key={selected.id}
+          client={selected}
+          onClose={() => setSelected(null)}
+          salonName={data.settings.name}
+          tz={tz}
+          noShowThreshold={noShowThreshold}
+          canManageClients={canManageClients}
+          loyalty={loyaltyByClientId.get(selected.id) ?? null}
+          clientPackages={packagesByClientId.get(selected.id) ?? []}
+          activeCatalogPackages={activeCatalogPackages}
+          bookings={data.bookings}
+          assigningPkg={assigningPkg}
+          redeemingPkgId={redeemingPkgId}
+          onSaveClient={handleSaveClient}
+          onAssignPackage={handleAssignPackage}
+          onRedeemPackageSession={handleRedeemPackageSession}
+        />
+      ) : null}
     </VStack>
   );
 }

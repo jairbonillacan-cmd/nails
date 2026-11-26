@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -7,7 +8,6 @@ import { Text } from '@astryxdesign/core/Text';
 import { Clock, Timer } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
-import { LANDING_ASSETS } from '../landing/landingContent';
 import { formatHoldClock } from './BookingChrome';
 import { formatServicePrice } from './bookingHelpers';
 
@@ -35,7 +35,7 @@ interface BookingSummaryCardProps {
   headingId: string;
 }
 
-export function BookingSummaryCard({
+export const BookingSummaryCard = memo(function BookingSummaryCard({
   currency,
   rows,
   totalPriceCents,
@@ -54,15 +54,6 @@ export function BookingSummaryCard({
 
   return (
     <VStack gap={4} className="rb-summary">
-      <img
-        className="rb-summary-cherries"
-        src={LANDING_ASSETS.cherriesWhite}
-        alt=""
-        width={280}
-        height={280}
-        loading="lazy"
-        decoding="async"
-      />
       <HStack justify="between" align="center" gap={2} wrap="wrap">
         <Heading level={2} id={headingId} color="inherit" className="lk-serif rb-summary-title">
           Tu cita
@@ -155,4 +146,4 @@ export function BookingSummaryCard({
       ) : null}
     </VStack>
   );
-}
+});

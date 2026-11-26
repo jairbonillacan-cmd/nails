@@ -1,19 +1,36 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Ban, Check, Copy, MessageCircle, Plus, Sparkles } from 'lucide-react';
-import { MetricGrid, PageHeader, PageSkeleton } from '@/components/ui';
+import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
 import { BookingsFiltersBar } from '@/components/admin/citas/BookingsFiltersBar';
 import { BookingsListView } from '@/components/admin/citas/BookingsListView';
 import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
 import { useCitasBookingActions } from '@/components/admin/citas/useCitasBookingActions';
 import { useCitasWorkspace } from '@/components/admin/citas/useCitasWorkspace';
-import { VisualScheduleGrid } from '@/components/admin/citas/VisualScheduleGrid';
 import { WaitlistPanel } from '@/components/admin/citas/WaitlistPanel';
+
+function ScheduleGridFallback() {
+  return (
+    <VStack gap={3} role="status" aria-live="polite" aria-label="Cargando agenda visual">
+      <SkeletonBlock width="100%" height="3.5rem" radius={3} index={0} />
+      <SkeletonBlock width="100%" height="14rem" radius={3} index={1} />
+    </VStack>
+  );
+}
+
+const VisualScheduleGrid = dynamic(
+  () =>
+    import('@/components/admin/citas/VisualScheduleGrid').then(
+      (mod) => mod.VisualScheduleGrid,
+    ),
+  { ssr: false, loading: ScheduleGridFallback },
+);
 
 export default function AdminBookingsPage() {
   const ws = useCitasWorkspace();

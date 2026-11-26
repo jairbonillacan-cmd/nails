@@ -5,7 +5,8 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { MapPin, MessageCircle } from 'lucide-react';
-import { BookingStatusTag, SurfaceCard } from '@/components/ui';
+import { BookingStatusTag } from '@/components/ui/StatusTag';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import {

@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { getImageProps } from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -23,13 +24,25 @@ import { useSalonAppearance } from './SalonThemeProvider';
 import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
 import { LandingNav } from './landing/LandingNav';
 import { LandingMenu } from './landing/LandingMenu';
-import { LandingCreations } from './landing/LandingCreations';
-import { LandingReviews } from './landing/LandingReviews';
-import { LandingTeam } from './landing/LandingTeam';
 import { LandingConnect } from './landing/LandingConnect';
 import { LandingFaq } from './landing/LandingFaq';
-import { LandingVisit } from './landing/LandingVisit';
 import { LandingFooter } from './landing/LandingFooter';
+
+const LandingCreations = dynamic(() =>
+  import('./landing/LandingCreations').then((mod) => mod.LandingCreations),
+);
+
+const LandingReviews = dynamic(() =>
+  import('./landing/LandingReviews').then((mod) => mod.LandingReviews),
+);
+
+const LandingTeam = dynamic(() =>
+  import('./landing/LandingTeam').then((mod) => mod.LandingTeam),
+);
+
+const LandingVisit = dynamic(() =>
+  import('./landing/LandingVisit').then((mod) => mod.LandingVisit),
+);
 
 interface LandingViewProps {
   initialSettings: PublicSettingsDTO;

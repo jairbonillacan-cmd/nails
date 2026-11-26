@@ -10,7 +10,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { MessageCircle } from 'lucide-react';
-import { EmptyStateCard } from '@/components/ui';
+import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import { formatDateShortInTimezone } from '@/lib/format';
 import { RESCHEDULE_REASON_OPTIONS } from '@/lib/notifications/cascade';

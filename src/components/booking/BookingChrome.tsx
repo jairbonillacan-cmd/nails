@@ -132,7 +132,7 @@ export function BookingHero({
 
   if (isCompact) {
     return (
-      <VStack as="section" className="rb-hero" aria-labelledby="rb-title">
+      <VStack as="section" className="rb-hero" data-compact="true" aria-labelledby="rb-title">
         <VStack gap={2} className="rb-wrap rb-hero-inner">
           <HStack justify="between" align="center" wrap="wrap" gap={2}>
             <Heading level={1} id="rb-title" color="inherit" className="lk-serif rb-hero-title">
@@ -167,14 +167,6 @@ export function BookingHero({
 
   return (
     <VStack as="section" className="rb-hero" aria-labelledby="rb-title">
-      <img
-        className="rb-hero-cherries"
-        src={LANDING_ASSETS.cherriesWhite}
-        alt=""
-        width={340}
-        height={340}
-        decoding="async"
-      />
       <VStack gap={4} className="rb-wrap rb-hero-inner">
         <HStack justify="between" align="end" wrap="wrap" gap={2}>
           <VStack gap={1}>
@@ -185,8 +177,11 @@ export function BookingHero({
               className="rb-hero-stroke"
               src={LANDING_ASSETS.strokePorcelain}
               alt=""
+              aria-hidden="true"
               width={180}
               height={20}
+              loading="lazy"
+              fetchPriority="low"
               decoding="async"
             />
           </VStack>

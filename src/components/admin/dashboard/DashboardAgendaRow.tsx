@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -73,7 +74,7 @@ interface DashboardAgendaRowProps {
   onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
 }
 
-export function DashboardAgendaRow({
+export const DashboardAgendaRow = memo(function DashboardAgendaRow({
   booking,
   metrics,
   salonName,
@@ -172,4 +173,4 @@ export function DashboardAgendaRow({
       </HStack>
     </article>
   );
-}
+});

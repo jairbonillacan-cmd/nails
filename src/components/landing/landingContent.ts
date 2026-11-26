@@ -39,8 +39,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Set editorial cereza',
     styleTag: 'Acrílico escultural',
     suggestedServiceSlug: 'unas-acrilicas',
-    width: 1080,
-    height: 1180,
+    width: 800,
+    height: 874,
   },
   {
     src: `${SET}/01-azul-joya-4x5.webp`,
@@ -55,8 +55,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'French minimal',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 1289,
-    height: 1405,
+    width: 800,
+    height: 872,
   },
   {
     src: `${SET}/03-flor-coral-4x5.webp`,
@@ -71,8 +71,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Glazed natural',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 1080,
-    height: 1180,
+    width: 800,
+    height: 874,
   },
   {
     src: `${SET}/11-estampados-mixtos-4x5.webp`,
@@ -87,8 +87,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Milky almendra',
     styleTag: 'Softgel natural',
     suggestedServiceSlug: 'unas-softgel',
-    width: 1320,
-    height: 1732,
+    width: 800,
+    height: 1050,
   },
   {
     src: `${SET}/05-rojo-oliva-3d-4x5.webp`,
@@ -103,8 +103,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Rosa porcelana',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 1320,
-    height: 1730,
+    width: 800,
+    height: 1048,
   },
   {
     src: `${SET}/07-rubi-y-negro-4x5.webp`,
@@ -119,8 +119,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Cat eye sutil',
     styleTag: 'Gel semipermanente',
     suggestedServiceSlug: 'gel-semipermanente-manos',
-    width: 1320,
-    height: 1498,
+    width: 800,
+    height: 908,
   },
   {
     src: `${SET}/12-rojo-laca-dorado-4x5.webp`,
@@ -135,8 +135,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Nude brillante',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 1320,
-    height: 1760,
+    width: 800,
+    height: 1067,
   },
   {
     src: `${SET}/10-vino-metalizado-4x5.webp`,
@@ -151,8 +151,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Almendra suave',
     styleTag: 'Uñas Softgel',
     suggestedServiceSlug: 'unas-softgel',
-    width: 1320,
-    height: 1702,
+    width: 800,
+    height: 1032,
   },
   {
     src: `${SET}/06-estampado-retro-4x5.webp`,
@@ -167,8 +167,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Brillo nacarado',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 1320,
-    height: 1732,
+    width: 800,
+    height: 1050,
   },
   {
     src: `${SET}/08-verde-oliva-oscuro-4x5.webp`,
@@ -183,32 +183,32 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Minimalista limpio',
     styleTag: 'Gel semipermanente',
     suggestedServiceSlug: 'gel-semipermanente-manos',
-    width: 1320,
-    height: 1641,
+    width: 800,
+    height: 995,
   },
   {
     src: `${SET}/foto-037.webp`,
     title: 'Detalle en relieve',
     styleTag: 'Softgel con 3D',
     suggestedServiceSlug: 'unas-softgel',
-    width: 1320,
-    height: 1760,
+    width: 800,
+    height: 1067,
   },
   {
     src: `${SET}/foto-040.webp`,
     title: 'Acabado cristal',
     styleTag: 'Acrílico escultural',
     suggestedServiceSlug: 'unas-acrilicas',
-    width: 1320,
-    height: 1760,
+    width: 800,
+    height: 1067,
   },
   {
     src: `${SET}/foto-042.webp`,
     title: 'Clásico atemporal',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 1320,
-    height: 1531,
+    width: 800,
+    height: 928,
   },
 ];
 
@@ -284,9 +284,9 @@ export const NAIL_SHAPES: ReadonlyArray<{ name: string; icon: string }> = [
 ];
 
 const STAFF_AVATARS = [
-  '/landing/avatar-cereza.png',
-  '/landing/avatar-obsidiana.png',
-  '/landing/avatar-marfil.png',
+  '/landing/avatar-cereza.webp',
+  '/landing/avatar-obsidiana.webp',
+  '/landing/avatar-marfil.webp',
 ] as const;
 
 export function staffAvatar(avatarUrl: string | null, index: number): string {

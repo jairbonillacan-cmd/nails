@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../cita.css';
 import { Button } from '@astryxdesign/core/Button';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -125,14 +126,6 @@ export default function LinksPage() {
     <PublicShell>
       <VStack gap={0} width="100%">
         <VStack as="section" className="rb-hero ck-hero" aria-labelledby="links-title">
-          <img
-            className="rb-hero-cherries"
-            src={LANDING_ASSETS.cherriesWhite}
-            alt=""
-            width={340}
-            height={340}
-            decoding="async"
-          />
           <VStack gap={3} align="center" className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={560} style={{ textAlign: 'center' }}>
             <img
               src={LANDING_ASSETS.logoWhite}

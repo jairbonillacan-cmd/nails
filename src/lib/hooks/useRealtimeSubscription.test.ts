@@ -202,7 +202,7 @@ describe('Production Supabase Realtime Transport & /api/realtime route', () => {
     });
   });
 
-  it('subscribes to Supabase public-slots broadcast + postgres_changes and cleans up channel on last unsubscribe', () => {
+  it('subscribes to Supabase public-slots broadcast + postgres_changes and cleans up channel on last unsubscribe', async () => {
     const receivedA: RealtimeEvent[] = [];
     const receivedB: RealtimeEvent[] = [];
 
@@ -217,8 +217,10 @@ describe('Production Supabase Realtime Transport & /api/realtime route', () => {
       (evt) => receivedB.push(evt),
     );
 
+    await vi.waitFor(() => {
+      expect(latestMockChannel).not.toBeNull();
+    });
     expect(latestChannelName).toBe(PUBLIC_SLOTS_CHANNEL);
-    expect(latestMockChannel).not.toBeNull();
 
     latestMockChannel?.subscribeStatusCb?.('SUBSCRIBED');
     expect(receivedA.map((e) => e.type)).toEqual(['connected']);
@@ -247,6 +249,21 @@ describe('Production Supabase Realtime Transport & /api/realtime route', () => {
 
     unsubB();
     expect(mockRemoveChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels safely when unsubscribed before lazy @supabase/supabase-js import resolves', async () => {
+    const received: RealtimeEvent[] = [];
+    const unsub = subscribeSupabasePublicSlots(
+      'https://proj.supabase.co',
+      'anon-key-cancel',
+      (evt) => received.push(evt),
+    );
+    unsub();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(latestMockChannel).toBeNull();
+    expect(mockRemoveChannel).not.toHaveBeenCalled();
+    expect(received).toHaveLength(0);
   });
 
   it('GET /api/realtime returns JSON metadata in Supabase mode and SSE stream in Demo mode', async () => {

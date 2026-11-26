@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../booking.css';
 import { getSnapshot } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
 import {

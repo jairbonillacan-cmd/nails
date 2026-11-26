@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Upload } from 'lucide-react';
-import { UploadDropzone } from '@/components/ui';
+import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import { readFileAsDataUrl } from '../booking/bookingHelpers';
 import { formatFileSize, validateProofImageFile } from './types';
 

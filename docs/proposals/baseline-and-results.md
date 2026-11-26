@@ -332,30 +332,32 @@ export interface UseCopyToClipboardResult {
 
 ### 9.1 Core Web Vitals & Production Payload Scorecard (Cold Load, SW-Bypassed)
 
-| Route & Viewport | Metric | Wave 1 Baseline (`1e40a12`) | Wave 3 (CSS/Media) | Wave 4 (Bundle/Perf) | Wave 6 Final | Delta vs Baseline |
+| Route & Viewport | Metric | Wave 1 Baseline (`1e40a12`) | Wave 3 (SEO/OG) | Wave 4 (CSS/Media/Bundle) | Wave 6 Final | Delta vs Baseline (W4) |
 |---|---|---:|---:|---:|---:|---:|
-| `/` (1440×900) | Total Transfer / Img / CSS / JS (KB) | 1,149.8 / 643.3 / 64.5 / 328.6 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `/` (1440×900) | LCP (ms) / CLS / INP (ms) | 184 / 0.0423 / 32 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `/` (390×844) | Total Transfer / Img / CSS / JS (KB) | 1,191.1 / 647.8 / 64.5 / 346.6 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `/reservar` (1440×900) | Total Transfer / Img / CSS / JS (KB) | 1,130.0 / 412.8 / 64.5 / 547.5 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `/reservar/rubber` (1440×900) | Total Transfer / Img / CSS / JS (KB) | 1,138.8 / 412.8 / 64.5 / 553.2 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `/links` (390×844) | Total Transfer / Img / CSS (KB) | 725.5 / 240.4 / 64.5 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `/admin/login` (1440×900) | CSS / JS / Total (KB) | 71.1 / 455.1 / 616.4 | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `/` (1440×900) | Total Transfer / Img / CSS / JS (KB) | 1,149.8 / 643.3 / 64.5 / 328.6 | _SEO Wave (§9.4)_ | **908.2 / 310.5 / 71.4** (`61.4` SSR gz) **/ 390.8** (`382.2` SSR gz) | _TBD_ | **Tot -21.0% · Img -51.7%** |
+| `/` (1440×900) | LCP (ms) / CLS / INP (ms) | 184 / 0.0423 / 32 | _SEO Wave (§9.4)_ | **348 (`IMG`) / 0.0008 / 16** | _TBD_ | **CLS -98.1% · INP -50.0%** |
+| `/` (390×844) | Total Transfer / Img / CSS / JS (KB) | 1,191.1 / 647.8 / 64.5 / 346.6 | _SEO Wave (§9.4)_ | **897.8 / 308.2 / 71.4** (`61.4` SSR gz) **/ 390.8** (`382.2` SSR gz) | _TBD_ | **Tot -24.6% · Img -52.4%** |
+| `/reservar` (1440×900) | Total Transfer / Img / CSS / JS (KB) | 1,130.0 / 412.8 / 64.5 / 547.5 | _SEO Wave (§9.4)_ | **790.6 / 169.4 / 66.5** (`60.3` SSR gz) **/ 429.2** (`420.9` SSR gz) | _TBD_ | **Tot -30.0% · Img -59.0% · JS -21.6%** |
+| `/reservar/rubber` (1440×900) | Total Transfer / Img / CSS / JS (KB) | 1,138.8 / 412.8 / 64.5 / 553.2 | _SEO Wave (§9.4)_ | **801.9 / 169.4 / 66.5** (`60.3` SSR gz) **/ 436.9** (`428.6` SSR gz) | _TBD_ | **Tot -29.6% · Img -59.0% · JS -21.0%** |
+| `/links` (390×844) | Total Transfer / Img / CSS (KB) | 725.5 / 240.4 / 64.5 | _SEO Wave (§9.4)_ | **716.4 / 181.9 / 68.6** (`58.6` SSR gz) | _TBD_ | **Img -24.3% · SSR CSS -9.1%** |
+| `/admin/login` (1440×900) | CSS / JS / Total (KB) | 71.1 / 455.1 / 616.4 | _SEO Wave (§9.4)_ | **70.1** (`63.9` SSR gz) **/ 496.6** (`479.2` SSR gz) **/ 669.7** | _TBD_ | **SSR CSS -10.1%** |
+
+> *Note on CDP wire bytes vs SSR gzipped body: Over local HTTP/1.1 (`:1718`), CDP `encodedDataLength` includes ~1.1 KB of response headers (including tightened CSP) per chunk plus viewport `<Link>` prefetch stylesheets (e.g., `/` prefetches `booking.css` within 1.5 s). Exact initial-SSR gzipped body bytes are shown in parentheses (`61.4 / 60.3 / 58.6 / 63.9 KB` CSS, `420.9 KB` `/reservar` JS); over HTTP/2 HPACK on Cloudflare Edge, headers compress to negligible bytes.*
 
 ### 9.2 Architecture, CSS, Media & Quality Scorecard
 
 | Dimension | Metric | Wave 1 Baseline | Target (End of Wave 6) | Wave 2 | Wave 3 | Wave 4 | Wave 5 | Wave 6 Final |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| **Monoliths** | UI/API prod files `> 400` LOC (excl. DB repos/seed/types/qr) | 38 files (50 total) | `0` target UI/API monoliths `> 400` LOC | **0 UI/API** (14 `src/lib/` total) | Unchanged (0 UI/API) | _TBD_ | _TBD_ | _TBD_ |
-| **Atomic UI** | Components in `src/components/ui/` | 0 (6 partial in `AdminConfigPrimitives`) | 10 Astryx-native modules + `useCopyToClipboard` | **11 modules** + `useCopyToClipboard` (`AdminConfigPrimitives` deleted) | Unchanged (11 modules) | _TBD_ | _TBD_ | _TBD_ |
-| **Contracts** | Unvalidated admin POST routes (`team`, `operations`) | 2 unvalidated | 0 unvalidated (`src/lib/contracts/` pure domain) | **0 unvalidated** (9 pure modules in `src/lib/contracts/`) | Unchanged (0 unvalidated) | _TBD_ | _TBD_ | _TBD_ |
-| **CSS** | `globals.css` / `admin.css` raw KB (dead selectors) | 62.1 / 45.2 KB (9 dead) | Route-scoped `globals.css <= 20 KB` (0 dead) | _Wave 3_ (62.1 / 45.2 KB) | _Deferred to Perf Wave_ | _TBD_ | _TBD_ | _TBD_ |
-| **Media** | `public/` total MB (orphaned MB) | 15.82 MB (12.89 MB orphaned) | `<= 1.8 MB` (0 MB orphaned) | _Wave 3_ (15.82 MB) | _Deferred to Perf Wave_ (PWA icons wired in `manifest.ts`/`layout.tsx`) | _TBD_ | _TBD_ | _TBD_ |
-| **Bundle** | `next/dynamic` boundaries / `React.memo` usages | 11 / 0 | `>= 22` / `>= 5` hot components | 12 / 0 (_Wave 4_) | Unchanged (12 / 0) | _TBD_ | _TBD_ | _TBD_ |
-| **A11y** | High contrast defects / Mobile `<44px` targets (`/` & `/admin/reportes`) | 1 HIGH / 22 & 5 (`20px` seg) | 0 HIGH / `0` primary CTA/control `<44px` | `/admin/reportes` period **`44px`** (`FilterPillBar`); `/` _Wave 5_ | `/` portfolio `alt` (4/4 fixed) + decorative `aria-hidden` + `#preguntas` accordion; CTA/hamburger _Wave 5_ | _TBD_ | _TBD_ | _TBD_ |
-| **SEO** | Routes with `og:image` + `twitter:image` + `metadataBase` / Private routes with `noindex` | 0% / 1 of 3 groups (`/mis-citas` only) | 100% public routes / 100% private routes (`/admin*`, `/cita/*`, `/mis-citas`) | _Wave 3_ | **100% public** (root + per-service OG/Twitter PNGs, `metadataBase`, HTTPS `robots`/`sitemap`, `@graph` JSON-LD + FAQ) / **3 of 3 private** (`/admin*`, `/cita/*`, `/mis-citas` `noindex, nofollow`) | _TBD_ | _TBD_ | _TBD_ |
-| **Security** | Open HIGH / MEDIUM findings (`SEC-01`..`SEC-07`) | 4 HIGH, 3 MEDIUM | **0 HIGH, 0 MEDIUM** (verified by tests + guardrails) | **0 HIGH, 0 MEDIUM** (`SEC-01`..`SEC-07` closed; `SEC-08` LOW open) | **0 HIGH, 0 MEDIUM** (private services excluded from sitemap/OG/JSON-LD; XSS-escaped JSON-LD; 0 PII/commission leaks) | _TBD_ | _TBD_ | _TBD_ |
-| **Gatekeeper** | `npm run verify` errors / warnings | 0 / 0 | 0 / 0 | **0 / 0** (314/314 Vitest, 25/25 doctor, 0 knip) | **0 / 0** (330/330 Vitest across 51 files, 22/22 guardrail tests, 25/25 doctor, 0 knip) | _TBD_ | _TBD_ | _TBD_ |
+| **Monoliths** | UI/API prod files `> 400` LOC (excl. DB repos/seed/types/qr) | 38 files (50 total) | `0` target UI/API monoliths `> 400` LOC | **0 UI/API** (14 `src/lib/` total) | Unchanged (0 UI/API app; +2 Satori OG/Twitter routes) | **0 UI/API** app files (all Wave 4 UI/hook edits `<= 400` LOC: `BookingWidget` 395L, `ScheduleStep` 397L, `useBookingDraft` 389L) | _TBD_ | _TBD_ |
+| **Atomic UI** | Components in `src/components/ui/` | 0 (6 partial in `AdminConfigPrimitives`) | 10 Astryx-native modules + `useCopyToClipboard` | **11 modules** + `useCopyToClipboard` (`AdminConfigPrimitives` deleted) | Unchanged (11 modules) | **11 modules** + `useCopyToClipboard` (17 public barrel imports converted to direct subpaths for tree-shaking) | _TBD_ | _TBD_ |
+| **Contracts** | Unvalidated admin POST routes (`team`, `operations`) | 2 unvalidated | 0 unvalidated (`src/lib/contracts/` pure domain) | **0 unvalidated** (9 pure modules in `src/lib/contracts/`) | Unchanged (0 unvalidated) | Unchanged (**0 unvalidated**) | _TBD_ | _TBD_ |
+| **CSS** | `globals.css` / `admin.css` raw KB (dead selectors) | 62.1 / 45.2 KB (9 dead) | Route-scoped `globals.css <= 20 KB` (0 dead) | _Wave 3_ (62.1 / 45.2 KB) | _Deferred to Wave 4_ | **`19.60` / `40.49` KB (`0` dead; `26` dead classes pruned)** + 4 route-scoped sheets (`landing` 18.99, `booking` 13.42, `cita` 2.87, `portal` 2.88 KB); raw app CSS `-38.1%` to `-64.1%` | _TBD_ | _TBD_ |
+| **Media** | `public/` total MB (orphaned MB) | 15.82 MB (12.89 MB orphaned) | `<= 1.8 MB` (0 MB orphaned) | _Wave 3_ (15.82 MB) | _Deferred to Wave 4_ (PWA icons wired in `manifest.ts`/`layout.tsx`) | **`1.10 MB` (`61` files, `0 MB` orphaned — `-93.02%`)**; 67 orphans deleted + all active sets/avatars compressed to WebP | _TBD_ | _TBD_ |
+| **Bundle** | `next/dynamic` boundaries / `React.memo` usages | 11 / 0 | `>= 22` / `>= 5` hot components | 12 / 0 (_Wave 4_) | Unchanged (12 / 0) | **`32` `next/dynamic` (`+20` new) / `5` `React.memo`** + lazy `@supabase/supabase-js` (`-63.4 KB` gz); `/reservar` JS **`-21.6%`** | _TBD_ | _TBD_ |
+| **A11y** | High contrast defects / Mobile `<44px` targets (`/` & `/admin/reportes`) | 1 HIGH / 22 & 5 (`20px` seg) | 0 HIGH / `0` primary CTA/control `<44px` | `/admin/reportes` period **`44px`** (`FilterPillBar`); `/` _Wave 5_ | `/` portfolio `alt` (4/4 fixed) + decorative `aria-hidden` + `#preguntas` accordion; CTA/hamburger _Wave 5_ | Decorative cherry `<img>` nodes moved to CSS `::before` mask (0 broken/unloaded DOM `<img>`s); CTA/hamburger _Wave 5_ | _TBD_ | _TBD_ |
+| **SEO** | Routes with `og:image` + `twitter:image` + `metadataBase` / Private routes with `noindex` | 0% / 1 of 3 groups (`/mis-citas` only) | 100% public routes / 100% private routes (`/admin*`, `/cita/*`, `/mis-citas`) | _Wave 3_ | **100% public** (root + per-service OG/Twitter PNGs, `metadataBase`, HTTPS `robots`/`sitemap`, `@graph` JSON-LD + FAQ) / **3 of 3 private** (`/admin*`, `/cita/*`, `/mis-citas` `noindex, nofollow`) | Preserved (**100% public SSR HTML** via `ssr: true` on landing dynamic imports / **3 of 3 private `noindex`**) | _TBD_ | _TBD_ |
+| **Security** | Open HIGH / MEDIUM / LOW findings (`SEC-01`..`SEC-08`) | 4 HIGH, 3 MEDIUM, 1 LOW | **0 HIGH, 0 MEDIUM, 0 LOW** (verified by tests + guardrails) | **0 HIGH, 0 MEDIUM** (`SEC-01`..`SEC-07` closed; `SEC-08` LOW open) | **0 HIGH, 0 MEDIUM** (private services excluded from sitemap/OG/JSON-LD; XSS-escaped JSON-LD; 0 PII/commission leaks) | **0 HIGH, 0 MEDIUM, 0 LOW** (**`SEC-08` closed**: tightened CSP allowlists, `media-src`/`manifest-src 'self'`, embed vs non-embed framing verified, **0 CSP violations**) | _TBD_ | _TBD_ |
+| **Gatekeeper** | `npm run verify` errors / warnings | 0 / 0 | 0 / 0 | **0 / 0** (314/314 Vitest, 25/25 doctor, 0 knip) | **0 / 0** (330/330 Vitest across 51 files, 22/22 guardrail tests, 25/25 doctor, 0 knip) | **0 / 0** (**338/338 Vitest** across 52 files, 22/22 guardrail tests, 25/25 doctor, 0 knip, **`cf:build` OK `5.82 MiB` gz**) | _TBD_ | _TBD_ |
 
 ### 9.3 Security Remediation Checklist (Tracked Across Waves 2–6)
 - [x] **SEC-01 (HIGH):** Sanitize `POST /api/bookings` response (`toPublicStaffDTO`, `toPublicServiceDTO`, strip `internalNotes` & `client.notes`) + test (`Wave 2`).
@@ -365,7 +367,7 @@ export interface UseCopyToClipboardResult {
 - [x] **SEC-05 (MEDIUM):** Scrub `booking.client.notes` in `GET`/`PATCH /api/bookings/manage/[token]` + test (`Wave 2`).
 - [x] **SEC-06 (MEDIUM):** Add rate limiting to `/api/admin/session`, Owner PIN endpoints, `/api/bookings/manage/[token]`, and `/api/availability` + test (`Wave 2`).
 - [x] **SEC-07 (MEDIUM):** Reject arbitrary external `http(s)://` URLs in public `persistBookingMediaField` calls + test (`Wave 2`).
-- [ ] **SEC-08 (LOW):** Tighten CSP `img-src` / `connect-src` origins in `next.config.ts`.
+- [x] **SEC-08 (LOW):** Tighten CSP `img-src` / `connect-src` origins in `next.config.ts` (`Wave 4`: explicit allowlists for configured Supabase/R2 origins + `*.r2.dev`, `*.supabase.co`, `wss://*.supabase.co`, `google-analytics.com`, `facebook.com`, plus `media-src 'self'`, `manifest-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-src https://www.google.com https://maps.google.com`, preserving `/reservar?embed=1` `frame-ancestors *` vs non-embed `X-Frame-Options: DENY` + `frame-ancestors 'none'`).
 
 ### 9.4 Wave 3 Verification Notes (Dynamic OG/Twitter, Local Puebla JSON-LD, FAQ, Canonicals & Private `noindex`)
 - **Dynamic Social Cards (`1200×630` PNG, edge-safe Satori `ImageResponse`):**
@@ -388,3 +390,31 @@ export interface UseCopyToClipboardResult {
 - **Private Route `noindex, nofollow` Enforcement:**
   - Verified `<meta name="robots" content="noindex, nofollow">` live in SSR HTML and Chromium DOM on `/cita/demo-token-sofia-1042`, `/mis-citas`, and `/admin/login` (inherited from Server Component `src/app/admin/layout.tsx`).
   - Confirmed zero `commissionPercent` or `ownerPinHash` strings in SSR HTML and hydrated DOM across all 8 verified routes.
+
+### 9.5 Wave 4 Verification Notes (Route-Scoped CSS, 93% Media Reduction, Code-Splitting, 4G Draft Resilience & Edge CSP)
+- **Production Build & Cloudflare Workers OpenNext (`Build ID: K47GCSXjuAXmpaBnHZwPN`):**
+  - `npm run verify`: **0 errors, 0 warnings** (`tsc --noEmit` 0 errors, `22/22` guardrail tests, `390` files 0 AST violations, seed parity OK, `oxlint --deny-warnings src` 0 warnings/0 errors, `knip` 0 unused exports, **52/52 test files / 338/338 Vitest tests**, `next build` clean, `astryx doctor` 25 pass / 0 warn / 0 fail).
+  - `npm run cf:build` (`@opennextjs/cloudflare` 1.20.19) + `npx wrangler deploy --dry-run`: exit `0` — **`Total Upload: 25,597.95 KiB / gzip: 5,959.42 KiB`** (`5.82 MiB` gzipped, well under Cloudflare Workers 10 MiB limit; `327` static assets in `.open-next/assets`; `.open-next/` ignored in `.gitignore`).
+- **Route-Scoped CSS Split & Pruning:**
+  - `src/app/globals.css`: `62.08 KB` (`2,038` L) → **`19.60 KB`** (`886` L, **`-68.4%`**); `src/app/admin/admin.css`: `45.19 KB` → **`40.49 KB`** (`-10.4%`, after absorbing admin-only skeletons/package pips and consolidating `16` repeated `:focus-visible` blocks).
+  - Created `src/app/landing.css` (`18.99 KB`), `src/app/booking.css` (`13.42 KB`), `src/app/cita.css` (`2.87 KB`), `src/app/portal.css` (`2.88 KB`); pruned **26 dead classes** + 7 dead variants + 2 dead keyframes (`0` dead remaining).
+  - Added metric-matched `@font-face` fallbacks (`Source Serif 4 Fallback`, `DM Sans Fallback`) + hero `contain: layout style`, slashing `/` desktop CLS from `0.0423` → **`0.0008`** (`-98.1%`).
+- **Media Cleanup & WebP Compression (`public/`):**
+  - Total files: `128` → **`61`** (`-67` orphaned files removed, including `56` raw IG JPGs `12.38 MB`, `3` unused `foto-*.webp`, `6` unused `public/brand/*`, `2` root SVGs).
+  - Total size: `15.82 MB` (`16,589,681 B`) → **`1.10 MB`** (`1,157,924 B`, **`-93.02%`**).
+  - Compressed all active `foto-*.webp` (`foto-025.webp` `321.0 → 67.0 KB`, `foto-033.webp` `126.4 → 33.9 KB`), all `9` `*-4x5.webp` cards (`-33.9%`), hero WebPs, and converted all `3` artist avatars from `1080×1080` PNG (`~69 KB` each) → `440×440` WebP (`5.5–6.6 KB`, `-90%+`).
+- **JS Code-Splitting, `React.memo` & Decorative Watermark Migration:**
+  - Expanded `next/dynamic` to **`32` boundaries** (`+20` new: lazy booking Steps 2–5 with hover/click module prefetch, lazy admin tabs/dialogs/schedule grid/wireframe picker, `ssr: true` below-fold landing sections preserving 100% SSR HTML).
+  - Added **`5` `React.memo`** hot list items (`BookingSummaryCard`, `ScheduleSlotItem`, `BookingCard`, `ScheduleBookingBlock`, `DashboardAgendaRow`).
+  - Converted `@supabase/supabase-js` in `useRealtimeSubscription.ts` to lazy `import('@supabase/supabase-js')` (`-63.4 KB` gz off initial paint on `/reservar`, `/reservar/[slug]`, and `/admin/login`) and replaced `17` public `@/components/ui` barrel imports with direct subpaths (`0` `RealtimeClient` in initial HTML across all 8 routes).
+  - Replaced `<img className="rb-hero-cherries">` and `<img className="rb-summary-cherries">` across `6` files with CSS `::before` `mask` pseudo-elements in `globals.css` (and `.rb-embed .rb-hero::before { display: none; }` in `booking.css`), eliminating the `IMG.rb-hero-cherries` DOM LCP node and all hidden unloaded lazy `<img>` nodes (`BrkImg: 0/0` across all 18 production passes; hero `SECTION` LCP `164–200 ms`).
+- **Full Chromium CDP Telemetry (`:1718`, SW-Bypassed, Cache Disabled, 18 Prod Passes + 10 Admin `:3000` Passes):**
+  - **All 18 production passes** (`/`, `/reservar`, `/reservar/rubber`, `/cita/demo-token-sofia-1042`, `/mis-citas`, `/links`, `/aviso-de-privacidad`, `/admin/login` light & dark × `1440×900` & `390×844`): **0 console errors, 0 hydration errors, 0 uncaught page errors, 0 HTTP `>= 400`, 0 CSP violations, 0 px horizontal overflow, 0 broken images** (verified after full page scroll including Google Maps iframe `744×496` desktop / `350×300` mobile on `/`).
+  - **Secondary routes measured (`1440×900` / `390×844`):**
+    - `/cita/demo-token-sofia-1042`: Total `652.1 KB` (JS `430.8` wire / `421.0` SSR gz, Img `31.8`, CSS `64.8` wire / `58.6` SSR gz), CLS `0.0000`, FCP `116 / 148 ms`, LCP `200 / 196 ms`.
+    - `/mis-citas`: Total `688.7 KB` (JS `486.3` wire / `427.6` SSR gz, Img `22.5`, CSS `68.5` wire / `58.6` SSR gz), CLS `0.0055 / 0.0000`, FCP `68 / 72 ms`, LCP `164 / 164 ms`.
+    - `/aviso-de-privacidad`: Total `571.1 KB` (JS `350.9` / `351.3` SSR gz, Img `16.2`, CSS `64.8` wire / `58.6` SSR gz), CLS `0.0370 / 0.0000`, FCP `80 / 80 ms`, LCP `172 / 164 ms`.
+  - **`/reservar` 4G Draft Persistence & Reset Verified Live:** Selected non-default `Uñas acrílicas` (`srv-unas-acrilicas`) + addon `Retiro de gel o acrílico previo` (`addon-retiro`), reloaded `/reservar` → `Retomamos tu avance` banner and saved selection restored cleanly (`0` console/hydration errors); clicked `Empezar de nuevo` → `sessionStorage` key `laikona_booking_draft_v1` cleared (`null`), banner dismissed, reset cleanly to default `Rubber`.
+  - **Authenticated `/admin/*` Read-Only Check (`http://localhost:3000`, light & dark):** Verified `/admin`, `/admin/citas` (`Lista` + lazy `VisualScheduleGrid`), `/admin/clientas` (lazy `ClientLoyaltyTab`), `/admin/caja` (lazy `CajaDepositsTab`, `CajaCommissionsTab`, `CajaPromosTab`), and `/admin/marca` (lazy `AppearanceWireframePicker`) — **0 console/page/HTTP/CSP errors, 0 broken images, 0 px overflow** in both light & dark modes.
+  - **CSP & Framing Headers (`SEC-08`) Verified Live:** `/` and `/reservar` emit `X-Frame-Options: DENY` + `frame-ancestors 'none'`; `/reservar?embed=1` and `/reservar/rubber?embed=1` omit `X-Frame-Options` and emit `frame-ancestors *`; `0` CSP violations across all routes and Google Maps iframe.
+  - **Visual Evidence (4 Verified Chromium PNGs):** `wave4-home-desktop-light.png`, `wave4-reservar-desktop-light.png`, `wave4-reservar-mobile-light.png`, `wave4-admin-citas-desktop-dark.png`.

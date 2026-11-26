@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../cita.css';
 import { Button } from '@astryxdesign/core/Button';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -80,14 +81,6 @@ export default function AvisoDePrivacidadPage() {
     <PublicShell>
       <VStack width="100%" gap={0}>
         <VStack as="section" className="rb-hero ck-hero" aria-labelledby="privacidad-title">
-          <img
-            className="rb-hero-cherries"
-            src={LANDING_ASSETS.cherriesWhite}
-            alt=""
-            width={340}
-            height={340}
-            decoding="async"
-          />
           <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={840}>
             <HStack gap={2} wrap="wrap" align="center">
               <Text color="inherit" className="ck-status-pill" data-tone="success">

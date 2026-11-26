@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../../booking.css';
 import { VStack } from '@astryxdesign/core/VStack';
 import { formatDuration, getDateKeyInTimezone } from '@/lib/format';
 import {

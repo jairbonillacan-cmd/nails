@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -9,11 +10,27 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Palette } from 'lucide-react';
-import { AppearanceWireframePicker } from '@/components/admin/AppearanceWireframePicker';
 import { ColorSwatchPicker } from '@/components/admin/ColorSwatchPicker';
-import { StatusTag, SurfaceCard } from '@/components/ui';
+import { SkeletonBlock, StatusTag, SurfaceCard } from '@/components/ui';
 import { ACCENT_PRESETS } from '@/lib/theme-presets';
 import type { CornerStyle, SalonSettings, ThemeModePreference } from '@/lib/types';
+
+function WireframePickerFallback() {
+  return (
+    <VStack gap={3} role="status" aria-live="polite" aria-label="Cargando selector de apariencia">
+      <SkeletonBlock width="100%" height="7rem" radius={3} index={0} />
+      <SkeletonBlock width="100%" height="7rem" radius={3} index={1} />
+    </VStack>
+  );
+}
+
+const AppearanceWireframePicker = dynamic(
+  () =>
+    import('@/components/admin/AppearanceWireframePicker').then(
+      (mod) => mod.AppearanceWireframePicker,
+    ),
+  { ssr: false, loading: WireframePickerFallback },
+);
 
 interface ColorReadabilityStatus {
   lightPassesAA: boolean;

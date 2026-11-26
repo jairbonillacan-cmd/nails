@@ -13,7 +13,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Clock, RefreshCw, ShieldAlert } from 'lucide-react';
-import { SurfaceCard } from '@/components/ui';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';

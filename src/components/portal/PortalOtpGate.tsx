@@ -9,7 +9,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { ShieldCheck } from 'lucide-react';
-import { SurfaceCard } from '@/components/ui';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 
 interface PortalOtpGateProps {
   showDemoHint: boolean;

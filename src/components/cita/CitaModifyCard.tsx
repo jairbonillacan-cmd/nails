@@ -11,7 +11,7 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react';
-import { SurfaceCard } from '@/components/ui';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 
 interface CitaModifyCardProps {
   bookingCode: string;

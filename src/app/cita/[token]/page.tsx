@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../../cita.css';
 import { notFound } from 'next/navigation';
 import { getBookingByToken, getSnapshot } from '@/lib/repositories/db';
 import { buildCalendarAddLinks } from '@/lib/ics';

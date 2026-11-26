@@ -15,7 +15,9 @@ import {
   ExternalLink,
   FileCheck2,
 } from 'lucide-react';
-import { BookingStatusTag, CopyableField, SurfaceCard } from '@/components/ui';
+import { CopyableField } from '@/components/ui/CopyableField';
+import { BookingStatusTag } from '@/components/ui/StatusTag';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import {
   formatCurrency,
   formatDateLongInTimezone,

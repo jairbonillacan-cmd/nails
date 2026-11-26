@@ -1,12 +1,15 @@
 'use client';
 
+import { memo } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { EmptyStateCard, FilterPillBar, SurfaceCard } from '@/components/ui';
+import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
+import { FilterPillBar } from '@/components/ui/FilterPillBar';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import type { AvailableSlot, DayAvailabilitySummary, DayPeriod } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
@@ -30,6 +33,8 @@ export interface ScheduleStepProps {
   isBusy: boolean;
   loadingAvail: boolean;
   isRevalidating?: boolean;
+  availabilityError?: string | null;
+  onRetryAvailability?: () => void;
   canAdvanceMonth: boolean;
   isViewingFutureWindow: boolean;
   onChangeLayoutView: (view: ScheduleLayout) => void;
@@ -49,20 +54,10 @@ const PERIOD_LABELS: ReadonlyArray<{ period: DayPeriod; label: string }> = [
   { period: 'afternoon', label: 'Tarde' },
   { period: 'evening', label: 'Noche' },
 ];
-
-const LAYOUT_OPTIONS = [
-  { value: 'month', label: 'Mes' },
-  { value: 'week', label: 'Semana' },
-] as const;
-
-const TIME_FORMAT_OPTIONS = [
-  { value: '12h', label: '12h' },
-  { value: '24h', label: '24h' },
-] as const;
-
+const LAYOUT_OPTIONS = [{ value: 'month', label: 'Mes' }, { value: 'week', label: 'Semana' }] as const;
+const TIME_FORMAT_OPTIONS = [{ value: '12h', label: '12h' }, { value: '24h', label: '24h' }] as const;
 const SKELETON_GROUP_KEYS = [0, 1] as const;
 const SKELETON_SLOT_KEYS = [0, 1, 2] as const;
-
 const shortDayFormatter = new Intl.DateTimeFormat('es-MX', { weekday: 'short', day: 'numeric', timeZone: 'UTC' });
 
 function plainDate(dateKey: string): Date {
@@ -73,6 +68,48 @@ function staffCountLabel(slot: AvailableSlot): string {
   const count = slot.availableStaffIds.length;
   return count === 1 ? '1 artista' : `${count} artistas`;
 }
+
+interface ScheduleSlotItemProps {
+  slot: AvailableSlot;
+  timeFormat: '12h' | '24h';
+  pinnedStaffName: string | null;
+  isPending: boolean;
+  isOn: boolean;
+  isBusy: boolean;
+  onSelectSlot: (slot: AvailableSlot) => void;
+}
+
+const ScheduleSlotItem = memo(function ScheduleSlotItem({
+  slot,
+  timeFormat,
+  pinnedStaffName,
+  isPending,
+  isOn,
+  isBusy,
+  onSelectSlot,
+}: ScheduleSlotItemProps) {
+  const time = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
+  const who = pinnedStaffName ? null : staffCountLabel(slot);
+  const subLabel = isPending ? 'Apartando…' : who;
+  return (
+    <li>
+      <button
+        type="button"
+        className={isPending ? 'rb-slot fx-press fx-tabular fx-busy' : 'rb-slot fx-press fx-tabular'}
+        aria-pressed={isOn || isPending}
+        aria-busy={isPending ? 'true' : undefined}
+        disabled={isBusy}
+        aria-label={isPending ? `Apartando ${time}` : `${time}${who ? `, ${who} libres` : ''}`}
+        onClick={() => onSelectSlot(slot)}
+      >
+        <Text color="inherit" weight="bold" hasTabularNumbers>{time}</Text>
+        {subLabel ? (
+          <Text color="inherit" type="supporting" className="rb-slot-sub">{subLabel}</Text>
+        ) : null}
+      </button>
+    </li>
+  );
+});
 
 export function ScheduleStep({
   settings,
@@ -90,6 +127,8 @@ export function ScheduleStep({
   isBusy,
   loadingAvail,
   isRevalidating = false,
+  availabilityError = null,
+  onRetryAvailability,
   canAdvanceMonth,
   isViewingFutureWindow,
   onChangeLayoutView,
@@ -106,7 +145,11 @@ export function ScheduleStep({
   const timezone = settings.timezone || 'America/Mexico_City';
   const slots = selectedDaySummary?.slots ?? [];
   const isRangeEmpty =
-    !loadingAvail && availabilityDays.length > 0 && availabilityDays.every((day) => day.slotCount === 0);
+    !loadingAvail &&
+    !availabilityError &&
+    availabilityDays.length > 0 &&
+    availabilityDays.every((day) => day.slotCount === 0);
+  const isColdLoadError = Boolean(availabilityError) && !loadingAvail && availabilityDays.length === 0;
   const nextOpenDay = availabilityDays.find((day) => day.date > selectedDate && day.hasSlots) ?? null;
   const redirectStaffId = selectedDaySummary?.redirectStaffId ?? null;
   const redirectStaffName = selectedDaySummary?.redirectStaffName ?? null;
@@ -116,9 +159,7 @@ export function ScheduleStep({
     <VStack gap={4} className="fx-step-in">
       <HStack justify="between" align="end" wrap="wrap" gap={3}>
         <VStack gap={0.5}>
-          <Heading level={2} className="lk-serif rb-h2">
-            ¿Cuándo?
-          </Heading>
+          <Heading level={2} className="lk-serif rb-h2">¿Cuándo?</Heading>
           <Text color="secondary">
             Hora de Puebla · {pinnedStaffName ? `horarios de ${pinnedStaffName}` : 'horarios de todo el equipo'}
           </Text>
@@ -169,15 +210,36 @@ export function ScheduleStep({
         </SurfaceCard>
       ) : null}
 
+      {availabilityError && !loadingAvail ? (
+        <Banner
+          status="error"
+          role="alert"
+          title={availabilityError}
+          description="Verifica tu señal e intenta de nuevo para ver los horarios disponibles."
+          endContent={
+            onRetryAvailability ? (
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                className="fx-press"
+                label="Reintentar"
+                isLoading={isRevalidating}
+                isDisabled={isRevalidating}
+                onClick={onRetryAvailability}
+              />
+            ) : undefined
+          }
+        />
+      ) : null}
+
       {publicNote || redirectStaffId ? (
         <Banner
           status="info"
           title={publicNote ? 'Aviso del salón para esta fecha' : 'Horario especial en esta fecha'}
           description={
             publicNote ||
-            (redirectStaffName
-              ? `Revisa los horarios disponibles con ${redirectStaffName}.`
-              : 'Prueba otra fecha disponible.')
+            (redirectStaffName ? `Revisa los horarios disponibles con ${redirectStaffName}.` : 'Prueba otra fecha disponible.')
           }
           endContent={
             redirectStaffId && redirectStaffName ? (
@@ -194,7 +256,7 @@ export function ScheduleStep({
         />
       ) : null}
 
-      {isRangeEmpty ? (
+      {isColdLoadError ? null : isRangeEmpty ? (
         <EmptyStateCard
           title="Sin lugares en estas fechas"
           description="Revisa el próximo mes o anótate en la lista de espera y te avisamos si se libera algo."
@@ -240,13 +302,7 @@ export function ScheduleStep({
               {formatDateLongInTimezone(`${selectedDate}T18:00:00Z`, timezone)}
             </Text>
             {loadingAvail || isRevalidating ? (
-              <Text
-                type="supporting"
-                className="fx-save-pill"
-                data-state="saving"
-                role="status"
-                aria-live="polite"
-              >
+              <Text type="supporting" className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
                 {loadingAvail ? 'Buscando horarios…' : 'Actualizando horarios…'}
               </Text>
             ) : null}
@@ -273,48 +329,24 @@ export function ScheduleStep({
                 if (periodSlots.length === 0) return null;
                 return (
                   <VStack key={period} gap={1.5}>
-                    <Text type="supporting" color="secondary" weight="semibold">
-                      {label}
-                    </Text>
+                    <Text type="supporting" color="secondary" weight="semibold">{label}</Text>
                     <ul className="rb-slots fx-stagger" aria-label={`Horarios de la ${label.toLowerCase()}`}>
                       {periodSlots.map((slot) => {
                         const slotKey = `${slot.staffId}-${slot.startAt}`;
-                        const time = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
-                        const isPending = pendingSlotKey === slotKey;
                         const isOn =
                           selectedSlot?.startAt === slot.startAt &&
                           (pinnedStaffName ? selectedSlot.staffId === slot.staffId : true);
-                        const who = pinnedStaffName ? null : staffCountLabel(slot);
-                        const subLabel = isPending ? 'Apartando…' : who;
                         return (
-                          <li key={slotKey}>
-                            <button
-                              type="button"
-                              className={
-                                isPending
-                                  ? 'rb-slot fx-press fx-tabular fx-busy'
-                                  : 'rb-slot fx-press fx-tabular'
-                              }
-                              aria-pressed={isOn || isPending}
-                              aria-busy={isPending ? 'true' : undefined}
-                              disabled={isBusy}
-                              aria-label={
-                                isPending
-                                  ? `Apartando ${time}`
-                                  : `${time}${who ? `, ${who} libres` : ''}`
-                              }
-                              onClick={() => onSelectSlot(slot)}
-                            >
-                              <Text color="inherit" weight="bold" hasTabularNumbers>
-                                {time}
-                              </Text>
-                              {subLabel ? (
-                                <Text color="inherit" type="supporting" className="rb-slot-sub">
-                                  {subLabel}
-                                </Text>
-                              ) : null}
-                            </button>
-                          </li>
+                          <ScheduleSlotItem
+                            key={slotKey}
+                            slot={slot}
+                            timeFormat={timeFormat}
+                            pinnedStaffName={pinnedStaffName}
+                            isPending={pendingSlotKey === slotKey}
+                            isOn={isOn}
+                            isBusy={isBusy}
+                            onSelectSlot={onSelectSlot}
+                          />
                         );
                       })}
                     </ul>
@@ -322,9 +354,7 @@ export function ScheduleStep({
                 );
               })}
               <HStack justify="between" align="center" gap={2} wrap="wrap" className="rb-waitlist">
-                <Text type="supporting" color="secondary">
-                  ¿No ves la hora que buscas?
-                </Text>
+                <Text type="supporting" color="secondary">¿No ves la hora que buscas?</Text>
                 <Button label="Lista de espera" variant="ghost" size="md" className="fx-press" onClick={onOpenWaitlist} />
               </HStack>
             </VStack>
@@ -357,12 +387,7 @@ export function ScheduleStep({
                       onClick={onAdvanceMonth}
                     />
                   ) : null}
-                  <Button
-                    label="Lista de espera"
-                    variant="secondary"
-                    className="fx-press"
-                    onClick={onOpenWaitlist}
-                  />
+                  <Button label="Lista de espera" variant="secondary" className="fx-press" onClick={onOpenWaitlist} />
                 </HStack>
               }
             />

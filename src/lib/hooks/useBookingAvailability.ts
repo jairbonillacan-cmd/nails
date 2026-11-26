@@ -14,6 +14,9 @@ import {
 } from '@/components/booking/bookingHelpers';
 
 export const DEFAULT_AVAILABILITY_TTL_MS = 45_000;
+const AVAILABILITY_LOAD_ERROR_MESSAGE =
+  'No pudimos cargar los horarios. Revisa tu conexión.';
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_STALE_MAX_AGE_MS = 5 * 60_000;
 const MAX_CACHE_ENTRIES = 36;
 const DEFAULT_WINDOW_DAYS = 35;
@@ -72,6 +75,7 @@ export interface BookingAvailabilityState {
   days: DayAvailabilitySummary[];
   isLoading: boolean;
   isRevalidating: boolean;
+  error: string | null;
 }
 
 interface BookingAvailabilityController {
@@ -101,6 +105,7 @@ const EMPTY_AVAILABILITY_STATE: BookingAvailabilityState = {
   days: [],
   isLoading: false,
   isRevalidating: false,
+  error: null,
 };
 
 function shiftDateKey(dateKey: string, deltaDays: number): string {
@@ -383,8 +388,9 @@ export function createBookingAvailabilityStore(options?: {
 export function createBookingAvailabilityController(options: {
   store: BookingAvailabilityStore;
   onStateChange: (state: BookingAvailabilityState) => void;
+  requestTimeoutMs?: number;
 }): BookingAvailabilityController {
-  const { store, onStateChange } = options;
+  const { store, onStateChange, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = options;
 
   let state: BookingAvailabilityState = EMPTY_AVAILABILITY_STATE;
   let activeQuery: BookingAvailabilityQuery | null = null;
@@ -403,7 +409,8 @@ export function createBookingAvailabilityController(options: {
       state.activeKey === next.activeKey &&
       state.days === next.days &&
       state.isLoading === next.isLoading &&
-      state.isRevalidating === next.isRevalidating
+      state.isRevalidating === next.isRevalidating &&
+      state.error === next.error
     ) {
       return;
     }
@@ -460,6 +467,7 @@ export function createBookingAvailabilityController(options: {
         days: state.activeKey === key ? state.days : [],
         isLoading: false,
         isRevalidating: true,
+        error: null,
       });
     } else {
       emit({
@@ -467,29 +475,61 @@ export function createBookingAvailabilityController(options: {
         days: [],
         isLoading: true,
         isRevalidating: false,
+        error: null,
       });
     }
 
-    const days = await store.load(query, {
-      force: fetchOptions.force,
-      signal: controller.signal,
-    });
+    let timedOut = false;
+    const timeoutId =
+      requestTimeoutMs > 0
+        ? globalThis.setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, requestTimeoutMs)
+        : null;
 
-    if (disposed || controller.signal.aborted || seq !== activeRequestSeq) {
+    let days: DayAvailabilitySummary[] | null = null;
+    try {
+      days = await store.load(query, {
+        force: fetchOptions.force,
+        signal: controller.signal,
+      });
+    } finally {
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    }
+
+    if (disposed || seq !== activeRequestSeq) {
+      return;
+    }
+    if (controller.signal.aborted && !timedOut) {
       return;
     }
     if (activeController === controller) {
       activeController = null;
     }
 
+    if (timedOut || days === null) {
+      emit({
+        activeKey: key,
+        days: fetchOptions.preserveVisibleDays ? state.days : [],
+        isLoading: false,
+        isRevalidating: false,
+        error: AVAILABILITY_LOAD_ERROR_MESSAGE,
+      });
+      return;
+    }
+
     emit({
       activeKey: key,
-      days: days ?? (fetchOptions.preserveVisibleDays ? state.days : []),
+      days,
       isLoading: false,
       isRevalidating: false,
+      error: null,
     });
 
-    if (days && days.length > 0) {
+    if (days.length > 0) {
       scheduleNextMonthPrefetch();
     }
   };
@@ -539,6 +579,7 @@ export function createBookingAvailabilityController(options: {
         days: cached.days,
         isLoading: false,
         isRevalidating: false,
+        error: null,
       });
       scheduleNextMonthPrefetch();
       return;
@@ -554,6 +595,7 @@ export function createBookingAvailabilityController(options: {
         days: cached.days,
         isLoading: false,
         isRevalidating: true,
+        error: null,
       });
       await runActiveFetch(query, key, {
         force: true,
@@ -653,6 +695,8 @@ interface UseBookingAvailabilityResult {
   days: DayAvailabilitySummary[];
   isLoading: boolean;
   isRevalidating: boolean;
+  error: string | null;
+  retry: () => void;
   prefetchWindow: (query: BookingAvailabilityQuery) => void;
   invalidateFromRealtime: (filter?: AvailabilityInvalidationFilter) => boolean;
   revalidateActive: () => void;
@@ -690,6 +734,7 @@ export function useBookingAvailability(
         days: cached.days,
         isLoading: false,
         isRevalidating: cached.isStale,
+        error: null,
       };
     }
     return {
@@ -697,6 +742,7 @@ export function useBookingAvailability(
       days: [],
       isLoading: true,
       isRevalidating: false,
+      error: null,
     };
   });
 
@@ -746,6 +792,12 @@ export function useBookingAvailability(
     void controllerRef.current?.revalidateActive();
   }, []);
 
+  const retry = useCallback(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    void controller.revalidateActive();
+  }, []);
+
   const syncCached = query ? sharedAvailabilityStore.peek(query) : null;
   const effectiveState: BookingAvailabilityState = !query
     ? EMPTY_AVAILABILITY_STATE
@@ -757,18 +809,22 @@ export function useBookingAvailability(
             days: syncCached.days,
             isLoading: false,
             isRevalidating: syncCached.isStale,
+            error: null,
           }
         : {
             activeKey: queryKey,
             days: [],
             isLoading: true,
             isRevalidating: false,
+            error: null,
           };
 
   return {
     days: effectiveState.days,
     isLoading: effectiveState.isLoading,
     isRevalidating: effectiveState.isRevalidating,
+    error: effectiveState.error,
+    retry,
     prefetchWindow,
     invalidateFromRealtime,
     revalidateActive,

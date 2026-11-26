@@ -124,14 +124,6 @@ export function CitaHero({
 
   return (
     <VStack as="section" className="rb-hero ck-hero" aria-labelledby="ck-title">
-      <img
-        className="rb-hero-cherries"
-        src={LANDING_ASSETS.cherriesWhite}
-        alt=""
-        width={340}
-        height={340}
-        decoding="async"
-      />
       <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up">
         <HStack gap={2} align="center" wrap="wrap" className="ck-hero-meta">
           <Text color="inherit" className="ck-status-pill fx-pop" data-tone={copy.tone}>

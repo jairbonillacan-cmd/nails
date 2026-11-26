@@ -6,7 +6,8 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Check, Download, QrCode } from 'lucide-react';
-import { CopyableField, SurfaceCard } from '@/components/ui';
+import { CopyableField } from '@/components/ui/CopyableField';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { generateQrSvg } from '@/lib/qr';
 

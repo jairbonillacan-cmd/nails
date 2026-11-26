@@ -9,7 +9,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { MessageCircle } from 'lucide-react';
-import { ConfirmActionDialog } from '@/components/ui';
+import { ConfirmActionDialog } from '@/components/ui/ConfirmActionDialog';
 import { CANCELLATION_REASON_OPTIONS } from '@/lib/notifications/cascade';
 
 interface CitaCancelDialogProps {

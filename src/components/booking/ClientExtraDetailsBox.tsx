@@ -8,7 +8,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
-import { UploadDropzone } from '@/components/ui';
+import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import {
   formatFileSize,
   readFileAsDataUrl,

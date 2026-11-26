@@ -12,6 +12,5 @@ export { EmptyStateCard } from './EmptyStateCard';
 export { CopyableField } from './CopyableField';
 export { ActionRow } from './ActionRow';
 export { ConfirmActionDialog } from './ConfirmActionDialog';
-export { UploadDropzone } from './UploadDropzone';
 export { FilterPillBar, type FilterPillOption } from './FilterPillBar';
 export { SkeletonBlock, PageSkeleton } from './SkeletonBlock';
