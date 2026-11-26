@@ -2,7 +2,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 
-const STEP_ITEMS = [0, 1, 2, 3] as const;
+const STEP_ITEMS = [0, 1, 2, 3, 4] as const;
 const SERVICE_CARDS = [0, 1, 2, 3, 4, 5] as const;
 
 export default function ReservarLoading() {

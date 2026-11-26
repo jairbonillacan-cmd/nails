@@ -11,6 +11,7 @@ import {
   validateClientImageFile,
 } from './bookingHelpers';
 import {
+  BOOKING_STEPS,
   bookingReducer,
   createInitialBookingFlowState,
 } from './bookingMachine';
@@ -42,6 +43,17 @@ const ALT_SLOT: AvailableSlot = {
 };
 
 describe('bookingMachine reducer', () => {
+  it('orders the dedicated extras step between service and schedule and navigates cleanly', () => {
+    expect(BOOKING_STEPS).toEqual(['service', 'extras', 'schedule', 'staff', 'details']);
+    const initial = createInitialBookingFlowState();
+    const extras = bookingReducer(initial, { type: 'GO_TO_STEP', step: 'extras' });
+    expect(extras.step).toBe('extras');
+    const schedule = bookingReducer(extras, { type: 'GO_TO_STEP', step: 'schedule' });
+    expect(schedule.step).toBe('schedule');
+    const backToExtras = bookingReducer(schedule, { type: 'GO_TO_STEP', step: 'extras' });
+    expect(backToExtras.step).toBe('extras');
+  });
+
   it('transitions browsing -> holding -> submitting -> confirmed and guards duplicate START_SUBMIT', () => {
     const initial = createInitialBookingFlowState();
     expect(initial.phase).toBe('browsing');

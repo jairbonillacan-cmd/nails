@@ -8,9 +8,9 @@ type BookingPhase =
   | 'confirmed'
   | 'conflict';
 
-export type BookingStep = 'service' | 'schedule' | 'staff' | 'details';
+export type BookingStep = 'service' | 'extras' | 'schedule' | 'staff' | 'details';
 
-export const BOOKING_STEPS: readonly BookingStep[] = ['service', 'schedule', 'staff', 'details'];
+export const BOOKING_STEPS: readonly BookingStep[] = ['service', 'extras', 'schedule', 'staff', 'details'];
 
 interface BookingConflictState {
   message: string;

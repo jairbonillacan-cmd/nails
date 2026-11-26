@@ -33,6 +33,7 @@ import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/typ
 import { BookingHeader, BookingHero, STEP_LABELS } from './booking/BookingChrome';
 import { BookingSummaryCard, type SummaryRow } from './booking/BookingSummaryCard';
 import { ClientConfirmStep } from './booking/ClientConfirmStep';
+import { ExtrasStep } from './booking/ExtrasStep';
 import { ScheduleStep, type ScheduleLayout } from './booking/ScheduleStep';
 import { ServiceStep } from './booking/ServiceStep';
 import { StaffStep } from './booking/StaffStep';
@@ -55,6 +56,7 @@ import {
   type ProofDeliveryMethod,
 } from './booking/bookingHelpers';
 import {
+  BOOKING_STEPS,
   bookingReducer,
   createInitialBookingFlowState,
   type BookingStep,
@@ -221,10 +223,17 @@ export function BookingWidget({
     return new Set(ids);
   }, [selectedService, selectedExtraServices]);
 
+  const extraServices = useMemo(
+    () => services.filter((service) => service.id !== selectedService?.id),
+    [services, selectedService],
+  );
+
   const compatibleAddons = useMemo(() => {
     if (!selectedService) return [];
     return addons.filter((a) => a.appliesToAll || a.serviceIds.some((id) => selectedServiceIdSet.has(id)));
   }, [addons, selectedService, selectedServiceIdSet]);
+
+  const hasExtrasOptions = compatibleAddons.length > 0 || extraServices.length > 0;
 
   const activeSelectedAddons = useMemo(
     () => compatibleAddons.filter((a) => selectedAddonIds.includes(a.id)),
@@ -409,8 +418,13 @@ export function BookingWidget({
     }
   };
 
-  const goToStep = (step: BookingStep) => {
-    dispatch({ type: 'GO_TO_STEP', step });
+  const goToStep = (nextStep: BookingStep) => {
+    if (nextStep === 'extras' && !hasExtrasOptions) {
+      dispatch({ type: 'GO_TO_STEP', step: flow.step === 'service' ? 'schedule' : 'service' });
+      revealPanel();
+      return;
+    }
+    dispatch({ type: 'GO_TO_STEP', step: nextStep });
     revealPanel();
   };
 
@@ -703,29 +717,35 @@ export function BookingWidget({
   };
 
   const step = flow.step;
+  const stepIndex = BOOKING_STEPS.indexOf(step);
   const hasSlot = Boolean(flow.selectedSlot);
   const skipsStaffForSlot = skipsStaffStep || (flow.selectedSlot?.availableStaffIds.length ?? 0) <= 1;
   const completedSteps = new Set<BookingStep>(['service']);
+  if (stepIndex > BOOKING_STEPS.indexOf('extras') || !hasExtrasOptions) {
+    completedSteps.add('extras');
+  }
   if (hasSlot) completedSteps.add('schedule');
   if (hasSlot && (skipsStaffForSlot || step === 'details')) completedSteps.add('staff');
 
   const previousStep = (current: BookingStep): BookingStep | null => {
     if (current === 'details') return skipsStaffForSlot ? 'schedule' : 'staff';
     if (current === 'staff') return 'schedule';
-    if (current === 'schedule') return 'service';
+    if (current === 'schedule') return hasExtrasOptions ? 'extras' : 'service';
+    if (current === 'extras') return 'service';
     return null;
   };
   const backTarget = previousStep(step);
   const handleBack = backTarget && !isSubmittingBooking ? () => goToStep(backTarget) : null;
 
   const handleNext = () => {
-    if (step === 'service') goToStep('schedule');
+    if (step === 'service') goToStep(hasExtrasOptions ? 'extras' : 'schedule');
+    else if (step === 'extras') goToStep('schedule');
     else if (step === 'schedule' && hasSlot) goToStep(skipsStaffForSlot ? 'details' : 'staff');
     else if (step === 'staff') void handlePickStaff(chosenStaffId);
   };
 
   const canContinue =
-    step === 'service'
+    step === 'service' || step === 'extras'
       ? Boolean(selectedService)
       : step === 'schedule'
         ? hasSlot
@@ -744,28 +764,33 @@ export function BookingWidget({
             : 'Confirmar cita'
       : 'Continuar';
 
+  const extrasSelectedCount = activeSelectedAddons.length + selectedExtraServices.length;
   const nextHint =
     step === 'service'
       ? `${formatDuration(totalDurationMinutes)} en total`
-      : step === 'schedule'
-        ? hasSlot
-          ? 'Horario apartado'
-          : 'Elige un horario'
-        : step === 'staff'
-          ? chosenStaffId === 'any'
-            ? 'Te asignamos a quien esté libre'
-            : ''
-          : flow.holdExpired
-            ? 'Reverifica tu horario arriba'
-            : isSubmittingBooking
-              ? 'Guardando tu reserva…'
-              : showsDeposit && proofDataUrl && proofDeliveryMethod !== 'instagram_dm'
-                ? 'Comprobante listo para enviar'
-                : showsDeposit && proofDeliveryMethod === 'instagram_dm'
-                  ? 'Envías tu anticipo por Instagram DM'
-                  : showsDeposit
-                    ? 'Después subes tu anticipo'
-                    : '';
+      : step === 'extras'
+        ? extrasSelectedCount > 0
+          ? `${extrasSelectedCount} extra${extrasSelectedCount > 1 ? 's' : ''} · ${formatDuration(totalDurationMinutes)}`
+          : 'Paso opcional · Sin extras'
+        : step === 'schedule'
+          ? hasSlot
+            ? 'Horario apartado'
+            : 'Elige un horario'
+          : step === 'staff'
+            ? chosenStaffId === 'any'
+              ? 'Te asignamos a quien esté libre'
+              : ''
+            : flow.holdExpired
+              ? 'Reverifica tu horario arriba'
+              : isSubmittingBooking
+                ? 'Guardando tu reserva…'
+                : showsDeposit && proofDataUrl && proofDeliveryMethod !== 'instagram_dm'
+                  ? 'Comprobante listo para enviar'
+                  : showsDeposit && proofDeliveryMethod === 'instagram_dm'
+                    ? 'Envías tu anticipo por Instagram DM'
+                    : showsDeposit
+                      ? 'Después subes tu anticipo'
+                      : '';
 
   const slot = flow.selectedSlot;
   const slotTime = slot ? (timeFormat === '24h' ? slot.localTime24 : slot.localTime12) : '';
@@ -943,9 +968,6 @@ export function BookingWidget({
                 categories={categories}
                 services={services}
                 selectedService={selectedService}
-                selectedExtraServiceIds={selectedExtraServiceIds}
-                compatibleAddons={compatibleAddons}
-                selectedAddonIds={selectedAddonIds}
                 onSelectService={(serviceId) => {
                   if (serviceId === selectedService?.id) return;
                   setSelectedServiceId(serviceId);
@@ -953,6 +975,17 @@ export function BookingWidget({
                   resetSelection();
                 }}
                 onPrefetchService={handlePrefetchService}
+              />
+            ) : null}
+
+            {step === 'extras' ? (
+              <ExtrasStep
+                currency={settings.currency}
+                selectedServiceName={selectedService?.name ?? null}
+                extraServices={extraServices}
+                selectedExtraServiceIds={selectedExtraServiceIds}
+                compatibleAddons={compatibleAddons}
+                selectedAddonIds={selectedAddonIds}
                 onToggleExtraService={(serviceId, checked) => {
                   const nextIds = checked
                     ? Array.from(new Set([...selectedExtraServiceIds, serviceId])).slice(0, 8)

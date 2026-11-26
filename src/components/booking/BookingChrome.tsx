@@ -11,6 +11,7 @@ import { BOOKING_STEPS, type BookingStep } from './bookingMachine';
 
 export const STEP_LABELS: Readonly<Record<BookingStep, string>> = {
   service: 'Servicio',
+  extras: 'Extras',
   schedule: 'Día y hora',
   staff: 'Artista',
   details: 'Tus datos',

@@ -6,12 +6,11 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Check } from 'lucide-react';
-import { formatCurrency, formatDuration } from '@/lib/format';
+import { formatDuration } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
-import type { ServiceAddon, ServiceCategory } from '@/lib/types';
-import { addonIcon, servicePhoto } from '../landing/landingContent';
+import type { ServiceCategory } from '@/lib/types';
+import { servicePhoto } from '../landing/landingContent';
 import { formatServicePrice, isOptimizableLocalRasterImage } from './bookingHelpers';
 
 interface ServiceStepProps {
@@ -19,13 +18,8 @@ interface ServiceStepProps {
   categories: ServiceCategory[];
   services: PublicServiceDTO[];
   selectedService: PublicServiceDTO | undefined;
-  selectedExtraServiceIds: string[];
-  compatibleAddons: ServiceAddon[];
-  selectedAddonIds: string[];
   onSelectService: (serviceId: string) => void;
   onPrefetchService?: (serviceId: string) => void;
-  onToggleExtraService: (serviceId: string, checked: boolean) => void;
-  onToggleAddon: (addonId: string, checked: boolean) => void;
 }
 
 const UNCATEGORIZED = 'otros';
@@ -35,13 +29,8 @@ export function ServiceStep({
   categories,
   services,
   selectedService,
-  selectedExtraServiceIds,
-  compatibleAddons,
-  selectedAddonIds,
   onSelectService,
   onPrefetchService,
-  onToggleExtraService,
-  onToggleAddon,
 }: ServiceStepProps) {
   const tabs = categories
     .filter((category) => services.some((service) => service.categoryId === category.id))
@@ -56,8 +45,6 @@ export function ServiceStep({
     selectedService ? categoryOf(selectedService) : (tabs[0]?.id ?? UNCATEGORIZED),
   );
   const visibleServices = tabs.length > 1 ? services.filter((service) => categoryOf(service) === activeTab) : services;
-  const extraServices = services.filter((service) => service.id !== selectedService?.id);
-  const extraCount = selectedExtraServiceIds.length;
 
   return (
     <VStack gap={5} className="fx-step-in">
@@ -65,7 +52,7 @@ export function ServiceStep({
         <Heading level={2} className="lk-serif rb-h2">
           ¿Qué te hacemos?
         </Heading>
-        <Text color="secondary">Elige tu servicio. El tiempo y el total se calculan solos.</Text>
+        <Text color="secondary">Elige tu servicio principal. En el siguiente paso puedes sumar nail art o extras.</Text>
       </VStack>
 
       {tabs.length > 1 ? (
@@ -143,94 +130,6 @@ export function ServiceStep({
           );
         })}
       </ul>
-
-      {compatibleAddons.length > 0 ? (
-        <VStack gap={2}>
-          <Heading level={3}>
-            Suma nail art o extras{' '}
-            <Text color="secondary" weight="normal">
-              · opcional
-            </Text>
-          </Heading>
-          <ul className="rb-rows" aria-label="Extras">
-            {compatibleAddons.map((addon) => {
-              const isOn = selectedAddonIds.includes(addon.id);
-              return (
-                <li key={addon.id}>
-                  <button
-                    type="button"
-                    className="rb-opt rb-row fx-press"
-                    aria-pressed={isOn}
-                    onClick={() => onToggleAddon(addon.id, !isOn)}
-                  >
-                    <Text color="inherit" className="rb-check" data-on={isOn ? 'true' : 'false'} aria-hidden="true">
-                      <Check size={14} />
-                    </Text>
-                    <img
-                      src={addonIcon(addon.name)}
-                      alt=""
-                      width={22}
-                      height={22}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <Text className="rb-grow">{addon.name}</Text>
-                    <Text
-                      type="supporting"
-                      color="secondary"
-                      hasTabularNumbers
-                      style={{ flexShrink: 0 }}
-                    >
-                      {addon.extraMinutes > 0
-                        ? `+${formatDuration(addon.extraMinutes)} · +${formatCurrency(addon.extraPriceCents, currency)}`
-                        : `+${formatCurrency(addon.extraPriceCents, currency)}`}
-                    </Text>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </VStack>
-      ) : null}
-
-      {extraServices.length > 0 ? (
-        <Collapsible
-          className="rb-fold"
-          defaultIsOpen={extraCount > 0}
-          trigger={
-            <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
-              <Text weight="semibold">¿Algo más en la misma visita?</Text>
-              <Text type="supporting" color="secondary" hasTabularNumbers>
-                {extraCount > 0 ? `${extraCount} agregado${extraCount > 1 ? 's' : ''}` : 'Opcional'}
-              </Text>
-            </HStack>
-          }
-        >
-          <ul className="rb-rows rb-fold-body" aria-label="Servicios adicionales">
-            {extraServices.map((service) => {
-              const isOn = selectedExtraServiceIds.includes(service.id);
-              return (
-                <li key={service.id}>
-                  <button
-                    type="button"
-                    className="rb-opt rb-row fx-press"
-                    aria-pressed={isOn}
-                    onClick={() => onToggleExtraService(service.id, !isOn)}
-                  >
-                    <Text color="inherit" className="rb-check" data-on={isOn ? 'true' : 'false'} aria-hidden="true">
-                      <Check size={14} />
-                    </Text>
-                    <Text className="rb-grow">{service.name}</Text>
-                    <Text type="supporting" color="secondary" hasTabularNumbers>
-                      {formatDuration(service.durationMinutes)} · {formatServicePrice(service.priceCents, service.isStartingPrice, currency)}
-                    </Text>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </Collapsible>
-      ) : null}
     </VStack>
   );
 }

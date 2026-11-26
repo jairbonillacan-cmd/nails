@@ -636,7 +636,7 @@ body {
   box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--lk-blanco) 18%, transparent);
 }
 .rb-hero-wave { position: absolute; left: 0; bottom: -1px; width: 100%; height: 1.25rem; fill: var(--lk-rosa); }
-.rb-stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+.rb-stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.5rem; }
 .rb-step {
   width: 100%;
   display: flex;
