@@ -95,29 +95,10 @@ export function AdvancedPoliciesSection({
           <SurfaceCard
             id="brand-rules-heading"
             icon={<ShieldCheck size={16} aria-hidden="true" />}
-            title="Textos, límites y tiempos de reserva"
+            title="Límites y tiempos de reserva"
             subtitle="Reglas de cancelación, límite de citas por clienta y aviso de privacidad."
           >
             <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-              <TextInput
-                label="Título principal de tu portada"
-                value={draft.landingContent.heroTitle}
-                onChange={(v) =>
-                  onUpdateDraft({
-                    landingContent: { ...draft.landingContent, heroTitle: v },
-                  })
-                }
-              />
-              <TextArea
-                label="Descripción de tu portada"
-                value={draft.landingContent.heroSubtitle}
-                onChange={(v) =>
-                  onUpdateDraft({
-                    landingContent: { ...draft.landingContent, heroSubtitle: v },
-                  })
-                }
-                rows={2}
-              />
               <TextArea
                 label="Regla de cancelación y cambios"
                 value={draft.cancellationPolicyText}

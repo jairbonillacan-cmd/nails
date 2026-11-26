@@ -675,7 +675,7 @@ async function testPwaServiceWorkerAndEmbedMode() {
     swCache.includes('no-cache'),
     `GET /sw.js debe incluir no-cache en Cache-Control, recibido: ${swCache}`,
   );
-  assert.ok(sw.text.includes('laikona-v1'), 'Service Worker debe declarar caché versionado laikona-v1');
+  assert.match(sw.text, /laikona-v\d+/, 'Service Worker debe declarar caché versionado laikona-vN');
   assert.ok(sw.text.includes('/admin'), 'Service Worker debe excluir rutas /admin del caché');
 
   const embedPage = await fetchText('/reservar?embed=1');

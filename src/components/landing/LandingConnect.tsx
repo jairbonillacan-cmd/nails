@@ -6,11 +6,18 @@ import { Text } from '@astryxdesign/core/Text';
 import { INSTAGRAM_PHOTOS, LANDING_ASSETS } from './landingContent';
 
 interface LandingConnectProps {
+  title?: string;
+  subtitle?: string;
   instagramUrl: string;
   instagramHandle: string;
 }
 
-export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnectProps) {
+export function LandingConnect({
+  title = 'Conectemos',
+  subtitle = 'Sets nuevos cada semana. Guarda tu favorito y tráelo a tu cita.',
+  instagramUrl,
+  instagramHandle,
+}: LandingConnectProps) {
   const [leftTop, leftBottom] = INSTAGRAM_PHOTOS.left;
   const [rightTop, rightBottom] = INSTAGRAM_PHOTOS.right;
   return (
@@ -29,7 +36,7 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
           />
           <VStack className="lk-cereza-text">
             <Heading level={2} id="ig-t" color="inherit" className="lk-serif lk-h2 lk-reveal">
-              Conectemos
+              {title}
             </Heading>
           </VStack>
         </VStack>
@@ -120,7 +127,7 @@ export function LandingConnect({ instagramUrl, instagramHandle }: LandingConnect
               />
               <VStack className="lk-soft" style={{ maxWidth: '22rem' }}>
                 <Text type="large" color="inherit" textWrap="pretty">
-                  Sets nuevos cada semana. Guarda tu favorito y tráelo a tu cita.
+                  {subtitle}
                 </Text>
               </VStack>
               <HStack

@@ -77,15 +77,48 @@ export function useServiceWorker(options?: { register?: boolean }): ServiceWorke
       return;
     }
 
-    let cancelled = false;
-    void registerAppServiceWorker(navigator.serviceWorker).then((ok) => {
-      if (!cancelled && ok) {
-        setSwReady(true);
+    if (process.env.NODE_ENV !== 'production') {
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((reg) => reg.unregister())))
+        .catch(() => undefined);
+      if (typeof caches !== 'undefined') {
+        void caches
+          .keys()
+          .then((keys) =>
+            Promise.all(
+              keys.filter((key) => key.startsWith('laikona-')).map((key) => caches.delete(key)),
+            ),
+          )
+          .catch(() => undefined);
       }
-    });
+      return;
+    }
+
+    let cancelled = false;
+    const runRegister = () => {
+      void registerAppServiceWorker(navigator.serviceWorker).then((ok) => {
+        if (!cancelled && ok) {
+          setSwReady(true);
+        }
+      });
+    };
+
+    if (typeof document !== 'undefined' && document.readyState === 'complete') {
+      runRegister();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const handleLoad = () => {
+      runRegister();
+    };
+    window.addEventListener('load', handleLoad, { once: true });
 
     return () => {
       cancelled = true;
+      window.removeEventListener('load', handleLoad);
     };
   }, [shouldRegister]);
 

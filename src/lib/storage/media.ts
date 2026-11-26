@@ -5,7 +5,7 @@ import { AwsClient } from 'aws4fetch';
 export const MAX_MEDIA_BYTES = 2_500_000;
 
 export type AllowedMediaMime = 'image/png' | 'image/jpeg' | 'image/webp';
-export type MediaFolder = 'inspo' | 'proofs';
+export type MediaFolder = 'inspo' | 'proofs' | 'gallery';
 export type MediaStorageDriver = 'r2_binding' | 'r2_s3' | 'demo_local';
 
 export type MediaValidationErrorCode =
@@ -100,7 +100,7 @@ function isAllowedMime(value: string): value is AllowedMediaMime {
 }
 
 function isAllowedFolder(value: string): value is MediaFolder {
-  return value === 'inspo' || value === 'proofs';
+  return value === 'inspo' || value === 'proofs' || value === 'gallery';
 }
 
 function isR2BucketLike(value: unknown): value is R2BucketLike {

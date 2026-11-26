@@ -3,11 +3,16 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import type { ResolvedLandingSections } from '@/lib/landing-config';
 import { WaveTop } from './LandingParts';
 import { LANDING_ASSETS } from './landingContent';
 
 interface LandingFooterProps {
   salonName: string;
+  customLogoUrl?: string | null;
+  hoursDays?: string;
+  hoursText?: string;
+  sections?: ResolvedLandingSections;
   address: string;
   mapsUrl: string;
   instagramUrl: string;
@@ -16,21 +21,28 @@ interface LandingFooterProps {
 }
 
 const EXPLORE_LINKS = [
-  { label: 'Menú', href: '#servicios' },
-  { label: 'Creaciones', href: '#galeria' },
-  { label: 'Equipo', href: '#equipo' },
-  { label: 'Preguntas', href: '#preguntas' },
-  { label: 'Visítanos', href: '#visitanos' },
+  { label: 'Menú', href: '#servicios', key: 'showMenu' as const },
+  { label: 'Creaciones', href: '#galeria', key: 'showCreations' as const },
+  { label: 'Equipo', href: '#equipo', key: 'showTeam' as const },
+  { label: 'Preguntas', href: '#preguntas', key: 'showFaq' as const },
+  { label: 'Visítanos', href: '#visitanos', key: 'showVisit' as const },
 ] as const;
 
 export function LandingFooter({
   salonName,
+  customLogoUrl = null,
+  hoursDays = 'Lunes a sábado',
+  hoursText = '10:00 a 6:00 · Solo con cita',
+  sections,
   address,
   mapsUrl,
   instagramUrl,
   whatsappUrl,
   year,
 }: LandingFooterProps) {
+  const visibleExploreLinks = EXPLORE_LINKS.filter((link) =>
+    sections ? sections[link.key] : true,
+  );
   return (
     <VStack as="footer" className="lk-cereza">
       <WaveTop />
@@ -49,13 +61,13 @@ export function LandingFooter({
         <HStack justify="between" align="end" wrap="wrap" gap={6} paddingBlockEnd={8} className="lk-reveal lk-rule-b">
           <VStack gap={3}>
             <img
-              src={LANDING_ASSETS.logoWhite}
+              src={customLogoUrl || LANDING_ASSETS.logoWhite}
               alt={salonName}
               width={440}
               height={186}
               loading="lazy"
               decoding="async"
-              style={{ width: 'min(27.5rem, 80vw)', height: 'auto' }}
+              style={{ width: 'min(27.5rem, 80vw)', maxHeight: '7.5rem', objectFit: 'contain', height: 'auto' }}
             />
             <img
               src={LANDING_ASSETS.curvePorcelain}
@@ -85,7 +97,7 @@ export function LandingFooter({
         <VStack className="lk-footer-grid lk-reveal-2">
           <VStack as="nav" aria-label="Pie de página" gap={0}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Explora</Text>
-            {EXPLORE_LINKS.map((link) => (
+            {visibleExploreLinks.map((link) => (
               <a key={link.href} className="lk-footer-link" href={link.href}>
                 {link.label}
               </a>
@@ -100,8 +112,8 @@ export function LandingFooter({
           </VStack>
           <VStack gap={1}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Horario</Text>
-            <Text color="inherit">Lunes a sábado</Text>
-            <Text color="inherit" hasTabularNumbers>10:00 a 6:00 · Solo con cita</Text>
+            <Text color="inherit">{hoursDays}</Text>
+            <Text color="inherit" hasTabularNumbers>{hoursText}</Text>
           </VStack>
           <VStack gap={0}>
             <Text color="inherit" className="lk-eyebrow lk-soft">Síguenos</Text>

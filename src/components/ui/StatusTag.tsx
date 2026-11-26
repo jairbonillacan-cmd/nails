@@ -123,7 +123,10 @@ export function StatusTag({
       size={size}
       icon={leadingIcon}
       className={className}
-      style={hasTabularNumbers ? { fontVariantNumeric: 'tabular-nums' } : undefined}
+      style={{
+        flexShrink: 0,
+        ...(hasTabularNumbers ? { fontVariantNumeric: 'tabular-nums' } : {}),
+      }}
     />
   );
 }
@@ -132,7 +135,7 @@ export function BookingStatusTag({
   status,
   hasPaymentProof = false,
   size = 'sm',
-  showDot = true,
+  showDot = false,
   className,
 }: BookingStatusTagProps) {
   const meta = resolveBookingStatusMeta(status, hasPaymentProof);
@@ -142,7 +145,7 @@ export function BookingStatusTag({
 export function WaitlistStatusTag({
   status,
   size = 'sm',
-  showDot = true,
+  showDot = false,
   className,
 }: WaitlistStatusTagProps) {
   const meta = WAITLIST_STATUS_META[status];
@@ -153,7 +156,7 @@ export function PackageStatusTag({
   status,
   isExpired = false,
   size = 'sm',
-  showDot = true,
+  showDot = false,
   className,
 }: PackageStatusTagProps) {
   const meta = PACKAGE_STATUS_META[isExpired ? 'expired' : status];

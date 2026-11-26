@@ -64,11 +64,10 @@ export function BookingAppearanceSection({
       badge={
         <StatusTag
           tone={colorsReadable ? 'success' : 'warning'}
-          showDot
           label={
             colorsReadable
-              ? 'Lectura de colores: Se lee súper bien'
-              : 'Lectura de colores: Color muy claro, cuesta leer'
+              ? 'Buena lectura'
+              : 'Revisar contraste'
           }
         />
       }

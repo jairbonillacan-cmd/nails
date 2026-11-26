@@ -7,6 +7,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Menu } from 'lucide-react';
 import { useScrolledPast } from '@/lib/hooks/useScrolledPast';
+import type { ResolvedLandingSections } from '@/lib/landing-config';
 import { LANDING_ASSETS } from './landingContent';
 
 const LandingMobileMenuDialog = dynamic(
@@ -14,28 +15,37 @@ const LandingMobileMenuDialog = dynamic(
   { ssr: false },
 );
 
-const NAV_LINKS = [
-  { label: 'Menú', href: '#servicios' },
-  { label: 'Creaciones', href: '#galeria' },
-  { label: 'Equipo', href: '#equipo' },
-  { label: 'Visítanos', href: '#visitanos' },
+const ALL_NAV_LINKS = [
+  { label: 'Menú', href: '#servicios', key: 'showMenu' as const },
+  { label: 'Creaciones', href: '#galeria', key: 'showCreations' as const },
+  { label: 'Equipo', href: '#equipo', key: 'showTeam' as const },
+  { label: 'Visítanos', href: '#visitanos', key: 'showVisit' as const },
 ] as const;
 
 interface LandingNavProps {
   salonName: string;
+  customLogoUrl?: string | null;
   instagramUrl: string;
   instagramHandle: string;
   whatsappUrl: string;
+  sections?: ResolvedLandingSections;
 }
 
 export function LandingNav({
   salonName,
+  customLogoUrl = null,
   instagramUrl,
   instagramHandle,
   whatsappUrl,
+  sections,
 }: LandingNavProps) {
   const isFloating = useScrolledPast(80);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const visibleLinks = ALL_NAV_LINKS.filter((item) =>
+    sections ? sections[item.key] : true,
+  );
+  const logoSrc =
+    customLogoUrl || (isFloating ? LANDING_ASSETS.logoBlack : LANDING_ASSETS.logoWhite);
 
   return (
     <header className="lk-header">
@@ -43,7 +53,7 @@ export function LandingNav({
         <a href="#inicio" aria-label={`${salonName}, inicio`} className="lk-logo-link">
           <img
             className="lk-logo"
-            src={isFloating ? LANDING_ASSETS.logoBlack : LANDING_ASSETS.logoWhite}
+            src={logoSrc}
             alt={salonName}
             width={180}
             height={76}
@@ -58,7 +68,7 @@ export function LandingNav({
           className="lk-nav-links"
           style={{ listStyle: 'none', margin: 0, padding: 0 }}
         >
-          {NAV_LINKS.map((link) => (
+          {visibleLinks.map((link) => (
             <li key={link.href}>
               <a className="lk-nav-link" href={link.href}>
                 {link.label}
@@ -92,7 +102,7 @@ export function LandingNav({
           instagramUrl={instagramUrl}
           instagramHandle={instagramHandle}
           whatsappUrl={whatsappUrl}
-          navLinks={NAV_LINKS}
+          navLinks={visibleLinks}
           onOpenChange={setIsMenuOpen}
         />
       ) : null}

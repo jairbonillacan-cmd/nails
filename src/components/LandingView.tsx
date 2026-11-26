@@ -1,7 +1,6 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { getImageProps } from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -9,12 +8,14 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import type { ServiceAddon, ServiceCategory } from '@/lib/types';
 import type {
+  PublicGalleryItemDTO,
   PublicReviewDTO,
   PublicServiceDTO,
   PublicSettingsDTO,
   PublicStaffDTO,
 } from '@/lib/public-dto';
 import { buildWhatsAppLink, formatCurrency } from '@/lib/format';
+import { resolveLandingContent } from '@/lib/landing-config';
 import {
   buildHomeStructuredData,
   buildSalonFaqs,
@@ -24,8 +25,6 @@ import { useSalonAppearance } from './SalonThemeProvider';
 import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
 import { LandingNav } from './landing/LandingNav';
 import { LandingMenu } from './landing/LandingMenu';
-import { LandingConnect } from './landing/LandingConnect';
-import { LandingFaq } from './landing/LandingFaq';
 import { LandingFooter } from './landing/LandingFooter';
 
 const LandingCreations = dynamic(() =>
@@ -40,6 +39,14 @@ const LandingTeam = dynamic(() =>
   import('./landing/LandingTeam').then((mod) => mod.LandingTeam),
 );
 
+const LandingConnect = dynamic(() =>
+  import('./landing/LandingConnect').then((mod) => mod.LandingConnect),
+);
+
+const LandingFaq = dynamic(() =>
+  import('./landing/LandingFaq').then((mod) => mod.LandingFaq),
+);
+
 const LandingVisit = dynamic(() =>
   import('./landing/LandingVisit').then((mod) => mod.LandingVisit),
 );
@@ -52,6 +59,7 @@ interface LandingViewProps {
   staff: PublicStaffDTO[];
   reviews: PublicReviewDTO[];
   reviewsSummary: { count: number; average: number };
+  gallery?: PublicGalleryItemDTO[];
   siteOrigin?: string;
 }
 
@@ -63,10 +71,13 @@ export function LandingView({
   staff,
   reviews,
   reviewsSummary,
+  gallery = [],
   siteOrigin,
 }: LandingViewProps) {
   const { settings: liveSettings } = useSalonAppearance();
   const settings = liveSettings ?? initialSettings;
+  const landing = resolveLandingContent(settings);
+  const { sections } = landing;
 
   const whatsappUrl = buildWhatsAppLink(
     settings.whatsappNumber,
@@ -78,12 +89,13 @@ export function LandingView({
   const hasDeposit = settings.paymentMode !== 'none' && depositCents > 0;
   const depositLabel = hasDeposit ? formatCurrency(depositCents, settings.currency) : null;
   const rescheduleHours = settings.minRescheduleHours || 12;
-  const marquee = [
+  const autoMarquee = [
     ...(depositLabel ? [`Anticipo de ${depositLabel}`] : []),
     `Reagenda hasta ${rescheduleHours} h antes`,
     'Solo con cita',
     'Trae tu foto de inspiración',
   ];
+  const marquee = landing.marqueeItems.length > 0 ? landing.marqueeItems : autoMarquee;
   const ratingLabel = reviewsSummary.average.toFixed(1);
   const reviewUrl = settings.googleReviewUrl?.trim() || settings.mapsUrl;
   const salonFaqs = buildSalonFaqs(settings);
@@ -94,47 +106,35 @@ export function LandingView({
     reviewsSummary,
   });
 
-  const heroCommon = {
-    alt: '',
-    sizes: '100vw',
-    quality: 75,
-  };
-  const {
-    props: { srcSet: mobileHeroSrcSet, sizes: mobileHeroSizes },
-  } = getImageProps({
-    ...heroCommon,
-    src: '/landing/hero-movil.webp',
-    width: 720,
-    height: 960,
-  });
-  const { props: desktopHeroProps } = getImageProps({
-    ...heroCommon,
-    src: '/landing/hero-escritorio.webp',
-    width: 1600,
-    height: 900,
-    loading: 'eager',
-    fetchPriority: 'high',
-    decoding: 'sync',
-  });
+  const secondaryCtaHref = sections.showCreations
+    ? '#galeria'
+    : sections.showMenu
+      ? '#servicios'
+      : null;
 
   return (
     <VStack as="main" gap={0} className="lk-root">
       <JsonLdScript id="jsonld-home" data={homeStructuredData} />
-      <VStack className="lk-marquee" aria-label={marquee.join('. ')}>
-        <HStack className="lk-marquee-track" aria-hidden="true">
-          {[...marquee, ...marquee, ...marquee, ...marquee].map((item, index) => (
-            <Text key={`${item}-${index}`} color="inherit">
-              {item}  ✿
-            </Text>
-          ))}
-        </HStack>
-      </VStack>
+
+      {sections.showMarquee ? (
+        <VStack className="lk-marquee" aria-label={marquee.join('. ')}>
+          <HStack className="lk-marquee-track" aria-hidden="true">
+            {[...marquee, ...marquee, ...marquee, ...marquee].map((item, index) => (
+              <Text key={`${item}-${index}`} color="inherit">
+                {item}  ✿
+              </Text>
+            ))}
+          </HStack>
+        </VStack>
+      ) : null}
 
       <LandingNav
         salonName={settings.name}
+        customLogoUrl={landing.customLogoUrl}
         instagramUrl={instagramUrl}
         instagramHandle={instagramHandle}
         whatsappUrl={whatsappUrl}
+        sections={sections}
       />
 
       <VStack as="section" id="inicio" aria-labelledby="hero-t" padding={3} paddingBlockEnd={0}>
@@ -142,77 +142,166 @@ export function LandingView({
           <picture className="lk-hero-media" aria-hidden="true">
             <source
               media="(max-width: 47.5rem)"
-              srcSet={mobileHeroSrcSet}
-              sizes={mobileHeroSizes}
+              srcSet={landing.heroImageMobileUrl}
               width={720}
               height={960}
             />
-            <img {...desktopHeroProps} alt="" />
+            <img
+              src={landing.heroImageDesktopUrl}
+              alt=""
+              width={1600}
+              height={900}
+              loading="eager"
+              fetchPriority="high"
+              decoding="sync"
+            />
           </picture>
           <VStack className="lk-hero-scrim" aria-hidden="true" />
           <VStack gap={5} className="lk-hero-content">
             <Heading level={1} id="hero-t" color="inherit" className="lk-serif lk-h1 lk-intro">
-              El arte está en tus uñas
+              {landing.heroTitle}
             </Heading>
             <VStack className="lk-hero-sub lk-intro-2" style={{ maxWidth: '27rem' }}>
               <Text type="large" color="inherit" textWrap="pretty">
-                Acrílico escultural, Softgel y Rubber en {settings.city || 'Puebla'}. Tú traes la idea.
+                {landing.heroSubtitle}
               </Text>
             </VStack>
             <HStack gap={3} wrap="wrap" className="lk-hero-actions lk-intro-3">
-              <Button label="Agendar cita" variant="primary" size="lg" className="fx-press" href="/reservar" />
-              <Button label="Ver creaciones" variant="secondary" size="lg" className="lk-btn-outline fx-press" href="#galeria" />
+              <Button
+                label={landing.heroPrimaryCta}
+                variant="primary"
+                size="lg"
+                className="fx-press"
+                href="/reservar"
+              />
+              {secondaryCtaHref ? (
+                <Button
+                  label={landing.heroSecondaryCta}
+                  variant="secondary"
+                  size="lg"
+                  className="lk-btn-outline fx-press"
+                  href={secondaryCtaHref}
+                />
+              ) : null}
             </HStack>
-            {reviewsSummary.count > 0 ? (
-              <a
-                href="#resenas"
-                className="lk-hero-sub lk-intro-3"
-                style={{
-                  color: 'inherit',
-                  textDecoration: 'none',
-                  alignSelf: 'flex-start',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  minHeight: '2.75rem',
-                }}
-              >
-                <HStack gap={2} align="center">
+            {sections.showHeroRating && reviewsSummary.count > 0 ? (
+              sections.showReviews ? (
+                <a
+                  href="#resenas"
+                  className="lk-hero-sub lk-intro-3"
+                  style={{
+                    color: 'inherit',
+                    textDecoration: 'none',
+                    alignSelf: 'flex-start',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    minHeight: '2.75rem',
+                  }}
+                >
+                  <HStack gap={2} align="center">
+                    <Text color="inherit" className="lk-stars" aria-hidden="true">★★★★★</Text>
+                    <Text color="inherit" hasTabularNumbers>
+                      {ratingLabel} en Google · {reviewsSummary.count}{' '}
+                      {reviewsSummary.count === 1 ? 'reseña' : 'reseñas'}
+                    </Text>
+                  </HStack>
+                </a>
+              ) : (
+                <HStack gap={2} align="center" className="lk-hero-sub lk-intro-3">
                   <Text color="inherit" className="lk-stars" aria-hidden="true">★★★★★</Text>
                   <Text color="inherit" hasTabularNumbers>
-                    {ratingLabel} en Google · {reviewsSummary.count} {reviewsSummary.count === 1 ? 'reseña' : 'reseñas'}
+                    {ratingLabel} en Google · {reviewsSummary.count}{' '}
+                    {reviewsSummary.count === 1 ? 'reseña' : 'reseñas'}
                   </Text>
                 </HStack>
-              </a>
+              )
             ) : null}
           </VStack>
         </VStack>
       </VStack>
 
-      <LandingMenu
-        categories={categories}
-        services={services}
-        addons={addons}
-        currency={settings.currency}
-        depositLabel={depositLabel}
-      />
-      <LandingCreations
-        instagramUrl={instagramUrl}
-        instagramHandle={instagramHandle}
-        services={services}
-      />
-      <LandingReviews reviews={reviews} summary={reviewsSummary} reviewUrl={reviewUrl} />
-      <LandingTeam staff={staff} services={services} currency={settings.currency} />
-      <LandingConnect instagramUrl={instagramUrl} instagramHandle={instagramHandle} />
-      <LandingFaq faqs={salonFaqs} whatsappUrl={whatsappUrl} />
-      <LandingVisit
-        address={settings.address}
-        mapsUrl={settings.mapsUrl}
-        whatsappUrl={whatsappUrl}
-        instagramUrl={instagramUrl}
-        instagramHandle={instagramHandle}
-      />
+      {sections.showMenu ? (
+        <LandingMenu
+          title={landing.menuTitle}
+          bannerText={landing.menuBannerText}
+          categories={categories}
+          services={services}
+          addons={addons}
+          currency={settings.currency}
+          depositLabel={depositLabel}
+        />
+      ) : null}
+
+      {sections.showCreations ? (
+        <LandingCreations
+          title={landing.creationsTitle}
+          subtitle={landing.creationsSubtitle}
+          customGallery={gallery}
+          galleryMode={landing.galleryMode}
+          instagramUrl={instagramUrl}
+          instagramHandle={instagramHandle}
+          services={services}
+        />
+      ) : null}
+
+      {sections.showReviews ? (
+        <LandingReviews
+          title={landing.reviewsTitle}
+          subtitle={landing.reviewsSubtitle}
+          reviews={reviews}
+          summary={reviewsSummary}
+          reviewUrl={reviewUrl}
+        />
+      ) : null}
+
+      {sections.showTeam ? (
+        <LandingTeam
+          title={landing.teamTitle}
+          subtitle={landing.teamSubtitle}
+          staff={staff}
+          services={services}
+          currency={settings.currency}
+        />
+      ) : null}
+
+      {sections.showConnect ? (
+        <LandingConnect
+          title={landing.connectTitle}
+          subtitle={landing.connectSubtitle}
+          instagramUrl={instagramUrl}
+          instagramHandle={instagramHandle}
+        />
+      ) : null}
+
+      {sections.showFaq ? (
+        <LandingFaq
+          title={landing.faqTitle}
+          subtitle={landing.faqSubtitle}
+          faqs={salonFaqs}
+          whatsappUrl={whatsappUrl}
+        />
+      ) : null}
+
+      {sections.showVisit ? (
+        <LandingVisit
+          title={landing.visitTitle}
+          hoursDays={landing.visitHoursDays}
+          hoursText={landing.visitHoursText}
+          showMapEmbed={sections.showMapEmbed}
+          address={settings.address}
+          mapsUrl={settings.mapsUrl}
+          whatsappUrl={whatsappUrl}
+          instagramUrl={instagramUrl}
+          instagramHandle={instagramHandle}
+        />
+      ) : null}
+
       <LandingFooter
         salonName={settings.name}
+        customLogoUrl={landing.customLogoUrl}
+        hoursDays={landing.visitHoursDays}
+        hoursText={landing.visitHoursText}
+        sections={sections}
         address={settings.address}
         mapsUrl={settings.mapsUrl}
         instagramUrl={instagramUrl}

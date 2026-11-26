@@ -12,12 +12,58 @@ import {
 } from './enums';
 import { CentsNonNegativeSchema, NonEmptyIdSchema } from './primitives';
 
+const LandingFaqItemSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  question: z.string().trim().min(1).max(240),
+  answer: z.string().trim().min(1).max(1000),
+});
+
+const LandingSectionsSchema = z
+  .object({
+    showMarquee: z.boolean(),
+    showHeroRating: z.boolean(),
+    showMenu: z.boolean(),
+    showCreations: z.boolean(),
+    showReviews: z.boolean(),
+    showTeam: z.boolean(),
+    showConnect: z.boolean(),
+    showFaq: z.boolean(),
+    showVisit: z.boolean(),
+    showMapEmbed: z.boolean(),
+  })
+  .partial();
+
+const LandingGalleryModeSchema = z.enum(['mix', 'custom_only']);
+
 export const LandingContentSchema = z.object({
   heroEyebrow: z.string(),
   heroTitle: z.string(),
   heroSubtitle: z.string(),
   aboutTitle: z.string(),
   aboutBody: z.string(),
+  heroPrimaryCta: z.string().max(80).optional(),
+  heroSecondaryCta: z.string().max(80).optional(),
+  heroImageDesktopUrl: z.string().max(3_600_000).nullable().optional(),
+  heroImageMobileUrl: z.string().max(3_600_000).nullable().optional(),
+  marqueeItems: z.array(z.string().max(120)).max(8).optional(),
+  menuTitle: z.string().max(120).optional(),
+  menuBannerText: z.string().max(240).optional(),
+  creationsTitle: z.string().max(160).optional(),
+  creationsSubtitle: z.string().max(320).optional(),
+  galleryMode: LandingGalleryModeSchema.optional(),
+  reviewsTitle: z.string().max(160).optional(),
+  reviewsSubtitle: z.string().max(320).optional(),
+  teamTitle: z.string().max(160).optional(),
+  teamSubtitle: z.string().max(320).optional(),
+  connectTitle: z.string().max(120).optional(),
+  connectSubtitle: z.string().max(320).optional(),
+  faqTitle: z.string().max(160).optional(),
+  faqSubtitle: z.string().max(320).optional(),
+  customFaqs: z.array(LandingFaqItemSchema).max(12).optional(),
+  visitTitle: z.string().max(120).optional(),
+  visitHoursDays: z.string().max(120).optional(),
+  visitHoursText: z.string().max(180).optional(),
+  sections: LandingSectionsSchema.optional(),
 });
 
 const LandingContentPatchSchema = z
@@ -27,6 +73,29 @@ const LandingContentPatchSchema = z
     heroSubtitle: z.string().max(500),
     aboutTitle: z.string().max(220),
     aboutBody: z.string().max(1200),
+    heroPrimaryCta: z.string().max(80),
+    heroSecondaryCta: z.string().max(80),
+    heroImageDesktopUrl: z.string().max(3_600_000).nullable(),
+    heroImageMobileUrl: z.string().max(3_600_000).nullable(),
+    marqueeItems: z.array(z.string().max(120)).max(8),
+    menuTitle: z.string().max(120),
+    menuBannerText: z.string().max(240),
+    creationsTitle: z.string().max(160),
+    creationsSubtitle: z.string().max(320),
+    galleryMode: LandingGalleryModeSchema,
+    reviewsTitle: z.string().max(160),
+    reviewsSubtitle: z.string().max(320),
+    teamTitle: z.string().max(160),
+    teamSubtitle: z.string().max(320),
+    connectTitle: z.string().max(120),
+    connectSubtitle: z.string().max(320),
+    faqTitle: z.string().max(160),
+    faqSubtitle: z.string().max(320),
+    customFaqs: z.array(LandingFaqItemSchema).max(12),
+    visitTitle: z.string().max(120),
+    visitHoursDays: z.string().max(120),
+    visitHoursText: z.string().max(180),
+    sections: LandingSectionsSchema,
   })
   .partial();
 
@@ -49,8 +118,8 @@ export const BrandPatchSchema = z
     name: z.string().trim().min(1).max(120),
     tagline: z.string().max(240),
     description: z.string().max(1000),
-    logoUrl: z.string().max(2_500_000).nullable(),
-    coverImageUrl: z.string().max(2_500_000).nullable(),
+    logoUrl: z.string().max(3_600_000).nullable(),
+    coverImageUrl: z.string().max(3_600_000).nullable(),
     address: z.string().max(240),
     city: z.string().max(120),
     mapsUrl: z.string().max(500),
@@ -121,7 +190,7 @@ export const GalleryItemInputSchema = z.object({
   title: z.string().trim().min(1).max(120),
   caption: z.string().max(400).default(''),
   category: z.string().max(80).default('Gel'),
-  imageUrl: z.string().min(1).max(2_500_000),
+  imageUrl: z.string().min(1).max(3_600_000),
   serviceId: NonEmptyIdSchema.nullable().default(null),
   isFeatured: z.boolean().default(true),
 });

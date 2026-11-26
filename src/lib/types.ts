@@ -27,12 +27,54 @@ export type AuditAction =
   | 'media_retention_warned'
   | 'media_retention_purged';
 
-interface LandingContent {
+export interface LandingFaqItem {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+export interface LandingSectionToggles {
+  showMarquee?: boolean;
+  showHeroRating?: boolean;
+  showMenu?: boolean;
+  showCreations?: boolean;
+  showReviews?: boolean;
+  showTeam?: boolean;
+  showConnect?: boolean;
+  showFaq?: boolean;
+  showVisit?: boolean;
+  showMapEmbed?: boolean;
+}
+
+export interface LandingContent {
   heroEyebrow: string;
   heroTitle: string;
   heroSubtitle: string;
   aboutTitle: string;
   aboutBody: string;
+  heroPrimaryCta?: string;
+  heroSecondaryCta?: string;
+  heroImageDesktopUrl?: string | null;
+  heroImageMobileUrl?: string | null;
+  marqueeItems?: string[];
+  menuTitle?: string;
+  menuBannerText?: string;
+  creationsTitle?: string;
+  creationsSubtitle?: string;
+  galleryMode?: 'mix' | 'custom_only';
+  reviewsTitle?: string;
+  reviewsSubtitle?: string;
+  teamTitle?: string;
+  teamSubtitle?: string;
+  connectTitle?: string;
+  connectSubtitle?: string;
+  faqTitle?: string;
+  faqSubtitle?: string;
+  customFaqs?: LandingFaqItem[];
+  visitTitle?: string;
+  visitHoursDays?: string;
+  visitHoursText?: string;
+  sections?: LandingSectionToggles;
 }
 
 export interface SalonSettings {

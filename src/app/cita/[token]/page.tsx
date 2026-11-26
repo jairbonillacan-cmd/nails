@@ -17,12 +17,23 @@ import { ManageBookingView } from '@/components/ManageBookingView';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Tu cita',
-  description:
-    'Consulta, reagenda o gestiona tu cita en LAIKONA NAILS desde tu enlace personal.',
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const booking = getBookingByToken(token);
+  if (!booking) {
+    notFound();
+  }
+  return {
+    title: 'Tu cita',
+    description:
+      'Consulta, reagenda o gestiona tu cita en LAIKONA NAILS desde tu enlace personal.',
+    robots: { index: false, follow: false },
+  };
+}
 
 export default async function ManageBookingPage({
   params,

@@ -100,7 +100,7 @@ export function UploadDropzone({
             <img src={previewUrl} alt={previewAlt} className="fx-upload-thumb" style={PREVIEW_IMG_STYLE} />
             <VStack gap={1} style={{ minWidth: 0, flex: '1 1 0%' }}>
               <HStack gap={1.5} align="center" wrap="wrap">
-                <StatusTag label={readyLabel} tone="success" showDot size="sm" />
+                <StatusTag label={readyLabel} tone="success" size="sm" />
               </HStack>
               {fileName ? (
                 <Text type="supporting" weight="semibold" style={{ overflowWrap: 'anywhere' }}>

@@ -13,4 +13,4 @@ export { CopyableField } from './CopyableField';
 export { ActionRow } from './ActionRow';
 export { ConfirmActionDialog } from './ConfirmActionDialog';
 export { FilterPillBar, type FilterPillOption } from './FilterPillBar';
-export { SkeletonBlock, PageSkeleton } from './SkeletonBlock';
+export { SkeletonBlock, PageSkeleton, AdminShellSkeleton } from './SkeletonBlock';

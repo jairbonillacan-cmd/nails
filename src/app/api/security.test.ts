@@ -258,6 +258,54 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(clearHeader).toContain('Max-Age=0');
     });
 
+    it('exposes accurate authMode (demo, disabled, supabase) and requires password when Supabase Auth is active', async () => {
+      const demoRes = await getAdminSessionRoute(
+        makeRequest('http://localhost:3000/api/admin/session'),
+      );
+      expect(demoRes.status).toBe(200);
+      const demoJson = (await demoRes.json()) as {
+        authMode: string;
+        availableDemoUsers: unknown[];
+      };
+      expect(demoJson.authMode).toBe('demo');
+      expect(demoJson.availableDemoUsers.length).toBeGreaterThan(0);
+
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('ADMIN_SESSION_SECRET', '');
+      const disabledRes = await getAdminSessionRoute(
+        makeRequest('http://localhost:3000/api/admin/session'),
+      );
+      const disabledJson = (await disabledRes.json()) as {
+        authMode: string;
+        availableDemoUsers: unknown[];
+      };
+      expect(disabledJson.authMode).toBe('disabled');
+      expect(disabledJson.availableDemoUsers).toEqual([]);
+
+      vi.unstubAllEnvs();
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://demo.supabase.co');
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'sb_publishable_test_anon_key');
+      vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'sb_secret_test_service_role_key');
+      const supaGetRes = await getAdminSessionRoute(
+        makeRequest('http://localhost:3000/api/admin/session'),
+      );
+      const supaGetJson = (await supaGetRes.json()) as {
+        authMode: string;
+        availableDemoUsers: unknown[];
+      };
+      expect(supaGetJson.authMode).toBe('supabase');
+      expect(supaGetJson.availableDemoUsers).toEqual([]);
+
+      const missingPasswordRes = await postAdminSession(
+        makeRequest('http://localhost:3000/api/admin/session', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'duena@nails.studio' }),
+        }),
+      );
+      expect(missingPasswordRes.status).toBe(400);
+    });
+
     it('fails closed in production and when Supabase is configured', async () => {
       const demoCookie = getOwnerCookieHeader();
 

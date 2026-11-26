@@ -1,6 +1,8 @@
+import '../cita.css';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { LANDING_ASSETS } from '@/components/landing/landingContent';
 
 const CTA_SLOTS = [0, 1, 2, 3, 4, 5] as const;
 const SERVICE_SLOTS = [0, 1, 2, 3] as const;
@@ -20,7 +22,7 @@ export default function LinksLoading() {
         <VStack className="rb-header-bar" gap={0}>
           <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
           <img
-            src="/landing/logo-negro.svg"
+            src={LANDING_ASSETS.logoBlack}
             alt="LAIKONA NAILS"
             width={120}
             height={50}
@@ -35,13 +37,23 @@ export default function LinksLoading() {
       <VStack as="section" className="rb-hero ck-hero" gap={0}>
         <VStack className="rb-wrap rb-hero-inner sk-links-wrap" align="center" gap={3}>
           <img
-            src="/landing/logo-blanco.svg"
+            src={LANDING_ASSETS.logoWhite}
             alt="LAIKONA NAILS"
             width={160}
             height={68}
             className="lk-logo"
           />
-          <VStack className="sk-bar" data-size="lg" data-w="60" data-on="cherry" aria-hidden="true" />
+          <Text color="inherit" className="sk-eyebrow" data-on="cherry">
+            Cargando accesos rápidos…
+          </Text>
+          <img
+            src={LANDING_ASSETS.strokePorcelain}
+            alt=""
+            aria-hidden="true"
+            width={150}
+            height={18}
+            className="rb-hero-stroke"
+          />
           <VStack className="sk-bar" data-size="sm" data-w="40" data-on="cherry" aria-hidden="true" />
           <VStack className="sk-bar" data-size="xs" data-w="80" data-on="cherry" aria-hidden="true" />
         </VStack>
@@ -59,6 +71,7 @@ export default function LinksLoading() {
         <VStack className="sk-links-wrap" gap={5}>
           <VStack className="ck-panel" gap={4} align="center">
             <HStack gap={2} justify="center" wrap="wrap">
+              <VStack className="sk-bar" data-size="pill" />
               <VStack className="sk-bar" data-size="pill" />
               <VStack className="sk-bar" data-size="pill" />
             </HStack>

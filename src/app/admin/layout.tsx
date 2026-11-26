@@ -3,6 +3,7 @@ import React, { Suspense } from 'react';
 import './admin.css';
 import { AdminProvider } from '@/components/admin/AdminProvider';
 import { AdminShell } from '@/components/admin/AdminShell';
+import { AdminShellSkeleton } from '@/components/ui/SkeletonBlock';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,7 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<AdminShellSkeleton ariaLabel="Abriendo tu panel de LAIKONA NAILS" />}>
       <AdminProvider>
         <AdminShell>{children}</AdminShell>
       </AdminProvider>

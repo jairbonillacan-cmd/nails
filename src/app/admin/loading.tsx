@@ -12,9 +12,9 @@ export default function AdminLoading() {
       gap={6}
       role="status"
       aria-busy="true"
-      aria-label="Cargando panel de administración"
+      aria-label="Cargando tu día en el salón"
     >
-      <Text className="rb-sr-only">Cargando panel de administración…</Text>
+      <Text className="rb-sr-only">Cargando tu día en el salón…</Text>
 
       <HStack
         as="header"
@@ -23,14 +23,17 @@ export default function AdminLoading() {
         align="end"
         gap={4}
         wrap="wrap"
-        aria-hidden="true"
       >
         <VStack gap={2} className="ad-head-copy">
-          <VStack className="sk-bar" data-size="xs" data-w="25" />
-          <VStack className="sk-bar" data-size="lg" data-w="40" />
-          <VStack className="sk-bar" data-size="sm" data-w="60" />
+          <HStack align="center">
+            <Text color="inherit" className="sk-eyebrow">
+              Preparando tu día…
+            </Text>
+          </HStack>
+          <VStack className="sk-bar" data-size="lg" data-w="40" aria-hidden="true" />
+          <VStack className="sk-bar" data-size="sm" data-w="60" aria-hidden="true" />
         </VStack>
-        <HStack gap={2} align="center">
+        <HStack gap={2} align="center" aria-hidden="true">
           <VStack className="ad-skeleton ad-hide-s" data-size="button" />
           <VStack className="ad-skeleton" data-size="button" />
         </HStack>
@@ -38,7 +41,7 @@ export default function AdminLoading() {
 
       <VStack className="ad-kpis" gap={0} aria-hidden="true">
         {KPI_SLOTS.map((idx) => (
-          <VStack key={idx} className="sk-card" data-variant="kpi" gap={2}>
+          <VStack key={idx} className="ad-sk-kpi" padding={4} gap={2}>
             <VStack className="sk-bar" data-size="xs" data-w="60" />
             <VStack className="sk-bar" data-size="lg" data-w="40" />
             <VStack className="sk-bar" data-size="xs" data-w="80" />

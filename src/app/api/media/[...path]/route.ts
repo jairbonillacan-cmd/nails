@@ -42,6 +42,7 @@ export async function GET(
   }
 
   const storagePath = parsed.storagePath;
+  const isPublicGalleryMedia = parsed.folder === 'gallery';
   let ownerLoaded = false;
   let ownerRecord: MediaAccessOwner | null = null;
   async function loadOwner(): Promise<MediaAccessOwner | null> {
@@ -52,23 +53,25 @@ export async function GET(
     return ownerRecord;
   }
 
-  let authorized = false;
+  let authorized = isPublicGalleryMedia;
   let forbiddenAttempt = false;
 
-  const adminSession = await requireAdmin(undefined, request);
-  if (adminSession) {
-    if (adminSession.user.role === 'owner' || adminSession.user.role === 'admin') {
-      authorized = true;
-    } else {
-      const owner = await loadOwner();
-      if (
-        owner?.staffId &&
-        adminSession.user.staffMemberId &&
-        owner.staffId === adminSession.user.staffMemberId
-      ) {
+  if (!authorized) {
+    const adminSession = await requireAdmin(undefined, request);
+    if (adminSession) {
+      if (adminSession.user.role === 'owner' || adminSession.user.role === 'admin') {
         authorized = true;
       } else {
-        forbiddenAttempt = true;
+        const owner = await loadOwner();
+        if (
+          owner?.staffId &&
+          adminSession.user.staffMemberId &&
+          owner.staffId === adminSession.user.staffMemberId
+        ) {
+          authorized = true;
+        } else {
+          forbiddenAttempt = true;
+        }
       }
     }
   }
@@ -139,8 +142,10 @@ export async function GET(
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "default-src 'none'; sandbox",
         'Content-Disposition': `inline; filename="${parsed.fileName}"`,
-        'Cache-Control': 'private, max-age=300, no-store',
-        Vary: 'Cookie',
+        'Cache-Control': isPublicGalleryMedia
+          ? 'public, max-age=31536000, immutable'
+          : 'private, max-age=300, no-store',
+        ...(isPublicGalleryMedia ? {} : { Vary: 'Cookie' }),
       },
     });
   } catch (err) {

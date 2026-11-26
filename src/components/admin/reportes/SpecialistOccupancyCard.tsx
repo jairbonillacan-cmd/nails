@@ -81,7 +81,7 @@ export function SpecialistOccupancyCard({
                   return (
                     <VStack gap={1}>
                       <HStack justify="between" align="center" gap={2}>
-                        <Text weight="bold" size="sm" hasTabularNumbers>
+                        <Text weight="bold" size="sm" hasTabularNumbers textWrap="nowrap">
                           {row.occupancyPercent}%
                         </Text>
                         <Text

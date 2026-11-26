@@ -248,7 +248,8 @@ a.lk-hero-sub:focus-visible,
 }
 
 .lk-hero-sub {
-  color: color-mix(in srgb, var(--lk-blanco) 88%, var(--lk-cereza));
+  color: color-mix(in srgb, var(--lk-blanco) 95%, var(--lk-rosa));
+  text-shadow: 0 0.0625rem 0.75rem color-mix(in srgb, var(--lk-tinta) 58%, transparent);
 }
 
 .lk-stars {
@@ -258,6 +259,15 @@ a.lk-hero-sub:focus-visible,
 
 .lk-section {
   padding-block: clamp(3.75rem, 7.5vw, 6.25rem);
+}
+
+#galeria,
+#resenas,
+#equipo,
+#preguntas,
+#visitanos {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 38rem;
 }
 
 .lk-cereza {
@@ -808,11 +818,24 @@ a.lk-card:focus-visible,
 .sk-landing-hero {
   background: linear-gradient(
     135deg,
-    var(--lk-tinte) 0%,
-    color-mix(in srgb, var(--lk-cereza) 16%, var(--lk-rosa)) 58%,
-    color-mix(in srgb, var(--lk-cereza) 24%, var(--lk-rosa)) 100%
+    var(--lk-cereza) 0%,
+    color-mix(in srgb, var(--lk-cereza) 82%, var(--lk-tinta)) 100%
   );
-  color: var(--lk-tinta);
+  color: var(--lk-blanco);
+}
+
+.sk-landing-hero::before {
+  content: '';
+  position: absolute;
+  right: -3.5rem;
+  top: -1.5rem;
+  width: 20rem;
+  aspect-ratio: 244 / 286;
+  opacity: 0.08;
+  background-color: var(--lk-blanco);
+  -webkit-mask: url('/landing/cerezas-blanco.svg') no-repeat center / contain;
+  mask: url('/landing/cerezas-blanco.svg') no-repeat center / contain;
+  pointer-events: none;
 }
 
 .sk-admin-grid {
@@ -829,14 +852,14 @@ a.lk-card:focus-visible,
 }
 
 @keyframes lk-marquee { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
-@keyframes lk-in { from { opacity: 0; transform: translate3d(0, 1.5rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
+@keyframes lk-in { from { opacity: 0.94; transform: translate3d(0, 0.5rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
 @keyframes lk-reveal-up { from { opacity: 1; transform: translate3d(0, 1.25rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
 @keyframes lk-pop { from { opacity: 1; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 @keyframes lk-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 
-.lk-intro { animation: lk-in var(--duration-slow) var(--ease-entrance) both; }
-.lk-intro-2 { animation: lk-in var(--duration-slow) var(--ease-entrance) 150ms both; }
-.lk-intro-3 { animation: lk-in var(--duration-slow) var(--ease-entrance) 300ms both; }
+.lk-intro { animation: lk-in 240ms var(--ease-entrance) both; }
+.lk-intro-2 { animation: lk-in 240ms var(--ease-entrance) 40ms both; }
+.lk-intro-3 { animation: lk-in 240ms var(--ease-entrance) 80ms both; }
 
 @media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
@@ -913,7 +936,14 @@ a.lk-card:focus-visible,
     object-position: center top;
   }
   .lk-hero-scrim {
-    background-image: linear-gradient(180deg, color-mix(in srgb, var(--lk-tinta) 50%, transparent) 0%, transparent 22%, transparent 42%, color-mix(in srgb, var(--lk-tinta) 94%, transparent) 78%);
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lk-tinta) 54%, transparent) 0%,
+      color-mix(in srgb, var(--lk-tinta) 14%, transparent) 22%,
+      color-mix(in srgb, var(--lk-tinta) 48%, transparent) 38%,
+      color-mix(in srgb, var(--lk-tinta) 84%, transparent) 58%,
+      color-mix(in srgb, var(--lk-tinta) 96%, transparent) 78%
+    );
   }
   .lk-hero-actions > * { flex: 1 1 100%; }
   .lk-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 9.4rem; gap: 0.6rem; }

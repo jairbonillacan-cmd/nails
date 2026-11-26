@@ -11,18 +11,25 @@ import { SALON_FAQS, type SalonFaqItem } from '@/lib/seo/structured-data';
 import { SectionHeading } from './LandingParts';
 
 interface LandingFaqProps {
+  title?: string;
+  subtitle?: string;
   faqs?: readonly SalonFaqItem[];
   whatsappUrl: string;
 }
 
-export function LandingFaq({ faqs = SALON_FAQS, whatsappUrl }: LandingFaqProps) {
+export function LandingFaq({
+  title = 'Preguntas frecuentes',
+  subtitle = 'Anticipos, reagendado, retoques y todo lo que necesitas saber antes de tu cita en Puebla.',
+  faqs = SALON_FAQS,
+  whatsappUrl,
+}: LandingFaqProps) {
   return (
     <VStack as="section" id="preguntas" aria-labelledby="preguntas-t" className="lk-section">
       <VStack gap={6} align="center" className="lk-wrap">
         <SectionHeading
           id="preguntas-t"
-          title="Preguntas frecuentes"
-          subtitle="Anticipos, reagendado, retoques y todo lo que necesitas saber antes de tu cita en Puebla."
+          title={title}
+          subtitle={subtitle}
           tone="ink"
           align="center"
         />

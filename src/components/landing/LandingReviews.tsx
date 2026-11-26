@@ -14,20 +14,28 @@ function formatReviewDate(iso: string): string {
 }
 
 interface LandingReviewsProps {
+  title?: string;
+  subtitle?: string;
   reviews: PublicReviewDTO[];
   summary: { count: number; average: number };
   reviewUrl: string;
 }
 
-export function LandingReviews({ reviews, summary, reviewUrl }: LandingReviewsProps) {
+export function LandingReviews({
+  title = 'De tu idea a tus uñas',
+  subtitle = 'Opiniones verificadas de clientas que ya salieron con su set.',
+  reviews,
+  summary,
+  reviewUrl,
+}: LandingReviewsProps) {
   const average = summary.average.toFixed(1);
   return (
     <VStack as="section" id="resenas" aria-labelledby="resenas-t" className="lk-section">
       <VStack gap={6} className="lk-wrap">
         <SectionHeading
           id="resenas-t"
-          title="De tu idea a tus uñas"
-          subtitle="Opiniones verificadas de clientas que ya salieron con su set."
+          title={title}
+          subtitle={subtitle}
           tone="cereza"
         />
         <HStack gap={6} align="center" wrap="wrap" className="lk-reveal">

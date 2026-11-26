@@ -14,7 +14,7 @@ import {
   transitionBookingStatus,
 } from '../booking/state-machine';
 import { generateBookingCode, systemClock, type Clock } from '../clock';
-import { isSafeInternalBookingMediaPath } from '../contracts';
+import { isSafeInternalBookingMediaPath, LandingContentSchema } from '../contracts';
 import { createDefaultWhatsAppTemplates } from '../demo-seed';
 import {
   getConfiguredWhatsAppMonthlyQuota,
@@ -162,13 +162,18 @@ function mapLandingContent(raw: unknown): SalonSettings['landingContent'] {
       aboutBody: '',
     };
   }
-  return {
+  const base = {
     heroEyebrow: asString(raw.heroEyebrow),
     heroTitle: asString(raw.heroTitle),
     heroSubtitle: asString(raw.heroSubtitle),
     aboutTitle: asString(raw.aboutTitle),
     aboutBody: asString(raw.aboutBody),
   };
+  const parsed = LandingContentSchema.safeParse({
+    ...raw,
+    ...base,
+  });
+  return parsed.success ? parsed.data : base;
 }
 
 function mapSettingsRow(row: Tables['salon_settings']['Row']): SalonSettings {
@@ -2867,13 +2872,105 @@ export function createSupabaseRepository(
         dbPatch.optimize_continuous_slots = patch.optimizeContinuousSlots;
       }
       if (patch.landingContent !== undefined) {
-        dbPatch.landing_content = {
-          heroEyebrow: patch.landingContent.heroEyebrow,
-          heroTitle: patch.landingContent.heroTitle,
-          heroSubtitle: patch.landingContent.heroSubtitle,
-          aboutTitle: patch.landingContent.aboutTitle,
-          aboutBody: patch.landingContent.aboutBody,
+        const currentRow = await supabase
+          .from('salon_settings')
+          .select('landing_content')
+          .eq('id', 'default')
+          .maybeSingle();
+        const existingContent = mapLandingContent(currentRow.data?.landing_content);
+        const mergedContent: SalonSettings['landingContent'] = {
+          ...existingContent,
+          ...patch.landingContent,
+          ...(patch.landingContent.sections !== undefined
+            ? {
+                sections: {
+                  ...existingContent.sections,
+                  ...patch.landingContent.sections,
+                },
+              }
+            : {}),
         };
+        const serializedLanding: Record<string, Database['public']['Tables']['salon_settings']['Update']['landing_content']> = {
+          heroEyebrow: mergedContent.heroEyebrow,
+          heroTitle: mergedContent.heroTitle,
+          heroSubtitle: mergedContent.heroSubtitle,
+          aboutTitle: mergedContent.aboutTitle,
+          aboutBody: mergedContent.aboutBody,
+        };
+        if (mergedContent.heroPrimaryCta !== undefined) {
+          serializedLanding.heroPrimaryCta = mergedContent.heroPrimaryCta;
+        }
+        if (mergedContent.heroSecondaryCta !== undefined) {
+          serializedLanding.heroSecondaryCta = mergedContent.heroSecondaryCta;
+        }
+        if (mergedContent.heroImageDesktopUrl !== undefined) {
+          serializedLanding.heroImageDesktopUrl = mergedContent.heroImageDesktopUrl;
+        }
+        if (mergedContent.heroImageMobileUrl !== undefined) {
+          serializedLanding.heroImageMobileUrl = mergedContent.heroImageMobileUrl;
+        }
+        if (mergedContent.marqueeItems !== undefined) {
+          serializedLanding.marqueeItems = mergedContent.marqueeItems;
+        }
+        if (mergedContent.menuTitle !== undefined) {
+          serializedLanding.menuTitle = mergedContent.menuTitle;
+        }
+        if (mergedContent.menuBannerText !== undefined) {
+          serializedLanding.menuBannerText = mergedContent.menuBannerText;
+        }
+        if (mergedContent.creationsTitle !== undefined) {
+          serializedLanding.creationsTitle = mergedContent.creationsTitle;
+        }
+        if (mergedContent.creationsSubtitle !== undefined) {
+          serializedLanding.creationsSubtitle = mergedContent.creationsSubtitle;
+        }
+        if (mergedContent.galleryMode !== undefined) {
+          serializedLanding.galleryMode = mergedContent.galleryMode;
+        }
+        if (mergedContent.reviewsTitle !== undefined) {
+          serializedLanding.reviewsTitle = mergedContent.reviewsTitle;
+        }
+        if (mergedContent.reviewsSubtitle !== undefined) {
+          serializedLanding.reviewsSubtitle = mergedContent.reviewsSubtitle;
+        }
+        if (mergedContent.teamTitle !== undefined) {
+          serializedLanding.teamTitle = mergedContent.teamTitle;
+        }
+        if (mergedContent.teamSubtitle !== undefined) {
+          serializedLanding.teamSubtitle = mergedContent.teamSubtitle;
+        }
+        if (mergedContent.connectTitle !== undefined) {
+          serializedLanding.connectTitle = mergedContent.connectTitle;
+        }
+        if (mergedContent.connectSubtitle !== undefined) {
+          serializedLanding.connectSubtitle = mergedContent.connectSubtitle;
+        }
+        if (mergedContent.faqTitle !== undefined) {
+          serializedLanding.faqTitle = mergedContent.faqTitle;
+        }
+        if (mergedContent.faqSubtitle !== undefined) {
+          serializedLanding.faqSubtitle = mergedContent.faqSubtitle;
+        }
+        if (mergedContent.customFaqs !== undefined) {
+          serializedLanding.customFaqs = mergedContent.customFaqs.map((faq) => ({
+            id: faq.id,
+            question: faq.question,
+            answer: faq.answer,
+          }));
+        }
+        if (mergedContent.visitTitle !== undefined) {
+          serializedLanding.visitTitle = mergedContent.visitTitle;
+        }
+        if (mergedContent.visitHoursDays !== undefined) {
+          serializedLanding.visitHoursDays = mergedContent.visitHoursDays;
+        }
+        if (mergedContent.visitHoursText !== undefined) {
+          serializedLanding.visitHoursText = mergedContent.visitHoursText;
+        }
+        if (mergedContent.sections !== undefined) {
+          serializedLanding.sections = { ...mergedContent.sections };
+        }
+        dbPatch.landing_content = serializedLanding;
       }
       if (patch.whatsappBookingEnabled !== undefined) {
         dbPatch.whatsapp_booking_enabled = patch.whatsappBookingEnabled;

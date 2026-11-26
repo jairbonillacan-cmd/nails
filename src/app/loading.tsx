@@ -1,6 +1,8 @@
+import './landing.css';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { LANDING_ASSETS } from '@/components/landing/landingContent';
 
 const HERO_SERVICES = [0, 1, 2, 3] as const;
 
@@ -27,7 +29,7 @@ export default function HomeLoading() {
           gap={3}
         >
           <img
-            src="/landing/logo-negro.svg"
+            src={LANDING_ASSETS.logoBlack}
             alt="LAIKONA NAILS"
             width={160}
             height={68}
@@ -42,22 +44,34 @@ export default function HomeLoading() {
         </HStack>
       </VStack>
 
-      <VStack as="section" padding={3} paddingBlockEnd={0} aria-hidden="true">
+      <VStack as="section" padding={3} paddingBlockEnd={0}>
         <VStack className="lk-hero sk-landing-hero" justify="end" gap={6}>
-          <VStack gap={5} className="lk-hero-content" maxWidth={520}>
-            <VStack gap={2}>
-              <VStack className="sk-bar" data-size="xl" data-w="100" />
-              <VStack className="sk-bar" data-size="xl" data-w="80" />
-            </VStack>
-            <VStack gap={2} maxWidth={420}>
-              <VStack className="sk-bar" data-size="md" data-w="100" />
-              <VStack className="sk-bar" data-size="sm" data-w="60" />
-            </VStack>
-            <HStack gap={3} wrap="wrap">
-              <VStack className="ad-skeleton" data-size="button" />
-              <VStack className="ad-skeleton" data-size="button" />
+          <VStack gap={4} className="lk-hero-content" maxWidth={540}>
+            <HStack align="center">
+              <Text color="inherit" className="sk-eyebrow" data-on="cherry">
+                Preparando el estudio…
+              </Text>
             </HStack>
-            <VStack className="sk-bar" data-size="sm" data-w="40" />
+            <VStack gap={2} aria-hidden="true">
+              <VStack className="sk-bar" data-size="xl" data-w="100" data-on="cherry" />
+              <VStack className="sk-bar" data-size="xl" data-w="80" data-on="cherry" />
+            </VStack>
+            <img
+              src={LANDING_ASSETS.strokePorcelain}
+              alt=""
+              aria-hidden="true"
+              width={160}
+              height={18}
+              className="rb-hero-stroke"
+            />
+            <VStack gap={2} maxWidth={420} aria-hidden="true">
+              <VStack className="sk-bar" data-size="md" data-w="100" data-on="cherry" />
+              <VStack className="sk-bar" data-size="sm" data-w="60" data-on="cherry" />
+            </VStack>
+            <HStack gap={3} wrap="wrap" aria-hidden="true">
+              <VStack className="ad-skeleton" data-size="button" data-on="cherry" />
+              <VStack className="ad-skeleton" data-size="button" data-on="cherry" />
+            </HStack>
           </VStack>
         </VStack>
       </VStack>

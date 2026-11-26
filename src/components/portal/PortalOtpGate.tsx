@@ -8,7 +8,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { ShieldCheck } from 'lucide-react';
+import { CalendarCheck, ShieldCheck } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 
 interface PortalOtpGateProps {
@@ -199,6 +199,29 @@ export function PortalOtpGate({
         className="pt-card fx-fade-up"
       >
         <VStack gap={4}>
+          <HStack
+            gap={4}
+            wrap="wrap"
+            align="center"
+            className="pt-steps"
+            aria-label="Pasos de verificación"
+          >
+            <Text
+              type="supporting"
+              className="pt-step"
+              data-state={authStep === 'phone' ? 'active' : 'done'}
+            >
+              01 · Tu WhatsApp
+            </Text>
+            <Text
+              type="supporting"
+              className="pt-step"
+              data-state={authStep === 'code' ? 'active' : 'pending'}
+            >
+              02 · Código de 6 dígitos
+            </Text>
+          </HStack>
+
           {errorMessage ? (
             <Banner
               status="error"
@@ -232,11 +255,14 @@ export function PortalOtpGate({
                   placeholder="222 412 3987"
                   startIcon={<Text weight="semibold">+52</Text>}
                   value={phoneInput}
-                  onChange={setPhoneInput}
+                  onChange={(nextValue) => {
+                    setPhoneInput(nextValue);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   isRequired
                   description={
                     showDemoHint
-                      ? 'Modo demo local: prueba con 222 412 3987 (Sofía Ramírez).'
+                      ? 'Modo de prueba: usa 222 412 3987 (Sofía Ramírez).'
                       : 'Usa el mismo número con el que agendaste tus citas.'
                   }
                 />
@@ -354,6 +380,28 @@ export function PortalOtpGate({
           )}
         </VStack>
       </SurfaceCard>
+
+      <VStack gap={2} align="center">
+        <HStack justify="center" align="center" gap={2} wrap="wrap">
+          <Text type="supporting" color="secondary">
+            ¿Primera vez en LAIKONA NAILS?
+          </Text>
+          <Button
+            label="Agendar mi primera cita"
+            variant="ghost"
+            size="md"
+            className="fx-press"
+            icon={<CalendarCheck size={15} aria-hidden="true" />}
+            href="/reservar"
+          />
+        </HStack>
+        <Button
+          label="Tus datos están protegidos · Aviso de privacidad"
+          variant="ghost"
+          size="sm"
+          href="/aviso-de-privacidad"
+        />
+      </VStack>
     </VStack>
   );
 }

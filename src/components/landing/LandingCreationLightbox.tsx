@@ -11,7 +11,7 @@ import { Dialog } from '@astryxdesign/core/Dialog';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { PublicServiceDTO } from '@/lib/public-dto';
 import { useGalleryLightbox } from '@/lib/hooks/useGalleryLightbox';
-import type { LandingCreation } from './landingContent';
+import { isOptimizableLocalRasterImage, type LandingCreation } from './landingContent';
 
 const LIGHTBOX_IMAGE_SIZES = '(max-width: 47.5rem) 92vw, 32rem';
 
@@ -32,6 +32,9 @@ export function LandingCreationLightbox({
     (index: number) => {
       const item = creations[index];
       if (!item) return null;
+      if (!isOptimizableLocalRasterImage(item.src)) {
+        return { src: item.src };
+      }
       const { props } = getImageProps({
         src: item.src,
         alt: '',
@@ -108,17 +111,30 @@ export function LandingCreationLightbox({
             onTouchEnd={swipeHandlers.onTouchEnd}
             onTouchCancel={swipeHandlers.onTouchCancel}
           >
-            <Image
-              key={activeCreation.src}
-              src={activeCreation.src}
-              alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
-              width={activeCreation.width}
-              height={activeCreation.height}
-              sizes={LIGHTBOX_IMAGE_SIZES}
-              loading="eager"
-              decoding="async"
-              className="lk-lightbox-img"
-            />
+            {isOptimizableLocalRasterImage(activeCreation.src) ? (
+              <Image
+                key={activeCreation.src}
+                src={activeCreation.src}
+                alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
+                width={activeCreation.width}
+                height={activeCreation.height}
+                sizes={LIGHTBOX_IMAGE_SIZES}
+                loading="eager"
+                decoding="async"
+                className="lk-lightbox-img"
+              />
+            ) : (
+              <img
+                key={activeCreation.src}
+                src={activeCreation.src}
+                alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
+                width={activeCreation.width}
+                height={activeCreation.height}
+                loading="eager"
+                decoding="async"
+                className="lk-lightbox-img"
+              />
+            )}
           </VStack>
         </VStack>
 

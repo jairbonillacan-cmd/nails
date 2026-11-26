@@ -125,8 +125,8 @@ export function CitaHero({
   return (
     <VStack as="section" className="rb-hero ck-hero" aria-labelledby="ck-title">
       <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up">
-        <HStack gap={2} align="center" wrap="wrap" className="ck-hero-meta">
-          <Text color="inherit" className="ck-status-pill fx-pop" data-tone={copy.tone}>
+        <HStack gap={3} align="center" wrap="wrap" className="ck-hero-meta">
+          <Text color="inherit" className="ck-eyebrow" data-tone={copy.tone}>
             {copy.statusLabel}
           </Text>
           <button

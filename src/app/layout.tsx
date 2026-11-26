@@ -120,6 +120,7 @@ export default function RootLayout({
       lang="es-MX"
       data-astryx-theme={initialThemeName}
       data-theme={initialMode === 'system' ? undefined : initialMode}
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
       <head>

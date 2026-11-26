@@ -76,14 +76,9 @@ export function DashboardShareCard({
           aria-hidden="true"
         />
 
-        <HStack gap={2} align="center" className="ad-cherry-layer">
-          <Text className="ad-live-dot fx-pulse-dot" aria-hidden="true">
-            {'\u200B'}
-          </Text>
-          <Text color="inherit" weight="bold" size="sm" className="ad-live-label">
-            EN VIVO
-          </Text>
-        </HStack>
+        <Text color="inherit" weight="semibold" size="sm" className="ad-live-label ad-cherry-layer">
+          TU SALÓN EN LÍNEA
+        </Text>
 
         <Heading level={2} id="ad-pg" className="lk-serif ad-cherry-title ad-cherry-layer">
           Tu página de reservas

@@ -160,7 +160,7 @@ export function WeeklyScheduleEditor({
             <Button
               type="button"
               label={savingWeekly ? 'Guardando...' : 'Guardar horario'}
-              variant="primary"
+              variant={isScheduleDirty ? 'primary' : 'secondary'}
               size="sm"
               icon={<Save size={15} aria-hidden="true" />}
               isLoading={savingWeekly}
@@ -261,7 +261,7 @@ export function WeeklyScheduleEditor({
           role="region"
           aria-label="Cambios de horario sin guardar"
         >
-          <HStack gap={2} align="center">
+          <HStack gap={2} align="center" wrap="wrap">
             <StatusTag label="Sin guardar" tone="warning" />
             <Text size="sm" weight="medium">
               Tienes cambios sin guardar en el horario de {staffName}.

@@ -156,13 +156,8 @@ export function SalonThemeProvider({
   const [mode, setMode] = usePersistedThemeMode(defaultMode);
 
   const safePathname = pathname ?? '';
-  const isLightLockedPublicRoute =
-    safePathname === '/' ||
-    safePathname.startsWith('/reservar') ||
-    safePathname.startsWith('/cita') ||
-    safePathname === '/links' ||
-    safePathname === '/aviso-de-privacidad';
-  const effectiveMode: ThemeModePreference = isLightLockedPublicRoute ? 'light' : mode;
+  const isAdminRoute = safePathname === '/admin' || safePathname.startsWith('/admin/');
+  const effectiveMode: ThemeModePreference = isAdminRoute ? mode : 'light';
 
   const resolvedTheme = useMemo(() => resolveSalonTheme(settings), [settings]);
   const safeGa4Id = sanitizeGa4MeasurementId(settings.ga4MeasurementId);

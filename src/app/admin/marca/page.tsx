@@ -7,9 +7,18 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Check, RotateCcw, Save } from 'lucide-react';
+import {
+  Check,
+  Images,
+  LayoutTemplate,
+  Palette,
+  RotateCcw,
+  Save,
+  Store,
+} from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
+  FilterPillBar,
   MetricGrid,
   PageHeader,
   PageSkeleton,
@@ -22,6 +31,8 @@ import { DepositSettingsSection } from '@/components/admin/marca/DepositSettings
 import { LoyaltySettingsSection } from '@/components/admin/marca/LoyaltySettingsSection';
 import { BrandGallerySection } from '@/components/admin/marca/BrandGallerySection';
 import { AdvancedPoliciesSection } from '@/components/admin/marca/AdvancedPoliciesSection';
+import { LandingContentEditorSection } from '@/components/admin/marca/LandingContentEditorSection';
+import { LandingGalleryFaqSection } from '@/components/admin/marca/LandingGalleryFaqSection';
 import {
   areLoyaltyProgramsEqual,
   areSettingsEqual,
@@ -44,10 +55,12 @@ const QrShareCard = dynamic(
 );
 
 type ActiveServiceMode = NonNullable<SalonSettings['serviceMode']>;
+type BrandEditorTab = 'portada' | 'galeria' | 'estilo' | 'negocio';
 
 export default function AdminBrandPage() {
   const { data, loading, refresh } = useAdminData();
   const { mode, setSettingsOverride, setMode } = useSalonAppearance();
+  const [activeTab, setActiveTab] = useState<BrandEditorTab>('portada');
   const [draftOverride, setDraftOverride] = useState<SalonSettings | null>(null);
   const [loyaltyOverride, setLoyaltyOverride] = useState<LoyaltyProgram | null>(null);
   const [saving, setSaving] = useState(false);
@@ -75,7 +88,6 @@ export default function AdminBrandPage() {
   const activeServiceMode: ActiveServiceMode = draft.serviceMode ?? 'studio';
   const soundAlertsEnabled = draft.soundAlertsEnabled ?? true;
   const noShowDepositThreshold = draft.noShowDepositThreshold ?? 2;
-  const ownerPinEnabled = Boolean(draft.ownerPinEnabled);
   const hasOwnerPin = Boolean(baseSettings.hasOwnerPin);
   const flaggedNoShowClientsCount = data.clients.filter(
     (c) => c.noShowCount >= noShowDepositThreshold,
@@ -101,9 +113,7 @@ export default function AdminBrandPage() {
     depositAmountCents,
     draft,
     loyaltyDraft,
-    hasOwnerPin,
-    ownerPinEnabled,
-    noShowDepositThreshold,
+    customGalleryCount: data.gallery.length,
   });
 
   const updateDraft = (patch: Partial<SalonSettings>) => {
@@ -156,7 +166,7 @@ export default function AdminBrandPage() {
       <PageHeader
         eyebrow="Tu salón en internet"
         title="Mi página"
-        subtitle="Personaliza el nombre, logo y color de tu salón, descarga tu QR y ajusta tu tarjeta de sellos."
+        subtitle="Edita tu portada, fotos, secciones, preguntas, colores y cobro de anticipo en un solo lugar."
         meta={
           saving ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -193,12 +203,41 @@ export default function AdminBrandPage() {
               />
             </HStack>
           ) : (
-            <StatusTag label="Todo guardado" tone="success" showDot />
+            <StatusTag label="Todo guardado" tone="success" />
           )
         }
       />
 
       <MetricGrid ariaLabel="Resumen de tu página" items={kpiItems} cols={4} />
+
+      <FilterPillBar<BrandEditorTab>
+        ariaLabel="Secciones del editor de Mi página"
+        value={activeTab}
+        onChange={setActiveTab}
+        options={[
+          {
+            value: 'portada',
+            label: 'Portada y secciones',
+            icon: <LayoutTemplate size={14} aria-hidden="true" />,
+          },
+          {
+            value: 'galeria',
+            label: 'Galería y preguntas',
+            count: data.gallery.length,
+            icon: <Images size={14} aria-hidden="true" />,
+          },
+          {
+            value: 'estilo',
+            label: 'Colores y estilo',
+            icon: <Palette size={14} aria-hidden="true" />,
+          },
+          {
+            value: 'negocio',
+            label: 'Datos, cobro y sellos',
+            icon: <Store size={14} aria-hidden="true" />,
+          },
+        ]}
+      />
 
       {errorMsg ? (
         <Banner
@@ -223,38 +262,78 @@ export default function AdminBrandPage() {
         >
           <VStack className="ad-config-grid" gap={5}>
             <VStack gap={4}>
-              <BrandIdentitySection
-                draft={draft}
-                brandLogo={brandLogo}
-                activeServiceMode={activeServiceMode}
-                onUpdateDraft={updateDraft}
-              />
-              <BookingAppearanceSection
-                draft={draft}
-                soundAlertsEnabled={soundAlertsEnabled}
-                colorReadability={colorReadability}
-                onUpdateDraft={updateDraft}
-                onModeChange={setMode}
-              />
-              <LoyaltySettingsSection
-                loyaltyDraft={loyaltyDraft}
-                activeServices={activeServices}
-                currency={draft.currency}
-                onUpdateLoyaltyDraft={updateLoyaltyDraft}
-              />
-              <DepositSettingsSection
-                draft={draft}
-                isDepositEnabled={isDepositEnabled}
-                depositAmountCents={depositAmountCents}
-                depositBeneficiary={depositBeneficiary}
-                onUpdateDraft={updateDraft}
-              />
+              {activeTab === 'portada' ? (
+                <LandingContentEditorSection
+                  draft={draft}
+                  defaultLogo={brandLogo}
+                  onUpdateDraft={updateDraft}
+                />
+              ) : null}
+
+              {activeTab === 'galeria' ? (
+                <LandingGalleryFaqSection
+                  draft={draft}
+                  gallery={data.gallery}
+                  activeServices={activeServices}
+                  onUpdateDraft={updateDraft}
+                  onRefresh={refresh}
+                  onNotify={saveNotice.show}
+                />
+              ) : null}
+
+              {activeTab === 'estilo' ? (
+                <BookingAppearanceSection
+                  draft={draft}
+                  soundAlertsEnabled={soundAlertsEnabled}
+                  colorReadability={colorReadability}
+                  onUpdateDraft={updateDraft}
+                  onModeChange={setMode}
+                />
+              ) : null}
+
+              {activeTab === 'negocio' ? (
+                <>
+                  <BrandIdentitySection
+                    draft={draft}
+                    brandLogo={draft.logoUrl || brandLogo}
+                    activeServiceMode={activeServiceMode}
+                    onUpdateDraft={updateDraft}
+                  />
+                  <DepositSettingsSection
+                    draft={draft}
+                    isDepositEnabled={isDepositEnabled}
+                    depositAmountCents={depositAmountCents}
+                    depositBeneficiary={depositBeneficiary}
+                    onUpdateDraft={updateDraft}
+                  />
+                  <LoyaltySettingsSection
+                    loyaltyDraft={loyaltyDraft}
+                    activeServices={activeServices}
+                    currency={draft.currency}
+                    onUpdateLoyaltyDraft={updateLoyaltyDraft}
+                  />
+                  <AdvancedPoliciesSection
+                    draft={draft}
+                    isOwner={isOwner}
+                    timezone={tz}
+                    appUrl={data.integration.appUrl}
+                    services={data.services}
+                    staff={data.staff}
+                    recentAuditLogs={data.recentAuditLogs}
+                    flaggedNoShowClientsCount={flaggedNoShowClientsCount}
+                    hasOwnerPin={hasOwnerPin}
+                    onUpdateDraft={updateDraft}
+                    onSyncOwnerPinEnabled={(enabled) => updateDraft({ ownerPinEnabled: enabled })}
+                    onRefresh={refresh}
+                    onNotify={saveNotice.show}
+                  />
+                </>
+              ) : null}
             </VStack>
 
-            <VStack gap={4}>
+            <VStack gap={4} className="ad-live-sticky">
               <BrandGallerySection
                 draft={draft}
-                brandLogo={brandLogo}
                 activeServiceMode={activeServiceMode}
                 isDepositEnabled={isDepositEnabled}
                 depositAmountCents={depositAmountCents}
@@ -263,22 +342,6 @@ export default function AdminBrandPage() {
               <QrShareCard appUrl={data.integration.appUrl} salonName={draft.name} />
             </VStack>
           </VStack>
-
-          <AdvancedPoliciesSection
-            draft={draft}
-            isOwner={isOwner}
-            timezone={tz}
-            appUrl={data.integration.appUrl}
-            services={data.services}
-            staff={data.staff}
-            recentAuditLogs={data.recentAuditLogs}
-            flaggedNoShowClientsCount={flaggedNoShowClientsCount}
-            hasOwnerPin={hasOwnerPin}
-            onUpdateDraft={updateDraft}
-            onSyncOwnerPinEnabled={(enabled) => updateDraft({ ownerPinEnabled: enabled })}
-            onRefresh={refresh}
-            onNotify={saveNotice.show}
-          />
         </VStack>
       </form>
 
@@ -292,7 +355,7 @@ export default function AdminBrandPage() {
           role="region"
           aria-label="Cambios sin guardar"
         >
-          <HStack gap={2} align="center">
+          <HStack gap={2} align="center" wrap="wrap">
             <StatusTag label="Sin guardar" tone="warning" />
             <Text size="sm" weight="medium">
               Tienes cambios pendientes en Mi página.

@@ -95,6 +95,7 @@ import {
 } from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
 import { isSafeInternalBookingMediaPath } from '../contracts';
+import { isSafeBrandMediaPath } from '../landing-config';
 import { MediaValidationError, storeMediaUpload } from '../storage/media';
 import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
 import { parseDemoDatabase } from './schema';
@@ -1427,6 +1428,31 @@ export async function persistBookingMediaField(
   throw new PolicyError(
     'INVALID_MEDIA_URL',
     'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+  );
+}
+
+export async function persistBrandMediaField(
+  value: string | null | undefined,
+): Promise<string | null> {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase().startsWith('data:')) {
+    try {
+      const stored = await storeMediaUpload({ dataUrl: trimmed, folder: 'gallery' });
+      return `/api/media/${stored.storagePath}`;
+    } catch (err) {
+      if (err instanceof MediaValidationError) {
+        throw new PolicyError(err.code, err.message);
+      }
+      throw err;
+    }
+  }
+  if (isSafeBrandMediaPath(trimmed)) {
+    return trimmed;
+  }
+  throw new PolicyError(
+    'INVALID_MEDIA_URL',
+    'Solo se permiten imágenes subidas desde tu dispositivo (PNG, JPEG o WEBP) o rutas del estudio.',
   );
 }
 
@@ -2978,7 +3004,18 @@ export async function updateSalonSettings(
       ...db.settings,
       ...patch,
       landingContent: patch.landingContent
-        ? { ...db.settings.landingContent, ...patch.landingContent }
+        ? {
+            ...db.settings.landingContent,
+            ...patch.landingContent,
+            ...(patch.landingContent.sections !== undefined
+              ? {
+                  sections: {
+                    ...db.settings.landingContent.sections,
+                    ...patch.landingContent.sections,
+                  },
+                }
+              : {}),
+          }
         : db.settings.landingContent,
       updatedAt: new Date().toISOString(),
     };

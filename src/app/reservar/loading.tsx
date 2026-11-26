@@ -2,6 +2,7 @@ import '../booking.css';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { LANDING_ASSETS } from '@/components/landing/landingContent';
 
 const STEP_ITEMS = [0, 1, 2, 3, 4] as const;
 const SERVICE_CARDS = [0, 1, 2, 3, 4, 5] as const;
@@ -21,7 +22,7 @@ export default function ReservarLoading() {
         <VStack className="rb-header-bar" gap={0}>
           <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
           <img
-            src="/landing/logo-negro.svg"
+            src={LANDING_ASSETS.logoBlack}
             alt="LAIKONA NAILS"
             width={120}
             height={50}
@@ -34,28 +35,38 @@ export default function ReservarLoading() {
         <VStack className="rb-progress" aria-hidden="true" />
       </VStack>
 
-      <VStack as="section" className="rb-hero" gap={0} aria-hidden="true">
+      <VStack as="section" className="rb-hero" gap={0}>
         <VStack className="rb-wrap rb-hero-inner" gap={4}>
           <HStack justify="between" align="end" wrap="wrap" gap={2}>
             <VStack gap={2} maxWidth={360} width="100%">
-              <VStack className="sk-bar" data-size="lg" data-w="80" data-on="cherry" />
-              <VStack className="sk-bar" data-size="xs" data-w="40" data-on="cherry" />
+              <VStack className="sk-bar" data-size="lg" data-w="80" data-on="cherry" aria-hidden="true" />
+              <img
+                src={LANDING_ASSETS.strokePorcelain}
+                alt=""
+                aria-hidden="true"
+                width={150}
+                height={18}
+                className="rb-hero-stroke"
+              />
             </VStack>
-            <VStack className="sk-bar rb-d" data-size="pill" data-on="cherry" />
+            <Text color="inherit" className="sk-eyebrow" data-on="cherry">
+              Cargando horarios en vivo…
+            </Text>
           </HStack>
 
-          <VStack className="rb-stepper rb-d" gap={0}>
+          <VStack className="rb-stepper rb-d" gap={0} aria-hidden="true">
             {STEP_ITEMS.map((idx) => (
-              <VStack
-                key={idx}
-                className="ad-skeleton"
-                data-size="row"
-                data-on="cherry"
-              />
+              <HStack key={idx} className="sk-step-pill" gap={2} align="center">
+                <VStack className="sk-bar sk-step-dot" data-on="cherry" />
+                <VStack gap={1} className="rb-grow">
+                  <VStack className="sk-bar" data-size="xs" data-w="40" data-on="cherry" />
+                  <VStack className="sk-bar" data-size="sm" data-w="80" data-on="cherry" />
+                </VStack>
+              </HStack>
             ))}
           </VStack>
 
-          <HStack justify="between" align="center" gap={2} className="rb-m rb-hero-mobile">
+          <HStack justify="between" align="center" gap={2} className="rb-m rb-hero-mobile" aria-hidden="true">
             <VStack className="sk-bar" data-size="sm" data-w="40" data-on="cherry" />
             <VStack className="sk-bar" data-size="xs" data-w="25" data-on="cherry" />
           </HStack>
@@ -84,7 +95,16 @@ export default function ReservarLoading() {
             </HStack>
             <VStack className="rb-skeleton-services">
               {SERVICE_CARDS.map((idx) => (
-                <VStack key={idx} className="ad-skeleton" data-size="card" />
+                <VStack key={idx} className="sk-service-card" gap={2}>
+                  <VStack className="fx-shimmer sk-service-media" />
+                  <VStack gap={1.5} paddingInline={1}>
+                    <VStack className="sk-bar" data-size="md" data-w="80" />
+                    <HStack justify="between" gap={2}>
+                      <VStack className="sk-bar" data-size="xs" data-w="40" />
+                      <VStack className="sk-bar" data-size="xs" data-w="25" />
+                    </HStack>
+                  </VStack>
+                </VStack>
               ))}
             </VStack>
           </VStack>

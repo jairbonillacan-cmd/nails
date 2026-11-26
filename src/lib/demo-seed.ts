@@ -210,9 +210,9 @@ export function createInitialDemoDatabase(): DemoDatabase {
 
       landingContent: {
         heroEyebrow: 'Laikona Nails by Karla · Puebla',
-        heroTitle: 'De tu idea a tus uñas.',
+        heroTitle: 'El arte está en tus uñas',
         heroSubtitle:
-          'Trabajo acrílico escultural, Softgel y Rubber. Elige tu técnica y trae una referencia para tu cita.',
+          'Acrílico escultural, Softgel y Rubber en Puebla. Tú traes la idea.',
         aboutTitle: 'Técnica precisa, higiene clínica y bloques dedicados en Puebla',
         aboutBody:
           'En LAIKONA NAILS by Karla cada cita tiene su bloque de horario reservado para trabajar con preparación en seco, instrumental esterilizado y acabados duraderos.',
@@ -1219,7 +1219,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
         title: 'Milky Micro French',
         caption: 'Rubber base lechoso con línea ultra fina blanca sobre almendra corta.',
         category: 'Rubber',
-        imageUrl: '/gallery/milky-french.svg',
+        imageUrl: '/landing/sets/foto-010.webp',
         serviceId: srvRubber,
         isFeatured: true,
         displayOrder: 0,
@@ -1229,7 +1229,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
         title: 'Glazed Pearl Chrome',
         caption: 'Softgel efecto perlado traslúcido con acabado espejo luminoso.',
         category: 'Softgel',
-        imageUrl: '/gallery/glazed-pearl.svg',
+        imageUrl: '/landing/sets/foto-004.webp',
         serviceId: srvSoftgel,
         isFeatured: true,
         displayOrder: 1,
@@ -1239,7 +1239,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
         title: 'Cherry Lacquer Velvet',
         caption: 'Gel semipermanente tono cereza editorial con brillo espejo.',
         category: 'Gel',
-        imageUrl: '/gallery/rosewood-velvet.svg',
+        imageUrl: '/landing/sets/foto-007.webp',
         serviceId: srvGelManos,
         isFeatured: true,
         displayOrder: 2,
@@ -1249,7 +1249,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
         title: 'Sculpted Espresso Tortoise',
         caption: 'Acrílico escultural con detalle carey y acento dorado sutil.',
         category: 'Acrílico',
-        imageUrl: '/gallery/espresso-tortoise.svg',
+        imageUrl: '/landing/sets/12-rojo-laca-dorado-4x5.webp',
         serviceId: srvAcrilicas,
         isFeatured: true,
         displayOrder: 3,

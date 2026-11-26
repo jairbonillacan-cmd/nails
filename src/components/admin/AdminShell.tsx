@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Text } from '@astryxdesign/core/Text';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
@@ -18,7 +17,7 @@ import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useBookingAlertSound } from '@/lib/hooks/useBookingAlertSound';
 import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
 import { useSidebarCollapsed } from '@/lib/hooks/useSidebarCollapsed';
-import { PageSkeleton } from '@/components/ui';
+import { AdminShellSkeleton } from '@/components/ui';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import { useSalonAppearance } from '../SalonThemeProvider';
 import { useAdminData, type AdminOverviewPayload } from './AdminProvider';
@@ -136,28 +135,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (loading || !data) {
     return (
-      <VStack className="ad-shell" gap={0} role="status" aria-busy="true">
-        <Text className="rb-sr-only">Cargando tu panel...</Text>
-        <HStack className="ad-frame" gap={0} align="stretch">
-          <VStack className="ad-side" gap={4} aria-hidden="true">
-            <VStack className="ad-skeleton" data-size="button" />
-            <VStack className="ad-skeleton" data-size="row" />
-            <VStack gap={2}>
-              <VStack className="ad-skeleton" data-size="line" data-width="short" />
-              <VStack className="ad-skeleton" data-size="line" data-width="long" />
-              <VStack className="ad-skeleton" data-size="line" data-width="mid" />
-              <VStack className="ad-skeleton" data-size="line" data-width="long" />
-            </VStack>
-          </VStack>
-          <VStack className="ad-main-wrap" gap={0}>
-            <VStack className="ad-sheet" gap={5} aria-hidden="true">
-              <VStack gap={5} width="100%" className="ad-content-inner">
-                <PageSkeleton kpiCount={3} withSplit ariaLabel="Cargando tu panel" />
-              </VStack>
-            </VStack>
-          </VStack>
-        </HStack>
-      </VStack>
+      <AdminShellSkeleton
+        isDark={mode === 'dark'}
+        ariaLabel="Abriendo tu panel"
+      />
     );
   }
 

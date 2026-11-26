@@ -17,10 +17,49 @@ import type {
   BookingWithRelations,
   CalendarConnection,
   ClientPackage,
+  GalleryItem,
+  LandingContent,
   SalonSettings,
   Service,
   StaffMember,
 } from './types';
+
+function cloneLandingContent(content: LandingContent): LandingContent {
+  return {
+    ...content,
+    ...(content.marqueeItems ? { marqueeItems: [...content.marqueeItems] } : {}),
+    ...(content.customFaqs
+      ? { customFaqs: content.customFaqs.map((faq) => ({ ...faq })) }
+      : {}),
+    ...(content.sections ? { sections: { ...content.sections } } : {}),
+  };
+}
+
+const PublicGalleryItemDTOSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  caption: z.string(),
+  category: z.string(),
+  imageUrl: z.string(),
+  serviceId: z.string().nullable(),
+  isFeatured: z.boolean(),
+  displayOrder: z.number(),
+});
+
+export type PublicGalleryItemDTO = z.infer<typeof PublicGalleryItemDTOSchema>;
+
+export function toPublicGalleryItemDTO(item: GalleryItem): PublicGalleryItemDTO {
+  return PublicGalleryItemDTOSchema.parse({
+    id: item.id,
+    title: item.title,
+    caption: item.caption,
+    category: item.category,
+    imageUrl: item.imageUrl,
+    serviceId: item.serviceId,
+    isFeatured: item.isFeatured,
+    displayOrder: item.displayOrder,
+  });
+}
 
 export const PublicStaffDTOSchema = z.object({
   id: z.string(),
@@ -288,7 +327,7 @@ export function toAdminSettingsDTO(settings: SalonSettings): AdminSettingsDTO {
   return {
     ...rest,
     enabledBookingLayouts: [...rest.enabledBookingLayouts],
-    landingContent: { ...rest.landingContent },
+    landingContent: cloneLandingContent(rest.landingContent),
     ownerPinEnabled: Boolean(rest.ownerPinEnabled && hasOwnerPin),
     hasOwnerPin,
   };
@@ -356,7 +395,7 @@ export function toPublicSettingsDTO(settings: SalonSettings): PublicSettingsDTO 
     serviceMode: settings.serviceMode,
     privacyPolicyVersion: settings.privacyPolicyVersion,
     optimizeContinuousSlots: settings.optimizeContinuousSlots,
-    landingContent: { ...settings.landingContent },
+    landingContent: cloneLandingContent(settings.landingContent),
     whatsappBookingEnabled: settings.whatsappBookingEnabled,
     metaPixelId: settings.metaPixelId,
     ga4MeasurementId: settings.ga4MeasurementId,

@@ -7,6 +7,10 @@ import { SectionHeading } from './LandingParts';
 import { LANDING_ASSETS } from './landingContent';
 
 interface LandingVisitProps {
+  title?: string;
+  hoursDays?: string;
+  hoursText?: string;
+  showMapEmbed?: boolean;
   address: string;
   mapsUrl: string;
   whatsappUrl: string;
@@ -19,6 +23,10 @@ function buildMapEmbedUrl(address: string): string {
 }
 
 export function LandingVisit({
+  title = 'Visítanos',
+  hoursDays = 'Lunes a sábado',
+  hoursText = 'Citas de 10:00 a 6:00 · Solo con cita',
+  showMapEmbed = true,
   address,
   mapsUrl,
   whatsappUrl,
@@ -40,7 +48,7 @@ export function LandingVisit({
             boxSizing: 'border-box',
           }}
         >
-          <SectionHeading id="visita-t" title="Visítanos" align="start" />
+          <SectionHeading id="visita-t" title={title} align="start" />
           <VStack as="dl" gap={4} style={{ margin: 0 }}>
             <HStack gap={3} align="start">
               <dt>
@@ -69,9 +77,9 @@ export function LandingVisit({
                 />
               </dt>
               <VStack as="dd" gap={0.5} style={{ margin: 0, minWidth: 0 }}>
-                <Text size="lg">Lunes a sábado</Text>
+                <Text size="lg">{hoursDays}</Text>
                 <Text color="secondary" hasTabularNumbers>
-                  Citas de 10:00 a 6:00 · Solo con cita
+                  {hoursText}
                 </Text>
               </VStack>
             </HStack>
@@ -115,16 +123,18 @@ export function LandingVisit({
             />
           </HStack>
         </VStack>
-        <VStack className="lk-reveal-2" style={{ flex: '2 1 24rem', minWidth: 0, maxWidth: '100%' }}>
-          <iframe
-            className="lk-map"
-            src={buildMapEmbedUrl(address)}
-            title={`Mapa de ${address}`}
-            loading="lazy"
-            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-        </VStack>
+        {showMapEmbed ? (
+          <VStack className="lk-reveal-2" style={{ flex: '2 1 24rem', minWidth: 0, maxWidth: '100%' }}>
+            <iframe
+              className="lk-map"
+              src={buildMapEmbedUrl(address)}
+              title={`Mapa de ${address}`}
+              loading="lazy"
+              sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          </VStack>
+        ) : null}
       </HStack>
     </VStack>
   );

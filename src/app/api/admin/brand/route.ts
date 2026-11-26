@@ -6,6 +6,7 @@ import { toAdminSettingsDTO } from '@/lib/public-dto';
 import {
   deleteGalleryItem,
   normalizeInstagramHandle,
+  persistBrandMediaField,
   PolicyError,
   updateSalonSettings,
   upsertGalleryItem,
@@ -70,9 +71,28 @@ export async function PATCH(request: NextRequest) {
       patch.depositAccountHolder = parsed.depositBeneficiary;
     }
 
+    if (parsed.logoUrl !== undefined) {
+      patch.logoUrl = await persistBrandMediaField(parsed.logoUrl);
+    }
+    if (parsed.coverImageUrl !== undefined) {
+      patch.coverImageUrl = await persistBrandMediaField(parsed.coverImageUrl);
+    }
+
+    const sanitizedLandingContent = landingContent ? { ...landingContent } : undefined;
+    if (sanitizedLandingContent && sanitizedLandingContent.heroImageDesktopUrl !== undefined) {
+      sanitizedLandingContent.heroImageDesktopUrl = await persistBrandMediaField(
+        sanitizedLandingContent.heroImageDesktopUrl,
+      );
+    }
+    if (sanitizedLandingContent && sanitizedLandingContent.heroImageMobileUrl !== undefined) {
+      sanitizedLandingContent.heroImageMobileUrl = await persistBrandMediaField(
+        sanitizedLandingContent.heroImageMobileUrl,
+      );
+    }
+
     const settings = await updateSalonSettings({
       ...patch,
-      ...(landingContent ? { landingContent } : {}),
+      ...(sanitizedLandingContent ? { landingContent: sanitizedLandingContent } : {}),
     });
 
     const updatedProgram = loyaltyProgram
@@ -108,9 +128,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const parsed = GalleryItemInputSchema.parse(await request.json());
-    const item = await upsertGalleryItem(parsed);
+    const storedImageUrl = await persistBrandMediaField(parsed.imageUrl);
+    if (!storedImageUrl) {
+      return NextResponse.json(
+        { error: 'Agrega una imagen válida (PNG, JPG o WEBP).' },
+        { status: 400 },
+      );
+    }
+    const item = await upsertGalleryItem({
+      ...parsed,
+      imageUrl: storedImageUrl,
+    });
     return NextResponse.json({ item });
   } catch (err) {
+    if (err instanceof PolicyError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+    }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos de galería inválidos.' },

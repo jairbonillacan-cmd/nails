@@ -26,6 +26,8 @@ import {
 const ART_TAB = 'arte-y-acabados';
 
 interface LandingMenuProps {
+  title?: string;
+  bannerText?: string | null;
   categories: ServiceCategory[];
   services: PublicServiceDTO[];
   addons: ServiceAddon[];
@@ -33,7 +35,15 @@ interface LandingMenuProps {
   depositLabel: string | null;
 }
 
-export function LandingMenu({ categories, services, addons, currency, depositLabel }: LandingMenuProps) {
+export function LandingMenu({
+  title = 'El menú',
+  bannerText = null,
+  categories,
+  services,
+  addons,
+  currency,
+  depositLabel,
+}: LandingMenuProps) {
   const visibleCategories = categories.filter((category) =>
     services.some((service) => service.categoryId === category.id),
   );
@@ -45,7 +55,7 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
     <VStack as="section" id="servicios" aria-labelledby="menu-t" className="lk-section">
       <VStack gap={6} className="lk-wrap">
         <HStack justify="between" align="end" wrap="wrap" gap={4}>
-          <SectionHeading id="menu-t" title="El menú" align="start" />
+          <SectionHeading id="menu-t" title={title} align="start" />
           <VStack className="lk-reveal-2" style={{ maxWidth: '100%', minWidth: 0 }}>
             <TabList value={selected} onChange={setSelected} size="lg">
               {visibleCategories.map((category) => (
@@ -204,9 +214,11 @@ export function LandingMenu({ categories, services, addons, currency, depositLab
 
         <HStack justify="between" align="center" wrap="wrap" gap={4} className="lk-banner lk-reveal">
           <Text type="large" color="inherit" textWrap="pretty">
-            {depositLabel
-              ? `Trae tu foto de inspiración · Apartas tu lugar con ${depositLabel}`
-              : 'Trae tu foto de inspiración · Agenda tu cita en menos de un minuto'}
+            {bannerText
+              ? bannerText
+              : depositLabel
+                ? `Trae tu foto de inspiración · Apartas tu lugar con ${depositLabel}`
+                : 'Trae tu foto de inspiración · Agenda tu cita en menos de un minuto'}
           </Text>
           <Button label="Agendar cita" variant="secondary" size="lg" className="lk-btn-light fx-press" href="/reservar" />
         </HStack>

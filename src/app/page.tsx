@@ -1,13 +1,16 @@
 import type { Metadata } from 'next';
+import { preload } from 'react-dom';
 import './landing.css';
 import { getSnapshot } from '@/lib/repositories/db';
 import {
+  toPublicGalleryItemDTO,
   toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
   type PublicReviewDTO,
 } from '@/lib/public-dto';
+import { resolveLandingContent } from '@/lib/landing-config';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 import { LandingView } from '@/components/LandingView';
 
@@ -45,6 +48,20 @@ export default function HomePage() {
   const db = getSnapshot();
   const siteOrigin = getSiteOrigin();
   const publicSettings = toPublicSettingsDTO(db.settings);
+  const resolvedLanding = resolveLandingContent(publicSettings);
+  preload(resolvedLanding.heroImageDesktopUrl, {
+    as: 'image',
+    fetchPriority: 'high',
+    media: '(min-width: 47.5625rem)',
+  });
+  preload(resolvedLanding.heroImageMobileUrl, {
+    as: 'image',
+    fetchPriority: 'high',
+    media: '(max-width: 47.5rem)',
+  });
+  const publicGallery = db.gallery
+    .toSorted((a, b) => a.displayOrder - b.displayOrder)
+    .map(toPublicGalleryItemDTO);
   const publicServices = db.services
     .filter((s) => s.isActive && !s.isPrivate)
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
@@ -92,6 +109,7 @@ export default function HomePage() {
         .map(toPublicStaffDTO)}
       reviews={publicReviews}
       reviewsSummary={{ count: reviewsCount, average }}
+      gallery={publicGallery}
       siteOrigin={siteOrigin}
     />
   );

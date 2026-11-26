@@ -73,10 +73,11 @@ export function ServiceStep({
       ) : null}
 
       <ul key={activeTab} className="rb-services fx-step-in fx-stagger" aria-label="Servicios">
-        {visibleServices.map((service) => {
+        {visibleServices.map((service, index) => {
           const isSelected = service.id === selectedService?.id;
           const photoSrc = servicePhoto(service.slug, service.imageUrl);
           const usesOptimizedImage = isOptimizableLocalRasterImage(photoSrc);
+          const isAboveFold = index < 3;
           return (
             <li key={service.id}>
               <button
@@ -95,7 +96,8 @@ export function ServiceStep({
                     width={320}
                     height={240}
                     sizes="(max-width: 47.5rem) 5.5rem, 16rem"
-                    loading="lazy"
+                    loading={isAboveFold ? 'eager' : 'lazy'}
+                    fetchPriority={index === 0 ? 'high' : undefined}
                     decoding="async"
                   />
                 ) : (
@@ -105,7 +107,8 @@ export function ServiceStep({
                     alt=""
                     width={320}
                     height={240}
-                    loading="lazy"
+                    loading={isAboveFold ? 'eager' : 'lazy'}
+                    fetchPriority={index === 0 ? 'high' : undefined}
                     decoding="async"
                   />
                 )}

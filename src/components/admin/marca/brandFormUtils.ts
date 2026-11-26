@@ -1,6 +1,7 @@
 import { formatCurrency } from '@/lib/format';
+import { resolveLandingContent } from '@/lib/landing-config';
 import type { MetricTileItem } from '@/components/ui';
-import type { LoyaltyProgram, SalonSettings, Service } from '@/lib/types';
+import type { LandingContent, LoyaltyProgram, SalonSettings, Service } from '@/lib/types';
 
 export const DEFAULT_LOYALTY_PROGRAM: LoyaltyProgram = {
   id: 'loy-laikona-default',
@@ -14,10 +15,60 @@ export const DEFAULT_LOYALTY_PROGRAM: LoyaltyProgram = {
   validDays: 90,
 };
 
+function serializeLandingContent(content: LandingContent): string {
+  return JSON.stringify({
+    heroEyebrow: content.heroEyebrow ?? '',
+    heroTitle: content.heroTitle ?? '',
+    heroSubtitle: content.heroSubtitle ?? '',
+    aboutTitle: content.aboutTitle ?? '',
+    aboutBody: content.aboutBody ?? '',
+    heroPrimaryCta: content.heroPrimaryCta ?? '',
+    heroSecondaryCta: content.heroSecondaryCta ?? '',
+    heroImageDesktopUrl: content.heroImageDesktopUrl ?? null,
+    heroImageMobileUrl: content.heroImageMobileUrl ?? null,
+    marqueeItems: content.marqueeItems ?? [],
+    menuTitle: content.menuTitle ?? '',
+    menuBannerText: content.menuBannerText ?? '',
+    creationsTitle: content.creationsTitle ?? '',
+    creationsSubtitle: content.creationsSubtitle ?? '',
+    galleryMode: content.galleryMode ?? 'mix',
+    reviewsTitle: content.reviewsTitle ?? '',
+    reviewsSubtitle: content.reviewsSubtitle ?? '',
+    teamTitle: content.teamTitle ?? '',
+    teamSubtitle: content.teamSubtitle ?? '',
+    connectTitle: content.connectTitle ?? '',
+    connectSubtitle: content.connectSubtitle ?? '',
+    faqTitle: content.faqTitle ?? '',
+    faqSubtitle: content.faqSubtitle ?? '',
+    customFaqs: (content.customFaqs ?? []).map((item) => ({
+      id: item.id,
+      question: item.question,
+      answer: item.answer,
+    })),
+    visitTitle: content.visitTitle ?? '',
+    visitHoursDays: content.visitHoursDays ?? '',
+    visitHoursText: content.visitHoursText ?? '',
+    sections: {
+      showMarquee: content.sections?.showMarquee ?? true,
+      showHeroRating: content.sections?.showHeroRating ?? true,
+      showMenu: content.sections?.showMenu ?? true,
+      showCreations: content.sections?.showCreations ?? true,
+      showReviews: content.sections?.showReviews ?? true,
+      showTeam: content.sections?.showTeam ?? true,
+      showConnect: content.sections?.showConnect ?? true,
+      showFaq: content.sections?.showFaq ?? true,
+      showVisit: content.sections?.showVisit ?? true,
+      showMapEmbed: content.sections?.showMapEmbed ?? true,
+    },
+  });
+}
+
 export function areSettingsEqual(a: SalonSettings, b: SalonSettings): boolean {
   return (
     a.name === b.name &&
     a.tagline === b.tagline &&
+    (a.logoUrl ?? null) === (b.logoUrl ?? null) &&
+    (a.coverImageUrl ?? null) === (b.coverImageUrl ?? null) &&
     a.address === b.address &&
     (a.city ?? '') === (b.city ?? '') &&
     a.mapsUrl === b.mapsUrl &&
@@ -50,8 +101,8 @@ export function areSettingsEqual(a: SalonSettings, b: SalonSettings): boolean {
     (a.privacyPolicyVersion ?? '2026-11') === (b.privacyPolicyVersion ?? '2026-11') &&
     (a.noShowDepositThreshold ?? 2) === (b.noShowDepositThreshold ?? 2) &&
     Boolean(a.ownerPinEnabled) === Boolean(b.ownerPinEnabled) &&
-    a.landingContent.heroTitle === b.landingContent.heroTitle &&
-    a.landingContent.heroSubtitle === b.landingContent.heroSubtitle
+    serializeLandingContent(a.landingContent) ===
+      serializeLandingContent(b.landingContent)
   );
 }
 
@@ -68,15 +119,28 @@ export function areLoyaltyProgramsEqual(a: LoyaltyProgram, b: LoyaltyProgram): b
   );
 }
 
+export function countVisibleLandingSections(settings: SalonSettings): number {
+  const { sections } = resolveLandingContent(settings);
+  const toggles = [
+    sections.showMarquee,
+    sections.showMenu,
+    sections.showCreations,
+    sections.showReviews,
+    sections.showTeam,
+    sections.showConnect,
+    sections.showFaq,
+    sections.showVisit,
+  ];
+  return toggles.filter(Boolean).length;
+}
+
 export function buildBrandKpis(params: {
   colorsReadable: boolean;
   isDepositEnabled: boolean;
   depositAmountCents: number;
   draft: SalonSettings;
   loyaltyDraft: LoyaltyProgram;
-  hasOwnerPin: boolean;
-  ownerPinEnabled: boolean;
-  noShowDepositThreshold: number;
+  customGalleryCount: number;
 }): MetricTileItem[] {
   const {
     colorsReadable,
@@ -84,18 +148,28 @@ export function buildBrandKpis(params: {
     depositAmountCents,
     draft,
     loyaltyDraft,
-    hasOwnerPin,
-    ownerPinEnabled,
-    noShowDepositThreshold,
+    customGalleryCount,
   } = params;
+  const visibleSections = countVisibleLandingSections(draft);
+  const resolved = resolveLandingContent(draft);
 
   return [
     {
-      id: 'contrast',
-      label: 'Lectura de colores',
-      value: colorsReadable ? 'Muy legible' : 'Revisar',
-      sub: colorsReadable ? 'Se lee bien en claro y oscuro' : 'Elige un tono con mejor lectura',
+      id: 'sections',
+      label: 'Secciones activas',
+      value: `${visibleSections} de 8`,
+      sub: colorsReadable ? 'Colores con buena lectura' : 'Revisa el contraste en Estilo',
       tone: colorsReadable ? 'success' : 'warning',
+    },
+    {
+      id: 'gallery',
+      label: 'Galería propia',
+      value: customGalleryCount === 1 ? '1 foto' : `${customGalleryCount} fotos`,
+      sub:
+        resolved.galleryMode === 'custom_only'
+          ? 'Mostrando solo tus fotos'
+          : 'Tus fotos + galería base',
+      tone: customGalleryCount > 0 ? 'accent' : 'default',
     },
     {
       id: 'deposit',
@@ -113,15 +187,8 @@ export function buildBrandKpis(params: {
         ? loyaltyDraft.rewardType === 'free_service'
           ? 'Premio: servicio gratis'
           : `Premio: ${loyaltyDraft.discountPercent ?? 50}% desc.`
-        : 'Actívala abajo',
+        : 'Actívala en Negocio',
       tone: loyaltyDraft.isActive ? 'accent' : 'default',
-    },
-    {
-      id: 'security',
-      label: 'PIN de dueña',
-      value: hasOwnerPin && ownerPinEnabled ? 'Activo' : hasOwnerPin ? 'Pausado' : 'Sin PIN',
-      sub: `Límite faltas: ${noShowDepositThreshold}`,
-      tone: hasOwnerPin && ownerPinEnabled ? 'success' : 'default',
     },
   ];
 }

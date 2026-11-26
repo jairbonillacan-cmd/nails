@@ -3,6 +3,8 @@
 import type React from 'react';
 import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Text } from '@astryxdesign/core/Text';
 import { SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import type { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
@@ -18,15 +20,23 @@ function BookingStepFallback() {
       gap={4}
       role="status"
       aria-live="polite"
+      aria-busy="true"
       aria-label="Cargando siguiente paso"
       className="fx-step-in"
     >
+      <HStack align="center">
+        <Text color="inherit" className="sk-eyebrow">
+          Preparando siguiente paso…
+        </Text>
+      </HStack>
       <VStack gap={1.5} aria-hidden="true">
-        <SkeletonBlock width="min(100%, 14rem)" height="1.75rem" radius={2} index={0} />
-        <SkeletonBlock width="min(100%, 22rem)" height="1rem" radius={1} index={1} />
+        <SkeletonBlock width="min(100%, 15rem)" height="1.875rem" radius={2} index={0} />
+        <SkeletonBlock width="min(100%, 24rem)" height="1rem" radius={1} index={1} />
       </VStack>
-      <SkeletonBlock width="100%" height="6rem" radius={3} index={2} />
-      <SkeletonBlock width="100%" height="6rem" radius={3} index={3} />
+      <VStack gap={3} aria-hidden="true">
+        <SkeletonBlock width="100%" height="5.25rem" radius={3} index={2} />
+        <SkeletonBlock width="100%" height="5.25rem" radius={3} index={3} />
+      </VStack>
     </VStack>
   );
 }

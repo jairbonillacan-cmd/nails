@@ -1,5 +1,5 @@
-const PAGE_CACHE = 'laikona-v1';
-const STATIC_CACHE = 'laikona-static-v1';
+const PAGE_CACHE = 'laikona-v2';
+const STATIC_CACHE = 'laikona-static-v2';
 const ALLOWED_CACHES = [PAGE_CACHE, STATIC_CACHE];
 
 const PRECACHE_ASSETS = [
@@ -33,7 +33,10 @@ function isNeverCachePath(pathname) {
     pathname === '/sw.js' ||
     pathname === '/admin' ||
     pathname.startsWith('/admin/') ||
-    pathname.startsWith('/api/')
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next/static/development/') ||
+    pathname.startsWith('/_next/webpack-hmr') ||
+    pathname.startsWith('/_next/static/hmr-client')
   );
 }
 
@@ -99,7 +102,7 @@ async function networkFirstNavigation(request, pathname) {
     const pathMatch = await cache.match(pathname);
     if (pathMatch) return pathMatch;
     return new Response(
-      '<!doctype html><html lang="es-MX"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sin conexión · LAIKONA NAILS</title></head><body style="font-family:system-ui,sans-serif;padding:2rem;text-align:center;background:#fdf7f8;color:#1c1917"><h1>Sin conexión</h1><p>No pudimos cargar esta vista sin internet. Vuelve a intentarlo al reconectarte.</p></body></html>',
+      '<!doctype html><html lang="es-MX"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sin conexión · LAIKONA NAILS</title></head><body style="margin:0;min-height:100dvh;display:grid;place-items:center;padding:1.5rem;font-family:system-ui,-apple-system,sans-serif;background:#fdf7f8;color:#1c1917"><main style="max-width:28rem;width:100%;background:#fff;border:1px solid #f0dde1;border-radius:1.5rem;overflow:hidden;text-align:center;box-shadow:0 20px 40px -28px rgba(134,30,47,.35)"><header style="background:#861e2f;color:#fff;padding:1.75rem 1.5rem"><strong style="letter-spacing:.12em;font-size:.75rem;text-transform:uppercase;opacity:.9">LAIKONA NAILS</strong><h1 style="margin:.5rem 0 0;font-family:Georgia,serif;font-size:1.75rem;font-weight:500">Sin conexión</h1></header><section style="padding:1.5rem"><p style="margin:0 0 1.25rem;color:#57534e;line-height:1.5">No pudimos abrir esta vista sin internet. Tus citas siguen a salvo; intenta de nuevo al reconectarte.</p><a href="/" style="display:inline-block;padding:.75rem 1.5rem;border-radius:999px;background:#861e2f;color:#fff;font-weight:600;text-decoration:none">Reintentar</a></section></main></body></html>',
       {
         status: 503,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },

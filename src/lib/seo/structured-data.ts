@@ -31,6 +31,7 @@ type SalonFaqSettings = Partial<
     | 'minRescheduleHours'
     | 'instagramHandle'
     | 'paymentMode'
+    | 'landingContent'
   >
 >;
 
@@ -224,6 +225,17 @@ function deriveOpeningHoursSpecification(
 }
 
 export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqItem[] {
+  const customFaqs = (settings?.landingContent?.customFaqs ?? [])
+    .map((item) => ({
+      id: item.id.trim(),
+      question: item.question.trim(),
+      answer: item.answer.trim(),
+    }))
+    .filter((item) => item.id.length > 0 && item.question.length > 0 && item.answer.length > 0);
+  if (customFaqs.length > 0) {
+    return customFaqs;
+  }
+
   const salonName = settings?.name?.trim() || DEFAULT_SALON_NAME;
   const currency = settings?.currency ?? 'MXN';
   const depositCents = settings?.depositAmountCents ?? 20000;

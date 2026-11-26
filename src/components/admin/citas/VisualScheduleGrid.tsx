@@ -296,7 +296,7 @@ export function VisualScheduleGrid({
                               >
                                 {'\u200B'}
                               </Text>
-                              <Text type="supporting" color="secondary" hasTabularNumbers>
+                              <Text type="supporting" color="primary" hasTabularNumbers>
                                 {cell.staff.name}:{' '}
                                 {cell.blocks.length > 0
                                   ? 'Bloqueado'

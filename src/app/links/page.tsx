@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { buildWhatsAppLink, formatCurrency, formatDuration } from '@/lib/format';
+import { resolveLandingContent } from '@/lib/landing-config';
 import {
   toPublicServiceDTO,
   toPublicSettingsDTO,
@@ -98,6 +99,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function LinksPage() {
   const db = getSnapshot();
   const settings = toPublicSettingsDTO(db.settings);
+  const landing = resolveLandingContent(settings);
   const activeStaff = db.staff
     .filter((member) => member.isActive)
     .toSorted((a, b) => a.displayOrder - b.displayOrder)
@@ -128,13 +130,13 @@ export default function LinksPage() {
         <VStack as="section" className="rb-hero ck-hero" aria-labelledby="links-title">
           <VStack gap={3} align="center" className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={560} style={{ textAlign: 'center' }}>
             <img
-              src={LANDING_ASSETS.logoWhite}
+              src={landing.customLogoUrl || LANDING_ASSETS.logoWhite}
               alt={settings.name}
               width={200}
               height={84}
               fetchPriority="high"
               decoding="async"
-              style={{ height: '3.5rem', width: 'auto', display: 'block' }}
+              style={{ height: '3.5rem', width: 'auto', objectFit: 'contain', display: 'block' }}
             />
             <VStack gap={1.5} align="center">
               <Heading level={1} id="links-title" color="inherit" justify="center" textWrap="balance" className="lk-serif rb-hero-title">
@@ -182,6 +184,11 @@ export default function LinksPage() {
           >
             <VStack gap={5} align="center" width="100%" className="ck-panel fx-fade-up">
               <HStack gap={2} justify="center" wrap="wrap">
+                <Token
+                  label={`${landing.visitHoursDays} · Solo con cita`}
+                  size="md"
+                  icon={<CalendarCheck size={14} aria-hidden="true" />}
+                />
                 <Token
                   label={`Turnos fijos con ${staffSummary}`}
                   size="md"

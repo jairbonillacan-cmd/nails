@@ -1,6 +1,8 @@
+import '../portal.css';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { LANDING_ASSETS } from '@/components/landing/landingContent';
 
 export default function MisCitasLoading() {
   return (
@@ -17,7 +19,7 @@ export default function MisCitasLoading() {
         <VStack className="rb-header-bar" gap={0}>
           <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
           <img
-            src="/landing/logo-negro.svg"
+            src={LANDING_ASSETS.logoBlack}
             alt="LAIKONA NAILS"
             width={120}
             height={50}
@@ -29,13 +31,25 @@ export default function MisCitasLoading() {
         </VStack>
       </VStack>
 
-      <VStack as="section" className="rb-hero ck-hero" gap={0} aria-hidden="true">
+      <VStack as="section" className="rb-hero ck-hero" gap={0}>
         <VStack className="rb-wrap rb-hero-inner" gap={3}>
+          <HStack align="center">
+            <Text color="inherit" className="sk-eyebrow" data-on="cherry">
+              Abriendo tus citas…
+            </Text>
+          </HStack>
           <VStack gap={1.5} maxWidth={360} width="100%">
-            <VStack className="sk-bar" data-size="lg" data-w="60" data-on="cherry" />
-            <VStack className="sk-bar" data-size="xs" data-w="40" data-on="cherry" />
+            <VStack className="sk-bar" data-size="lg" data-w="60" data-on="cherry" aria-hidden="true" />
+            <img
+              src={LANDING_ASSETS.strokePorcelain}
+              alt=""
+              aria-hidden="true"
+              width={150}
+              height={18}
+              className="rb-hero-stroke"
+            />
           </VStack>
-          <VStack className="sk-bar" data-size="sm" data-w="80" data-on="cherry" />
+          <VStack className="sk-bar" data-size="sm" data-w="80" data-on="cherry" aria-hidden="true" />
         </VStack>
         <svg
           className="rb-hero-wave"
@@ -50,11 +64,14 @@ export default function MisCitasLoading() {
       <VStack as="main" className="rb-wrap rb-main" gap={4} aria-hidden="true">
         <VStack className="sk-links-wrap" gap={4}>
           <VStack className="pt-card" gap={4}>
-            <VStack className="sk-bar" data-size="lg" data-w="80" />
-            <VStack gap={1.5}>
+            <VStack gap={2}>
+              <VStack className="sk-bar" data-size="lg" data-w="60" />
               <VStack className="sk-bar" data-size="sm" data-w="100" />
-              <VStack className="sk-bar" data-size="sm" data-w="60" />
             </VStack>
+            <HStack gap={2} wrap="wrap">
+              <VStack className="sk-bar" data-size="pill" />
+              <VStack className="sk-bar" data-size="pill" />
+            </HStack>
             <VStack className="sk-bar" data-size="cta" data-w="100" />
             <VStack className="sk-bar" data-size="cta" data-w="100" />
             <HStack justify="center">

@@ -15,6 +15,7 @@ import {
   bookingReducer,
   createInitialBookingFlowState,
 } from './bookingMachine';
+import { computeStepNavigation } from './bookingViewHelpers';
 
 const SAMPLE_SLOT: AvailableSlot = {
   startAt: '2026-12-01T16:00:00.000Z',
@@ -270,6 +271,74 @@ describe('bookingMachine reducer', () => {
     expect(back.marketingOptIn).toBe(true);
     expect(back.formErrorCode).toBeNull();
     expect(back.activeBookings).toEqual([]);
+  });
+  it('computes backTarget, nextLabel, and nextHint accurately across all 5 steps including optional extras', () => {
+    const baseInput = {
+      hasExtrasOptions: true,
+      hasSelectedService: true,
+      requiresConfirmation: false,
+      skipsStaffForSlot: false,
+      totalDurationMinutes: 90,
+      extrasSelectedCount: 0,
+      chosenStaffId: 'any',
+      isSubmittingBooking: false,
+      showsDeposit: true,
+      proofDataUrl: null,
+      proofDeliveryMethod: 'web_upload' as const,
+    };
+
+    const onService = computeStepNavigation({
+      ...baseInput,
+      flow: createInitialBookingFlowState(),
+    });
+    expect(onService.backTarget).toBeNull();
+    expect(onService.canContinue).toBe(true);
+    expect(onService.nextLabel).toBe('Continuar');
+
+    const onExtrasEmpty = computeStepNavigation({
+      ...baseInput,
+      flow: { ...createInitialBookingFlowState(), step: 'extras' },
+    });
+    expect(onExtrasEmpty.backTarget).toBe('service');
+    expect(onExtrasEmpty.canContinue).toBe(true);
+    expect(onExtrasEmpty.nextHint).toBe('Paso opcional · Sin extras');
+
+    const onExtrasPicked = computeStepNavigation({
+      ...baseInput,
+      extrasSelectedCount: 2,
+      totalDurationMinutes: 125,
+      flow: { ...createInitialBookingFlowState(), step: 'extras' },
+    });
+    expect(onExtrasPicked.nextHint).toContain('2 extras');
+
+    const onSchedule = computeStepNavigation({
+      ...baseInput,
+      flow: { ...createInitialBookingFlowState(), step: 'schedule' },
+    });
+    expect(onSchedule.backTarget).toBe('extras');
+    expect(onSchedule.canContinue).toBe(false);
+
+    const onScheduleNoExtras = computeStepNavigation({
+      ...baseInput,
+      hasExtrasOptions: false,
+      flow: { ...createInitialBookingFlowState(), step: 'schedule' },
+    });
+    expect(onScheduleNoExtras.backTarget).toBe('service');
+
+    const onDetails = computeStepNavigation({
+      ...baseInput,
+      flow: {
+        ...createInitialBookingFlowState(),
+        step: 'details',
+        phase: 'holding',
+        selectedSlot: SAMPLE_SLOT,
+      },
+    });
+    expect(onDetails.backTarget).toBe('staff');
+    expect(onDetails.nextLabel).toBe('Apartar mi cita');
+    expect(onDetails.completedSteps.has('extras')).toBe(true);
+    expect(onDetails.completedSteps.has('schedule')).toBe(true);
+    expect(onDetails.completedSteps.has('staff')).toBe(true);
   });
 });
 

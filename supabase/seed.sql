@@ -571,7 +571,7 @@ VALUES
     'Milky Micro French',
     'Rubber base lechoso con línea ultra fina blanca sobre almendra corta.',
     'Rubber',
-    '/gallery/milky-french.svg',
+    '/landing/sets/foto-010.webp',
     (SELECT id FROM public.services WHERE slug = 'rubber'),
     true,
     0
@@ -581,7 +581,7 @@ VALUES
     'Glazed Pearl Chrome',
     'Softgel efecto perlado traslúcido con acabado espejo luminoso.',
     'Softgel',
-    '/gallery/glazed-pearl.svg',
+    '/landing/sets/foto-004.webp',
     (SELECT id FROM public.services WHERE slug = 'unas-softgel'),
     true,
     1
@@ -591,7 +591,7 @@ VALUES
     'Cherry Lacquer Velvet',
     'Gel semipermanente tono cereza editorial con brillo espejo.',
     'Gel',
-    '/gallery/rosewood-velvet.svg',
+    '/landing/sets/foto-007.webp',
     (SELECT id FROM public.services WHERE slug = 'gel-semipermanente-manos'),
     true,
     2
@@ -601,7 +601,7 @@ VALUES
     'Sculpted Espresso Tortoise',
     'Acrílico escultural con detalle carey y acento dorado sutil.',
     'Acrílico',
-    '/gallery/espresso-tortoise.svg',
+    '/landing/sets/12-rojo-laca-dorado-4x5.webp',
     (SELECT id FROM public.services WHERE slug = 'unas-acrilicas'),
     true,
     3

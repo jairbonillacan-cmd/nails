@@ -22,12 +22,20 @@ const LandingTeamDialog = dynamic(
 );
 
 interface LandingTeamProps {
+  title?: string;
+  subtitle?: string;
   staff: PublicStaffDTO[];
   services: PublicServiceDTO[];
   currency: PublicSettingsDTO['currency'];
 }
 
-export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
+export function LandingTeam({
+  title = 'Elige a tu artista',
+  subtitle = 'Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio.',
+  staff,
+  services,
+  currency,
+}: LandingTeamProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const openIndex = staff.findIndex((member) => member.id === openId);
   const member = openIndex >= 0 ? staff[openIndex] : undefined;
@@ -59,8 +67,8 @@ export function LandingTeam({ staff, services, currency }: LandingTeamProps) {
       >
         <SectionHeading
           id="equipo-t"
-          title="Elige a tu artista"
-          subtitle="Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio."
+          title={title}
+          subtitle={subtitle}
           tone="light"
         />
         <HStack role="list" wrap="wrap" justify="center" align="start" gap={8} width="100%">

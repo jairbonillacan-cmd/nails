@@ -90,6 +90,7 @@ const ScheduleSlotItem = memo(function ScheduleSlotItem({
 }: ScheduleSlotItemProps) {
   const time = timeFormat === '24h' ? slot.localTime24 : slot.localTime12;
   const who = pinnedStaffName ? null : staffCountLabel(slot);
+  const freeSuffix = slot.availableStaffIds.length === 1 ? 'libre' : 'libres';
   const subLabel = isPending ? 'Apartando…' : who;
   return (
     <li>
@@ -99,7 +100,7 @@ const ScheduleSlotItem = memo(function ScheduleSlotItem({
         aria-pressed={isOn || isPending}
         aria-busy={isPending ? 'true' : undefined}
         disabled={isBusy}
-        aria-label={isPending ? `Apartando ${time}` : `${time}${who ? `, ${who} libres` : ''}`}
+        aria-label={isPending ? `Apartando ${time}` : `${time}${who ? `, ${who} ${freeSuffix}` : ''}`}
         onClick={() => onSelectSlot(slot)}
       >
         <Text color="inherit" weight="bold" hasTabularNumbers>{time}</Text>

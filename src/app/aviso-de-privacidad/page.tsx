@@ -82,14 +82,9 @@ export default function AvisoDePrivacidadPage() {
       <VStack width="100%" gap={0}>
         <VStack as="section" className="rb-hero ck-hero" aria-labelledby="privacidad-title">
           <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up" maxWidth={840}>
-            <HStack gap={2} wrap="wrap" align="center">
-              <Text color="inherit" className="ck-status-pill" data-tone="success">
-                Versión {policyVersion} · LFPDPPP
-              </Text>
-              <Text color="inherit" type="supporting" className="lk-soft">
-                {cityLabel}
-              </Text>
-            </HStack>
+            <Text color="inherit" className="ck-eyebrow">
+              Versión {policyVersion} · LFPDPPP · {cityLabel}
+            </Text>
             <VStack gap={1.5}>
               <Heading
                 level={1}
@@ -145,10 +140,25 @@ export default function AvisoDePrivacidadPage() {
               <Token label={cityLabel} size="sm" />
             </HStack>
 
+            <HStack as="nav" aria-label="Secciones del aviso" gap={1.5} wrap="wrap">
+              <a className="ck-anchor-pill" href="#responsable">
+                1. Responsable
+              </a>
+              <a className="ck-anchor-pill" href="#datos">
+                2. Datos que recabamos
+              </a>
+              <a className="ck-anchor-pill" href="#finalidades">
+                3. Finalidades
+              </a>
+              <a className="ck-anchor-pill" href="#arco">
+                5. Derechos ARCO
+              </a>
+            </HStack>
+
             <Divider />
 
             <VStack gap={2}>
-              <Heading level={2} className="lk-serif ck-h3">
+              <Heading level={2} id="responsable" className="lk-serif ck-h3">
                 1. Identidad y domicilio del responsable
               </Heading>
               <Text as="p" type="body" textWrap="pretty" style={{ overflowWrap: 'anywhere' }}>
@@ -162,7 +172,7 @@ export default function AvisoDePrivacidadPage() {
             </VStack>
 
             <VStack gap={2}>
-              <Heading level={2} className="lk-serif ck-h3">
+              <Heading level={2} id="datos" className="lk-serif ck-h3">
                 2. Datos personales que recabamos
               </Heading>
               <Text as="p" type="body" textWrap="pretty">
@@ -208,7 +218,7 @@ export default function AvisoDePrivacidadPage() {
             </VStack>
 
             <VStack gap={3}>
-              <Heading level={2} className="lk-serif ck-h3">
+              <Heading level={2} id="finalidades" className="lk-serif ck-h3">
                 3. Finalidades del tratamiento
               </Heading>
 
@@ -256,7 +266,7 @@ export default function AvisoDePrivacidadPage() {
             </VStack>
 
             <VStack gap={3} padding={5} width="100%" className="rb-deposit">
-              <Heading level={2} className="lk-serif ck-h3">
+              <Heading level={2} id="arco" className="lk-serif ck-h3">
                 5. Derechos ARCO, descarga de datos y revocación
               </Heading>
               <Text as="p" type="body" textWrap="pretty">

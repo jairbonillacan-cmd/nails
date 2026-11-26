@@ -31,7 +31,13 @@ function applyRecordedSupabaseCookies(
 
 export async function GET(request: NextRequest) {
   const session = await getAdminSession(request);
-  const demoEnabled = !isSupabaseEnabled() && isLocalDemoAuthEnabled();
+  const supabaseActive = isSupabaseEnabled();
+  const demoEnabled = !supabaseActive && isLocalDemoAuthEnabled();
+  const authMode: 'supabase' | 'demo' | 'disabled' = supabaseActive
+    ? 'supabase'
+    : demoEnabled
+      ? 'demo'
+      : 'disabled';
   const availableDemoUsers = demoEnabled
     ? getSnapshot().adminUsers.filter((u) => u.isActive)
     : [];
@@ -39,6 +45,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     session,
     availableDemoUsers,
+    authMode,
   });
 }
 
