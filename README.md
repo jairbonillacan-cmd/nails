@@ -82,6 +82,14 @@ Todo el plan, las revisiones de arquitectura y el roadmap viven en [`docs/plan/`
 
 ---
 
+## Cotización y Migración a Producción
+
+El apartado comercial y técnico de entrega para **Laikona Nails** vive en [`docs/cotizacion/`](docs/cotizacion/README.md):
+- [`docs/cotizacion/cotizacion-laikona-nails.pdf`](docs/cotizacion/cotizacion-laikona-nails.pdf) — Propuesta comercial final (devand · 3 páginas).
+- [`docs/cotizacion/prompt-migracion-produccion.md`](docs/cotizacion/prompt-migracion-produccion.md) — Prompt maestro de migración a Cloudflare Workers + Supabase Free + Cloudflare R2 + Meta WhatsApp Cloud API (Coexistence) + Resend + GitHub Actions.
+
+---
+
 ## Pasar a Producción (`.env.local`)
 
 1. Copia `.env.example` a `.env.local` y configura los secretos obligatorios de sesión/cifrado (`ADMIN_SESSION_SECRET`, `CLIENT_SESSION_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`). En producción (`NODE_ENV=production`) la autenticación falla cerrado (`fail-closed`) si faltan credenciales.
