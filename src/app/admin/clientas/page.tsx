@@ -71,6 +71,7 @@ const NewClientDialog = dynamic(
 export default function AdminClientsPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
   const searchParams = useSearchParams();
+  const [selected, setSelected] = useState<ClientProfile | null>(null);
   const {
     data,
     canManageClients,
@@ -102,7 +103,6 @@ export default function AdminClientsPage() {
     campaignsLoading,
     inactiveLoading,
     inactiveError,
-    revalidateClients,
     reloadCampaigns,
     reloadPackages,
   } = useClientasData(
@@ -110,9 +110,9 @@ export default function AdminClientsPage() {
     bookingEventSeq,
     searchParams.get('tab'),
     searchParams.get('q')?.trim() ?? '',
+    Boolean(selected),
   );
 
-  const [selected, setSelected] = useState<ClientProfile | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [bannerMsg, setBannerMsg] = useState<BannerNotice | null>(null);
   const [dispatchingKey, setDispatchingKey] = useState<string | null>(null);
@@ -141,7 +141,6 @@ export default function AdminClientsPage() {
     setBannerMsg({ status: 'success', title: 'Ficha de clienta actualizada.' });
     invalidateAdminCache('/api/admin/clients');
     await refresh();
-    revalidateClients();
     return null;
   };
 
@@ -158,7 +157,6 @@ export default function AdminClientsPage() {
     setBannerMsg({ status: 'success', title: 'Clienta agregada al directorio.' });
     invalidateAdminCache('/api/admin/clients');
     await refresh();
-    revalidateClients();
     return result;
   };
 

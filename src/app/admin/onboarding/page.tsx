@@ -1,13 +1,13 @@
 'use client';
 
 import type React from 'react';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { LayoutDashboard } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
-import { PageHeader, PageSkeleton, SkeletonBlock, SurfaceCard } from '@/components/ui';
+import { PageHeader, PageSkeleton } from '@/components/ui';
 import {
   OnboardingProgressCard,
   WIZARD_STEPS,
@@ -27,15 +27,8 @@ import {
   submitOnboardingStep,
 } from '@/components/admin/onboarding/onboardingActions';
 import { OnboardingStepAlerts } from '@/components/admin/onboarding/OnboardingStepAlerts';
-import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { useBookingAlertSound } from '@/lib/hooks/useBookingAlertSound';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
-import type { Service } from '@/lib/types';
-
-interface OnboardingApiPayload {
-  onboarding: OnboardingProfileState & { onboardingCompleted: boolean };
-  starterServices: Service[];
-}
 
 export default function AdminOnboardingPage() {
   const { data, loading, refresh } = useAdminData();
@@ -45,63 +38,17 @@ export default function AdminOnboardingPage() {
 
   const [stepIndex, setStepIndex] = useState(0);
   const [maxReachedStep, setMaxReachedStep] = useState(0);
-  const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notifDialogOpen, setNotifDialogOpen] = useState(false);
 
-  const [profile, setProfile] = useState<OnboardingProfileState>(INITIAL_ONBOARDING_PROFILE);
+  const [profileDraft, setProfileDraft] = useState<Partial<OnboardingProfileState>>({});
   const [depositDraft, setDepositDraft] = useState<OnboardingDepositState>(INITIAL_ONBOARDING_DEPOSIT);
-  const [starterServices, setStarterServices] = useState<Service[]>([]);
-  const [serviceDraft, setServiceDraft] = useState<OnboardingServiceState>(INITIAL_ONBOARDING_SERVICE);
+  const [serviceDraftOverrides, setServiceDraftOverrides] = useState<
+    Partial<OnboardingServiceState>
+  >({});
 
   const isOwner = data?.session.user.role === 'owner';
-
-  const loadOnboarding = useCallback(
-    async (signal: AbortSignal) => {
-      if (!isOwner) {
-        setHydrated(true);
-        return;
-      }
-      try {
-        const res = await fetch('/api/admin/onboarding', { cache: 'no-store', signal });
-        if (signal.aborted) return;
-        if (res.ok) {
-          const payload = (await res.json()) as OnboardingApiPayload;
-          const ob = payload.onboarding;
-          setProfile((prev) => ({
-            businessType: ob.businessType || prev.businessType,
-            teamSizeTier: ob.teamSizeTier || prev.teamSizeTier,
-            salonName: ob.salonName || prev.salonName,
-            serviceMode: ob.serviceMode,
-            address: ob.address || prev.address,
-            soundAlertsEnabled: ob.soundAlertsEnabled,
-          }));
-          setStarterServices(payload.starterServices);
-          const first = payload.starterServices[0];
-          if (first) {
-            setServiceDraft({
-              id: first.id,
-              name: first.name,
-              priceMxn: Math.round(first.priceCents / 100),
-              durationMinutes: first.durationMinutes,
-              isStartingPrice: first.isStartingPrice ?? true,
-            });
-          }
-        }
-      } catch {
-        return;
-      } finally {
-        if (!signal.aborted) setHydrated(true);
-      }
-    },
-    [isOwner],
-  );
-
-  useExternalSync(
-    isOwner ? 'admin-onboarding-owner' : 'admin-onboarding-skip',
-    loadOnboarding,
-  );
 
   if (loading || !data) {
     return (
@@ -127,6 +74,31 @@ export default function AdminOnboardingPage() {
       </VStack>
     );
   }
+
+  const starterServices = data.services.filter((s) => s.isActive).slice(0, 5);
+  const firstStarter = starterServices[0];
+  const profile: OnboardingProfileState = {
+    businessType: data.settings.businessType || INITIAL_ONBOARDING_PROFILE.businessType,
+    teamSizeTier: data.settings.teamSizeTier || INITIAL_ONBOARDING_PROFILE.teamSizeTier,
+    salonName: data.settings.name || INITIAL_ONBOARDING_PROFILE.salonName,
+    serviceMode: data.settings.serviceMode ?? INITIAL_ONBOARDING_PROFILE.serviceMode,
+    address: data.settings.address || INITIAL_ONBOARDING_PROFILE.address,
+    soundAlertsEnabled:
+      data.settings.soundAlertsEnabled ?? INITIAL_ONBOARDING_PROFILE.soundAlertsEnabled,
+    ...profileDraft,
+  };
+  const serviceDraft: OnboardingServiceState = {
+    ...(firstStarter
+      ? {
+          id: firstStarter.id,
+          name: firstStarter.name,
+          priceMxn: Math.round(firstStarter.priceCents / 100),
+          durationMinutes: firstStarter.durationMinutes,
+          isStartingPrice: firstStarter.isStartingPrice ?? true,
+        }
+      : INITIAL_ONBOARDING_SERVICE),
+    ...serviceDraftOverrides,
+  };
 
   const depositEnabled = depositDraft.enabled ?? data.settings.paymentMode !== 'none';
   const depositAmountMxn =
@@ -172,7 +144,7 @@ export default function AdminOnboardingPage() {
   const handleActivateNotifications = async () => {
     const permission = await requestBrowserNotifications();
     await playBookingChime();
-    setProfile((prev) => ({ ...prev, soundAlertsEnabled: true }));
+    setProfileDraft((prev) => ({ ...prev, soundAlertsEnabled: true }));
     setSaving(true);
     try {
       const res = await postOnboardingJson(
@@ -232,15 +204,7 @@ export default function AdminOnboardingPage() {
 
       {feedback.message ? <Banner status="success" role="status" title={feedback.message} /> : null}
 
-      {!hydrated ? (
-        <SurfaceCard padded>
-          <VStack gap={3} role="status" aria-label="Cargando datos del salón">
-            <SkeletonBlock width="min(100%, 16rem)" height="1.5rem" radius={2} index={0} />
-            <SkeletonBlock width="100%" height="1rem" radius={1} index={1} />
-            <SkeletonBlock width="100%" height="8rem" radius={2} index={2} />
-          </VStack>
-        </SurfaceCard>
-      ) : stepIndex < 3 ? (
+      {stepIndex < 3 ? (
         <OnboardingStepFormCard
           stepIndex={stepIndex}
           saving={saving}
@@ -254,11 +218,11 @@ export default function AdminOnboardingPage() {
           staffShiftSummaries={buildStaffShiftSummaries(data.staff, data.schedules)}
           starterServices={starterServices}
           serviceDraft={serviceDraft}
-          onPatchProfile={(patch) => setProfile((p) => ({ ...p, ...patch }))}
+          onPatchProfile={(patch) => setProfileDraft((p) => ({ ...p, ...patch }))}
           onPatchDeposit={(patch) => setDepositDraft((d) => ({ ...d, ...patch }))}
-          onPatchService={(patch) => setServiceDraft((s) => ({ ...s, ...patch }))}
+          onPatchService={(patch) => setServiceDraftOverrides((s) => ({ ...s, ...patch }))}
           onSelectStarterService={(srv) =>
-            setServiceDraft({
+            setServiceDraftOverrides({
               id: srv.id,
               name: srv.name,
               priceMxn: Math.round(srv.priceCents / 100),

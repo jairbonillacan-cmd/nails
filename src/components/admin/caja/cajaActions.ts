@@ -163,10 +163,91 @@ export async function approveCajaDeposit(
   }
 }
 
+function applyOptimisticDepositRejection(
+  overview: AdminOverviewPayload,
+  bookingId: string,
+  rejectedAtIso: string,
+): AdminOverviewPayload {
+  return {
+    ...overview,
+    bookings: overview.bookings.map((booking) =>
+      booking.id === bookingId
+        ? {
+            ...booking,
+            paymentProofUrl: null,
+            proofDeliveryMethod: 'none',
+            proofRejectedAt: rejectedAtIso,
+            updatedAt: rejectedAtIso,
+          }
+        : booking,
+    ),
+    pendingDeposits: overview.pendingDeposits.map((dep) =>
+      dep.bookingId === bookingId
+        ? {
+            ...dep,
+            paymentProofUrl: null,
+            proofDeliveryMethod: 'none',
+          }
+        : dep,
+    ),
+  };
+}
+
+function applyOptimisticDepositRejectionToList(
+  payload: { bookings: BookingWithRelations[] },
+  bookingId: string,
+  rejectedAtIso: string,
+): { bookings: BookingWithRelations[] } {
+  return {
+    bookings: payload.bookings.map((booking) =>
+      booking.id === bookingId
+        ? {
+            ...booking,
+            paymentProofUrl: null,
+            proofDeliveryMethod: 'none',
+            proofRejectedAt: rejectedAtIso,
+            updatedAt: rejectedAtIso,
+          }
+        : booking,
+    ),
+  };
+}
+
 export async function rejectCajaDeposit(
+  data: AdminOverviewPayload,
   bookingId: string,
   bookingCode: string,
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const prevOverview =
+    getAdminCacheSnapshot<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview) ?? data;
+  const prevBookings = getAdminCacheSnapshot<{ bookings: BookingWithRelations[] }>(
+    ADMIN_CACHE_KEYS.bookings,
+  );
+  const rejectedAtIso = new Date().toISOString();
+
+  mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+    applyOptimisticDepositRejection(current ?? prevOverview, bookingId, rejectedAtIso),
+  );
+  if (prevBookings) {
+    mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+      ADMIN_CACHE_KEYS.bookings,
+      (current) =>
+        current
+          ? applyOptimisticDepositRejectionToList(current, bookingId, rejectedAtIso)
+          : current,
+    );
+  }
+
+  const rollback = () => {
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
+    if (prevBookings) {
+      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+        prevBookings,
+      );
+    }
+  };
+
   try {
     const res = await fetch('/api/admin/bookings', {
       method: 'PATCH',
@@ -175,6 +256,7 @@ export async function rejectCajaDeposit(
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
+      rollback();
       return { ok: false, error: json?.error || 'No se pudo rechazar el comprobante.' };
     }
     invalidateAdminCache('/api/admin/reports');
@@ -183,6 +265,7 @@ export async function rejectCajaDeposit(
       message: `Comprobante de ${bookingCode} rechazado. Ya avisamos a la clienta para que suba uno nuevo.`,
     };
   } catch {
+    rollback();
     return { ok: false, error: 'No se pudo conectar para rechazar el comprobante.' };
   }
 }

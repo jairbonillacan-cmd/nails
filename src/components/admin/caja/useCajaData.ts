@@ -26,7 +26,6 @@ import {
 
 export function useCajaData(
   providerData: AdminOverviewPayload | null,
-  bookingEventSeq: number,
   tabParam: string | null,
 ) {
   const initialRoute = resolveInitialCajaRoute(tabParam);
@@ -47,12 +46,6 @@ export function useCajaData(
     setPromosView(next.promosView);
   });
 
-  const canQueryOperations = Boolean(
-    providerData &&
-      (providerData.session.user.role === 'owner' ||
-        providerData.session.user.role === 'admin'),
-  );
-
   const fetchOverview = useCallback(
     (signal: AbortSignal) =>
       fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
@@ -66,11 +59,6 @@ export function useCajaData(
       ),
     [],
   );
-  const fetchOperations = useCallback(
-    (signal: AbortSignal) =>
-      fetchAdminJson<{ ok: boolean }>(ADMIN_CACHE_KEYS.operations, signal),
-    [],
-  );
 
   const overviewQuery = useAdminCachedQuery<AdminOverviewPayload>(
     providerData ? ADMIN_CACHE_KEYS.overview : null,
@@ -79,23 +67,17 @@ export function useCajaData(
       enabled: Boolean(providerData),
       initialData: providerData ?? undefined,
       staleTimeMs: 10_000,
-      revalidateKey: bookingEventSeq,
     },
   );
 
+  const shouldLoadPackages = Boolean(providerData) && activeTab === 'promos';
   const packagesQuery = useAdminCachedQuery<{
     servicePackages?: ServicePackageCatalogRow[];
   }>(providerData ? ADMIN_CACHE_KEYS.packages : null, fetchPackages, {
-    enabled: Boolean(providerData),
+    enabled: shouldLoadPackages,
     staleTimeMs: 10_000,
     revalidateKey: packagesSeq,
   });
-
-  useAdminCachedQuery<{ ok: boolean }>(
-    canQueryOperations ? ADMIN_CACHE_KEYS.operations : null,
-    fetchOperations,
-    { enabled: canQueryOperations, staleTimeMs: 15_000 },
-  );
 
   const data = overviewQuery.data ?? providerData;
   const packagesCatalog = packagesQuery.data?.servicePackages ?? [];

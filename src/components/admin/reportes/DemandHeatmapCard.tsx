@@ -22,28 +22,6 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
       id="reports-heatmap-heading"
       title="Días y horas con más citas"
       subtitle="Cuántas citas se agendan cada día entre las 9:00 y las 20:00."
-      actions={
-        heatmap.peakSlot || heatmap.quietSlot ? (
-          <HStack gap={1.5} wrap="wrap" align="center">
-            {heatmap.peakSlot ? (
-              <StatusTag
-                tone="accent"
-                icon={<Flame size={12} aria-hidden="true" />}
-                hasTabularNumbers
-                label={`Más lleno: ${heatmap.peakSlot.dayShort} ${heatmap.peakSlot.hourLabel} (${heatmap.peakSlot.count})`}
-              />
-            ) : null}
-            {heatmap.quietSlot ? (
-              <StatusTag
-                tone="neutral"
-                icon={<Sparkles size={12} aria-hidden="true" />}
-                hasTabularNumbers
-                label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${heatmap.quietSlot.hourLabel} (${heatmap.quietSlot.count})`}
-              />
-            ) : null}
-          </HStack>
-        ) : undefined
-      }
     >
       {heatmap.totalBookings === 0 ? (
         <VStack className="ad-empty" gap={2}>
@@ -57,6 +35,26 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
         </VStack>
       ) : (
         <VStack className="ad-card-body" gap={3} paddingBlockStart={4}>
+          {heatmap.peakSlot || heatmap.quietSlot ? (
+            <HStack gap={2} wrap="wrap" align="center">
+              {heatmap.peakSlot ? (
+                <StatusTag
+                  tone="accent"
+                  icon={<Flame size={12} aria-hidden="true" />}
+                  hasTabularNumbers
+                  label={`Más lleno: ${heatmap.peakSlot.dayShort} ${heatmap.peakSlot.hourLabel} (${heatmap.peakSlot.count})`}
+                />
+              ) : null}
+              {heatmap.quietSlot ? (
+                <StatusTag
+                  tone="neutral"
+                  icon={<Sparkles size={12} aria-hidden="true" />}
+                  hasTabularNumbers
+                  label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${heatmap.quietSlot.hourLabel} (${heatmap.quietSlot.count})`}
+                />
+              ) : null}
+            </HStack>
+          ) : null}
           <VStack className="ad-table-scroll" gap={0}>
             <section
               className="ad-heatmap"

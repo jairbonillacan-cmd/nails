@@ -37,6 +37,39 @@ import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/fo
 
 type InventoryFilter = 'all' | 'low' | 'retail' | 'cabin';
 
+const INVARIANT_STOCK_UNITS = new Set([
+  'ml',
+  'l',
+  'lt',
+  'g',
+  'gr',
+  'kg',
+  'mg',
+  'oz',
+  'cm',
+  'mm',
+  'm',
+  'ud',
+  'uds',
+]);
+
+function pluralizeSpanishUnit(unit: string, quantity: number): string {
+  const trimmed = unit.trim();
+  if (!trimmed) return quantity === 1 ? 'pieza' : 'piezas';
+  if (quantity === 1) return trimmed;
+  const lower = trimmed.toLowerCase();
+  if (INVARIANT_STOCK_UNITS.has(lower)) return trimmed;
+  if (lower.endsWith('s') || lower.endsWith('x')) return trimmed;
+  if (lower.endsWith('z')) return `${trimmed.slice(0, -1)}ces`;
+  if (/[aeiouáéíóú]$/.test(lower)) return `${trimmed}s`;
+  if (/(?:set|kit|tip|pad|clip|pack)$/.test(lower)) return `${trimmed}s`;
+  return `${trimmed}es`;
+}
+
+function formatStockLabel(quantity: number, unit: string): string {
+  return `${quantity} ${pluralizeSpanishUnit(unit, quantity)}`;
+}
+
 export default function AdminInventoryPage() {
   const { data, loading, refresh } = useAdminData();
   const [filterMode, setFilterMode] = useState<InventoryFilter>('all');
@@ -127,7 +160,10 @@ export default function AdminInventoryPage() {
       <MetricGrid ariaLabel="Resumen de inventario" items={kpiItems} cols={4} />
 
       <InventoryLowStockAlert
-        lowStock={lowStock}
+        lowStock={lowStock.map((item) => ({
+          ...item,
+          unit: pluralizeSpanishUnit(item.unit, item.stockQuantity),
+        }))}
         isFilteredLow={filterMode === 'low'}
         busyByItem={busyByItem}
         optimisticDeltas={optimisticDeltas}
@@ -189,7 +225,7 @@ export default function AdminInventoryPage() {
                 isCompact
                 icon={<Package size={22} aria-hidden="true" />}
                 title="Sin productos en este filtro"
-                description="Cambia el filtro o agrega un producto nuevo desde el panel derecho."
+                description='Cambia el filtro o agrega un producto nuevo con el botón "Agregar producto" arriba a la derecha.'
                 actions={
                   filterMode !== 'all' || searchQuery ? (
                     <Button
@@ -222,7 +258,7 @@ export default function AdminInventoryPage() {
                         <Text weight="semibold">{item.name}</Text>
                         <StatusTag
                           tone={isLow ? 'warning' : 'success'}
-                          label={`${item.stockQuantity} ${item.unit}`}
+                          label={formatStockLabel(item.stockQuantity, item.unit)}
                           hasTabularNumbers
                         />
                         {pendingDelta !== 0 ? (

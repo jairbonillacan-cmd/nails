@@ -163,9 +163,9 @@ export async function saveClientProfileRequest(input: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
-    const json = (await res.json()) as { error?: string };
+    const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
-      return json.error || 'No se pudo actualizar la ficha.';
+      return json?.error || 'No se pudo actualizar la ficha.';
     }
     return null;
   } catch {
@@ -187,16 +187,16 @@ export async function createClientProfileRequest(input: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
-    const json = (await res.json()) as { error?: string };
+    const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (res.status === 409) {
       return {
         ok: false,
         conflict: true,
-        error: json.error || 'Ya existe una clienta registrada con ese WhatsApp.',
+        error: json?.error || 'Ya existe una clienta registrada con ese WhatsApp.',
       };
     }
     if (!res.ok) {
-      return { ok: false, error: json.error || 'Revisa los datos ingresados.' };
+      return { ok: false, error: json?.error || 'Revisa los datos ingresados.' };
     }
     return { ok: true };
   } catch {

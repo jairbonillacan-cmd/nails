@@ -11,6 +11,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
+import { Avatar } from '@astryxdesign/core/Avatar';
 import { ArrowLeft, ArrowRight, Eye, EyeOff, MapPin, Moon, Sun } from 'lucide-react';
 import type { AdminRole, AdminUser } from '@/lib/types';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
@@ -52,13 +53,6 @@ const LOGIN_PHOTO = '/landing/sets/07-rubi-y-negro-4x5.webp';
 function cleanDemoDisplayName(fullName: string): string {
   const stripped = fullName.replace(/\s*\([^)]*\)\s*$/, '').trim();
   return stripped || fullName.trim();
-}
-
-function getInitials(fullName: string): string {
-  const parts = cleanDemoDisplayName(fullName).split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'LN';
-  if (parts.length === 1) return (parts[0] ?? 'LN').slice(0, 2).toUpperCase();
-  return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
 }
 
 export default function AdminLoginPage() {
@@ -345,15 +339,13 @@ export default function AdminLoginPage() {
                           onClick={() => void signIn(u.email)}
                         >
                           <HStack gap={3} align="center" className="rb-grow" style={{ flexWrap: 'nowrap' }}>
-                            <Text
-                              color="inherit"
-                              weight="bold"
-                              className="ad-avatar"
+                            <Avatar
+                              name={displayName}
+                              size="sm"
+                              tooltip={false}
                               aria-hidden="true"
                               style={{ flexShrink: 0 }}
-                            >
-                              {getInitials(displayName)}
-                            </Text>
+                            />
                             <VStack gap={0.5} className="rb-grow">
                               <HStack gap={1.5} align="center" wrap="wrap">
                                 <Text weight="semibold" size="sm">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -21,7 +21,13 @@ import {
 } from '@/components/admin/caja/cajaActions';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
 import type { CajaTab, ServicePackageCatalogRow } from '@/components/admin/caja/cajaTypes';
-import { MetricGrid, PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
+import {
+  ConfirmActionDialog,
+  MetricGrid,
+  PageHeader,
+  PageSkeleton,
+  SkeletonBlock,
+} from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
 import type { PaymentMethod } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
@@ -61,7 +67,7 @@ const OwnerPinDialog = dynamic(
 );
 
 export default function AdminCashPage() {
-  const { data: providerData, bookingEventSeq, refresh } = useAdminData();
+  const { data: providerData, refresh } = useAdminData();
   const searchParams = useSearchParams();
   const {
     data,
@@ -82,12 +88,17 @@ export default function AdminCashPage() {
     splitSummaryByMethod,
     splitDetails,
     commissionsByStaff,
-  } = useCajaData(providerData, bookingEventSeq, searchParams.get('tab'));
+  } = useCajaData(providerData, searchParams.get('tab'));
 
   const [msg, setMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectConfirmTarget, setRejectConfirmTarget] = useState<{
+    bookingId: string;
+    bookingCode: string;
+  } | null>(null);
+  const rejectResolveRef = useRef<((ok: boolean) => void) | null>(null);
   const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
@@ -108,6 +119,12 @@ export default function AdminCashPage() {
   const hasActiveOwnerPin = Boolean(
     data.settings.ownerPinEnabled && data.settings.hasOwnerPin,
   );
+
+  const settlePendingReject = (ok: boolean) => {
+    const resolve = rejectResolveRef.current;
+    rejectResolveRef.current = null;
+    resolve?.(ok);
+  };
 
   const handleApproveDeposit = async (
     bookingId: string,
@@ -130,22 +147,35 @@ export default function AdminCashPage() {
     }
   };
 
-  const handleRejectDeposit = async (
+  const handleRejectDeposit = (
     bookingId: string,
     bookingCode: string,
   ): Promise<boolean> => {
+    settlePendingReject(false);
+    setRejectConfirmTarget({ bookingId, bookingCode });
+    return new Promise<boolean>((resolve) => {
+      rejectResolveRef.current = resolve;
+    });
+  };
+
+  const handleConfirmRejectDeposit = async () => {
+    if (!rejectConfirmTarget) return;
+    const { bookingId, bookingCode } = rejectConfirmTarget;
     setRejectingId(bookingId);
     setErrorMsg(null);
     setMsg(null);
     try {
-      const result = await rejectCajaDeposit(bookingId, bookingCode);
+      const result = await rejectCajaDeposit(data, bookingId, bookingCode);
       if (!result.ok) {
         setErrorMsg(result.error ?? 'No se pudo rechazar el comprobante.');
-        return false;
+        setRejectConfirmTarget(null);
+        settlePendingReject(false);
+        return;
       }
       setMsg(result.message ?? null);
+      setRejectConfirmTarget(null);
+      settlePendingReject(true);
       void refresh();
-      return true;
     } finally {
       setRejectingId(null);
     }
@@ -382,6 +412,25 @@ export default function AdminCashPage() {
           onTogglePackage={handleTogglePackage}
         />
       )}
+
+      {rejectConfirmTarget ? (
+        <ConfirmActionDialog
+          isOpen={Boolean(rejectConfirmTarget)}
+          onOpenChange={(open) => {
+            if (!open && !rejectingId) {
+              setRejectConfirmTarget(null);
+              settlePendingReject(false);
+            }
+          }}
+          title="¿Rechazar este comprobante?"
+          description={`Le avisaremos a la clienta de la cita ${rejectConfirmTarget.bookingCode} que no pudimos validar el recibo para que suba uno nuevo. Su horario seguirá apartado mientras tanto.`}
+          confirmLabel="Sí, rechazar"
+          cancelLabel="Volver"
+          variant="destructive"
+          isLoading={rejectingId === rejectConfirmTarget.bookingId}
+          onConfirm={() => void handleConfirmRejectDeposit()}
+        />
+      ) : null}
 
       {csvPinOpen ? (
         <OwnerPinDialog

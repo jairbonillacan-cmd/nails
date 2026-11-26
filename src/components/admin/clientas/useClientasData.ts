@@ -8,7 +8,7 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import type { ClientProfile, ServicePackage } from '@/lib/types';
+import type { ServicePackage } from '@/lib/types';
 import type { MetricTileItem } from '@/components/ui';
 import {
   buildLoyaltyByClientId,
@@ -27,11 +27,6 @@ import {
   type InactiveClientRow,
 } from './clientasTypes';
 
-interface ClientsQueryPayload {
-  clients: ClientProfile[];
-  nearRewardClients: AdminOverviewPayload['nearRewardClients'];
-}
-
 interface PackagesQueryPayload {
   servicePackages?: ServicePackage[];
   clientPackages?: ClientPackageRow[];
@@ -47,6 +42,7 @@ export function useClientasData(
   bookingEventSeq: number,
   paramTab: string | null,
   paramQuery: string,
+  hasSelectedClient: boolean,
 ) {
   const [activeTab, setActiveTab] = useState<ClientsTab>(
     () => resolveClientasTabParam(paramTab) ?? 'directory',
@@ -74,11 +70,6 @@ export function useClientasData(
     if (paramQuery) setQuery(paramQuery);
   });
 
-  const fetchClients = useCallback(
-    (signal: AbortSignal) =>
-      fetchAdminJson<ClientsQueryPayload>(ADMIN_CACHE_KEYS.clients, signal),
-    [],
-  );
   const fetchPackages = useCallback(
     (signal: AbortSignal) =>
       fetchAdminJson<PackagesQueryPayload>(ADMIN_CACHE_KEYS.packages, signal),
@@ -96,32 +87,27 @@ export function useClientasData(
     [inactiveKey],
   );
 
-  const clientsQuery = useAdminCachedQuery<ClientsQueryPayload>(
-    canManageClients ? ADMIN_CACHE_KEYS.clients : null,
-    fetchClients,
-    {
-      enabled: canManageClients,
-      initialData: providerData
-        ? {
-            clients: providerData.clients,
-            nearRewardClients: providerData.nearRewardClients,
-          }
-        : undefined,
-      staleTimeMs: 10_000,
-      revalidateKey: bookingEventSeq,
-    },
-  );
-
+  const shouldLoadPackages =
+    Boolean(providerData) && (activeTab === 'loyalty' || hasSelectedClient);
   const packagesQuery = useAdminCachedQuery<PackagesQueryPayload>(
     providerData ? ADMIN_CACHE_KEYS.packages : null,
     fetchPackages,
-    { enabled: Boolean(providerData), staleTimeMs: 10_000, revalidateKey: packagesSeq },
+    {
+      enabled: shouldLoadPackages,
+      staleTimeMs: 10_000,
+      revalidateKey: packagesSeq,
+    },
   );
 
+  const shouldLoadCampaigns = canManageClients && activeTab === 'retention';
   const campaignsQuery = useAdminCachedQuery<CampaignsPayload>(
     canManageClients ? ADMIN_CACHE_KEYS.campaigns : null,
     fetchCampaigns,
-    { enabled: canManageClients, staleTimeMs: 10_000, revalidateKey: campaignsSeq },
+    {
+      enabled: shouldLoadCampaigns,
+      staleTimeMs: 10_000,
+      revalidateKey: campaignsSeq,
+    },
   );
 
   const inactiveQuery = useAdminCachedQuery<InactiveClientsQueryPayload>(
@@ -134,16 +120,7 @@ export function useClientasData(
     },
   );
 
-  const data = useMemo<AdminOverviewPayload | null>(() => {
-    if (!providerData) return null;
-    const cachedClients = clientsQuery.data;
-    if (!cachedClients) return providerData;
-    return {
-      ...providerData,
-      clients: cachedClients.clients,
-      nearRewardClients: cachedClients.nearRewardClients,
-    };
-  }, [providerData, clientsQuery.data]);
+  const data = providerData;
 
   const servicePackages = useMemo(
     () => packagesQuery.data?.servicePackages ?? [],
@@ -208,6 +185,8 @@ export function useClientasData(
   const loyaltyHighlightsCount =
     (data?.nearRewardClients.length ?? 0) + activeClientPackages.length;
 
+  const hasLoadedCampaigns = campaignsQuery.data !== undefined;
+  const hasLoadedPackages = packagesQuery.data !== undefined;
   const kpiItems: MetricTileItem[] =
     data && data.retention
       ? [
@@ -222,7 +201,11 @@ export function useClientasData(
             id: 'comeback',
             label: 'Para invitar de vuelta',
             value: String(comebackCount),
-            sub: `${campaigns?.birthdays.length ?? 0} cumpleaños · ${displayedInactiveClients.length} sin cita (${inactiveDays}+ días)`,
+            sub: !canManageClients
+              ? `${displayedInactiveClients.length} sin cita (${inactiveDays}+ días)`
+              : hasLoadedCampaigns
+                ? `${campaigns?.birthdays.length ?? 0} cumpleaños · ${displayedInactiveClients.length} sin cita (${inactiveDays}+ días)`
+                : `${displayedInactiveClients.length} sin cita reciente · revisa cumpleaños`,
             tone: comebackCount > 0 ? 'warning' : 'success',
             interactive: true,
           },
@@ -230,7 +213,9 @@ export function useClientasData(
             id: 'loyalty',
             label: 'Sellos y paquetes',
             value: String(loyaltyHighlightsCount),
-            sub: `${data.nearRewardClients.length} cerca de premio · ${activeClientPackages.length} paquetes activos`,
+            sub: hasLoadedPackages
+              ? `${data.nearRewardClients.length} cerca de premio · ${activeClientPackages.length} paquetes activos`
+              : `${data.nearRewardClients.length} cerca de premio · ver paquetes`,
             interactive: true,
           },
         ]
@@ -267,7 +252,6 @@ export function useClientasData(
     campaignsLoading: campaignsQuery.isLoading,
     inactiveLoading: inactiveQuery.isLoading,
     inactiveError: inactiveQuery.error ? inactiveQuery.error.message : null,
-    revalidateClients: () => void clientsQuery.revalidate(),
     reloadCampaigns: () => setCampaignsSeq((prev) => prev + 1),
     reloadPackages: () => setPackagesSeq((prev) => prev + 1),
   };
