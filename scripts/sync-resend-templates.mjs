@@ -1073,8 +1073,10 @@ function buildVarArgs(variables) {
 function syncAllTemplates() {
   const existingRes = runResendCli(['templates', 'list', '--limit', '100', '--json']);
   const existingByAlias = new Map();
+  const existingByName = new Map();
   for (const item of existingRes.data ?? []) {
     if (item.alias) existingByAlias.set(item.alias, item);
+    if (item.name) existingByName.set(item.name, item);
   }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'laikona-resend-tpl-'));
@@ -1087,8 +1089,10 @@ function syncAllTemplates() {
       fs.writeFileSync(htmlPath, tpl.html, 'utf8');
       fs.writeFileSync(textPath, tpl.text, 'utf8');
 
-      const existing = existingByAlias.get(tpl.alias);
+      const existing = existingByAlias.get(tpl.alias) ?? existingByName.get(tpl.name);
       const commonArgs = [
+        '--alias',
+        tpl.alias,
         '--name',
         tpl.name,
         '--from',
@@ -1115,8 +1119,6 @@ function syncAllTemplates() {
         const created = runResendCli([
           'templates',
           'create',
-          '--alias',
-          tpl.alias,
           ...commonArgs,
         ]);
         id = created.id;
