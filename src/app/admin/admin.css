@@ -261,6 +261,19 @@
   object-fit: contain;
 }
 
+.ad-logo-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.75rem;
+  width: 2.75rem;
+}
+
+.ad-logo-compact .ad-logo {
+  width: 100%;
+  height: auto;
+}
+
 .ad-topbar-logo {
   display: inline-flex;
   align-items: center;
@@ -3429,6 +3442,18 @@ input.ad-pin-input,
   .ad-page-head {
     align-items: flex-start;
     padding-bottom: 0.25rem;
+  }
+
+  .ad-scroll-row,
+  .ad-scroll-row > * {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+
+  .ad-scroll-row * {
+    flex-shrink: 0;
   }
 
   .ad-page-actions {

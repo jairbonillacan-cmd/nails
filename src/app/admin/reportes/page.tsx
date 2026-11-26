@@ -85,8 +85,8 @@ export default function AdminReportsPage() {
     report?.scope === 'specialist' || data.session.user.role === 'specialist';
   const currency = report?.currency ?? data.settings.currency;
   const scopeSubtitle = isSpecialistScope
-    ? `Tus citas y resultados personales${report?.scopeStaffName ? ` (${report.scopeStaffName})` : ''} · ${PERIOD_LABELS[period]}`
-    : `Resumen de citas, ingresos y equipo · ${PERIOD_LABELS[period]}`;
+    ? `Tus citas y resultados${report?.scopeStaffName ? `, ${report.scopeStaffName}` : ''}.`
+    : 'Cómo le va al salón.';
 
   const kpiCards: MetricTileItem[] = report
     ? [

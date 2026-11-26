@@ -11,7 +11,6 @@ import { QrCode } from 'lucide-react';
 import { useClientOrigin } from '@/lib/hooks/useClientOrigin';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
-import { LANDING_ASSETS } from '../../landing/landingContent';
 import { getDisplayBookingUrl } from './dashboardMetrics';
 
 const DashboardQrDialog = dynamic(
@@ -71,19 +70,6 @@ export function DashboardShareCard({
   return (
     <>
       <VStack as="section" className="ad-cherry-card" aria-labelledby="ad-pg" gap={3}>
-        <img
-          src={LANDING_ASSETS.cherriesWhite}
-          alt=""
-          width={170}
-          height={170}
-          className="ad-cherry-art"
-          aria-hidden="true"
-        />
-
-        <Text color="inherit" weight="semibold" size="sm" className="ad-live-label ad-cherry-layer">
-          TU SALÓN EN LÍNEA
-        </Text>
-
         <Heading level={2} id="ad-pg" className="lk-serif ad-cherry-title ad-cherry-layer">
           Tu página de reservas
         </Heading>

@@ -67,7 +67,7 @@ export function GoogleCalendarSection({
                     <StatusTag
                       tone={conn?.isConnected ? 'success' : 'neutral'}
                       showDot={Boolean(conn?.isConnected)}
-                      label={conn?.isConnected ? 'Conectado' : 'Pendiente'}
+                      label={conn?.isConnected ? 'Conectado' : 'Sin conectar'}
                     />
                   </HStack>
 

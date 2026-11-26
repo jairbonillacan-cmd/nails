@@ -4,7 +4,6 @@ import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
-import { LANDING_ASSETS } from '../../landing/landingContent';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import type { NavGroupConfig, NavItemConfig, SidebarStaffRow } from './adminNavConfig';
 import { AdminNavGroups } from './AdminNavGroups';
@@ -61,15 +60,15 @@ export function AdminSidebar({
             <NextLink
               href="/admin"
               aria-label={`${data.settings.name}, inicio del panel`}
-              className="ad-brand-tile fx-press"
+              className="ad-logo-link ad-logo-compact fx-press"
             >
               <img
-                src={LANDING_ASSETS.cherriesWhite}
+                src={brandLogo}
                 alt=""
-                width={18}
-                height={18}
+                width={44}
+                height={12}
                 aria-hidden="true"
-                className="ad-brand-tile-mark"
+                className="ad-logo"
               />
             </NextLink>
           </Tooltip>

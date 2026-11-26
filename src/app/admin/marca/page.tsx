@@ -227,6 +227,7 @@ export default function AdminBrandPage() {
 
       <FilterPillBar<BrandEditorTab>
         ariaLabel="Secciones del editor de Mi página"
+        className="ad-scroll-row"
         value={activeTab}
         onChange={setActiveTab}
         options={[
