@@ -7,13 +7,23 @@ import path from 'node:path';
 const DEFAULT_FROM = 'LAIKONA NAILS <citas@laikona.devand.net>';
 const DEFAULT_REPLY_TO = 'jairbonillacan@gmail.com';
 const DEFAULT_SITE_URL = 'https://laikona.devand.net';
-const WORDMARK_BLACK_URL = 'https://laikona.devand.net/brand/email-wordmark-ink.png';
+
+const LOGO_BLACK_URL = 'https://laikona.devand.net/brand/email-wordmark-ink.png';
+const LOGO_WHITE_URL = 'https://laikona.devand.net/brand/email-wordmark-white.png';
 const STROKE_PORCELAIN_URL = 'https://laikona.devand.net/brand/email-stroke-porcelain.png';
-const WAVE_TO_WHITE_URL = 'https://laikona.devand.net/brand/email-wave-to-white.png';
+const STROKE_CEREZA_URL = 'https://laikona.devand.net/brand/email-stroke-cereza.png';
+const STROKE_ROSE_URL = 'https://laikona.devand.net/brand/email-stroke-rose.png';
+const CURVE_PORCELAIN_URL = 'https://laikona.devand.net/brand/email-curve-porcelain.png';
+const WAVE_TO_CHERRY_URL = 'https://laikona.devand.net/brand/email-wave-to-cherry.png';
 const HERO_BG_CHERRY_URL = 'https://laikona.devand.net/brand/email-hero-bg-cherry.png';
 const HERO_BG_OBSIDIAN_URL = 'https://laikona.devand.net/brand/email-hero-bg-obsidian.png';
-const CHERRIES_MARK_URL = 'https://laikona.devand.net/brand/email-cherries-mark.png';
+const FOOTER_BG_CHERRY_URL = 'https://laikona.devand.net/brand/email-footer-bg-cherry.png';
+const CHERRIES_DECOR_URL = 'https://laikona.devand.net/brand/email-cherries-mark.png';
+const CHERRIES_ROSE_URL = 'https://laikona.devand.net/brand/email-cherries-rose.png';
 const EDITORIAL_HERO_URL = 'https://laikona.devand.net/brand/email-editorial-hero.jpg';
+const SET_FLORAL_URL = 'https://laikona.devand.net/brand/email-set-floral.jpg';
+const SET_LACA_URL = 'https://laikona.devand.net/brand/email-set-laca.jpg';
+const WAITLIST_HERO_URL = 'https://laikona.devand.net/brand/email-waitlist-hero.jpg';
 
 const SERIF = "'Source Serif 4', Georgia, 'Times New Roman', serif";
 const SANS = "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
@@ -33,158 +43,73 @@ const C = {
   suaveInk: '#D8CFD1',
 };
 
-function renderWebShell({
-  preheader,
-  eyebrow,
-  badgeText,
-  headline,
-  heroImageUrl = null,
-  heroAlt = 'LAIKONA NAILS BY KARLA',
-  tone = 'cherry',
-  bodyHtml,
-  primaryCta,
-  secondaryCta,
-  footnoteHtml = '',
-}) {
-  const isAdmin = tone === 'obsidian';
-  const heroBg = isAdmin ? C.ink : C.cereza;
-  const heroBgUrl = isAdmin ? HERO_BG_OBSIDIAN_URL : HERO_BG_CHERRY_URL;
-  const eyebrowColor = isAdmin ? C.suaveInk : C.suave;
-  const ctaBg = isAdmin ? C.ink : C.cereza;
+function buildDarkModeRules(prefix = '') {
+  const s = (sel) => (prefix ? `${prefix} ${sel}` : sel);
+  return `
+      ${s('.dm-canvas')} { background-color: #110E0F !important; }
+      ${s('.dm-card')} { background-color: #1B1517 !important; border-color: #302528 !important; box-shadow: 0 20px 48px -28px rgba(0,0,0,0.7) !important; }
+      ${s('.dm-surface')} { background-color: #1B1517 !important; }
+      ${s('.dm-inset')} { background-color: #241C1F !important; border-color: #392C30 !important; }
+      ${s('.dm-tint')} { background-color: #341B21 !important; border-color: #5C2E39 !important; }
+      ${s('.dm-border')} { border-color: #34282C !important; }
+      ${s('.dm-border-l')} { border-left-color: #E57A89 !important; }
+      ${s('.dm-ink')} { color: #FAF5F5 !important; }
+      ${s('.dm-body')} { color: #DDD1D4 !important; }
+      ${s('.dm-muted')} { color: #AE9BA0 !important; }
+      ${s('.dm-accent')} { color: #E57A89 !important; }
+      ${s('.dm-link')} { color: #E57A89 !important; border-bottom-color: #703945 !important; }
+      ${s('.dm-pill-soft')} { background-color: #381D24 !important; color: #F5B8C2 !important; }
+      ${s('.dm-pill-muted')} { background-color: #2B2225 !important; color: #CBBCC0 !important; }
+      ${s('.dm-pill-dark')} { background-color: #FAF5F5 !important; color: #181314 !important; }
+      ${s('.dm-cta-cherry')} { background-color: #A22636 !important; background-image: linear-gradient(#A22636,#A22636) !important; }
+      ${s('.dm-cta-ink')} { background-color: #FAF5F5 !important; background-image: linear-gradient(#FAF5F5,#FAF5F5) !important; }
+      ${s('.dm-cta-ink a')} { color: #181314 !important; }
+      ${s('.dm-btn-sec')} { background-color: #292023 !important; border-color: #49383E !important; }
+      ${s('.dm-btn-sec a')} { color: #FAF5F5 !important; }
+      ${s('.dm-code-box')} { background-color: #120E0F !important; border-color: #392C30 !important; }
+      ${s('.dm-obsidian-hero')} { border: 1px solid #3A2E31 !important; }
+      ${s('.lk-only-light')} { display: none !important; max-height: 0 !important; overflow: hidden !important; }
+      ${s('.lk-only-dark')} { display: block !important; max-height: none !important; overflow: visible !important; }`;
+}
 
-  const badgeHtml = badgeText
-    ? `<td align="right" valign="middle" style="padding-left:12px;">
-                      <span style="display:inline-block;padding:4px 11px;border-radius:999px;background-color:rgba(255,255,255,0.16);font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.04em;color:${C.white};white-space:nowrap;font-variant-numeric:tabular-nums;">${badgeText}</span>
-                    </td>`
-    : '';
-
-  const heroPhotoHtml = heroImageUrl
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
-                <tr>
-                  <td style="line-height:0;font-size:0;border-radius:18px;overflow:hidden;">
-                    <img src="${heroImageUrl}" alt="${heroAlt}" width="488" style="display:block;width:100%;max-width:488px;height:auto;border:0;border-radius:18px;" />
-                  </td>
-                </tr>
-              </table>`
-    : '';
-
-  const primaryCtaHtml = primaryCta
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;">
-                <tr>
-                  <td align="center" bgcolor="${ctaBg}" style="background-color:${ctaBg};border-radius:999px;">
-                    <a href="${primaryCta.href}" style="display:block;padding:15px 26px;font-family:${SANS};font-size:14.5px;font-weight:600;line-height:1.2;color:${C.white};text-decoration:none;text-align:center;border-radius:999px;">
-                      ${primaryCta.label}
-                    </a>
-                  </td>
-                </tr>
-              </table>`
-    : '';
-
-  const secondaryCtaHtml = secondaryCta
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;">
-                <tr>
-                  <td align="center" bgcolor="${C.rosa}" style="background-color:${C.rosa};border:1px solid ${C.lineaStrong};border-radius:999px;">
-                    <a href="${secondaryCta.href}" style="display:block;padding:13px 24px;font-family:${SANS};font-size:13.5px;font-weight:600;line-height:1.2;color:${C.ink};text-decoration:none;text-align:center;border-radius:999px;">
-                      ${secondaryCta.label}
-                    </a>
-                  </td>
-                </tr>
-              </table>`
-    : '';
-
-  const noteHtml = footnoteHtml
-    ? `<p style="margin:20px 0 0;font-family:${SANS};font-size:12.5px;line-height:1.65;color:${C.muted};text-align:center;">${footnoteHtml}</p>`
-    : '';
-
+function wrapDocument({ title, preheader, maxWidth = 560, cardHtml }) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="color-scheme" content="light" />
-  <title>${headline}</title>
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>${title}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&display=swap');
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    @media (prefers-color-scheme: dark) {${buildDarkModeRules('')}
+    }
+    ${buildDarkModeRules('[data-ogsc]')}
+    ${buildDarkModeRules('html.lk-force-dark')}
     @media only screen and (max-width:600px) {
       .lk-outer { padding: 14px 8px 24px !important; }
       .lk-card { border-radius: 20px !important; }
-      .lk-pad { padding-left: 22px !important; padding-right: 22px !important; }
-      .lk-hero-pad { padding: 24px 22px 10px !important; }
+      .lk-pad { padding-left: 20px !important; padding-right: 20px !important; }
+      .lk-hero-box { padding: 24px 20px 22px !important; }
       .lk-h1 { font-size: 27px !important; line-height: 1.06 !important; }
+      .lk-h1-lg { font-size: 30px !important; line-height: 1.04 !important; }
+      .lk-time-xl { font-size: 38px !important; }
       .lk-otp { font-size: 32px !important; letter-spacing: 8px !important; padding-left: 8px !important; }
       .lk-row-label { width: 42% !important; font-size: 10.5px !important; }
       .lk-row-val { font-size: 13.5px !important; }
+      .lk-kpi-val { font-size: 22px !important; }
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background-color:${C.rosa};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+<body class="dm-canvas" style="margin:0;padding:0;background-color:${C.rosa};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${preheader}&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="lk-outer" style="background-color:${C.rosa};padding:28px 12px 40px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="lk-outer dm-canvas" style="background-color:${C.rosa};padding:28px 12px 40px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.white}" class="lk-card" style="max-width:560px;background-color:${C.white};border:1px solid ${C.linea};border-radius:24px;overflow:hidden;box-shadow:0 20px 48px -32px rgba(139,30,43,0.28);">
-          <tr>
-            <td align="center" bgcolor="${C.white}" style="background-color:${C.white};padding:18px 28px 16px;border-bottom:1px solid ${C.tinte};">
-              <a href="{{{SITE_URL}}}" style="text-decoration:none;border:0;display:inline-block;">
-                <img src="${WORDMARK_BLACK_URL}" alt="LAIKONA NAILS BY KARLA" width="142" style="display:block;width:142px;max-width:100%;height:auto;border:0;margin:0 auto;" />
-              </a>
-            </td>
-          </tr>
-          <tr>
-            <td bgcolor="${heroBg}" background="${heroBgUrl}" style="background-color:${heroBg};background-image:url('${heroBgUrl}');background-repeat:no-repeat;background-position:right top;background-size:cover;padding:0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td class="lk-hero-pad" style="padding:28px 36px 14px;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td valign="middle" style="font-family:${SANS};font-size:10.5px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:${eyebrowColor};">
-                          ${eyebrow}
-                        </td>
-                        ${badgeHtml}
-                      </tr>
-                    </table>
-                    <h1 class="lk-h1" style="margin:12px 0 10px;font-family:${SERIF};font-size:34px;font-weight:500;line-height:1.04;letter-spacing:-0.025em;color:${C.white};">
-                      ${headline}
-                    </h1>
-                    <img src="${STROKE_PORCELAIN_URL}" alt="" width="128" style="display:block;width:128px;max-width:44%;height:auto;border:0;" />
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:0;line-height:0;font-size:0;">
-                    <img src="${WAVE_TO_WHITE_URL}" alt="" width="560" style="display:block;width:100%;height:auto;border:0;" />
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td class="lk-pad" bgcolor="${C.white}" style="background-color:${C.white};padding:22px 36px 34px;">
-              ${bodyHtml}
-              ${heroPhotoHtml}
-              ${primaryCtaHtml}
-              ${secondaryCtaHtml}
-              ${noteHtml}
-            </td>
-          </tr>
-          <tr>
-            <td class="lk-pad" align="center" bgcolor="${C.rosa}" style="background-color:${C.rosa};border-top:1px solid ${C.linea};padding:26px 36px 30px;">
-              <img src="${CHERRIES_MARK_URL}" alt="" width="22" height="26" style="display:block;width:22px;height:26px;margin:0 auto 12px;border:0;" />
-              <p style="margin:0;font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:${C.ink};">
-                {{{SALON_NAME}}}
-              </p>
-              <p style="margin:6px 0 0;font-family:${SANS};font-size:12.5px;line-height:1.55;color:${C.body};">
-                {{{ADDRESS}}}
-              </p>
-              <p style="margin:4px 0 0;font-family:${SANS};font-size:11.5px;line-height:1.5;color:${C.muted};font-variant-numeric:tabular-nums;">
-                Lunes a sábado &middot; 10:00 a 6:00 &middot; Solo con cita
-              </p>
-              <p style="margin:12px 0 0;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.muted};">
-                <span style="color:${C.cereza};font-weight:600;">{{{INSTAGRAM_HANDLE}}}</span>
-                &nbsp;&nbsp;<span style="color:${C.cereza};">&#10047;</span>&nbsp;&nbsp;
-                <a href="{{{SITE_URL}}}" style="color:${C.body};text-decoration:none;border-bottom:1px solid ${C.lineaStrong};padding-bottom:1px;">{{{SITE_URL}}}</a>
-              </p>
-            </td>
-          </tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.white}" class="lk-card dm-card" style="max-width:${maxWidth}px;background-color:${C.white};border:1px solid ${C.linea};border-radius:24px;overflow:hidden;box-shadow:0 20px 48px -32px rgba(139,30,43,0.26);">
+          ${cardHtml}
         </table>
       </td>
     </tr>
@@ -193,10 +118,157 @@ function renderWebShell({
 </html>`;
 }
 
-function renderSummaryCard(rows, { title = null, highlightLast = false, accentColor = C.cereza } = {}) {
+function renderOfficialLogo({ width = 148, align = 'center' } = {}) {
+  const margin = align === 'center' ? 'margin:0 auto;' : 'margin:0;';
+  const whiteWidth = Math.round(width * 0.88);
+  return `<a href="{{{SITE_URL}}}" style="text-decoration:none;border:0;display:inline-block;">
+                <img class="lk-only-light" src="${LOGO_BLACK_URL}" alt="LAIKONA NAILS BY KARLA" width="${width}" style="display:block;width:${width}px;max-width:100%;height:auto;border:0;${margin}" />
+                <img class="lk-only-dark" src="${LOGO_WHITE_URL}" alt="LAIKONA NAILS BY KARLA" width="${whiteWidth}" style="display:none;max-height:0;overflow:hidden;mso-hide:all;width:${whiteWidth}px;max-width:100%;height:auto;border:0;${margin}" />
+              </a>`;
+}
+
+function renderAdaptiveStroke({ width = 132, align = 'center', marginBottom = 16 } = {}) {
+  const margin = align === 'center' ? `margin:0 auto ${marginBottom}px;` : `margin:0 0 ${marginBottom}px;`;
+  return `<img class="lk-only-light" src="${STROKE_CEREZA_URL}" alt="" width="${width}" style="display:block;width:${width}px;max-width:48%;height:auto;border:0;${margin}" />
+              <img class="lk-only-dark" src="${STROKE_ROSE_URL}" alt="" width="${width}" style="display:none;max-height:0;overflow:hidden;mso-hide:all;width:${width}px;max-width:48%;height:auto;border:0;${margin}" />`;
+}
+
+function renderAdaptiveCherriesDecor({ width = 28, height = 34 } = {}) {
+  return `<img class="lk-only-light" src="${CHERRIES_DECOR_URL}" alt="" width="${width}" height="${height}" style="display:block;width:${width}px;height:${height}px;border:0;opacity:0.88;" />
+              <img class="lk-only-dark" src="${CHERRIES_ROSE_URL}" alt="" width="${width}" height="${height}" style="display:none;max-height:0;overflow:hidden;mso-hide:all;width:${width}px;height:${height}px;border:0;opacity:0.92;" />`;
+}
+
+function renderMarqueeRow(items) {
+  const joined = items.join('&nbsp;&nbsp;&#10047;&nbsp;&nbsp;');
+  return `<tr>
+            <td align="center" bgcolor="${C.cereza}" style="background-color:${C.cereza};background-image:linear-gradient(${C.cereza},${C.cereza});padding:9px 16px;font-family:${SANS};font-size:11px;font-weight:500;letter-spacing:0.04em;color:${C.white};">
+              ${joined}
+            </td>
+          </tr>`;
+}
+
+function renderCenteredLogoBar({ width = 152, borderBottom = true, topRuleColor = null } = {}) {
+  const topRule = topRuleColor
+    ? `<tr><td height="3" bgcolor="${topRuleColor}" style="background-color:${topRuleColor};background-image:linear-gradient(${topRuleColor},${topRuleColor});height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>`
+    : '';
+  const borderClass = borderBottom ? ' dm-border' : '';
+  const borderCss = borderBottom ? `border-bottom:1px solid ${C.tinte};` : '';
+  return `${topRule}
+          <tr>
+            <td align="center" bgcolor="${C.white}" class="dm-surface${borderClass}" style="background-color:${C.white};padding:16px 28px 14px;${borderCss}">
+              ${renderOfficialLogo({ width, align: 'center' })}
+            </td>
+          </tr>`;
+}
+
+function renderSplitLogoBar({
+  pillText,
+  pillBg = C.tinte,
+  pillColor = C.cereza,
+  pillDarkClass = 'dm-pill-soft',
+  topRuleColor = null,
+  borderBottom = true,
+} = {}) {
+  const topRule = topRuleColor
+    ? `<tr><td height="3" bgcolor="${topRuleColor}" style="background-color:${topRuleColor};background-image:linear-gradient(${topRuleColor},${topRuleColor});height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>`
+    : '';
+  const borderClass = borderBottom ? ' dm-border' : '';
+  const borderCss = borderBottom ? `border-bottom:1px solid ${C.tinte};` : '';
+  return `${topRule}
+          <tr>
+            <td class="lk-pad dm-surface${borderClass}" bgcolor="${C.white}" style="background-color:${C.white};padding:14px 32px;${borderCss}">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td valign="middle" align="left">
+                    ${renderOfficialLogo({ width: 136, align: 'left' })}
+                  </td>
+                  <td valign="middle" align="right" style="padding-left:10px;">
+                    <span class="${pillDarkClass}" style="display:inline-block;padding:5px 12px;border-radius:999px;background-color:${pillBg};font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.04em;color:${pillColor};white-space:nowrap;font-variant-numeric:tabular-nums;">${pillText}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`;
+}
+
+function renderRoundedHeroCard({ eyebrow, badgeText, headline, tone = 'cherry' }) {
+  const isAdmin = tone === 'obsidian';
+  const heroBg = isAdmin ? C.ink : C.cereza;
+  const heroBgUrl = isAdmin ? HERO_BG_OBSIDIAN_URL : HERO_BG_CHERRY_URL;
+  const eyebrowColor = isAdmin ? C.suaveInk : C.suave;
+  const extraClass = isAdmin ? ' dm-obsidian-hero' : '';
+  const badgeHtml = badgeText
+    ? `<td align="right" valign="middle" style="padding-left:12px;">
+                      <span style="display:inline-block;padding:4px 11px;border-radius:999px;background-color:rgba(255,255,255,0.16);font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.04em;color:${C.white};white-space:nowrap;font-variant-numeric:tabular-nums;">${badgeText}</span>
+                    </td>`
+    : '';
+
+  return `<tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:18px 28px 4px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${heroBg}" background="${heroBgUrl}" class="${extraClass}" style="background-color:${heroBg};background-image:url('${heroBgUrl}');background-repeat:no-repeat;background-position:right top;background-size:cover;border-radius:20px;overflow:hidden;">
+                <tr>
+                  <td class="lk-hero-box" style="padding:26px 28px 24px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td valign="middle" style="font-family:${SANS};font-size:10.5px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:${eyebrowColor};">
+                          ${eyebrow}
+                        </td>
+                        ${badgeHtml}
+                      </tr>
+                    </table>
+                    <h1 class="lk-h1" style="margin:12px 0 10px;font-family:${SERIF};font-size:33px;font-weight:500;line-height:1.04;letter-spacing:-0.025em;color:${C.white};">
+                      ${headline}
+                    </h1>
+                    <img src="${STROKE_PORCELAIN_URL}" alt="" width="126" style="display:block;width:126px;max-width:44%;height:auto;border:0;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`;
+}
+
+function renderPillCta({ label, href, tone = 'cherry', marginTop = 24 }) {
+  const isInk = tone === 'obsidian';
+  const bg = isInk ? C.ink : C.cereza;
+  const darkCls = isInk ? 'dm-cta-ink' : 'dm-cta-cherry';
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:${marginTop}px;">
+                <tr>
+                  <td align="center" bgcolor="${bg}" class="${darkCls}" style="background-color:${bg};background-image:linear-gradient(${bg},${bg});border-radius:999px;">
+                    <a href="${href}" style="display:block;padding:15px 26px;font-family:${SANS};font-size:14.5px;font-weight:600;line-height:1.2;color:${C.white};text-decoration:none;text-align:center;border-radius:999px;">
+                      ${label}
+                    </a>
+                  </td>
+                </tr>
+              </table>`;
+}
+
+function renderSecondaryPill({ label, href, marginTop = 10 }) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:${marginTop}px;">
+                <tr>
+                  <td align="center" bgcolor="${C.rosa}" class="dm-btn-sec" style="background-color:${C.rosa};border:1px solid ${C.lineaStrong};border-radius:999px;">
+                    <a href="${href}" style="display:block;padding:13px 24px;font-family:${SANS};font-size:13.5px;font-weight:600;line-height:1.2;color:${C.ink};text-decoration:none;text-align:center;border-radius:999px;">
+                      ${label}
+                    </a>
+                  </td>
+                </tr>
+              </table>`;
+}
+
+function renderTextLink({ label, href, marginTop = 16 }) {
+  return `<p class="dm-body" style="margin:${marginTop}px 0 0;text-align:center;font-family:${SANS};font-size:13.5px;font-weight:500;line-height:1.5;color:${C.body};">
+                <a href="${href}" class="dm-link" style="color:${C.cereza};text-decoration:none;border-bottom:1px solid ${C.lineaStrong};padding-bottom:2px;">${label}</a>
+              </p>`;
+}
+
+function renderFootnote(text, marginTop = 18) {
+  return `<p class="dm-muted" style="margin:${marginTop}px 0 0;font-family:${SANS};font-size:12.5px;line-height:1.65;color:${C.muted};text-align:center;">${text}</p>`;
+}
+
+function renderSummaryCard(rows, { title = null, highlightLast = false, accentColor = C.cereza, marginTop = 20 } = {}) {
+  const titleAccentClass = accentColor === C.ink ? 'dm-ink' : 'dm-accent';
   const titleRow = title
     ? `<tr>
-                  <td colspan="2" style="padding:14px 0 8px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${accentColor};border-bottom:1px solid ${C.linea};">
+                  <td colspan="2" class="${titleAccentClass} dm-border" style="padding:14px 0 8px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${accentColor};border-bottom:1px solid ${C.linea};">
                     ${title}
                   </td>
                 </tr>`
@@ -206,22 +278,24 @@ function renderSummaryCard(rows, { title = null, highlightLast = false, accentCo
     .map(([label, value], i) => {
       const isLast = i === rows.length - 1;
       const borderStyle = isLast ? '' : `border-bottom:1px solid ${C.linea};`;
+      const borderClass = isLast ? '' : ' dm-border';
       const isHighlight = highlightLast && isLast;
       const valFont = isHighlight
         ? `font-family:${SERIF};font-size:19px;font-weight:500;color:${accentColor};`
         : `font-family:${SANS};font-size:14px;font-weight:600;color:${C.ink};`;
+      const valDarkClass = isHighlight ? (accentColor === C.ink ? 'dm-ink' : 'dm-accent') : 'dm-ink';
       return `<tr>
-                  <td class="lk-row-label" style="${borderStyle}padding:12px 10px 12px 0;font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};width:38%;vertical-align:top;">
+                  <td class="lk-row-label dm-muted${borderClass}" style="${borderStyle}padding:12px 10px 12px 0;font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};width:38%;vertical-align:top;">
                     ${label}
                   </td>
-                  <td align="right" class="lk-row-val" style="${borderStyle}padding:12px 0;${valFont}line-height:1.4;vertical-align:top;font-variant-numeric:tabular-nums;">
+                  <td align="right" class="lk-row-val ${valDarkClass}${borderClass}" style="${borderStyle}padding:12px 0;${valFont}line-height:1.4;vertical-align:top;font-variant-numeric:tabular-nums;">
                     ${value}
                   </td>
                 </tr>`;
     })
     .join('\n');
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" style="margin-top:22px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:18px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="dm-inset" style="margin-top:${marginTop}px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:18px;">
                 <tr>
                   <td style="padding:4px 20px;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -233,14 +307,34 @@ function renderSummaryCard(rows, { title = null, highlightLast = false, accentCo
               </table>`;
 }
 
+function renderHairlineRows(rows, { marginTop = 20 } = {}) {
+  const trs = rows
+    .map(([label, value], i) => {
+      const topBorder = i === 0 ? `border-top:1px solid ${C.linea};` : '';
+      return `<tr>
+                  <td class="lk-row-label dm-muted dm-border" style="${topBorder}border-bottom:1px solid ${C.linea};padding:12px 10px 12px 0;font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};width:38%;vertical-align:top;">
+                    ${label}
+                  </td>
+                  <td align="right" class="lk-row-val dm-ink dm-border" style="${topBorder}border-bottom:1px solid ${C.linea};padding:12px 0;font-family:${SANS};font-size:14px;font-weight:500;line-height:1.45;color:${C.ink};vertical-align:top;font-variant-numeric:tabular-nums;">
+                    ${value}
+                  </td>
+                </tr>`;
+    })
+    .join('\n');
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:${marginTop}px;">
+                ${trs}
+              </table>`;
+}
+
 function renderTipsList(tips) {
   const rows = tips
     .map(
       (tip, i) => `<tr>
-                  <td width="32" valign="top" style="padding:6px 0;">
-                    <span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:999px;background-color:${C.tinte};color:${C.cereza};font-family:${SANS};font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;">${i + 1}</span>
+                  <td width="32" valign="top" style="padding:5px 0;">
+                    <span class="dm-pill-soft" style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:999px;background-color:${C.tinte};color:${C.cereza};font-family:${SANS};font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;">${i + 1}</span>
                   </td>
-                  <td valign="top" style="padding:7px 0 7px 6px;font-family:${SANS};font-size:13.5px;line-height:1.6;color:${C.body};">
+                  <td valign="top" class="dm-body" style="padding:6px 0 6px 6px;font-family:${SANS};font-size:13.5px;line-height:1.6;color:${C.body};">
                     ${tip}
                   </td>
                 </tr>`,
@@ -249,12 +343,74 @@ function renderTipsList(tips) {
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
                 <tr>
-                  <td colspan="2" style="padding-bottom:6px;font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.ink};">
+                  <td colspan="2" class="dm-ink" style="padding-bottom:6px;font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.ink};">
                     Para tu visita
                   </td>
                 </tr>
                 ${rows}
               </table>`;
+}
+
+function renderLightFooter({ compact = false } = {}) {
+  if (compact) {
+    return `<tr>
+            <td class="lk-pad dm-surface dm-border" align="center" bgcolor="${C.white}" style="background-color:${C.white};border-top:1px solid ${C.linea};padding:20px 28px 24px;">
+              <div style="margin-bottom:8px;">
+                ${renderOfficialLogo({ width: 102, align: 'center' })}
+              </div>
+              <p class="dm-muted" style="margin:0;font-family:${SANS};font-size:11.5px;line-height:1.55;color:${C.muted};">
+                {{{ADDRESS}}} &nbsp;<span class="dm-accent" style="color:${C.cereza};">&#10047;</span>&nbsp;
+                <a href="{{{SITE_URL}}}" class="dm-body" style="color:${C.body};text-decoration:none;">{{{SITE_URL}}}</a>
+              </p>
+            </td>
+          </tr>`;
+  }
+
+  return `<tr>
+            <td class="lk-pad dm-surface dm-border" align="center" bgcolor="${C.white}" style="background-color:${C.white};border-top:1px solid ${C.linea};padding:24px 36px 28px;">
+              <div style="margin-bottom:10px;">
+                ${renderOfficialLogo({ width: 118, align: 'center' })}
+              </div>
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:12.5px;line-height:1.55;color:${C.body};">
+                {{{ADDRESS}}}
+              </p>
+              <p class="dm-muted" style="margin:4px 0 0;font-family:${SANS};font-size:11.5px;line-height:1.5;color:${C.muted};font-variant-numeric:tabular-nums;">
+                Lunes a sábado &middot; 10:00 a 6:00 &middot; Solo con cita
+              </p>
+              <p class="dm-muted" style="margin:12px 0 0;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.muted};">
+                <span class="dm-accent" style="color:${C.cereza};font-weight:600;">{{{INSTAGRAM_HANDLE}}}</span>
+                &nbsp;&nbsp;<span class="dm-accent" style="color:${C.cereza};">&#10047;</span>&nbsp;&nbsp;
+                <a href="{{{SITE_URL}}}" class="dm-body dm-border" style="color:${C.body};text-decoration:none;border-bottom:1px solid ${C.lineaStrong};padding-bottom:1px;">{{{SITE_URL}}}</a>
+              </p>
+            </td>
+          </tr>`;
+}
+
+function renderCherryFooter() {
+  return `<tr>
+            <td bgcolor="${C.white}" class="dm-surface" style="background-color:${C.white};padding:0;line-height:0;font-size:0;">
+              <img src="${WAVE_TO_CHERRY_URL}" alt="" width="560" style="display:block;width:100%;height:auto;border:0;" />
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad" align="center" bgcolor="${C.cereza}" background="${FOOTER_BG_CHERRY_URL}" style="background-color:${C.cereza};background-image:url('${FOOTER_BG_CHERRY_URL}');background-repeat:no-repeat;background-position:right bottom;background-size:cover;padding:20px 36px 32px;">
+              <a href="{{{SITE_URL}}}" style="text-decoration:none;border:0;display:inline-block;">
+                <img src="${LOGO_WHITE_URL}" alt="LAIKONA NAILS BY KARLA" width="144" style="display:block;width:144px;height:auto;border:0;margin:0 auto 6px;" />
+              </a>
+              <img src="${CURVE_PORCELAIN_URL}" alt="" width="92" style="display:block;width:92px;height:auto;border:0;margin:0 auto 14px;opacity:0.78;" />
+              <p style="margin:0;font-family:${SANS};font-size:12.5px;line-height:1.6;color:${C.white};">
+                {{{ADDRESS}}}
+              </p>
+              <p style="margin:4px 0 0;font-family:${SANS};font-size:11.5px;line-height:1.5;color:${C.suave};font-variant-numeric:tabular-nums;">
+                Lunes a sábado &middot; 10:00 a 6:00 &middot; Solo con cita
+              </p>
+              <p style="margin:14px 0 0;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.suave};">
+                <span style="color:${C.white};font-weight:600;">{{{INSTAGRAM_HANDLE}}}</span>
+                &nbsp;&nbsp;&#10047;&nbsp;&nbsp;
+                <a href="{{{SITE_URL}}}" style="color:${C.white};text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.45);padding-bottom:1px;">{{{SITE_URL}}}</a>
+              </p>
+            </td>
+          </tr>`;
 }
 
 const COMMON_FOOTER_VARS = [
@@ -285,26 +441,38 @@ export const RESEND_TEMPLATES = [
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Apartamos tu espacio.',
       preheader: 'Apartamos tu espacio {{{BOOKING_CODE}}}. Realiza tu anticipo SPEI para confirmarlo.',
-      eyebrow: 'ANTICIPO PENDIENTE',
-      badgeText: '{{{BOOKING_CODE}}}',
-      headline: 'Apartamos tu espacio.',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, reservamos provisionalmente tu horario en el estudio. Para dejar tu cita confirmada, realiza tu transferencia SPEI y sube tu comprobante desde tu enlace personal.
+      cardHtml: `
+          ${renderSplitLogoBar({ pillText: '{{{BOOKING_CODE}}}' })}
+          ${renderRoundedHeroCard({
+            eyebrow: 'PASO FINAL · ANTICIPO SPEI',
+            badgeText: 'Por confirmar',
+            headline: 'Apartamos tu espacio.',
+            tone: 'cherry',
+          })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:20px 36px 34px;">
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, tu lugar está apartado de forma provisional. Completa estos dos pasos rápidos para dejarlo confirmado:
               </p>
-              ${renderSummaryCard(
-                [
-                  ['Servicio', '{{{SERVICE_NAME}}}'],
-                  ['Artista', '{{{STAFF_NAME}}}'],
-                  ['Fecha', '{{{DATE_LABEL}}}'],
-                  ['Horario', '{{{TIME_LABEL}}}'],
-                  ['Total aprox.', '{{{TOTAL_LABEL}}}'],
-                ],
-                { title: 'Resumen de tu cita', highlightLast: true },
-              )}
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.cereza}" style="margin-top:18px;background-color:${C.cereza};border-radius:20px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;">
+                <tr>
+                  <td width="48%" valign="top" bgcolor="${C.rosa}" class="dm-inset" style="background-color:${C.rosa};border:1px solid ${C.linea};border-radius:14px;padding:12px 14px;">
+                    <span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:999px;background-color:${C.cereza};color:${C.white};font-family:${SANS};font-size:11px;font-weight:700;">1</span>
+                    <p class="dm-ink" style="margin:8px 0 0;font-family:${SANS};font-size:13px;font-weight:600;color:${C.ink};line-height:1.35;">Transfiere {{{DEPOSIT_LABEL}}}</p>
+                    <p class="dm-muted" style="margin:2px 0 0;font-family:${SANS};font-size:12px;color:${C.muted};line-height:1.4;">A la CLABE de abajo</p>
+                  </td>
+                  <td width="4%">&nbsp;</td>
+                  <td width="48%" valign="top" bgcolor="${C.rosa}" class="dm-inset" style="background-color:${C.rosa};border:1px solid ${C.linea};border-radius:14px;padding:12px 14px;">
+                    <span class="dm-pill-soft" style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:999px;background-color:${C.tinte};color:${C.cereza};font-family:${SANS};font-size:11px;font-weight:700;">2</span>
+                    <p class="dm-ink" style="margin:8px 0 0;font-family:${SANS};font-size:13px;font-weight:600;color:${C.ink};line-height:1.35;">Sube tu comprobante</p>
+                    <p class="dm-muted" style="margin:2px 0 0;font-family:${SANS};font-size:12px;color:${C.muted};line-height:1.4;">Desde tu enlace personal</p>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.cereza}" style="margin-top:18px;background-color:${C.cereza};background-image:linear-gradient(${C.cereza},${C.cereza});border-radius:20px;">
                 <tr>
                   <td style="padding:22px 24px;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -317,7 +485,7 @@ export const RESEND_TEMPLATES = [
                         </td>
                       </tr>
                     </table>
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.2);">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.22);">
                       <tr>
                         <td style="padding-top:14px;font-family:${SANS};font-size:13.5px;line-height:1.65;color:${C.white};">
                           <span style="color:${C.suave};">Banco:</span>&nbsp; {{{BANK_NAME}}}<br />
@@ -339,17 +507,23 @@ export const RESEND_TEMPLATES = [
                     </table>
                   </td>
                 </tr>
-              </table>`,
-      primaryCta: {
-        label: 'Subir comprobante y ver mi cita',
-        href: '{{{MANAGE_URL}}}',
-      },
-      secondaryCta: {
-        label: 'Enviar comprobante por WhatsApp',
-        href: '{{{WHATSAPP_URL}}}',
-      },
-      footnoteHtml:
-        'Adjuntamos tu invitación de calendario (.ics) lista para guardar en un clic.',
+              </table>
+              ${renderSummaryCard(
+                [
+                  ['Servicio', '{{{SERVICE_NAME}}}'],
+                  ['Artista', '{{{STAFF_NAME}}}'],
+                  ['Fecha', '{{{DATE_LABEL}}}'],
+                  ['Horario', '{{{TIME_LABEL}}}'],
+                  ['Total aprox.', '{{{TOTAL_LABEL}}}'],
+                ],
+                { title: 'Resumen de tu cita', highlightLast: true, marginTop: 18 },
+              )}
+              ${renderPillCta({ label: 'Subir comprobante y ver mi cita', href: '{{{MANAGE_URL}}}' })}
+              ${renderSecondaryPill({ label: 'Enviar comprobante por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
+              ${renderFootnote('Adjuntamos tu invitación de calendario (.ics) lista para guardar en un clic.')}
+            </td>
+          </tr>
+          ${renderLightFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 ANTICIPO PENDIENTE · {{{BOOKING_CODE}}}
@@ -359,17 +533,17 @@ Apartamos tu espacio.
 Hola {{{CLIENT_NAME}}},
 Reservamos provisionalmente tu horario en el estudio. Para dejar tu cita confirmada, realiza tu anticipo SPEI y sube tu comprobante desde tu enlace personal.
 
+ANTICIPO PARA APARTAR — {{{DEPOSIT_LABEL}}}
+Banco: {{{BANK_NAME}}}
+Titular: {{{BENEFICIARY}}}
+CLABE: {{{CLABE}}}
+
 RESUMEN DE TU CITA
 Servicio: {{{SERVICE_NAME}}}
 Artista: {{{STAFF_NAME}}}
 Fecha: {{{DATE_LABEL}}}
 Horario: {{{TIME_LABEL}}}
 Total aprox.: {{{TOTAL_LABEL}}}
-
-ANTICIPO PARA APARTAR — {{{DEPOSIT_LABEL}}}
-Banco: {{{BANK_NAME}}}
-Titular: {{{BENEFICIARY}}}
-CLABE: {{{CLABE}}}
 
 Subir comprobante y ver mi cita: {{{MANAGE_URL}}}
 WhatsApp del estudio: {{{WHATSAPP_URL}}}
@@ -397,42 +571,82 @@ Adjuntamos tu invitación de calendario (.ics).
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Tu lugar está listo.',
       preheader: 'Tu cita {{{BOOKING_CODE}}} de {{{SERVICE_NAME}}} con {{{STAFF_NAME}}} está confirmada.',
-      eyebrow: 'CITA CONFIRMADA',
-      badgeText: '{{{BOOKING_CODE}}}',
-      headline: 'Tu lugar está listo.',
-      heroImageUrl: EDITORIAL_HERO_URL,
-      heroAlt: 'Manicure editorial cereza en LAIKONA NAILS BY KARLA',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, qué gusto recibirte pronto. Tu cita en <strong style="color:${C.ink};">{{{SALON_NAME}}}</strong> ha quedado confirmada y preparada especialmente para ti.
-              </p>
-              ${renderSummaryCard(
-                [
-                  ['Servicio', '{{{SERVICE_NAME}}}'],
-                  ['Artista', '{{{STAFF_NAME}}}'],
-                  ['Fecha', '{{{DATE_LABEL}}}'],
-                  ['Horario', '{{{TIME_LABEL}}}'],
-                  ['Total', '{{{TOTAL_LABEL}}}'],
-                ],
-                { title: 'Tu cita', highlightLast: true },
-              )}
+      cardHtml: `
+          ${renderMarqueeRow(['Solo con cita', 'Puebla', 'Cita confirmada'])}
+          ${renderCenteredLogoBar({ width: 156, borderBottom: false })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:2px 32px 0;line-height:0;font-size:0;">
+              <img src="${EDITORIAL_HERO_URL}" alt="Manicure editorial cereza en LAIKONA NAILS BY KARLA" width="496" style="display:block;width:100%;max-width:496px;height:auto;border:0;border-radius:18px;" />
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:26px 36px 26px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center">
+                    <span class="dm-pill-soft" style="display:inline-block;padding:4px 12px;border-radius:999px;background-color:${C.tinte};font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${C.cereza};font-variant-numeric:tabular-nums;">
+                      Confirmada &middot; {{{BOOKING_CODE}}}
+                    </span>
+                    <h1 class="lk-h1-lg dm-ink" style="margin:12px 0 8px;font-family:${SERIF};font-size:36px;font-weight:500;line-height:1.02;letter-spacing:-0.025em;color:${C.ink};">
+                      Tu lugar está listo.
+                    </h1>
+                    ${renderAdaptiveStroke({ width: 136, align: 'center', marginBottom: 16 })}
+                    <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+                      Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, qué gusto recibirte pronto en <strong class="dm-ink" style="color:${C.ink};">{{{SALON_NAME}}}</strong>. Ya reservamos tu mesa y preparamos todo para tu visita.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="dm-inset" style="margin-top:22px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:20px;overflow:hidden;">
+                <tr>
+                  <td bgcolor="${C.tinte}" class="dm-tint dm-border" style="background-color:${C.tinte};padding:16px 20px;border-bottom:1px solid ${C.linea};">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td valign="middle">
+                          <p class="dm-accent" style="margin:0;font-family:${SANS};font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.cereza};">Fecha</p>
+                          <p class="dm-ink" style="margin:3px 0 0;font-family:${SANS};font-size:14.5px;font-weight:700;color:${C.ink};">{{{DATE_LABEL}}}</p>
+                        </td>
+                        <td align="right" valign="middle" style="padding-left:10px;">
+                          <p class="dm-accent" style="margin:0;font-family:${SANS};font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.cereza};">Horario</p>
+                          <p class="dm-accent" style="margin:3px 0 0;font-family:${SERIF};font-size:22px;font-weight:500;line-height:1;color:${C.cereza};font-variant-numeric:tabular-nums;">{{{TIME_LABEL}}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td class="lk-row-label dm-muted dm-border" style="border-bottom:1px solid ${C.linea};padding:12px 10px 12px 0;font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};width:38%;">Servicio</td>
+                        <td align="right" class="lk-row-val dm-ink dm-border" style="border-bottom:1px solid ${C.linea};padding:12px 0;font-family:${SANS};font-size:14px;font-weight:600;color:${C.ink};">{{{SERVICE_NAME}}}</td>
+                      </tr>
+                      <tr>
+                        <td class="lk-row-label dm-muted dm-border" style="border-bottom:1px solid ${C.linea};padding:12px 10px 12px 0;font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};width:38%;">Artista</td>
+                        <td align="right" class="lk-row-val dm-ink dm-border" style="border-bottom:1px solid ${C.linea};padding:12px 0;font-family:${SANS};font-size:14px;font-weight:600;color:${C.ink};">{{{STAFF_NAME}}}</td>
+                      </tr>
+                      <tr>
+                        <td class="lk-row-label dm-muted" style="padding:12px 10px 12px 0;font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};width:38%;">Total</td>
+                        <td align="right" class="lk-row-val dm-accent" style="padding:12px 0;font-family:${SERIF};font-size:19px;font-weight:500;color:${C.cereza};font-variant-numeric:tabular-nums;">{{{TOTAL_LABEL}}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
               ${renderTipsList([
                 'Llega 5 a 10 minutos antes para comenzar con calma.',
                 'Cuidamos cada set con 15 minutos máximos de tolerancia.',
                 'Si ya tienes foto de inspiración, tráela lista para revisarla juntas.',
-              ])}`,
-      primaryCta: {
-        label: 'Ver detalles o reagendar',
-        href: '{{{MANAGE_URL}}}',
-      },
-      secondaryCta: {
-        label: 'Escribir por WhatsApp al estudio',
-        href: '{{{WHATSAPP_URL}}}',
-      },
-      footnoteHtml:
-        'Adjuntamos tu invitación de calendario (.ics) para guardarla con un clic.',
+              ])}
+              ${renderPillCta({ label: 'Ver detalles o reagendar', href: '{{{MANAGE_URL}}}' })}
+              ${renderSecondaryPill({ label: 'Escribir por WhatsApp al estudio', href: '{{{WHATSAPP_URL}}}' })}
+              ${renderFootnote('Adjuntamos tu invitación de calendario (.ics) para guardarla con un clic.')}
+            </td>
+          </tr>
+          ${renderCherryFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CITA CONFIRMADA · {{{BOOKING_CODE}}}
@@ -478,35 +692,54 @@ Adjuntamos tu archivo de calendario (.ics).
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Mañana te esperamos.',
       preheader: 'Mañana tienes cita de {{{SERVICE_NAME}}} a las {{{TIME_LABEL}}} con {{{STAFF_NAME}}}.',
-      eyebrow: 'RECORDATORIO · 24 HORAS',
-      badgeText: '{{{BOOKING_CODE}}}',
-      headline: 'Mañana te esperamos.',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, te compartimos los detalles de tu cita de mañana en el estudio. Si necesitas mover tu horario, puedes hacerlo directo desde tu enlace personal.
+      cardHtml: `
+          ${renderSplitLogoBar({ pillText: 'Mañana · {{{BOOKING_CODE}}}', topRuleColor: C.cereza })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:28px 36px 34px;">
+              <p class="dm-accent" style="margin:0 0 6px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:${C.cereza};">
+                Recordatorio &middot; 24 horas
               </p>
-              ${renderSummaryCard(
+              <h1 class="lk-h1 dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:34px;font-weight:500;line-height:1.05;letter-spacing:-0.025em;color:${C.ink};">
+                Mañana te esperamos.
+              </h1>
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, te recordamos tu cita de mañana en el estudio. Si necesitas mover tu horario, puedes hacerlo directo desde tu enlace personal.
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="dm-inset dm-border-l" style="margin-top:22px;background-color:${C.rosa};border:1px solid ${C.linea};border-left:4px solid ${C.cereza};border-radius:16px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td valign="middle">
+                          <p class="dm-muted" style="margin:0;font-family:${SANS};font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${C.muted};">Tu horario de mañana</p>
+                          <p class="dm-accent" style="margin:4px 0 0;font-family:${SERIF};font-size:32px;font-weight:500;line-height:1.05;color:${C.cereza};font-variant-numeric:tabular-nums;">{{{TIME_LABEL}}}</p>
+                          <p class="dm-ink" style="margin:6px 0 0;font-family:${SANS};font-size:13.5px;font-weight:600;color:${C.ink};">{{{DATE_LABEL}}}</p>
+                        </td>
+                        <td align="right" valign="middle" width="40">
+                          ${renderAdaptiveCherriesDecor({ width: 28, height: 34 })}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              ${renderHairlineRows(
                 [
                   ['Servicio', '{{{SERVICE_NAME}}}'],
                   ['Artista', '{{{STAFF_NAME}}}'],
-                  ['Fecha', '{{{DATE_LABEL}}}'],
-                  ['Horario', '{{{TIME_LABEL}}}'],
                   ['Ubicación', '{{{ADDRESS}}}'],
                 ],
-                { title: 'Tu visita de mañana' },
-              )}`,
-      primaryCta: {
-        label: 'Gestionar mi cita',
-        href: '{{{MANAGE_URL}}}',
-      },
-      secondaryCta: {
-        label: 'Avisar por WhatsApp',
-        href: '{{{WHATSAPP_URL}}}',
-      },
-      footnoteHtml:
-        'Te agradecemos avisar cualquier cambio con anticipación para cuidar tu anticipo.',
+                { marginTop: 20 },
+              )}
+              ${renderPillCta({ label: 'Gestionar mi cita', href: '{{{MANAGE_URL}}}', marginTop: 26 })}
+              ${renderTextLink({ label: '¿Necesitas avisarnos algo? Escríbenos por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
+              ${renderFootnote('Te agradecemos avisar cualquier cambio con anticipación para cuidar tu anticipo.')}
+            </td>
+          </tr>
+          ${renderLightFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 RECORDATORIO 24 H · {{{BOOKING_CODE}}}
@@ -541,41 +774,62 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Nos vemos muy pronto.',
       preheader: 'Hoy es tu cita a las {{{TIME_LABEL}}} con {{{STAFF_NAME}}} en {{{SALON_NAME}}}.',
-      eyebrow: 'HOY EN EL ESTUDIO',
-      badgeText: '{{{BOOKING_CODE}}}',
-      headline: 'Nos vemos muy pronto.',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, tu mesa está por quedar lista. Te esperamos hoy en <strong style="color:${C.ink};">{{{SALON_NAME}}}</strong>:
-              </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" style="margin-top:22px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:20px;">
+      cardHtml: `
+          ${renderCenteredLogoBar({ width: 148, borderBottom: false })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:6px 24px 28px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.cereza}" background="${FOOTER_BG_CHERRY_URL}" style="background-color:${C.cereza};background-image:url('${FOOTER_BG_CHERRY_URL}');background-repeat:no-repeat;background-position:right bottom;background-size:cover;border-radius:22px;overflow:hidden;">
                 <tr>
-                  <td align="center" style="padding:26px 20px;">
-                    <p style="margin:0 0 6px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${C.muted};">
-                      Horario de hoy
+                  <td align="center" style="padding:32px 26px 30px;">
+                    <span style="display:inline-block;padding:5px 13px;border-radius:999px;background-color:rgba(255,255,255,0.16);font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.white};font-variant-numeric:tabular-nums;">
+                      Hoy en el estudio &middot; {{{BOOKING_CODE}}}
+                    </span>
+                    <p style="margin:20px 0 4px;font-family:${SANS};font-size:14px;color:${C.suave};">
+                      Hola <strong style="color:${C.white};">{{{CLIENT_NAME}}}</strong>, tu mesa te espera a las
                     </p>
-                    <p style="margin:0;font-family:${SERIF};font-size:42px;font-weight:500;line-height:1;letter-spacing:-0.02em;color:${C.cereza};font-variant-numeric:tabular-nums;">
+                    <p class="lk-time-xl" style="margin:0;font-family:${SERIF};font-size:50px;font-weight:500;line-height:1;letter-spacing:-0.025em;color:${C.white};font-variant-numeric:tabular-nums;">
                       {{{TIME_LABEL}}}
                     </p>
-                    <p style="margin:12px 0 0;font-family:${SANS};font-size:14.5px;font-weight:600;color:${C.ink};">
-                      {{{SERVICE_NAME}}} &nbsp;&middot;&nbsp; con {{{STAFF_NAME}}}
-                    </p>
-                    <p style="margin:6px 0 0;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.muted};">
-                      {{{ADDRESS}}}
-                    </p>
+                    <img src="${STROKE_PORCELAIN_URL}" alt="" width="128" style="display:block;width:128px;max-width:48%;height:auto;border:0;margin:12px auto 18px;" />
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:rgba(255,255,255,0.12);border-radius:16px;">
+                      <tr>
+                        <td align="center" style="padding:14px 16px;">
+                          <p style="margin:0;font-family:${SANS};font-size:15px;font-weight:600;color:${C.white};">
+                            {{{SERVICE_NAME}}} &nbsp;&middot;&nbsp; con {{{STAFF_NAME}}}
+                          </p>
+                          <p style="margin:5px 0 0;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.suave};">
+                            {{{ADDRESS}}}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
+                      <tr>
+                        <td align="center" bgcolor="${C.white}" style="background-color:${C.white};background-image:linear-gradient(${C.white},${C.white});border-radius:999px;">
+                          <a href="{{{MANAGE_URL}}}" style="display:block;padding:15px 24px;font-family:${SANS};font-size:14.5px;font-weight:700;line-height:1.2;color:${C.cereza};text-decoration:none;text-align:center;border-radius:999px;">
+                            Abrir ubicación y detalles
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;">
+                      <tr>
+                        <td align="center" style="border:1.5px solid rgba(255,255,255,0.58);border-radius:999px;">
+                          <a href="{{{WHATSAPP_URL}}}" style="display:block;padding:12px 22px;font-family:${SANS};font-size:13.5px;font-weight:600;line-height:1.2;color:${C.white};text-decoration:none;text-align:center;border-radius:999px;">
+                            ¿Vienes en camino? Escríbenos por WhatsApp
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
-              </table>`,
-      primaryCta: {
-        label: 'Abrir ubicación y detalles',
-        href: '{{{MANAGE_URL}}}',
-      },
-      secondaryCta: {
-        label: '¿Vienes en camino? Escríbenos por WhatsApp',
-        href: '{{{WHATSAPP_URL}}}',
-      },
+              </table>
+            </td>
+          </tr>
+          ${renderLightFooter({ compact: true })}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 HOY EN EL ESTUDIO · {{{BOOKING_CODE}}}
@@ -610,34 +864,58 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Actualizamos tu cita.',
       preheader: 'Actualizamos tu cita {{{BOOKING_CODE}}} al {{{DATE_LABEL}}} a las {{{TIME_LABEL}}}.',
-      eyebrow: 'CAMBIO DE HORARIO',
-      badgeText: '{{{BOOKING_CODE}}}',
-      headline: 'Actualizamos tu cita.',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, guardamos tu nueva fecha sin problema. Estos son los datos actualizados de tu próxima visita:
-              </p>
-              ${renderSummaryCard(
+      cardHtml: `
+          ${renderCenteredLogoBar({ width: 148, borderBottom: true })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:30px 36px 34px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center">
+                    <p class="dm-accent" style="margin:0 0 8px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${C.cereza};">
+                      Cambio de horario &middot; {{{BOOKING_CODE}}}
+                    </p>
+                    <h1 class="lk-h1 dm-ink" style="margin:0 0 10px;font-family:${SERIF};font-size:34px;font-weight:500;line-height:1.04;letter-spacing:-0.025em;color:${C.ink};">
+                      Actualizamos tu cita.
+                    </h1>
+                    ${renderAdaptiveStroke({ width: 132, align: 'center', marginBottom: 18 })}
+                    <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+                      Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, guardamos tu nueva fecha sin problema. Así queda tu próxima visita:
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.tinte}" class="dm-tint" style="margin-top:22px;background-color:${C.tinte};border:1px solid ${C.lineaStrong};border-radius:18px;">
+                <tr>
+                  <td align="center" style="padding:20px 18px;">
+                    <p class="dm-accent" style="margin:0 0 4px;font-family:${SANS};font-size:10px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${C.cereza};">
+                      Nuevo horario confirmado
+                    </p>
+                    <p class="dm-ink" style="margin:0;font-family:${SERIF};font-size:26px;font-weight:500;line-height:1.2;color:${C.ink};font-variant-numeric:tabular-nums;">
+                      {{{DATE_LABEL}}}
+                    </p>
+                    <p class="dm-accent" style="margin:4px 0 0;font-family:${SERIF};font-size:24px;font-weight:500;line-height:1.1;color:${C.cereza};font-variant-numeric:tabular-nums;">
+                      {{{TIME_LABEL}}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              ${renderHairlineRows(
                 [
-                  ['Nueva fecha', '{{{DATE_LABEL}}}'],
-                  ['Nuevo horario', '{{{TIME_LABEL}}}'],
                   ['Servicio', '{{{SERVICE_NAME}}}'],
                   ['Artista', '{{{STAFF_NAME}}}'],
+                  ['Código', '{{{BOOKING_CODE}}}'],
                 ],
-                { title: 'Nuevo horario confirmado' },
-              )}`,
-      primaryCta: {
-        label: 'Ver mi cita actualizada',
-        href: '{{{MANAGE_URL}}}',
-      },
-      secondaryCta: {
-        label: 'Escribir por WhatsApp al estudio',
-        href: '{{{WHATSAPP_URL}}}',
-      },
-      footnoteHtml:
-        'Adjuntamos el archivo .ics actualizado para reemplazar la fecha anterior en tu calendario.',
+                { marginTop: 18 },
+              )}
+              ${renderPillCta({ label: 'Ver mi cita actualizada', href: '{{{MANAGE_URL}}}', marginTop: 26 })}
+              ${renderSecondaryPill({ label: 'Escribir por WhatsApp al estudio', href: '{{{WHATSAPP_URL}}}' })}
+              ${renderFootnote('Adjuntamos el archivo .ics actualizado para reemplazar la fecha anterior en tu calendario.')}
+            </td>
+          </tr>
+          ${renderLightFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CAMBIO DE HORARIO · {{{BOOKING_CODE}}}
@@ -674,32 +952,39 @@ Adjuntamos tu archivo .ics actualizado.
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Tu cita ha sido cancelada.',
       preheader: 'Confirmamos la cancelación de tu cita {{{BOOKING_CODE}}} en {{{SALON_NAME}}}.',
-      eyebrow: 'CANCELACIÓN CONFIRMADA',
-      badgeText: '{{{BOOKING_CODE}}}',
-      headline: 'Tu cita ha sido cancelada.',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, liberamos tu espacio en agenda tal como se solicitó. Cuando desees agendar de nuevo, estaremos encantadas de recibirte.
+      cardHtml: `
+          ${renderSplitLogoBar({
+            pillText: 'Cancelada · {{{BOOKING_CODE}}}',
+            pillBg: C.rosa,
+            pillColor: C.muted,
+            pillDarkClass: 'dm-pill-muted',
+            topRuleColor: C.ink,
+          })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:30px 36px 34px;">
+              <h1 class="lk-h1 dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:32px;font-weight:500;line-height:1.08;letter-spacing:-0.02em;color:${C.ink};">
+                Tu cita ha sido cancelada.
+              </h1>
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, liberamos tu espacio en agenda tal como se solicitó. Cuando quieras volver a agendar, aquí te esperamos con gusto.
               </p>
-              ${renderSummaryCard(
+              ${renderHairlineRows(
                 [
                   ['Servicio', '{{{SERVICE_NAME}}}'],
                   ['Artista', '{{{STAFF_NAME}}}'],
                   ['Fecha original', '{{{DATE_LABEL}}} · {{{TIME_LABEL}}}'],
                   ['Nota', '{{{CANCELLATION_NOTE}}}'],
                 ],
-                { title: 'Detalle de cancelación' },
-              )}`,
-      primaryCta: {
-        label: 'Agendar una nueva fecha',
-        href: '{{{BOOKING_URL}}}',
-      },
-      secondaryCta: {
-        label: '¿Necesitas ayuda? Escríbenos por WhatsApp',
-        href: '{{{WHATSAPP_URL}}}',
-      },
+                { marginTop: 22 },
+              )}
+              ${renderPillCta({ label: 'Agendar una nueva fecha', href: '{{{BOOKING_URL}}}', tone: 'obsidian', marginTop: 28 })}
+              ${renderTextLink({ label: '¿Necesitas ayuda? Escríbenos por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
+            </td>
+          </tr>
+          ${renderLightFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CANCELACIÓN · {{{BOOKING_CODE}}}
@@ -731,34 +1016,59 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'WHATSAPP_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/links` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: '¿Lista para tu retoque?',
       preheader: 'Ya casi cumplen 3 semanas tus uñas. Aparta tu retoque en {{{SALON_NAME}}}.',
-      eyebrow: 'CUIDADO DE TU SET',
-      badgeText: '3 semanas',
-      headline: '¿Lista para tu retoque?',
-      heroImageUrl: EDITORIAL_HERO_URL,
-      heroAlt: 'Set editorial cereza en LAIKONA NAILS BY KARLA',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, ya casi cumplen tres semanas desde tu último servicio de <strong style="color:${C.ink};">{{{SERVICE_NAME}}}</strong> con {{{STAFF_NAME}}}. Renovar tu set a tiempo mantiene tu uña natural fuerte, ligera y con estructura impecable.
-              </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" style="margin-top:20px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:18px;">
+      cardHtml: `
+          ${renderMarqueeRow(['3 semanas después', 'Ritual de retoque', 'Puebla'])}
+          ${renderCenteredLogoBar({ width: 152, borderBottom: false })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:4px 32px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="padding:18px 22px;">
-                    <p style="margin:0;font-family:${SERIF};font-style:italic;font-size:17px;line-height:1.55;color:${C.ink};">
+                  <td width="48.5%" style="line-height:0;font-size:0;">
+                    <img src="${SET_FLORAL_URL}" alt="Set flor coral en LAIKONA NAILS" width="240" style="display:block;width:100%;height:auto;border:0;border-radius:16px;" />
+                  </td>
+                  <td width="3%">&nbsp;</td>
+                  <td width="48.5%" style="line-height:0;font-size:0;">
+                    <img src="${SET_LACA_URL}" alt="Set rojo laca y dorado en LAIKONA NAILS" width="240" style="display:block;width:100%;height:auto;border:0;border-radius:16px;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:26px 36px 28px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center">
+                    <p class="dm-accent" style="margin:0 0 8px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${C.cereza};">
+                      Cuidado de tu set &middot; 3 semanas
+                    </p>
+                    <h1 class="lk-h1-lg dm-ink" style="margin:0 0 8px;font-family:${SERIF};font-size:36px;font-weight:500;line-height:1.04;letter-spacing:-0.025em;color:${C.ink};">
+                      ¿Lista para tu retoque?
+                    </h1>
+                    ${renderAdaptiveStroke({ width: 136, align: 'center', marginBottom: 18 })}
+                  </td>
+                </tr>
+              </table>
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.75;color:${C.body};text-align:center;">
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, ya casi cumplen tres semanas desde tu último servicio de <strong class="dm-ink" style="color:${C.ink};">{{{SERVICE_NAME}}}</strong> con {{{STAFF_NAME}}}. Renovar tu set a tiempo mantiene tu uña natural fuerte, ligera y con estructura impecable.
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="dm-inset dm-border-l" style="margin-top:22px;background-color:${C.rosa};border-left:3px solid ${C.cereza};border-radius:0 16px 16px 0;">
+                <tr>
+                  <td style="padding:16px 20px;">
+                    <p class="dm-ink" style="margin:0;font-family:${SERIF};font-style:italic;font-size:17px;line-height:1.55;color:${C.ink};">
                       “El secreto de unas uñas que siempre se ven impecables está en el retoque a tiempo.”
                     </p>
                   </td>
                 </tr>
-              </table>`,
-      primaryCta: {
-        label: 'Apartar mi retoque en línea',
-        href: '{{{BOOKING_URL}}}',
-      },
-      secondaryCta: {
-        label: 'Consultar horarios por WhatsApp',
-        href: '{{{WHATSAPP_URL}}}',
-      },
+              </table>
+              ${renderPillCta({ label: 'Apartar mi retoque en línea', href: '{{{BOOKING_URL}}}', marginTop: 26 })}
+              ${renderTextLink({ label: 'Consultar horarios por WhatsApp', href: '{{{WHATSAPP_URL}}}' })}
+            </td>
+          </tr>
+          ${renderCherryFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 CUIDADO DE TU SET · 3 SEMANAS
@@ -788,32 +1098,58 @@ WhatsApp: {{{WHATSAPP_URL}}}
       { key: 'OFFER_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/reservar` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Se abrió un lugar para ti.',
       preheader: 'Tienes {{{TTL_MINUTES}}} minutos de prioridad para apartar el espacio del {{{DATE_LABEL}}}.',
-      eyebrow: 'LISTA DE ESPERA',
-      badgeText: 'Prioridad {{{TTL_MINUTES}}} min',
-      headline: 'Se abrió un lugar para ti.',
-      heroImageUrl: EDITORIAL_HERO_URL,
-      heroAlt: 'Espacio disponible en LAIKONA NAILS BY KARLA',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, acaba de liberarse un espacio que coincide con tu solicitud en el estudio. Lo mantenemos reservado de forma prioritaria para ti durante los próximos <strong style="color:${C.cereza};">{{{TTL_MINUTES}}} minutos</strong>.
+      cardHtml: `
+          ${renderSplitLogoBar({
+            pillText: 'Prioridad · {{{TTL_MINUTES}}} min',
+            pillBg: C.cereza,
+            pillColor: C.white,
+            pillDarkClass: 'dm-cta-cherry',
+            borderBottom: false,
+          })}
+          <tr>
+            <td style="padding:0;line-height:0;font-size:0;">
+              <img src="${WAITLIST_HERO_URL}" alt="Set rojo laca y dorado en LAIKONA NAILS" width="560" style="display:block;width:100%;height:auto;border:0;" />
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad" bgcolor="${C.cereza}" style="background-color:${C.cereza};background-image:linear-gradient(${C.cereza},${C.cereza});padding:18px 36px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td valign="middle">
+                    <p style="margin:0;font-family:${SANS};font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:${C.suave};">Lugar disponible ahora</p>
+                    <p style="margin:3px 0 0;font-family:${SERIF};font-size:23px;font-weight:500;line-height:1.15;color:${C.white};">{{{DATE_LABEL}}}</p>
+                  </td>
+                  <td align="right" valign="middle" style="padding-left:10px;">
+                    <span style="display:inline-block;padding:8px 14px;border-radius:999px;background-color:${C.white};font-family:${SERIF};font-size:18px;font-weight:600;color:${C.cereza};white-space:nowrap;font-variant-numeric:tabular-nums;">{{{TIME_LABEL}}}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:26px 36px 34px;">
+              <h1 class="lk-h1 dm-ink" style="margin:0 0 12px;font-family:${SERIF};font-size:32px;font-weight:500;line-height:1.06;letter-spacing:-0.02em;color:${C.ink};">
+                Se abrió un lugar para ti.
+              </h1>
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, acaba de liberarse un horario que coincide con tu solicitud. Lo apartamos con prioridad exclusiva para ti durante los próximos <strong class="dm-accent" style="color:${C.cereza};">{{{TTL_MINUTES}}} minutos</strong>.
               </p>
-              ${renderSummaryCard(
+              ${renderHairlineRows(
                 [
                   ['Servicio', '{{{SERVICE_NAME}}}'],
                   ['Artista', '{{{STAFF_NAME}}}'],
-                  ['Fecha', '{{{DATE_LABEL}}}'],
-                  ['Horario libre', '{{{TIME_LABEL}}}'],
+                  ['Fecha y hora', '{{{DATE_LABEL}}} · {{{TIME_LABEL}}}'],
                 ],
-                { title: 'Espacio disponible' },
-              )}`,
-      primaryCta: {
-        label: 'Tomar este horario ahora',
-        href: '{{{OFFER_URL}}}',
-      },
-      footnoteHtml:
-        'Al concluir los {{{TTL_MINUTES}}} minutos el espacio se libera automáticamente para la siguiente persona en lista.',
+                { marginTop: 20 },
+              )}
+              ${renderPillCta({ label: 'Tomar este horario ahora', href: '{{{OFFER_URL}}}', marginTop: 26 })}
+              ${renderFootnote('Al concluir los {{{TTL_MINUTES}}} minutos el espacio se libera automáticamente para la siguiente persona en lista.')}
+            </td>
+          </tr>
+          ${renderLightFooter()}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 LISTA DE ESPERA · PRIORIDAD {{{TTL_MINUTES}}} MIN
@@ -843,35 +1179,41 @@ Tomar este horario ahora: {{{OFFER_URL}}}
       { key: 'PORTAL_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/mis-citas` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: 'Tu código de acceso.',
       preheader: 'Tu código privado de {{{SALON_NAME}}} es {{{OTP_CODE}}}. Válido por {{{EXPIRES_MINUTES}}} minutos.',
-      eyebrow: 'PORTAL MIS CITAS',
-      badgeText: 'Acceso privado',
-      headline: 'Tu código de acceso.',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
-                Hola <strong style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, ingresa este código de un solo uso para consultar tus próximas citas, historial y sellos de fidelidad:
+      maxWidth: 468,
+      cardHtml: `
+          ${renderCenteredLogoBar({ width: 142, borderBottom: true, topRuleColor: C.cereza })}
+          <tr>
+            <td class="lk-pad dm-surface" align="center" bgcolor="${C.white}" style="background-color:${C.white};padding:30px 32px 32px;">
+              <span class="dm-pill-soft" style="display:inline-block;padding:4px 12px;border-radius:999px;background-color:${C.tinte};font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${C.cereza};">
+                Portal Mis citas
+              </span>
+              <h1 class="lk-h1 dm-ink" style="margin:12px 0 8px;font-family:${SERIF};font-size:30px;font-weight:500;line-height:1.08;letter-spacing:-0.02em;color:${C.ink};">
+                Tu código de acceso
+              </h1>
+              ${renderAdaptiveStroke({ width: 112, align: 'center', marginBottom: 16 })}
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:14.5px;line-height:1.68;color:${C.body};">
+                Hola <strong class="dm-ink" style="color:${C.ink};">{{{CLIENT_NAME}}}</strong>, usa este código de un solo uso para ver tus citas, historial y sellos de fidelidad:
               </p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" style="margin-top:22px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:20px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" class="dm-inset" style="margin-top:22px;background-color:${C.rosa};border:1.5px solid ${C.lineaStrong};border-radius:18px;">
                 <tr>
-                  <td align="center" style="padding:28px 16px;">
-                    <p class="lk-otp" style="margin:0;font-family:${MONO};font-size:38px;font-weight:700;letter-spacing:10px;color:${C.cereza};padding-left:10px;line-height:1.1;">
+                  <td align="center" style="padding:26px 14px;">
+                    <p class="lk-otp dm-accent" style="margin:0;font-family:${MONO};font-size:38px;font-weight:700;letter-spacing:10px;color:${C.cereza};padding-left:10px;line-height:1.1;">
                       {{{OTP_CODE}}}
                     </p>
-                    <p style="margin:14px 0 0;">
-                      <span style="display:inline-block;padding:5px 12px;border-radius:999px;background-color:${C.tinte};font-family:${SANS};font-size:11px;font-weight:600;color:${C.cereza};font-variant-numeric:tabular-nums;">
-                        Válido por {{{EXPIRES_MINUTES}}} minutos &middot; Uso personal
-                      </span>
+                    <p class="dm-muted" style="margin:14px 0 0;font-family:${SANS};font-size:11.5px;font-weight:600;color:${C.muted};font-variant-numeric:tabular-nums;">
+                      Válido por {{{EXPIRES_MINUTES}}} minutos &middot; Uso personal
                     </p>
                   </td>
                 </tr>
-              </table>`,
-      primaryCta: {
-        label: 'Ir a Mis citas',
-        href: '{{{PORTAL_URL}}}',
-      },
-      footnoteHtml:
-        'Si no solicitaste este código, puedes ignorar este correo; nadie puede entrar sin él.',
+              </table>
+              ${renderPillCta({ label: 'Ir a Mis citas', href: '{{{PORTAL_URL}}}', marginTop: 22 })}
+              ${renderFootnote('Si no solicitaste este código, puedes ignorar este correo; nadie puede entrar sin él.')}
+            </td>
+          </tr>
+          ${renderLightFooter({ compact: true })}`,
     }),
     text: `LAIKONA NAILS BY KARLA · PUEBLA
 PORTAL MIS CITAS · ACCESO PRIVADO
@@ -905,14 +1247,25 @@ Ir a Mis citas: {{{PORTAL_URL}}}
       { key: 'ADMIN_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/admin/citas` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: '{{{ALERT_HEADING}}}',
       preheader: '{{{ALERT_HEADING}}} ({{{BOOKING_CODE}}}) — {{{CLIENT_NAME}}}.',
-      eyebrow: 'PANEL ESTUDIO · {{{ALERT_BADGE}}}',
-      badgeText: '{{{BOOKING_CODE}}}',
-      tone: 'obsidian',
-      headline: '{{{ALERT_HEADING}}}',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+      cardHtml: `
+          ${renderSplitLogoBar({
+            pillText: 'Panel Estudio',
+            pillBg: C.ink,
+            pillColor: C.white,
+            pillDarkClass: 'dm-pill-dark',
+          })}
+          ${renderRoundedHeroCard({
+            eyebrow: 'AVISO INTERNO · {{{ALERT_BADGE}}}',
+            badgeText: '{{{BOOKING_CODE}}}',
+            headline: '{{{ALERT_HEADING}}}',
+            tone: 'obsidian',
+          })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:20px 36px 32px;">
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
                 {{{ALERT_DETAIL}}}
               </p>
               ${renderSummaryCard(
@@ -924,11 +1277,11 @@ Ir a Mis citas: {{{PORTAL_URL}}}
                   ['Fecha y hora', '{{{DATE_LABEL}}} · {{{TIME_LABEL}}}'],
                 ],
                 { title: 'Movimiento en agenda', accentColor: C.ink },
-              )}`,
-      primaryCta: {
-        label: 'Abrir agenda en Admin',
-        href: '{{{ADMIN_URL}}}',
-      },
+              )}
+              ${renderPillCta({ label: 'Abrir agenda en Admin', href: '{{{ADMIN_URL}}}', tone: 'obsidian', marginTop: 24 })}
+            </td>
+          </tr>
+          ${renderLightFooter({ compact: true })}`,
     }),
     text: `LAIKONA NAILS · PANEL ESTUDIO
 {{{ALERT_BADGE}}} · {{{BOOKING_CODE}}}
@@ -962,43 +1315,66 @@ Abrir agenda en Admin: {{{ADMIN_URL}}}
       { key: 'CAJA_URL', type: 'string', fallback: `${DEFAULT_SITE_URL}/admin/caja?tab=anticipos` },
       ...COMMON_FOOTER_VARS,
     ],
-    html: renderWebShell({
+    html: wrapDocument({
+      title: '{{{HEADING_TEXT}}}',
       preheader: 'Respalda {{{ASSETS_COUNT}}} archivo(s) antes de su purga automática en {{{STAGE_LABEL}}}.',
-      eyebrow: 'RESPALDO CONTABLE',
-      badgeText: 'En {{{STAGE_LABEL}}}',
-      tone: 'obsidian',
-      headline: '{{{HEADING_TEXT}}}',
-      bodyHtml: `
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.72;color:${C.body};">
+      cardHtml: `
+          ${renderSplitLogoBar({
+            pillText: 'En {{{STAGE_LABEL}}}',
+            pillBg: C.tinte,
+            pillColor: C.cereza,
+            pillDarkClass: 'dm-pill-soft',
+            topRuleColor: C.ink,
+          })}
+          <tr>
+            <td class="lk-pad dm-surface" bgcolor="${C.white}" style="background-color:${C.white};padding:28px 36px 32px;">
+              <p class="dm-accent" style="margin:0 0 6px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:${C.cereza};">
+                Respaldo contable &middot; Retención anual
+              </p>
+              <h1 class="lk-h1 dm-ink" style="margin:0 0 14px;font-family:${SERIF};font-size:30px;font-weight:500;line-height:1.1;letter-spacing:-0.02em;color:${C.ink};">
+                {{{HEADING_TEXT}}}
+              </h1>
+              <p class="dm-body" style="margin:0;font-family:${SANS};font-size:14.5px;line-height:1.7;color:${C.body};">
                 {{{INTRO_TEXT}}}
               </p>
-              ${renderSummaryCard(
-                [
-                  ['Archivos en lote', '{{{ASSETS_COUNT}}}'],
-                  ['Comprobantes SPEI', '{{{PROOFS_COUNT}}}'],
-                  ['Fotos de referencia', '{{{INSPO_COUNT}}}'],
-                  ['Peso total', '{{{TOTAL_SIZE}}}'],
-                ],
-                { title: 'Resumen del lote', accentColor: C.ink },
-              )}
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.rosa}" style="margin-top:16px;background-color:${C.rosa};border:1px solid ${C.linea};border-radius:16px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
+                <tr>
+                  <td width="31.5%" align="center" bgcolor="${C.rosa}" class="dm-inset" style="background-color:${C.rosa};border:1px solid ${C.linea};border-radius:16px;padding:14px 8px;">
+                    <p class="dm-muted" style="margin:0;font-family:${SANS};font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${C.muted};">Archivos</p>
+                    <p class="lk-kpi-val dm-ink" style="margin:4px 0 0;font-family:${SERIF};font-size:26px;font-weight:500;line-height:1;color:${C.ink};font-variant-numeric:tabular-nums;">{{{ASSETS_COUNT}}}</p>
+                  </td>
+                  <td width="2.75%">&nbsp;</td>
+                  <td width="31.5%" align="center" bgcolor="${C.rosa}" class="dm-inset" style="background-color:${C.rosa};border:1px solid ${C.linea};border-radius:16px;padding:14px 8px;">
+                    <p class="dm-muted" style="margin:0;font-family:${SANS};font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${C.muted};">SPEI</p>
+                    <p class="lk-kpi-val dm-accent" style="margin:4px 0 0;font-family:${SERIF};font-size:26px;font-weight:500;line-height:1;color:${C.cereza};font-variant-numeric:tabular-nums;">{{{PROOFS_COUNT}}}</p>
+                  </td>
+                  <td width="2.75%">&nbsp;</td>
+                  <td width="31.5%" align="center" bgcolor="${C.rosa}" class="dm-inset" style="background-color:${C.rosa};border:1px solid ${C.linea};border-radius:16px;padding:14px 8px;">
+                    <p class="dm-muted" style="margin:0;font-family:${SANS};font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${C.muted};">Peso</p>
+                    <p class="lk-kpi-val dm-ink" style="margin:4px 0 0;font-family:${SERIF};font-size:22px;font-weight:500;line-height:1.15;color:${C.ink};font-variant-numeric:tabular-nums;">{{{TOTAL_SIZE}}}</p>
+                  </td>
+                </tr>
+              </table>
+              <p class="dm-muted" style="margin:10px 0 0;font-family:${SANS};font-size:12px;color:${C.muted};text-align:center;font-variant-numeric:tabular-nums;">
+                Incluye {{{PROOFS_COUNT}}} comprobante(s) SPEI y {{{INSPO_COUNT}}} foto(s) de referencia.
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.ink}" class="dm-code-box" style="margin-top:18px;background-color:${C.ink};border:1px solid #2F2528;border-radius:16px;">
                 <tr>
                   <td style="padding:16px 20px;">
-                    <p style="margin:0 0 8px;font-family:${SANS};font-size:10.5px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.muted};">
+                    <p style="margin:0 0 8px;font-family:${SANS};font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${C.suaveInk};">
                       Vista previa del lote
                     </p>
-                    <p style="margin:0;font-family:${MONO};font-size:12px;line-height:1.7;color:${C.body};white-space:pre-line;">
+                    <p style="margin:0;font-family:${MONO};font-size:12px;line-height:1.7;color:${C.white};white-space:pre-line;">
                       {{{ASSETS_PREVIEW}}}
                     </p>
                   </td>
                 </tr>
-              </table>`,
-      primaryCta: {
-        label: 'Abrir Caja y respaldar comprobantes',
-        href: '{{{CAJA_URL}}}',
-      },
-      footnoteHtml:
-        'Tu historial de citas, pagos, reportes de caja y datos de clientas permanecen intactos; únicamente se depuran las imágenes mayores a 12 meses.',
+              </table>
+              ${renderPillCta({ label: 'Abrir Caja y respaldar comprobantes', href: '{{{CAJA_URL}}}', tone: 'obsidian', marginTop: 24 })}
+              ${renderFootnote('Tu historial de citas, pagos, reportes de caja y datos de clientas permanecen intactos; únicamente se depuran las imágenes mayores a 12 meses.')}
+            </td>
+          </tr>
+          ${renderLightFooter({ compact: true })}`,
     }),
     text: `LAIKONA NAILS · RESPALDO CONTABLE ({{{STAGE_LABEL}}})
 {{{HEADING_TEXT}}}
@@ -1160,9 +1536,12 @@ function renderTemplateWithFallbacks(tpl, assetBaseUrl) {
 }
 
 function buildGalleryHtml(assetBaseUrl) {
-  const logoSrc = assetBaseUrl
+  const logoLightSrc = assetBaseUrl
     ? `${assetBaseUrl}/email-wordmark-ink.png`
-    : WORDMARK_BLACK_URL;
+    : LOGO_BLACK_URL;
+  const logoDarkSrc = assetBaseUrl
+    ? `${assetBaseUrl}/email-wordmark-white.png`
+    : LOGO_WHITE_URL;
 
   const items = RESEND_TEMPLATES.map((tpl) => {
     const rendered = renderTemplateWithFallbacks(tpl, assetBaseUrl);
@@ -1202,6 +1581,19 @@ function buildGalleryHtml(assetBaseUrl) {
       --cherry: #8B1E2B;
       --cherry-soft: #F3E8EA;
       --line: #EFE1E3;
+      --chrome: #FAF5F5;
+      --iframe-bg: #FAF5F5;
+    }
+    body.ui-dark {
+      --bg: #110E0F;
+      --surface: #1B1517;
+      --ink: #FAF5F5;
+      --muted: #AE9BA0;
+      --cherry: #A22636;
+      --cherry-soft: #361C22;
+      --line: #302528;
+      --chrome: #161113;
+      --iframe-bg: #110E0F;
     }
     * { box-sizing: border-box; }
     body {
@@ -1212,6 +1604,7 @@ function buildGalleryHtml(assetBaseUrl) {
       min-height: 100vh;
       display: grid;
       grid-template-columns: 296px 1fr;
+      transition: background 180ms ease, color 180ms ease;
     }
     aside {
       background: var(--surface);
@@ -1229,10 +1622,13 @@ function buildGalleryHtml(assetBaseUrl) {
     }
     .brand-logo {
       display: block;
-      width: 132px;
+      width: 138px;
       height: auto;
       margin-bottom: 10px;
     }
+    .brand-logo-dark { display: none; width: 122px; }
+    body.ui-dark .brand-logo-light { display: none; }
+    body.ui-dark .brand-logo-dark { display: block; }
     .brand-title {
       font-family: 'Source Serif 4', Georgia, serif;
       font-size: 21px;
@@ -1267,12 +1663,10 @@ function buildGalleryHtml(assetBaseUrl) {
       display: block;
       transition: background 140ms ease, border-color 140ms ease;
     }
-    .nav-btn:hover {
-      background: var(--bg);
-    }
+    .nav-btn:hover { background: var(--bg); }
     .nav-btn.active {
       background: var(--cherry-soft);
-      border-color: rgba(139, 30, 43, 0.35);
+      border-color: rgba(229, 122, 137, 0.35);
     }
     .nav-name {
       display: block;
@@ -1297,18 +1691,17 @@ function buildGalleryHtml(assetBaseUrl) {
       position: sticky;
       top: 0;
       z-index: 20;
-      background: rgba(255, 255, 255, 0.94);
-      backdrop-filter: blur(12px);
+      background: var(--surface);
       border-bottom: 1px solid var(--line);
       padding: 14px 28px;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
+      gap: 12px;
     }
     .mail-meta {
-      min-width: 240px;
+      min-width: 220px;
       flex: 1;
     }
     .mail-subject {
@@ -1324,6 +1717,12 @@ function buildGalleryHtml(assetBaseUrl) {
       margin: 0;
     }
     .mail-headers strong { color: var(--ink); font-weight: 600; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
     .modes {
       display: inline-flex;
       border: 1px solid var(--line);
@@ -1332,7 +1731,7 @@ function buildGalleryHtml(assetBaseUrl) {
       padding: 3px;
       gap: 3px;
     }
-    .mode-btn {
+    .mode-btn, .theme-btn {
       border: 0;
       border-radius: 999px;
       background: transparent;
@@ -1340,10 +1739,10 @@ function buildGalleryHtml(assetBaseUrl) {
       font-family: inherit;
       font-size: 12px;
       font-weight: 600;
-      padding: 7px 14px;
+      padding: 7px 13px;
       cursor: pointer;
     }
-    .mode-btn.active {
+    .mode-btn.active, .theme-btn.active {
       background: var(--cherry);
       color: #fff;
     }
@@ -1374,15 +1773,15 @@ function buildGalleryHtml(assetBaseUrl) {
     .desktop-frame {
       width: 660px;
       max-width: 100%;
-      background: #fff;
+      background: var(--iframe-bg);
       border: 1px solid var(--line);
       border-radius: 20px;
       overflow: hidden;
-      box-shadow: 0 20px 50px -30px rgba(139, 30, 43, 0.24);
+      box-shadow: 0 20px 50px -30px rgba(0, 0, 0, 0.32);
     }
     .desktop-chrome {
       height: 32px;
-      background: #FAF5F5;
+      background: var(--chrome);
       border-bottom: 1px solid var(--line);
       display: flex;
       align-items: center;
@@ -1395,25 +1794,26 @@ function buildGalleryHtml(assetBaseUrl) {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #DFC9CD;
+      background: var(--line);
     }
     .mobile-bezel {
       width: 414px;
-      background: #181314;
+      background: #0D0A0B;
+      border: 1px solid #2C2325;
       border-radius: 42px;
       padding: 12px;
-      box-shadow: 0 24px 54px -24px rgba(24, 19, 20, 0.45);
+      box-shadow: 0 24px 54px -24px rgba(0, 0, 0, 0.55);
     }
     .mobile-notch {
       width: 108px;
       height: 18px;
-      background: #181314;
+      background: #0D0A0B;
       border-radius: 0 0 14px 14px;
       margin: 0 auto 8px;
     }
     .mobile-screen {
       width: 390px;
-      background: #FAF5F5;
+      background: var(--iframe-bg);
       border-radius: 30px;
       overflow: hidden;
     }
@@ -1421,7 +1821,7 @@ function buildGalleryHtml(assetBaseUrl) {
       display: block;
       width: 100%;
       border: 0;
-      background: #FAF5F5;
+      background: var(--iframe-bg);
       min-height: 620px;
     }
     .text-card {
@@ -1465,7 +1865,7 @@ function buildGalleryHtml(assetBaseUrl) {
     }
     .all-block-head code {
       font-size: 12px;
-      color: var(--cherry);
+      color: var(--ink);
       background: var(--cherry-soft);
       border-radius: 999px;
       padding: 4px 10px;
@@ -1482,9 +1882,10 @@ function buildGalleryHtml(assetBaseUrl) {
 <body>
   <aside>
     <div class="brand-head">
-      <img class="brand-logo" src="${logoSrc}" alt="LAIKONA NAILS BY KARLA" />
+      <img class="brand-logo brand-logo-light" src="${logoLightSrc}" alt="LAIKONA NAILS BY KARLA" />
+      <img class="brand-logo brand-logo-dark" src="${logoDarkSrc}" alt="LAIKONA NAILS BY KARLA" />
       <h1 class="brand-title">Plantillas de Correo</h1>
-      <p class="brand-sub">11 plantillas con identidad web · Desktop &amp; Móvil</p>
+      <p class="brand-sub">11 diseños variados · Logo oficial · Claro &amp; Oscuro</p>
     </div>
     <p class="group-label">Clientas (9)</p>
     <div id="nav-client"></div>
@@ -1501,12 +1902,18 @@ function buildGalleryHtml(assetBaseUrl) {
           <span id="cur-size"></span>
         </p>
       </div>
-      <div class="modes" role="tablist">
-        <button class="mode-btn active" data-mode="split">Desktop + Móvil</button>
-        <button class="mode-btn" data-mode="desktop">Desktop</button>
-        <button class="mode-btn" data-mode="mobile">Móvil</button>
-        <button class="mode-btn" data-mode="text">Texto plano</button>
-        <button class="mode-btn" data-mode="all">Ver las 11</button>
+      <div class="controls">
+        <div class="modes" role="group" aria-label="Tema">
+          <button class="theme-btn active" data-theme="light">Claro</button>
+          <button class="theme-btn" data-theme="dark">Oscuro</button>
+        </div>
+        <div class="modes" role="tablist">
+          <button class="mode-btn active" data-mode="split">Desktop + Móvil</button>
+          <button class="mode-btn" data-mode="desktop">Desktop</button>
+          <button class="mode-btn" data-mode="mobile">Móvil</button>
+          <button class="mode-btn" data-mode="text">Texto plano</button>
+          <button class="mode-btn" data-mode="all">Ver las 11</button>
+        </div>
       </div>
     </header>
     <section class="stage" id="stage"></section>
@@ -1516,6 +1923,7 @@ function buildGalleryHtml(assetBaseUrl) {
     const TEMPLATES = ${safeDataJson};
     let currentIndex = 1;
     let currentMode = 'split';
+    let currentTheme = 'light';
 
     const navClient = document.getElementById('nav-client');
     const navAdmin = document.getElementById('nav-admin');
@@ -1523,6 +1931,16 @@ function buildGalleryHtml(assetBaseUrl) {
     const curSubject = document.getElementById('cur-subject');
     const curAlias = document.getElementById('cur-alias');
     const curSize = document.getElementById('cur-size');
+
+    function themedHtml(html) {
+      if (currentTheme === 'dark') {
+        return html.replace('<html lang="es">', '<html lang="es" class="lk-force-dark">');
+      }
+      return html.replace(
+        '@media (prefers-color-scheme: dark)',
+        '@media (prefers-color-scheme: dark) and (max-width: 0px)',
+      );
+    }
 
     function autoSizeIframe(iframe) {
       const resize = () => {
@@ -1543,11 +1961,12 @@ function buildGalleryHtml(assetBaseUrl) {
     function createDesktopCol(tpl) {
       const col = document.createElement('div');
       col.className = 'device-col';
-      col.innerHTML = '<p class="device-label">Desktop · 660 px</p><div class="desktop-frame"><div class="desktop-chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:8px;">Bandeja de entrada · Gmail / Apple Mail</span></div></div>';
+      const themeLabel = currentTheme === 'dark' ? ' · Modo Oscuro' : ' · Modo Claro';
+      col.innerHTML = '<p class="device-label">Desktop · 660 px' + themeLabel + '</p><div class="desktop-frame"><div class="desktop-chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:8px;">Bandeja de entrada · Gmail / Apple Mail</span></div></div>';
       const iframe = document.createElement('iframe');
       iframe.className = 'email-iframe';
       iframe.title = tpl.name + ' (Desktop)';
-      iframe.srcdoc = tpl.html;
+      iframe.srcdoc = themedHtml(tpl.html);
       autoSizeIframe(iframe);
       col.querySelector('.desktop-frame').appendChild(iframe);
       return col;
@@ -1556,11 +1975,12 @@ function buildGalleryHtml(assetBaseUrl) {
     function createMobileCol(tpl) {
       const col = document.createElement('div');
       col.className = 'device-col';
-      col.innerHTML = '<p class="device-label">Móvil · 390 px (iPhone)</p><div class="mobile-bezel"><div class="mobile-notch"></div><div class="mobile-screen"></div></div>';
+      const themeLabel = currentTheme === 'dark' ? ' · Modo Oscuro' : ' · Modo Claro';
+      col.innerHTML = '<p class="device-label">Móvil · 390 px' + themeLabel + '</p><div class="mobile-bezel"><div class="mobile-notch"></div><div class="mobile-screen"></div></div>';
       const iframe = document.createElement('iframe');
       iframe.className = 'email-iframe';
       iframe.title = tpl.name + ' (Móvil)';
-      iframe.srcdoc = tpl.html;
+      iframe.srcdoc = themedHtml(tpl.html);
       autoSizeIframe(iframe);
       col.querySelector('.mobile-screen').appendChild(iframe);
       return col;
@@ -1588,6 +2008,10 @@ function buildGalleryHtml(assetBaseUrl) {
       document.querySelectorAll('.mode-btn').forEach((b) => {
         b.classList.toggle('active', b.dataset.mode === currentMode);
       });
+      document.querySelectorAll('.theme-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.theme === currentTheme);
+      });
+      document.body.classList.toggle('ui-dark', currentTheme === 'dark');
     }
 
     function renderStage() {
@@ -1595,7 +2019,7 @@ function buildGalleryHtml(assetBaseUrl) {
       if (currentMode === 'all') {
         curSubject.textContent = 'Todas las plantillas (11) — Vista comparativa Desktop + Móvil';
         curAlias.textContent = 'laikona-*';
-        curSize.textContent = '11 plantillas publicadas';
+        curSize.textContent = '11 diseños variados';
       } else {
         curSubject.textContent = tpl.subject;
         curAlias.textContent = tpl.alias;
@@ -1652,6 +2076,15 @@ function buildGalleryHtml(assetBaseUrl) {
       };
     });
 
+    document.querySelectorAll('.theme-btn').forEach((btn) => {
+      btn.onclick = () => {
+        currentTheme = btn.dataset.theme;
+        syncModeButtons();
+        renderStage();
+      };
+    });
+
+    syncModeButtons();
     renderNav();
     renderStage();
   </script>
