@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Button } from '@astryxdesign/core/Button';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -10,7 +11,7 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { PackagePlus } from 'lucide-react';
 import type { InventoryItem } from '@/lib/types';
-import { SurfaceCard } from '@/components/ui';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 
 export interface NewInventoryItemInput {
   sku: string;
@@ -29,6 +30,19 @@ interface InventoryItemFormProps {
   onCreateItem: (item: NewInventoryItemInput) => Promise<boolean>;
 }
 
+export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
+  return (
+    <FormDialogLauncher
+      triggerLabel="Agregar producto"
+      title="Agregar producto"
+      subtitle="Cuánto tienes, cuándo avisarte y si también lo vendes."
+      icon={<PackagePlus size={16} aria-hidden="true" />}
+    >
+      {(close) => <InventoryItemFormBody onCreateItem={onCreateItem} onDone={close} />}
+    </FormDialogLauncher>
+  );
+}
+
 const CATEGORY_OPTIONS: Array<{ value: InventoryItem['category']; label: string }> = [
   { value: 'Gel / Esmalte', label: 'Gel / Esmalte' },
   { value: 'Acrílico', label: 'Acrílico' },
@@ -37,7 +51,10 @@ const CATEGORY_OPTIONS: Array<{ value: InventoryItem['category']; label: string 
   { value: 'Reventa', label: 'Para venta' },
 ];
 
-export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
+function InventoryItemFormBody({
+  onCreateItem,
+  onDone,
+}: InventoryItemFormProps & { onDone: () => void }) {
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
   const [category, setCategory] = useState<InventoryItem['category']>('Gel / Esmalte');
@@ -67,23 +84,13 @@ export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
         isForRetail,
         isActive: true,
       });
-      if (ok) {
-        setName('');
-        setSku('');
-      }
+      if (ok) onDone();
     } finally {
       setCreating(false);
     }
   };
 
   return (
-    <SurfaceCard
-      id="inventory-create-heading"
-      icon={<PackagePlus size={16} aria-hidden="true" />}
-      title="Agregar producto"
-      subtitle="Define cuándo avisarte y si también se vende a tus clientas."
-      padded
-    >
       <form onSubmit={(e) => void handleSubmit(e)}>
         <VStack gap={3}>
           <TextInput
@@ -144,17 +151,18 @@ export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
               onChange={setRetailMxn}
             />
           ) : null}
-          <Button
-            type="submit"
-            label="Guardar producto"
-            variant="primary"
-            icon={<PackagePlus size={15} aria-hidden="true" />}
-            width="100%"
-            isLoading={creating}
-            isDisabled={name.trim().length < 2 || creating}
-          />
+          <HStack gap={2} justify="end" wrap="wrap">
+            <Button type="button" label="Cancelar" variant="secondary" isDisabled={creating} onClick={onDone} />
+            <Button
+              type="submit"
+              label="Guardar producto"
+              variant="primary"
+              icon={<PackagePlus size={15} aria-hidden="true" />}
+              isLoading={creating}
+              isDisabled={name.trim().length < 2 || creating}
+            />
+          </HStack>
         </VStack>
       </form>
-    </SurfaceCard>
   );
 }

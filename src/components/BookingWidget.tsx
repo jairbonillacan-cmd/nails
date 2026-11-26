@@ -26,7 +26,13 @@ import { BookingDesktopActions, BookingStickyBar } from './booking/BookingSticky
 import { BookingSummaryCard } from './booking/BookingSummaryCard';
 import { HoldExtendDialog, shouldPromptHoldExtension } from './booking/HoldExtendDialog';
 import { resolveEffectiveSelectedDate } from './booking/bookingHelpers';
-import { bookingReducer, createInitialBookingFlowState, isPostHoldStep } from './booking/bookingMachine';
+import {
+  BOOKING_STEPS,
+  bookingReducer,
+  createInitialBookingFlowState,
+  isPostHoldStep,
+  type BookingStep,
+} from './booking/bookingMachine';
 import {
   buildLiveAnnouncement,
   buildSummaryRows,
@@ -79,6 +85,16 @@ export function BookingWidget(props: BookingWidgetProps) {
   const [hasOpenedWaitlist, setHasOpenedWaitlist] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [holdPromptDismissedFor, setHoldPromptDismissedFor] = useState<number | null>(null);
+  const [stepMotion, setStepMotion] = useState<{ step: BookingStep; direction: 'forward' | 'back' }>({
+    step: flow.step,
+    direction: 'forward',
+  });
+  if (stepMotion.step !== flow.step) {
+    setStepMotion({
+      step: flow.step,
+      direction: BOOKING_STEPS.indexOf(flow.step) >= BOOKING_STEPS.indexOf(stepMotion.step) ? 'forward' : 'back',
+    });
+  }
 
   const validServiceIds = useMemo(() => services.map((s) => s.id), [services]);
   const validAddonIds = useMemo(() => addons.map((a) => a.id), [addons]);
@@ -311,6 +327,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               onSelectSuggestion={(alt) => void actions.handleSelectSlot(alt, { stayOnDetails: isPostHoldStep(flow.step) })}
             />
 
+            <VStack key={flow.step} className="rb-step-motion" data-dir={stepMotion.direction}>
             <BookingStepRouter
               formId={FORM_ID}
               settings={settings}
@@ -363,6 +380,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                 },
               }}
             />
+            </VStack>
 
             <BookingDesktopActions
               {...ctaProps}

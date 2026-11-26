@@ -69,7 +69,19 @@
   transition: max-width var(--duration-medium) var(--ease-move), padding var(--duration-medium) var(--ease-move), background-color var(--duration-medium) var(--ease-standard), box-shadow var(--duration-medium) var(--ease-standard), border-color var(--duration-medium) var(--ease-standard);
 }
 
+.lk-nav[data-hero='inside'] {
+  opacity: 0;
+  transform: translate3d(0, -0.75rem, 0);
+  pointer-events: none;
+  transition: opacity 180ms var(--ease-standard), transform 180ms var(--ease-standard);
+}
+
+.lk-nav[data-hero='top'] {
+  animation: lk-nav-settle 320ms var(--ease-entrance) both;
+}
+
 .lk-nav[data-floating='true'] {
+  animation: lk-nav-drop 520ms cubic-bezier(0.22, 1.2, 0.36, 1) both;
   max-width: 55rem;
   padding: 0.3rem 0.3rem 0.3rem 1.25rem;
   background: color-mix(in srgb, var(--lk-rosa) 90%, transparent);
@@ -851,23 +863,65 @@ a.lk-card:focus-visible,
   gap: 0.75rem;
 }
 
+.lk-faq {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+}
+
+.lk-faq-list {
+  border-top: 1px solid var(--lk-linea);
+}
+
+@media (min-width: 60rem) {
+  .lk-faq {
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    gap: 4rem;
+    align-items: start;
+  }
+
+  .lk-faq-intro {
+    position: sticky;
+    top: 6rem;
+  }
+
+  .lk-faq-more {
+    margin-top: 1rem;
+  }
+}
+
+@keyframes lk-nav-drop {
+  0% { opacity: 0; transform: translate3d(0, -140%, 0) scale(0.86); filter: blur(6px); }
+  60% { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+}
+@keyframes lk-nav-settle { from { opacity: 0; transform: translate3d(0, -0.5rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
 @keyframes lk-marquee { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
-@keyframes lk-in { from { opacity: 0.94; transform: translate3d(0, 0.5rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
-@keyframes lk-reveal-up { from { opacity: 1; transform: translate3d(0, 1.25rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
-@keyframes lk-pop { from { opacity: 1; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes lk-in { from { opacity: 0; transform: translate3d(0, 1.25rem, 0); filter: blur(4px); } to { opacity: 1; transform: translate3d(0, 0, 0); filter: blur(0); } }
+@keyframes lk-hero-zoom { from { transform: scale(1.08); } to { transform: scale(1); } }
+@keyframes lk-reveal-up { from { opacity: 0; transform: translate3d(0, 2.5rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
+@keyframes lk-pop { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
 @keyframes lk-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 
-.lk-intro { animation: lk-in 240ms var(--ease-entrance) both; }
-.lk-intro-2 { animation: lk-in 240ms var(--ease-entrance) 40ms both; }
-.lk-intro-3 { animation: lk-in 240ms var(--ease-entrance) 80ms both; }
+.lk-intro { animation: lk-in 760ms var(--ease-entrance) 80ms both; }
+.lk-intro-2 { animation: lk-in 760ms var(--ease-entrance) 220ms both; }
+.lk-intro-3 { animation: lk-in 760ms var(--ease-entrance) 360ms both; }
+.lk-hero-media img { animation: lk-hero-zoom 1600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 @media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
-    .lk-reveal { animation: lk-reveal-up linear both; animation-timeline: view(); animation-range: entry 0% entry 55%; }
-    .lk-reveal-2 { animation: lk-reveal-up linear both; animation-timeline: view(); animation-range: entry 5% entry 65%; }
-    .lk-reveal-3 { animation: lk-reveal-up linear both; animation-timeline: view(); animation-range: entry 10% entry 75%; }
-    .lk-pop { animation: lk-pop linear both; animation-timeline: view(); animation-range: entry 0% entry 50%; }
+    .lk-reveal { animation: lk-reveal-up linear both; animation-timeline: view(); animation-range: entry 0% entry 60%; }
+    .lk-reveal-2 { animation: lk-reveal-up linear both; animation-timeline: view(); animation-range: entry 10% entry 70%; }
+    .lk-reveal-3 { animation: lk-reveal-up linear both; animation-timeline: view(); animation-range: entry 20% entry 80%; }
+    .lk-pop { animation: lk-pop linear both; animation-timeline: view(); animation-range: entry 0% entry 55%; }
     .lk-draw { animation: lk-draw linear both; animation-timeline: view(); animation-range: entry 10% entry 85%; }
+    .lk-section ul:not(.lk-marquee-track) > li {
+      animation: lk-reveal-up linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 45%;
+    }
+    .lk-section ul > li:nth-child(3n + 2) { animation-range: entry 6% entry 52%; }
+    .lk-section ul > li:nth-child(3n + 3) { animation-range: entry 12% entry 60%; }
   }
 }
 
@@ -881,12 +935,18 @@ a.lk-card:focus-visible,
   .lk-reveal-3,
   .lk-pop,
   .lk-draw,
+  .lk-hero-media img,
+  .lk-section ul > li,
   .lk-lightbox-img {
     animation: none !important;
     animation-timeline: auto !important;
     opacity: 1 !important;
     transform: none !important;
     clip-path: none !important;
+  }
+
+  .lk-nav {
+    animation: none !important;
   }
 
   .lk-card,

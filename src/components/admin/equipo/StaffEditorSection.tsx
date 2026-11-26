@@ -14,6 +14,7 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Check, Copy, Pencil, Save, UserPlus, Users } from 'lucide-react';
 import {
   ActionRow,
@@ -50,6 +51,7 @@ export function StaffEditorSection({
   onNotice,
 }: StaffEditorSectionProps) {
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [sName, setSName] = useState('');
   const [sRoleTitle, setSRoleTitle] = useState('Manicurista');
   const [sBio, setSBio] = useState('');
@@ -70,6 +72,7 @@ export function StaffEditorSection({
     : null;
 
   const startEditingStaff = (st: StaffMember) => {
+    setIsEditorOpen(true);
     setEditingStaffId(st.id);
     setSName(st.name);
     setSRoleTitle(st.roleTitle);
@@ -79,6 +82,7 @@ export function StaffEditorSection({
   };
 
   const resetStaffForm = () => {
+    setIsEditorOpen(false);
     setEditingStaffId(null);
     setSName('');
     setSRoleTitle('Manicurista');
@@ -152,6 +156,19 @@ export function StaffEditorSection({
         title="Manicuristas del salón"
         subtitle="Cada una tiene su link propio de citas y porcentaje de comisión."
         count={staff.length}
+        actions={
+          <Button
+            type="button"
+            label="Agregar"
+            variant="secondary"
+            size="sm"
+            icon={<UserPlus size={14} aria-hidden="true" />}
+            onClick={() => {
+              resetStaffForm();
+              setIsEditorOpen(true);
+            }}
+          />
+        }
       >
         {staff.length === 0 ? (
           <VStack className="ad-empty" gap={2}>
@@ -196,8 +213,8 @@ export function StaffEditorSection({
                         />
                         <Button
                           type="button"
-                          label={isEditingThis ? 'Editando' : 'Editar'}
-                          variant={isEditingThis ? 'primary' : 'ghost'}
+                          label="Editar"
+                          variant="ghost"
                           size="sm"
                           icon={<Pencil size={13} aria-hidden="true" />}
                           isDisabled={savingStaff}
@@ -221,18 +238,26 @@ export function StaffEditorSection({
         )}
       </SurfaceCard>
 
-      <SurfaceCard
-        id="team-add-staff-heading"
-        title={editingStaffId ? 'Editar manicurista' : 'Agregar manicurista'}
-        subtitle="Define su nombre, comisión y los servicios que realiza."
-        actions={
-          editingStaffId ? (
-            <Button type="button" label="Cancelar" variant="ghost" size="sm" isDisabled={savingStaff} onClick={resetStaffForm} />
-          ) : undefined
-        }
+      <Dialog
+        isOpen={isEditorOpen}
+        onOpenChange={(open) => {
+          if (!open && !savingStaff) resetStaffForm();
+        }}
+        purpose="form"
+        width="min(34rem, 96vw)"
+        maxHeight="92dvh"
+        padding={5}
       >
+        <VStack gap={4} className="fx-sheet-in">
+        <DialogHeader
+          title={editingStaffId ? `Editar a ${editingStaff?.name ?? 'manicurista'}` : 'Agregar manicurista'}
+          subtitle="Nombre, comisión y los servicios que hace."
+          onOpenChange={(open) => {
+            if (!open && !savingStaff) resetStaffForm();
+          }}
+        />
         <form onSubmit={handleSaveStaff}>
-          <VStack gap={3} className={savingStaff ? 'ad-card-body fx-busy' : 'ad-card-body'} paddingBlockStart={4} aria-busy={savingStaff || undefined}>
+          <VStack gap={3} className={savingStaff ? 'fx-busy' : undefined} aria-busy={savingStaff || undefined}>
             {editingStaff ? (
               <CopyableField
                 label={`Link directo de ${editingStaff.name}`}
@@ -288,18 +313,21 @@ export function StaffEditorSection({
               </>
             ) : null}
 
-            <Button
-              type="submit"
-              label={savingStaff ? 'Guardando...' : editingStaffId ? 'Guardar cambios' : 'Agregar manicurista'}
-              variant="primary"
-              icon={editingStaffId ? <Save size={15} aria-hidden="true" /> : <UserPlus size={15} aria-hidden="true" />}
-              width="100%"
-              isLoading={savingStaff}
-              isDisabled={sName.trim().length < 2 || savingStaff}
-            />
+            <HStack gap={2} justify="end" wrap="wrap">
+              <Button type="button" label="Cancelar" variant="secondary" isDisabled={savingStaff} onClick={resetStaffForm} />
+              <Button
+                type="submit"
+                label={savingStaff ? 'Guardando...' : editingStaffId ? 'Guardar cambios' : 'Agregar'}
+                variant="primary"
+                icon={editingStaffId ? <Save size={15} aria-hidden="true" /> : <UserPlus size={15} aria-hidden="true" />}
+                isLoading={savingStaff}
+                isDisabled={sName.trim().length < 2 || savingStaff}
+              />
+            </HStack>
           </VStack>
         </form>
-      </SurfaceCard>
+        </VStack>
+      </Dialog>
     </VStack>
   );
 }

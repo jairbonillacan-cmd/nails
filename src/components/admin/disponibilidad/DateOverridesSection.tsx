@@ -17,6 +17,14 @@ import {
 import type { DateOverride, StaffMember } from '@/lib/types';
 import { DateOverrideFormCard } from './DateOverrideFormCard';
 
+const overrideDateFormatter = new Intl.DateTimeFormat('es-MX', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
 const HOLIDAY_YEAR_OPTIONS = [
   { value: '2026', label: '2026' },
   { value: '2027', label: '2027' },
@@ -127,8 +135,8 @@ export function DateOverridesSection({
       >
         <VStack gap={1} className="rb-grow">
           <HStack gap={2} align="center" wrap="wrap">
-            <Text weight="semibold" className="fx-tabular" hasTabularNumbers>
-              {o.overrideDate}
+            <Text weight="semibold" className="fx-tabular rb-first-upper" hasTabularNumbers>
+              {overrideDateFormatter.format(new Date(`${o.overrideDate}T12:00:00Z`))}
             </Text>
             <StatusTag
               tone={o.isUnavailable ? 'warning' : 'accent'}
@@ -200,7 +208,7 @@ export function DateOverridesSection({
         </HStack>
       </SurfaceCard>
 
-      <VStack className="ad-split" gap={5}>
+      <VStack gap={5}>
         <VStack gap={4}>
           <SurfaceCard
             id="active-vacations-heading"
@@ -208,6 +216,16 @@ export function DateOverridesSection({
             title="Vacaciones y días cerrados"
             subtitle={`Fechas especiales o vacaciones de ${staffName}.`}
             count={activeOverrides.length}
+            actions={
+              <DateOverrideFormCard
+                staffId={staffId}
+                allStaff={allStaff}
+                serverTodayKey={serverTodayKey}
+                onRefresh={onRefresh}
+                onSavedNotice={onSavedNotice}
+                onMessage={onMessage}
+              />
+            }
           >
             {activeOverrides.length === 0 ? (
               <EmptyStateCard
@@ -249,14 +267,6 @@ export function DateOverridesSection({
           ) : null}
         </VStack>
 
-        <DateOverrideFormCard
-          staffId={staffId}
-          allStaff={allStaff}
-          serverTodayKey={serverTodayKey}
-          onRefresh={onRefresh}
-          onSavedNotice={onSavedNotice}
-          onMessage={onMessage}
-        />
       </VStack>
 
       <ConfirmActionDialog

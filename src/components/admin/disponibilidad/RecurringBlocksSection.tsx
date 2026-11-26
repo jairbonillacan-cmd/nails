@@ -11,6 +11,8 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
+import { DateInput } from '@astryxdesign/core/DateInput';
+import type { ISODateString } from '@astryxdesign/core/Calendar';
 import { Coffee, Pause, Play, Plus, Trash2 } from 'lucide-react';
 import {
   ConfirmActionDialog,
@@ -20,6 +22,7 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import type { RecurringBlock } from '@/lib/types';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import { DAYS, FIXED_TIME_OPTIONS, formatRecurringSummary } from './scheduleConstants';
 
 interface RecurringBlocksSectionProps {
@@ -59,7 +62,7 @@ export function RecurringBlocksSection({
     });
   };
 
-  const createRecurringBreak = async (e: React.FormEvent) => {
+  const createRecurringBreak = async (e: React.FormEvent, onDone: () => void) => {
     e.preventDefault();
     if (!staffId || savingRecurring) return;
     if (recFrequency === 'weekly' && recWeekdays.length === 0) {
@@ -102,6 +105,7 @@ export function RecurringBlocksSection({
         await onRefresh();
         setRecReason('');
         setRecUntilDate('');
+        onDone();
         onSavedNotice('Descanso fijo guardado');
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -173,90 +177,24 @@ export function RecurringBlocksSection({
   };
 
   return (
-    <VStack className="ad-split" gap={5}>
+    <VStack gap={5}>
       <SurfaceCard
         id="recurring-breaks-heading"
         icon={<Coffee size={16} aria-hidden="true" />}
         title="Descansos fijos"
         subtitle={`Horarios que se repiten cada semana o cada mes para ${staffName}.`}
         count={recurringBlocks.length}
-      >
-        {recurringBlocks.length === 0 ? (
-          <EmptyStateCard
-            framed={false}
-            isCompact
-            icon={<Coffee size={22} aria-hidden="true" />}
-            title="Sin descansos fijos"
-            description="Agrega aquí tu hora de comida, esterilización o clases para que nadie reserve encima."
-          />
-        ) : (
-          <VStack as="ul" className="ad-row-list" gap={0}>
-            {recurringBlocks.map((block) => {
-              const isBusy = busyBlockId === block.id;
-              return (
-                <li
-                  key={block.id}
-                  className={isBusy ? 'ad-row-item fx-busy' : 'ad-row-item'}
-                  data-muted={!block.isActive ? 'true' : undefined}
-                  aria-busy={isBusy || undefined}
-                >
-                  <VStack gap={1} className="rb-grow">
-                    <HStack gap={2} align="center" wrap="wrap">
-                      <Text weight="semibold">{block.reason}</Text>
-                      <StatusTag
-                        tone={block.isActive ? 'success' : 'neutral'}
-                        label={block.isActive ? 'Activo' : 'Pausado'}
-                      />
-                    </HStack>
-                    <Text type="supporting" color="secondary" hasTabularNumbers>
-                      {formatRecurringSummary(block)}
-                    </Text>
-                  </VStack>
-
-                  <HStack gap={1.5} align="center">
-                    <Button
-                      type="button"
-                      label={isBusy ? 'Guardando...' : block.isActive ? 'Pausar' : 'Activar'}
-                      variant="secondary"
-                      size="sm"
-                      icon={
-                        block.isActive ? (
-                          <Pause size={13} aria-hidden="true" />
-                        ) : (
-                          <Play size={13} aria-hidden="true" />
-                        )
-                      }
-                      isLoading={isBusy}
-                      isDisabled={isBusy || Boolean(busyBlockId)}
-                      onClick={() => void handleToggleRecurringBlock(block)}
-                    />
-                    <Button
-                      type="button"
-                      label="Quitar"
-                      isIconOnly
-                      variant="ghost"
-                      size="sm"
-                      icon={<Trash2 size={14} aria-hidden="true" />}
-                      isDisabled={isBusy || Boolean(busyBlockId)}
-                      onClick={() => setPendingDelete(block)}
-                    />
-                  </HStack>
-                </li>
-              );
-            })}
-          </VStack>
-        )}
-      </SurfaceCard>
-
-      <SurfaceCard
-        id="create-recurring-break-heading"
-        title="Agregar descanso fijo"
-        subtitle="Ideal para tu hora de comida o limpieza semanal sin bloquear día por día."
-      >
-        <form onSubmit={createRecurringBreak}>
+        actions={
+          <FormDialogLauncher
+            triggerLabel="Agregar descanso"
+            title="Descanso fijo"
+            subtitle="Tu hora de comida o limpieza, sin bloquear día por día."
+            triggerVariant="secondary"
+          >
+            {(close) => (
+        <form onSubmit={(e) => void createRecurringBreak(e, close)}>
           <VStack
             gap={3}
-            padding={5}
             className={savingRecurring ? 'fx-busy' : undefined}
             aria-busy={savingRecurring || undefined}
           >
@@ -324,27 +262,97 @@ export function RecurringBlocksSection({
               isRequired
             />
 
-            <TextInput
-              label="Termina el (opcional)"
-              placeholder="Ej. 2026-12-31 · vacío = siempre"
-              value={recUntilDate}
-              autoCapitalize="none"
-              hasAutoCorrect={false}
-              hasSpellCheck={false}
-              onChange={setRecUntilDate}
+            <DateInput
+              label="Hasta cuándo"
+              description="Déjalo vacío si se repite siempre."
+              placeholder="Sin fecha de fin"
+              value={(recUntilDate || undefined) as ISODateString | undefined}
+              onChange={(v) => setRecUntilDate(v ?? '')}
+              isOptional
             />
 
-            <Button
-              type="submit"
-              label={savingRecurring ? 'Guardando...' : 'Agregar descanso fijo'}
-              variant="primary"
-              width="100%"
-              icon={<Plus size={14} aria-hidden="true" />}
-              isLoading={savingRecurring}
-              isDisabled={savingRecurring}
-            />
+            <HStack gap={2} justify="end" wrap="wrap">
+              <Button type="button" label="Cancelar" variant="secondary" isDisabled={savingRecurring} onClick={close} />
+              <Button
+                type="submit"
+                label={savingRecurring ? 'Guardando...' : 'Guardar descanso'}
+                variant="primary"
+                icon={<Plus size={14} aria-hidden="true" />}
+                isLoading={savingRecurring}
+                isDisabled={savingRecurring}
+              />
+            </HStack>
           </VStack>
         </form>
+            )}
+          </FormDialogLauncher>
+        }
+      >
+        {recurringBlocks.length === 0 ? (
+          <EmptyStateCard
+            framed={false}
+            isCompact
+            icon={<Coffee size={22} aria-hidden="true" />}
+            title="Sin descansos fijos"
+            description="Agrega tu hora de comida o limpieza para que nadie reserve encima."
+          />
+        ) : (
+          <VStack as="ul" className="ad-row-list" gap={0}>
+            {recurringBlocks.map((block) => {
+              const isBusy = busyBlockId === block.id;
+              return (
+                <li
+                  key={block.id}
+                  className={isBusy ? 'ad-row-item fx-busy' : 'ad-row-item'}
+                  data-muted={!block.isActive ? 'true' : undefined}
+                  aria-busy={isBusy || undefined}
+                >
+                  <VStack gap={1} className="rb-grow">
+                    <HStack gap={2} align="center" wrap="wrap">
+                      <Text weight="semibold">{block.reason}</Text>
+                      <StatusTag
+                        tone={block.isActive ? 'success' : 'neutral'}
+                        label={block.isActive ? 'Activo' : 'Pausado'}
+                      />
+                    </HStack>
+                    <Text type="supporting" color="secondary" hasTabularNumbers>
+                      {formatRecurringSummary(block)}
+                    </Text>
+                  </VStack>
+
+                  <HStack gap={1.5} align="center">
+                    <Button
+                      type="button"
+                      label={isBusy ? 'Guardando...' : block.isActive ? 'Pausar' : 'Activar'}
+                      variant="secondary"
+                      size="sm"
+                      icon={
+                        block.isActive ? (
+                          <Pause size={13} aria-hidden="true" />
+                        ) : (
+                          <Play size={13} aria-hidden="true" />
+                        )
+                      }
+                      isLoading={isBusy}
+                      isDisabled={isBusy || Boolean(busyBlockId)}
+                      onClick={() => void handleToggleRecurringBlock(block)}
+                    />
+                    <Button
+                      type="button"
+                      label="Quitar"
+                      isIconOnly
+                      variant="ghost"
+                      size="sm"
+                      icon={<Trash2 size={14} aria-hidden="true" />}
+                      isDisabled={isBusy || Boolean(busyBlockId)}
+                      onClick={() => setPendingDelete(block)}
+                    />
+                  </HStack>
+                </li>
+              );
+            })}
+          </VStack>
+        )}
       </SurfaceCard>
 
       <ConfirmActionDialog

@@ -204,7 +204,6 @@ export function BookingStepRouter({
     return (
       <ScheduleStep
         settings={settings}
-        layoutView={selection.layoutView}
         timeFormat={selection.timeFormat}
         todayKey={schedule.todayKey}
         selectedDate={schedule.effectiveSelectedDate}
@@ -222,7 +221,6 @@ export function BookingStepRouter({
         onRetryAvailability={schedule.onRetryAvailability}
         canAdvanceMonth={selection.canAdvanceMonth}
         isViewingFutureWindow={selection.windowStartDate > schedule.todayKey}
-        onChangeLayoutView={selection.setLayoutView}
         onChangeTimeFormat={selection.setTimeFormat}
         onSelectDate={(nextDate) => {
           prefetchBookingNextStep('schedule', selection.hasExtrasOptions);

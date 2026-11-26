@@ -11,7 +11,6 @@ import { TextArea } from '@astryxdesign/core/TextArea';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Divider } from '@astryxdesign/core/Divider';
 import { Package, Plus } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
@@ -22,6 +21,7 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import type { ServicePackageCatalogRow } from './cajaTypes';
 
 interface PackagesSubSectionProps {
@@ -66,7 +66,7 @@ export function PackagesSubSection({
 
   const effectivePkgServiceId = pkgServiceId || activeServices[0]?.id || '';
 
-  const handlePackageSubmit = async (e: React.FormEvent) => {
+  const handlePackageSubmit = async (e: React.FormEvent, onDone: () => void) => {
     e.preventDefault();
     if (!pkgName.trim() || !effectivePkgServiceId || pkgSaving) return;
     setPkgSaving(true);
@@ -82,6 +82,7 @@ export function PackagesSubSection({
       if (ok) {
         setPkgName('');
         setPkgDescription('');
+        onDone();
       }
     } finally {
       setPkgSaving(false);
@@ -90,11 +91,87 @@ export function PackagesSubSection({
 
   return (
     <>
-      <VStack className="ad-split" gap={0}>
+      <VStack gap={0}>
         <SurfaceCard
           title="Paquetes de sesiones"
-          subtitle="Arma paquetes prepagados de retoques o servicios para asignar a tus clientas."
+          subtitle="Paquetes prepagados (ej. 5 retoques) que luego asignas a una clienta."
           count={packagesCatalog.length}
+          actions={
+            canManagePackages ? (
+              <FormDialogLauncher
+                triggerLabel="Nuevo paquete"
+                title="Nuevo paquete de sesiones"
+                subtitle="Elige el servicio, cuántas sesiones incluye y su precio."
+                triggerVariant="secondary"
+              >
+                {(close) => (
+            <form onSubmit={(e) => void handlePackageSubmit(e, close)}>
+              <VStack gap={3}>
+                <TextInput
+                  label="Nombre del paquete"
+                  placeholder="Ej. Paquete 5 retoques Rubber"
+                  value={pkgName}
+                  onChange={setPkgName}
+                  isRequired
+                />
+                <Selector
+                  label="Servicio incluido"
+                  value={effectivePkgServiceId}
+                  onChange={(v) => v && setPkgServiceId(v)}
+                  options={activeServices.map((srv) => ({
+                    value: srv.id,
+                    label: `${srv.name} (${formatCurrency(srv.priceCents, currency)})`,
+                  }))}
+                />
+                <Grid columns={{ minWidth: 110, max: 3 }} gap={2}>
+                  <NumberInput
+                    label="Sesiones"
+                    value={pkgTotalSessions}
+                    min={2}
+                    max={20}
+                    isIntegerOnly
+                    onChange={setPkgTotalSessions}
+                  />
+                  <NumberInput
+                    label={`Precio (${currency})`}
+                    value={pkgPriceMxn}
+                    min={0}
+                    onChange={setPkgPriceMxn}
+                  />
+                  <NumberInput
+                    label="Vigencia (días)"
+                    value={pkgValidDays}
+                    min={0}
+                    max={730}
+                    isIntegerOnly
+                    onChange={setPkgValidDays}
+                  />
+                </Grid>
+                <TextArea
+                  label="Notas del paquete (opcional)"
+                  placeholder="Ej. Incluye 5 retoques con precio preferencial."
+                  value={pkgDescription}
+                  onChange={setPkgDescription}
+                  rows={2}
+                  isOptional
+                />
+                <HStack gap={2} justify="end" wrap="wrap">
+                  <Button type="button" label="Cancelar" variant="secondary" isDisabled={pkgSaving} onClick={close} />
+                  <Button
+                    type="submit"
+                    label="Crear paquete"
+                    variant="primary"
+                    icon={<Plus size={15} aria-hidden="true" />}
+                    isLoading={pkgSaving}
+                    isDisabled={pkgSaving || !pkgName.trim() || !effectivePkgServiceId}
+                  />
+                </HStack>
+              </VStack>
+            </form>
+                )}
+              </FormDialogLauncher>
+            ) : undefined
+          }
         >
           {packagesLoading && packagesCatalog.length === 0 ? (
             <VStack padding={4} gap={2} role="status" aria-busy="true">
@@ -107,7 +184,7 @@ export function PackagesSubSection({
                 framed={false}
                 isCompact
                 title="Sin paquetes todavía"
-                description="Crea tu primer paquete de sesiones (ej. 4 sesiones de Rubber) para consentir a tus clientas frecuentes."
+                description="Usa Nuevo paquete para crear el primero, por ejemplo 4 sesiones de Rubber."
               />
             </VStack>
           ) : (
@@ -182,72 +259,6 @@ export function PackagesSubSection({
           )}
         </SurfaceCard>
 
-        {canManagePackages ? (
-          <SurfaceCard title="Nuevo paquete de sesiones" headingLevel={3} padded>
-            <form onSubmit={(e) => void handlePackageSubmit(e)}>
-              <VStack gap={3}>
-                <TextInput
-                  label="Nombre del paquete"
-                  placeholder="Ej. Paquete 5 retoques Rubber"
-                  value={pkgName}
-                  onChange={setPkgName}
-                  isRequired
-                />
-                <Selector
-                  label="Servicio incluido"
-                  value={effectivePkgServiceId}
-                  onChange={(v) => v && setPkgServiceId(v)}
-                  options={activeServices.map((srv) => ({
-                    value: srv.id,
-                    label: `${srv.name} (${formatCurrency(srv.priceCents, currency)})`,
-                  }))}
-                />
-                <Grid columns={{ minWidth: 110, max: 3 }} gap={2}>
-                  <NumberInput
-                    label="Sesiones"
-                    value={pkgTotalSessions}
-                    min={2}
-                    max={20}
-                    isIntegerOnly
-                    onChange={setPkgTotalSessions}
-                  />
-                  <NumberInput
-                    label={`Precio (${currency})`}
-                    value={pkgPriceMxn}
-                    min={0}
-                    onChange={setPkgPriceMxn}
-                  />
-                  <NumberInput
-                    label="Vigencia (días)"
-                    value={pkgValidDays}
-                    min={0}
-                    max={730}
-                    isIntegerOnly
-                    onChange={setPkgValidDays}
-                  />
-                </Grid>
-                <TextArea
-                  label="Notas del paquete (opcional)"
-                  placeholder="Ej. Incluye 5 retoques con precio preferencial."
-                  value={pkgDescription}
-                  onChange={setPkgDescription}
-                  rows={2}
-                  isOptional
-                />
-                <Divider />
-                <Button
-                  type="submit"
-                  label="Crear paquete"
-                  variant="primary"
-                  icon={<Plus size={15} aria-hidden="true" />}
-                  width="100%"
-                  isLoading={pkgSaving}
-                  isDisabled={pkgSaving || !pkgName.trim() || !effectivePkgServiceId}
-                />
-              </VStack>
-            </form>
-          </SurfaceCard>
-        ) : null}
       </VStack>
 
       <ConfirmActionDialog

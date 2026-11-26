@@ -55,7 +55,7 @@ export default function AdminTeamPage() {
       sub:
         activeStaffCount <= 1
           ? 'Se asigna en automático'
-          : 'Clienta elige o "Me da igual"',
+          : 'La clienta elige o toma "Cualquier profesional"',
     },
     {
       id: 'panel-access',

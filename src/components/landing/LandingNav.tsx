@@ -6,7 +6,7 @@ import NextLink from 'next/link';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Menu } from 'lucide-react';
-import { useScrolledPast } from '@/lib/hooks/useScrolledPast';
+import { useHeroScrollState } from '@/lib/hooks/useHeroScrollState';
 import type { ResolvedLandingSections } from '@/lib/landing-config';
 import { LANDING_ASSETS } from './landingContent';
 
@@ -39,7 +39,8 @@ export function LandingNav({
   whatsappUrl,
   sections,
 }: LandingNavProps) {
-  const isFloating = useScrolledPast(80);
+  const heroState = useHeroScrollState('#inicio');
+  const isFloating = heroState === 'past';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const visibleLinks = ALL_NAV_LINKS.filter((item) =>
     sections ? sections[item.key] : true,
@@ -49,7 +50,12 @@ export function LandingNav({
 
   return (
     <header className="lk-header">
-      <nav className="lk-nav" data-floating={isFloating ? 'true' : 'false'} aria-label="Principal">
+      <nav
+        className="lk-nav"
+        data-floating={isFloating ? 'true' : 'false'}
+        data-hero={heroState}
+        aria-label="Principal"
+      >
         <a href="#inicio" aria-label={`${salonName}, inicio`} className="lk-logo-link">
           <img
             className="lk-logo"

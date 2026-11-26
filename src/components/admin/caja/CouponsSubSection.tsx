@@ -9,11 +9,11 @@ import { Table } from '@astryxdesign/core/Table';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
-import { Divider } from '@astryxdesign/core/Divider';
 import { Gift } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { Coupon } from '@/lib/types';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 
 interface CouponsSubSectionProps {
   coupons: readonly Coupon[];
@@ -39,7 +39,7 @@ export function CouponsSubSection({
   const [cpRecipient, setCpRecipient] = useState('');
   const [cpSaving, setCpSaving] = useState(false);
 
-  const handleCouponSubmit = async (e: React.FormEvent) => {
+  const handleCouponSubmit = async (e: React.FormEvent, onDone: () => void) => {
     e.preventDefault();
     if (!cpCode.trim() || cpSaving) return;
     setCpSaving(true);
@@ -54,6 +54,7 @@ export function CouponsSubSection({
       if (ok) {
         setCpCode('');
         setCpRecipient('');
+        onDone();
       }
     } finally {
       setCpSaving(false);
@@ -61,11 +62,80 @@ export function CouponsSubSection({
   };
 
   return (
-    <VStack className="ad-split" gap={0}>
+    <VStack gap={0}>
       <SurfaceCard
         title="Cupones y tarjetas de regalo"
         subtitle="Códigos de descuento y tarjetas con saldo que tus clientas pueden usar al agendar."
         count={coupons.length}
+        actions={
+          <FormDialogLauncher
+            triggerLabel="Crear código"
+            title="Crear cupón o tarjeta de regalo"
+            subtitle="Tus clientas lo escriben al agendar y se descuenta solo."
+            triggerVariant="secondary"
+          >
+            {(close) => (
+        <form onSubmit={(e) => void handleCouponSubmit(e, close)}>
+          <VStack gap={3}>
+            <TextInput
+              label="Código"
+              placeholder="Ej. CUMPLE20 o REGALO500"
+              value={cpCode}
+              onChange={setCpCode}
+              isRequired
+            />
+            <Selector
+              label="Tipo"
+              value={cpKind}
+              onChange={(v) => v && setCpKind(v as 'coupon' | 'gift_card')}
+              options={[
+                { value: 'coupon', label: 'Cupón de descuento' },
+                { value: 'gift_card', label: 'Tarjeta de regalo con saldo' },
+              ]}
+            />
+            {cpKind === 'coupon' ? (
+              <Selector
+                label="Descuento por"
+                value={cpDiscountType}
+                onChange={(v) => v && setCpDiscountType(v as 'percent' | 'fixed_cents')}
+                options={[
+                  { value: 'percent', label: 'Porcentaje (%)' },
+                  { value: 'fixed_cents', label: 'Monto fijo (MXN)' },
+                ]}
+              />
+            ) : null}
+            <NumberInput
+              label={
+                cpKind === 'gift_card' || cpDiscountType === 'fixed_cents'
+                  ? 'Monto en MXN'
+                  : 'Porcentaje (%)'
+              }
+              value={cpValue}
+              min={1}
+              onChange={setCpValue}
+            />
+            <TextInput
+              label="Para quién es (opcional)"
+              placeholder="Ej. Regalo para Ana"
+              value={cpRecipient}
+              onChange={setCpRecipient}
+              isOptional
+            />
+            <HStack gap={2} justify="end" wrap="wrap">
+              <Button type="button" label="Cancelar" variant="secondary" isDisabled={cpSaving} onClick={close} />
+              <Button
+                type="submit"
+                label="Crear código"
+                variant="primary"
+                isLoading={cpSaving}
+                isDisabled={cpSaving || !cpCode.trim()}
+              />
+            </HStack>
+          </VStack>
+        </form>
+            )}
+          </FormDialogLauncher>
+        }
       >
         {coupons.length === 0 ? (
           <VStack padding={4}>
@@ -73,7 +143,7 @@ export function CouponsSubSection({
               framed={false}
               isCompact
               title="Sin cupones activos"
-              description="Crea un cupón de descuento o una tarjeta de regalo desde el panel derecho."
+              description="Usa el botón Crear código para hacer el primero."
             />
           </VStack>
         ) : (
@@ -134,65 +204,6 @@ export function CouponsSubSection({
         )}
       </SurfaceCard>
 
-      <SurfaceCard title="Crear cupón o tarjeta de regalo" headingLevel={3} padded>
-        <form onSubmit={(e) => void handleCouponSubmit(e)}>
-          <VStack gap={3}>
-            <TextInput
-              label="Código"
-              placeholder="Ej. CUMPLE20 o REGALO500"
-              value={cpCode}
-              onChange={setCpCode}
-              isRequired
-            />
-            <Selector
-              label="Tipo"
-              value={cpKind}
-              onChange={(v) => v && setCpKind(v as 'coupon' | 'gift_card')}
-              options={[
-                { value: 'coupon', label: 'Cupón de descuento' },
-                { value: 'gift_card', label: 'Tarjeta de regalo con saldo' },
-              ]}
-            />
-            {cpKind === 'coupon' ? (
-              <Selector
-                label="Descuento por"
-                value={cpDiscountType}
-                onChange={(v) => v && setCpDiscountType(v as 'percent' | 'fixed_cents')}
-                options={[
-                  { value: 'percent', label: 'Porcentaje (%)' },
-                  { value: 'fixed_cents', label: 'Monto fijo (MXN)' },
-                ]}
-              />
-            ) : null}
-            <NumberInput
-              label={
-                cpKind === 'gift_card' || cpDiscountType === 'fixed_cents'
-                  ? 'Monto en MXN'
-                  : 'Porcentaje (%)'
-              }
-              value={cpValue}
-              min={1}
-              onChange={setCpValue}
-            />
-            <TextInput
-              label="Para quién es (opcional)"
-              placeholder="Ej. Regalo para Ana"
-              value={cpRecipient}
-              onChange={setCpRecipient}
-              isOptional
-            />
-            <Divider />
-            <Button
-              type="submit"
-              label="Crear código"
-              variant="primary"
-              width="100%"
-              isLoading={cpSaving}
-              isDisabled={cpSaving || !cpCode.trim()}
-            />
-          </VStack>
-        </form>
-      </SurfaceCard>
     </VStack>
   );
 }

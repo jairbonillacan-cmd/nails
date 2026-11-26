@@ -121,7 +121,8 @@ export default function AdminInventoryPage() {
       <PageHeader
         eyebrow="Tu salón"
         title="Inventario"
-        subtitle="Lleva el control de geles, acrílicos, tips y productos de venta con avisos cuando algo esté por acabarse."
+        subtitle="Geles, acrílicos, tips y productos de venta. Te avisamos cuando algo se esté acabando."
+        actions={<InventoryItemForm onCreateItem={handleCreateItem} />}
       />
 
       <MetricGrid ariaLabel="Resumen de inventario" items={kpiItems} cols={4} />
@@ -145,7 +146,7 @@ export default function AdminInventoryPage() {
         />
       ) : null}
 
-      <VStack className="ad-split" gap={5}>
+      <VStack gap={5}>
         <SurfaceCard
           id="inventory-list-heading"
           title="Material y productos"
@@ -290,7 +291,6 @@ export default function AdminInventoryPage() {
           )}
         </SurfaceCard>
 
-        <InventoryItemForm onCreateItem={handleCreateItem} />
       </VStack>
     </VStack>
   );

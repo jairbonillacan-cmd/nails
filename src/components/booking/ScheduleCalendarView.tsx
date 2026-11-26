@@ -1,19 +1,66 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
-import { Button } from '@astryxdesign/core/Button';
-import { Calendar, type ISODateString } from '@astryxdesign/core/Calendar';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DayAvailabilitySummary } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
 
 export type ScheduleLayout = 'month' | 'week';
 
+export interface MonthGridCell {
+  date: string;
+  day: number;
+  isInMonth: boolean;
+  isMonthStart: boolean;
+}
+
+const WEEKDAY_LABELS = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'] as const;
+const monthNameFormatter = new Intl.DateTimeFormat('es-MX', { month: 'long', timeZone: 'UTC' });
+const monthShortFormatter = new Intl.DateTimeFormat('es-MX', { month: 'short', timeZone: 'UTC' });
+
+function toKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function utcDate(year: number, monthIndex: number, day: number): Date {
+  return new Date(Date.UTC(year, monthIndex, day, 12, 0, 0));
+}
+
+export function monthStartKey(dateKey: string): string {
+  return `${dateKey.slice(0, 7)}-01`;
+}
+
+export function previousMonthStartKey(dateKey: string): string {
+  const [year = 2026, month = 1] = dateKey.split('-').map(Number);
+  return toKey(utcDate(year, month - 2, 1));
+}
+
+export function buildMonthGrid(dateKey: string): MonthGridCell[] {
+  const [year = 2026, month = 1] = dateKey.split('-').map(Number);
+  const first = utcDate(year, month - 1, 1);
+  const daysInMonth = utcDate(year, month, 0).getUTCDate();
+  const leading = first.getUTCDay();
+  const cells: MonthGridCell[] = [];
+  for (let i = 0; i < leading; i += 1) {
+    const d = utcDate(year, month - 1, i - leading + 1);
+    cells.push({ date: toKey(d), day: d.getUTCDate(), isInMonth: false, isMonthStart: false });
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push({ date: toKey(utcDate(year, month - 1, day)), day, isInMonth: true, isMonthStart: day === 1 });
+  }
+  let trailing = 1;
+  while (cells.length % 7 !== 0) {
+    const d = utcDate(year, month, trailing);
+    cells.push({ date: toKey(d), day: trailing, isInMonth: false, isMonthStart: trailing === 1 });
+    trailing += 1;
+  }
+  return cells;
+}
+
 interface ScheduleCalendarViewProps {
-  layoutView: ScheduleLayout;
   timezone: string;
   todayKey: string;
   selectedDate: string;
@@ -22,26 +69,13 @@ interface ScheduleCalendarViewProps {
   isBusy: boolean;
   loadingAvail: boolean;
   canAdvanceMonth: boolean;
-  isViewingFutureWindow: boolean;
   onSelectDate: (date: string) => void;
   onAdvanceMonth: () => void;
   onPrefetchNextMonth?: () => void;
-  onReturnToToday: () => void;
   children: ReactNode;
 }
 
-const STRIP_DAYS = 21;
-const SKELETON_DAY_KEYS = [0, 1, 2, 3, 4, 5, 6] as const;
-
-const weekdayFormatter = new Intl.DateTimeFormat('es-MX', { weekday: 'short', timeZone: 'UTC' });
-const monthFormatter = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-
-function plainDate(dateKey: string): Date {
-  return new Date(`${dateKey}T12:00:00Z`);
-}
-
 export function ScheduleCalendarView({
-  layoutView,
   timezone,
   todayKey,
   selectedDate,
@@ -50,177 +84,113 @@ export function ScheduleCalendarView({
   isBusy,
   loadingAvail,
   canAdvanceMonth,
-  isViewingFutureWindow,
   onSelectDate,
   onAdvanceMonth,
   onPrefetchNextMonth,
-  onReturnToToday,
   children,
 }: ScheduleCalendarViewProps) {
-  const [isMonthOpen, setIsMonthOpen] = useState(false);
-  const maxDateKey = availabilityDays[availabilityDays.length - 1]?.date;
-  const stripDays = availabilityDays.slice(0, STRIP_DAYS);
-  const monthLabel = monthFormatter.format(plainDate(selectedDate));
+  const cells = buildMonthGrid(selectedDate);
+  const [year = 2026, month = 1] = selectedDate.split('-').map(Number);
+  const monthDate = utcDate(year, month - 1, 1);
+  const canGoBack = monthStartKey(selectedDate) > monthStartKey(todayKey);
+  const loadedEnd = availabilityDays[availabilityDays.length - 1]?.date ?? '';
   const controlsDisabled = loadingAvail || isBusy;
 
-  const calendar = (
-    <Calendar
-      mode="single"
-      value={selectedDate as ISODateString}
-      min={todayKey as ISODateString}
-      max={maxDateKey as ISODateString | undefined}
-      dateConstraints={[(date) => availableDateSet.has(date.toISOString().slice(0, 10))]}
-      onChange={(value) => {
-        if (typeof value === 'string') {
-          onSelectDate(value);
-          setIsMonthOpen(false);
-        }
-      }}
-    />
-  );
-
-  const renderWindowButtons = (touchTarget: boolean) => (
-    <>
-      {isViewingFutureWindow ? (
-        <Button
-          label="Mes actual"
-          variant="ghost"
-          size="md"
-          style={touchTarget ? { minHeight: '2.75rem' } : undefined}
-          className="fx-press"
-          isDisabled={controlsDisabled}
-          onClick={onReturnToToday}
-        />
-      ) : null}
-      {canAdvanceMonth ? (
-        <Button
-          label="Próximo mes"
-          variant="ghost"
-          size="md"
-          style={touchTarget ? { minHeight: '2.75rem' } : undefined}
-          className="fx-press"
-          isDisabled={controlsDisabled}
-          onMouseEnter={onPrefetchNextMonth}
-          onFocus={onPrefetchNextMonth}
-          onClick={onAdvanceMonth}
-        />
-      ) : null}
-    </>
-  );
-
-  const strip = loadingAvail ? (
-    <HStack
-      gap={1}
-      className="rb-scroll"
-      data-fade="true"
-      role="status"
-      aria-busy="true"
-      aria-label="Cargando días disponibles"
-    >
-      {SKELETON_DAY_KEYS.map((item) => (
-        <VStack key={item} className="rb-day-skeleton fx-shimmer" aria-hidden="true" />
-      ))}
-    </HStack>
-  ) : (
-    <HStack gap={1} className="rb-scroll" data-fade="true" role="listbox" aria-label="Próximos días">
-      {stripDays.map((day) => {
-        const date = plainDate(day.date);
-        const isOn = day.date === selectedDate;
-        return (
-          <button
-            key={day.date}
-            type="button"
-            role="option"
-            className="rb-day fx-press fx-tabular"
-            aria-selected={isOn}
-            disabled={!day.hasSlots || isBusy}
-            aria-label={`${formatDateLongInTimezone(`${day.date}T18:00:00Z`, timezone)}, ${
-              day.hasSlots ? `${day.slotCount} horarios` : 'sin lugares'
-            }`}
-            onClick={() => onSelectDate(day.date)}
-          >
-            <Text color="inherit" type="supporting" className="rb-day-wd">
-              {weekdayFormatter.format(date).replace('.', '')}
-            </Text>
-            <Text color="inherit" weight="bold" size="xl" hasTabularNumbers>
-              {date.getUTCDate()}
-            </Text>
-            <Text color="inherit" type="supporting" className="rb-day-count rb-d" hasTabularNumbers>
-              {day.hasSlots ? `${day.slotCount} libres` : 'sin lugar'}
-            </Text>
-          </button>
-        );
-      })}
-    </HStack>
-  );
-
   return (
-    <>
-      <VStack gap={2} className="rb-m">
-        <HStack justify="between" align="center" gap={2} wrap="wrap">
-          <Text weight="bold" display="block" className="rb-first-upper">
-            {monthLabel}
+    <VStack className="rb-cal-layout">
+      <VStack
+        gap={3}
+        className="rb-cal fx-busy"
+        data-busy={loadingAvail ? 'true' : 'false'}
+        aria-busy={loadingAvail ? 'true' : 'false'}
+      >
+        <HStack justify="between" align="center" gap={2}>
+          <Text weight="bold" className="rb-cal-title">
+            <Text color="inherit" weight="bold" className="rb-first-upper">
+              {monthNameFormatter.format(monthDate)}
+            </Text>{' '}
+            <Text color="secondary" weight="normal">
+              {year}
+            </Text>
           </Text>
-          <HStack gap={1.5} align="center" wrap="wrap">
-            {renderWindowButtons(true)}
-            <Button
-              label={isMonthOpen ? 'Ocultar mes' : 'Ver mes'}
-              variant="secondary"
-              size="md"
-              style={{ minHeight: '2.75rem' }}
-              className="fx-press"
-              aria-expanded={isMonthOpen}
-              isDisabled={controlsDisabled}
-              onClick={() => setIsMonthOpen((open) => !open)}
-            />
+          <HStack gap={1} align="center">
+            <button
+              type="button"
+              className="rb-cal-nav fx-press"
+              aria-label="Mes anterior"
+              disabled={!canGoBack || controlsDisabled}
+              onClick={() => {
+                const previous = previousMonthStartKey(selectedDate);
+                onSelectDate(previous < todayKey ? todayKey : previous);
+              }}
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="rb-cal-nav fx-press"
+              aria-label="Mes siguiente"
+              disabled={!canAdvanceMonth || controlsDisabled}
+              onMouseEnter={onPrefetchNextMonth}
+              onFocus={onPrefetchNextMonth}
+              onClick={onAdvanceMonth}
+            >
+              <ChevronRight size={18} aria-hidden="true" />
+            </button>
           </HStack>
         </HStack>
-        {isMonthOpen ? (
-          <VStack
-            align="center"
-            className="fx-busy"
-            data-busy={loadingAvail ? 'true' : 'false'}
-            aria-busy={loadingAvail ? 'true' : 'false'}
-          >
-            {calendar}
-          </VStack>
-        ) : (
-          strip
-        )}
+
+        <ol className="rb-cal-grid" aria-hidden="true">
+          {WEEKDAY_LABELS.map((label) => (
+            <li key={label} className="rb-cal-wd">
+              {label}
+            </li>
+          ))}
+        </ol>
+
+        <ol className="rb-cal-grid" aria-label="Días del mes">
+          {cells.map((cell) => {
+            const isAvailable = availableDateSet.has(cell.date);
+            const isSelected = cell.date === selectedDate;
+            const isPast = cell.date < todayKey;
+            const isLoaded = cell.date <= loadedEnd;
+            const showCell = cell.isInMonth || (cell.date > selectedDate && isLoaded);
+            if (!showCell) {
+              return <li key={cell.date} className="rb-cal-cell" aria-hidden="true" />;
+            }
+            const state = isSelected ? 'selected' : isAvailable && !isPast ? 'available' : 'off';
+            return (
+              <li key={cell.date} className="rb-cal-cell">
+                <button
+                  type="button"
+                  className="rb-cal-day fx-press fx-tabular"
+                  data-state={state}
+                  data-today={cell.date === todayKey ? 'true' : 'false'}
+                  aria-pressed={isSelected}
+                  aria-label={`${formatDateLongInTimezone(`${cell.date}T18:00:00Z`, timezone)}${
+                    state === 'off' ? ', sin lugares' : ''
+                  }`}
+                  disabled={state === 'off' || isBusy}
+                  onClick={() => onSelectDate(cell.date)}
+                >
+                  {cell.isMonthStart && !cell.isInMonth ? (
+                    <Text color="inherit" className="rb-cal-mon">
+                      {monthShortFormatter.format(utcDate(year, month, 1)).replace('.', '').toUpperCase()}
+                    </Text>
+                  ) : null}
+                  <Text color="inherit" weight={state === 'off' ? 'normal' : 'bold'} hasTabularNumbers>
+                    {cell.day}
+                  </Text>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
       </VStack>
 
-      <HStack gap={6} align="start" className="rb-schedule">
-        {layoutView === 'month' ? (
-          <VStack
-            className="rb-d rb-calendar fx-busy"
-            gap={2}
-            data-busy={loadingAvail ? 'true' : 'false'}
-            aria-busy={loadingAvail ? 'true' : 'false'}
-          >
-            {calendar}
-            <HStack gap={2} justify="center" wrap="wrap">
-              {renderWindowButtons(false)}
-            </HStack>
-          </VStack>
-        ) : null}
-
-        <VStack gap={3} className="rb-grow" aria-busy={loadingAvail ? 'true' : 'false'}>
-          {layoutView === 'week' ? (
-            <VStack gap={2} className="rb-d">
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" weight="semibold" color="secondary" className="rb-first-upper">
-                  {monthLabel}
-                </Text>
-                <HStack gap={1.5} align="center">
-                  {renderWindowButtons(false)}
-                </HStack>
-              </HStack>
-              {strip}
-            </VStack>
-          ) : null}
-          {children}
-        </VStack>
-      </HStack>
-    </>
+      <VStack gap={3} className="rb-times-col" aria-busy={loadingAvail ? 'true' : 'false'}>
+        {children}
+      </VStack>
+    </VStack>
   );
 }

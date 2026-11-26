@@ -7,6 +7,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Check, Plus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
@@ -109,6 +110,11 @@ export default function AdminServicesPage() {
     setCleanupEnabledOverride(false);
   };
 
+  const closeEditor = () => {
+    setEditing(null);
+    setCleanupEnabledOverride(null);
+  };
+
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isServiceDirty || savingService) return;
@@ -131,14 +137,9 @@ export default function AdminServicesPage() {
       });
       if (res.ok) {
         await refresh();
-        if (wasEditing) {
-          setEditing(normalizedPayload);
-        } else {
-          setEditing(null);
-          setCleanupEnabledOverride(null);
-        }
+        closeEditor();
         saveNotice.show(
-          activeDraft.isPrivate ? 'Servicio privado guardado' : 'Servicio guardado',
+          wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
         );
       } else {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -237,7 +238,7 @@ export default function AdminServicesPage() {
       </TabList>
 
       {section === 'services' ? (
-        <VStack key="tab-services" className="ad-split fx-step-in" gap={5}>
+        <VStack key="tab-services" className="fx-step-in" gap={5}>
           <ServiceCatalogSection
             services={data.services}
             categories={data.categories}
@@ -255,42 +256,6 @@ export default function AdminServicesPage() {
             }}
             onCopyError={(text) => setSavedMsg({ status: 'error', text })}
           />
-
-          <VStack gap={4}>
-            <ServiceLivePreview
-              draft={activeDraft}
-              categoryName={previewCategoryName}
-              currency={currency}
-              appUrl={data.integration.appUrl}
-            />
-            <ServiceEditorPanel
-              draft={activeDraft}
-              categoryOptions={categoryOptions}
-              defaultDepositCents={defaultDepositCents}
-              hasCleanupTime={hasCleanupTime}
-              hasCustomAdvancedValues={hasCustomAdvancedValues}
-              isDirty={isServiceDirty}
-              saving={savingService}
-              saveNoticeMessage={saveNotice.message}
-              onChangeDraft={setEditing}
-              onToggleCleanupTime={(checked) => {
-                setCleanupEnabledOverride(checked);
-                if (!checked) {
-                  setEditing({ ...activeDraft, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 });
-                } else if (
-                  (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
-                  (activeDraft.bufferAfterMinutes ?? 0) === 0
-                ) {
-                  setEditing({ ...activeDraft, bufferAfterMinutes: 15 });
-                }
-              }}
-              onResetToNew={() => {
-                setEditing(null);
-                setCleanupEnabledOverride(null);
-              }}
-              onSubmit={handleSaveService}
-            />
-          </VStack>
         </VStack>
       ) : (
         <AddonsManagerSection
@@ -301,6 +266,56 @@ export default function AdminServicesPage() {
           onNotice={saveNotice.show}
         />
       )}
+
+      <Dialog
+        isOpen={editing !== null}
+        onOpenChange={(open) => {
+          if (!open && !savingService) closeEditor();
+        }}
+        purpose="form"
+        width="min(40rem, 96vw)"
+        maxHeight="92dvh"
+        padding={5}
+      >
+        <VStack gap={4} className="fx-sheet-in">
+          <DialogHeader
+            title={activeDraft.id ? 'Editar servicio' : 'Nuevo servicio'}
+            subtitle="Nombre, precio y duración es lo único obligatorio."
+            onOpenChange={(open) => {
+              if (!open && !savingService) closeEditor();
+            }}
+          />
+          <ServiceLivePreview
+            draft={activeDraft}
+            categoryName={previewCategoryName}
+            currency={currency}
+            appUrl={data.integration.appUrl}
+          />
+          <ServiceEditorPanel
+            draft={activeDraft}
+            categoryOptions={categoryOptions}
+            defaultDepositCents={defaultDepositCents}
+            hasCleanupTime={hasCleanupTime}
+            hasCustomAdvancedValues={hasCustomAdvancedValues}
+            isDirty={isServiceDirty}
+            saving={savingService}
+            onChangeDraft={setEditing}
+            onToggleCleanupTime={(checked) => {
+              setCleanupEnabledOverride(checked);
+              if (!checked) {
+                setEditing({ ...activeDraft, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 });
+              } else if (
+                (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
+                (activeDraft.bufferAfterMinutes ?? 0) === 0
+              ) {
+                setEditing({ ...activeDraft, bufferAfterMinutes: 15 });
+              }
+            }}
+            onCancel={closeEditor}
+            onSubmit={handleSaveService}
+          />
+        </VStack>
+      </Dialog>
 
       <ConfirmActionDialog
         isOpen={Boolean(pendingPauseService)}

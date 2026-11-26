@@ -251,38 +251,38 @@ export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqIt
   return [
     {
       id: 'faq-anticipo',
-      question: '¿Cómo aparto mi cita y cuánto es el anticipo?',
+      question: '¿Cómo aparto mi cita?',
       answer: hasDeposit
-        ? `Apartas tu cita en línea desde /reservar con un anticipo de ${depositText} vía transferencia SPEI o enviando tu comprobante por Instagram DM a ${instagramHandle}. El anticipo se descuenta del total de tu servicio.`
-        : 'Apartas tu cita en línea desde /reservar eligiendo tu técnica, especialista y horario disponible en tiempo real.',
+        ? `Escoges servicio, día y hora aquí en la página y dejas un anticipo de ${depositText} por transferencia SPEI. El comprobante lo puedes subir ahí mismo o mandarlo por DM a ${instagramHandle}. Ese anticipo se descuenta de tu total.`
+        : 'Escoges servicio, día y hora aquí en la página y listo. Te llega la confirmación por WhatsApp.',
     },
     {
       id: 'faq-reagendar',
-      question: '¿Con cuánta anticipación puedo reagendar o cancelar?',
-      answer: `Puedes reagendar o cancelar hasta ${cancelHours} horas antes de tu cita sin perder tu anticipo, directamente desde el enlace de tu confirmación o en /mis-citas.`,
+      question: '¿Puedo cambiar o cancelar mi cita?',
+      answer: `Sí, hasta ${cancelHours} horas antes y sin perder tu anticipo. Lo haces desde el link que te llega al confirmar o en "Mis citas".`,
     },
     {
       id: 'faq-retoque',
-      question: '¿Cada cuánto recomiendan el retoque de Rubber, acrílico o softgel?',
+      question: '¿Cada cuánto me toca retoque?',
       answer:
-        'Recomendamos hacer tu retoque cada 21 días para cuidar la salud de tu uña natural y mantener el set intacto. Puedes agendar tu siguiente retoque en 1 clic desde /mis-citas.',
+        'Lo ideal es cada 21 días, sea rubber, acrílico o softgel. Así tu uña natural se mantiene sana y el set se ve bien hasta el final.',
     },
     {
       id: 'faq-ubicacion',
-      question: `¿Dónde está ubicado ${salonName} en Puebla y atienden sin cita?`,
-      answer: `Estamos ubicados en ${address}. Atendemos únicamente con cita previa para dedicarte tu bloque completo sin prisas.`,
+      question: `¿Dónde está ${salonName}? ¿Atienden sin cita?`,
+      answer: `Estamos en ${address}. Solo atendemos con cita, para que tu tiempo sea completo para ti.`,
     },
     {
       id: 'faq-extras',
-      question: '¿Puedo agregar nail art, efectos o retiro de gel previo?',
+      question: '¿Puedo agregar nail art o quitarme el gel que traigo?',
       answer:
-        'Sí. En el paso de Extras de /reservar puedes agregar nail art, efectos chrome o cat eye, largo extra o retiro de gel previo; el tiempo y el total se calculan solos.',
+        'Sí. Al reservar, en el paso de Extras eliges nail art, chrome, cat eye, largo extra o retiro de gel. El tiempo y el precio se suman solos.',
     },
     {
       id: 'faq-sellos',
-      question: '¿Cómo funciona la Tarjeta de Sellos LAIKONA?',
+      question: '¿Cómo funciona la tarjeta de sellos?',
       answer:
-        'Acumulas sellos digitales automáticamente en cada visita completada y al completar 8 sellos obtienes 50% de descuento en tu siguiente servicio. Puedes consultar tu avance en /mis-citas.',
+        'Cada visita te da un sello. Al juntar 8, tu siguiente servicio tiene 50% de descuento. Puedes ver cuántos llevas en "Mis citas".',
     },
   ];
 }

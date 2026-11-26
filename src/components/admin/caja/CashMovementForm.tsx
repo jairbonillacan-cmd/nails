@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Button } from '@astryxdesign/core/Button';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -9,7 +10,8 @@ import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Plus } from 'lucide-react';
 import type { PaymentMethod } from '@/lib/types';
-import { FilterPillBar, SurfaceCard, type FilterPillOption } from '@/components/ui';
+import { FilterPillBar, type FilterPillOption } from '@/components/ui';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 
 export type QuickEntryType = 'expense' | 'product_sale' | 'service_income';
 
@@ -29,6 +31,22 @@ const ENTRY_TYPE_OPTIONS: readonly FilterPillOption<QuickEntryType>[] = [
 ];
 
 export function CashMovementForm({ onRecordCashEntry }: CashMovementFormProps) {
+  return (
+    <FormDialogLauncher
+      triggerLabel="Registrar gasto o venta"
+      title="Registrar gasto o venta"
+      subtitle="Lo que entra o sale de caja fuera de una cita."
+      isTriggerFullWidth
+    >
+      {(close) => <CashMovementFormBody onRecordCashEntry={onRecordCashEntry} onDone={close} />}
+    </FormDialogLauncher>
+  );
+}
+
+function CashMovementFormBody({
+  onRecordCashEntry,
+  onDone,
+}: CashMovementFormProps & { onDone: () => void }) {
   const [entryType, setEntryType] = useState<QuickEntryType>('expense');
   const [desc, setDesc] = useState('');
   const [amountMxn, setAmountMxn] = useState(150);
@@ -46,16 +64,13 @@ export function CashMovementForm({ onRecordCashEntry }: CashMovementFormProps) {
         amountMxn,
         method,
       });
-      if (ok) {
-        setDesc('');
-      }
+      if (ok) onDone();
     } finally {
       setSavingEntry(false);
     }
   };
 
   return (
-    <SurfaceCard title="Registrar gasto o venta" headingLevel={3} padded>
       <form onSubmit={(e) => void handleSubmitEntry(e)}>
         <VStack gap={3}>
           <FilterPillBar
@@ -97,23 +112,24 @@ export function CashMovementForm({ onRecordCashEntry }: CashMovementFormProps) {
               ]}
             />
           </Grid>
-          <Button
-            type="submit"
-            label={
-              entryType === 'expense'
-                ? 'Guardar gasto'
-                : entryType === 'product_sale'
-                  ? 'Guardar venta'
-                  : 'Guardar ingreso'
-            }
-            variant="primary"
-            icon={<Plus size={15} aria-hidden="true" />}
-            width="100%"
-            isLoading={savingEntry}
-            isDisabled={savingEntry || !desc.trim()}
-          />
+          <HStack gap={2} justify="end" wrap="wrap">
+            <Button type="button" label="Cancelar" variant="secondary" isDisabled={savingEntry} onClick={onDone} />
+            <Button
+              type="submit"
+              label={
+                entryType === 'expense'
+                  ? 'Guardar gasto'
+                  : entryType === 'product_sale'
+                    ? 'Guardar venta'
+                    : 'Guardar ingreso'
+              }
+              variant="primary"
+              icon={<Plus size={15} aria-hidden="true" />}
+              isLoading={savingEntry}
+              isDisabled={savingEntry || !desc.trim()}
+            />
+          </HStack>
         </VStack>
       </form>
-    </SurfaceCard>
   );
 }

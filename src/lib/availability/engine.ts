@@ -11,7 +11,7 @@ import type {
   StaffMember,
 } from '../types';
 
-export type DayPeriod = 'morning' | 'afternoon' | 'evening';
+type DayPeriod = 'morning' | 'afternoon' | 'evening';
 
 export interface AvailableSlot {
   startAt: string;

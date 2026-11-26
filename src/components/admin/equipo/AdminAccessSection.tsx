@@ -10,8 +10,7 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Banner } from '@astryxdesign/core/Banner';
-import { Collapsible } from '@astryxdesign/core/Collapsible';
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Shield, UserPlus } from 'lucide-react';
 import {
   ActionRow,
@@ -60,6 +59,7 @@ export function AdminAccessSection({
   const [aRole, setARole] = useState<AdminRole>('admin');
   const [aStaffId, setAStaffId] = useState<string>('none');
   const [savingAdmin, setSavingAdmin] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
 
   const staffNameById = new Map(staff.map((st) => [st.id, st.name]));
 
@@ -88,6 +88,7 @@ export function AdminAccessSection({
         return;
       }
       await onRefresh();
+      setIsInviteOpen(false);
       setAName('');
       setAEmail('');
       setARole('admin');
@@ -106,8 +107,20 @@ export function AdminAccessSection({
         id="team-access-heading"
         icon={<Shield size={16} aria-hidden="true" />}
         title="Accesos al panel"
-        subtitle="Elige qué puede ver y hacer cada persona: Dueña, Recepción o Manicurista."
+        subtitle="Quién puede entrar y qué puede ver: Dueña, Recepción o Manicurista."
         count={adminUsers.length}
+        actions={
+          isOwner ? (
+            <Button
+              type="button"
+              label="Agregar persona"
+              variant="secondary"
+              size="sm"
+              icon={<UserPlus size={14} aria-hidden="true" />}
+              onClick={() => setIsInviteOpen(true)}
+            />
+          ) : undefined
+        }
       >
         <VStack as="ul" className="ad-row-list" gap={0}>
           {adminUsers.map((u) => {
@@ -154,29 +167,26 @@ export function AdminAccessSection({
         </VStack>
       </SurfaceCard>
 
-      <SurfaceCard
-        id="team-invite-heading"
-        title="Dar acceso a alguien del equipo"
-        subtitle="Crea un acceso separado para recepción o para que cada manicurista vea solo su agenda."
+      <Dialog
+        isOpen={isInviteOpen}
+        onOpenChange={(open) => {
+          if (!savingAdmin) setIsInviteOpen(open);
+        }}
+        purpose="form"
+        width="min(30rem, 96vw)"
+        padding={5}
       >
-        {isOwner ? (
-          <VStack className="ad-card-body" paddingBlockStart={4}>
-            <Collapsible
-              className="ad-disclosure"
-              defaultIsOpen={false}
-              trigger={
-                <HStack gap={2} align="center">
-                  <UserPlus size={14} aria-hidden="true" />
-                  <Text weight="semibold" size="sm">
-                    Agregar persona al panel
-                  </Text>
-                </HStack>
-              }
-            >
+        <VStack gap={4} className="fx-sheet-in">
+          <DialogHeader
+            title="Agregar persona al panel"
+            subtitle="Entrará con su propio correo y solo verá lo que su permiso le deje."
+            onOpenChange={(open) => {
+              if (!savingAdmin) setIsInviteOpen(open);
+            }}
+          />
               <form onSubmit={handleAddAccess}>
                 <VStack
                   gap={3}
-                  paddingBlockStart={3}
                   className={savingAdmin ? 'fx-busy' : undefined}
                   aria-busy={savingAdmin || undefined}
                 >
@@ -190,7 +200,6 @@ export function AdminAccessSection({
                   <TextInput
                     label="Correo para entrar"
                     type="email"
-                    placeholder="equipo@nails.studio"
                     value={aEmail}
                     onChange={setAEmail}
                     isRequired
@@ -229,29 +238,27 @@ export function AdminAccessSection({
                       ]}
                     />
                   ) : null}
-                  <Button
-                    type="submit"
-                    label={savingAdmin ? 'Agregando...' : 'Crear acceso'}
-                    variant="primary"
-                    icon={<UserPlus size={15} aria-hidden="true" />}
-                    width="100%"
-                    isLoading={savingAdmin}
-                    isDisabled={!aName.trim() || !aEmail.trim() || savingAdmin}
-                  />
+                  <HStack gap={2} justify="end" wrap="wrap">
+                    <Button
+                      type="button"
+                      label="Cancelar"
+                      variant="secondary"
+                      isDisabled={savingAdmin}
+                      onClick={() => setIsInviteOpen(false)}
+                    />
+                    <Button
+                      type="submit"
+                      label={savingAdmin ? 'Agregando...' : 'Dar acceso'}
+                      variant="primary"
+                      icon={<UserPlus size={15} aria-hidden="true" />}
+                      isLoading={savingAdmin}
+                      isDisabled={!aName.trim() || !aEmail.trim() || savingAdmin}
+                    />
+                  </HStack>
                 </VStack>
               </form>
-            </Collapsible>
-          </VStack>
-        ) : (
-          <VStack className="ad-card-body" paddingBlockStart={4}>
-            <Banner
-              status="info"
-              title="Solo disponible para la Dueña"
-              description="Únicamente la Dueña puede agregar cuentas nuevas o cambiar permisos del panel."
-            />
-          </VStack>
-        )}
-      </SurfaceCard>
+        </VStack>
+      </Dialog>
     </VStack>
   );
 }

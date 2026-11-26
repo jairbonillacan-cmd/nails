@@ -13,8 +13,8 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Check, Save, SlidersHorizontal } from 'lucide-react';
-import { StatusTag, SurfaceCard } from '@/components/ui';
+import { Save, SlidersHorizontal } from 'lucide-react';
+import { StatusTag } from '@/components/ui';
 import type { Service } from '@/lib/types';
 
 interface CategoryOption {
@@ -30,10 +30,9 @@ interface ServiceEditorPanelProps {
   hasCustomAdvancedValues: boolean;
   isDirty: boolean;
   saving: boolean;
-  saveNoticeMessage: string | null;
   onChangeDraft: (next: Partial<Service>) => void;
   onToggleCleanupTime: (checked: boolean) => void;
-  onResetToNew: () => void;
+  onCancel: () => void;
   onSubmit: (e: React.FormEvent) => void;
 }
 
@@ -45,48 +44,15 @@ export function ServiceEditorPanel({
   hasCustomAdvancedValues,
   isDirty,
   saving,
-  saveNoticeMessage,
   onChangeDraft,
   onToggleCleanupTime,
-  onResetToNew,
+  onCancel,
   onSubmit,
 }: ServiceEditorPanelProps) {
   return (
-    <SurfaceCard
-      id="service-editor-heading"
-      title={draft.id ? 'Editar servicio' : 'Crear servicio'}
-      subtitle="Lo esencial primero: nombre, precio, duración y categoría."
-      actions={
-        <HStack gap={2} align="center" wrap="wrap">
-          {saving ? (
-            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando...
-            </Text>
-          ) : isDirty ? (
-            <StatusTag label="Sin guardar" tone="warning" className="fx-pop" />
-          ) : saveNoticeMessage ? (
-            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-              <Check size={12} aria-hidden="true" />
-              {saveNoticeMessage}
-            </Text>
-          ) : null}
-          {draft.id ? (
-            <Button
-              type="button"
-              label="Nuevo"
-              variant="ghost"
-              size="sm"
-              isDisabled={saving}
-              onClick={onResetToNew}
-            />
-          ) : null}
-        </HStack>
-      }
-    >
       <form onSubmit={onSubmit}>
         <VStack
           gap={3}
-          padding={5}
           className={saving ? 'fx-busy' : undefined}
           aria-busy={saving || undefined}
         >
@@ -245,23 +211,19 @@ export function ServiceEditorPanel({
             </VStack>
           </Collapsible>
 
-          <Button
-            type="submit"
-            label={
-              saving
-                ? 'Guardando...'
-                : draft.id
-                  ? 'Guardar servicio'
-                  : 'Crear servicio'
-            }
-            variant="primary"
-            icon={<Save size={15} aria-hidden="true" />}
-            width="100%"
-            isLoading={saving}
-            isDisabled={!isDirty || saving}
-          />
+          <HStack gap={2} justify="end" align="center" wrap="wrap">
+            {isDirty && !saving ? <StatusTag label="Sin guardar" tone="warning" className="fx-pop" /> : null}
+            <Button type="button" label="Cancelar" variant="secondary" isDisabled={saving} onClick={onCancel} />
+            <Button
+              type="submit"
+              label={saving ? 'Guardando...' : draft.id ? 'Guardar cambios' : 'Crear servicio'}
+              variant="primary"
+              icon={<Save size={15} aria-hidden="true" />}
+              isLoading={saving}
+              isDisabled={!isDirty || saving}
+            />
+          </HStack>
         </VStack>
       </form>
-    </SurfaceCard>
   );
 }

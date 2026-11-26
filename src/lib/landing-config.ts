@@ -177,7 +177,7 @@ export function resolveLandingContent(
     faqTitle: cleanText(content.faqTitle, 'Preguntas frecuentes'),
     faqSubtitle: cleanText(
       content.faqSubtitle,
-      `Anticipos, reagendado, retoques y todo lo que necesitas saber antes de tu cita en ${cityLabel}.`,
+      'Lo que más nos preguntan antes de su primera cita.',
     ),
     customFaqs,
     visitTitle: cleanText(content.visitTitle, 'Visítanos'),

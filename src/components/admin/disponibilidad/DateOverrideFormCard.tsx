@@ -11,8 +11,12 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Save } from 'lucide-react';
-import { FilterPillBar, SurfaceCard } from '@/components/ui';
+import { DateInput } from '@astryxdesign/core/DateInput';
+import type { ISODateString } from '@astryxdesign/core/Calendar';
+import { HStack } from '@astryxdesign/core/HStack';
+import { CalendarPlus, Save } from 'lucide-react';
+import { FilterPillBar } from '@/components/ui';
+import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import type { DateOverride, StaffMember } from '@/lib/types';
 import { TIME_OPTIONS } from './scheduleConstants';
 
@@ -25,14 +29,29 @@ interface DateOverrideFormCardProps {
   onMessage: (msg: { status: 'success' | 'error'; text: string } | null) => void;
 }
 
-export function DateOverrideFormCard({
+export function DateOverrideFormCard(props: DateOverrideFormCardProps) {
+  return (
+    <FormDialogLauncher
+      triggerLabel="Agregar fecha"
+      title="Vacaciones o día cerrado"
+      subtitle="Cierra uno o varios días, o pon un horario distinto."
+      triggerVariant="secondary"
+      icon={<CalendarPlus size={14} aria-hidden="true" />}
+    >
+      {(close) => <DateOverrideFormBody {...props} onDone={close} />}
+    </FormDialogLauncher>
+  );
+}
+
+function DateOverrideFormBody({
   staffId,
   allStaff,
   serverTodayKey,
   onRefresh,
   onSavedNotice,
   onMessage,
-}: DateOverrideFormCardProps) {
+  onDone,
+}: DateOverrideFormCardProps & { onDone: () => void }) {
   const [ovrMode, setOvrMode] = useState<'single' | 'range'>('single');
   const [ovrDateInput, setOvrDateInput] = useState<string | null>(null);
   const [ovrEndDateInput, setOvrEndDateInput] = useState<string | null>(null);
@@ -99,6 +118,7 @@ export function DateOverrideFormCard({
         setOvrReason('');
         setOvrPublicNote('');
         setOvrRedirectStaffId('');
+        onDone();
         onSavedNotice(
           ovrMode === 'range'
             ? `Fechas guardadas (${json.overrides?.length ?? 1} días)`
@@ -116,15 +136,9 @@ export function DateOverrideFormCard({
   };
 
   return (
-    <SurfaceCard
-      id="create-vacation-heading"
-      title="Agregar vacaciones o día cerrado"
-      subtitle="Cierra un día completo, varios días seguidos o pon un horario distinto."
-    >
       <form onSubmit={addClosedDate}>
         <VStack
           gap={3}
-          padding={5}
           className={savingOverride ? 'fx-busy' : undefined}
           aria-busy={savingOverride || undefined}
         >
@@ -142,27 +156,30 @@ export function DateOverrideFormCard({
           />
 
           {ovrMode === 'single' ? (
-            <TextInput
+            <DateInput
               label="Fecha"
-              placeholder="Ej. 2026-12-24 (año-mes-día)"
-              value={ovrDate}
-              onChange={setOvrDateInput}
+              placeholder="Elige el día"
+              value={ovrDate as ISODateString}
+              min={serverTodayKey as ISODateString}
+              onChange={(v) => setOvrDateInput(v ?? null)}
               isRequired
             />
           ) : (
             <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
-              <TextInput
+              <DateInput
                 label="Desde"
-                placeholder="Ej. 2026-12-24"
-                value={ovrDate}
-                onChange={setOvrDateInput}
+                placeholder="Primer día"
+                value={ovrDate as ISODateString}
+                min={serverTodayKey as ISODateString}
+                onChange={(v) => setOvrDateInput(v ?? null)}
                 isRequired
               />
-              <TextInput
+              <DateInput
                 label="Hasta"
-                placeholder="Ej. 2026-12-31"
-                value={ovrEndDate}
-                onChange={setOvrEndDateInput}
+                placeholder="Último día"
+                value={ovrEndDate as ISODateString}
+                min={ovrDate as ISODateString}
+                onChange={(v) => setOvrEndDateInput(v ?? null)}
                 isRequired
               />
             </Grid>
@@ -222,23 +239,18 @@ export function DateOverrideFormCard({
             </VStack>
           </Collapsible>
 
-          <Button
-            type="submit"
-            label={
-              savingOverride
-                ? 'Guardando...'
-                : ovrMode === 'range'
-                  ? 'Guardar vacaciones'
-                  : 'Guardar fecha'
-            }
-            variant="primary"
-            width="100%"
-            icon={<Save size={15} aria-hidden="true" />}
-            isLoading={savingOverride}
-            isDisabled={savingOverride}
-          />
+          <HStack gap={2} justify="end" wrap="wrap">
+            <Button type="button" label="Cancelar" variant="secondary" isDisabled={savingOverride} onClick={onDone} />
+            <Button
+              type="submit"
+              label={savingOverride ? 'Guardando...' : ovrMode === 'range' ? 'Guardar vacaciones' : 'Guardar fecha'}
+              variant="primary"
+              icon={<Save size={15} aria-hidden="true" />}
+              isLoading={savingOverride}
+              isDisabled={savingOverride}
+            />
+          </HStack>
         </VStack>
       </form>
-    </SurfaceCard>
   );
 }

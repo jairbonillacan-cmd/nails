@@ -18,6 +18,55 @@
   color: var(--lk-blanco);
 }
 
+@keyframes rb-step-forward {
+  from { opacity: 0; transform: translate3d(1.5rem, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes rb-step-back {
+  from { opacity: 0; transform: translate3d(-1.5rem, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes rb-select-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.9); }
+  70% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes rb-check-in {
+  from { opacity: 0; transform: scale(0.4) rotate(-20deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+.rb-step-motion {
+  min-width: 0;
+  animation: rb-step-forward 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rb-step-motion[data-dir='back'] {
+  animation-name: rb-step-back;
+}
+
+.rb-cal-day[data-state='selected'],
+.rb-time[aria-pressed='true'] {
+  animation: rb-select-pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rb-check[data-on='true'] svg {
+  animation: rb-check-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.rb-opt[aria-pressed='true'] {
+  transition: border-color 200ms ease, background-color 200ms ease, box-shadow 260ms ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 0.75rem 1.75rem -1.25rem var(--lk-sombra);
+}
+
+.rb-step-dot[data-on='true'] {
+  animation: rb-select-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 .rb-segments {
   list-style: none;
   margin: 0;
@@ -231,8 +280,7 @@
   transition: border-color var(--duration-fast) ease, background-color var(--duration-fast) ease, box-shadow var(--duration-medium) ease, transform var(--duration-medium) var(--ease-move);
 }
 
-.rb-opt:hover:not(:disabled),
-.rb-slot:hover:not(:disabled) {
+.rb-opt:hover:not(:disabled) {
   border-color: var(--lk-cereza);
 }
 
@@ -248,8 +296,9 @@
 
 .rb-opt:focus-visible,
 .rb-pill:focus-visible,
-.rb-slot:focus-visible,
-.rb-day:focus-visible,
+.rb-time:focus-visible,
+.rb-cal-day:focus-visible,
+.rb-cal-nav:focus-visible,
 .rb-bottom-summary:focus-visible {
   outline: 2px solid var(--lk-cereza);
   outline-offset: 2px;
@@ -278,8 +327,7 @@
   border-radius: var(--radius-full);
 }
 
-.rb-check[data-on='true'],
-.rb-day[aria-selected='true'] {
+.rb-check[data-on='true'] {
   background: var(--lk-cereza);
   border-color: var(--lk-cereza);
   color: var(--lk-blanco);
@@ -364,124 +412,211 @@
   border: 1px solid var(--lk-tinte);
 }
 
-.rb-schedule {
-  flex-wrap: nowrap;
+.rb-cal-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
 }
 
-.rb-calendar {
-  flex: 0 0 auto;
-  padding: 0.875rem;
+.rb-cal {
+  padding: 1rem;
   border-radius: 1.25rem;
+  border: 1px solid var(--lk-tinte);
+  background: var(--color-background-surface);
+}
+
+.rb-cal-title {
+  font-size: 1.0625rem;
+}
+
+.rb-cal-nav {
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--lk-tinta);
+  cursor: pointer;
+}
+
+.rb-cal-nav:hover:not(:disabled) {
   background: var(--lk-rosa);
 }
 
-.rb-day {
+.rb-cal-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.rb-cal-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.rb-cal-wd {
+  text-align: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--lk-suave);
+}
+
+.rb-cal-cell {
+  min-width: 0;
+  aspect-ratio: 1;
+}
+
+.rb-cal-day {
   position: relative;
-  width: 3.75rem;
-  min-height: 4.75rem;
+  width: 100%;
+  height: 100%;
+  min-height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: var(--lk-suave);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+  transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms cubic-bezier(0.22, 1, 0.36, 1), transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rb-cal-day[data-state='available'] {
+  background: var(--lk-rosa);
+  color: var(--lk-tinta);
+  cursor: pointer;
+}
+
+.rb-cal-day[data-state='available']:hover {
+  background: var(--lk-tinte);
+}
+
+.rb-cal-day[data-state='selected'] {
+  background: var(--lk-cereza);
+  color: var(--lk-blanco);
+  cursor: pointer;
+}
+
+.rb-cal-day:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.rb-cal-day[data-today='true']::after {
+  content: '';
+  position: absolute;
+  bottom: 0.35rem;
+  left: 50%;
+  width: 0.25rem;
+  height: 0.25rem;
+  margin-left: -0.125rem;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.rb-cal-mon {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.35rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.rb-times-col {
+  min-width: 0;
+}
+
+.rb-times-day {
+  font-size: 1.0625rem;
+  text-transform: capitalize;
+}
+
+.rb-times {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.rb-time {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.5rem 0.75rem;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.125rem;
-  border-radius: 1.125rem;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
   border: 1.5px solid var(--lk-tinte);
   background: var(--color-background-surface);
   color: var(--lk-tinta);
   font: inherit;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms cubic-bezier(0.22, 1, 0.36, 1), transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms cubic-bezier(0.22, 1, 0.36, 1), transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.rb-day:active:not(:disabled) {
-  transform: scale(0.97);
+.rb-time:hover:not(:disabled) {
+  border-color: var(--lk-cereza);
 }
 
-.rb-day-wd {
-  text-transform: capitalize;
-  color: inherit;
-}
-
-.rb-day-count {
-  color: inherit;
-  opacity: 0.75;
-  white-space: nowrap;
-}
-
-.rb-day:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.rb-day:not(:disabled):not([aria-selected='true'])::after {
-  content: '';
-  position: absolute;
-  bottom: 0.5rem;
-  width: 0.25rem;
-  height: 0.25rem;
-  border-radius: var(--radius-full);
-  background: var(--lk-cereza);
-}
-
-.rb-schedule .rb-day {
-  width: 5.25rem;
-}
-
-.rb-schedule .rb-day::after {
-  display: none;
-}
-
-.rb-slots {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
-  gap: 0.5rem;
-}
-
-.rb-slot {
-  width: 100%;
-  min-height: 3.5rem;
-  padding: 0.375rem 0.625rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: 1rem;
-  border: 1.5px solid var(--lk-linea);
-  background: var(--color-background-surface);
-  color: var(--lk-tinta);
-  font: inherit;
-  font-size: 0.9375rem;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), background-color 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.rb-slot:active:not(:disabled) {
+.rb-time:active:not(:disabled) {
   transform: scale(0.98);
 }
 
-.rb-slot[aria-pressed='true'] {
+.rb-time[aria-pressed='true'] {
   background: var(--lk-cereza);
   border-color: var(--lk-cereza);
   color: var(--lk-blanco);
-  box-shadow: 0 0.625rem 1.25rem -0.75rem var(--lk-sombra);
 }
 
-.rb-slot:disabled {
+.rb-time:disabled {
   opacity: 0.6;
   cursor: progress;
 }
 
-.rb-slot-sub {
-  color: inherit;
-  opacity: 0.75;
-  font-size: 0.6875rem;
+.rb-time-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-text-success);
 }
 
+.rb-time[aria-pressed='true'] .rb-time-dot {
+  background: var(--lk-blanco);
+}
+
+@media (min-width: 64rem) {
+  .rb-cal-layout {
+    grid-template-columns: minmax(0, 1fr) 13rem;
+    align-items: start;
+  }
+
+  .rb-times-col {
+    max-height: 28rem;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--lk-tinte) transparent;
+    padding-inline-end: 0.25rem;
+  }
+
+  .rb-times {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .rb-waitlist {
   padding-top: 0.5rem;
   border-top: 1px solid var(--lk-tinte);
@@ -612,17 +747,6 @@
   border-radius: 1rem;
 }
 
-.rb-day-skeleton {
-  width: 3.75rem;
-  min-height: 4.75rem;
-  border-radius: 1.125rem;
-  flex: 0 0 auto;
-}
-
-.rb-schedule .rb-day-skeleton {
-  width: 5.25rem;
-}
-
 .rb-embed {
   min-height: auto;
   background: var(--color-background-surface);
@@ -659,10 +783,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .rb-step-motion,
+  .rb-cal-day,
+  .rb-time,
+  .rb-check svg,
+  .rb-step-dot {
+    animation: none !important;
+  }
+
   .rb-opt,
-  .rb-slot,
+  .rb-time,
   .rb-pill,
-  .rb-day,
+  .rb-cal-day,
   .rb-step,
   .rb-timer,
   .rb-segment {
@@ -670,8 +802,8 @@
   }
 
   .rb-pill:active,
-  .rb-day:active,
-  .rb-slot:active,
+  .rb-cal-day:active,
+  .rb-time:active,
   .rb-service:hover,
   .rb-artist:hover {
     transform: none !important;
@@ -693,7 +825,8 @@
   .rb-rows,
   .rb-artists,
   .rb-skeleton-services { grid-template-columns: minmax(0, 1fr); }
-  .rb-slots,
-  .rb-skeleton-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rb-skeleton-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rb-cal { padding: 0.75rem; }
+  .rb-cal-grid { gap: 0.25rem; }
   .rb-embed .rb-panel { padding: 0.875rem 0.75rem 1.25rem; }
 }
