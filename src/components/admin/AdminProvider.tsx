@@ -1,11 +1,17 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import type { AdminOverviewPayload } from '@/lib/admin/overview-types';
 import {
   ADMIN_CACHE_KEYS,
+  AdminFetchError,
+  fetchAdminCached,
+  fetchAdminJson,
+  getAdminCacheSnapshot,
+  invalidateAdminCache,
   mutateAdminCache,
+  setAdminCacheScope,
 } from '@/lib/hooks/useAdminCache';
 import { useAdminProviderSync } from '@/lib/hooks/useAdminProviderSync';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
@@ -52,10 +58,17 @@ export function AdminProvider({
       setData(next);
       setLoading(false);
       setSettingsOverride(next.settings);
-      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, next);
-      mutateAdminCache<{ bookings: BookingWithRelations[] }>(ADMIN_CACHE_KEYS.bookings, {
-        bookings: next.bookings,
-      });
+      if (getAdminCacheSnapshot<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview) !== next) {
+        mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, next);
+      }
+      const cachedBookings = getAdminCacheSnapshot<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+      );
+      if (cachedBookings?.bookings !== next.bookings) {
+        mutateAdminCache<{ bookings: BookingWithRelations[] }>(ADMIN_CACHE_KEYS.bookings, {
+          bookings: next.bookings,
+        });
+      }
     },
     [setSettingsOverride],
   );
@@ -70,21 +83,22 @@ export function AdminProvider({
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const res = await fetch('/api/admin/overview', {
-          cache: 'no-store',
-          signal,
-        });
+        const json = await fetchAdminCached<AdminOverviewPayload>(
+          ADMIN_CACHE_KEYS.overview,
+          (fetchSignal) =>
+            fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, fetchSignal),
+          { force: true, signal },
+        );
         if (signal?.aborted) return;
-        if (res.status === 401) {
+        applyPayload(json);
+      } catch (err: unknown) {
+        if (signal?.aborted) return;
+        if (err instanceof AdminFetchError && err.status === 401) {
+          invalidateAdminCache();
+          setAdminCacheScope(null);
           setData(null);
           router.push('/admin/login');
-          return;
         }
-        if (res.ok) {
-          const json = (await res.json()) as AdminOverviewPayload;
-          applyPayload(json);
-        }
-      } catch {
         return;
       } finally {
         if (!signal?.aborted) {
@@ -132,25 +146,42 @@ export function AdminProvider({
     !isLoginRoute && Boolean(data),
   );
 
-  const switchDemoUser = async (email: string) => {
-    await fetch('/api/admin/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    await refresh();
-  };
+  const switchDemoUser = useCallback(
+    async (email: string) => {
+      await fetch('/api/admin/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      invalidateAdminCache();
+      setAdminCacheScope(null);
+      await refresh();
+    },
+    [refresh],
+  );
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await fetch('/api/admin/session', { method: 'DELETE' });
+    invalidateAdminCache();
+    setAdminCacheScope(null);
     setData(null);
     router.push('/admin/login');
-  };
+  }, [router]);
+
+  const contextValue = useMemo<AdminContextValue>(
+    () => ({
+      data,
+      loading,
+      bookingEventSeq,
+      refresh,
+      switchDemoUser,
+      logout,
+    }),
+    [data, loading, bookingEventSeq, refresh, switchDemoUser, logout],
+  );
 
   return (
-    <AdminContext.Provider
-      value={{ data, loading, bookingEventSeq, refresh, switchDemoUser, logout }}
-    >
+    <AdminContext.Provider value={contextValue}>
       {children}
     </AdminContext.Provider>
   );

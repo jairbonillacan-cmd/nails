@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -12,7 +13,11 @@ import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { LANDING_ASSETS } from '../../landing/landingContent';
 import { getDisplayBookingUrl } from './dashboardMetrics';
-import { DashboardQrDialog } from './DashboardQrDialog';
+
+const DashboardQrDialog = dynamic(
+  () => import('./DashboardQrDialog').then((mod) => mod.DashboardQrDialog),
+  { ssr: false },
+);
 
 interface DashboardShareCardProps {
   salonName: string;

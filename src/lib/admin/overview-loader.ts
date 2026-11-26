@@ -15,7 +15,7 @@ import {
   getWhatsAppTemplates,
   hydrateBookingsWithRelationsFromDb,
 } from '@/lib/repositories/db';
-import type { PaymentSplit } from '@/lib/types';
+import type { BookingWithRelations, ClientProfile, PaymentSplit } from '@/lib/types';
 import type { AdminOverviewPayload } from './overview-types';
 
 function scopeByStaff<T extends { staffId: string | null }>(
@@ -49,28 +49,100 @@ export async function buildAdminOverviewPayload(
   const tz = db.settings.timezone || 'America/Mexico_City';
   const todayKey = getDateKeyInTimezone(now, tz);
 
-  const todayBookings = bookings.filter(
-    (b) =>
-      getDateKeyInTimezone(new Date(b.startAt), tz) === todayKey &&
-      b.status !== 'canceled',
-  );
-  const pendingConfirmations = bookings.filter(
-    (b) => b.status === 'pending_confirmation' || b.status === 'pending_payment',
-  );
-  const completedCount = bookings.filter((b) => b.status === 'completed').length;
-  const noShowCount = bookings.filter((b) => b.status === 'no_show').length;
+  let todayBookingsCount = 0;
+  let completedCount = 0;
+  let noShowCount = 0;
+  const visibleBookingIds = new Set<string>();
+  const visibleClientIds = new Set<string>();
+  const pendingDeposits: AdminOverviewPayload['pendingDeposits'] = [];
+  const clientVisitStats = new Map<
+    string,
+    { totalVisits: number; lastPastVisitMs: number | null; hasUpcoming: boolean }
+  >();
+  const uncollectedCandidates: Array<{ booking: BookingWithRelations; startMs: number }> = [];
+
+  for (const booking of bookings) {
+    visibleBookingIds.add(booking.id);
+    visibleClientIds.add(booking.clientId);
+
+    const startDate = new Date(booking.startAt);
+    const startMs = startDate.getTime();
+    const status = booking.status;
+
+    if (status !== 'canceled' && getDateKeyInTimezone(startDate, tz) === todayKey) {
+      todayBookingsCount += 1;
+    }
+
+    if (status === 'pending_confirmation' || status === 'pending_payment') {
+      pendingDeposits.push({
+        bookingId: booking.id,
+        bookingCode: booking.bookingCode,
+        status,
+        clientId: booking.clientId,
+        clientName: booking.client.fullName,
+        clientPhone: booking.client.phoneE164,
+        clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? null,
+        serviceName: booking.service.name,
+        staffId: booking.staffId,
+        staffName: booking.staff.name,
+        startAt: booking.startAt,
+        depositAmountCents: booking.depositAmountCents,
+        totalPriceCents: booking.totalPriceCents,
+        proofDeliveryMethod:
+          booking.proofDeliveryMethod ?? (booking.paymentProofUrl ? 'web_upload' : 'none'),
+        paymentProofUrl: booking.paymentProofUrl,
+      });
+    } else if (status === 'completed') {
+      completedCount += 1;
+    } else if (status === 'no_show') {
+      noShowCount += 1;
+    }
+
+    if (status !== 'canceled' && status !== 'no_show') {
+      const stat = clientVisitStats.get(booking.clientId) ?? {
+        totalVisits: 0,
+        lastPastVisitMs: null,
+        hasUpcoming: false,
+      };
+      if (status === 'completed' || status === 'confirmed') {
+        stat.totalVisits += 1;
+      }
+      if (status === 'completed' || (status === 'confirmed' && startMs <= nowMs)) {
+        if (stat.lastPastVisitMs === null || startMs > stat.lastPastVisitMs) {
+          stat.lastPastVisitMs = startMs;
+        }
+      }
+      if (
+        (status === 'confirmed' ||
+          status === 'pending_confirmation' ||
+          status === 'pending_payment') &&
+        startMs > nowMs
+      ) {
+        stat.hasUpcoming = true;
+      }
+      clientVisitStats.set(booking.clientId, stat);
+    }
+
+    if (
+      status === 'completed' ||
+      (isActiveBookingStatus(status) && new Date(booking.endAt).getTime() < nowMs)
+    ) {
+      uncollectedCandidates.push({ booking, startMs });
+    }
+  }
 
   const cashEntries = scopeByStaff(db.cashEntries, isSpecialist, ownStaffId);
-  const totalRevenueCents = cashEntries
-    .filter((c) => c.entryType !== 'expense')
-    .reduce((sum, c) => sum + c.amountCents, 0);
-  const totalTipsCents = cashEntries.reduce((sum, c) => sum + c.tipCents, 0);
-  const totalExpensesCents = cashEntries
-    .filter((c) => c.entryType === 'expense')
-    .reduce((sum, c) => sum + Math.abs(c.amountCents), 0);
-
-  const visibleBookingIds = new Set(bookings.map((b) => b.id));
-  const visibleClientIds = new Set(bookings.map((b) => b.clientId));
+  let totalRevenueCents = 0;
+  let totalTipsCents = 0;
+  let totalExpensesCents = 0;
+  for (const entry of cashEntries) {
+    if (entry.entryType === 'expense') {
+      totalExpensesCents += Math.abs(entry.amountCents);
+    } else {
+      totalRevenueCents += entry.amountCents;
+    }
+    totalTipsCents += entry.tipCents;
+  }
 
   const scopedStaff = isSpecialist
     ? ownStaffId
@@ -87,6 +159,10 @@ export async function buildAdminOverviewPayload(
   const scopedClients = isSpecialist
     ? db.clients.filter((c) => visibleClientIds.has(c.id))
     : db.clients;
+  const scopedClientsById = new Map<string, ClientProfile>();
+  for (const client of scopedClients) {
+    scopedClientsById.set(client.id, client);
+  }
   const scopedReviews = isSpecialist
     ? db.reviews.filter(
         (r) =>
@@ -165,58 +241,6 @@ export async function buildAdminOverviewPayload(
     steps: checklistSteps,
   };
 
-  const pendingDeposits = pendingConfirmations.map((b) => ({
-    bookingId: b.id,
-    bookingCode: b.bookingCode,
-    status: b.status,
-    clientId: b.clientId,
-    clientName: b.client.fullName,
-    clientPhone: b.client.phoneE164,
-    clientInstagram: b.clientInstagram ?? b.client.instagramHandle ?? null,
-    serviceName: b.service.name,
-    staffId: b.staffId,
-    staffName: b.staff.name,
-    startAt: b.startAt,
-    depositAmountCents: b.depositAmountCents,
-    totalPriceCents: b.totalPriceCents,
-    proofDeliveryMethod: b.proofDeliveryMethod ?? (b.paymentProofUrl ? 'web_upload' : 'none'),
-    paymentProofUrl: b.paymentProofUrl,
-  }));
-
-  const clientVisitStats = new Map<
-    string,
-    { totalVisits: number; lastPastVisitMs: number | null; hasUpcoming: boolean }
-  >();
-  for (const booking of bookings) {
-    if (booking.status === 'canceled' || booking.status === 'no_show') continue;
-    const startMs = new Date(booking.startAt).getTime();
-    const stat = clientVisitStats.get(booking.clientId) ?? {
-      totalVisits: 0,
-      lastPastVisitMs: null,
-      hasUpcoming: false,
-    };
-    if (booking.status === 'completed' || booking.status === 'confirmed') {
-      stat.totalVisits += 1;
-    }
-    if (
-      booking.status === 'completed' ||
-      (booking.status === 'confirmed' && startMs <= nowMs)
-    ) {
-      if (stat.lastPastVisitMs === null || startMs > stat.lastPastVisitMs) {
-        stat.lastPastVisitMs = startMs;
-      }
-    }
-    if (
-      (booking.status === 'confirmed' ||
-        booking.status === 'pending_confirmation' ||
-        booking.status === 'pending_payment') &&
-      startMs > nowMs
-    ) {
-      stat.hasUpcoming = true;
-    }
-    clientVisitStats.set(booking.clientId, stat);
-  }
-
   let returningClientsCount = 0;
   const inactiveClientsUnsorted = [];
   for (const [clientId, stat] of clientVisitStats.entries()) {
@@ -224,7 +248,7 @@ export async function buildAdminOverviewPayload(
     if (stat.lastPastVisitMs !== null && !stat.hasUpcoming) {
       const daysSinceLastVisit = Math.floor((nowMs - stat.lastPastVisitMs) / 86_400_000);
       if (daysSinceLastVisit >= 30) {
-        const client = scopedClients.find((c) => c.id === clientId);
+        const client = scopedClientsById.get(clientId);
         if (client) {
           inactiveClientsUnsorted.push({
             clientId: client.id,
@@ -257,38 +281,41 @@ export async function buildAdminOverviewPayload(
     splitsByBookingId.set(split.bookingId, list);
   }
 
-  const uncollectedUnsorted = [];
-  for (const b of bookings) {
-    const isPastActive =
-      isActiveBookingStatus(b.status) && new Date(b.endAt).getTime() < nowMs;
-    if (b.status !== 'completed' && !isPastActive) continue;
+  const uncollectedWithTime: Array<{
+    item: AdminOverviewPayload['uncollectedBookings'][number];
+    startMs: number;
+  }> = [];
+  for (const { booking: b, startMs } of uncollectedCandidates) {
     const summary = computeBookingPaymentSummary(
       b.totalPriceCents,
       splitsByBookingId.get(b.id) ?? [],
     );
     if (!summary.isUncollected) continue;
-    uncollectedUnsorted.push({
-      bookingId: b.id,
-      bookingCode: b.bookingCode,
-      status: b.status,
-      clientId: b.clientId,
-      clientName: b.client.fullName,
-      clientPhone: b.client.phoneE164,
-      clientInstagram: b.clientInstagram ?? b.client.instagramHandle ?? null,
-      serviceName: b.service.name,
-      staffId: b.staffId,
-      staffName: b.staff.name,
-      startAt: b.startAt,
-      endAt: b.endAt,
-      totalPriceCents: summary.totalPriceCents,
-      paidCents: summary.paidCents,
-      remainingCents: summary.remainingCents,
+    uncollectedWithTime.push({
+      startMs,
+      item: {
+        bookingId: b.id,
+        bookingCode: b.bookingCode,
+        status: b.status,
+        clientId: b.clientId,
+        clientName: b.client.fullName,
+        clientPhone: b.client.phoneE164,
+        clientInstagram: b.clientInstagram ?? b.client.instagramHandle ?? null,
+        serviceName: b.service.name,
+        staffId: b.staffId,
+        staffName: b.staff.name,
+        startAt: b.startAt,
+        endAt: b.endAt,
+        totalPriceCents: summary.totalPriceCents,
+        paidCents: summary.paidCents,
+        remainingCents: summary.remainingCents,
+      },
     });
   }
 
-  const uncollectedBookings = uncollectedUnsorted.toSorted(
-    (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
-  );
+  const uncollectedBookings = uncollectedWithTime
+    .toSorted((a, b) => b.startMs - a.startMs)
+    .map(({ item }) => item);
   const recurringBlocks = scopeByStaff(db.recurringBlocks ?? [], isSpecialist, ownStaffId);
 
   const loyaltyPrograms = db.loyaltyPrograms ?? [];
@@ -328,8 +355,8 @@ export async function buildAdminOverviewPayload(
     serverTodayKey: todayKey,
     settings: safeSettings,
     kpis: {
-      todayBookingsCount: todayBookings.length,
-      pendingConfirmationsCount: pendingConfirmations.length,
+      todayBookingsCount,
+      pendingConfirmationsCount: pendingDeposits.length,
       totalRevenueCents,
       totalTipsCents,
       totalExpensesCents,

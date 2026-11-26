@@ -2,6 +2,7 @@
 
 import type React from 'react';
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -23,10 +24,13 @@ import {
 import { ActionRow, EmptyStateCard, SurfaceCard } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import { isDisplayableProofUrl, type DashboardMetrics } from './dashboardMetrics';
-import {
-  DepositProofPreviewDialog,
-  type PendingDepositItem,
-} from './DepositProofPreviewDialog';
+import type { PendingDepositItem } from './DepositProofPreviewDialog';
+
+const DepositProofPreviewDialog = dynamic(
+  () =>
+    import('./DepositProofPreviewDialog').then((mod) => mod.DepositProofPreviewDialog),
+  { ssr: false },
+);
 
 interface DashboardAttentionCardProps {
   data: AdminOverviewPayload;
@@ -52,11 +56,6 @@ interface AttentionTask {
   title: string;
   subtitle: string;
   isBusy?: boolean;
-  reject?: {
-    label: string;
-    isLoading?: boolean;
-    onClick: () => void;
-  };
   secondary?: {
     label: string;
     href?: string;
@@ -86,7 +85,7 @@ export function DashboardAttentionCard({
   savedMessage,
   onConfirmDeposit,
   onRejectDeposit,
-  maxVisible = 5,
+  maxVisible = 4,
 }: DashboardAttentionCardProps) {
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositItem | null>(null);
   const currency = data.settings.currency;
@@ -127,14 +126,6 @@ export function DashboardAttentionCard({
         : `Anticipo pendiente de ${dep.clientName} · ${formatCurrency(amountCents, currency)}`,
       subtitle: `${dep.serviceName} · ${dateLabel} ${timeLabel} con ${dep.staffName} · ${dep.bookingCode}`,
       isBusy: isLoading || isRejecting,
-      reject:
-        isUploaded && onRejectDeposit
-          ? {
-              label: isRejecting ? 'Rechazando...' : 'Rechazar',
-              isLoading: isRejecting,
-              onClick: () => void onRejectDeposit(dep.bookingId, dep.clientName),
-            }
-          : undefined,
       secondary: isUploaded
         ? {
             label: isExternalLink ? 'Ver enlace' : 'Ver comprobante',
@@ -326,17 +317,6 @@ export function DashboardAttentionCard({
                 subtitle={task.subtitle}
                 actions={
                   <HStack gap={2} wrap="wrap">
-                    {task.reject ? (
-                      <Button
-                        type="button"
-                        label={task.reject.label}
-                        variant="ghost"
-                        size="sm"
-                        isLoading={Boolean(task.reject.isLoading)}
-                        isDisabled={Boolean(task.isBusy)}
-                        onClick={task.reject.onClick}
-                      />
-                    ) : null}
                     {task.secondary ? (
                       <Button
                         type={task.secondary.href ? undefined : 'button'}
@@ -373,17 +353,19 @@ export function DashboardAttentionCard({
         )}
       </SurfaceCard>
 
-      <DepositProofPreviewDialog
-        deposit={previewDeposit}
-        currency={currency}
-        timezone={tz}
-        depositFallbackCents={depositFallbackCents}
-        confirmingBookingId={confirmingBookingId}
-        rejectingBookingId={rejectingBookingId}
-        onClose={() => setPreviewDeposit(null)}
-        onConfirmDeposit={onConfirmDeposit}
-        onRejectDeposit={onRejectDeposit}
-      />
+      {previewDeposit ? (
+        <DepositProofPreviewDialog
+          deposit={previewDeposit}
+          currency={currency}
+          timezone={tz}
+          depositFallbackCents={depositFallbackCents}
+          confirmingBookingId={confirmingBookingId}
+          rejectingBookingId={rejectingBookingId}
+          onClose={() => setPreviewDeposit(null)}
+          onConfirmDeposit={onConfirmDeposit}
+          onRejectDeposit={onRejectDeposit}
+        />
+      ) : null}
     </>
   );
 }

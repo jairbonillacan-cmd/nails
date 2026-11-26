@@ -16,7 +16,7 @@ export const ADMIN_CACHE_KEYS = {
   reports: (period: string) => `/api/admin/reports?period=${encodeURIComponent(period)}`,
 } as const;
 
-class AdminFetchError extends Error {
+export class AdminFetchError extends Error {
   readonly status: number;
   readonly code: string | null;
 
@@ -354,6 +354,45 @@ function runCachedFetch<T>(
   };
 }
 
+export async function fetchAdminCached<T>(
+  key: string,
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  options?: { force?: boolean; staleTimeMs?: number; signal?: AbortSignal },
+): Promise<T> {
+  const externalSignal = options?.signal;
+  if (externalSignal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
+  const { promise, release } = runCachedFetch(key, fetcher, {
+    force: options?.force ?? true,
+    staleTimeMs: options?.staleTimeMs ?? 0,
+  });
+
+  if (!externalSignal) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      release();
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    externalSignal.addEventListener('abort', onAbort, { once: true });
+
+    promise.then(
+      (value) => {
+        externalSignal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        externalSignal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 export async function prefetchAdminData<T>(
   key: string,
   fetcher: (signal: AbortSignal) => Promise<T>,
@@ -517,10 +556,17 @@ export function useAdminCacheSessionSync(
 
     if (scopeKey && overviewData && lastSeededOverviewRef.current !== overviewData) {
       lastSeededOverviewRef.current = overviewData;
-      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, overviewData);
-      mutateAdminCache<{ bookings: BookingWithRelations[] }>(ADMIN_CACHE_KEYS.bookings, {
-        bookings: overviewData.bookings,
-      });
+      if (getAdminCacheSnapshot<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview) !== overviewData) {
+        mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, overviewData);
+      }
+      const cachedBookings = getAdminCacheSnapshot<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+      );
+      if (cachedBookings?.bookings !== overviewData.bookings) {
+        mutateAdminCache<{ bookings: BookingWithRelations[] }>(ADMIN_CACHE_KEYS.bookings, {
+          bookings: overviewData.bookings,
+        });
+      }
     }
   }, [scopeKey, overviewData]);
 }

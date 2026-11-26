@@ -70,7 +70,7 @@ export function DashboardQrDialog({
                   display: 'block',
                   maxWidth: '100%',
                   height: 'auto',
-                  borderRadius: 'var(--radius-sm)',
+                  borderRadius: 'var(--radius-inner)',
                 }}
               />
             </VStack>

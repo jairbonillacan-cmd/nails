@@ -40,7 +40,7 @@ const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
 ];
 
 export default function AdminOverviewPage() {
-  const { data: providerData, bookingEventSeq, refresh } = useAdminData();
+  const { data: providerData, refresh } = useAdminData();
   const [period, setPeriod] = useState<DashboardPeriod>('7d');
   const [confirmingBookingId, setConfirmingBookingId] = useState<string | null>(null);
   const [rejectingBookingId, setRejectingBookingId] = useState<string | null>(null);
@@ -54,7 +54,6 @@ export default function AdminOverviewPage() {
       enabled: Boolean(providerData),
       initialData: providerData ?? undefined,
       staleTimeMs: 30_000,
-      revalidateKey: bookingEventSeq,
     },
   );
 

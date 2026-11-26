@@ -5,7 +5,6 @@ import {
   fetchAdminJson,
   prefetchAdminData,
 } from '@/lib/hooks/useAdminCache';
-import type { BookingWithRelations } from '@/lib/types';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
 export const ROLE_LABELS = {
@@ -216,7 +215,7 @@ export function buildSidebarStaffRows(data: AdminOverviewPayload): SidebarStaffR
       id: member.id,
       firstName: member.name.trim().split(/\s+/)[0] || member.name,
       todayCount: todayCounts.get(member.id) ?? 0,
-      href: '/admin/citas',
+      href: `/admin/citas?staff=${encodeURIComponent(member.id)}`,
     }));
 }
 
@@ -230,22 +229,9 @@ export function prefetchAdminRoute(
   const currentRole = data.session.user.role;
   routerPrefetch(href);
 
-  if (routeId === 'overview') {
+  if (routeId === 'overview' || routeId === 'bookings') {
     void prefetchAdminData(ADMIN_CACHE_KEYS.overview, (signal) =>
       fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
-    );
-    return;
-  }
-
-  if (routeId === 'bookings') {
-    void prefetchAdminData(ADMIN_CACHE_KEYS.overview, (signal) =>
-      fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
-    );
-    void prefetchAdminData(ADMIN_CACHE_KEYS.bookings, (signal) =>
-      fetchAdminJson<{ bookings: BookingWithRelations[] }>(
-        ADMIN_CACHE_KEYS.bookings,
-        signal,
-      ),
     );
     return;
   }
@@ -264,11 +250,6 @@ export function prefetchAdminRoute(
   }
 
   if (routeId === 'cash' && roleCanAccess(currentRole, 'cash')) {
-    if (currentRole === 'owner' || currentRole === 'admin') {
-      void prefetchAdminData(ADMIN_CACHE_KEYS.operations, (signal) =>
-        fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.operations, signal),
-      );
-    }
     void prefetchAdminData(ADMIN_CACHE_KEYS.overview, (signal) =>
       fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
     );

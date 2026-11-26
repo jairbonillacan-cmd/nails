@@ -3,9 +3,11 @@ import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import type { BookingWithRelations } from '@/lib/types';
 import {
   ADMIN_CACHE_KEYS,
+  AdminFetchError,
   applyOptimisticBookingStatus,
   applyOptimisticBookingStatusToList,
   clearAdminCacheForTests,
+  fetchAdminCached,
   getAdminCacheSnapshot,
   invalidateAdminCache,
   mutateAdminCache,
@@ -483,5 +485,86 @@ describe('useAdminCache store', () => {
     const afterCancel = applyOptimisticBookingStatus(overview, 'bk-1', 'canceled');
     expect(afterCancel.uncollectedBookings).toHaveLength(0);
     expect(afterCancel.kpis.todayBookingsCount).toBe(1);
+  });
+
+  it('collapses concurrent fetchAdminCached refreshes and prefetches into a single request', async () => {
+    setAdminCacheScope('owner-1:owner');
+    const deferred = createDeferred<{ version: number }>();
+    const fetcher = vi.fn((_signal: AbortSignal) => deferred.promise);
+
+    const p1 = fetchAdminCached(ADMIN_CACHE_KEYS.overview, fetcher);
+    const p2 = fetchAdminCached(ADMIN_CACHE_KEYS.overview, fetcher);
+    const p3 = prefetchAdminData(ADMIN_CACHE_KEYS.overview, fetcher);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    deferred.resolve({ version: 2 });
+    const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+
+    expect(r1).toEqual({ version: 2 });
+    expect(r2).toEqual({ version: 2 });
+    expect(r3).toEqual({ version: 2 });
+    expect(getAdminCacheSnapshot<{ version: number }>(ADMIN_CACHE_KEYS.overview)).toEqual({
+      version: 2,
+    });
+  });
+
+  it('keeps shared in-flight fetch alive when one consumer aborts and aborts when sole consumer aborts', async () => {
+    setAdminCacheScope('owner-1:owner');
+    const sharedSignals: AbortSignal[] = [];
+    const sharedDeferred = createDeferred<{ ok: boolean }>();
+    const sharedFetcher = vi.fn((signal: AbortSignal) => {
+      sharedSignals.push(signal);
+      return sharedDeferred.promise;
+    });
+
+    const c1 = new AbortController();
+    const p1 = fetchAdminCached(ADMIN_CACHE_KEYS.overview, sharedFetcher, {
+      signal: c1.signal,
+    });
+    const p2 = fetchAdminCached(ADMIN_CACHE_KEYS.overview, sharedFetcher);
+
+    expect(sharedFetcher).toHaveBeenCalledTimes(1);
+    c1.abort();
+
+    await expect(p1).rejects.toMatchObject({ name: 'AbortError' });
+    expect(sharedSignals[0]?.aborted).toBe(false);
+
+    sharedDeferred.resolve({ ok: true });
+    await expect(p2).resolves.toEqual({ ok: true });
+
+    const soleSignals: AbortSignal[] = [];
+    const soleDeferred = createDeferred<{ ok: boolean }>();
+    const soleController = new AbortController();
+    const pSole = fetchAdminCached(
+      ADMIN_CACHE_KEYS.clients,
+      (signal) => {
+        soleSignals.push(signal);
+        return soleDeferred.promise;
+      },
+      { signal: soleController.signal },
+    );
+
+    soleController.abort();
+    await expect(pSole).rejects.toMatchObject({ name: 'AbortError' });
+    expect(soleSignals[0]?.aborted).toBe(true);
+  });
+
+  it('rejects immediately on pre-aborted signal and propagates AdminFetchError status codes', async () => {
+    setAdminCacheScope('owner-1:owner');
+    const aborted = new AbortController();
+    aborted.abort();
+    const neverCalled = vi.fn(async () => ({ ok: true }));
+
+    await expect(
+      fetchAdminCached(ADMIN_CACHE_KEYS.overview, neverCalled, { signal: aborted.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(neverCalled).not.toHaveBeenCalled();
+
+    await expect(
+      fetchAdminCached(ADMIN_CACHE_KEYS.overview, async () => {
+        throw new AdminFetchError('Sesión expirada', 401, 'UNAUTHORIZED');
+      }),
+    ).rejects.toMatchObject({ name: 'AdminFetchError', status: 401, code: 'UNAUTHORIZED' });
   });
 });

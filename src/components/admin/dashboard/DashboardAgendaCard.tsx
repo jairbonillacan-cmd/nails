@@ -34,8 +34,14 @@ export function DashboardAgendaCard({
   savedMessage,
   onConfirmDeposit,
 }: DashboardAgendaCardProps) {
-  const [day, setDay] = useState<DayKey>('hoy');
+  const [selectedDay, setSelectedDay] = useState<DayKey | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('all');
+
+  const autoShowingTomorrow =
+    selectedDay === null &&
+    metrics.todayBookings.length === 0 &&
+    metrics.tomorrowBookings.length > 0;
+  const day: DayKey = selectedDay ?? (autoShowingTomorrow ? 'manana' : 'hoy');
 
   const currency = data.settings.currency;
   const isSpecialist = data.session.user.role === 'specialist';
@@ -79,7 +85,9 @@ export function DashboardAgendaCard({
           : 'Sin citas agendadas para hoy'
         : 'Sin citas agendadas para mañana'
       : [
-          day === 'manana' ? `Mañana: ${dayList.length} citas` : null,
+          day === 'manana'
+            ? `Mañana: ${dayList.length} ${dayList.length === 1 ? 'cita' : 'citas'}`
+            : null,
           staffSummaryParts.join(' · '),
           pendingForDay > 0
             ? `${pendingForDay} anticipo${pendingForDay === 1 ? '' : 's'} por confirmar`
@@ -156,7 +164,9 @@ export function DashboardAgendaCard({
       subtitle={
         day === 'hoy'
           ? `${metrics.headerDateLabel} · Horarios en vivo`
-          : 'Vista anticipada de mañana'
+          : autoShowingTomorrow
+            ? 'Sin citas hoy · Mostrando tu agenda de mañana'
+            : 'Vista anticipada de mañana'
       }
       badge={statusPill}
       className="ad-card"
@@ -167,7 +177,7 @@ export function DashboardAgendaCard({
           size="sm"
           value={day}
           options={dayOptions}
-          onChange={setDay}
+          onChange={setSelectedDay}
         />
       }
       footer={
@@ -226,7 +236,7 @@ export function DashboardAgendaCard({
                       label={`Ver citas de mañana (${metrics.tomorrowBookings.length})`}
                       variant="secondary"
                       size="sm"
-                      onClick={() => setDay('manana')}
+                      onClick={() => setSelectedDay('manana')}
                     />
                   ) : null}
                   <Button

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -94,8 +94,24 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     [data, router],
   );
 
-  const idlePrefetchRoutes = data
-    ? buildPrimaryNavGroups(data)
+  const primaryNavGroups = useMemo(
+    () => (data ? buildPrimaryNavGroups(data) : []),
+    [data],
+  );
+
+  const footerNavItems = useMemo(
+    () => (data ? buildFooterNavItems(data) : []),
+    [data],
+  );
+
+  const staffRows = useMemo(
+    () => (data ? buildSidebarStaffRows(data) : []),
+    [data],
+  );
+
+  const idlePrefetchRoutes = useMemo(
+    () =>
+      primaryNavGroups
         .flatMap((group) => group.items)
         .filter(
           (item) =>
@@ -106,8 +122,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               item.id === 'reports' ||
               item.id === 'overview'),
         )
-        .map((item) => item.href)
-    : [];
+        .map((item) => item.href),
+    [primaryNavGroups, pathname],
+  );
 
   useAdminIdlePrefetch({
     enabled: Boolean(data) && !isLoginRoute,
@@ -115,33 +132,55 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     prefetch: useCallback((href: string) => router.prefetch(href), [router]),
   });
 
-  useKeyboardShortcut(
-    'k',
+  const handleToggleQuickSearch = useCallback(
     () => setQuickSearchOpen((prev) => !prev),
-    { enabled: Boolean(data) && !isLoginRoute, requireModifier: true },
+    [],
   );
 
-  useKeyboardShortcut(
-    'b',
-    toggleSidebarCollapsed,
-    { enabled: Boolean(data) && !isLoginRoute, requireModifier: true },
-  );
+  useKeyboardShortcut('k', handleToggleQuickSearch, {
+    enabled: Boolean(data) && !isLoginRoute,
+    requireModifier: true,
+  });
 
-  const allowedShortcutRoutes = new Set(
-    data
-      ? buildPrimaryNavGroups(data)
+  useKeyboardShortcut('b', toggleSidebarCollapsed, {
+    enabled: Boolean(data) && !isLoginRoute,
+    requireModifier: true,
+  });
+
+  const allowedShortcutRoutes = useMemo(
+    () =>
+      new Set(
+        primaryNavGroups
           .flatMap((group) => group.items)
-          .map((item) => item.href)
-      : [],
+          .map((item) => item.href),
+      ),
+    [primaryNavGroups],
   );
+
+  const handleOpenQuickSearch = useCallback(() => setQuickSearchOpen(true), []);
+  const handleOpenMobileMenu = useCallback(() => setMobileMenuOpen(true), []);
+  const handleNewBooking = useCallback(() => router.push('/admin/citas?new=1'), [router]);
+  const handleNavigate = useCallback((href: string) => router.push(href), [router]);
 
   useAdminGlobalShortcuts({
     enabled: Boolean(data) && !isLoginRoute && !quickSearchOpen && !mobileMenuOpen,
-    onQuickSearch: useCallback(() => setQuickSearchOpen(true), []),
-    onNewBooking: useCallback(() => router.push('/admin/citas?new=1'), [router]),
-    onNavigate: useCallback((href: string) => router.push(href), [router]),
+    onQuickSearch: handleOpenQuickSearch,
+    onNewBooking: handleNewBooking,
+    onNavigate: handleNavigate,
     allowedRoutes: allowedShortcutRoutes,
   });
+
+  const isDark = mode === 'dark';
+
+  const handleTestSound = useCallback(() => {
+    void playBookingChime().then((played) => {
+      soundFeedback.show(played ? 'Así va a sonar' : 'El navegador bloqueó el sonido');
+    });
+  }, [playBookingChime, soundFeedback]);
+
+  const handleToggleTheme = useCallback(() => {
+    setMode(isDark ? 'light' : 'dark');
+  }, [isDark, setMode]);
 
   if (isLoginRoute) {
     return <>{children}</>;
@@ -150,28 +189,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   if (loading || !data) {
     return (
       <AdminShellSkeleton
-        isDark={mode === 'dark'}
+        isDark={isDark}
         ariaLabel="Abriendo tu panel"
       />
     );
   }
 
   const soundActive = soundConfigured && !isMuted;
-  const isDark = mode === 'dark';
   const brandLogo = isDark ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
-  const primaryNavGroups = buildPrimaryNavGroups(data);
-  const footerNavItems = buildFooterNavItems(data);
-  const staffRows = buildSidebarStaffRows(data);
-
-  const handleTestSound = () => {
-    void playBookingChime().then((played) => {
-      soundFeedback.show(played ? 'Así va a sonar' : 'El navegador bloqueó el sonido');
-    });
-  };
-
-  const handleToggleTheme = () => {
-    setMode(isDark ? 'light' : 'dark');
-  };
 
   return (
     <VStack className="ad-shell" gap={0}>
@@ -207,8 +232,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             mobileMenuOpen={mobileMenuOpen}
             soundActive={soundActive}
             onToggleSidebar={toggleSidebarCollapsed}
-            onOpenMobileMenu={() => setMobileMenuOpen(true)}
-            onOpenQuickSearch={() => setQuickSearchOpen(true)}
+            onOpenMobileMenu={handleOpenMobileMenu}
+            onOpenQuickSearch={handleOpenQuickSearch}
             onToggleMute={toggleMute}
           />
 

@@ -13,6 +13,7 @@ import {
   Bell,
   Check,
   Clock,
+  MessageCircle,
   Package,
   PanelLeft,
   Plus,
@@ -23,6 +24,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { roleCanAccess } from '@/lib/rbac';
+import { LANDING_ASSETS } from '../../landing/landingContent';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
 interface AdminTopBarProps {
@@ -54,9 +56,10 @@ export function AdminTopBar({
   const lowStockCount = roleCanAccess(role, 'inventory')
     ? data.inventory.filter((item) => item.isActive && item.stockQuantity <= item.minStockAlert).length
     : 0;
+  const whatsappUsage = data.whatsappUsage;
   const hasWhatsAppAlert =
-    data.whatsappUsage?.alertLevel === 'warning_80' ||
-    data.whatsappUsage?.alertLevel === 'limit_100';
+    whatsappUsage?.alertLevel === 'warning_80' ||
+    whatsappUsage?.alertLevel === 'limit_100';
 
   const totalAlerts =
     pendingDepositsCount + uncollectedCount + waitingCount + lowStockCount + (hasWhatsAppAlert ? 1 : 0);
@@ -94,6 +97,17 @@ export function AdminTopBar({
           icon: <Package size={15} aria-hidden="true" />,
         }
       : null,
+    hasWhatsAppAlert && whatsappUsage
+      ? {
+          id: 'whatsapp-quota',
+          label:
+            whatsappUsage.alertLevel === 'limit_100'
+              ? `Límite de WhatsApp alcanzado (${whatsappUsage.sentCount}/${whatsappUsage.quotaLimit})`
+              : `WhatsApp al ${whatsappUsage.percentUsed}% del límite mensual`,
+          href: roleCanAccess(role, 'integrations') ? '/admin/integraciones' : '/admin',
+          icon: <MessageCircle size={15} aria-hidden="true" />,
+        }
+      : null,
   ].filter((row): row is NonNullable<typeof row> => row !== null);
 
   return (
@@ -123,13 +137,30 @@ export function AdminTopBar({
 
         <button
           type="button"
-          className="ad-topbar-icon ad-topbar-toggle-m fx-press"
+          className="ad-topbar-icon ad-topbar-toggle-m ad-hide-s fx-press"
           aria-label="Abrir menú del salón"
           aria-expanded={mobileMenuOpen}
           onClick={onOpenMobileMenu}
         >
           <PanelLeft size={18} strokeWidth={1.85} aria-hidden="true" />
         </button>
+
+        <HStack className="rb-m" align="center" gap={0}>
+          <NextLink
+            href="/admin"
+            aria-label={`${data.settings.name}, inicio del panel`}
+            className="ad-brand-tile fx-press"
+          >
+            <img
+              src={LANDING_ASSETS.cherriesWhite}
+              alt=""
+              width={16}
+              height={16}
+              aria-hidden="true"
+              className="ad-brand-tile-mark"
+            />
+          </NextLink>
+        </HStack>
 
         <button
           type="button"

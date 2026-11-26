@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -12,7 +13,7 @@ import {
   formatDateShortInTimezone,
   formatTimeInTimezone,
 } from '@/lib/format';
-import { StatusTag } from '@/components/ui';
+import { ConfirmActionDialog, StatusTag } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import { isDisplayableProofUrl } from './dashboardMetrics';
 
@@ -41,6 +42,7 @@ export function DepositProofPreviewDialog({
   onConfirmDeposit,
   onRejectDeposit,
 }: DepositProofPreviewDialogProps) {
+  const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
   const isConfirming = Boolean(deposit && confirmingBookingId === deposit.bookingId);
   const isRejecting = Boolean(deposit && rejectingBookingId === deposit.bookingId);
   const isBusy = isConfirming || isRejecting;
@@ -57,28 +59,35 @@ export function DepositProofPreviewDialog({
       ? deposit.paymentProofUrl
       : null;
 
+  const handleClosePreview = () => {
+    if (!confirmingBookingId && !rejectingBookingId && !confirmRejectOpen) {
+      onClose();
+    }
+  };
+
   return (
-    <Dialog
-      isOpen={Boolean(deposit)}
-      onOpenChange={(open) => {
-        if (!open && !confirmingBookingId && !rejectingBookingId) onClose();
-      }}
-      width={520}
-      padding={5}
-    >
-      {deposit ? (
-        <VStack
-          gap={4}
-          className={isBusy ? 'fx-busy' : undefined}
-          aria-busy={isBusy || undefined}
-        >
-          <DialogHeader
-            title="Comprobante de anticipo"
-            subtitle={`${deposit.clientName} · ${deposit.bookingCode}`}
-            onOpenChange={(open) => {
-              if (!open && !confirmingBookingId && !rejectingBookingId) onClose();
-            }}
-          />
+    <>
+      <Dialog
+        isOpen={Boolean(deposit)}
+        onOpenChange={(open) => {
+          if (!open) handleClosePreview();
+        }}
+        width={520}
+        padding={5}
+      >
+        {deposit ? (
+          <VStack
+            gap={4}
+            className={isBusy ? 'fx-busy' : undefined}
+            aria-busy={isBusy || undefined}
+          >
+            <DialogHeader
+              title="Comprobante de anticipo"
+              subtitle={`${deposit.clientName} · ${deposit.bookingCode}`}
+              onOpenChange={(open) => {
+                if (!open) handleClosePreview();
+              }}
+            />
 
           <VStack gap={2} className="ad-proof-meta">
             <HStack justify="between" align="center" gap={2} wrap="wrap">
@@ -172,12 +181,7 @@ export function DepositProofPreviewDialog({
                 size="sm"
                 isLoading={isRejecting}
                 isDisabled={isBusy}
-                onClick={async () => {
-                  const ok = await onRejectDeposit(deposit.bookingId, deposit.clientName);
-                  if (ok) {
-                    onClose();
-                  }
-                }}
+                onClick={() => setConfirmRejectOpen(true)}
               />
             ) : null}
             <Button
@@ -205,5 +209,28 @@ export function DepositProofPreviewDialog({
         </VStack>
       ) : null}
     </Dialog>
+
+    {deposit && onRejectDeposit ? (
+      <ConfirmActionDialog
+        isOpen={confirmRejectOpen}
+        onOpenChange={(open) => {
+          if (!isRejecting) setConfirmRejectOpen(open);
+        }}
+        title="¿Rechazar este comprobante?"
+        description={`Avisaremos a ${deposit.clientName} que el anticipo de la cita ${deposit.bookingCode} no pudo validarse para que envíe un nuevo comprobante.`}
+        confirmLabel={isRejecting ? 'Rechazando...' : 'Sí, rechazar comprobante'}
+        cancelLabel="Volver"
+        variant="destructive"
+        isLoading={isRejecting}
+        onConfirm={async () => {
+          const ok = await onRejectDeposit(deposit.bookingId, deposit.clientName);
+          if (ok) {
+            setConfirmRejectOpen(false);
+            onClose();
+          }
+        }}
+      />
+    ) : null}
+    </>
   );
 }
