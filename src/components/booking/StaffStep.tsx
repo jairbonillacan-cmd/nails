@@ -58,7 +58,7 @@ export function StaffStep({
           <Text color="inherit" weight="semibold" hasTabularNumbers>
             {time}
           </Text>
-          . Tu horario ya está apartado.
+          . Ya te guardamos el horario.
         </Text>
       </VStack>
 
@@ -87,14 +87,16 @@ export function StaffStep({
             </Text>
             <VStack gap={0} className="rb-grow">
               <Text weight="medium" className="lk-serif rb-artist-name">
-                Me da igual
+                Cualquier profesional
               </Text>
               <Text type="supporting" color="accent" weight="semibold">
-                La opción más rápida
+                Mayor disponibilidad
               </Text>
-              <Text type="supporting" color="secondary">
-                {isAnyPending ? 'Confirmando tu lugar…' : 'Te asignamos a quien esté libre'}
-              </Text>
+              {isAnyPending ? (
+                <Text type="supporting" color="secondary">
+                  Un momento…
+                </Text>
+              ) : null}
             </VStack>
             <Text
               color="inherit"

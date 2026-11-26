@@ -84,6 +84,7 @@ export function useBookingFlowActions({
   const [pendingSlotKey, setPendingSlotKey] = useState<string | null>(null);
   const [pendingStaffId, setPendingStaffId] = useState<string | null>(null);
   const [isReholding, setIsReholding] = useState(false);
+  const [isExtendingHold, setIsExtendingHold] = useState(false);
   const [hasTriedSubmit, setHasTriedSubmit] = useState(false);
 
   const [couponInput, setCouponInput] = useState('');
@@ -175,9 +176,9 @@ export function useBookingFlowActions({
         slot,
         holdId: result.holdId,
         holdExpiresAt: result.holdExpiresAt,
-        nextStep: hasStaffChoice ? 'staff' : 'details',
+        nextStep: stayOnDetails ? flow.step : 'schedule',
       });
-      revealPanel();
+      if (stayOnDetails) revealPanel();
     } finally {
       busyLockRef.current = false;
       setIsBusy(false);
@@ -196,6 +197,24 @@ export function useBookingFlowActions({
     }
   };
 
+  const handleExtendHold = async (): Promise<boolean> => {
+    const slot = flow.selectedSlot;
+    if (!slot || flow.holdExpired || isExtendingHold || busyLockRef.current) return false;
+    setIsExtendingHold(true);
+    try {
+      const result = await holdSlot(slot, slot.staffId);
+      if (!result.ok) {
+        dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
+        revalidateActive();
+        return false;
+      }
+      dispatch({ type: 'HOLD_EXTENDED', holdId: result.holdId, holdExpiresAt: result.holdExpiresAt });
+      return true;
+    } finally {
+      setIsExtendingHold(false);
+    }
+  };
+
   const handlePickStaff = async (staffId: string) => {
     const slot = flow.selectedSlot;
     if (!slot || isBusy || busyLockRef.current) return;
@@ -204,7 +223,6 @@ export function useBookingFlowActions({
     if (staffId === 'any' || !member || staffId === slot.staffId) {
       setChosenStaffId(staffId);
       dispatch({ type: 'STAFF_ASSIGNED', slot, holdId: null, holdExpiresAt: null });
-      revealPanel();
       return;
     }
     busyLockRef.current = true;
@@ -224,7 +242,6 @@ export function useBookingFlowActions({
         holdId: result.holdId,
         holdExpiresAt: result.holdExpiresAt,
       });
-      revealPanel();
     } finally {
       busyLockRef.current = false;
       setIsBusy(false);
@@ -263,6 +280,14 @@ export function useBookingFlowActions({
     ? validateClientBookingFields(client.clientName, client.clientPhone)
     : EMPTY_FIELD_ERRORS;
 
+  const handleDetailsContinue = (e: React.FormEvent) => {
+    e.preventDefault();
+    setHasTriedSubmit(true);
+    const errors = validateClientBookingFields(client.clientName, client.clientPhone);
+    if (errors.name || errors.phone) return;
+    goToStep('payment');
+  };
+
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
@@ -277,7 +302,7 @@ export function useBookingFlowActions({
     setHasTriedSubmit(true);
     const errors = validateClientBookingFields(client.clientName, client.clientPhone);
     if (errors.name || errors.phone) {
-      dispatch({ type: 'SUBMIT_FAILED', error: errors.name ?? errors.phone ?? '' });
+      goToStep('details');
       return;
     }
     if (!flow.privacyConsentAccepted) {
@@ -356,6 +381,7 @@ export function useBookingFlowActions({
     pendingSlotKey,
     pendingStaffId,
     isReholding,
+    isExtendingHold,
     isSubmittingBooking,
     fieldErrors,
     couponInput,
@@ -368,9 +394,11 @@ export function useBookingFlowActions({
     resetSelection,
     handleSelectSlot,
     handleReholdExpiredSlot,
+    handleExtendHold,
     handlePickStaff,
     handleApplyCoupon,
     handleRemoveCoupon,
+    handleDetailsContinue,
     handleConfirmBooking,
   };
 }

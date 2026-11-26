@@ -9,7 +9,7 @@ import type { BookingLayoutView, ServiceAddon } from '@/lib/types';
 import type { SummaryRow } from './BookingSummaryCard';
 import type { ScheduleLayout } from './ScheduleCalendarView';
 import type { ProofDeliveryMethod } from './bookingHelpers';
-import { BOOKING_STEPS, type BookingFlowState, type BookingStep } from './bookingMachine';
+import { BOOKING_STEPS, isPostHoldStep, type BookingFlowState, type BookingStep } from './bookingMachine';
 
 export function shiftPlainDateKey(dateKey: string, deltaDays: number): string {
   const parts = dateKey.split('-').map(Number);
@@ -79,12 +79,11 @@ export function buildSummaryRows(input: {
   address: string;
   chosenStaffId: string;
   isPinned: boolean;
-  skipsStaffForSlot: boolean;
   totalDurationMinutes: number;
 }): SummaryRow[] {
   const slot = input.flow.selectedSlot;
   const slotTime = slot ? (input.timeFormat === '24h' ? slot.localTime24 : slot.localTime12) : '';
-  const staffDecided = Boolean(slot) && (input.skipsStaffForSlot || input.flow.step === 'details');
+  const staffDecided = Boolean(slot) && (input.flow.step === 'staff' || isPostHoldStep(input.flow.step));
   return [
     {
       key: 'service',
@@ -110,7 +109,7 @@ export function buildSummaryRows(input: {
       value: !staffDecided
         ? 'Por elegir'
         : input.chosenStaffId === 'any' && !input.isPinned
-          ? 'Me da igual'
+          ? 'Cualquier profesional'
           : (slot?.staffName ?? 'Por elegir'),
       sub:
         staffDecided && input.chosenStaffId === 'any' && !input.isPinned && slot
@@ -135,7 +134,6 @@ export function computeStepNavigation(input: {
   hasExtrasOptions: boolean;
   hasSelectedService: boolean;
   requiresConfirmation: boolean;
-  skipsStaffForSlot: boolean;
   totalDurationMinutes: number;
   extrasSelectedCount: number;
   chosenStaffId: string;
@@ -143,8 +141,9 @@ export function computeStepNavigation(input: {
   showsDeposit: boolean;
   proofDataUrl: string | null;
   proofDeliveryMethod: ProofDeliveryMethod;
+  hasDesignDetails?: boolean;
 }) {
-  const { flow, hasExtrasOptions, skipsStaffForSlot } = input;
+  const { flow, hasExtrasOptions } = input;
   const step = flow.step;
   const stepIndex = BOOKING_STEPS.indexOf(step);
   const hasSlot = Boolean(flow.selectedSlot);
@@ -154,13 +153,17 @@ export function computeStepNavigation(input: {
     completedSteps.add('extras');
   }
   if (hasSlot) completedSteps.add('schedule');
-  if (hasSlot && (skipsStaffForSlot || step === 'details')) completedSteps.add('staff');
+  if (hasSlot && isPostHoldStep(step)) completedSteps.add('staff');
+  if (hasSlot && (step === 'details' || step === 'payment')) completedSteps.add('design');
+  if (hasSlot && step === 'payment') completedSteps.add('details');
 
   const backTarget: BookingStep | null =
-    step === 'details'
-      ? skipsStaffForSlot
-        ? 'schedule'
-        : 'staff'
+    step === 'payment'
+      ? 'details'
+      : step === 'details'
+      ? 'design'
+      : step === 'design'
+        ? 'staff'
       : step === 'staff'
         ? 'schedule'
         : step === 'schedule'
@@ -174,12 +177,12 @@ export function computeStepNavigation(input: {
   const canContinue =
     step === 'service' || step === 'extras'
       ? input.hasSelectedService
-      : step === 'schedule' || step === 'staff'
+      : step === 'schedule' || step === 'staff' || step === 'design' || step === 'details'
         ? hasSlot
         : !flow.holdExpired;
 
   const nextLabel =
-    step === 'details'
+    step === 'payment'
       ? flow.phase === 'confirmed'
         ? 'Abriendo tu cita…'
         : flow.phase === 'submitting'
@@ -202,8 +205,14 @@ export function computeStepNavigation(input: {
             : 'Elige un horario'
           : step === 'staff'
             ? input.chosenStaffId === 'any'
-              ? 'Te asignamos a quien esté libre'
+              ? 'Cualquier profesional'
               : ''
+            : step === 'design'
+              ? input.hasDesignDetails
+                ? 'Tu artista ya tiene tu idea'
+                : 'Paso opcional · Puedes saltarlo'
+            : step === 'details'
+              ? ''
             : flow.holdExpired
               ? 'Reverifica tu horario arriba'
               : input.isSubmittingBooking

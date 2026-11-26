@@ -216,7 +216,7 @@ export function ScheduleStep({
           status="error"
           role="alert"
           title={availabilityError}
-          description="Verifica tu señal e intenta de nuevo para ver los horarios disponibles."
+          description="Puede ser la señal. Intenta otra vez en un momento."
           endContent={
             onRetryAvailability ? (
               <Button

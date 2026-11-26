@@ -1,20 +1,30 @@
 'use client';
 
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { ChevronLeft, MessageCircle, Timer } from 'lucide-react';
+import { ChevronLeft, CircleHelp, Timer } from 'lucide-react';
+import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import { BOOKING_STEPS, type BookingStep } from './bookingMachine';
+
+const BookingHelpDialog = dynamic(
+  () => import('./BookingHelpDialog').then((mod) => mod.BookingHelpDialog),
+  { ssr: false },
+);
 
 export const STEP_LABELS: Readonly<Record<BookingStep, string>> = {
   service: 'Servicio',
   extras: 'Extras',
   schedule: 'Día y hora',
   staff: 'Artista',
+  design: 'Tu diseño',
   details: 'Tus datos',
+  payment: 'Pago',
 };
 
 export function formatHoldClock(totalSeconds: number): string {
@@ -22,25 +32,24 @@ export function formatHoldClock(totalSeconds: number): string {
 }
 
 interface BookingHeaderProps {
-  salonName: string;
-  step?: BookingStep;
+  settings: PublicSettingsDTO;
   holdRemainingSec?: number;
-  whatsappUrl: string;
+  tone?: 'light' | 'cherry';
   onBack?: (() => void) | null;
 }
 
 export function BookingHeader({
-  salonName,
-  step,
+  settings,
   holdRemainingSec = 0,
-  whatsappUrl,
+  tone = 'light',
   onBack = null,
 }: BookingHeaderProps) {
-  const stepIndex = step ? BOOKING_STEPS.indexOf(step) : -1;
-  const progress = stepIndex >= 0 ? ((stepIndex + 0.5) / BOOKING_STEPS.length) * 100 : null;
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [hasOpenedHelp, setHasOpenedHelp] = useState(false);
+  const salonName = settings.name;
 
   return (
-    <header className="rb-header">
+    <header className="rb-header" data-tone={tone}>
       <nav className="rb-header-bar" aria-label="Reserva">
         <HStack align="center">
           {onBack ? (
@@ -62,7 +71,7 @@ export function BookingHeader({
         <NextLink href="/" aria-label={`${salonName}, inicio`} className="rb-logo-link">
           <img
             className="rb-logo"
-            src={LANDING_ASSETS.logoBlack}
+            src={tone === 'cherry' ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack}
             alt={salonName}
             width={120}
             height={50}
@@ -87,27 +96,25 @@ export function BookingHeader({
               {formatHoldClock(holdRemainingSec)}
             </p>
           ) : null}
-          <a
+          <button
+            type="button"
             className="rb-ghost fx-press"
-            href={whatsappUrl}
-            aria-label="Ayuda por WhatsApp"
-            target="_blank"
-            rel="noopener noreferrer"
+            aria-label="Ayuda y preguntas frecuentes"
+            aria-haspopup="dialog"
+            onClick={() => {
+              setHasOpenedHelp(true);
+              setIsHelpOpen(true);
+            }}
           >
-            <MessageCircle size={20} aria-hidden="true" />
+            <CircleHelp size={20} aria-hidden="true" />
             <Text color="inherit" weight="semibold" className="rb-d">
               Ayuda
             </Text>
-          </a>
+          </button>
         </HStack>
       </nav>
-      {progress !== null ? (
-        <progress
-          className="rb-progress"
-          aria-label="Progreso de la reserva"
-          max={100}
-          value={progress}
-        />
+      {hasOpenedHelp ? (
+        <BookingHelpDialog isOpen={isHelpOpen} settings={settings} onOpenChange={setIsHelpOpen} />
       ) : null}
     </header>
   );
@@ -185,8 +192,8 @@ export function BookingHero({
               decoding="async"
             />
           </VStack>
-          <Text color="inherit" className="rb-live rb-d">
-            Horarios en tiempo real
+          <Text color="inherit" className="rb-hero-note rb-d">
+            Los horarios que ves son los que de verdad están libres.
           </Text>
         </HStack>
 
@@ -222,17 +229,23 @@ export function BookingHero({
           })}
         </ol>
 
-        <HStack justify="between" gap={2} className="rb-m rb-hero-mobile">
+        <VStack gap={1.5} className="rb-m rb-hero-mobile">
           <Text color="inherit">
             <Text color="inherit" weight="bold">
               Paso {stepIndex + 1} de {BOOKING_STEPS.length}
             </Text>{' '}
             · {STEP_LABELS[step]}
           </Text>
-          <Text color="inherit" className="rb-live">
-            En vivo
-          </Text>
-        </HStack>
+          <ol className="rb-segments" aria-hidden="true">
+            {BOOKING_STEPS.map((item, index) => (
+              <li
+                key={item}
+                className="rb-segment"
+                data-state={index < stepIndex ? 'done' : index === stepIndex ? 'current' : 'todo'}
+              />
+            ))}
+          </ol>
+        </VStack>
       </VStack>
       <svg className="rb-hero-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true">
         <path d="M0 40h1440V22c-120-14-240-20-360-12S840 34 720 34 480 14 360 10 120 20 0 26Z" />

@@ -20,6 +20,15 @@ import type {
   ScheduledNotification,
 } from '../types';
 import {
+  buildBookingTemplatePayload,
+  buildRetentionWarningTemplatePayload,
+  buildSalonAlertTemplatePayload,
+  resolveBookingEmailSituation,
+  shouldAttachBookingCalendarIcs,
+  type EmailTemplateSituation,
+  type ResendTemplateDispatchPayload,
+} from './resend-templates';
+import {
   buildWhatsAppTemplatePayload,
   evaluateWhatsAppQuota,
   getOfficialWhatsAppTemplateSpec,
@@ -67,6 +76,9 @@ export interface WhatsAppDispatchParams {
     booking?: BookingWithRelations;
     settings: SalonSettings;
     appUrl: string;
+    situation?: EmailTemplateSituation;
+    template?: ResendTemplateDispatchPayload;
+    idempotencyKey?: string;
   };
   settingsTimezone?: string;
   monthKey?: string;
@@ -161,6 +173,16 @@ function friendlyAssetFolderLabel(folder: RetentionWarningAsset['folder']): stri
 function resolveFromAddress(salonName: string): string {
   const safeFromName = salonName.replace(/[\r\n<>"]/g, '').trim() || 'Laikona Nails';
   return process.env.RESEND_FROM_EMAIL?.trim() || `${safeFromName} <onboarding@resend.dev>`;
+}
+
+function resolveReplyToAddress(settings: SalonSettings): string | undefined {
+  const candidate =
+    settings.retentionNoticeEmail?.trim() || settings.contactEmail?.trim() || '';
+  return candidate.includes('@') ? candidate : undefined;
+}
+
+function isResendTemplateError(message: string | undefined): boolean {
+  return Boolean(message && /template/i.test(message));
 }
 
 export function renderBookingEmailHtml(params: {
@@ -319,6 +341,8 @@ export async function dispatchEmailNotification(params: {
   booking: BookingWithRelations;
   settings: SalonSettings;
   appUrl: string;
+  situation?: EmailTemplateSituation;
+  idempotencyKey?: string;
 }): Promise<NotificationDispatchResult> {
   const env = getRuntimeIntegrationStatus();
   const normalizedUrl = params.appUrl.replace(/\/+$/, '');
@@ -334,53 +358,100 @@ export async function dispatchEmailNotification(params: {
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const icsContent = generateBookingIcs(params.booking, params.settings, manageUrl);
-    const fromEmail = resolveFromAddress(params.settings.name);
-    const isPendingDeposit =
-      (params.booking.status === 'pending_confirmation' ||
-        params.booking.status === 'pending_payment') &&
-      params.settings.paymentMode === 'manual_transfer' &&
-      Boolean(params.settings.depositClabe.trim());
-    const depositCents =
-      params.booking.depositAmountCents > 0
-        ? params.booking.depositAmountCents
-        : (params.settings.depositAmountCents ?? 20000);
-    const speiDetails: BookingEmailSpeiDetails | null = isPendingDeposit
-      ? {
-          bankName: params.settings.depositBankName || 'Mercado Pago',
-          beneficiary:
-            params.settings.depositBeneficiary || params.settings.depositAccountHolder,
-          clabe: params.settings.depositClabe,
-          depositAmountLabel: formatCurrency(depositCents, params.settings.currency),
-        }
-      : null;
-
-    const result = await resend.emails.send({
-      from: fromEmail,
-      to: params.to,
-      subject: params.subject,
-      html: renderBookingEmailHtml({
-        salonName: params.settings.name,
-        bodyText: params.bodyText,
-        manageUrl,
-        address: params.settings.address,
-        instagramHandle: params.settings.instagramHandle,
-        bookingCode: params.booking.bookingCode,
-        whatsappUrl: buildBookingWhatsAppFallbackUrl(
-          params.booking,
-          params.settings,
-          normalizedUrl,
-        ),
-        speiDetails,
-        hasCalendarAttachment: true,
-      }),
-      attachments: [
-        {
-          filename: `cita-${params.booking.bookingCode}.ics`,
-          content: Buffer.from(icsContent, 'utf-8'),
-        },
-      ],
+    const situation = resolveBookingEmailSituation({
+      booking: params.booking,
+      settings: params.settings,
+      situation: params.situation,
     });
+    const includeCalendar = shouldAttachBookingCalendarIcs(situation);
+    const attachments = includeCalendar
+      ? [
+          {
+            filename: `cita-${params.booking.bookingCode}.ics`,
+            content: Buffer.from(
+              generateBookingIcs(params.booking, params.settings, manageUrl),
+              'utf-8',
+            ),
+          },
+        ]
+      : undefined;
+    const fromEmail = resolveFromAddress(params.settings.name);
+    const replyTo = resolveReplyToAddress(params.settings);
+    const whatsappUrl = buildBookingWhatsAppFallbackUrl(
+      params.booking,
+      params.settings,
+      normalizedUrl,
+    );
+    const templatePayload = buildBookingTemplatePayload({
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: normalizedUrl,
+      whatsappUrl,
+      situation,
+    });
+    const requestOptions = params.idempotencyKey
+      ? { idempotencyKey: params.idempotencyKey }
+      : undefined;
+
+    let result = await resend.emails.send(
+      {
+        from: fromEmail,
+        to: params.to,
+        subject: params.subject,
+        ...(replyTo ? { replyTo } : {}),
+        ...(attachments ? { attachments } : {}),
+        template: templatePayload,
+      },
+      requestOptions,
+    );
+
+    if (result.error && isResendTemplateError(result.error.message)) {
+      logWarn('notification_email_template_fallback', {
+        templateId: templatePayload.id,
+        bookingCode: params.booking.bookingCode,
+        error: result.error.message,
+      });
+      const isPendingDeposit =
+        situation === 'pending_spei' &&
+        params.settings.paymentMode === 'manual_transfer' &&
+        Boolean(params.settings.depositClabe.trim());
+      const depositCents =
+        params.booking.depositAmountCents > 0
+          ? params.booking.depositAmountCents
+          : (params.settings.depositAmountCents ?? 20000);
+      const speiDetails: BookingEmailSpeiDetails | null = isPendingDeposit
+        ? {
+            bankName: params.settings.depositBankName || 'Mercado Pago',
+            beneficiary:
+              params.settings.depositBeneficiary || params.settings.depositAccountHolder,
+            clabe: params.settings.depositClabe,
+            depositAmountLabel: formatCurrency(depositCents, params.settings.currency),
+          }
+        : null;
+      result = await resend.emails.send(
+        {
+          from: fromEmail,
+          to: params.to,
+          subject: params.subject,
+          ...(replyTo ? { replyTo } : {}),
+          html: renderBookingEmailHtml({
+            salonName: params.settings.name,
+            bodyText: params.bodyText,
+            manageUrl,
+            address: params.settings.address,
+            instagramHandle: params.settings.instagramHandle,
+            bookingCode: params.booking.bookingCode,
+            whatsappUrl,
+            speiDetails,
+            hasCalendarAttachment: includeCalendar,
+          }),
+          ...(attachments ? { attachments } : {}),
+        },
+        params.idempotencyKey
+          ? { idempotencyKey: `${params.idempotencyKey}-html` }
+          : undefined,
+      );
+    }
 
     if (result.error) {
       logError('notification_email_provider_error', {
@@ -414,6 +485,86 @@ export async function dispatchEmailNotification(params: {
   }
 }
 
+export async function dispatchSalonAlertEmail(params: {
+  to: string;
+  subject: string;
+  bodyText: string;
+  kind: 'canceled' | 'rescheduled';
+  reason?: string;
+  booking: BookingWithRelations;
+  settings: SalonSettings;
+  appUrl: string;
+}): Promise<NotificationDispatchResult> {
+  const env = getRuntimeIntegrationStatus();
+  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
+  if (!env.resendConfigured || !process.env.RESEND_API_KEY) {
+    return {
+      status: 'sent',
+      providerMessageId: `demo-resend-alert-${Date.now()}`,
+      errorMessage: null,
+    };
+  }
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const fromEmail = resolveFromAddress(params.settings.name);
+    const replyTo = resolveReplyToAddress(params.settings);
+    const templatePayload = buildSalonAlertTemplatePayload({
+      kind: params.kind,
+      reason: params.reason,
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: normalizedUrl,
+    });
+
+    let result = await resend.emails.send({
+      from: fromEmail,
+      to: params.to,
+      subject: params.subject,
+      ...(replyTo ? { replyTo } : {}),
+      template: templatePayload,
+    });
+
+    if (result.error && isResendTemplateError(result.error.message)) {
+      result = await resend.emails.send({
+        from: fromEmail,
+        to: params.to,
+        subject: params.subject,
+        ...(replyTo ? { replyTo } : {}),
+        html: renderBookingEmailHtml({
+          salonName: params.settings.name,
+          bodyText: params.bodyText,
+          manageUrl: `${normalizedUrl}/admin/citas`,
+          address: params.settings.address,
+          instagramHandle: params.settings.instagramHandle,
+          bookingCode: params.booking.bookingCode,
+          hasCalendarAttachment: false,
+        }),
+      });
+    }
+
+    if (result.error) {
+      return {
+        status: 'failed',
+        providerMessageId: null,
+        errorMessage: result.error.message,
+      };
+    }
+
+    return {
+      status: 'sent',
+      providerMessageId: result.data?.id ?? `resend-alert-${Date.now()}`,
+      errorMessage: null,
+    };
+  } catch (err) {
+    return {
+      status: 'failed',
+      providerMessageId: null,
+      errorMessage: err instanceof Error ? err.message : 'Error enviando aviso al estudio',
+    };
+  }
+}
+
 export async function dispatchRetentionWarningEmail(params: {
   to: string;
   stage: '30d' | '7d';
@@ -437,17 +588,37 @@ export async function dispatchRetentionWarningEmail(params: {
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const result = await resend.emails.send({
-      from: resolveFromAddress(params.settings.name),
+    const fromEmail = resolveFromAddress(params.settings.name);
+    const replyTo = resolveReplyToAddress(params.settings);
+    const templatePayload = buildRetentionWarningTemplatePayload({
+      stage: params.stage,
+      assets: params.assets,
+      settings: params.settings,
+      appUrl: params.appUrl,
+    });
+
+    let result = await resend.emails.send({
+      from: fromEmail,
       to: params.to,
       subject,
-      html: renderRetentionWarningEmailHtml({
-        stage: params.stage,
-        assets: params.assets,
-        settings: params.settings,
-        appUrl: params.appUrl,
-      }),
+      ...(replyTo ? { replyTo } : {}),
+      template: templatePayload,
     });
+
+    if (result.error && isResendTemplateError(result.error.message)) {
+      result = await resend.emails.send({
+        from: fromEmail,
+        to: params.to,
+        subject,
+        ...(replyTo ? { replyTo } : {}),
+        html: renderRetentionWarningEmailHtml({
+          stage: params.stage,
+          assets: params.assets,
+          settings: params.settings,
+          appUrl: params.appUrl,
+        }),
+      });
+    }
 
     if (result.error) {
       logError('notification_retention_email_provider_error', {
@@ -491,6 +662,9 @@ async function dispatchPlainFallbackEmail(params: {
   settings: SalonSettings;
   appUrl: string;
   booking?: BookingWithRelations;
+  situation?: EmailTemplateSituation;
+  template?: ResendTemplateDispatchPayload;
+  idempotencyKey?: string;
 }): Promise<NotificationDispatchResult> {
   if (params.booking) {
     return dispatchEmailNotification({
@@ -500,6 +674,8 @@ async function dispatchPlainFallbackEmail(params: {
       booking: params.booking,
       settings: params.settings,
       appUrl: params.appUrl,
+      situation: params.situation,
+      idempotencyKey: params.idempotencyKey,
     });
   }
 
@@ -515,19 +691,63 @@ async function dispatchPlainFallbackEmail(params: {
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const result = await resend.emails.send({
-      from: resolveFromAddress(params.settings.name),
-      to: params.to,
-      subject: params.subject,
-      html: renderBookingEmailHtml({
-        salonName: params.settings.name,
-        bodyText: params.bodyText,
-        manageUrl: `${normalizedUrl}/mis-citas`,
-        address: params.settings.address,
-        instagramHandle: params.settings.instagramHandle,
-        hasCalendarAttachment: false,
-      }),
-    });
+    const fromEmail = resolveFromAddress(params.settings.name);
+    const replyTo = resolveReplyToAddress(params.settings);
+    const requestOptions = params.idempotencyKey
+      ? { idempotencyKey: params.idempotencyKey }
+      : undefined;
+
+    let result = params.template
+      ? await resend.emails.send(
+          {
+            from: fromEmail,
+            to: params.to,
+            subject: params.subject,
+            ...(replyTo ? { replyTo } : {}),
+            template: params.template,
+          },
+          requestOptions,
+        )
+      : await resend.emails.send(
+          {
+            from: fromEmail,
+            to: params.to,
+            subject: params.subject,
+            ...(replyTo ? { replyTo } : {}),
+            html: renderBookingEmailHtml({
+              salonName: params.settings.name,
+              bodyText: params.bodyText,
+              manageUrl: `${normalizedUrl}/mis-citas`,
+              address: params.settings.address,
+              instagramHandle: params.settings.instagramHandle,
+              hasCalendarAttachment: false,
+            }),
+          },
+          requestOptions,
+        );
+
+    if (params.template && result.error && isResendTemplateError(result.error.message)) {
+      result = await resend.emails.send(
+        {
+          from: fromEmail,
+          to: params.to,
+          subject: params.subject,
+          ...(replyTo ? { replyTo } : {}),
+          html: renderBookingEmailHtml({
+            salonName: params.settings.name,
+            bodyText: params.bodyText,
+            manageUrl: `${normalizedUrl}/mis-citas`,
+            address: params.settings.address,
+            instagramHandle: params.settings.instagramHandle,
+            hasCalendarAttachment: false,
+          }),
+        },
+        params.idempotencyKey
+          ? { idempotencyKey: `${params.idempotencyKey}-html` }
+          : undefined,
+      );
+    }
+
     if (result.error) {
       return {
         status: 'failed',
@@ -662,6 +882,9 @@ export async function dispatchWhatsAppNotification(
           booking: params.fallbackEmail.booking,
           settings: params.fallbackEmail.settings,
           appUrl: params.fallbackEmail.appUrl,
+          situation: params.fallbackEmail.situation,
+          template: params.fallbackEmail.template,
+          idempotencyKey: params.fallbackEmail.idempotencyKey,
         });
         return {
           ...emailFallback,
@@ -696,6 +919,9 @@ export async function dispatchWhatsAppNotification(
         booking: params.fallbackEmail.booking,
         settings: params.fallbackEmail.settings,
         appUrl: params.fallbackEmail.appUrl,
+        situation: params.fallbackEmail.situation,
+        template: params.fallbackEmail.template,
+        idempotencyKey: params.fallbackEmail.idempotencyKey,
       });
       return {
         ...emailFallback,
@@ -883,6 +1109,17 @@ export async function dispatchSmsNotification(params: {
   }
 }
 
+function mapImmediateTriggerToEmailSituation(
+  trigger: 'booking_created' | 'booking_confirmed' | 'booking_canceled' | 'booking_rescheduled',
+  booking: BookingWithRelations,
+  settings: SalonSettings,
+): EmailTemplateSituation {
+  if (trigger === 'booking_canceled') return 'canceled';
+  if (trigger === 'booking_rescheduled') return 'rescheduled';
+  if (trigger === 'booking_confirmed') return 'confirmed';
+  return resolveBookingEmailSituation({ booking, settings });
+}
+
 function mapImmediateTriggerToWhatsAppTemplate(
   trigger: 'booking_created' | 'booking_confirmed' | 'booking_canceled' | 'booking_rescheduled',
 ): WhatsAppTemplateTriggerKey {
@@ -969,6 +1206,11 @@ export async function buildAndSendImmediateNotifications(params: {
           ? params.booking.client.email!
           : params.booking.client.phoneE164;
 
+      const emailSituation = mapImmediateTriggerToEmailSituation(
+        params.trigger,
+        params.booking,
+        params.settings,
+      );
       let res: NotificationDispatchResult;
       if (channel === 'email') {
         res = await dispatchEmailNotification({
@@ -978,6 +1220,8 @@ export async function buildAndSendImmediateNotifications(params: {
           booking: params.booking,
           settings: params.settings,
           appUrl: env.appUrl,
+          situation: emailSituation,
+          idempotencyKey: `${params.trigger}-${params.booking.id}-${wf.id}-email`,
         });
       } else if (channel === 'whatsapp') {
         const triggerKey = mapImmediateTriggerToWhatsAppTemplate(params.trigger);
@@ -1000,6 +1244,8 @@ export async function buildAndSendImmediateNotifications(params: {
                 booking: params.booking,
                 settings: params.settings,
                 appUrl: env.appUrl,
+                situation: emailSituation,
+                idempotencyKey: `${params.trigger}-${params.booking.id}-${wf.id}-wa-fallback`,
               }
             : undefined,
         });

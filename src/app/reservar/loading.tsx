@@ -4,7 +4,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { LANDING_ASSETS } from '@/components/landing/landingContent';
 
-const STEP_ITEMS = [0, 1, 2, 3, 4] as const;
+const STEP_ITEMS = [0, 1, 2, 3, 4, 5, 6] as const;
 const SERVICE_CARDS = [0, 1, 2, 3, 4, 5] as const;
 
 export default function ReservarLoading() {
@@ -18,21 +18,20 @@ export default function ReservarLoading() {
     >
       <Text className="rb-sr-only">Cargando agenda de reservas…</Text>
 
-      <VStack as="header" className="rb-header" gap={0}>
+      <VStack as="header" className="rb-header" data-tone="cherry" gap={0}>
         <VStack className="rb-header-bar" gap={0}>
-          <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
+          <VStack className="sk-bar" data-size="pill" data-on="cherry" aria-hidden="true" />
           <img
-            src={LANDING_ASSETS.logoBlack}
+            src={LANDING_ASSETS.logoWhite}
             alt="LAIKONA NAILS"
             width={120}
             height={50}
             className="rb-logo"
           />
           <HStack justify="end">
-            <VStack className="sk-bar" data-size="pill" aria-hidden="true" />
+            <VStack className="sk-bar" data-size="pill" data-on="cherry" aria-hidden="true" />
           </HStack>
         </VStack>
-        <VStack className="rb-progress" aria-hidden="true" />
       </VStack>
 
       <VStack as="section" className="rb-hero" gap={0}>
@@ -50,7 +49,7 @@ export default function ReservarLoading() {
               />
             </VStack>
             <Text color="inherit" className="sk-eyebrow" data-on="cherry">
-              Cargando horarios en vivo…
+              Cargando horarios…
             </Text>
           </HStack>
 

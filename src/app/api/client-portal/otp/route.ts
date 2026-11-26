@@ -13,6 +13,7 @@ import {
   dispatchSmsNotification,
   dispatchWhatsAppNotification,
 } from '@/lib/integrations/notifications';
+import { buildClientOtpTemplatePayload } from '@/lib/integrations/resend-templates';
 import { logInfo, logWarn } from '@/lib/logger';
 import { getRepository } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
@@ -84,9 +85,17 @@ export async function POST(request: NextRequest) {
         matchedClient?.email && env.resendConfigured
           ? {
               to: matchedClient.email,
-              subject: `Tu código de verificación · ${settings.name}`,
+              subject: `Tu código de acceso: ${challenge.code} · ${settings.name}`,
               settings,
               appUrl: env.appUrl,
+              template: buildClientOtpTemplatePayload({
+                clientName: matchedClient.fullName,
+                otpCode: challenge.code,
+                expiresMinutes: 5,
+                settings,
+                appUrl: env.appUrl,
+              }),
+              idempotencyKey: `portal-otp-${challenge.phoneE164}-${challenge.code}`,
             }
           : undefined;
       const messageBody = `Tu código de verificación de ${settings.name} es ${challenge.code}. Válido por 5 minutos. No lo compartas con nadie.`;

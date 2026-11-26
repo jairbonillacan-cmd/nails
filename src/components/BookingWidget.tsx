@@ -7,7 +7,6 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { buildWhatsAppLink } from '@/lib/format';
 import { isAvailabilityRealtimeEvent, useBookingAvailability } from '@/lib/hooks/useBookingAvailability';
 import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
 import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
@@ -25,8 +24,9 @@ import { BookingConflictBanner } from './booking/BookingConflictBanner';
 import { BookingStepRouter, prefetchBookingNextStep } from './booking/BookingStepRouter';
 import { BookingDesktopActions, BookingStickyBar } from './booking/BookingStickyBar';
 import { BookingSummaryCard } from './booking/BookingSummaryCard';
+import { HoldExtendDialog, shouldPromptHoldExtension } from './booking/HoldExtendDialog';
 import { resolveEffectiveSelectedDate } from './booking/bookingHelpers';
-import { bookingReducer, createInitialBookingFlowState } from './booking/bookingMachine';
+import { bookingReducer, createInitialBookingFlowState, isPostHoldStep } from './booking/bookingMachine';
 import {
   buildLiveAnnouncement,
   buildSummaryRows,
@@ -78,6 +78,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [hasOpenedWaitlist, setHasOpenedWaitlist] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [holdPromptDismissedFor, setHoldPromptDismissedFor] = useState<number | null>(null);
 
   const validServiceIds = useMemo(() => services.map((s) => s.id), [services]);
   const validAddonIds = useMemo(() => addons.map((a) => a.id), [addons]);
@@ -142,10 +143,10 @@ export function BookingWidget(props: BookingWidgetProps) {
     useCallback(() => {
       dispatch({
         type: 'HOLD_EXPIRED',
-        message: `Pasaron los ${settings.slotHoldMinutes || 5} minutos de apartado y el horario se liberó. Tus datos siguen guardados.`,
+        message: 'Se acabó el tiempo y soltamos tu horario. Lo que escribiste sigue aquí.',
       });
       revalidateActive();
-    }, [revalidateActive, settings.slotHoldMinutes]),
+    }, [revalidateActive]),
   );
 
   const actions = useBookingFlowActions({
@@ -199,14 +200,11 @@ export function BookingWidget(props: BookingWidgetProps) {
     [flow, holdRemainingSec, holdTotalSec, settings.slotHoldMinutes, realtimePing.message, loadingAvail, selectedDaySummary, timezone],
   );
 
-  const skipsStaffForSlot =
-    selection.skipsStaffStep || (flow.selectedSlot?.availableStaffIds.length ?? 0) <= 1;
   const nav = computeStepNavigation({
     flow,
     hasExtrasOptions: selection.hasExtrasOptions,
     hasSelectedService: Boolean(selection.selectedService),
     requiresConfirmation: Boolean(selection.selectedService?.requiresConfirmation),
-    skipsStaffForSlot,
     totalDurationMinutes: selection.totalDurationMinutes,
     extrasSelectedCount: selection.activeSelectedAddons.length + selection.selectedExtraServices.length,
     chosenStaffId: actions.chosenStaffId,
@@ -214,6 +212,7 @@ export function BookingWidget(props: BookingWidgetProps) {
     showsDeposit: selection.showsDeposit,
     proofDataUrl: selection.clientForm.proofDataUrl,
     proofDeliveryMethod: selection.clientForm.proofDeliveryMethod,
+    hasDesignDetails: Boolean(selection.clientForm.clientNotes.trim() || selection.clientForm.inspoFile),
   });
 
   const handleBack =
@@ -223,8 +222,9 @@ export function BookingWidget(props: BookingWidgetProps) {
     prefetchBookingNextStep(flow.step, selection.hasExtrasOptions);
     if (flow.step === 'service') actions.goToStep(selection.hasExtrasOptions ? 'extras' : 'schedule');
     else if (flow.step === 'extras') actions.goToStep('schedule');
-    else if (flow.step === 'schedule' && flow.selectedSlot) actions.goToStep(skipsStaffForSlot ? 'details' : 'staff');
-    else if (flow.step === 'staff') void actions.handlePickStaff(actions.chosenStaffId);
+    else if (flow.step === 'schedule' && flow.selectedSlot) actions.goToStep('staff');
+    else if (flow.step === 'staff' && flow.selectedSlot) actions.goToStep('design');
+    else if (flow.step === 'design') actions.goToStep('details');
   };
 
   const summaryRows = useMemo(
@@ -239,10 +239,9 @@ export function BookingWidget(props: BookingWidgetProps) {
         address: settings.address,
         chosenStaffId: actions.chosenStaffId,
         isPinned: selection.isPinned,
-        skipsStaffForSlot,
         totalDurationMinutes: selection.totalDurationMinutes,
       }),
-    [selection.selectedService, selection.selectedExtraServices, selection.activeSelectedAddons, flow, selection.timeFormat, timezone, settings.address, actions.chosenStaffId, selection.isPinned, skipsStaffForSlot, selection.totalDurationMinutes],
+    [selection.selectedService, selection.selectedExtraServices, selection.activeSelectedAddons, flow, selection.timeFormat, timezone, settings.address, actions.chosenStaffId, selection.isPinned, selection.totalDurationMinutes],
   );
 
   const summaryProps = {
@@ -251,7 +250,17 @@ export function BookingWidget(props: BookingWidgetProps) {
     depositAmountCents: selection.showsDeposit ? selection.depositAmountCents || 20000 : 0,
     holdRemainingSec, holdTotalSec, isHoldExpired: flow.holdExpired,
   };
-  const whatsappUrl = buildWhatsAppLink(settings.whatsappNumber, `Hola ${settings.name}, tengo una duda para agendar mi cita.`);
+  const isHoldPromptOpen = shouldPromptHoldExtension({
+    holdRemainingSec,
+    holdExpiresAt: flow.holdExpiresAt,
+    dismissedForExpiresAt: holdPromptDismissedFor,
+    isSubmitting: actions.isSubmittingBooking,
+  });
+  const handleExtendHold = async () => {
+    const expiresAt = flow.holdExpiresAt;
+    const extended = await actions.handleExtendHold();
+    if (!extended) setHoldPromptDismissedFor(expiresAt);
+  };
   const ctaProps = {
     step: flow.step, formId: FORM_ID, nextLabel: nav.nextLabel, canContinue: nav.canContinue,
     isBusy: actions.isBusy, isSubmittingBooking: actions.isSubmittingBooking, holdExpired: flow.holdExpired, onNext: handleNext,
@@ -267,7 +276,7 @@ export function BookingWidget(props: BookingWidgetProps) {
       </p>
 
       {!isEmbed ? (
-        <BookingHeader salonName={settings.name} step={flow.step} holdRemainingSec={holdRemainingSec} whatsappUrl={whatsappUrl} onBack={handleBack} />
+        <BookingHeader settings={settings} tone="cherry" holdRemainingSec={holdRemainingSec} onBack={handleBack} />
       ) : null}
       <BookingHero step={flow.step} completedSteps={nav.completedSteps} onGoToStep={actions.goToStep} isCompact={isEmbed} holdRemainingSec={holdRemainingSec} />
 
@@ -283,8 +292,8 @@ export function BookingWidget(props: BookingWidgetProps) {
             {bookingDraft.hasRestoredDraft ? (
               <Banner
                 status="info"
-                title="Retomamos tu avance"
-                description="Recuperamos tus datos guardados para que no empieces de cero."
+                title="Seguimos donde te quedaste"
+                description="Guardamos lo que llevabas para que no lo vuelvas a llenar."
                 endContent={<Button type="button" variant="secondary" size="sm" label="Empezar de nuevo" onClick={handleStartFresh} />}
                 isDismissable
                 onDismiss={bookingDraft.dismissRestoredBanner}
@@ -299,7 +308,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               pendingSlotKey={actions.pendingSlotKey}
               isBusy={actions.isBusy}
               onDismissConflict={() => dispatch({ type: 'DISMISS_CONFLICT' })}
-              onSelectSuggestion={(alt) => void actions.handleSelectSlot(alt, { stayOnDetails: flow.step === 'details' })}
+              onSelectSuggestion={(alt) => void actions.handleSelectSlot(alt, { stayOnDetails: isPostHoldStep(flow.step) })}
             />
 
             <BookingStepRouter
@@ -379,6 +388,15 @@ export function BookingWidget(props: BookingWidgetProps) {
         summaryProps={summaryProps}
         onOpenSummary={() => setSummaryOpen(true)}
         onSummaryOpenChange={setSummaryOpen}
+      />
+
+      <HoldExtendDialog
+        isOpen={isHoldPromptOpen}
+        holdRemainingSec={holdRemainingSec}
+        extraMinutes={settings.slotHoldMinutes || 5}
+        isExtending={actions.isExtendingHold}
+        onExtend={() => void handleExtendHold()}
+        onDecline={() => setHoldPromptDismissedFor(flow.holdExpiresAt)}
       />
 
       {hasOpenedWaitlist ? (

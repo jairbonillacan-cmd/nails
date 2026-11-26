@@ -149,7 +149,7 @@ export function DepositCard({
           <HStack gap={2} align="start" className="rb-card" padding={3}>
             <Info size={15} aria-hidden="true" className="ck-icon lk-cereza-text" />
             <Text type="supporting" color="secondary" textWrap="pretty">
-              Para cuidar el tiempo de tu artista, el anticipo confirma tu lugar y se aplica de forma automática en cuentas con inasistencias previas.
+              Con el anticipo tu lugar queda apartado. Si no puedes venir, avísanos con tiempo y lo movemos a otro día.
             </Text>
           </HStack>
         )}

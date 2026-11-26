@@ -56,6 +56,11 @@ const StaffStep = dynamic(
   { ssr: false, loading: BookingStepFallback },
 );
 
+const DesignStep = dynamic(
+  () => import('./DesignStep').then((mod) => mod.DesignStep),
+  { ssr: false, loading: BookingStepFallback },
+);
+
 const ClientConfirmStep = dynamic(
   () => import('./ClientConfirmStep').then((mod) => mod.ClientConfirmStep),
   { ssr: false, loading: BookingStepFallback },
@@ -88,6 +93,7 @@ export function prefetchBookingNextStep(
   if (step === 'schedule' && !prefetchedConfirm) {
     prefetchedConfirm = true;
     void import('./StaffStep');
+    void import('./DesignStep');
     void import('./ClientConfirmStep');
   }
 }
@@ -262,9 +268,30 @@ export function BookingStepRouter({
     );
   }
 
-  if (flow.step === 'details') {
+  if (flow.step === 'design') {
+    const allowInspo =
+      Boolean(selection.selectedService?.allowInspoPhoto) ||
+      selection.selectedExtraServices.some((srv) => srv.allowInspoPhoto);
+    const artistName = flow.selectedSlot?.staffName?.trim() || null;
+    return (
+      <DesignStep
+        artistName={artistName}
+        clientNotes={selection.clientForm.clientNotes}
+        allowInspo={allowInspo}
+        inspoFile={selection.clientForm.inspoFile}
+        inspoDataUrl={selection.clientForm.inspoDataUrl}
+        onChangeClientNotes={selection.clientForm.onChangeClientNotes}
+        onChangeInspoFile={selection.clientForm.onChangeInspoFile}
+      />
+    );
+  }
+
+  if (flow.step === 'details' || flow.step === 'payment') {
     return (
       <ClientConfirmStep
+        key={flow.step}
+        section={flow.step}
+        onContinueDetails={actions.handleDetailsContinue}
         formId={formId}
         settings={settings}
         selectedService={selection.selectedService}
@@ -285,9 +312,6 @@ export function BookingStepRouter({
         clientInstagram={selection.clientForm.clientInstagram}
         clientEmail={selection.clientForm.clientEmail}
         clientBirthday={selection.clientForm.clientBirthday}
-        clientNotes={selection.clientForm.clientNotes}
-        inspoFile={selection.clientForm.inspoFile}
-        inspoDataUrl={selection.clientForm.inspoDataUrl}
         proofDeliveryMethod={selection.clientForm.proofDeliveryMethod}
         proofFile={selection.clientForm.proofFile}
         proofDataUrl={selection.clientForm.proofDataUrl}
@@ -315,8 +339,6 @@ export function BookingStepRouter({
         onChangeClientInstagram={selection.clientForm.onChangeClientInstagram}
         onChangeClientEmail={selection.clientForm.onChangeClientEmail}
         onChangeClientBirthday={selection.clientForm.onChangeClientBirthday}
-        onChangeClientNotes={selection.clientForm.onChangeClientNotes}
-        onChangeInspoFile={selection.clientForm.onChangeInspoFile}
         onChangeProofMethod={selection.clientForm.onChangeProofMethod}
         onChangeProofFile={selection.clientForm.onChangeProofFile}
         onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}

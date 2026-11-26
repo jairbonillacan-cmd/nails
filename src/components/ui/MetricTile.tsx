@@ -100,7 +100,7 @@ export function MetricGrid({
       as="section"
       aria-label={ariaLabel}
       gap={2}
-      className={className}
+      className={`ad-metric-grid ad-metric-grid-${(cols ?? 4) === 3 ? '3' : '2'}${className ? ` ${className}` : ''}`}
       style={{ minWidth: 0 }}
     >
       <Grid

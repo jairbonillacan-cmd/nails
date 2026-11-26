@@ -7,6 +7,7 @@ import {
   dispatchSmsNotification,
   dispatchWhatsAppNotification,
 } from '@/lib/integrations/notifications';
+import type { EmailTemplateSituation } from '@/lib/integrations/resend-templates';
 import { logError, logInfo, logWarn } from '@/lib/logger';
 import {
   cleanupExpiredSlotHolds,
@@ -61,6 +62,33 @@ function resolveReminderWhatsAppTemplate(
   return {};
 }
 
+function resolveReminderEmailSituation(
+  notification: ScheduledNotification,
+  booking: BookingWithRelations,
+): EmailTemplateSituation {
+  if (
+    notification.workflowId === 'wf-retoque' ||
+    /retoque/i.test(notification.subject)
+  ) {
+    return 'touchup';
+  }
+  const scheduledMs = new Date(notification.scheduledFor).getTime();
+  const startMs = new Date(booking.startAt).getTime();
+  const endMs = new Date(booking.endAt).getTime();
+  if (Number.isFinite(scheduledMs) && Number.isFinite(endMs) && scheduledMs > endMs) {
+    return 'touchup';
+  }
+  if (
+    notification.workflowId === 'wf-2h' ||
+    (Number.isFinite(scheduledMs) &&
+      Number.isFinite(startMs) &&
+      startMs - scheduledMs <= 4 * 60 * 60 * 1000)
+  ) {
+    return 'reminder_2h';
+  }
+  return 'reminder_24h';
+}
+
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
@@ -88,6 +116,7 @@ export async function POST(request: NextRequest) {
     const holdsCleanup = await cleanupExpiredSlotHolds(nowMs);
     const summary = await processDueScheduledNotifications(
       async ({ notification, booking, settings }) => {
+        const emailSituation = resolveReminderEmailSituation(notification, booking);
         if (notification.channel === 'email') {
           return dispatchEmailNotification({
             to: notification.recipient,
@@ -96,6 +125,8 @@ export async function POST(request: NextRequest) {
             booking,
             settings,
             appUrl: env.appUrl,
+            situation: emailSituation,
+            idempotencyKey: `cron-reminder-${notification.id}-email`,
           });
         }
         if (notification.channel === 'whatsapp') {
@@ -119,6 +150,8 @@ export async function POST(request: NextRequest) {
                   booking,
                   settings,
                   appUrl: env.appUrl,
+                  situation: emailSituation,
+                  idempotencyKey: `cron-reminder-${notification.id}-wa-fallback`,
                 }
               : undefined,
           });

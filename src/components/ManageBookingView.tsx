@@ -134,7 +134,7 @@ export function ManageBookingView({
 
   return (
     <VStack className="lk-root rb-root">
-      <BookingHeader salonName={settings.name} whatsappUrl={manage.whatsappUrl} />
+      <BookingHeader settings={settings} />
 
       <CitaHero
         status={booking.status}

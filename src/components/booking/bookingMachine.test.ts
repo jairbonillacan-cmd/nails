@@ -45,7 +45,7 @@ const ALT_SLOT: AvailableSlot = {
 
 describe('bookingMachine reducer', () => {
   it('orders the dedicated extras step between service and schedule and navigates cleanly', () => {
-    expect(BOOKING_STEPS).toEqual(['service', 'extras', 'schedule', 'staff', 'details']);
+    expect(BOOKING_STEPS).toEqual(['service', 'extras', 'schedule', 'staff', 'design', 'details', 'payment']);
     const initial = createInitialBookingFlowState();
     const extras = bookingReducer(initial, { type: 'GO_TO_STEP', step: 'extras' });
     expect(extras.step).toBe('extras');
@@ -277,7 +277,6 @@ describe('bookingMachine reducer', () => {
       hasExtrasOptions: true,
       hasSelectedService: true,
       requiresConfirmation: false,
-      skipsStaffForSlot: false,
       totalDurationMinutes: 90,
       extrasSelectedCount: 0,
       chosenStaffId: 'any',
@@ -334,8 +333,15 @@ describe('bookingMachine reducer', () => {
         selectedSlot: SAMPLE_SLOT,
       },
     });
-    expect(onDetails.backTarget).toBe('staff');
-    expect(onDetails.nextLabel).toBe('Apartar mi cita');
+    expect(onDetails.backTarget).toBe('design');
+    expect(onDetails.nextLabel).toBe('Continuar');
+    const onPayment = computeStepNavigation({
+      ...baseInput,
+      flow: { ...createInitialBookingFlowState(), step: 'payment', phase: 'holding', selectedSlot: SAMPLE_SLOT },
+    });
+    expect(onPayment.backTarget).toBe('details');
+    expect(onPayment.nextLabel).toBe('Apartar mi cita');
+    expect(onPayment.completedSteps.has('details')).toBe(true);
     expect(onDetails.completedSteps.has('extras')).toBe(true);
     expect(onDetails.completedSteps.has('schedule')).toBe(true);
     expect(onDetails.completedSteps.has('staff')).toBe(true);
@@ -360,7 +366,7 @@ describe('time-first staff assignment', () => {
       holdId: 'hold-paty',
       holdExpiresAt: 1_900_000_300_000,
     });
-    expect(assigned.step).toBe('details');
+    expect(assigned.step).toBe('staff');
     expect(assigned.selectedSlot?.staffId).toBe('staff-paty');
     expect(assigned.holdId).toBe('hold-paty');
 

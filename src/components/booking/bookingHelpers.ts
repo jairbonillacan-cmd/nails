@@ -186,6 +186,14 @@ export function resolveInstagramUrl(settings: PublicSettingsDTO): string {
     : DEFAULT_INSTAGRAM_URL;
 }
 
+export function resolveInstagramDmUrl(settings: Pick<PublicSettingsDTO, 'instagramHandle' | 'instagramUrl'>): string {
+  const fromUrl = settings.instagramUrl?.trim().match(/instagram\.com\/([a-zA-Z0-9._]+)/)?.[1] ?? '';
+  const fromHandle = settings.instagramHandle?.trim().replace(/^@+/, '') ?? '';
+  const fallback = normalizeInstagramHandle(null).replace(/^@+/, '');
+  const slug = (fromHandle || fromUrl || fallback).replace(/[^a-zA-Z0-9._]/g, '');
+  return slug ? `https://ig.me/m/${encodeURIComponent(slug)}` : DEFAULT_INSTAGRAM_URL;
+}
+
 export function resolveDepositAmountCents(
   settings: PublicSettingsDTO,
   primaryService: PublicServiceDTO | undefined,

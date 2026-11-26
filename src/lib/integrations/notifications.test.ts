@@ -4,11 +4,16 @@ import type { BookingWithRelations } from '../types';
 import {
   dispatchEmailNotification,
   dispatchRetentionWarningEmail,
+  dispatchSalonAlertEmail,
   dispatchWhatsAppNotification,
   renderBookingEmailHtml,
   renderRetentionWarningEmailHtml,
   type RetentionWarningAsset,
 } from './notifications';
+import {
+  buildClientOtpTemplatePayload,
+  RESEND_TEMPLATE_ALIASES,
+} from './resend-templates';
 
 const mockResendEmailsSend = vi.fn();
 
@@ -93,7 +98,7 @@ describe('Laikona Nails Resend Emails & WhatsApp Official UTILITY Dispatch', () 
     expect(html).toContain('&lt;svg onload=evil()&gt;');
   });
 
-  it('dispatches Resend booking email with Laikona HTML and preserves RFC 5545 .ics attachment', async () => {
+  it('dispatches Resend booking email via published branded template and preserves RFC 5545 .ics attachment', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_laikona_key');
     vi.stubEnv('RESEND_FROM_EMAIL', 'Laikona Nails <citas@laikona.mx>');
     mockResendEmailsSend.mockResolvedValue({ data: { id: 're_msg_123' }, error: null });
@@ -106,6 +111,7 @@ describe('Laikona Nails Resend Emails & WhatsApp Official UTILITY Dispatch', () 
       booking,
       settings,
       appUrl: 'https://laikona.mx/',
+      idempotencyKey: 'confirm-test-1',
     });
 
     expect(res.status).toBe('sent');
@@ -114,14 +120,108 @@ describe('Laikona Nails Resend Emails & WhatsApp Official UTILITY Dispatch', () 
     const callArg = mockResendEmailsSend.mock.calls[0]?.[0] as {
       from: string;
       to: string;
-      html: string;
+      template: { id: string; variables: Record<string, string | number> };
       attachments: Array<{ filename: string; content: Buffer }>;
     };
+    const reqOpts = mockResendEmailsSend.mock.calls[0]?.[1] as {
+      idempotencyKey?: string;
+    };
     expect(callArg.from).toBe('Laikona Nails <citas@laikona.mx>');
-    expect(callArg.html).toContain('#8B1E2B');
+    expect(callArg.template.id).toBe(RESEND_TEMPLATE_ALIASES.bookingConfirmed);
+    expect(callArg.template.variables.BOOKING_CODE).toBe(booking.bookingCode);
+    expect(callArg.template.variables.SALON_NAME).toBe(settings.name);
+    expect(reqOpts.idempotencyKey).toBe('confirm-test-1');
     expect(callArg.attachments).toHaveLength(1);
     expect(callArg.attachments[0]?.filename).toBe(`cita-${booking.bookingCode}.ics`);
     expect(callArg.attachments[0]?.content.toString('utf8')).toContain('BEGIN:VCALENDAR');
+  });
+
+  it('selects situation-specific Resend templates (SPEI, canceled, salon alert, retention, OTP) and falls back to HTML on template error', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_laikona_key');
+    vi.stubEnv('RESEND_FROM_EMAIL', 'LAIKONA NAILS <citas@laikona.devand.net>');
+
+    const { booking, settings } = buildSampleBooking();
+    const pendingSpeiBooking: BookingWithRelations = {
+      ...booking,
+      status: 'pending_confirmation',
+    };
+
+    mockResendEmailsSend
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Template not found in workspace' },
+      })
+      .mockResolvedValueOnce({ data: { id: 're_html_fallback_1' }, error: null });
+
+    const fallbackRes = await dispatchEmailNotification({
+      to: 'clienta@example.com',
+      subject: 'Anticipo SPEI',
+      bodyText: 'Envía tu comprobante SPEI.',
+      booking: pendingSpeiBooking,
+      settings,
+      appUrl: 'https://laikona.devand.net',
+    });
+    expect(fallbackRes.status).toBe('sent');
+    expect(fallbackRes.providerMessageId).toBe('re_html_fallback_1');
+    expect(mockResendEmailsSend).toHaveBeenCalledTimes(2);
+    const firstAttempt = mockResendEmailsSend.mock.calls[0]?.[0] as {
+      template: { id: string; variables: Record<string, string | number> };
+    };
+    const secondAttempt = mockResendEmailsSend.mock.calls[1]?.[0] as {
+      html: string;
+    };
+    expect(firstAttempt.template.id).toBe(RESEND_TEMPLATE_ALIASES.bookingPendingSpei);
+    expect(firstAttempt.template.variables.CLABE).toBe(settings.depositClabe);
+    expect(secondAttempt.html).toContain('#8B1E2B');
+
+    mockResendEmailsSend.mockReset();
+    mockResendEmailsSend.mockResolvedValue({ data: { id: 're_tpl_ok' }, error: null });
+
+    const canceledRes = await dispatchEmailNotification({
+      to: 'clienta@example.com',
+      subject: 'Cita cancelada',
+      bodyText: 'Tu cita fue cancelada.',
+      booking: { ...booking, status: 'canceled', cancellationReason: 'Cambio de planes' },
+      settings,
+      appUrl: 'https://laikona.devand.net',
+      situation: 'canceled',
+    });
+    expect(canceledRes.status).toBe('sent');
+    const canceledArg = mockResendEmailsSend.mock.calls[0]?.[0] as {
+      template: { id: string; variables: Record<string, string | number> };
+      attachments?: unknown[];
+    };
+    expect(canceledArg.template.id).toBe(RESEND_TEMPLATE_ALIASES.bookingCanceled);
+    expect(canceledArg.template.variables.CANCELLATION_NOTE).toBe('Cambio de planes');
+    expect(canceledArg.attachments).toBeUndefined();
+
+    const alertRes = await dispatchSalonAlertEmail({
+      to: 'jairbonillacan@gmail.com',
+      subject: 'Aviso al estudio',
+      bodyText: 'Reagendada',
+      kind: 'rescheduled',
+      booking,
+      settings,
+      appUrl: 'https://laikona.devand.net',
+    });
+    expect(alertRes.status).toBe('sent');
+    const alertArg = mockResendEmailsSend.mock.calls[1]?.[0] as {
+      template: { id: string; variables: Record<string, string | number> };
+    };
+    expect(alertArg.template.id).toBe(RESEND_TEMPLATE_ALIASES.salonAlert);
+    expect(alertArg.template.variables.ADMIN_URL).toBe(
+      'https://laikona.devand.net/admin/citas',
+    );
+
+    const otpPayload = buildClientOtpTemplatePayload({
+      clientName: 'Sofía',
+      otpCode: '123456',
+      expiresMinutes: 5,
+      settings,
+      appUrl: 'https://laikona.devand.net',
+    });
+    expect(otpPayload.id).toBe(RESEND_TEMPLATE_ALIASES.clientOtp);
+    expect(otpPayload.variables.OTP_CODE).toBe('123456');
   });
 
   it('renders and dispatches 30d and 7d retention warning emails with Laikona branding and XSS escaping', async () => {

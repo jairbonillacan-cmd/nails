@@ -11,20 +11,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CalendarCheck,
-  Eye,
-  EyeOff,
-  Lock,
-  Mail,
-  MapPin,
-  Moon,
-  ShieldCheck,
-  Sparkles,
-  Sun,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, MapPin, Moon, Sun } from 'lucide-react';
 import type { AdminRole, AdminUser } from '@/lib/types';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { LANDING_ASSETS } from '@/components/landing/landingContent';
@@ -45,41 +32,22 @@ const ROLE_META: Record<
 > = {
   owner: {
     label: 'Dueña',
-    hint: 'Todo el salón, mi página y conexiones',
+    hint: 'Ve y cambia todo',
     tone: 'accent',
   },
   admin: {
     label: 'Recepción',
-    hint: 'Agenda, cobros, clientas y productos',
+    hint: 'Agenda, cobros y clientas',
     tone: 'info',
   },
   specialist: {
     label: 'Manicurista',
-    hint: 'Sus citas, horarios y comisiones',
+    hint: 'Sus citas y comisiones',
     tone: 'neutral',
   },
 };
 
-const BRAND_HIGHLIGHTS = [
-  {
-    id: 'agenda',
-    icon: CalendarCheck,
-    title: 'Agenda en vivo sin empates',
-    desc: 'Turnos fijos, bloqueos y apartados de 5 minutos siempre sincronizados.',
-  },
-  {
-    id: 'reminders',
-    icon: Sparkles,
-    title: 'Recordatorios y fidelidad',
-    desc: 'Avisos automáticos por WhatsApp, tarjeta de sellos y paquetes.',
-  },
-  {
-    id: 'security',
-    icon: ShieldCheck,
-    title: 'Control por rol y anticipos',
-    desc: 'Permisos separados para dueña, recepción y manicuristas.',
-  },
-] as const;
+const LOGIN_PHOTO = '/landing/sets/07-rubi-y-negro-4x5.webp';
 
 function cleanDemoDisplayName(fullName: string): string {
   const stripped = fullName.replace(/\s*\([^)]*\)\s*$/, '').trim();
@@ -126,9 +94,6 @@ export default function AdminLoginPage() {
         setActiveSession(json.session ?? null);
         setDemoUsers(users);
         setAuthMode(resolvedMode);
-        if (resolvedMode === 'demo' && users[0]) {
-          setEmail((prev) => prev || users[0]?.email || 'duena@nails.studio');
-        }
       } catch {
         return;
       } finally {
@@ -142,11 +107,11 @@ export default function AdminLoginPage() {
   const signIn = async (targetEmail: string, targetPassword?: string) => {
     const cleanEmail = targetEmail.trim();
     if (!cleanEmail) {
-      setError('Escribe tu correo electrónico para entrar.');
+      setError('Escribe tu correo.');
       return;
     }
     if (authMode === 'supabase' && !(targetPassword ?? '').trim()) {
-      setError('Escribe tu contraseña para iniciar sesión.');
+      setError('Escribe tu contraseña.');
       return;
     }
 
@@ -164,13 +129,13 @@ export default function AdminLoginPage() {
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) {
-        setError(json?.error || 'No pudimos iniciar sesión. Revisa tus datos.');
+        setError(json?.error || 'El correo o la contraseña no coinciden.');
         return;
       }
       router.push('/admin');
       router.refresh();
     } catch {
-      setError('Error de conexión al iniciar sesión. Revisa tu internet.');
+      setError('No hay conexión. Revisa tu internet e intenta otra vez.');
     } finally {
       setLoadingEmail(null);
     }
@@ -182,76 +147,36 @@ export default function AdminLoginPage() {
     <VStack as="main" className="ad-login-wrap" gap={0}>
       <VStack className="ad-login-frame fx-fade-up" gap={0}>
         <VStack className="ad-login-mobile-bar" gap={0} aria-hidden="true" />
-        <VStack as="aside" className="ad-login-brand" justify="between" gap={6} aria-label={`Identidad de ${settings.name}`}>
-          <VStack gap={5}>
-            <HStack justify="between" align="center" gap={2} wrap="wrap">
-              <NextLink href="/" aria-label={`${settings.name}, inicio`} className="ad-logo-link">
-                <img
-                  src={LANDING_ASSETS.logoWhite}
-                  alt={settings.name}
-                  width={132}
-                  height={38}
-                  className="ad-logo"
-                />
-              </NextLink>
-              <Text color="inherit" className="ad-login-pill">
-                Panel del equipo
-              </Text>
-            </HStack>
-
-            <VStack gap={2}>
-              <Heading level={2} color="inherit" className="lk-serif ad-login-brand-title">
-                Tu estudio, en calma y al día
-              </Heading>
-              <img
-                src={LANDING_ASSETS.strokePorcelain}
-                alt=""
-                aria-hidden="true"
-                width={150}
-                height={18}
-                className="ad-login-stroke"
-              />
-              <Text color="inherit" className="ad-login-brand-sub" textWrap="pretty">
-                Revisa citas del día, confirma anticipos y atiende a tus clientas desde el celular o la computadora.
-              </Text>
-            </VStack>
-
-            <VStack as="ul" gap={3} className="ad-login-points">
-              {BRAND_HIGHLIGHTS.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <HStack as="li" key={item.id} gap={3} align="start">
-                    <VStack className="ad-login-point-icon" align="center" justify="center" aria-hidden="true">
-                      <Icon size={16} />
-                    </VStack>
-                    <VStack gap={0.5} className="rb-grow">
-                      <Text color="inherit" weight="semibold" size="sm">
-                        {item.title}
-                      </Text>
-                      <Text color="inherit" type="supporting" className="ad-login-brand-sub">
-                        {item.desc}
-                      </Text>
-                    </VStack>
-                  </HStack>
-                );
-              })}
-            </VStack>
-          </VStack>
-
-          <HStack justify="between" align="center" wrap="wrap" gap={2} className="ad-login-brand-sub">
-            <HStack gap={1.5} align="center">
+        <VStack as="aside" className="ad-login-brand" justify="between" gap={6} aria-label={settings.name}>
+          <img
+            src={LOGIN_PHOTO}
+            alt=""
+            aria-hidden="true"
+            width={800}
+            height={1000}
+            className="ad-login-photo"
+            decoding="async"
+          />
+          <NextLink href="/" aria-label={`${settings.name}, inicio`} className="ad-logo-link">
+            <img
+              src={LANDING_ASSETS.logoWhite}
+              alt={settings.name}
+              width={132}
+              height={38}
+              className="ad-logo"
+            />
+          </NextLink>
+          <VStack gap={1}>
+            <Text color="inherit" weight="semibold">
+              {settings.name}
+            </Text>
+            <HStack gap={1.5} align="center" className="ad-login-brand-sub">
               <MapPin size={14} aria-hidden="true" />
               <Text color="inherit" type="supporting">
                 {settings.address}
               </Text>
             </HStack>
-            <HStack gap={1} align="center">
-              <Lock size={12} aria-hidden="true" />
-              <Text color="inherit" type="supporting">
-                Sesión cifrada
-              </Text>
-            </HStack>
-          </HStack>
+          </VStack>
         </VStack>
 
         <VStack className="ad-login-panel" justify="between" gap={5}>
@@ -283,16 +208,11 @@ export default function AdminLoginPage() {
             </HStack>
 
             <VStack gap={1}>
-              <Text type="supporting" weight="semibold" color="accent">
-                Acceso privado · {settings.name}
-              </Text>
               <Heading level={1} className="ad-page-title">
-                Bienvenida al salón
+                Entrar
               </Heading>
               <Text color="secondary" className="ad-page-sub">
-                {authMode === 'supabase'
-                  ? 'Ingresa tu correo y contraseña de equipo para abrir tu agenda del día.'
-                  : 'Entra con tu cuenta de dueña, recepción o manicurista para gestionar tu día.'}
+                Con el correo que tienes registrado en {settings.name}.
               </Text>
             </VStack>
 
@@ -300,11 +220,11 @@ export default function AdminLoginPage() {
               <Banner
                 status="success"
                 role="status"
-                title={`Ya tienes sesión activa como ${cleanDemoDisplayName(activeSession.user.fullName)}`}
-                description="Puedes continuar directo a tu panel o cambiar de cuenta abajo."
+                title={`Ya entraste como ${cleanDemoDisplayName(activeSession.user.fullName)}`}
+                description="Puedes seguir a la agenda o entrar con otra cuenta."
                 endContent={
                   <Button
-                    label="Ir a mi panel"
+                    label="Ir a la agenda"
                     variant="primary"
                     size="md"
                     href="/admin"
@@ -318,8 +238,8 @@ export default function AdminLoginPage() {
               <Banner
                 status="info"
                 role="status"
-                title="Acceso pendiente de activar"
-                description="Este entorno tiene desactivado el acceso de prueba sin contraseña. Activa las credenciales del estudio para iniciar sesión con tu equipo."
+                title="Todavía no se puede entrar aquí"
+                description="Falta conectar las cuentas del equipo en este sitio. Pídele a quien lo administra que lo active."
               />
             ) : null}
 
@@ -342,11 +262,9 @@ export default function AdminLoginPage() {
                 ) : null}
 
                 <TextInput
-                  label="Tu correo"
+                  label="Correo"
                   type="email"
                   size="lg"
-                  placeholder="karla@laikonanails.com"
-                  startIcon={<Mail size={16} aria-hidden="true" />}
                   value={email}
                   onChange={(nextValue) => {
                     setEmail(nextValue);
@@ -360,11 +278,9 @@ export default function AdminLoginPage() {
                 {authMode === 'supabase' ? (
                   <VStack gap={1.5}>
                     <TextInput
-                      label="Tu contraseña"
+                      label="Contraseña"
                       type={showPassword ? 'text' : 'password'}
                       size="lg"
-                      placeholder="••••••••"
-                      startIcon={<Lock size={16} aria-hidden="true" />}
                       value={password}
                       onChange={(nextValue) => {
                         setPassword(nextValue);
@@ -381,7 +297,8 @@ export default function AdminLoginPage() {
                         size="sm"
                         className="fx-press"
                         icon={showPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
-                        label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        label={showPassword ? 'Ocultar' : 'Mostrar'}
+                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                         onClick={() => setShowPassword((prev) => !prev)}
                       />
                     </HStack>
@@ -390,7 +307,7 @@ export default function AdminLoginPage() {
 
                 <Button
                   type="submit"
-                  label="Entrar al salón"
+                  label="Entrar"
                   variant="primary"
                   size="lg"
                   width="100%"
@@ -403,7 +320,7 @@ export default function AdminLoginPage() {
 
             {loadingSession ? (
               <VStack gap={3} aria-hidden="true">
-                <Divider label="Verificando acceso del estudio" />
+                <Divider />
                 <VStack className="ad-surface" gap={2} padding={3}>
                   <SkeletonBlock width="100%" height="3.5rem" radius={2} index={0} />
                   <SkeletonBlock width="100%" height="3.5rem" radius={2} index={1} />
@@ -411,7 +328,7 @@ export default function AdminLoginPage() {
               </VStack>
             ) : demoUsers.length > 0 ? (
               <VStack gap={3}>
-                <Divider label="Entrar rápido (modo de prueba)" />
+                <Divider label="Cuentas de prueba" />
                 <VStack className="ad-surface" gap={0}>
                   <VStack className="ad-row-list fx-stagger" gap={0}>
                     {demoUsers.map((u) => {
@@ -445,7 +362,7 @@ export default function AdminLoginPage() {
                                 <StatusTag label={meta.label} tone={meta.tone} size="sm" />
                               </HStack>
                               <Text type="supporting" color="secondary" maxLines={1}>
-                                {isSigning ? 'Entrando al panel…' : meta.hint}
+                                {isSigning ? 'Entrando…' : meta.hint}
                               </Text>
                             </VStack>
                           </HStack>
@@ -459,17 +376,11 @@ export default function AdminLoginPage() {
             ) : null}
           </VStack>
 
-          <HStack justify="between" align="center" wrap="wrap" gap={2} className="ad-login-foot">
+          <HStack justify="start" align="center" gap={2} className="ad-login-foot">
             <NextLink href="/" className="ad-foot-link">
               <ArrowLeft size={14} aria-hidden="true" />
               <Text color="inherit" size="sm">
-                Página del salón
-              </Text>
-            </NextLink>
-            <NextLink href="/reservar" className="ad-foot-link">
-              <CalendarCheck size={14} aria-hidden="true" />
-              <Text color="inherit" size="sm">
-                Ver agenda pública
+                Volver a la página
               </Text>
             </NextLink>
           </HStack>

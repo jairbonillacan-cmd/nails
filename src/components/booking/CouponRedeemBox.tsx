@@ -70,7 +70,7 @@ export function CouponRedeemBox({
           </VStack>
           <Button
             type="button"
-            label={couponLoading ? 'Validando…' : 'Aplicar'}
+            label={couponLoading ? 'Revisando…' : 'Aplicar'}
             variant="secondary"
             className="fx-press"
             isLoading={couponLoading}

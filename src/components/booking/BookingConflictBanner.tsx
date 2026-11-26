@@ -36,8 +36,8 @@ export function BookingConflictBanner({
           <Banner
             status="info"
             role="status"
-            title="Anticipo obligatorio por política de puntualidad"
-            description="Para proteger la agenda del estudio, esta reserva requiere anticipo previo para confirmar tu horario."
+            title="Esta cita lleva anticipo"
+            description="Con el anticipo apartamos tu lugar. Se descuenta de tu total el día de tu cita."
           />
         </VStack>
       ) : null}

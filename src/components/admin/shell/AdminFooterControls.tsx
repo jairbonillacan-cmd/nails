@@ -7,7 +7,6 @@ import { Text } from '@astryxdesign/core/Text';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
 import {
-  BellRing,
   ExternalLink,
   LogOut,
   Moon,
@@ -76,7 +75,7 @@ export function AdminFooterControls({
 
         <Tooltip
           content={
-            soundActive ? 'Silenciar timbre de nuevas citas' : 'Activar timbre de nuevas citas'
+            soundActive ? 'Quitar sonido de citas nuevas' : 'Sonar con cada cita nueva'
           }
           placement="end"
           hasHoverIndication={false}
@@ -85,7 +84,7 @@ export function AdminFooterControls({
             type="button"
             className="ad-rail-btn"
             aria-label={
-              soundActive ? 'Silenciar timbre de nuevas citas' : 'Activar timbre de nuevas citas'
+              soundActive ? 'Quitar sonido de citas nuevas' : 'Sonar con cada cita nueva'
             }
             aria-pressed={soundActive}
             onClick={onToggleMute}
@@ -179,54 +178,45 @@ export function AdminFooterControls({
         />
       ) : null}
 
-      <HStack gap={1.5} align="center">
-        <button
-          type="button"
-          className="ad-pill ad-foot-pill fx-press"
-          aria-pressed={soundActive}
-          onClick={onToggleMute}
-        >
-          {soundActive ? (
-            <Volume2 size={14} aria-hidden="true" />
-          ) : (
-            <VolumeX size={14} aria-hidden="true" />
-          )}
-          <Text color="inherit" size="sm" weight="semibold" maxLines={1}>
-            {soundFeedbackMessage
-              ? soundFeedbackMessage
-              : soundActive
-                ? 'Timbre de nuevas citas'
-                : 'Timbre apagado'}
-          </Text>
-        </button>
-        <button
-          type="button"
-          className="ad-pill ad-icon-pill fx-press"
-          aria-label="Probar timbre de nuevas citas"
-          title="Probar timbre de nuevas citas"
-          onClick={onTestSound}
-        >
-          <BellRing size={14} aria-hidden="true" />
-        </button>
-      </HStack>
-
       <button
         type="button"
         className="ad-pill ad-foot-pill fx-press"
-        aria-pressed={isDark}
-        onClick={onToggleTheme}
+        aria-pressed={soundActive}
+        onClick={() => {
+          onToggleMute();
+          if (!soundActive) onTestSound();
+        }}
       >
-        {isDark ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
-        <Text color="inherit" size="sm" weight="semibold">
-          {isDark ? 'Modo claro' : 'Modo oscuro'}
+        {soundActive ? (
+          <Volume2 size={14} aria-hidden="true" />
+        ) : (
+          <VolumeX size={14} aria-hidden="true" />
+        )}
+        <Text color="inherit" size="sm" weight="semibold" maxLines={1}>
+          {soundFeedbackMessage
+            ? soundFeedbackMessage
+            : soundActive
+              ? 'Sonar con cada cita nueva'
+              : 'Sin sonido'}
         </Text>
       </button>
 
-      <HStack justify="between" align="center" gap={2}>
+      <HStack justify="between" align="center" gap={1}>
+        <Tooltip content={isDark ? 'Modo claro' : 'Modo oscuro'} hasHoverIndication={false}>
+          <button
+            type="button"
+            className="ad-rail-btn"
+            aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            aria-pressed={isDark}
+            onClick={onToggleTheme}
+          >
+            {isDark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+          </button>
+        </Tooltip>
         <NextLink href="/" className="ad-foot-link" onClick={closeDrawer}>
           <ExternalLink size={14} aria-hidden="true" />
           <Text color="inherit" size="sm">
-            Ver mi página
+            Mi página
           </Text>
         </NextLink>
         <button

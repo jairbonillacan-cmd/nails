@@ -22,7 +22,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
 
   return (
     <VStack className="lk-root rb-root" gap={0} width="100%">
-      <BookingHeader salonName={settings.name} whatsappUrl={whatsappDirect} />
+      <BookingHeader settings={settings} />
 
       <VStack as="main" gap={0} width="100%" style={{ flex: '1 1 auto' }}>
         {children}

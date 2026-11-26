@@ -18,27 +18,28 @@
   color: var(--lk-blanco);
 }
 
-.rb-progress {
-  appearance: none;
-  display: block;
-  width: 100%;
-  border: 0;
-  overflow: hidden;
-  height: 0.1875rem;
-  background: var(--lk-tinte);
+.rb-segments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
 }
 
-.rb-progress::-webkit-progress-bar {
-  background: var(--lk-tinte);
+.rb-segment {
+  height: 0.25rem;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--lk-blanco) 22%, transparent);
+  transition: background-color var(--duration-medium) var(--ease-move);
 }
 
-.rb-progress::-webkit-progress-value {
-  background: var(--lk-cereza);
-  transition: width var(--duration-medium) var(--ease-move);
+.rb-segment[data-state='done'] {
+  background: color-mix(in srgb, var(--lk-blanco) 70%, transparent);
 }
 
-.rb-progress::-moz-progress-bar {
-  background: var(--lk-cereza);
+.rb-segment[data-state='current'] {
+  background: var(--lk-blanco);
 }
 
 .rb-live {
@@ -56,8 +57,41 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.5rem;
+}
+
+.rb-header[data-tone='cherry'] {
+  position: relative;
+  background: var(--lk-cereza);
+  backdrop-filter: none;
+  border-bottom: 0;
+  color: var(--lk-blanco);
+}
+
+.rb-header[data-tone='cherry'] .rb-ghost {
+  color: var(--lk-blanco);
+}
+
+.rb-header[data-tone='cherry'] .rb-ghost:hover {
+  background: color-mix(in srgb, var(--lk-blanco) 14%, transparent);
+}
+
+.rb-header[data-tone='cherry'] .rb-ghost:focus-visible,
+.rb-header[data-tone='cherry'] .rb-logo-link:focus-visible {
+  outline-color: var(--lk-blanco);
+}
+
+.rb-header[data-tone='cherry'] + .rb-hero {
+  padding-top: 1.5rem;
+}
+
+.rb-hero-note {
+  max-width: 18rem;
+  font-size: 0.875rem;
+  opacity: 0.85;
+  text-align: end;
+  text-wrap: pretty;
 }
 
 .rb-step {
@@ -118,7 +152,7 @@
 .rb-panel {
   min-width: 0;
   gap: 1.25rem;
-  scroll-margin-top: 4.5rem;
+  scroll-margin-top: 1rem;
   background: var(--color-background-surface);
   border: 1px solid var(--lk-tinte);
   border-radius: 1.75rem;
@@ -128,7 +162,7 @@
 
 .rb-aside {
   position: sticky;
-  top: 4.5rem;
+  top: 1.25rem;
 }
 
 .rb-actions {
@@ -551,6 +585,11 @@
 .rb-cta {
   min-width: 9.5rem;
   min-height: 2.75rem;
+  flex-shrink: 0;
+}
+
+.rb-bottom-hint {
+  white-space: nowrap;
 }
 
 .rb-skeleton-services {
@@ -626,7 +665,7 @@
   .rb-day,
   .rb-step,
   .rb-timer,
-  .rb-progress::-webkit-progress-value {
+  .rb-segment {
     transition: none !important;
   }
 
@@ -641,8 +680,9 @@
 
 @media (max-width: 47.5rem) {
   .rb-hero-mobile { color: var(--lk-suave); font-size: 0.875rem; }
+  .rb-header[data-tone='cherry'] + .rb-hero { padding-top: 0.5rem; }
   .rb-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .rb-panel { border-radius: 0; border: 0; box-shadow: none; background: transparent; padding: 1rem 1rem 1.75rem; scroll-margin-top: 3.5rem; }
+  .rb-panel { border-radius: 0; border: 0; box-shadow: none; background: transparent; padding: 1rem 1rem 1.75rem; scroll-margin-top: 0.5rem; }
   .rb-services { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
   .rb-service { display: grid; grid-template-columns: 4.75rem minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.5rem 0.875rem 0.5rem 0.5rem; border-radius: 1.125rem; }
   .rb-service-img { width: 4.75rem; height: 4.75rem; aspect-ratio: auto; border-radius: 0.75rem; }

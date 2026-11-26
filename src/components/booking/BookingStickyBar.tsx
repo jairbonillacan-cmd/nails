@@ -5,8 +5,9 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { BottomSheet } from '@astryxdesign/core/BottomSheet';
-import { ChevronUp } from 'lucide-react';
+import { ChevronUp, Timer } from 'lucide-react';
 import { formatDuration } from '@/lib/format';
+import { formatHoldClock } from './BookingChrome';
 import { BookingSummaryCard, type SummaryRow } from './BookingSummaryCard';
 import { formatServicePrice } from './bookingHelpers';
 import type { BookingStep } from './bookingMachine';
@@ -32,7 +33,7 @@ function BookingPrimaryCta({
   holdExpired,
   onNext,
 }: PrimaryCtaProps) {
-  if (step === 'details') {
+  if (step === 'details' || step === 'payment') {
     return (
       <Button
         type="submit"
@@ -40,7 +41,7 @@ function BookingPrimaryCta({
         variant="primary"
         size="lg"
         label={nextLabel}
-        isDisabled={isSubmittingBooking || holdExpired}
+        isDisabled={isSubmittingBooking || (step === 'payment' && holdExpired)}
         isLoading={isSubmittingBooking}
         className="rb-cta fx-press"
       />
@@ -141,7 +142,10 @@ export function BookingStickyBar({
             {formatServicePrice(totalPriceCents, hasStartingPrice, currency)}
           </Text>
           <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint" hasTabularNumbers>
-            {formatDuration(totalDurationMinutes)} · Ver resumen
+            {summaryProps.holdRemainingSec > 0 ? <Timer size={12} aria-label="Tiempo de apartado" /> : null}
+            {summaryProps.holdRemainingSec > 0
+              ? `${formatHoldClock(summaryProps.holdRemainingSec)} · Resumen`
+              : `${formatDuration(totalDurationMinutes)} · Ver resumen`}
             <ChevronUp size={14} aria-hidden="true" />
           </Text>
         </button>

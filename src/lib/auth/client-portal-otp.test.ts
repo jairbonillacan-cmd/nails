@@ -290,6 +290,8 @@ describe('client-portal-otp auth', () => {
       expect(spy).toHaveBeenCalledTimes(1);
       const firstCall = spy.mock.calls[0]?.[0];
       expect(firstCall?.fallbackEmail?.to).toBe('sofia.ramirez@ejemplo.mx');
+      expect(firstCall?.fallbackEmail?.template?.id).toBe('laikona-client-otp');
+      expect(String(firstCall?.fallbackEmail?.template?.variables?.OTP_CODE)).toMatch(/^\d{6}$/);
     } finally {
       spy.mockRestore();
     }

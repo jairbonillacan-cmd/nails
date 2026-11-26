@@ -80,8 +80,10 @@ import {
 } from '../format';
 import {
   dispatchEmailNotification,
+  dispatchSalonAlertEmail,
   dispatchWhatsAppNotification,
 } from '../integrations/notifications';
+import { buildWaitlistOfferTemplatePayload } from '../integrations/resend-templates';
 import {
   ClientPortalSnapshotDTOSchema,
   PublicLoyaltySummarySchema,
@@ -800,10 +802,12 @@ async function dispatchSalonBookingAlert(params: {
   }
 
   if (params.settings.contactEmail.trim()) {
-    const emailRes = await dispatchEmailNotification({
+    const emailRes = await dispatchSalonAlertEmail({
       to: params.settings.contactEmail,
       subject,
       bodyText,
+      kind: params.kind,
+      reason: params.reason,
       booking: params.booking,
       settings: params.settings,
       appUrl: env.appUrl,
@@ -837,6 +841,7 @@ interface WaitlistOfferDispatchPayload {
   bookingId: string;
   clientName: string;
   clientPhoneE164: string;
+  clientEmail: string | null;
   serviceName: string;
   serviceSlug: string;
   staffName: string;
@@ -876,11 +881,15 @@ function assignWaitlistPriorityOfferInLock(
 
   const service = db.services.find((s) => s.id === canceledBooking.serviceId);
   const staff = db.staff.find((s) => s.id === canceledBooking.staffId);
+  const matchedClient = db.clients.find(
+    (c) => c.phoneE164 === candidate.clientPhoneE164,
+  );
   return {
     entryId: candidate.id,
     bookingId: canceledBooking.id,
     clientName: candidate.clientName,
     clientPhoneE164: candidate.clientPhoneE164,
+    clientEmail: matchedClient?.email ?? null,
     serviceName: service?.name ?? 'Servicio',
     serviceSlug: service?.slug ?? 'servicio',
     staffName: staff?.name ?? 'Especialista',
@@ -906,6 +915,27 @@ async function dispatchWaitlistPriorityOffer(
   const waRes = await dispatchWhatsAppNotification({
     toPhoneE164: offer.clientPhoneE164,
     bodyText,
+    triggerKey: 'waitlist_offer',
+    fallbackEmail: offer.clientEmail
+      ? {
+          to: offer.clientEmail,
+          subject: `¡Se liberó un espacio en ${offer.settings.name}! (${dateLabel} ${timeLabel})`,
+          settings: offer.settings,
+          appUrl: env.appUrl,
+          template: buildWaitlistOfferTemplatePayload({
+            clientName: offer.clientName,
+            serviceName: offer.serviceName,
+            staffName: offer.staffName,
+            dateLabel,
+            timeLabel,
+            ttlMinutes: WAITLIST_OFFER_TTL_MINUTES,
+            offerUrl,
+            settings: offer.settings,
+            appUrl: env.appUrl,
+          }),
+          idempotencyKey: `waitlist-offer-${offer.entryId}-${offer.offerToken}`,
+        }
+      : undefined,
   });
 
   const log: ScheduledNotification = {
@@ -3327,6 +3357,7 @@ export async function sendManualBookingReminder(params: {
         booking: hydrated,
         settings,
         appUrl: env.appUrl,
+        situation: 'reminder_24h',
       });
       createdLogs.push({
         id: generateId('ntf'),

@@ -159,7 +159,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   const handleTestSound = () => {
     void playBookingChime().then((played) => {
-      soundFeedback.show(played ? 'Timbre OK' : 'Sin audio');
+      soundFeedback.show(played ? 'Así va a sonar' : 'El navegador bloqueó el sonido');
     });
   };
 

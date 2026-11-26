@@ -8,9 +8,21 @@ type BookingPhase =
   | 'confirmed'
   | 'conflict';
 
-export type BookingStep = 'service' | 'extras' | 'schedule' | 'staff' | 'details';
+export type BookingStep = 'service' | 'extras' | 'schedule' | 'staff' | 'design' | 'details' | 'payment';
 
-export const BOOKING_STEPS: readonly BookingStep[] = ['service', 'extras', 'schedule', 'staff', 'details'];
+export const BOOKING_STEPS: readonly BookingStep[] = [
+  'service',
+  'extras',
+  'schedule',
+  'staff',
+  'design',
+  'details',
+  'payment',
+];
+
+export function isPostHoldStep(step: BookingStep): boolean {
+  return step === 'design' || step === 'details' || step === 'payment';
+}
 
 export interface BookingConflictState {
   message: string;
@@ -41,7 +53,7 @@ export type BookingFlowAction =
       slot: AvailableSlot;
       holdId: string | null;
       holdExpiresAt: number | null;
-      nextStep: 'staff' | 'details';
+      nextStep: BookingStep;
     }
   | {
       type: 'STAFF_ASSIGNED';
@@ -52,6 +64,11 @@ export type BookingFlowAction =
   | {
       type: 'GO_TO_STEP';
       step: BookingStep;
+    }
+  | {
+      type: 'HOLD_EXTENDED';
+      holdId: string | null;
+      holdExpiresAt: number | null;
     }
   | {
       type: 'SLOT_CONFLICT';
@@ -144,7 +161,6 @@ export function bookingReducer(
       return {
         ...state,
         phase: 'holding',
-        step: 'details',
         selectedSlot: action.slot,
         holdId: action.holdId ?? state.holdId,
         holdExpiresAt: action.holdExpiresAt ?? state.holdExpiresAt,
@@ -157,6 +173,16 @@ export function bookingReducer(
       return {
         ...state,
         step: action.step,
+      };
+
+    case 'HOLD_EXTENDED':
+      if (!state.selectedSlot || state.holdExpired || state.phase === 'submitting' || state.phase === 'confirmed') {
+        return state;
+      }
+      return {
+        ...state,
+        holdId: action.holdId ?? state.holdId,
+        holdExpiresAt: action.holdExpiresAt ?? state.holdExpiresAt,
       };
 
     case 'SLOT_CONFLICT':
@@ -179,11 +205,10 @@ export function bookingReducer(
       };
 
     case 'HOLD_EXPIRED':
-      if (state.step === 'details' && state.selectedSlot) {
+      if (isPostHoldStep(state.step) && state.selectedSlot) {
         return {
           ...state,
           phase: 'conflict',
-          step: 'details',
           selectedSlot: state.selectedSlot,
           holdId: null,
           holdExpiresAt: null,

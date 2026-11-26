@@ -31,6 +31,8 @@ import {
 } from './bookingHelpers';
 
 export interface ClientConfirmStepProps {
+  section: 'details' | 'payment';
+  onContinueDetails: (e: React.FormEvent) => void;
   formId: string;
   settings: PublicSettingsDTO;
   selectedService: PublicServiceDTO | undefined;
@@ -51,9 +53,6 @@ export interface ClientConfirmStepProps {
   clientInstagram: string;
   clientEmail: string;
   clientBirthday: string;
-  clientNotes: string;
-  inspoFile: File | null;
-  inspoDataUrl: string | null;
   proofDeliveryMethod: ProofDeliveryMethod;
   proofFile: File | null;
   proofDataUrl: string | null;
@@ -78,8 +77,6 @@ export interface ClientConfirmStepProps {
   onChangeClientInstagram: (value: string) => void;
   onChangeClientEmail: (value: string) => void;
   onChangeClientBirthday: (value: string) => void;
-  onChangeClientNotes: (value: string) => void;
-  onChangeInspoFile: (file: File | null, dataUrl: string | null) => void;
   onChangeProofMethod: (method: ProofDeliveryMethod) => void;
   onChangeProofFile: (file: File | null, dataUrl: string | null) => void;
   onChangePrivacyConsent: (accepted: boolean) => void;
@@ -113,9 +110,6 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
   const privacyCheckboxRef = useRef<HTMLInputElement>(null);
 
   const showDepositCard = hasConfiguredDeposit(props.settings, props.depositAmountCents);
-  const allowInspo =
-    Boolean(props.selectedService?.allowInspoPhoto) ||
-    props.selectedExtraServices.some((srv) => srv.allowInspoPhoto);
   const policyVersion = props.settings.privacyPolicyVersion || '2026-11';
   const timezone = props.settings.timezone || 'America/Mexico_City';
   const showFormBanner =
@@ -124,13 +118,20 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
     !props.fieldErrors.name &&
     !props.fieldErrors.phone;
 
+  const isDetails = props.section === 'details';
+
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    const errors = validateClientBookingFields(props.clientName, props.clientPhone);
-    if (errors.name) {
-      focusFieldSmoothly(nameInputRef.current, e.currentTarget, 'input[name="clientName"]');
-    } else if (errors.phone) {
-      focusFieldSmoothly(phoneInputRef.current, e.currentTarget, 'input[name="clientPhone"]');
-    } else if (!props.privacyConsentAccepted) {
+    if (isDetails) {
+      const errors = validateClientBookingFields(props.clientName, props.clientPhone);
+      if (errors.name) {
+        focusFieldSmoothly(nameInputRef.current, e.currentTarget, 'input[name="clientName"]');
+      } else if (errors.phone) {
+        focusFieldSmoothly(phoneInputRef.current, e.currentTarget, 'input[name="clientPhone"]');
+      }
+      props.onContinueDetails(e);
+      return;
+    }
+    if (!props.privacyConsentAccepted) {
       focusFieldSmoothly(
         privacyCheckboxRef.current,
         e.currentTarget,
@@ -150,12 +151,18 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
       >
         <VStack gap={0.5}>
           <Heading level={2} className="lk-serif rb-h2">
-            Casi lista
+            {isDetails ? '¿A nombre de quién?' : showDepositCard ? 'Aparta con tu anticipo' : 'Revisa y confirma'}
           </Heading>
-          <Text color="secondary">Sin cuenta ni contraseña. Te confirmamos por WhatsApp.</Text>
+          <Text color="secondary">
+            {isDetails
+              ? 'Tu nombre y tu WhatsApp. Ahí te mandamos la confirmación y tus recordatorios.'
+              : showDepositCard
+                ? 'Se descuenta de tu total el día de tu cita.'
+                : 'Si tienes un cupón, ponlo aquí. Luego acepta el aviso de privacidad y listo.'}
+          </Text>
         </VStack>
 
-        {props.holdExpired ? (
+        {!isDetails && props.holdExpired ? (
           <VStack className="fx-fade-up">
             <Banner
               status="warning"
@@ -163,7 +170,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
               title="Tu apartado temporal terminó"
               description={
                 props.holdExpiredMessage ||
-                'Tus datos y archivos siguen guardados. Reverifica si ese horario sigue libre o elige otro sin empezar de cero.'
+                'No perdiste nada de lo que escribiste. Revisa si tu horario sigue libre o escoge otro.'
               }
               icon={<Clock size={18} aria-hidden="true" />}
             >
@@ -173,7 +180,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
                   variant="primary"
                   size="md"
                   className="fx-press"
-                  label={props.isReholding ? 'Verificando horario…' : 'Volver a apartar este horario'}
+                  label={props.isReholding ? 'Revisando…' : 'Apartarlo otra vez'}
                   isLoading={props.isReholding}
                   isDisabled={props.isReholding}
                   onClick={props.onReholdSlot}
@@ -192,7 +199,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           </VStack>
         ) : null}
 
-        {showFormBanner ? (
+        {!isDetails && showFormBanner ? (
           <VStack className="fx-fade-up">
             <Banner
               status="error"
@@ -204,13 +211,13 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           </VStack>
         ) : null}
 
-        {props.activeBookings.length > 0 ? (
+        {!isDetails && props.activeBookings.length > 0 ? (
           <SurfaceCard
             tone="subtle"
             padded
             headingLevel={3}
             title="Tus citas activas"
-            subtitle="Reprograma cualquiera sin perder tu anticipo ni volver a capturar tus datos:"
+            subtitle="Ya tienes el máximo de citas activas. Si quieres, mueve alguna de estas a otro día:"
             className="rb-note fx-fade-up"
           >
             <List hasDividers density="balanced">
@@ -239,6 +246,8 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           </SurfaceCard>
         ) : null}
 
+        {isDetails ? (
+        <>
         <VStack as="fieldset" gap={3} className="rb-fieldset">
           <legend className="rb-legend">Tus datos</legend>
           <TextInput
@@ -277,6 +286,18 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           />
         </VStack>
 
+        <ClientExtraDetailsBox
+            clientInstagram={props.clientInstagram}
+            clientEmail={props.clientEmail}
+            clientBirthday={props.clientBirthday}
+            isDisabled={props.isSubmitting}
+            onChangeClientInstagram={props.onChangeClientInstagram}
+            onChangeClientEmail={props.onChangeClientEmail}
+            onChangeClientBirthday={props.onChangeClientBirthday}
+          />
+        </>
+        ) : (
+        <>
         {showDepositCard ? (
           <DepositCard
             settings={props.settings}
@@ -298,22 +319,6 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           />
         ) : null}
 
-        <ClientExtraDetailsBox
-          clientInstagram={props.clientInstagram}
-          clientEmail={props.clientEmail}
-          clientBirthday={props.clientBirthday}
-          clientNotes={props.clientNotes}
-          allowInspo={allowInspo}
-          inspoFile={props.inspoFile}
-          inspoDataUrl={props.inspoDataUrl}
-          isDisabled={props.isSubmitting}
-          onChangeClientInstagram={props.onChangeClientInstagram}
-          onChangeClientEmail={props.onChangeClientEmail}
-          onChangeClientBirthday={props.onChangeClientBirthday}
-          onChangeClientNotes={props.onChangeClientNotes}
-          onChangeInspoFile={props.onChangeInspoFile}
-        />
-
         <CouponRedeemBox
           currency={props.settings.currency}
           subtotalCents={props.subtotalCents}
@@ -333,7 +338,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
             ref={privacyCheckboxRef}
             htmlName="privacyConsentAccepted"
             label="Acepto el Aviso de Privacidad"
-            description="Lo usamos para tu cita, recordatorios y anticipo."
+            description="Usamos tus datos solo para tu cita, tus recordatorios y tu anticipo."
             value={props.privacyConsentAccepted}
             onChange={props.onChangePrivacyConsent}
             isDisabled={props.isSubmitting}
@@ -345,7 +350,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           </Link>
           <CheckboxInput
             htmlName="marketingOptIn"
-            label="Quiero avisos de retoque y cortesías de cumpleaños"
+            label="Avísame cuando toque mi retoque y en mi cumpleaños"
             value={props.marketingOptIn}
             onChange={props.onChangeMarketingOptIn}
             isDisabled={props.isSubmitting}
@@ -356,6 +361,8 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
         <Text type="supporting" color="secondary">
           {props.settings.cancellationPolicyText}
         </Text>
+        </>
+        )}
       </VStack>
     </form>
   );

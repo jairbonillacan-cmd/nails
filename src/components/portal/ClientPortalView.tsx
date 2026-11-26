@@ -13,7 +13,6 @@ import { CalendarCheck, LogOut, RefreshCw, WifiOff } from 'lucide-react';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui/FilterPillBar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
-import { buildWhatsAppLink } from '@/lib/format';
 import { useServiceWorker } from '@/lib/hooks/useServiceWorker';
 import type {
   ClientPortalBookingDTO,
@@ -54,10 +53,6 @@ export function ClientPortalView({
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const timezone = settings.timezone || 'America/Mexico_City';
-  const whatsappUrl = buildWhatsAppLink(
-    settings.whatsappNumber,
-    `Hola ${settings.name}, necesito ayuda para consultar mis citas.`,
-  );
 
   const upcomingBookings = useMemo(() => {
     if (!snapshot) return [];
@@ -136,7 +131,7 @@ export function ClientPortalView({
 
   return (
     <VStack className="lk-root pt-shell">
-      <BookingHeader salonName={settings.name} whatsappUrl={whatsappUrl} />
+      <BookingHeader settings={settings} />
 
       <VStack as="section" className="rb-hero ck-hero" aria-labelledby="pt-hero-title">
         <VStack gap={3} className="rb-wrap rb-hero-inner fx-fade-up">
