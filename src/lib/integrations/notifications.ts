@@ -12,6 +12,7 @@ import {
   formatDateLongInTimezone,
   formatDateShortInTimezone,
   formatTimeInTimezone,
+  collapseDoublePeriods,
 } from '../format';
 import { generateBookingIcs } from '../ics';
 import { logError, logWarn } from '../logger';
@@ -146,7 +147,7 @@ function renderNotificationTemplate(
   for (const [token, val] of Object.entries(replacements)) {
     out = out.split(token).join(val);
   }
-  return out;
+  return collapseDoublePeriods(out);
 }
 
 export function buildBookingWhatsAppFallbackUrl(
@@ -156,10 +157,10 @@ export function buildBookingWhatsAppFallbackUrl(
 ): string {
   const normalizedUrl = appUrl.replace(/\/+$/, '');
   const tz = settings.timezone || 'America/Mexico_City';
-  const msg = `Hola ${settings.name}, acabo de agendar mi cita (${booking.bookingCode}) de ${booking.service.name} el ${formatDateLongInTimezone(
+  const msg = collapseDoublePeriods(`Hola ${settings.name}, acabo de agendar mi cita (${booking.bookingCode}) de ${booking.service.name} el ${formatDateLongInTimezone(
     booking.startAt,
     tz,
-  )} a las ${formatTimeInTimezone(booking.startAt, tz, false)}. Link de mi cita: ${normalizedUrl}/cita/${booking.manageToken}`;
+  )} a las ${formatTimeInTimezone(booking.startAt, tz, false)}. Link de mi cita: ${normalizedUrl}/cita/${booking.manageToken}`);
   return buildWhatsAppLink(settings.whatsappNumber, msg);
 }
 

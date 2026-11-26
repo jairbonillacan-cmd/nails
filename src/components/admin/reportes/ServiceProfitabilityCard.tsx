@@ -76,7 +76,7 @@ export function ServiceProfitabilityCard({
                     className="fx-tabular"
                     hasTabularNumbers
                   >
-                    {formatCurrency(Math.round((row.revenuePerMinuteCents * 60) / 100) * 100, currency)} / h
+                    {formatCurrency(Math.round((row.revenuePerMinuteCents * 60) / 100) * 100, currency)} por hora
                   </Text>
                 </HStack>
 

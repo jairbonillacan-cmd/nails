@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collapseDoublePeriods,
+  formatDateKeyDisplay,
   formatBirthdayDisplay,
   formatDateRangeDisplay,
   formatPhoneDisplay,
@@ -7,6 +9,17 @@ import {
 } from './format';
 
 describe('display formatters', () => {
+  it('shows calendar date keys as readable Spanish dates', () => {
+    expect(formatDateKeyDisplay('2026-11-27')).toBe('viernes, 27 de noviembre');
+    expect(formatDateKeyDisplay('not-a-date')).toBe('not-a-date');
+  });
+
+  it('drops the extra period after a.m./p.m. at the end of a sentence', () => {
+    expect(collapseDoublePeriods('a las 2:00 p.m.. Link')).toBe('a las 2:00 p.m. Link');
+    expect(collapseDoublePeriods('a las 9:30 a. m..')).toBe('a las 9:30 a. m.');
+    expect(collapseDoublePeriods('Fin. Otra frase...')).toBe('Fin. Otra frase...');
+  });
+
   it('pluralizes inventory units in Spanish without touching abbreviations', () => {
     expect(formatUnitCount(1, 'frasco')).toBe('1 frasco');
     expect(formatUnitCount(2, 'frasco')).toBe('2 frascos');

@@ -161,7 +161,7 @@ export function ClientProfileDialog({
                     <StatusTag
                       tone={noShowStats.noShowCount >= noShowThreshold ? 'warning' : 'neutral'}
                       hasTabularNumbers
-                      label={`${noShowStats.ratePercent}% inasistencias`}
+                      label={`Falta ${noShowStats.ratePercent}% de las veces`}
                     />
                   ) : null}
                 </HStack>

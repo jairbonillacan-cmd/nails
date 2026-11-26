@@ -43,7 +43,7 @@ export function OnboardingStepDeposit({
     <VStack gap={4}>
       <VStack gap={1}>
         <Heading level={2} className="lk-serif ad-h2">
-          2. Configura tu anticipo SPEI
+          2. Configura tu anticipo
         </Heading>
         <Text color="secondary">
           Así evitas cancelaciones de último minuto.

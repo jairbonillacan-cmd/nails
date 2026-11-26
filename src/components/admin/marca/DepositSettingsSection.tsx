@@ -30,7 +30,7 @@ export function DepositSettingsSection({
     <SurfaceCard
       id="brand-spei-heading"
       icon={<Wallet size={16} aria-hidden="true" />}
-      title="Anticipo por transferencia (SPEI)"
+      title="Anticipo por transferencia"
       subtitle="Datos bancarios que ven tus clientas para apartar su cita."
       badge={
         <StatusTag
@@ -41,7 +41,7 @@ export function DepositSettingsSection({
       }
       actions={
         <Switch
-          label="Pedir anticipo SPEI"
+          label="Pedir anticipo"
           isLabelHidden
           value={isDepositEnabled}
           onChange={(enabled) =>

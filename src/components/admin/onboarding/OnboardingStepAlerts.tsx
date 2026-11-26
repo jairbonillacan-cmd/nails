@@ -111,7 +111,7 @@ export function OnboardingStepAlerts({
               <li>
                 <ActionRow
                   leading={<CheckCircle2 size={18} aria-hidden="true" />}
-                  title="Anticipo SPEI"
+                  title="Anticipo"
                   meta={
                     depositEnabled
                       ? `${formatCurrency(Math.round(depositAmountMxn * 100), currency)} · ${depositBank || 'Transferencia'}`

@@ -15,7 +15,7 @@ import {
   WaitlistStatusTag,
 } from '@/components/ui';
 import type { Service, WaitlistEntry } from '@/lib/types';
-import { buildWhatsAppLink } from '@/lib/format';
+import { buildWhatsAppLink, formatDateKeyDisplay, formatPhoneDisplay } from '@/lib/format';
 
 const WAITLIST_WINDOW_LABELS: Record<WaitlistEntry['preferredWindow'], string> = {
   morning: 'Mañana',
@@ -118,7 +118,7 @@ export function WaitlistPanel({
             const isBusy = notifyingId === w.id;
             const waHref = buildWhatsAppLink(
               w.clientPhoneE164,
-              `Hola ${w.clientName}, se abrió un lugar en ${salonName} para ${srv?.name || 'tu servicio'} el ${w.desiredDate}. ¿Te gustaría agendarlo?`,
+              `Hola ${w.clientName}, se abrió un lugar en ${salonName} para ${srv?.name || 'tu servicio'} el ${formatDateKeyDisplay(w.desiredDate)}. ¿Te gustaría agendarlo?`,
             );
             return (
               <ActionRow
@@ -131,9 +131,9 @@ export function WaitlistPanel({
                   </HStack>
                 }
                 subtitle={w.notes || undefined}
-                meta={`${srv?.name ?? 'Servicio'} · Día deseado: ${w.desiredDate} (${
+                meta={`${srv?.name ?? 'Servicio'} · Quiere el ${formatDateKeyDisplay(w.desiredDate, 'short')} (${
                   WAITLIST_WINDOW_LABELS[w.preferredWindow]
-                }) · ${w.clientPhoneE164}`}
+                }) · ${formatPhoneDisplay(w.clientPhoneE164)}`}
                 actions={
                   <Button
                     label={isBusy ? 'Marcando...' : 'Avisar por WhatsApp'}

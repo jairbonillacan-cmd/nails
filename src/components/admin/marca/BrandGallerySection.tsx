@@ -133,7 +133,7 @@ export function BrandGallerySection({
             <VStack className="ad-subpanel" gap={2}>
               <HStack justify="between" align="center" wrap="wrap" gap={2}>
                 <Text type="label" color="accent" weight="semibold" hasTabularNumbers>
-                  ANTICIPO SPEI ({formatCurrency(depositAmountCents, draft.currency)})
+                  ANTICIPO ({formatCurrency(depositAmountCents, draft.currency)})
                 </Text>
                 <StatusTag
                   tone="neutral"

@@ -59,7 +59,7 @@ function paymentModeChip(mode: PaymentMode): {
   label: string;
   tone: StatusTagTone;
 } {
-  if (mode === 'manual_transfer') return { label: 'Transferencia SPEI', tone: 'success' };
+  if (mode === 'manual_transfer') return { label: 'Transferencia', tone: 'success' };
   if (mode === 'mercadopago') return { label: 'Mercado Pago', tone: 'accent' };
   if (mode === 'stripe') return { label: 'Tarjeta en línea', tone: 'accent' };
   return { label: 'Sin anticipo', tone: 'neutral' };
@@ -116,19 +116,19 @@ export function PaymentsAnalyticsSection({
             options={[
               {
                 value: 'manual_transfer',
-                label: 'Transferencia SPEI con comprobante (Sin comisión)',
+                label: 'Transferencia: te mandan su comprobante (sin comisión)',
               },
               {
                 value: 'mercadopago',
-                label: 'Mercado Pago (Pago automático con tarjeta, SPEI u OXXO)',
+                label: 'Mercado Pago: pagan con tarjeta, transferencia u OXXO y se confirma sola',
               },
               {
                 value: 'stripe',
-                label: 'Tarjeta en línea (Stripe)',
+                label: 'Pago con tarjeta en línea',
               },
               {
                 value: 'none',
-                label: 'Sin anticipo (Reserva directa)',
+                label: 'Sin anticipo: apartan sin pagar',
               },
             ]}
           />
@@ -137,7 +137,7 @@ export function PaymentsAnalyticsSection({
             <VStack className="ad-subpanel" gap={2}>
               <HStack justify="between" align="center" wrap="wrap" gap={2}>
                 <Text weight="semibold" size="sm">
-                  Transferencia SPEI
+                  Transferencia
                 </Text>
                 <StatusTag tone="success" label="$0 comisión" />
               </HStack>
@@ -165,7 +165,7 @@ export function PaymentsAnalyticsSection({
                 />
               </HStack>
               <Text type="supporting" color="secondary">
-                Envía un link de pago con tarjeta, SPEI u OXXO y confirma la cita sola en cuanto se acredite el pago.
+                Envía un link de pago con tarjeta, transferencia u OXXO y confirma la cita sola en cuanto se acredite el pago.
               </Text>
             </VStack>
           </VStack>

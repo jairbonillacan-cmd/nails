@@ -9,7 +9,7 @@ import { SurfaceCard } from '@/components/ui';
 
 const WIZARD_STEPS = [
   { id: 'salon', label: 'Tu salón', short: '1. Tu salón' },
-  { id: 'spei', label: 'Anticipo SPEI', short: '2. Anticipo SPEI' },
+  { id: 'spei', label: 'Anticipo', short: '2. Anticipo' },
   { id: 'shifts', label: 'Tus turnos', short: '3. Tus turnos' },
   { id: 'ready', label: '¡Lista para compartir!', short: '4. ¡Lista!' },
 ] as const;

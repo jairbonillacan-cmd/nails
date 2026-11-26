@@ -65,13 +65,13 @@ export function WeeklyDayRow({
                 value={isFixedMode ? 'fixed' : 'continuous'}
                 onChange={(val) => onChangeMode(dow, val)}
                 options={[
-                  { value: 'fixed', label: 'Turnos fijos' },
-                  { value: 'continuous', label: 'Horario libre' },
+                  { value: 'fixed', label: 'Horas fijas' },
+                  { value: 'continuous', label: 'Citas seguidas' },
                 ]}
               />
               <Button
                 type="button"
-                label="Copiar a L–V"
+                label="Igual lun a vie"
                 size="sm"
                 variant="ghost"
                 icon={<Copy size={13} aria-hidden="true" />}

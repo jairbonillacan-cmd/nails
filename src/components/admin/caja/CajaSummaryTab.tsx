@@ -273,7 +273,7 @@ export function CajaSummaryTab({
           </VStack>
           <VStack className="ad-subpanel" gap={0.5}>
             <Text type="supporting" color="secondary">
-              Transferencia SPEI
+              Transferencia
             </Text>
             <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
               {formatCurrency(todaySummary.transferCents, currency)}

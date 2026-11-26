@@ -69,7 +69,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             <HStack gap={5} wrap="wrap" align="end">
               <VStack gap={0.5}>
                 <Text type="supporting" color="secondary">
-                  {metrics.cash.hasTodayEntries ? 'Neto hoy' : 'Registrado'}
+                  {metrics.cash.hasTodayEntries ? 'Te queda hoy' : 'Registrado'}
                 </Text>
                 <Text className="ad-sub-figure fx-tabular" hasTabularNumbers>
                   {formatCurrency(

@@ -62,7 +62,7 @@ export const SPLIT_METHOD_ORDER: readonly PaymentSplitMethod[] = [
 export function splitMethodLabel(method: PaymentSplitMethod): string {
   if (method === 'cash') return 'Efectivo';
   if (method === 'card') return 'Tarjeta';
-  if (method === 'transfer') return 'Transferencia SPEI';
+  if (method === 'transfer') return 'Transferencia';
   if (method === 'giftcard') return 'Tarjeta de regalo';
   return 'Pago en línea';
 }
@@ -70,7 +70,7 @@ export function splitMethodLabel(method: PaymentSplitMethod): string {
 export function paymentMethodLabel(method: PaymentMethod): string {
   if (method === 'cash') return 'Efectivo';
   if (method === 'card') return 'Tarjeta';
-  if (method === 'transfer') return 'Transferencia SPEI';
+  if (method === 'transfer') return 'Transferencia';
   return 'Tarjeta de regalo';
 }
 

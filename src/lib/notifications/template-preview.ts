@@ -46,7 +46,13 @@ export function buildTemplatePreview(
     cursor = index + match[0].length;
   }
   if (cursor < template.length) segments.push({ kind: 'text', text: template.slice(cursor) });
-  return segments;
+  return segments.map((segment, idx) => {
+    const prev = segments[idx - 1];
+    if (segment.kind === 'text' && prev?.kind === 'value' && prev.text.endsWith('.') && segment.text.startsWith('.')) {
+      return { ...segment, text: segment.text.slice(1) };
+    }
+    return segment;
+  });
 }
 
 function formatOffset(minutes: number): string {

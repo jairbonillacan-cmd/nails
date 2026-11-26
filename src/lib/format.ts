@@ -77,6 +77,22 @@ export function normalizePhoneE164(raw: string, defaultCountryCode = '+52'): str
   return `+${cleaned}`;
 }
 
+export function formatDateKeyDisplay(dateKey: string, style: 'long' | 'short' = 'long'): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey.trim());
+  if (!match) return dateKey;
+  const [, y, m, d] = match;
+  return new Intl.DateTimeFormat('es-MX', {
+    timeZone: 'UTC',
+    weekday: style,
+    day: 'numeric',
+    month: style,
+  }).format(new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12)));
+}
+
+export function collapseDoublePeriods(text: string): string {
+  return text.replace(/([ap]\.\s?m\.)\./g, '$1');
+}
+
 export function formatTimeInTimezone(
   iso: string,
   timeZone: string,

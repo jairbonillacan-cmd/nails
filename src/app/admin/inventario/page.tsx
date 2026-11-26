@@ -11,6 +11,7 @@ import { Package, Search, ShoppingBag } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import {
   InventoryItemForm,
+  inventoryCategoryLabel,
   type NewInventoryItemInput,
 } from '@/components/admin/inventario/InventoryItemForm';
 import { InventoryLowStockAlert } from '@/components/admin/inventario/InventoryLowStockAlert';
@@ -231,7 +232,7 @@ export default function AdminInventoryPage() {
                         ) : null}
                       </HStack>
                     }
-                    subtitle={`${item.category} · Mín. ${item.minStockAlert} · Compra ${formatCurrency(item.costCents, currency)}`}
+                    subtitle={`${inventoryCategoryLabel(item.category)} · Avisar al quedar ${item.minStockAlert} · Cuesta ${formatCurrency(item.costCents, currency)}`}
                     actions={
                       <HStack gap={1.5} wrap="wrap" align="center">
                         <Button

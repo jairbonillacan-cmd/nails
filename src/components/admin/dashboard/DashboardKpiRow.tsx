@@ -115,7 +115,7 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
       footerLink={
         canReports ? (
           <NextLink href="/admin/reportes" className="ad-inline-link-muted">
-            Ver analítica completa en Reportes ›
+            Ver más en Reportes ›
           </NextLink>
         ) : undefined
       }

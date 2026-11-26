@@ -128,7 +128,6 @@ export function ClientDirectoryTab({
                   const visits = visitCountByClient.get(c.id) ?? 0;
                   const noShowStats = noShowStatsByClient.get(c.id) ?? null;
                   const effectiveNoShows = noShowStats?.noShowCount ?? c.noShowCount;
-                  const noShowRatePercent = noShowStats?.ratePercent ?? 0;
                   const loyalty = loyaltyByClientId.get(c.id) ?? null;
                   const clientActivePkgs = (packagesByClientId.get(c.id) ?? []).filter(
                     (pkg) =>
@@ -201,7 +200,7 @@ export function ClientDirectoryTab({
                             <StatusTag
                               tone={isFlaggedNoShow ? 'warning' : 'neutral'}
                               hasTabularNumbers
-                              label={`${effectiveNoShows} ${effectiveNoShows === 1 ? 'inasistencia' : 'inasistencias'} · ${noShowRatePercent}%`}
+                              label={`Faltó ${effectiveNoShows} ${effectiveNoShows === 1 ? 'vez' : 'veces'}`}
                             />
                           ) : null}
                         </HStack>

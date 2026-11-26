@@ -233,16 +233,16 @@ export function WeeklyScheduleEditor({
         <HStack justify="between" align="center" wrap="wrap" gap={3} paddingBlockStart={3}>
           <VStack gap={0.5} className="rb-grow">
             <Text weight="semibold" size="sm">
-              Aprovechar huecos en horario libre
+              Juntar citas en días de citas seguidas
             </Text>
             <Text type="supporting" color="secondary">
-              Cuando un día está en Horario libre, acomoda el siguiente espacio justo al terminar la
-              cita anterior. Nunca cambia tus turnos fijos.
+              En los días con citas seguidas, la siguiente cita empieza justo cuando termina la
+              anterior. Los días con horas fijas no cambian.
             </Text>
           </VStack>
           {isOwner ? (
             <Switch
-              label="Aprovechar huecos en horario libre"
+              label="Juntar citas en días de citas seguidas"
               isLabelHidden
               value={effectiveOptimizeContinuous}
               isLoading={savingOptimize}

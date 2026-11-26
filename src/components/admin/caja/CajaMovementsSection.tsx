@@ -160,7 +160,7 @@ export function CajaMovementsSection({
           trigger={
             <HStack justify="between" align="center" gap={2} width="100%">
               <Text weight="semibold" size="sm">
-                Detalle de pagos combinados
+                Pagos hechos con dos formas (ej. efectivo + tarjeta)
               </Text>
               <StatusTag tone="neutral" hasTabularNumbers label={String(splitDetails.length)} />
             </HStack>

@@ -1613,6 +1613,18 @@ export function checkSourceText(rawRel, text) {
 
   checkComments(rel, text, sf, scriptKind, addViolation);
 
+  const mojibakeMatch = /Ã[\u0080-¿¡-¿]|Â[¡-¿·]|�/.exec(text);
+  if (mojibakeMatch) {
+    const { line, col } = getLineCol(sf, mojibakeMatch.index);
+    addViolation(
+      rel,
+      line,
+      col,
+      'no-mojibake',
+      'Texto con acentos dañados (UTF-8 leído como Windows-1252). Reescribe el archivo en UTF-8 sin BOM.',
+    );
+  }
+
   const testFile = isTestFile(rel);
   const productUi = isProductUiFile(rel);
   const checkAstryx = productUi && !isAstryxBoundaryExempt(rel);

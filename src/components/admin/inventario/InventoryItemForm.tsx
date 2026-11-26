@@ -54,6 +54,10 @@ const CATEGORY_OPTIONS: Array<{ value: InventoryItem['category']; label: string 
   { value: 'Reventa', label: 'Para venta' },
 ];
 
+export function inventoryCategoryLabel(category: InventoryItem['category']): string {
+  return CATEGORY_OPTIONS.find((opt) => opt.value === category)?.label ?? category;
+}
+
 function InventoryItemFormBody({
   onCreateItem,
   controls,

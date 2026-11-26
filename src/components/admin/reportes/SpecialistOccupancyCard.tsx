@@ -90,7 +90,7 @@ export function SpecialistOccupancyCard({
                           size="sm"
                           hasTabularNumbers
                         >
-                          {formatDuration(row.bookedMinutes)} /{' '}
+                          {formatDuration(row.bookedMinutes)} de{' '}
                           {formatDuration(row.availableMinutes)}
                         </Text>
                       </HStack>
@@ -145,7 +145,7 @@ export function SpecialistOccupancyCard({
                       hasTabularNumbers
                     >
                       {row.newClientsCount} nueva{row.newClientsCount === 1 ? '' : 's'} ·{' '}
-                      {row.returningClientsCount} que regresan
+                      {row.returningClientsCount} repite{row.returningClientsCount === 1 ? '' : 'n'}
                     </Text>
                   </VStack>
                 ),

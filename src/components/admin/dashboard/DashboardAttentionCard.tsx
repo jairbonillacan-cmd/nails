@@ -18,6 +18,7 @@ import {
 import {
   buildWhatsAppLink,
   formatCurrency,
+  formatDateKeyDisplay,
   formatDateShortInTimezone,
   formatTimeInTimezone,
   formatUnitCount,
@@ -169,7 +170,7 @@ export function DashboardAttentionCard({
     const serviceLabel = srv?.name ?? 'tu cita';
     const waLink = buildWhatsAppLink(
       entry.clientPhoneE164,
-      `Hola ${entry.clientName}, se liberó un espacio en ${data.settings.name} para ${serviceLabel} el ${entry.desiredDate}. ¿Te lo apartamos?`,
+      `Hola ${entry.clientName}, se liberó un espacio en ${data.settings.name} para ${serviceLabel} el ${formatDateKeyDisplay(entry.desiredDate)}. ¿Te lo apartamos?`,
     );
     const windowLabel = WAITLIST_WINDOW_LABELS[entry.preferredWindow] ?? entry.preferredWindow;
     allTasks.push({
@@ -177,7 +178,7 @@ export function DashboardAttentionCard({
       tone: 'info',
       icon: <Clock size={19} aria-hidden="true" />,
       title: `${entry.clientName} en lista de espera`,
-      subtitle: `${serviceLabel} · ${entry.desiredDate} (${windowLabel})`,
+      subtitle: `${serviceLabel} · ${formatDateKeyDisplay(entry.desiredDate, 'short')} (${windowLabel})`,
       secondary: {
         label: 'Ver agenda',
         href: '/admin/citas',

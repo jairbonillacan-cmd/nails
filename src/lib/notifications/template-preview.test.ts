@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { buildTemplatePreview, describeWorkflowMoment } from './template-preview';
 
 describe('template preview', () => {
+  it('does not repeat the period after a time sample', () => {
+    const text = buildTemplatePreview('a las {{time_label}}. Gracias', { salonName: 'X', address: 'Y' })
+      .map((s) => s.text)
+      .join('');
+    expect(text).toBe('a las 2:00 p.m. Gracias');
+  });
+
   it('replaces placeholders with sample values and readable link labels', () => {
     const segments = buildTemplatePreview(
       'Hola {{client_name}}, te esperamos en {{salon_name}}. Confirma aquí: {{confirm_url}}',

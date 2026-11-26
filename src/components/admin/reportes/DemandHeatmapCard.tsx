@@ -42,7 +42,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                   tone="accent"
                   icon={<Flame size={12} aria-hidden="true" />}
                   hasTabularNumbers
-                  label={`Más lleno: ${heatmap.peakSlot.dayShort} ${heatmap.peakSlot.hourLabel} (${heatmap.peakSlot.count})`}
+                  label={`Más lleno: ${heatmap.peakSlot.dayShort} ${heatmap.peakSlot.hourLabel}`}
                 />
               ) : null}
               {heatmap.quietSlot ? (
@@ -50,7 +50,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                   tone="neutral"
                   icon={<Sparkles size={12} aria-hidden="true" />}
                   hasTabularNumbers
-                  label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${heatmap.quietSlot.hourLabel} (${heatmap.quietSlot.count})`}
+                  label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${heatmap.quietSlot.hourLabel}`}
                 />
               ) : null}
             </HStack>

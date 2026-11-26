@@ -113,7 +113,7 @@ export function useCajaData(
           id: 'collected',
           label: 'Cobrado',
           value: formatCurrency(data.kpis.totalRevenueCents, data.settings.currency),
-          sub: `Neto ${formatCurrency(data.kpis.netCashCents, data.settings.currency)} · Gastos ${formatCurrency(data.kpis.totalExpensesCents, data.settings.currency)}`,
+          sub: `Te queda ${formatCurrency(data.kpis.netCashCents, data.settings.currency)} · Gastos ${formatCurrency(data.kpis.totalExpensesCents, data.settings.currency)}`,
           interactive: true,
         },
         {
