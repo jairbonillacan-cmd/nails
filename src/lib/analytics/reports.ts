@@ -126,11 +126,11 @@ export interface ExecutiveReport {
 }
 
 const FUNNEL_STAGE_DEFS: ReadonlyArray<{ eventType: FunnelEventType; label: string }> = [
-  { eventType: 'page_view', label: 'Visitaron /reservar' },
+  { eventType: 'page_view', label: 'Abrieron tu página' },
   { eventType: 'booking_started', label: 'Eligieron servicio' },
   { eventType: 'slot_held', label: 'Apartaron horario' },
   { eventType: 'details_completed', label: 'Completaron datos' },
-  { eventType: 'deposit_submitted', label: 'Adjuntaron comprobante' },
+  { eventType: 'deposit_submitted', label: 'Mandaron su comprobante' },
   { eventType: 'booking_confirmed', label: 'Confirmaron cita' },
 ];
 

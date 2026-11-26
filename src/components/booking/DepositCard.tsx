@@ -156,7 +156,7 @@ export function DepositCard({
           <RadioListItem
             value="web_link"
             label="Sí, pego el enlace del recibo"
-            description="Enlace HTTPS de tu banco o Mercado Pago."
+            description="El link que te da tu banco o Mercado Pago al pagar."
           />
           <RadioListItem
             value="none"
@@ -186,7 +186,7 @@ export function DepositCard({
           />
         ) : activeMethod === 'web_link' ? (
           <TextInput
-            label="Enlace del comprobante (HTTPS)"
+            label="Link del comprobante"
             type="url"
             placeholder="https://..."
             value={linkDraft}
@@ -197,11 +197,11 @@ export function DepositCard({
                 ? {
                     type: 'error',
                     message:
-                      'Usa un enlace HTTPS de Mercado Pago, CEP Banxico, tu banco (BBVA, Nu, Santander, etc.) o Google Drive.',
+                      'Ese link no parece de un banco. Pega el que te dio tu banco, Mercado Pago o Google Drive, o mejor sube una captura.',
                   }
                 : undefined
             }
-            description="Mercado Pago, CEP Banxico, banco o Google Drive (o súbelo después desde tu cita)."
+            description="De tu banco, Mercado Pago o Google Drive. También puedes subirlo después desde tu cita."
             onChange={(val) => {
               const trimmed = val.trim();
               onChangeProofFile(null, trimmed || null);

@@ -123,7 +123,6 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
   const privacyCheckboxRef = useRef<HTMLInputElement>(null);
 
   const showDepositCard = hasConfiguredDeposit(props.settings, props.depositAmountCents);
-  const policyVersion = props.settings.privacyPolicyVersion || '2026-11';
   const timezone = props.settings.timezone || 'America/Mexico_City';
   const showFormBanner =
     Boolean(props.formError) &&
@@ -547,7 +546,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
             status={props.privacyConsentError ? { type: 'error', message: props.privacyConsentError } : undefined}
           />
           <Link href="/aviso-de-privacidad" target="_blank" rel="noopener noreferrer" isExternalLink type="supporting">
-            Leer Aviso de Privacidad (v{policyVersion})
+            Leer el Aviso de Privacidad
           </Link>
           <CheckboxInput
             htmlName="marketingOptIn"

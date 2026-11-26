@@ -217,12 +217,12 @@ export default function AdminReportsPage() {
           {!isSpecialistScope ? (
             <SurfaceCard
               id="reports-funnel-heading"
-              title="Embudo de reservas"
-              subtitle="Cuántas personas avanzaron en cada paso de la reserva."
+              title="Cómo reservan tus clientas"
+              subtitle="De quienes abren tu página, cuántas llegan a apartar su cita."
               badge={
                 <StatusTag
                   tone={report.funnel.overallConversionPercent >= 25 ? 'success' : 'accent'}
-                  label={`${report.funnel.overallConversionPercent}% conversión`}
+                  label={`${report.funnel.overallConversionPercent}% terminan su cita`}
                   hasTabularNumbers
                 />
               }
@@ -232,8 +232,8 @@ export default function AdminReportsPage() {
                   <EmptyStateCard
                     framed={false}
                     isCompact
-                    title="Sin visitas registradas en este período"
-                    description="Conforme las clientas entren a /reservar y avancen en los pasos, aquí verás en dónde se detienen o confirman."
+                    title="Aún nadie ha abierto tu página en estas fechas"
+                    description="Cuando tus clientas entren a reservar, aquí verás en qué paso se quedan y cuántas apartan."
                   />
                 </VStack>
               ) : (
@@ -256,8 +256,8 @@ export default function AdminReportsPage() {
                           hasTabularNumbers
                         >
                           {stage.sessionsCount}{' '}
-                          {stage.sessionsCount === 1 ? 'sesión' : 'sesiones'}
-                          {idx > 0 ? ` · ${stage.stepConversionPercent}% del paso anterior` : ''}
+                          {stage.sessionsCount === 1 ? 'persona' : 'personas'}
+                          {idx > 0 ? ` · ${stage.stepConversionPercent}% siguió` : ''}
                         </Text>
                       </HStack>
                       <VStack className="ad-bar-track" aria-hidden="true">

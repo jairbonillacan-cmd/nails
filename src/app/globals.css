@@ -1271,3 +1271,11 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
     animation-delay: 0s !important;
   }
 }
+
+.astryx-field-label {
+  flex-wrap: wrap;
+}
+
+.astryx-field-label > span {
+  white-space: nowrap;
+}
