@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildStaffOpenSlots,
   buildZonedIsoForDateAndMinutes,
+  computeElapsedMinutesForDate,
+  computeElapsedPercent,
   computeBlockGeometryPercent,
   computeNowIndicator,
   formatMinutesHHMM,
@@ -36,5 +39,23 @@ describe('scheduleGridGeometry', () => {
 
     const onOtherDay = computeNowIndicator(middayMs, '2026-11-27', '2026-11-26', tz);
     expect(onOtherDay.visible).toBe(false);
+  });
+
+  it('shades elapsed time and never offers a free turn that already started', () => {
+    const middayMs = Date.parse('2026-11-26T20:30:00.000Z');
+    const elapsedToday = computeElapsedMinutesForDate(middayMs, '2026-11-26', '2026-11-26', tz);
+    expect(elapsedToday).toBe(14 * 60 + 30);
+    expect(computeElapsedPercent(elapsedToday)).toBeCloseTo(50, 1);
+    expect(computeElapsedPercent(computeElapsedMinutesForDate(middayMs, '2026-11-25', '2026-11-26', tz))).toBe(100);
+    expect(computeElapsedPercent(computeElapsedMinutesForDate(middayMs, '2026-11-27', '2026-11-26', tz))).toBe(0);
+
+    const slots = buildStaffOpenSlots({
+      fixedTimes: ['10:00', '13:30', '16:30'],
+      staffBookings: [],
+      staffBlocks: [],
+      timezone: tz,
+      notBeforeMinutes: elapsedToday,
+    });
+    expect(slots.map((slot) => slot.timeHHMM)).toEqual(['16:30']);
   });
 });

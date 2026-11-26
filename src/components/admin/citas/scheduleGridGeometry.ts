@@ -156,6 +156,23 @@ export function computeNowIndicator(
   };
 }
 
+export function computeElapsedMinutesForDate(
+  nowMs: number,
+  dateKey: string,
+  todayKey: string,
+  timeZone: string,
+): number {
+  if (!nowMs || dateKey > todayKey) return CALENDAR_START_MIN;
+  if (dateKey < todayKey) return CALENDAR_END_MIN;
+  const nowMinutes = getLocalMinutesInTimezone(new Date(nowMs).toISOString(), timeZone);
+  return Math.max(CALENDAR_START_MIN, Math.min(CALENDAR_END_MIN, nowMinutes));
+}
+
+export function computeElapsedPercent(elapsedMinutes: number): number {
+  const clamped = Math.max(CALENDAR_START_MIN, Math.min(CALENDAR_END_MIN, elapsedMinutes));
+  return Number((((clamped - CALENDAR_START_MIN) / CALENDAR_TOTAL_MIN) * 100).toFixed(3));
+}
+
 function doesRecurringBlockApplyOnDate(
   block: RecurringBlock,
   dateKey: string,
@@ -175,8 +192,9 @@ export function buildStaffOpenSlots(params: {
   staffBookings: readonly BookingWithRelations[];
   staffBlocks: readonly RecurringBlock[];
   timezone: string;
+  notBeforeMinutes?: number;
 }): CalendarOpenSlot[] {
-  const { fixedTimes, staffBookings, staffBlocks, timezone } = params;
+  const { fixedTimes, staffBookings, staffBlocks, timezone, notBeforeMinutes = 0 } = params;
   const busyIntervals: Array<{ start: number; end: number }> = [];
 
   for (const booking of staffBookings) {
@@ -203,6 +221,7 @@ export function buildStaffOpenSlots(params: {
   for (const hhmm of fixedTimes) {
     const startMin = parseTimeMinutes(hhmm);
     if (startMin < CALENDAR_START_MIN || startMin >= CALENDAR_END_MIN) continue;
+    if (startMin < notBeforeMinutes) continue;
     const duration = 90;
     if (isFree(startMin, 45)) {
       const geo = computeBlockGeometryPercent(startMin, duration);
@@ -221,7 +240,7 @@ export function buildStaffOpenSlots(params: {
   if (slots.length === 0) {
     for (const hour of CALENDAR_HOURS) {
       const startMin = hour * 60;
-      if (usedStarts.has(startMin)) continue;
+      if (usedStarts.has(startMin) || startMin < notBeforeMinutes) continue;
       if (isFree(startMin, 60)) {
         const geo = computeBlockGeometryPercent(startMin, 60);
         slots.push({

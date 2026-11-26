@@ -109,13 +109,15 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
               align="end"
               gap={2}
               role="img"
-              aria-label="Ingresos diarios de los últimos 7 días"
+              aria-label={`Ingresos diarios de los últimos 7 días: ${metrics.dailySeries
+                .map((day) => `${day.shortLabel} ${formatCurrency(day.revenueCents, currency)}`)
+                .join(', ')}`}
             >
               {metrics.dailySeries.map((day) => {
                 const heightPct =
                   day.revenueCents > 0
                     ? Math.max(16, Math.round((day.revenueCents / maxDailyRevenue) * 100))
-                    : 10;
+                    : 4;
                 return (
                   <VStack
                     key={day.dateKey}
@@ -127,6 +129,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
                       <Text
                         className="ad-mini-bar-fill"
                         data-current={day.isToday ? 'true' : 'false'}
+                        data-empty={day.revenueCents > 0 ? 'false' : 'true'}
                         style={{ height: `${heightPct}%` }}
                         aria-hidden="true"
                       >

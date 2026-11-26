@@ -91,7 +91,7 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
         uncollectedCount > 0
           ? `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} pendiente${uncollectedCount === 1 ? '' : 's'}`
           : 'Todo cobrado',
-      tone: metrics.uncollectedTotalCents > 0 ? 'warning' : 'success',
+      tone: metrics.uncollectedTotalCents > 0 ? 'accent' : 'success',
       interactive: true,
     },
     {

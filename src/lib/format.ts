@@ -15,6 +15,16 @@ export function formatDuration(minutes: number): string {
   return mins === 0 ? `${hrs} h` : `${hrs} h ${mins} min`;
 }
 
+export function formatUnitCount(count: number, unit: string): string {
+  const base = unit.trim();
+  if (count === 1 || base.length < 3 || !/[a-záéíóúñ]$/i.test(base) || /s$/i.test(base)) {
+    return `${count} ${base}`;
+  }
+  if (/[aeiouáéó]$/i.test(base)) return `${count} ${base}s`;
+  if (/z$/i.test(base)) return `${count} ${base.slice(0, -1)}ces`;
+  return `${count} ${base}es`;
+}
+
 export function normalizePhoneE164(raw: string, defaultCountryCode = '+52'): string {
   const cleaned = raw.replace(/[^\d+]/g, '');
   if (!cleaned) return '';

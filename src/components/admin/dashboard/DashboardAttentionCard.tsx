@@ -20,6 +20,7 @@ import {
   formatCurrency,
   formatDateShortInTimezone,
   formatTimeInTimezone,
+  formatUnitCount,
 } from '@/lib/format';
 import { ActionRow, EmptyStateCard, SurfaceCard } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
@@ -194,8 +195,8 @@ export function DashboardAttentionCard({
       id: `stock-${item.id}`,
       tone: 'neutral',
       icon: <Package size={19} aria-hidden="true" />,
-      title: `Quedan ${item.stockQuantity} ${item.unit} de ${item.name}`,
-      subtitle: `Por debajo de tu mínimo de ${item.minStockAlert} ${item.unit} en inventario`,
+      title: `${item.stockQuantity === 1 ? 'Queda' : 'Quedan'} ${formatUnitCount(item.stockQuantity, item.unit)} de ${item.name}`,
+      subtitle: `Tu mínimo es ${formatUnitCount(item.minStockAlert, item.unit)}`,
       primary: {
         label: 'Ir a inventario',
         href: '/admin/inventario',

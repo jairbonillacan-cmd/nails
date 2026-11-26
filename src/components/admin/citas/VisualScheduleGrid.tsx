@@ -52,6 +52,8 @@ import {
   CALENDAR_START_MIN,
   computeBlockGeometryPercent,
   computeNowIndicator,
+  computeElapsedMinutesForDate,
+  computeElapsedPercent,
   formatMinutesHHMM,
   getDayOfWeekFromDateKey,
   getLocalMinutesInTimezone,
@@ -203,6 +205,9 @@ export function VisualScheduleGrid({
     return map;
   }, [dayBookings]);
 
+  const elapsedMinutes = computeElapsedMinutesForDate(nowMs, dateKey, todayKey, timezone);
+  const elapsedPct = computeElapsedPercent(elapsedMinutes);
+
   const openSlotsByStaffId = useMemo(() => {
     const map = new Map<string, CalendarOpenSlot[]>();
     for (const st of activeStaff) {
@@ -216,11 +221,12 @@ export function VisualScheduleGrid({
           staffBookings,
           staffBlocks,
           timezone,
+          notBeforeMinutes: elapsedMinutes,
         }),
       );
     }
     return map;
-  }, [activeStaff, dayBookingsByStaffId, activeBlocksByStaff, fixedTimesByStaff, timezone]);
+  }, [activeStaff, dayBookingsByStaffId, activeBlocksByStaff, fixedTimesByStaff, timezone, elapsedMinutes]);
 
   const nowIndicator = useMemo(
     () => computeNowIndicator(nowMs, dateKey, todayKey, timezone),
@@ -659,6 +665,15 @@ export function VisualScheduleGrid({
                       </button>
                     ))}
 
+                    {elapsedPct > 0 ? (
+                      <VStack
+                        className="ad-cal-past"
+                        style={{ height: `${elapsedPct}%` }}
+                        aria-hidden="true"
+                        gap={0}
+                      />
+                    ) : null}
+
                     {staffBlocks.map((blk) => {
                       const blkStart = parseTimeMinutes(blk.startTime);
                       const blkEnd = parseTimeMinutes(blk.endTime);
@@ -805,6 +820,9 @@ export function VisualScheduleGrid({
 
               {weekDays.map((day) => {
                 const dayNow = computeNowIndicator(nowMs, day.dateKey, todayKey, timezone);
+                const dayElapsedPct = computeElapsedPercent(
+                  computeElapsedMinutesForDate(nowMs, day.dateKey, todayKey, timezone),
+                );
                 const isDropTarget =
                   Boolean(drag.activeDrag?.isDragging) &&
                   drag.activeDrag?.targetDateKey === day.dateKey;
@@ -844,6 +862,15 @@ export function VisualScheduleGrid({
                         </Text>
                       </button>
                     ))}
+
+                    {dayElapsedPct > 0 ? (
+                      <VStack
+                        className="ad-cal-past"
+                        style={{ height: `${dayElapsedPct}%` }}
+                        aria-hidden="true"
+                        gap={0}
+                      />
+                    ) : null}
 
                     {dayNow.visible ? (
                       <VStack
