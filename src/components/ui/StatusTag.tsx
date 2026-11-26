@@ -128,7 +128,7 @@ export function StatusTag({
       style={{
         display: 'inline-flex',
         flexShrink: 0,
-        color: TONE_TEXT_COLOR[tone],
+        color: `var(--ad-tag-fg, ${TONE_TEXT_COLOR[tone]})`,
         fontVariantNumeric: hasTabularNumbers ? 'tabular-nums' : undefined,
       }}
     >

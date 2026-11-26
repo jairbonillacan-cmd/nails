@@ -58,7 +58,7 @@ export function FilterPillBar<T extends string>({
         layout={layout}
         isDisabled={isDisabled}
         className={className}
-        style={{ minHeight: '2.75rem', maxWidth: '100%' }}
+        style={{ maxWidth: '100%' }}
       >
         {options.map((opt) => {
           const itemLabel =
@@ -72,7 +72,6 @@ export function FilterPillBar<T extends string>({
               label={itemLabel}
               icon={opt.icon}
               isDisabled={opt.isDisabled}
-              style={{ minHeight: '2.75rem' }}
             />
           );
         })}
@@ -108,7 +107,6 @@ export function FilterPillBar<T extends string>({
                 onChange(opt.value);
               }
             }}
-            style={{ minHeight: '2.75rem' }}
           >
             {hasCount ? (
               <HStack gap={1.5} align="center">

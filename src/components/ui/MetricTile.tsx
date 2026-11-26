@@ -98,14 +98,16 @@ function MetricTile({
     ? 'ad-card ad-kpi-card fx-card-lift'
     : 'ad-card ad-kpi-card';
   const tileClass = className ? `${baseClass} ${className}` : baseClass;
+  const isCompact = !description && !(sparkline && sparkline.length >= 2);
 
   return (
     <VStack
       as="article"
-      gap={3}
+      gap={isCompact ? 2 : 3}
       justify="between"
-      padding={5}
+      padding={isCompact ? 4 : 5}
       className={tileClass}
+      data-compact={isCompact ? 'true' : undefined}
       style={{
         minWidth: 0,
         background: 'var(--ad-surface, var(--color-background-surface))',

@@ -194,9 +194,9 @@
     --color-syntax-removed-marker: var(--color-syntax-punctuation);
     --color-background-surface: light-dark(#FFFFFF, #181516);
     --color-background-body: light-dark(#FAF7F5, #110F10);
-    --color-background-card: light-dark(#ffffff, #110f10);
-    --color-background-popover: light-dark(#ffffff, #110f10);
-    --color-background-muted: light-dark(#F3EFEA, #110f10);
+    --color-background-card: light-dark(#ffffff, #1E1A1B);
+    --color-background-popover: light-dark(#ffffff, #262122);
+    --color-background-muted: light-dark(#F3EFEA, #221E1F);
     --color-accent: light-dark(#8b1e2b, #E57A89);
     --color-accent-muted: light-dark(#e5cecd, #79252c);
     --color-neutral: light-dark(#0000000F, #ffffff1A);
@@ -289,8 +289,8 @@
     --shadow-low: 0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 25%)), 0 4px 8px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 40%)), inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 8%));
     --shadow-med: 0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 35%)), 0 4px 12px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)), inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 12%));
     --shadow-high: 0 4px 6px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)), 0 12px 24px light-dark(oklch(0 0 0 / 15%), oklch(0 0 0 / 70%)), inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 15%));
-    --shadow-inset-hover: inset 0px 0px 0px 2px #0074e24D;
-    --shadow-inset-selected: inset 0px 0px 0px 2px #0074e280;
+    --shadow-inset-hover: inset 0px 0px 0px 2px light-dark(#8b1e2b4D, #E57A894D);
+    --shadow-inset-selected: inset 0px 0px 0px 2px light-dark(#8b1e2b80, #E57A8980);
     --shadow-inset-success: inset 0px 0px 0px 2px #2f7d334D;
     --shadow-inset-warning: inset 0px 0px 0px 2px #f8d36a4D;
     --shadow-inset-error: inset 0px 0px 0px 2px #de47454D;
@@ -322,7 +322,7 @@
     --size-element-md: 28px;
     --size-element-lg: 32px;
     --duration-exit: var(--duration-fast);
-    --astryx-theme-neutral-color-status-fill-accent: light-dark(#0074e2, #6d9cfe);
+    --astryx-theme-neutral-color-status-fill-accent: light-dark(#8b1e2b, #E57A89);
   }
 
   :scope {

@@ -7,4 +7,7 @@ import {nailsAdminSettings} from './nails-admin.settings';
 export const nailsAdminTheme = defineTheme({
   extends: nailsAdminSettings,
   name: 'nails-admin',
+  localTokens: {
+    '--astryx-theme-neutral-color-status-fill-accent': ['#8b1e2b', '#E57A89'],
+  },
 });

@@ -126,6 +126,34 @@
       "source": "property",
       "on": "progress-bar-track",
       "mode": "dark"
+    },
+    {
+      "thing": "--color-background-card",
+      "value": "#1E1A1B",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "--color-background-popover",
+      "value": "#262122",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "--color-background-muted",
+      "value": "#221E1F",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "--shadow-inset-hover",
+      "value": "inset 0px 0px 0px 2px light-dark(#8b1e2b4D, #E57A894D)",
+      "source": "token"
+    },
+    {
+      "thing": "--shadow-inset-selected",
+      "value": "inset 0px 0px 0px 2px light-dark(#8b1e2b80, #E57A8980)",
+      "source": "token"
     }
   ],
   "lifted": [],
