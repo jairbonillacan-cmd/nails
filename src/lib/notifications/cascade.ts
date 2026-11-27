@@ -202,6 +202,20 @@ export function summarizeCascadeMetrics(
   };
 }
 
+function extractFractionalMicroseconds(iso: string): number {
+  const match = /\.(\d+)/.exec(iso);
+  if (!match?.[1]) return 0;
+  return Number(match[1].slice(0, 6).padEnd(6, '0'));
+}
+
+function compareIsoTimestampsAsc(a: string, b: string): number {
+  const msDiff = Date.parse(a) - Date.parse(b);
+  if (msDiff !== 0) return msDiff;
+  const microDiff = extractFractionalMicroseconds(a) - extractFractionalMicroseconds(b);
+  if (microDiff !== 0) return microDiff;
+  return a.localeCompare(b);
+}
+
 export function selectNextWaitlistCandidate(
   waitlist: readonly WaitlistEntry[],
   params: {
@@ -232,8 +246,9 @@ export function selectNextWaitlistCandidate(
     return true;
   });
 
-  const ordered = eligible.toSorted(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
+  const ordered = eligible.toSorted((a, b) => {
+    const timeDiff = compareIsoTimestampsAsc(a.createdAt, b.createdAt);
+    return timeDiff !== 0 ? timeDiff : a.id.localeCompare(b.id);
+  });
   return ordered[0] ?? null;
 }

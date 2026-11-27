@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import fc from 'fast-check';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { selectNextWaitlistCandidate } from '../notifications/cascade';
 import {
   addDateOverride,
   addDateOverrideRange,
@@ -2358,5 +2359,58 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
       }),
     );
     expect(invalidTouchUpRes.status).toBe(400);
+  });
+
+  it('addWaitlistEntry assigns strictly monotonic createdAt within the same millisecond so FIFO priority is deterministic', async () => {
+    const frozenNowMs = Date.parse('2026-12-15T18:00:00.500Z');
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(frozenNowMs);
+    try {
+      const first = await addWaitlistEntry({
+        serviceId: 'srv-rubber',
+        preferredStaffId: 'staff-karla',
+        desiredDate: '2026-12-20',
+        preferredWindow: 'any',
+        clientName: 'FIFO Primera',
+        clientPhoneE164: '+522227771001',
+        clientEmail: null,
+        notes: '',
+      });
+      const second = await addWaitlistEntry({
+        serviceId: 'srv-rubber',
+        preferredStaffId: 'staff-karla',
+        desiredDate: '2026-12-20',
+        preferredWindow: 'any',
+        clientName: 'FIFO Segunda',
+        clientPhoneE164: '+522227771002',
+        clientEmail: null,
+        notes: '',
+      });
+      const third = await addWaitlistEntry({
+        serviceId: 'srv-rubber',
+        preferredStaffId: 'staff-karla',
+        desiredDate: '2026-12-20',
+        preferredWindow: 'any',
+        clientName: 'FIFO Tercera',
+        clientPhoneE164: '+522227771003',
+        clientEmail: null,
+        notes: '',
+      });
+
+      expect(Date.parse(first.createdAt)).toBeLessThan(Date.parse(second.createdAt));
+      expect(Date.parse(second.createdAt)).toBeLessThan(Date.parse(third.createdAt));
+
+      const snapshot = getSnapshot();
+      expect(snapshot.waitlist[0]?.id).toBe(third.id);
+      const selected = selectNextWaitlistCandidate(snapshot.waitlist, {
+        serviceId: 'srv-rubber',
+        staffId: 'staff-karla',
+        dateKey: '2026-12-20',
+        nowMs: frozenNowMs + 60_000,
+      });
+      expect(selected?.id).toBe(first.id);
+      expect(selected?.clientName).toBe('FIFO Primera');
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

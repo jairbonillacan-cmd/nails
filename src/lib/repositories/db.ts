@@ -5580,13 +5580,19 @@ export async function addWaitlistEntry(
     return createSupabaseRepository().addWaitlistEntry(input);
   }
   return withWriteLock((db) => {
+    const maxExistingMs = db.waitlist.reduce((max, item) => {
+      const ts = Date.parse(item.createdAt);
+      return Number.isFinite(ts) && ts > max ? ts : max;
+    }, 0);
+    const nowMs = Date.now();
+    const createdAtMs = nowMs > maxExistingMs ? nowMs : maxExistingMs + 1;
     const entry: WaitlistEntry = {
       ...input,
       clientPhoneE164: normalizePhoneE164(input.clientPhoneE164),
       id: `wl-${crypto.randomUUID().slice(0, 8)}`,
       status: 'waiting',
       notifiedAt: null,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(createdAtMs).toISOString(),
     };
     db.waitlist.unshift(entry);
     publishRealtimeEvent('waitlist_updated');

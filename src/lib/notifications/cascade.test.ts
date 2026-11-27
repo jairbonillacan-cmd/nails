@@ -271,4 +271,28 @@ describe('Cascade notifications, metrics & waitlist engine (N5/C8/U3)', () => {
     });
     expect(noneSelected).toBeNull();
   });
+
+  it('selectNextWaitlistCandidate preserves FIFO order on same-millisecond microsecond timestamps even when stored newest-first', () => {
+    const newestFirstWaitlist: WaitlistEntry[] = [
+      buildWaitlistEntry({
+        id: 'wl-second-in-same-ms',
+        clientName: 'Espera Segunda',
+        createdAt: '2026-12-01T10:00:00.123800+00:00',
+      }),
+      buildWaitlistEntry({
+        id: 'wl-first-in-same-ms',
+        clientName: 'Espera Primera',
+        createdAt: '2026-12-01T10:00:00.123100+00:00',
+      }),
+    ];
+
+    const winner = selectNextWaitlistCandidate(newestFirstWaitlist, {
+      serviceId: 'srv-gel-semipermanente-manos',
+      staffId: 'staff-karla',
+      dateKey: '2026-12-10',
+      nowMs: new Date('2026-12-10T12:00:00.000Z').getTime(),
+    });
+    expect(winner?.id).toBe('wl-first-in-same-ms');
+    expect(winner?.clientName).toBe('Espera Primera');
+  });
 });
