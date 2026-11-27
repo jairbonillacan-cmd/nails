@@ -12,6 +12,7 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import type { BookingWithRelations } from '@/lib/types';
 import { getDateKeyInTimezone } from '@/lib/format';
 import type { AgendaRange } from './BookingsFiltersBar';
@@ -47,7 +48,9 @@ export function useCitasWorkspace() {
   const paramTab = searchParams.get('tab')?.trim() ?? '';
 
   const [tab, setTab] = useState('upcoming');
-  const [viewMode, setViewMode] = useState<'schedule' | 'list'>('schedule');
+  const isNarrowScreen = useIsNarrowScreen();
+  const [viewModeChoice, setViewMode] = useState<'schedule' | 'list' | null>(null);
+  const viewMode = viewModeChoice ?? (isNarrowScreen ? 'list' : 'schedule');
   const [agendaRange, setAgendaRange] = useState<AgendaRange>('today');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>(() => {
     if (
