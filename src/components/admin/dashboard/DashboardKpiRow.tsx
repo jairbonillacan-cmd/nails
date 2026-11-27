@@ -106,6 +106,7 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
   return (
     <MetricGrid
       ariaLabel="Resumen del periodo"
+      className="ad-dash-kpis"
       items={items}
       cols={4}
       footerLink={

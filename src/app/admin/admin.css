@@ -3267,6 +3267,20 @@ input.ad-pin-input,
   }
 }
 
+@media (max-width: 47.9375rem) {
+  .ad-dashboard > .ad-main {
+    order: 1;
+  }
+
+  .ad-dashboard > .ad-dash-kpis {
+    order: 2;
+  }
+
+  .ad-dashboard > .ad-dash-bottom {
+    order: 3;
+  }
+}
+
 @media (max-width: 47.5rem) {
   .ad-topbar {
     padding: 0.625rem 1rem 0.375rem;
