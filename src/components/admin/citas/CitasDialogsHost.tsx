@@ -1,7 +1,10 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
+import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { ADMIN_CACHE_KEYS, invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import { roleCanAccess } from '@/lib/rbac';
 import type { BookingStatus, BookingWithRelations, StaffMember } from '@/lib/types';
@@ -41,6 +44,11 @@ const QuickSlotFinderDialog = dynamic(
   { ssr: false },
 );
 
+const WaitlistPanel = dynamic(
+  () => import('./WaitlistPanel').then((mod) => mod.WaitlistPanel),
+  { ssr: false },
+);
+
 interface CitasDialogsHostProps {
   data: AdminOverviewPayload;
   tz: string;
@@ -64,8 +72,12 @@ interface CitasDialogsHostProps {
   blockOpen: boolean;
   blockSessionKey: number;
   onBlockOpenChange: (open: boolean) => void;
+  waitlistOpen: boolean;
+  onWaitlistOpenChange: (open: boolean) => void;
+  canViewWaitlist: boolean;
   canViewClients: boolean;
   busyAction: { bookingId: string; status: BookingStatus } | null;
+  checkingInId: string | null;
   rejectingDepositId: string | null;
   remindingId: string | null;
   requestingRescheduleId: string | null;
@@ -77,6 +89,7 @@ interface CitasDialogsHostProps {
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onScheduleRetouch: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus, pin?: string) => Promise<boolean>;
+  onCheckIn: (bookingId: string) => Promise<boolean>;
   onRejectDeposit: (bookingId: string, bookingCode: string, reason?: string) => Promise<boolean>;
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
@@ -108,8 +121,12 @@ export function CitasDialogsHost({
   blockOpen,
   blockSessionKey,
   onBlockOpenChange,
+  waitlistOpen,
+  onWaitlistOpenChange,
+  canViewWaitlist,
   canViewClients,
   busyAction,
+  checkingInId,
   rejectingDepositId,
   remindingId,
   requestingRescheduleId,
@@ -121,6 +138,7 @@ export function CitasDialogsHost({
   onOpenCheckout,
   onScheduleRetouch,
   onUpdateStatus,
+  onCheckIn,
   onRejectDeposit,
   onSendReminder,
   onRequestReschedule,
@@ -128,6 +146,9 @@ export function CitasDialogsHost({
   onShowNotice,
   onSetFeedback,
 }: CitasDialogsHostProps) {
+  const touchUpDays = normalizeTouchUpDays(data.settings.landingContent?.touchUpDays);
+  const activeWaitingCount = data.waitlist.filter((w) => w.status === 'waiting').length;
+
   return (
     <>
       {quickFinderOpen ? (
@@ -155,10 +176,16 @@ export function CitasDialogsHost({
       {popoverBooking ? (
         <BookingQuickPopover
           booking={popoverBooking}
+          allBookings={data.bookings}
           allServices={data.services}
+          clients={data.clients}
+          loyaltyProgram={data.loyaltyProgram}
+          loyaltyStamps={data.loyaltyStamps}
           paymentSplits={data.paymentSplits}
           cashEntries={data.cashEntries}
           serverNowIso={data.serverNowIso}
+          noShowThreshold={data.settings.noShowDepositThreshold ?? 2}
+          touchUpDays={touchUpDays}
           salonName={data.settings.name}
           googleReviewUrl={data.settings.googleReviewUrl ?? null}
           currency={data.settings.currency}
@@ -168,13 +195,19 @@ export function CitasDialogsHost({
           busyStatus={
             busyAction?.bookingId === popoverBooking.id ? busyAction.status : null
           }
+          isCheckingIn={checkingInId === popoverBooking.id}
           isRejectingDeposit={rejectingDepositId === popoverBooking.id}
           isReminding={remindingId === popoverBooking.id}
           isRequestingReschedule={requestingRescheduleId === popoverBooking.id}
           onClose={onClosePopover}
           onUpdateStatus={(id, status) => onUpdateStatus(id, status)}
+          onCheckIn={onCheckIn}
           onRejectDeposit={onRejectDeposit}
           onOpenCheckout={onOpenCheckout}
+          onScheduleRetouch={(booking) => {
+            onClosePopover();
+            onScheduleRetouch(booking);
+          }}
           onSendReminder={onSendReminder}
           onRequestReschedule={onRequestReschedule}
         />
@@ -219,6 +252,7 @@ export function CitasDialogsHost({
           loyaltyProgram={data.loyaltyProgram}
           loyaltyStamps={data.loyaltyStamps}
           currency={data.settings.currency}
+          touchUpDays={touchUpDays}
           onClose={onCloseCheckout}
           onCompleted={async () => {
             invalidateAdminCache('/api/admin/reports');
@@ -248,6 +282,57 @@ export function CitasDialogsHost({
             onShowNotice(notice);
           }}
         />
+      ) : null}
+
+      {canViewWaitlist ? (
+        <Drawer
+          isOpen={waitlistOpen}
+          onOpenChange={onWaitlistOpenChange}
+          side="end"
+          width={460}
+          label="Lista de espera"
+        >
+          <Layout
+            header={
+              <DrawerHeader
+                title="Lista de espera"
+                subtitle={
+                  activeWaitingCount > 0
+                    ? `${activeWaitingCount} ${activeWaitingCount === 1 ? 'clienta esperando espacio' : 'clientas esperando espacio'}`
+                    : 'Sin solicitudes activas por ahora'
+                }
+                onOpenChange={onWaitlistOpenChange}
+                hasDivider
+              />
+            }
+            content={
+              <LayoutContent>
+                {waitlistOpen ? (
+                  <WaitlistPanel
+                    embedded
+                    waitlist={data.waitlist}
+                    services={data.services}
+                    salonName={data.settings.name}
+                    onStatusUpdated={async (message) => {
+                      await onRefresh();
+                      onShowNotice(message);
+                    }}
+                    onBookEntry={(entry) => {
+                      onWaitlistOpenChange(false);
+                      onOpenManualModal('any', {
+                        serviceId: entry.serviceId,
+                        startDate: entry.desiredDate,
+                        clientName: entry.clientName,
+                        clientPhone: entry.clientPhoneE164,
+                        internalNotes: entry.notes || 'Agendada desde lista de espera',
+                      });
+                    }}
+                  />
+                ) : null}
+              </LayoutContent>
+            }
+          />
+        </Drawer>
       ) : null}
 
       {pendingCancelBooking ? (

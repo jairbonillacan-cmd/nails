@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
+  findFreedSlotWaitlistMatch,
+  type FreedSlotWaitlistMatch,
+} from '@/lib/booking/waitlist-match';
+import {
   ADMIN_CACHE_KEYS,
   applyOptimisticBookingReschedule,
   applyOptimisticBookingRescheduleToList,
@@ -29,6 +33,7 @@ export interface CitasFeedbackState {
   description?: string;
   waMeUrl?: string;
   rescheduleUrl?: string;
+  freedSlotMatch?: FreedSlotWaitlistMatch;
 }
 
 interface UseCitasBookingActionsParams {
@@ -52,9 +57,25 @@ export function useCitasBookingActions({
   const [pendingCancelBookingId, setPendingCancelBookingId] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinSubmitting, setPinSubmitting] = useState(false);
+  const [checkingInId, setCheckingInId] = useState<string | null>(null);
+  const [notifyingWaitlistId, setNotifyingWaitlistId] = useState<string | null>(null);
 
   const inlineNotice = useEphemeralMessage(3200);
   const rescheduleCopy = useCopyToClipboard(2500);
+
+  const findWaitlistForFreedBooking = (bookingId: string): FreedSlotWaitlistMatch | null => {
+    if (!data || data.waitlist.length === 0) return null;
+    const freed = data.bookings.find((b) => b.id === bookingId);
+    if (!freed) return null;
+    return findFreedSlotWaitlistMatch({
+      waitlist: data.waitlist,
+      booking: freed,
+      services: data.services,
+      salonName: data.settings.name,
+      timezone: data.settings.timezone,
+      nowMs: Date.parse(data.serverNowIso) || undefined,
+    });
+  };
 
   const updateStatus = async (
     bookingId: string,
@@ -108,6 +129,21 @@ export function useCitasBookingActions({
         setPinError(null);
         invalidateAdminCache('/api/admin/reports');
         inlineNotice.show(`Estado: ${BOOKING_STATUS_BADGE[status].label}`);
+        if (status === 'canceled') {
+          const match = findWaitlistForFreedBooking(bookingId);
+          if (match) {
+            setFeedback({
+              status: 'success',
+              title: 'Se liberó un horario · Hay clientas en lista de espera',
+              description: `${match.candidate.clientName} espera ${match.serviceName}${
+                match.waitingCount > 1
+                  ? ` (+${match.waitingCount - 1} más en lista)`
+                  : ''
+              }.`,
+              freedSlotMatch: match,
+            });
+          }
+        }
         void refresh();
         return true;
       }
@@ -367,6 +403,17 @@ export function useCitasBookingActions({
       if (res.ok) {
         invalidateAdminCache('/api/admin/reports');
         inlineNotice.show(params.summaryLabel);
+        const match = findWaitlistForFreedBooking(params.bookingId);
+        if (match) {
+          setFeedback({
+            status: 'success',
+            title: `${params.summaryLabel} · Se liberó un horario`,
+            description: `${match.candidate.clientName} espera ${match.serviceName}${
+              match.waitingCount > 1 ? ` (+${match.waitingCount - 1} más en lista)` : ''
+            }.`,
+            freedSlotMatch: match,
+          });
+        }
         void refresh();
         return true;
       }
@@ -394,10 +441,71 @@ export function useCitasBookingActions({
     }
   };
 
+  const checkInBooking = async (bookingId: string): Promise<boolean> => {
+    if (!data || checkingInId === bookingId) return false;
+    setCheckingInId(bookingId);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
+        body: JSON.stringify({ action: 'check_in', bookingId }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        setFeedback({
+          status: 'error',
+          title: json?.error || 'No se pudo registrar la llegada.',
+        });
+        return false;
+      }
+      inlineNotice.show('Llegada registrada');
+      void refresh();
+      return true;
+    } catch (err) {
+      setFeedback({
+        status: 'error',
+        title: isTimeoutOrAbortError(err)
+          ? 'El registro de llegada tardó demasiado. Intenta de nuevo.'
+          : 'Error de conexión al registrar la llegada.',
+      });
+      return false;
+    } finally {
+      setCheckingInId(null);
+    }
+  };
+
+  const notifyWaitlistCandidate = async (waitlistId: string): Promise<boolean> => {
+    if (notifyingWaitlistId === waitlistId) return false;
+    setNotifyingWaitlistId(waitlistId);
+    try {
+      const res = await fetch('/api/admin/operations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({ kind: 'waitlist', id: waitlistId, status: 'notified' }),
+      });
+      if (res.ok) {
+        inlineNotice.show('Clienta marcada como avisada');
+        setFeedback(null);
+        void refresh();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setNotifyingWaitlistId(null);
+    }
+  };
+
   return {
     feedback,
     setFeedback,
     busyAction,
+    checkingInId,
+    notifyingWaitlistId,
     reschedulingId,
     rejectingDepositId,
     remindingId,
@@ -410,6 +518,8 @@ export function useCitasBookingActions({
     inlineNotice,
     rescheduleCopy,
     updateStatus,
+    checkInBooking,
+    notifyWaitlistCandidate,
     rejectDeposit,
     rescheduleAdmin,
     sendReminder,

@@ -66,6 +66,10 @@ describe('Typed Admin Deep Links (src/lib/admin-links.ts)', () => {
     expect(parseAgendaParams(href)).toEqual(input);
     expect(agendaHref()).toBe('/admin/citas');
     expect(parseAgendaParams('/admin/citas')).toEqual({});
+    expect(parseAgendaParams('/admin/citas?tab=unconfirmed&status=unconfirmed')).toEqual({
+      tab: 'pending',
+      status: 'pending',
+    });
   });
 
   it('round-trips Caja links and normalizes legacy tab/sub aliases', () => {

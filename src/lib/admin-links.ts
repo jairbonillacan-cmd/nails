@@ -18,8 +18,8 @@ export type AdminSearchParamsInput =
   | null
   | undefined;
 
-type AgendaViewParam = 'day' | 'week' | 'list';
-type AgendaStatusParam =
+export type AgendaViewParam = 'day' | 'week' | 'list';
+export type AgendaStatusParam =
   | 'all'
   | 'upcoming'
   | 'pending'
@@ -283,11 +283,17 @@ export function parseAgendaParams(input: AdminSearchParamsInput): AgendaLinkPara
   if (date && isMetricDateKey(date)) out.date = date;
   const staff = cleanString(reader.get('staff'));
   if (staff) out.staff = staff;
-  const status = pickOne(reader.get('status'), AGENDA_STATUSES);
+  const rawStatus = cleanString(reader.get('status'));
+  const status =
+    rawStatus === 'unconfirmed'
+      ? 'pending'
+      : pickOne(rawStatus, AGENDA_STATUSES);
   if (status) out.status = status;
   const q = cleanString(reader.get('q'));
   if (q) out.q = q;
-  const tab = pickOne(reader.get('tab'), AGENDA_TABS);
+  const rawTab = cleanString(reader.get('tab'));
+  const tab =
+    rawTab === 'unconfirmed' ? 'pending' : pickOne(rawTab, AGENDA_TABS);
   if (tab) out.tab = tab;
   const rawNew = cleanString(reader.get('new'));
   if (rawNew === '1' || rawNew === 'true') out.new = true;

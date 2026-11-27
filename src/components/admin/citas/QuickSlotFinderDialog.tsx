@@ -17,15 +17,15 @@ import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/Segme
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Clock } from 'lucide-react';
-import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import type { AvailableSlot } from '@/lib/availability/engine';
 import type { Service, StaffMember } from '@/lib/types';
 import {
   formatCurrency,
   formatDateShortInTimezone,
   formatDuration,
-  getDateKeyInTimezone,
 } from '@/lib/format';
+import { computeCatalogSelectionTotals } from './NewBookingServiceStep';
+import type { QuickSlotOption } from './NewBookingSlotStep';
+import { useNewBookingSlots } from './useNewBookingSlots';
 
 interface QuickSlotSelection {
   serviceId: string;
@@ -91,13 +91,6 @@ export function QuickSlotFinderDialog({
   const [extraServiceIds, setExtraServiceIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState(lockedStaffId ?? 'any');
   const [daysWindow, setDaysWindow] = useState<'7' | '14' | '30'>('14');
-  const [slots, setSlots] = useState<AvailableSlot[]>([]);
-  const [totals, setTotals] = useState<{
-    totalDurationMinutes: number;
-    subtotalCents: number;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [errorText, setErrorText] = useState<string | null>(null);
 
   const effectiveServiceId = serviceId || defaultServiceId;
   const effectiveStaffId = lockedStaffId ?? staffId;
@@ -106,59 +99,25 @@ export function QuickSlotFinderDialog({
     [extraServiceIds, effectiveServiceId],
   );
 
-  const syncKey = isOpen
-    ? `${effectiveServiceId}|${cleanExtras.join(',')}|${effectiveStaffId}|${daysWindow}|${todayKey}`
-    : 'closed';
+  const totals = useMemo(
+    () => computeCatalogSelectionTotals(activeServices, [], effectiveServiceId, cleanExtras, []),
+    [activeServices, effectiveServiceId, cleanExtras],
+  );
 
-  useExternalSync(syncKey, async (signal, key) => {
-    if (key === 'closed' || !effectiveServiceId) return;
-    setLoading(true);
-    setErrorText(null);
-    try {
-      const qs = new URLSearchParams({
-        mode: 'quick_search',
-        serviceId: effectiveServiceId,
-        startDate: todayKey,
-        days: daysWindow,
-        limit: '12',
-      });
-      if (cleanExtras.length > 0) {
-        qs.set('extraServiceIds', cleanExtras.join(','));
-      }
-      if (effectiveStaffId && effectiveStaffId !== 'any') {
-        qs.set('staffId', effectiveStaffId);
-      }
-      const res = await fetch(`/api/availability?${qs.toString()}`, { signal });
-      if (signal.aborted) return;
-      if (!res.ok) {
-        const err = (await res.json().catch(() => null)) as { error?: string } | null;
-        setErrorText(err?.error || 'No se pudieron consultar horarios disponibles.');
-        setSlots([]);
-        return;
-      }
-      const json = (await res.json()) as {
-        slots?: AvailableSlot[];
-        totals?: { totalDurationMinutes: number; subtotalCents: number };
-      };
-      if (signal.aborted) return;
-      setSlots(json.slots ?? []);
-      setTotals(json.totals ?? null);
-    } catch {
-      if (!signal.aborted) {
-        setErrorText('Error de conexión al buscar horarios.');
-        setSlots([]);
-      }
-    } finally {
-      if (!signal.aborted) {
-        setLoading(false);
-      }
-    }
+  const { slots, loadingSlots, errorText } = useNewBookingSlots({
+    isOpen,
+    serviceId: effectiveServiceId,
+    extraServiceIds: cleanExtras,
+    staffId: effectiveStaffId,
+    startDate: todayKey,
+    days: Number(daysWindow),
+    limit: 24,
   });
 
   const groupedSlots = useMemo(() => {
-    const byDate = new Map<string, Record<DayPeriod, AvailableSlot[]>>();
+    const byDate = new Map<string, Record<DayPeriod, QuickSlotOption[]>>();
     for (const slot of slots) {
-      const dateKey = getDateKeyInTimezone(new Date(slot.startAt), timezone);
+      const dateKey = slot.date;
       const bucket = byDate.get(dateKey) ?? {
         Mañana: [],
         Tarde: [],
@@ -274,17 +233,17 @@ export function QuickSlotFinderDialog({
                   <SegmentedControlItem value="30" label="30 días" />
                 </SegmentedControl>
 
-                {totals ? (
+                {totals.durationMinutes > 0 ? (
                   <HStack gap={1.5} align="center">
                     <Token
                       size="sm"
                       color="default"
-                      label={`Duración ${formatDuration(totals.totalDurationMinutes)}`}
+                      label={`Duración ${formatDuration(totals.durationMinutes)}`}
                     />
                     <Token
                       size="sm"
                       color="green"
-                      label={formatCurrency(totals.subtotalCents, currency)}
+                      label={formatCurrency(totals.priceCents, currency)}
                     />
                   </HStack>
                 ) : null}
@@ -292,7 +251,7 @@ export function QuickSlotFinderDialog({
 
               {errorText ? <Banner status="error" role="alert" title={errorText} /> : null}
 
-              {loading ? (
+              {loadingSlots ? (
                 <VStack
                   className="ad-surface"
                   data-tone="subtle"
@@ -327,10 +286,22 @@ export function QuickSlotFinderDialog({
                       daysWindow !== '30' || (!lockedStaffId && effectiveStaffId !== 'any') ? (
                         <HStack gap={2} wrap="wrap" justify="center">
                           {daysWindow !== '30' ? (
-                            <Button type="button" size="sm" variant="secondary" label="Buscar en 30 días" onClick={() => setDaysWindow('30')} />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              label="Buscar en 30 días"
+                              onClick={() => setDaysWindow('30')}
+                            />
                           ) : null}
                           {!lockedStaffId && effectiveStaffId !== 'any' ? (
-                            <Button type="button" size="sm" variant="secondary" label="Cualquier profesional" onClick={() => setStaffId('any')} />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              label="Cualquier profesional"
+                              onClick={() => setStaffId('any')}
+                            />
                           ) : null}
                         </HStack>
                       ) : undefined

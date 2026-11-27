@@ -2,6 +2,7 @@
 
 import type React from 'react';
 import NextLink from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -22,6 +23,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { parseAgendaParams } from '@/lib/admin-links';
 import {
   computeCollapsedSectionBadge,
   computeCollapsedStaffBadge,
@@ -87,6 +89,9 @@ export function AdminNavGroups({
   onPrefetchRoute,
   onItemClick,
 }: AdminNavGroupsProps) {
+  const searchParams = useSearchParams();
+  const activeAgendaStaffId =
+    pathname === '/admin/citas' ? (parseAgendaParams(searchParams).staff ?? null) : null;
   const { isSectionCollapsed, toggleSection } = useSidebarSections({
     pathname,
     primaryNavGroups,
@@ -237,31 +242,36 @@ export function AdminNavGroups({
             data-collapsed={staffCollapsed ? 'true' : 'false'}
             hidden={staffCollapsed}
           >
-            {staffRows.map((member) => (
-              <li key={member.id}>
-                <NextLink
-                  href={member.href}
-                  className="ad-nav ad-nav-staff fx-press"
-                  onMouseEnter={() => onPrefetchRoute('bookings', member.href)}
-                  onFocus={() => onPrefetchRoute('bookings', member.href)}
-                  onClick={onItemClick}
-                >
-                  <Text
-                    className="ad-staff-dot"
-                    data-active={member.todayCount > 0 ? 'true' : 'false'}
-                    aria-hidden="true"
+            {staffRows.map((member) => {
+              const isStaffSelected = activeAgendaStaffId === member.id;
+              return (
+                <li key={member.id}>
+                  <NextLink
+                    href={member.href}
+                    className="ad-nav ad-nav-staff fx-press"
+                    data-on={isStaffSelected ? 'true' : 'false'}
+                    aria-current={isStaffSelected ? 'page' : undefined}
+                    onMouseEnter={() => onPrefetchRoute('bookings', member.href)}
+                    onFocus={() => onPrefetchRoute('bookings', member.href)}
+                    onClick={onItemClick}
                   >
-                    {'\u200B'}
-                  </Text>
-                  <Text color="inherit" className="ad-nav-label">
-                    {member.firstName}
-                  </Text>
-                  <Text type="supporting" className="ad-staff-meta" hasTabularNumbers>
-                    {member.todayCount > 0 ? `${member.todayCount} hoy` : 'Libre'}
-                  </Text>
-                </NextLink>
-              </li>
-            ))}
+                    <Text
+                      className="ad-staff-dot"
+                      data-active={member.todayCount > 0 || isStaffSelected ? 'true' : 'false'}
+                      aria-hidden="true"
+                    >
+                      {'\u200B'}
+                    </Text>
+                    <Text color="inherit" className="ad-nav-label">
+                      {member.firstName}
+                    </Text>
+                    <Text type="supporting" className="ad-staff-meta" hasTabularNumbers>
+                      {member.todayCount > 0 ? `${member.todayCount} hoy` : 'Libre'}
+                    </Text>
+                  </NextLink>
+                </li>
+              );
+            })}
           </VStack>
         </VStack>
       ) : null}

@@ -6,7 +6,12 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Plus } from 'lucide-react';
 import { EmptyStateCard, StatusTag } from '@/components/ui';
-import { isPendingDepositStatus } from '@/lib/booking/balance';
+import type { AgendaStatusParam } from '@/lib/admin-links';
+import {
+  computeBookingBalance,
+  isPendingDepositStatus,
+} from '@/lib/booking/balance';
+import { isActiveBookingStatus } from '@/lib/booking/state-machine';
 import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
 import type {
   BookingStatus,
@@ -17,80 +22,95 @@ import type {
 } from '@/lib/types';
 import { getDateKeyInTimezone } from '@/lib/format';
 import { BookingCard } from './BookingCard';
-import type { AgendaRange } from './BookingsFiltersBar';
-import { shiftDateKey } from './scheduleGridGeometry';
 
-export function filterBookingsForTab(params: {
+export function filterBookingsForAgendaStatus(params: {
   bookings: readonly BookingWithRelations[];
+  paymentSplits: readonly PaymentSplit[];
+  cashEntries: readonly CashRegisterEntry[];
   serverNowIso: string;
-  tab: string;
+  status: AgendaStatusParam;
   search: string;
   selectedStaffFilter: string;
 }): BookingWithRelations[] {
-  const { bookings, serverNowIso, tab, search, selectedStaffFilter } = params;
-  const nowMs = new Date(serverNowIso).getTime();
-  return bookings
-    .filter((b) => {
-      if (selectedStaffFilter !== 'all' && b.staffId !== selectedStaffFilter) {
-        return false;
-      }
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const ig = (b.clientInstagram ?? b.client.instagramHandle ?? '').toLowerCase();
-        const hit =
-          b.client.fullName.toLowerCase().includes(q) ||
-          b.service.name.toLowerCase().includes(q) ||
-          b.bookingCode.toLowerCase().includes(q) ||
-          b.client.phoneE164.includes(q) ||
-          ig.includes(q);
-        if (!hit) return false;
-      }
-      if (tab === 'upcoming') {
-        return (
-          ['confirmed', 'pending_confirmation', 'pending_payment'].includes(b.status) &&
-          new Date(b.endAt).getTime() >= nowMs - 86_400_000
-        );
-      }
-      if (tab === 'unconfirmed') {
-        return isPendingDepositStatus(b.status);
-      }
-      if (tab === 'past') {
-        return b.status === 'completed' || b.status === 'no_show';
-      }
-      if (tab === 'canceled') {
-        return b.status === 'canceled';
-      }
-      return true;
-    })
-    .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  const {
+    bookings,
+    paymentSplits,
+    cashEntries,
+    serverNowIso,
+    status,
+    search,
+    selectedStaffFilter,
+  } = params;
+  const nowMs = Date.parse(serverNowIso) || Date.now();
+  const cleanSearch = search.trim().toLowerCase();
+
+  const matches = bookings.filter((b) => {
+    if (selectedStaffFilter !== 'all' && b.staffId !== selectedStaffFilter) {
+      return false;
+    }
+    if (cleanSearch) {
+      const ig = (b.clientInstagram ?? b.client.instagramHandle ?? '').toLowerCase();
+      const hit =
+        b.client.fullName.toLowerCase().includes(cleanSearch) ||
+        b.service.name.toLowerCase().includes(cleanSearch) ||
+        b.bookingCode.toLowerCase().includes(cleanSearch) ||
+        b.client.phoneE164.toLowerCase().includes(cleanSearch) ||
+        ig.includes(cleanSearch);
+      if (!hit) return false;
+    }
+    if (status === 'all') return true;
+    if (status === 'upcoming') {
+      return (
+        isActiveBookingStatus(b.status) &&
+        Date.parse(b.endAt) >= nowMs - 86_400_000
+      );
+    }
+    if (status === 'pending') {
+      return isPendingDepositStatus(b.status);
+    }
+    if (status === 'uncollected') {
+      return computeBookingBalance(b, paymentSplits, cashEntries, nowMs).isUncollected;
+    }
+    if (status === 'past') {
+      return b.status === 'completed' || b.status === 'no_show';
+    }
+    if (status === 'completed') {
+      return b.status === 'completed';
+    }
+    if (status === 'canceled') {
+      return b.status === 'canceled';
+    }
+    return true;
+  });
+
+  const descending =
+    status === 'past' || status === 'completed' || status === 'canceled';
+  return matches.toSorted((a, b) => {
+    const diff = Date.parse(a.startAt) - Date.parse(b.startAt);
+    return descending ? -diff : diff;
+  });
 }
 
-export function filterBookingsForListRange(params: {
-  tabFiltered: readonly BookingWithRelations[];
-  tab: string;
+export function filterBookingsForListDate(params: {
+  filtered: readonly BookingWithRelations[];
+  status: AgendaStatusParam;
   search: string;
-  agendaRange: AgendaRange;
-  todayKey: string;
+  dateKey: string;
   timezone: string;
 }): BookingWithRelations[] {
-  const { tabFiltered, tab, search, agendaRange, todayKey, timezone } = params;
-  if (search.trim() || tab !== 'upcoming') {
-    return [...tabFiltered];
+  const { filtered, status, search, dateKey, timezone } = params;
+  if (search.trim() || status !== 'upcoming') {
+    return [...filtered];
   }
-  const tomorrowKey = shiftDateKey(todayKey, 1);
-  const weekEndKey = shiftDateKey(todayKey, 6);
-  return tabFiltered.filter((b) => {
-    const bookingDateKey = getDateKeyInTimezone(new Date(b.startAt), timezone);
-    if (agendaRange === 'today') return bookingDateKey === todayKey;
-    if (agendaRange === 'tomorrow') return bookingDateKey === tomorrowKey;
-    return bookingDateKey >= todayKey && bookingDateKey <= weekEndKey;
-  });
+  return filtered.filter(
+    (b) => getDateKeyInTimezone(new Date(b.startAt), timezone) === dateKey,
+  );
 }
 
 interface BookingsListViewProps {
   bookings: BookingWithRelations[];
-  tab: string;
-  agendaRange: AgendaRange;
+  status: AgendaStatusParam;
+  dateKey: string;
   search: string;
   allServices: Service[];
   paymentSplits: PaymentSplit[];
@@ -104,8 +124,8 @@ interface BookingsListViewProps {
   busyBookingId: string | null;
   busyStatus: BookingStatus | null;
   requestingRescheduleId: string | null;
-  onSelectRangeWeek: () => void;
-  onClearSearch?: () => void;
+  onSelectWeekView: () => void;
+  onResetFilters?: () => void;
   onOpenNewBooking: () => void;
   onSelectBooking: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
@@ -115,8 +135,8 @@ interface BookingsListViewProps {
 
 export function BookingsListView({
   bookings,
-  tab,
-  agendaRange,
+  status,
+  dateKey,
   search,
   allServices,
   paymentSplits,
@@ -130,8 +150,8 @@ export function BookingsListView({
   busyBookingId,
   busyStatus,
   requestingRescheduleId,
-  onSelectRangeWeek,
-  onClearSearch,
+  onSelectWeekView,
+  onResetFilters,
   onOpenNewBooking,
   onSelectBooking,
   onUpdateStatus,
@@ -141,34 +161,35 @@ export function BookingsListView({
   const nowMs = useCurrentClockTick(serverNowIso);
 
   if (bookings.length === 0) {
+    const hasFilter = Boolean(search.trim()) || status !== 'upcoming';
     return (
       <EmptyStateCard
-        key={`${tab}-${agendaRange}-empty`}
+        key={`${status}-${dateKey}-empty`}
         isCompact
         title="No hay citas en esta vista"
         description={
-          tab === 'upcoming' && agendaRange !== 'week' && !search.trim()
-            ? 'Puedes ver toda la semana o agendar una nueva cita.'
-            : 'Puedes agendar una nueva cita o ajustar los filtros.'
+          hasFilter
+            ? 'Prueba limpiando los filtros o revisando otra fecha.'
+            : 'No hay citas para este día. Puedes ver toda la semana o agendar una nueva cita.'
         }
         actions={
           <HStack gap={2} wrap="wrap" justify="center">
-            {search.trim() && onClearSearch ? (
+            {hasFilter && onResetFilters ? (
               <Button
                 type="button"
-                label="Limpiar búsqueda"
+                label="Ver próximas"
                 variant="secondary"
                 size="sm"
-                onClick={onClearSearch}
+                onClick={onResetFilters}
               />
             ) : null}
-            {tab === 'upcoming' && agendaRange !== 'week' && !search.trim() ? (
+            {!hasFilter ? (
               <Button
                 type="button"
-                label="Ver toda la semana"
+                label="Ver semana"
                 variant="secondary"
                 size="sm"
-                onClick={onSelectRangeWeek}
+                onClick={onSelectWeekView}
               />
             ) : null}
             <Button
@@ -186,7 +207,7 @@ export function BookingsListView({
   }
 
   return (
-    <VStack gap={3} key={`${tab}-${agendaRange}-list`}>
+    <VStack gap={3} key={`${status}-${dateKey}-list`}>
       {bookings.map((b) => {
         const isRisk =
           b.client.noShowCount >= noShowThreshold || Boolean(b.noShowPolicyEnforced);

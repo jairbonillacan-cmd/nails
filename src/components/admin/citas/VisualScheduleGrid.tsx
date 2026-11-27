@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -109,8 +109,7 @@ interface VisualScheduleGridProps {
   busyBookingId?: string | null;
   busyStatus?: BookingStatus | null;
   reschedulingBookingId?: string | null;
-  rangeControls?: ReactNode;
-  staffControls?: ReactNode;
+  hideInternalToolbar?: boolean;
   onChangeDate: (nextDateKey: string) => void;
   onJumpToDay: (nextDateKey: string) => void;
   onOpenNewForStaff: (
@@ -150,8 +149,7 @@ export function VisualScheduleGrid({
   busyBookingId = null,
   busyStatus = null,
   reschedulingBookingId = null,
-  rangeControls,
-  staffControls,
+  hideInternalToolbar = false,
   onChangeDate,
   onJumpToDay,
   onOpenNewForStaff,
@@ -655,59 +653,58 @@ export function VisualScheduleGrid({
 
   return (
     <VStack gap={2} className="ad-cal-shell">
-      <HStack
-        className="ad-cal-bar"
-        justify="between"
-        align="center"
-        wrap="wrap"
-        gap={2}
-      >
-        <HStack gap={2} align="center" wrap="wrap">
-          <HStack gap={1.5} align="center">
-            <Button
-              type="button"
-              label={rangeMode === 'week' ? 'Semana anterior' : 'Día anterior'}
-              isIconOnly
-              size="sm"
-              variant="secondary"
-              icon={<ChevronLeft size={15} aria-hidden="true" />}
-              onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? -7 : -1))}
-            />
-            <Heading level={2} className="lk-serif ad-cal-heading">
-              {rangeMode === 'week' ? formattedWeekRange : formattedDay}
-            </Heading>
-            <Button
-              type="button"
-              label={rangeMode === 'week' ? 'Semana siguiente' : 'Día siguiente'}
-              isIconOnly
-              size="sm"
-              variant="secondary"
-              icon={<ChevronRight size={15} aria-hidden="true" />}
-              onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? 7 : 1))}
+      {!hideInternalToolbar ? (
+        <HStack
+          className="ad-cal-bar"
+          justify="between"
+          align="center"
+          wrap="wrap"
+          gap={2}
+        >
+          <HStack gap={2} align="center" wrap="wrap">
+            <HStack gap={1.5} align="center">
+              <Button
+                type="button"
+                label={rangeMode === 'week' ? 'Semana anterior' : 'Día anterior'}
+                isIconOnly
+                size="sm"
+                variant="secondary"
+                icon={<ChevronLeft size={15} aria-hidden="true" />}
+                onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? -7 : -1))}
+              />
+              <Heading level={2} className="lk-serif ad-cal-heading">
+                {rangeMode === 'week' ? formattedWeekRange : formattedDay}
+              </Heading>
+              <Button
+                type="button"
+                label={rangeMode === 'week' ? 'Semana siguiente' : 'Día siguiente'}
+                isIconOnly
+                size="sm"
+                variant="secondary"
+                icon={<ChevronRight size={15} aria-hidden="true" />}
+                onClick={() => onChangeDate(shiftDateKey(dateKey, rangeMode === 'week' ? 7 : 1))}
+              />
+            </HStack>
+            {dateKey !== todayKey ? (
+              <Button
+                type="button"
+                label="Hoy"
+                size="sm"
+                variant="ghost"
+                onClick={() => onChangeDate(todayKey)}
+              />
+            ) : null}
+          </HStack>
+
+          <HStack gap={2} align="center" wrap="wrap">
+            <StatusTag
+              tone="neutral"
+              hasTabularNumbers
+              label={`${visibleBookingsCount} ${visibleBookingsCount === 1 ? 'cita' : 'citas'}`}
             />
           </HStack>
-          {rangeControls ? (
-            rangeControls
-          ) : dateKey !== todayKey ? (
-            <Button
-              type="button"
-              label="Hoy"
-              size="sm"
-              variant="ghost"
-              onClick={() => onChangeDate(todayKey)}
-            />
-          ) : null}
         </HStack>
-
-        <HStack gap={2} align="center" wrap="wrap">
-          {staffControls}
-          <StatusTag
-            tone="neutral"
-            hasTabularNumbers
-            label={`${visibleBookingsCount} ${visibleBookingsCount === 1 ? 'cita' : 'citas'}`}
-          />
-        </HStack>
-      </HStack>
+      ) : null}
 
       <VStack key={`${rangeMode}-${dateKey}`} className="ad-cal-scroll" gap={0}>
         {rangeMode === 'day' ? (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -10,7 +10,14 @@ import { Link } from '@astryxdesign/core/Link';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Banner } from '@astryxdesign/core/Banner';
-import { AtSign, ExternalLink, XCircle } from 'lucide-react';
+import {
+  AtSign,
+  ExternalLink,
+  History,
+  Package,
+  Sparkles,
+  XCircle,
+} from 'lucide-react';
 import {
   BookingStatusTag,
   ConfirmActionDialog,
@@ -21,15 +28,25 @@ import {
   type DepositProofReviewItem,
   type StatusTagTone,
 } from '@/components/ui';
+import {
+  formatNailTechBadges,
+  parseNailTechNotes,
+} from '@/components/admin/clientas/nailTechProfile';
 import { clientasHref, integracionesHref, whatsappHref } from '@/lib/admin-links';
 import { computeBookingBalance } from '@/lib/booking/balance';
+import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { BOOKING_TRANSITIONS } from '@/lib/booking/state-machine';
 import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
   BookingWithRelations,
   CashRegisterEntry,
+  ClientProfile,
+  LoyaltyProgram,
+  LoyaltyStamp,
   PaymentSplit,
   Service,
 } from '@/lib/types';
@@ -48,13 +65,21 @@ import {
   isDisplayableProofImage,
 } from './BookingCard';
 import { BookingPopoverActions } from './BookingPopoverActions';
+import { fetchActiveClientPackages } from './checkoutApi';
+import type { ClientPackageSummaryRow } from './CheckoutLoyaltySection';
 
 interface BookingQuickPopoverProps {
   booking: BookingWithRelations | null;
+  allBookings?: readonly BookingWithRelations[];
   allServices: Service[];
+  clients?: readonly ClientProfile[];
+  loyaltyProgram?: LoyaltyProgram | null;
+  loyaltyStamps?: readonly LoyaltyStamp[];
   paymentSplits: PaymentSplit[];
   cashEntries?: CashRegisterEntry[];
   serverNowIso?: string;
+  noShowThreshold?: number;
+  touchUpDays?: number;
   salonName: string;
   googleReviewUrl?: string | null;
   currency: 'MXN' | 'USD';
@@ -62,13 +87,16 @@ interface BookingQuickPopoverProps {
   canViewClients?: boolean;
   canManageIntegrations?: boolean;
   busyStatus?: BookingStatus | null;
+  isCheckingIn?: boolean;
   isRejectingDeposit?: boolean;
   isReminding: boolean;
   isRequestingReschedule: boolean;
   onClose: () => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => Promise<boolean>;
+  onCheckIn?: (bookingId: string) => Promise<boolean>;
   onRejectDeposit?: (bookingId: string, bookingCode: string, reason?: string) => Promise<boolean>;
   onOpenCheckout: (booking: BookingWithRelations) => void;
+  onScheduleRetouch?: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
 }
@@ -82,10 +110,16 @@ const PROOF_COLOR_TO_TONE: Record<'green' | 'orange' | 'purple' | 'gray', Status
 
 export function BookingQuickPopover({
   booking,
+  allBookings = [],
   allServices,
+  clients = [],
+  loyaltyProgram = null,
+  loyaltyStamps = [],
   paymentSplits,
   cashEntries = [],
   serverNowIso,
+  noShowThreshold = 2,
+  touchUpDays: touchUpDaysProp,
   salonName,
   googleReviewUrl = null,
   currency,
@@ -93,13 +127,16 @@ export function BookingQuickPopover({
   canViewClients = true,
   canManageIntegrations = false,
   busyStatus = null,
+  isCheckingIn = false,
   isRejectingDeposit = false,
   isReminding,
   isRequestingReschedule,
   onClose,
   onUpdateStatus,
+  onCheckIn,
   onRejectDeposit,
   onOpenCheckout,
+  onScheduleRetouch,
   onSendReminder,
   onRequestReschedule,
 }: BookingQuickPopoverProps) {
@@ -116,23 +153,79 @@ export function BookingQuickPopover({
     bookingId: string;
     message: string;
   } | null>(null);
+  const [clientPackages, setClientPackages] = useState<ClientPackageSummaryRow[]>([]);
+
+  const packageSyncKey = booking
+    ? `popover-pkg|${booking.clientId}|${booking.id}`
+    : 'popover-pkg-closed';
+
+  useExternalSync(packageSyncKey, async (signal, key) => {
+    if (key === 'popover-pkg-closed' || !booking) {
+      setClientPackages([]);
+      return;
+    }
+    try {
+      const timeoutSignal = AbortSignal.timeout(10_000);
+      const effectiveSignal =
+        typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([signal, timeoutSignal])
+          : signal;
+      const active = await fetchActiveClientPackages(
+        booking.clientId,
+        booking.serviceId,
+        effectiveSignal,
+      );
+      if (!signal.aborted) setClientPackages(active);
+    } catch {
+      if (!signal.aborted) setClientPackages([]);
+    }
+  });
+
+  const lastCompletedBooking = useMemo(() => {
+    if (!booking) return null;
+    const pool = allBookings.length > 0 ? allBookings : (adminData?.bookings ?? []);
+    const pastVisits = pool
+      .filter(
+        (item) =>
+          item.clientId === booking.clientId &&
+          item.id !== booking.id &&
+          item.status === 'completed',
+      )
+      .toSorted((a, b) => Date.parse(b.startAt) - Date.parse(a.startAt));
+    return pastVisits[0] ?? null;
+  }, [allBookings, adminData?.bookings, booking]);
 
   if (!booking) {
     return (
-      <Dialog isOpen={false} onOpenChange={() => onClose()} width={500} padding={5}>
+      <Dialog isOpen={false} onOpenChange={() => onClose()} width={520} padding={5}>
         <VStack gap={2} />
       </Dialog>
     );
   }
 
+  const resolvedClients = clients.length > 0 ? clients : (adminData?.clients ?? []);
+  const fullClientProfile =
+    resolvedClients.find((c) => c.id === booking.clientId) ?? booking.client;
+  const parsedClientNotes = parseNailTechNotes(fullClientProfile.notes ?? '');
+  const techBadges = formatNailTechBadges(parsedClientNotes.profile);
+  const activeLoyaltyProgram = loyaltyProgram ?? adminData?.loyaltyProgram ?? null;
+  const activeLoyaltyStamps =
+    loyaltyStamps.length > 0 ? loyaltyStamps : (adminData?.loyaltyStamps ?? []);
+  const loyaltySummary = activeLoyaltyProgram
+    ? computeClientLoyaltySummary(activeLoyaltyProgram, activeLoyaltyStamps, booking.clientId)
+    : null;
+  const touchUpDays = normalizeTouchUpDays(
+    touchUpDaysProp ?? adminData?.settings.landingContent?.touchUpDays,
+  );
+
   const visibleActionError =
     actionError && actionError.bookingId === booking.id ? actionError.message : null;
-  const isBusy = Boolean(busyStatus) || isRejectingDeposit;
+  const isBusy = Boolean(busyStatus) || isRejectingDeposit || isCheckingIn;
   const allowedNext: readonly BookingStatus[] = BOOKING_TRANSITIONS[booking.status];
   const extraServiceNames = (booking.extraServiceIds ?? [])
     .map((id) => allServices.find((s) => s.id === id)?.name)
     .filter((name): name is string => Boolean(name));
-  const igHandle = booking.clientInstagram ?? booking.client.instagramHandle ?? null;
+  const igHandle = booking.clientInstagram ?? fullClientProfile.instagramHandle ?? null;
   const igUrl = buildInstagramProfileUrl(igHandle);
   const proofMeta = getProofBadgeMeta(booking);
   const hasDisplayableProof = isDisplayableProofImage(
@@ -158,6 +251,10 @@ export function BookingQuickPopover({
     booking.status !== 'canceled' &&
     booking.status !== 'no_show' &&
     (allowedNext.includes('completed') || balance.isUncollected || isPastUnclosed);
+  const isCheckedIn =
+    booking.attendanceStatus === 'confirmed' || Boolean(booking.attendanceConfirmedAt);
+  const canCheckIn =
+    booking.status === 'confirmed' && !isCheckedIn && Boolean(onCheckIn);
 
   const isCompleted = booking.status === 'completed';
   const whatsappChatHref = canOpenWhatsAppInbox
@@ -178,8 +275,20 @@ export function BookingQuickPopover({
         googleReviewUrl,
       })
     : null;
-  const clientProfileHref = clientasHref({ q: booking.client.phoneE164 });
+  const clientProfileHref = clientasHref({
+    clientId: booking.clientId,
+    q: booking.client.phoneE164,
+  });
   const headerSubtitle = `${formatDateShortInTimezone(booking.startAt, timezone)} · ${formatTimeInTimezone(booking.startAt, timezone)} – ${formatTimeInTimezone(booking.endAt, timezone)} (${formatDuration(booking.totalDurationMinutes)})`;
+
+  const hasClientContext = Boolean(
+    techBadges.length > 0 ||
+      loyaltySummary ||
+      clientPackages.length > 0 ||
+      fullClientProfile.noShowCount > 0 ||
+      lastCompletedBooking ||
+      parsedClientNotes.freeNotes,
+  );
 
   const handleClose = () => {
     setProofZoomOpen(false);
@@ -215,6 +324,18 @@ export function BookingQuickPopover({
         message: 'Error de conexión al actualizar la cita. Intenta de nuevo.',
       });
       return false;
+    }
+  };
+
+  const handleCheckInAction = async () => {
+    if (isBusy || !onCheckIn) return;
+    setActionError(null);
+    const ok = await onCheckIn(booking.id);
+    if (!ok) {
+      setActionError({
+        bookingId: booking.id,
+        message: 'No se pudo registrar la llegada. Intenta de nuevo.',
+      });
     }
   };
 
@@ -269,7 +390,7 @@ export function BookingQuickPopover({
         isOpen={Boolean(booking)}
         onOpenChange={handleDialogOpenChange}
         purpose="info"
-        width={500}
+        width={520}
         maxHeight="min(90dvh, calc(100dvh - 2rem))"
         padding={5}
       >
@@ -298,6 +419,7 @@ export function BookingQuickPopover({
                     onDismiss={() => setActionError(null)}
                   />
                 ) : null}
+
                 <HStack gap={2} align="center" wrap="wrap">
                   {isPastUnclosed ? (
                     <StatusTag tone="warning" showDot label="Pasada sin cerrar" />
@@ -307,6 +429,9 @@ export function BookingQuickPopover({
                       hasPaymentProof={Boolean(booking.paymentProofUrl)}
                     />
                   )}
+                  {isCheckedIn ? (
+                    <StatusTag tone="success" label="En salón" />
+                  ) : null}
                   {isBusy ? (
                     <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
                       Actualizando…
@@ -432,6 +557,95 @@ export function BookingQuickPopover({
                   </VStack>
                 </SurfaceCard>
 
+                {hasClientContext ? (
+                  <SurfaceCard tone="subtle" padded className="ad-pop-context">
+                    <VStack gap={2}>
+                      <HStack justify="between" align="center" gap={2} wrap="wrap">
+                        <Text type="supporting" weight="semibold" color="secondary">
+                          Ficha de la clienta
+                        </Text>
+                        {fullClientProfile.noShowCount > 0 ? (
+                          <StatusTag
+                            size="sm"
+                            tone={
+                              fullClientProfile.noShowCount >= noShowThreshold
+                                ? 'danger'
+                                : 'warning'
+                            }
+                            label={`${fullClientProfile.noShowCount} ${
+                              fullClientProfile.noShowCount === 1
+                                ? 'inasistencia'
+                                : 'inasistencias'
+                            }`}
+                            hasTabularNumbers
+                          />
+                        ) : (
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            0 inasistencias
+                          </Text>
+                        )}
+                      </HStack>
+
+                      {techBadges.length > 0 ? (
+                        <HStack gap={1.5} wrap="wrap" className="ad-pop-tech-chips">
+                          {techBadges.map((badge) => (
+                            <StatusTag
+                              key={badge.label}
+                              size="sm"
+                              tone={badge.tone}
+                              label={badge.label}
+                            />
+                          ))}
+                        </HStack>
+                      ) : null}
+
+                      {loyaltySummary || clientPackages.length > 0 ? (
+                        <HStack gap={1.5} wrap="wrap" align="center" className="ad-pop-loyalty-row">
+                          {loyaltySummary ? (
+                            <StatusTag
+                              size="sm"
+                              tone={loyaltySummary.isRewardReady ? 'success' : 'accent'}
+                              icon={<Sparkles size={12} aria-hidden="true" />}
+                              label={
+                                loyaltySummary.isRewardReady
+                                  ? `Premio listo (${loyaltySummary.currentStamps}/${loyaltySummary.stampsRequired})`
+                                  : `${loyaltySummary.currentStamps}/${loyaltySummary.stampsRequired} sellos`
+                              }
+                              hasTabularNumbers
+                            />
+                          ) : null}
+                          {clientPackages.map((pkg) => (
+                            <StatusTag
+                              key={pkg.id}
+                              size="sm"
+                              tone="info"
+                              icon={<Package size={12} aria-hidden="true" />}
+                              label={`${pkg.packageName} · ${pkg.remainingSessions}/${pkg.totalSessions}`}
+                              hasTabularNumbers
+                            />
+                          ))}
+                        </HStack>
+                      ) : null}
+
+                      {lastCompletedBooking ? (
+                        <HStack gap={1.5} align="center" wrap="wrap">
+                          <History size={13} aria-hidden="true" />
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            Última visita: {lastCompletedBooking.service.name} (
+                            {formatDateShortInTimezone(lastCompletedBooking.startAt, timezone)})
+                          </Text>
+                        </HStack>
+                      ) : null}
+
+                      {parsedClientNotes.freeNotes ? (
+                        <Text type="supporting" color="secondary" className="ad-pop-note">
+                          Nota de ficha: {parsedClientNotes.freeNotes}
+                        </Text>
+                      ) : null}
+                    </VStack>
+                  </SurfaceCard>
+                ) : null}
+
                 <SurfaceCard tone={balance.isFullyPaid ? 'subtle' : 'warning'} padded>
                   <HStack justify="between" align="center" wrap="wrap" gap={2}>
                     <VStack gap={0.5}>
@@ -463,12 +677,12 @@ export function BookingQuickPopover({
                 </SurfaceCard>
 
                 {booking.clientNotes ? (
-                  <Text type="supporting" color="secondary">
+                  <Text type="supporting" color="secondary" className="ad-pop-note">
                     Nota de la clienta: {booking.clientNotes}
                   </Text>
                 ) : null}
                 {booking.internalNotes ? (
-                  <Text type="supporting" color="secondary">
+                  <Text type="supporting" color="secondary" className="ad-pop-note">
                     Nota interna: {booking.internalNotes}
                   </Text>
                 ) : null}
@@ -478,8 +692,12 @@ export function BookingQuickPopover({
                   isPending={isPending}
                   isCompleted={isCompleted}
                   isPastUnclosed={isPastUnclosed}
+                  isFullyPaid={balance.isFullyPaid}
                   canCollect={canCollect}
                   canRemind={canRemind}
+                  canCheckIn={canCheckIn}
+                  isCheckingIn={isCheckingIn}
+                  touchUpDays={touchUpDays}
                   isBusy={isBusy}
                   busyStatus={busyStatus}
                   isReminding={isReminding}
@@ -496,6 +714,15 @@ export function BookingQuickPopover({
                   clientProfileHref={clientProfileHref}
                   onConfirm={() => void handleStatusAction('confirmed')}
                   onComplete={() => void handleStatusAction('completed')}
+                  onCheckIn={canCheckIn ? () => void handleCheckInAction() : undefined}
+                  onScheduleRetouch={
+                    onScheduleRetouch
+                      ? () => {
+                          handleClose();
+                          onScheduleRetouch(booking);
+                        }
+                      : undefined
+                  }
                   onNoShowDirect={() => void handleStatusAction('no_show')}
                   onCheckout={() => {
                     handleClose();

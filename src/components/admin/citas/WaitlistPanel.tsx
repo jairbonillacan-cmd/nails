@@ -31,6 +31,7 @@ interface WaitlistPanelProps {
   waitlist: WaitlistEntry[];
   services: Service[];
   salonName: string;
+  embedded?: boolean;
   onStatusUpdated: (message: string) => Promise<void>;
   onBookEntry: (entry: WaitlistEntry) => void;
 }
@@ -39,6 +40,7 @@ export function WaitlistPanel({
   waitlist,
   services,
   salonName,
+  embedded = false,
   onStatusUpdated,
   onBookEntry,
 }: WaitlistPanelProps) {
@@ -65,6 +67,7 @@ export function WaitlistPanel({
       const res = await fetch('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           kind: 'waitlist',
           id: waitlistId,
@@ -89,20 +92,10 @@ export function WaitlistPanel({
     }
   };
 
-  return (
-    <SurfaceCard
-      title="Lista de espera"
-      headingLevel={2}
-      actions={
-        <StatusTag
-          label={`${waitlist.length} ${waitlist.length === 1 ? 'clienta' : 'clientas'}`}
-          tone="neutral"
-          hasTabularNumbers
-        />
-      }
-    >
+  const listBody = (
+    <>
       {errorMessage ? (
-        <VStack paddingInline={5} paddingBlockStart={3} gap={0}>
+        <VStack paddingInline={embedded ? 0 : 5} paddingBlockStart={embedded ? 0 : 3} gap={0}>
           <Banner
             status="error"
             role="alert"
@@ -263,6 +256,26 @@ export function WaitlistPanel({
           }
         />
       ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return <VStack gap={3}>{listBody}</VStack>;
+  }
+
+  return (
+    <SurfaceCard
+      title="Lista de espera"
+      headingLevel={2}
+      actions={
+        <StatusTag
+          label={`${waitlist.length} ${waitlist.length === 1 ? 'clienta' : 'clientas'}`}
+          tone="neutral"
+          hasTabularNumbers
+        />
+      }
+    >
+      {listBody}
     </SurfaceCard>
   );
 }

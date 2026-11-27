@@ -1,33 +1,33 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useAdminData,
   type AdminOverviewPayload,
 } from '@/components/admin/AdminProvider';
-import { agendaHref } from '@/lib/admin-links';
+import {
+  computeBookingBalance,
+  isPendingDepositStatus,
+} from '@/lib/booking/balance';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
+import { useAgendaUrlState } from '@/lib/hooks/useAgendaUrlState';
+import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import type { BookingWithRelations } from '@/lib/types';
 import { phonesMatchE164 } from '@/lib/format';
-import type { AgendaRange } from './BookingsFiltersBar';
 import {
-  filterBookingsForListRange,
-  filterBookingsForTab,
+  filterBookingsForAgendaStatus,
+  filterBookingsForListDate,
 } from './BookingsListView';
 import type { NewBookingPrefill } from './NewBookingDialog';
 import { shiftDateKey } from './scheduleGridGeometry';
 
 export function useCitasWorkspace() {
   const { data: providerData, refresh } = useAdminData();
-  const router = useRouter();
-  const searchParams = useSearchParams();
 
   const overviewQuery = useAdminCachedQuery<AdminOverviewPayload>(
     providerData ? ADMIN_CACHE_KEYS.overview : null,
@@ -40,39 +40,46 @@ export function useCitasWorkspace() {
   );
 
   const data = overviewQuery.data ?? providerData;
+  const tz = data?.settings.timezone || 'America/Mexico_City';
+  const todayKey = data?.serverTodayKey ?? '';
+  const tomorrowKey = todayKey ? shiftDateKey(todayKey, 1) : '';
+  const isSpecialistOnly = Boolean(
+    data && data.session.user.role === 'specialist' && data.session.user.staffMemberId,
+  );
+  const lockedStaffId = isSpecialistOnly ? (data?.session.user.staffMemberId ?? null) : null;
 
-  const paramCollect = searchParams.get('collect')?.trim() ?? '';
-  const paramNew = searchParams.get('new')?.trim() ?? '';
-  const paramClientName = searchParams.get('clientName')?.trim() ?? '';
-  const paramClientPhone = searchParams.get('clientPhone')?.trim() ?? '';
-  const paramClientInstagram = searchParams.get('clientInstagram')?.trim() ?? '';
-  const paramStaffId = searchParams.get('staffId')?.trim() ?? '';
-  const paramQuery = searchParams.get('q')?.trim() ?? '';
-  const paramDate = searchParams.get('date')?.trim() ?? '';
-  const paramStaff = searchParams.get('staff')?.trim() ?? '';
-  const paramTab = searchParams.get('tab')?.trim() ?? '';
+  const orderedStaff = useMemo(
+    () =>
+      (data?.staff ?? [])
+        .filter((s) => s.isActive)
+        .toSorted((a, b) => a.displayOrder - b.displayOrder),
+    [data?.staff],
+  );
+  const validStaffIds = useMemo(
+    () => new Set(orderedStaff.map((s) => s.id)),
+    [orderedStaff],
+  );
+  const allStaffColorIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    orderedStaff.forEach((st, idx) => map.set(st.id, idx % 4));
+    return map;
+  }, [orderedStaff]);
 
-  const [tab, setTab] = useState('upcoming');
-  const isNarrowScreen = useIsNarrowScreen();
-  const [viewModeChoice, setViewMode] = useState<'schedule' | 'list' | null>(null);
-  const viewMode = viewModeChoice ?? (isNarrowScreen ? 'list' : 'schedule');
-  const [agendaRange, setAgendaRange] = useState<AgendaRange>('today');
-  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>(() => {
-    if (
-      paramStaff &&
-      providerData &&
-      !(
-        providerData.session.user.role === 'specialist' &&
-        providerData.session.user.staffMemberId
-      ) &&
-      providerData.staff.some((s) => s.isActive && s.id === paramStaff)
-    ) {
-      return paramStaff;
-    }
-    return 'all';
+  const urlState = useAgendaUrlState({
+    todayKey,
+    lockedStaffId,
+    validStaffIds,
   });
-  const [search, setSearch] = useState('');
-  const [selectedVisualDate, setSelectedVisualDate] = useState<string | null>(null);
+
+  const [searchDraft, setSearchDraft] = useState<{ baseQ: string; value: string } | null>(null);
+  const search =
+    searchDraft && searchDraft.baseQ === urlState.q ? searchDraft.value : urlState.q;
+
+  const handleChangeSearch = (nextValue: string) => {
+    setSearchDraft({ baseQ: urlState.q, value: nextValue });
+    urlState.setSearch(nextValue);
+  };
+
   const [quickFinderOpen, setQuickFinderOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualInitStaffId, setManualInitStaffId] = useState('any');
@@ -83,92 +90,63 @@ export function useCitasWorkspace() {
   const [checkoutSessionKey, setCheckoutSessionKey] = useState(0);
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockSessionKey, setBlockSessionKey] = useState(0);
-  const lastHandledUrlKeyRef = useRef('');
-  const lastParamStaffRef = useRef(paramStaff);
+  const lastHandledOneShotKeyRef = useRef('');
 
-  const tz = data?.settings.timezone || 'America/Mexico_City';
-  const urlSyncKey = data
-    ? `citas-ready|${paramCollect}|${paramNew}|${paramClientName}|${paramClientPhone}|${paramClientInstagram}|${paramStaffId}|${paramQuery}|${paramDate}|${paramStaff}|${paramTab}`
-    : 'citas-loading';
+  const { oneShot } = urlState;
+  const oneShotSyncKey =
+    data && urlState.hasOneShotParams
+      ? `oneshot|${oneShot.collectId ?? ''}|${oneShot.isNew ? '1' : '0'}|${oneShot.clientName}|${oneShot.clientPhone}|${oneShot.clientInstagram}|${oneShot.staffId}|${oneShot.serviceId}`
+      : 'oneshot-idle';
 
-  useExternalSync(urlSyncKey, async (signal, key) => {
-    if (signal.aborted || !key.startsWith('citas-ready') || !data) return;
-    if (lastHandledUrlKeyRef.current === key) return;
-    lastHandledUrlKeyRef.current = key;
+  useExternalSync(oneShotSyncKey, async (signal, key) => {
+    if (signal.aborted || key === 'oneshot-idle' || !data) return;
+    if (lastHandledOneShotKeyRef.current === key) return;
+    lastHandledOneShotKeyRef.current = key;
 
-    const isSpecialist =
-      data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
-    if (!isSpecialist) {
-      if (paramStaff && data.staff.some((s) => s.isActive && s.id === paramStaff)) {
-        setSelectedStaffFilter(paramStaff);
-        setTab((prev) => (prev === 'waitlist' ? 'upcoming' : prev));
-      } else if (paramStaff === 'all' || (lastParamStaffRef.current && !paramStaff)) {
-        setSelectedStaffFilter('all');
-      }
-    }
-    lastParamStaffRef.current = paramStaff;
-
-    if (paramTab === 'waitlist') {
-      setTab('waitlist');
-      return;
-    }
-    if (paramTab === 'unconfirmed' || paramTab === 'pending') {
-      setTab('unconfirmed');
-      setViewMode('list');
-      return;
-    }
-    if (paramDate && /^\d{4}-\d{2}-\d{2}$/.test(paramDate)) {
-      setSelectedVisualDate(paramDate);
-      setTab('upcoming');
-      setViewMode('schedule');
-      if (paramDate === data.serverTodayKey) {
-        setAgendaRange('today');
-      } else if (paramDate === shiftDateKey(data.serverTodayKey, 1)) {
-        setAgendaRange('tomorrow');
-      } else {
-        setAgendaRange('today');
-      }
-      return;
-    }
-    if (paramCollect) {
-      const target = data.bookings.find((b) => b.id === paramCollect);
+    if (oneShot.collectId) {
+      const target = data.bookings.find((b) => b.id === oneShot.collectId);
       if (target) {
         setPopoverBookingId(null);
         setCheckoutBookingId(target.id);
         setCheckoutSessionKey((prev) => prev + 1);
-        router.replace(agendaHref(), { scroll: false });
-        return;
       }
+      urlState.clearOneShotParams();
+      return;
     }
-    if (paramNew === '1') {
-      const requestedStaffId = paramStaffId || paramStaff;
+
+    if (oneShot.isNew) {
+      const requestedStaffId = oneShot.staffId || (urlState.staffFilter !== 'all' ? urlState.staffFilter : '');
       const validRequestedStaffId =
-        !isSpecialist &&
+        !isSpecialistOnly &&
         requestedStaffId &&
         data.staff.some((s) => s.isActive && s.id === requestedStaffId)
           ? requestedStaffId
           : '';
-      const resolvedStaffId = isSpecialist
-        ? (data.session.user.staffMemberId ?? 'any')
-        : validRequestedStaffId || 'any';
-      const safeClientName = paramClientName.slice(0, 120);
-      const safeClientPhone = paramClientPhone.slice(0, 30);
+      const resolvedStaffId = lockedStaffId ?? (validRequestedStaffId || 'any');
+      const safeClientName = oneShot.clientName.slice(0, 120);
+      const safeClientPhone = oneShot.clientPhone.slice(0, 30);
       const matchedClient = safeClientPhone
         ? data.clients.find((c) => phonesMatchE164(c.phoneE164, safeClientPhone))
         : undefined;
       const resolvedInstagram = (
-        paramClientInstagram ||
+        oneShot.clientInstagram ||
         matchedClient?.instagramHandle ||
         ''
       ).slice(0, 120);
+      const validServiceId =
+        oneShot.serviceId && data.services.some((s) => s.isActive && s.id === oneShot.serviceId)
+          ? oneShot.serviceId
+          : '';
       const hasPrefillFields = Boolean(
         safeClientName ||
           safeClientPhone ||
           resolvedInstagram ||
+          validServiceId ||
           resolvedStaffId !== 'any',
       );
       const nextPrefill: NewBookingPrefill | null = hasPrefillFields
         ? {
+            ...(validServiceId ? { serviceId: validServiceId } : {}),
             ...(safeClientName ? { clientName: safeClientName } : {}),
             ...(safeClientPhone ? { clientPhone: safeClientPhone } : {}),
             ...(resolvedInstagram ? { clientInstagram: resolvedInstagram } : {}),
@@ -179,100 +157,106 @@ export function useCitasWorkspace() {
       setManualPrefill(nextPrefill);
       setManualSessionKey((prev) => prev + 1);
       setManualOpen(true);
-      router.replace(agendaHref(), { scroll: false });
-      return;
-    }
-    if (paramQuery) {
-      if (!isSpecialist && !paramStaff) {
-        setSelectedStaffFilter('all');
-      }
-      setSearch(paramQuery);
-      setViewMode('list');
-      const qLower = paramQuery.toLowerCase();
-      const matched = data.bookings.find(
-        (b) =>
-          b.bookingCode.toLowerCase() === qLower ||
-          b.id.toLowerCase() === qLower ||
-          b.client.fullName.toLowerCase().includes(qLower) ||
-          b.client.phoneE164.toLowerCase().includes(qLower),
-      );
-      if (matched) {
-        setTab(
-          matched.status === 'pending_confirmation' || matched.status === 'pending_payment'
-            ? 'unconfirmed'
-            : matched.status === 'completed' || matched.status === 'no_show'
-              ? 'past'
-              : matched.status === 'canceled'
-                ? 'canceled'
-                : 'upcoming',
-        );
-      }
+      urlState.clearOneShotParams();
     }
   });
 
-  const orderedStaff = useMemo(
-    () =>
-      (data?.staff ?? [])
-        .filter((s) => s.isActive)
-        .toSorted((a, b) => a.displayOrder - b.displayOrder),
-    [data?.staff],
-  );
-  const allStaffColorIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    orderedStaff.forEach((st, idx) => map.set(st.id, idx % 4));
-    return map;
-  }, [orderedStaff]);
-
-  const tabFilteredBookings = useMemo(() => {
+  const statusFilteredBookings = useMemo(() => {
     if (!data) return [];
-    const filtered = filterBookingsForTab({
+    const filtered = filterBookingsForAgendaStatus({
       bookings: data.bookings,
+      paymentSplits: data.paymentSplits,
+      cashEntries: data.cashEntries,
       serverNowIso: data.serverNowIso,
-      tab,
+      status: urlState.status,
       search,
-      selectedStaffFilter,
+      selectedStaffFilter: urlState.staffFilter,
     });
     if (filtered.length > 0 || !search.trim()) {
       return filtered;
     }
-    return filterBookingsForTab({
+    return filterBookingsForAgendaStatus({
       bookings: data.bookings,
+      paymentSplits: data.paymentSplits,
+      cashEntries: data.cashEntries,
       serverNowIso: data.serverNowIso,
-      tab: 'all',
+      status: 'all',
       search,
-      selectedStaffFilter,
+      selectedStaffFilter: urlState.staffFilter,
     });
-  }, [data, tab, search, selectedStaffFilter]);
+  }, [data, urlState.status, search, urlState.staffFilter]);
 
   const listBookings = useMemo(
     () =>
       data
-        ? filterBookingsForListRange({
-            tabFiltered: tabFilteredBookings,
-            tab,
+        ? filterBookingsForListDate({
+            filtered: statusFilteredBookings,
+            status: urlState.status,
             search,
-            agendaRange,
-            todayKey: data.serverTodayKey,
+            dateKey: urlState.dateKey,
             timezone: tz,
           })
         : [],
-    [data, tabFilteredBookings, tab, search, agendaRange, tz],
+    [data, statusFilteredBookings, urlState.status, search, urlState.dateKey, tz],
   );
 
-  const todayKey = data?.serverTodayKey ?? '';
-  const tomorrowKey = todayKey ? shiftDateKey(todayKey, 1) : '';
-  const isSpecialistOnly = Boolean(
-    data && data.session.user.role === 'specialist' && data.session.user.staffMemberId,
-  );
-  const lockedStaffId = isSpecialistOnly ? (data?.session.user.staffMemberId ?? null) : null;
+  const nowMs = useCurrentClockTick(data?.serverNowIso ?? '');
+
+  const chipCounts = useMemo(() => {
+    if (!data) {
+      return {
+        pendingCount: 0,
+        uncollectedCount: 0,
+        uncollectedTotalCents: 0,
+        todayWaitingCount: 0,
+        totalWaitingCount: 0,
+      };
+    }
+    const scopedBookings =
+      urlState.staffFilter === 'all'
+        ? data.bookings
+        : data.bookings.filter((b) => b.staffId === urlState.staffFilter);
+
+    let pendingCount = 0;
+    let uncollectedCount = 0;
+    let uncollectedTotalCents = 0;
+    for (const booking of scopedBookings) {
+      if (isPendingDepositStatus(booking.status)) {
+        pendingCount += 1;
+      }
+      const balance = computeBookingBalance(
+        booking,
+        data.paymentSplits,
+        data.cashEntries,
+        nowMs,
+      );
+      if (balance.isUncollected) {
+        uncollectedCount += 1;
+        uncollectedTotalCents += balance.remainingCents;
+      }
+    }
+
+    const activeWaiting = data.waitlist.filter((w) => w.status === 'waiting');
+    const todayWaitingCount = activeWaiting.filter(
+      (w) => w.desiredDate === urlState.dateKey || w.desiredDate === todayKey,
+    ).length;
+
+    return {
+      pendingCount,
+      uncollectedCount,
+      uncollectedTotalCents,
+      todayWaitingCount,
+      totalWaitingCount: activeWaiting.length,
+    };
+  }, [data, urlState.staffFilter, urlState.dateKey, todayKey, nowMs]);
 
   const openManualModal = (preferredStaffId = 'any', prefill: NewBookingPrefill | null = null) => {
     const resolvedStaff =
       lockedStaffId ??
       (preferredStaffId !== 'any'
         ? preferredStaffId
-        : selectedStaffFilter !== 'all'
-          ? selectedStaffFilter
+        : urlState.staffFilter !== 'all'
+          ? urlState.staffFilter
           : 'any');
     setManualInitStaffId(resolvedStaff);
     setManualPrefill(prefill);
@@ -286,13 +270,6 @@ export function useCitasWorkspace() {
     setCheckoutSessionKey((prev) => prev + 1);
   };
 
-  const handleSelectRange = (nextRange: AgendaRange) => {
-    setAgendaRange(nextRange);
-    setSelectedVisualDate(
-      nextRange === 'today' ? todayKey : nextRange === 'tomorrow' ? tomorrowKey : null,
-    );
-  };
-
   return {
     data,
     tz,
@@ -302,21 +279,26 @@ export function useCitasWorkspace() {
     lockedStaffId,
     orderedStaff,
     allStaffColorIndex,
-    tabFilteredBookings,
+    statusFilteredBookings,
     listBookings,
+    chipCounts,
     refresh,
-    tab,
-    setTab,
-    viewMode,
-    setViewMode,
-    agendaRange,
-    setAgendaRange,
-    selectedStaffFilter,
-    setSelectedStaffFilter,
+    explicitView: urlState.explicitView,
+    resolvedView: urlState.resolvedView,
+    isNarrow: urlState.isNarrow,
+    isHydrated: urlState.isHydrated,
+    dateKey: urlState.dateKey,
+    selectedStaffFilter: urlState.staffFilter,
+    status: urlState.status,
     search,
-    setSearch,
-    selectedVisualDate,
-    setSelectedVisualDate,
+    waitlistOpen: urlState.waitlistOpen,
+    setView: urlState.setView,
+    setDate: urlState.setDate,
+    setStaff: urlState.setStaff,
+    setStatus: urlState.setStatus,
+    setWaitlistOpen: urlState.setWaitlistOpen,
+    setSearch: handleChangeSearch,
+    updateFilters: urlState.updateFilters,
     quickFinderOpen,
     setQuickFinderOpen,
     manualOpen,
@@ -338,6 +320,5 @@ export function useCitasWorkspace() {
     },
     openManualModal,
     openCheckoutDrawer,
-    handleSelectRange,
   };
 }

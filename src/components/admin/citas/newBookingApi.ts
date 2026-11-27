@@ -29,13 +29,17 @@ export async function fetchNewBookingRangeSlots(
     addonIds: readonly string[];
     staffId: string;
     startDate: string;
+    days?: number;
+    limit?: number;
   },
   signal: AbortSignal,
-): Promise<QuickSlotOption[]> {
+): Promise<{ slots: QuickSlotOption[]; error: string | null }> {
+  const days = Math.max(1, Math.min(45, Math.round(params.days ?? 14)));
+  const limit = Math.max(1, Math.min(48, Math.round(params.limit ?? 16)));
   const qs = new URLSearchParams({
     mode: 'range',
     serviceId: params.serviceId,
-    days: '14',
+    days: String(days),
   });
   if (params.startDate && ISO_DATE_RE.test(params.startDate)) {
     qs.set('startDate', params.startDate);
@@ -45,22 +49,37 @@ export async function fetchNewBookingRangeSlots(
   if (params.addonIds.length > 0) qs.set('addonIds', params.addonIds.join(','));
   if (params.staffId && params.staffId !== 'any') qs.set('staffId', params.staffId);
 
-  const res = await fetch(`/api/availability?${qs.toString()}`, { signal });
-  if (signal.aborted || !res.ok) return [];
+  const timeoutSignal = AbortSignal.timeout(15_000);
+  const fetchSignal =
+    typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([signal, timeoutSignal])
+      : signal;
+
+  const res = await fetch(`/api/availability?${qs.toString()}`, { signal: fetchSignal });
+  if (signal.aborted) return { slots: [], error: null };
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { error?: string } | null;
+    return {
+      slots: [],
+      error: err?.error || 'No se pudieron consultar horarios disponibles.',
+    };
+  }
 
   const json = (await res.json()) as {
     days?: Array<{ date: string; slots: AvailableSlot[] }>;
   };
-  if (signal.aborted) return [];
+  if (signal.aborted) return { slots: [], error: null };
 
   const flattened: QuickSlotOption[] = [];
   for (const day of json.days ?? []) {
     for (const slot of day.slots) {
       flattened.push({ ...slot, date: day.date });
-      if (flattened.length >= 16) return flattened;
+      if (flattened.length >= limit) {
+        return { slots: flattened, error: null };
+      }
     }
   }
-  return flattened;
+  return { slots: flattened, error: null };
 }
 
 export type SubmitAdminBookingResult =

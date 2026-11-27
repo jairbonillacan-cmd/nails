@@ -1,246 +1,162 @@
 'use client';
 
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Badge } from '@astryxdesign/core/Badge';
-import { TabList, Tab } from '@astryxdesign/core/TabList';
+import { Selector } from '@astryxdesign/core/Selector';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { AlertTriangle, CalendarClock, List as ListIcon, Search } from 'lucide-react';
-import { FilterPillBar, StatusTag, SurfaceCard } from '@/components/ui';
-import type { BookingWithRelations, StaffMember } from '@/lib/types';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Search,
+  X,
+} from 'lucide-react';
+import { FilterPillBar } from '@/components/ui';
+import type { AgendaStatusParam, AgendaViewParam } from '@/lib/admin-links';
+import { formatCurrency, formatDateShortInTimezone } from '@/lib/format';
+import type { StaffMember } from '@/lib/types';
+import { shiftDateKey } from './scheduleGridGeometry';
 
-export type AgendaRange = 'today' | 'tomorrow' | 'week';
-
-interface AgendaRangeControlsProps {
-  agendaRange: AgendaRange;
-  isDateRangeActive: boolean;
-  isTodaySelected: boolean;
-  isTomorrowSelected: boolean;
+interface AgendaToolbarProps {
+  resolvedView: AgendaViewParam | null;
+  dateKey: string;
+  todayKey: string;
+  timezone: string;
+  selectedStaffFilter: string;
   search: string;
-  listCount?: number;
-  onSelectRange: (range: AgendaRange) => void;
-}
-
-export function AgendaRangeControls({
-  agendaRange,
-  isDateRangeActive,
-  isTodaySelected,
-  isTomorrowSelected,
-  search,
-  listCount,
-  onSelectRange,
-}: AgendaRangeControlsProps) {
-  const activeRangeValue: AgendaRange | '' = isTodaySelected
-    ? 'today'
-    : isTomorrowSelected
-      ? 'tomorrow'
-      : agendaRange === 'week'
-        ? 'week'
-        : '';
-
-  if (isDateRangeActive) {
-    return (
-      <FilterPillBar<AgendaRange | ''>
-        ariaLabel="Rango de fechas"
-        mode="pills"
-        size="sm"
-        value={activeRangeValue}
-        onChange={(next) => {
-          if (next === 'today' || next === 'tomorrow' || next === 'week') {
-            onSelectRange(next);
-          }
-        }}
-        options={[
-          { value: 'today', label: 'Hoy' },
-          { value: 'tomorrow', label: 'Mañana' },
-          { value: 'week', label: 'Semana' },
-        ]}
-      />
-    );
-  }
-
-  if (search.trim()) {
-    return <StatusTag label="Buscando en todas las fechas" tone="neutral" />;
-  }
-
-  if (typeof listCount === 'number') {
-    return (
-      <Text type="supporting" color="secondary" hasTabularNumbers>
-        {listCount} {listCount === 1 ? 'cita encontrada' : 'citas encontradas'}
-      </Text>
-    );
-  }
-
-  return null;
-}
-
-interface AgendaStaffControlsProps {
   isSpecialistOnly: boolean;
   visibleStaff: StaffMember[];
   allStaffColorIndex: ReadonlyMap<string, number>;
-  selectedStaffFilter: string;
+  onChangeView: (view: AgendaViewParam) => void;
+  onChangeDate: (nextDateKey: string) => void;
   onChangeStaffFilter: (staffId: string) => void;
-}
-
-export function AgendaStaffControls({
-  isSpecialistOnly,
-  visibleStaff,
-  allStaffColorIndex,
-  selectedStaffFilter,
-  onChangeStaffFilter,
-}: AgendaStaffControlsProps) {
-  if (isSpecialistOnly || visibleStaff.length <= 1) return null;
-
-  return (
-    <FilterPillBar<string>
-      ariaLabel="Filtrar por profesional"
-      mode="pills"
-      size="sm"
-      value={selectedStaffFilter}
-      onChange={onChangeStaffFilter}
-      options={[
-        {
-          value: 'all',
-          label: 'Todas',
-          icon: (
-            <Text className="ad-dot" data-idx="all" aria-hidden="true">
-              {'\u200B'}
-            </Text>
-          ),
-        },
-        ...visibleStaff.map((st) => ({
-          value: st.id,
-          label: st.name,
-          icon: (
-            <Text
-              className="ad-dot"
-              data-idx={String(allStaffColorIndex.get(st.id) ?? 0)}
-              aria-hidden="true"
-            >
-              {'\u200B'}
-            </Text>
-          ),
-        })),
-      ]}
-    />
-  );
-}
-
-interface BookingsFiltersBarProps {
-  tab: string;
-  viewMode: 'schedule' | 'list';
-  agendaRange: AgendaRange;
-  selectedStaffFilter: string;
-  search: string;
-  pendingConfirmationsCount: number;
-  waitlistCount: number;
-  isDateRangeActive: boolean;
-  isTodaySelected: boolean;
-  isTomorrowSelected: boolean;
-  listCount: number;
-  isSpecialistOnly: boolean;
-  visibleStaff: StaffMember[];
-  allStaffColorIndex: ReadonlyMap<string, number>;
-  flaggedBookings: BookingWithRelations[];
-  noShowThreshold: number;
-  showSecondaryRow?: boolean;
-  onChangeTab: (nextTab: string) => void;
   onChangeSearch: (value: string) => void;
-  onChangeViewMode: (mode: 'schedule' | 'list') => void;
-  onSelectRange: (range: AgendaRange) => void;
-  onChangeStaffFilter: (staffId: string) => void;
-  onInspectFlaggedBooking: (bookingId: string) => void;
 }
 
-export function BookingsFiltersBar({
-  tab,
-  viewMode,
-  agendaRange,
+export function AgendaToolbar({
+  resolvedView,
+  dateKey,
+  todayKey,
+  timezone,
   selectedStaffFilter,
   search,
-  pendingConfirmationsCount,
-  waitlistCount,
-  isDateRangeActive,
-  isTodaySelected,
-  isTomorrowSelected,
-  listCount,
   isSpecialistOnly,
   visibleStaff,
   allStaffColorIndex,
-  flaggedBookings,
-  noShowThreshold,
-  showSecondaryRow = true,
-  onChangeTab,
-  onChangeSearch,
-  onChangeViewMode,
-  onSelectRange,
+  onChangeView,
+  onChangeDate,
   onChangeStaffFilter,
-  onInspectFlaggedBooking,
-}: BookingsFiltersBarProps) {
+  onChangeSearch,
+}: AgendaToolbarProps) {
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const isMobileSearchExpanded = mobileSearchOpen || Boolean(search.trim());
+  const isWeekView = resolvedView === 'week';
+  const stepDays = isWeekView ? 7 : 1;
+  const isToday = dateKey === todayKey;
+
+  const formattedDay = dateKey
+    ? formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)
+    : 'Hoy';
+  const formattedWeekRange = dateKey
+    ? `${formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)} – ${formatDateShortInTimezone(`${shiftDateKey(dateKey, 6)}T18:00:00Z`, timezone)}`
+    : 'Semana';
+  const dateButtonLabel = isWeekView
+    ? formattedWeekRange
+    : isToday
+      ? 'Hoy'
+      : formattedDay;
+
+  const showStaffSelect = !isSpecialistOnly && visibleStaff.length > 1;
+
   return (
-    <VStack gap={2}>
-      {flaggedBookings.length > 0 && tab !== 'waitlist' ? (
-        <SurfaceCard tone="warning" padded>
-          <HStack justify="between" align="center" wrap="wrap" gap={2}>
-            <HStack gap={2} align="center" wrap="wrap" className="rb-grow">
-              <AlertTriangle size={15} aria-hidden="true" />
-              <Text size="sm" weight="semibold" hasTabularNumbers>
-                Atención: {flaggedBookings.length} cita
-                {flaggedBookings.length === 1 ? '' : 's'} de clientas con {noShowThreshold}+
-                inasistencias previas (anticipo obligatorio)
-              </Text>
-            </HStack>
-            <HStack gap={1.5} wrap="wrap">
-              {flaggedBookings.slice(0, 3).map((bk) => (
-                <Button
-                  key={bk.id}
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  label={`${bk.client.fullName} (${bk.client.noShowCount})`}
-                  onClick={() => onInspectFlaggedBooking(bk.id)}
-                />
-              ))}
-            </HStack>
-          </HStack>
-        </SurfaceCard>
-      ) : null}
+    <VStack className="ad-agenda-toolbar" gap={1.5}>
+      <HStack className="ad-agenda-toolbar-row" align="center" justify="between" gap={2}>
+        <HStack className="ad-agenda-date-nav" align="center" gap={1}>
+          <Button
+            type="button"
+            label={isWeekView ? 'Semana anterior' : 'Día anterior'}
+            isIconOnly
+            size="sm"
+            variant="secondary"
+            icon={<ChevronLeft size={15} aria-hidden="true" />}
+            onClick={() => onChangeDate(shiftDateKey(dateKey, -stepDays))}
+          />
+          <Button
+            type="button"
+            label={dateButtonLabel}
+            size="sm"
+            variant={isToday && !isWeekView ? 'secondary' : 'ghost'}
+            onClick={() => onChangeDate(todayKey)}
+          />
+          <Button
+            type="button"
+            label={isWeekView ? 'Semana siguiente' : 'Día siguiente'}
+            isIconOnly
+            size="sm"
+            variant="secondary"
+            icon={<ChevronRight size={15} aria-hidden="true" />}
+            onClick={() => onChangeDate(shiftDateKey(dateKey, stepDays))}
+          />
+        </HStack>
 
-      <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={2}>
-        <VStack style={{ minWidth: 0, maxWidth: '100%' }}>
-          <TabList value={tab} onChange={onChangeTab}>
-            <Tab value="upcoming" label="Próximas" />
-            <Tab
-              value="unconfirmed"
-              label="Por confirmar"
-              endContent={
-                pendingConfirmationsCount > 0 ? (
-                  <Badge variant="neutral" label={String(pendingConfirmationsCount)} />
-                ) : undefined
-              }
-            />
-            <Tab value="past" label="Pasadas" />
-            <Tab value="canceled" label="Canceladas" />
-            <Tab
-              value="waitlist"
-              label="Lista de espera"
-              endContent={
-                waitlistCount > 0 ? (
-                  <Badge variant="neutral" label={String(waitlistCount)} />
-                ) : undefined
-              }
-            />
-          </TabList>
-        </VStack>
+        <FilterPillBar<AgendaViewParam | ''>
+          ariaLabel="Vista de agenda"
+          mode="segmented"
+          size="sm"
+          value={resolvedView ?? ''}
+          onChange={(next) => {
+            if (next === 'day' || next === 'week' || next === 'list') {
+              onChangeView(next);
+            }
+          }}
+          options={[
+            { value: 'day', label: 'Día' },
+            { value: 'week', label: 'Semana' },
+            { value: 'list', label: 'Lista' },
+          ]}
+        />
 
-        <HStack
-          gap={2}
-          align="center"
-          wrap="wrap"
-          style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '100%' }}
-        >
+        {showStaffSelect ? (
+          <VStack className="ad-agenda-staff-select" gap={0}>
+            <Selector
+              label="Profesional"
+              isLabelHidden
+              size="sm"
+              width="100%"
+              value={selectedStaffFilter}
+              onChange={(next) => onChangeStaffFilter(next ?? 'all')}
+              options={[
+                {
+                  value: 'all',
+                  label: 'Todas las profesionales',
+                  icon: (
+                    <Text className="ad-dot" data-idx="all" aria-hidden="true">
+                      {'\u200B'}
+                    </Text>
+                  ),
+                },
+                ...visibleStaff.map((st) => ({
+                  value: st.id,
+                  label: st.name,
+                  icon: (
+                    <Text
+                      className="ad-dot"
+                      data-idx={String(allStaffColorIndex.get(st.id) ?? 0)}
+                      aria-hidden="true"
+                    >
+                      {'\u200B'}
+                    </Text>
+                  ),
+                })),
+              ]}
+            />
+          </VStack>
+        ) : null}
+
+        <VStack className="ad-agenda-search-desktop" gap={0}>
           <TextInput
             type="search"
             label="Buscar cita"
@@ -248,8 +164,7 @@ export function BookingsFiltersBar({
             placeholder="Buscar clienta o código..."
             startIcon={<Search size={14} aria-hidden="true" />}
             size="sm"
-            width="13.5rem"
-            containerStyle={{ flex: '1 1 13.5rem', minWidth: 0, maxWidth: '100%' }}
+            width="100%"
             hasClear
             autoCapitalize="none"
             hasAutoCorrect={false}
@@ -258,42 +173,162 @@ export function BookingsFiltersBar({
             value={search}
             onChange={onChangeSearch}
           />
-          {tab !== 'waitlist' ? (
-            <FilterPillBar<'schedule' | 'list'>
-              ariaLabel="Vista de agenda"
-              mode="segmented"
-              size="sm"
-              value={viewMode}
-              onChange={onChangeViewMode}
-              options={[
-                { value: 'schedule', label: 'Horario', icon: <CalendarClock size={14} aria-hidden="true" /> },
-                { value: 'list', label: 'Lista', icon: <ListIcon size={14} aria-hidden="true" /> },
-              ]}
-            />
-          ) : null}
-        </HStack>
+        </VStack>
+
+        <Button
+          type="button"
+          className="ad-agenda-search-toggle"
+          label={isMobileSearchExpanded ? 'Cerrar búsqueda' : 'Buscar cita'}
+          isIconOnly
+          size="sm"
+          variant={isMobileSearchExpanded ? 'primary' : 'secondary'}
+          icon={
+            isMobileSearchExpanded ? (
+              <X size={16} aria-hidden="true" />
+            ) : (
+              <Search size={16} aria-hidden="true" />
+            )
+          }
+          onClick={() => {
+            if (isMobileSearchExpanded) {
+              onChangeSearch('');
+              setMobileSearchOpen(false);
+            } else {
+              setMobileSearchOpen(true);
+            }
+          }}
+        />
       </HStack>
 
-      {tab !== 'waitlist' && showSecondaryRow ? (
-        <HStack justify="between" align="center" wrap="wrap" gap={2}>
-          <AgendaRangeControls
-            agendaRange={agendaRange}
-            isDateRangeActive={isDateRangeActive}
-            isTodaySelected={isTodaySelected}
-            isTomorrowSelected={isTomorrowSelected}
-            search={search}
-            listCount={listCount}
-            onSelectRange={onSelectRange}
+      {isMobileSearchExpanded ? (
+        <VStack className="ad-agenda-search ad-agenda-mobile-only" gap={0}>
+          <TextInput
+            type="search"
+            label="Buscar cita"
+            isLabelHidden
+            placeholder="Buscar clienta, servicio o código..."
+            startIcon={<Search size={14} aria-hidden="true" />}
+            size="sm"
+            width="100%"
+            hasClear
+            autoCapitalize="none"
+            hasAutoCorrect={false}
+            hasSpellCheck={false}
+            enterKeyHint="search"
+            value={search}
+            onChange={onChangeSearch}
           />
-          <AgendaStaffControls
-            isSpecialistOnly={isSpecialistOnly}
-            visibleStaff={visibleStaff}
-            allStaffColorIndex={allStaffColorIndex}
-            selectedStaffFilter={selectedStaffFilter}
-            onChangeStaffFilter={onChangeStaffFilter}
-          />
-        </HStack>
+        </VStack>
       ) : null}
     </VStack>
+  );
+}
+
+interface AgendaStatusChipsProps {
+  status: AgendaStatusParam;
+  pendingCount: number;
+  uncollectedCount: number;
+  uncollectedTotalCents: number;
+  currency: 'MXN' | 'USD';
+  todayWaitingCount: number;
+  totalWaitingCount: number;
+  waitlistOpen: boolean;
+  canViewWaitlist: boolean;
+  onChangeStatus: (nextStatus: AgendaStatusParam) => void;
+  onToggleWaitlist: () => void;
+}
+
+interface StatusChipDef {
+  readonly value: AgendaStatusParam;
+  readonly label: string;
+  readonly countText?: string;
+  readonly tone?: 'warning' | 'accent';
+}
+
+export function AgendaStatusChips({
+  status,
+  pendingCount,
+  uncollectedCount,
+  uncollectedTotalCents,
+  currency,
+  todayWaitingCount,
+  totalWaitingCount,
+  waitlistOpen,
+  canViewWaitlist,
+  onChangeStatus,
+  onToggleWaitlist,
+}: AgendaStatusChipsProps) {
+  const uncollectedSummary =
+    uncollectedCount > 0
+      ? uncollectedTotalCents > 0
+        ? `${uncollectedCount} · ${formatCurrency(uncollectedTotalCents, currency)}`
+        : String(uncollectedCount)
+      : undefined;
+
+  const chips: readonly StatusChipDef[] = [
+    { value: 'upcoming', label: 'Próximas' },
+    {
+      value: 'pending',
+      label: 'Por confirmar',
+      countText: pendingCount > 0 ? String(pendingCount) : undefined,
+      tone: pendingCount > 0 ? 'warning' : undefined,
+    },
+    {
+      value: 'uncollected',
+      label: 'Por cobrar',
+      countText: uncollectedSummary,
+      tone: uncollectedCount > 0 ? 'accent' : undefined,
+    },
+    { value: 'past', label: 'Pasadas' },
+    { value: 'canceled', label: 'Canceladas' },
+  ];
+
+  const waitlistLabel =
+    totalWaitingCount > 0 ? `${totalWaitingCount} en espera` : 'Lista de espera';
+  const waitlistTitle =
+    todayWaitingCount > 0
+      ? `${totalWaitingCount} en espera (${todayWaitingCount} para esta fecha/hoy)`
+      : 'Abrir panel de lista de espera';
+
+  return (
+    <nav aria-label="Filtros de estado de agenda" className="ad-agenda-chips">
+      {chips.map((chip) => {
+        const isActive =
+          status === chip.value ||
+          (chip.value === 'past' && status === 'completed');
+        return (
+          <button
+            key={chip.value}
+            type="button"
+            className="ad-agenda-chip"
+            data-active={isActive ? 'true' : undefined}
+            data-tone={chip.tone}
+            aria-pressed={isActive}
+            onClick={() => onChangeStatus(chip.value)}
+          >
+            {chip.label}
+            {chip.countText ? (
+              <Text className="ad-agenda-chip-count" hasTabularNumbers>
+                {chip.countText}
+              </Text>
+            ) : null}
+          </button>
+        );
+      })}
+
+      {canViewWaitlist ? (
+        <button
+          type="button"
+          className="ad-agenda-waitlist-chip"
+          data-active={waitlistOpen ? 'true' : undefined}
+          aria-pressed={waitlistOpen}
+          title={waitlistTitle}
+          onClick={onToggleWaitlist}
+        >
+          <Clock size={13} aria-hidden="true" />
+          {waitlistLabel}
+        </button>
+      ) : null}
+    </nav>
   );
 }

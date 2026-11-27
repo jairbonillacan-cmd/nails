@@ -6,11 +6,17 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
-import { CalendarPlus, PackageCheck, Sparkles } from 'lucide-react';
+import { CalendarPlus, MessageCircle, PackageCheck, Sparkles } from 'lucide-react';
 import { StatusTag, SurfaceCard } from '@/components/ui';
+import { buildCheckoutReceiptWhatsAppUrl } from '@/lib/booking/receipt';
 import { DEFAULT_TOUCH_UP_DAYS } from '@/lib/booking/recurrence';
 import type { BookingPaymentSummary } from '@/lib/payments/splits';
-import type { BookingWithRelations, LoyaltyStamp, PaymentSplit } from '@/lib/types';
+import type {
+  BookingWithRelations,
+  LoyaltyStamp,
+  PaymentSplit,
+  SalonSettings,
+} from '@/lib/types';
 import { formatCurrency } from '@/lib/format';
 import { PAYMENT_METHOD_LABELS } from './PaymentSplitsEditor';
 
@@ -118,7 +124,9 @@ export function CheckoutBalanceCard({
 interface CheckoutReceiptViewProps {
   booking: BookingWithRelations;
   completedState: CompletedCheckoutState;
-  currency: 'MXN' | 'USD';
+  salonSettings: Pick<SalonSettings, 'name' | 'currency' | 'timezone'>;
+  stampsCount?: number | null;
+  stampsRequired?: number | null;
   touchUpDays?: number;
   onScheduleRetouch: (booking: BookingWithRelations) => void;
 }
@@ -126,10 +134,30 @@ interface CheckoutReceiptViewProps {
 export function CheckoutReceiptView({
   booking,
   completedState,
-  currency,
+  salonSettings,
+  stampsCount = null,
+  stampsRequired = null,
   touchUpDays = DEFAULT_TOUCH_UP_DAYS,
   onScheduleRetouch,
 }: CheckoutReceiptViewProps) {
+  const currency = salonSettings.currency;
+  const receiptWaUrl = buildCheckoutReceiptWhatsAppUrl({
+    settings: salonSettings,
+    booking,
+    paidCents: completedState.summary.paidCents,
+    totalTipsCents: completedState.summary.totalTipsCents,
+    stampAwarded: Boolean(completedState.stampAwarded),
+    stampsCount,
+    stampsRequired,
+    redeemedPackageName: completedState.redeemedPackageName,
+    redeemedReward: completedState.redeemedReward,
+  });
+
+  const stampTagLabel =
+    typeof stampsCount === 'number' && typeof stampsRequired === 'number'
+      ? `+1 sello · ${stampsCount}/${stampsRequired}`
+      : '+1 sello';
+
   return (
     <VStack gap={4} className="fx-drawer-in">
       <Banner
@@ -150,7 +178,7 @@ export function CheckoutReceiptView({
               <Sparkles size={15} aria-hidden="true" />
               <Text weight="semibold">Sello sumado a su tarjeta</Text>
             </HStack>
-            <StatusTag label="+1 sello" tone="success" />
+            <StatusTag label={stampTagLabel} tone="success" hasTabularNumbers />
           </HStack>
         </SurfaceCard>
       ) : null}
@@ -175,6 +203,30 @@ export function CheckoutReceiptView({
             <Text weight="semibold">Premio de tarjeta de sellos aplicado</Text>
             <StatusTag label="Canjeado" tone="info" />
           </HStack>
+        </SurfaceCard>
+      ) : null}
+
+      {receiptWaUrl ? (
+        <SurfaceCard tone="subtle" padded>
+          <VStack gap={2}>
+            <Text weight="semibold" size="base">
+              Recibo por WhatsApp
+            </Text>
+            <Text type="supporting" color="secondary">
+              Envía el comprobante con total cobrado
+              {completedState.stampAwarded ? ' y avance de sellos' : ''} a {booking.client.fullName}.
+            </Text>
+            <Button
+              label="Enviar recibo por WhatsApp"
+              variant="secondary"
+              size="md"
+              width="100%"
+              icon={<MessageCircle size={16} aria-hidden="true" />}
+              href={receiptWaUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          </VStack>
         </SurfaceCard>
       ) : null}
 

@@ -272,7 +272,21 @@ export function CheckoutDrawerDialog({
               <CheckoutReceiptView
                 booking={booking}
                 completedState={completedState}
-                currency={currency}
+                salonSettings={{
+                  name: adminData?.settings.name ?? 'LAIKONA NAILS',
+                  currency,
+                  timezone: adminData?.settings.timezone ?? 'America/Mexico_City',
+                }}
+                stampsCount={
+                  loyaltySummary
+                    ? loyaltySummary.currentStamps +
+                      (completedState.stampAwarded &&
+                      !loyaltyStamps.some((st) => st.id === completedState.stampAwarded?.id)
+                        ? 1
+                        : 0)
+                    : null
+                }
+                stampsRequired={loyaltySummary?.stampsRequired ?? loyaltyProgram?.stampsRequired ?? null}
                 touchUpDays={touchUpDays}
                 onScheduleRetouch={onScheduleRetouch}
               />

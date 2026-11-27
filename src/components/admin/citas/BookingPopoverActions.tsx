@@ -9,11 +9,13 @@ import {
   Ban,
   Bell,
   CalendarClock,
+  CalendarPlus,
   Check,
   CheckCircle2,
   DollarSign,
   MessageCircle,
   Star,
+  UserCheck,
   UserRound,
   UserX,
 } from 'lucide-react';
@@ -24,8 +26,12 @@ interface BookingPopoverActionsProps {
   isPending: boolean;
   isCompleted: boolean;
   isPastUnclosed?: boolean;
+  isFullyPaid?: boolean;
   canCollect: boolean;
   canRemind: boolean;
+  canCheckIn?: boolean;
+  isCheckingIn?: boolean;
+  touchUpDays?: number;
   isBusy: boolean;
   busyStatus: BookingStatus | null;
   isReminding: boolean;
@@ -39,6 +45,8 @@ interface BookingPopoverActionsProps {
   clientProfileHref: string;
   onConfirm: () => void;
   onComplete: () => void;
+  onCheckIn?: () => void;
+  onScheduleRetouch?: () => void;
   onNoShowDirect?: () => void;
   onCheckout: () => void;
   onReschedule: () => void;
@@ -52,8 +60,12 @@ export function BookingPopoverActions({
   isPending,
   isCompleted,
   isPastUnclosed = false,
+  isFullyPaid = false,
   canCollect,
   canRemind,
+  canCheckIn = false,
+  isCheckingIn = false,
+  touchUpDays = 21,
   isBusy,
   busyStatus,
   isReminding,
@@ -67,6 +79,8 @@ export function BookingPopoverActions({
   clientProfileHref,
   onConfirm,
   onComplete,
+  onCheckIn,
+  onScheduleRetouch,
   onNoShowDirect,
   onCheckout,
   onReschedule,
@@ -78,15 +92,17 @@ export function BookingPopoverActions({
   const showReviewSetupLink = isCompleted && !reviewWaHref && canManageIntegrations;
   const canMarkCompleted = !isPending && allowedNext.includes('completed');
   const showPrimaryNoShow = isPastUnclosed && allowedNext.includes('no_show');
+  const showRetouch = isCompleted && Boolean(onScheduleRetouch);
+  const retouchIsPrimary = showRetouch && isFullyPaid;
 
   return (
-    <VStack gap={3}>
+    <VStack gap={3} className="ad-pop-actions">
       <VStack gap={1.5} paddingBlockStart={1}>
         <HStack gap={2} wrap="wrap">
           {isPending && !isPastUnclosed ? (
             <Button
               type="button"
-              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
+              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar anticipo'}
               variant="primary"
               size="md"
               icon={<Check size={15} aria-hidden="true" />}
@@ -104,6 +120,29 @@ export function BookingPopoverActions({
               icon={<DollarSign size={15} aria-hidden="true" />}
               isDisabled={isBusy}
               onClick={onCheckout}
+            />
+          ) : null}
+          {showRetouch && onScheduleRetouch ? (
+            <Button
+              type="button"
+              label={`Agendar retoque (+${touchUpDays}d)`}
+              variant={retouchIsPrimary ? 'primary' : 'secondary'}
+              size="md"
+              icon={<CalendarPlus size={15} aria-hidden="true" />}
+              isDisabled={isBusy}
+              onClick={onScheduleRetouch}
+            />
+          ) : null}
+          {canCheckIn && onCheckIn && !isPastUnclosed ? (
+            <Button
+              type="button"
+              label={isCheckingIn ? 'Registrando…' : 'Marcar llegada'}
+              variant="secondary"
+              size="md"
+              icon={<UserCheck size={15} aria-hidden="true" />}
+              isLoading={isCheckingIn}
+              isDisabled={isBusy || isCheckingIn}
+              onClick={onCheckIn}
             />
           ) : null}
           {canMarkCompleted ? (
@@ -133,7 +172,7 @@ export function BookingPopoverActions({
           {isPending && isPastUnclosed ? (
             <Button
               type="button"
-              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
+              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar anticipo'}
               variant="secondary"
               size="md"
               icon={<Check size={15} aria-hidden="true" />}
@@ -145,7 +184,7 @@ export function BookingPopoverActions({
           {showReviewLink && reviewWaHref ? (
             <Button
               label="Pedir reseña"
-              variant={!isPending && !canCollect ? 'primary' : 'secondary'}
+              variant={!isPending && !canCollect && !retouchIsPrimary ? 'primary' : 'secondary'}
               size="md"
               icon={<Star size={15} aria-hidden="true" />}
               href={reviewWaHref}
@@ -164,7 +203,11 @@ export function BookingPopoverActions({
           {whatsappChatHref ? (
             <Button
               label="Abrir chat"
-              variant={!isPending && !canCollect && !showReviewLink ? 'primary' : 'secondary'}
+              variant={
+                !isPending && !canCollect && !showReviewLink && !retouchIsPrimary
+                  ? 'primary'
+                  : 'secondary'
+              }
               size="md"
               icon={<MessageCircle size={15} aria-hidden="true" />}
               href={whatsappChatHref}
@@ -172,7 +215,11 @@ export function BookingPopoverActions({
           ) : (
             <Button
               label="WhatsApp"
-              variant={!isPending && !canCollect && !showReviewLink ? 'primary' : 'secondary'}
+              variant={
+                !isPending && !canCollect && !showReviewLink && !retouchIsPrimary
+                  ? 'primary'
+                  : 'secondary'
+              }
               size="md"
               icon={<MessageCircle size={15} aria-hidden="true" />}
               href={waHref}

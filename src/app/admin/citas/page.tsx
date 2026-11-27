@@ -2,31 +2,40 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Ban, Check, Copy, MessageCircle, Sparkles } from 'lucide-react';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
+import {
+  Ban,
+  Check,
+  Copy,
+  HelpCircle,
+  MessageCircle,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import { PageSkeleton, SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import type { BlockTimePrefill } from '@/components/admin/disponibilidad/BlockTimeForm';
 import {
-  AgendaRangeControls,
-  AgendaStaffControls,
-  BookingsFiltersBar,
+  AgendaStatusChips,
+  AgendaToolbar,
 } from '@/components/admin/citas/BookingsFiltersBar';
 import { BookingsListView } from '@/components/admin/citas/BookingsListView';
 import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
-import { resolveSuggestedBlockWindow } from '@/components/admin/citas/scheduleGridGeometry';
+import {
+  resolveSuggestedBlockWindow,
+  shiftDateKey,
+} from '@/components/admin/citas/scheduleGridGeometry';
 import { useCitasBookingActions } from '@/components/admin/citas/useCitasBookingActions';
 import { useCitasWorkspace } from '@/components/admin/citas/useCitasWorkspace';
 import type { CalendarEmptySlotSelection } from '@/components/admin/citas/VisualScheduleGrid';
-import { WaitlistPanel } from '@/components/admin/citas/WaitlistPanel';
-import { cajaHref } from '@/lib/admin-links';
+import { horariosHref } from '@/lib/admin-links';
 import { buildRetouchPrefill } from '@/lib/booking/recurrence';
-import { formatCurrency } from '@/lib/format';
+import { getDateKeyInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 
 const CalendarSlotActionDialog = dynamic(
@@ -77,11 +86,13 @@ export default function AdminBookingsPage() {
   });
 
   if (!ws.data) {
-    return <PageSkeleton kpiCount={3} withSplit={false} ariaLabel="Cargando citas y agenda" />;
+    return <PageSkeleton kpiCount={0} withSplit={false} ariaLabel="Cargando agenda" />;
   }
 
   const data = ws.data;
   const canViewClients = roleCanAccess(data.session.user.role, 'clients');
+  const canViewAvailability = roleCanAccess(data.session.user.role, 'availability');
+  const canViewWaitlist = !ws.isSpecialistOnly;
   const visibleStaff = ws.lockedStaffId
     ? ws.orderedStaff.filter((s) => s.id === ws.lockedStaffId)
     : ws.orderedStaff;
@@ -89,8 +100,6 @@ export default function AdminBookingsPage() {
     ws.selectedStaffFilter === 'all' || ws.lockedStaffId
       ? visibleStaff
       : visibleStaff.filter((s) => s.id === ws.selectedStaffFilter);
-  const activeVisualDate =
-    ws.selectedVisualDate ?? (ws.agendaRange === 'tomorrow' ? ws.tomorrowKey : ws.todayKey);
 
   const popoverBooking = ws.popoverBookingId
     ? data.bookings.find((b) => b.id === ws.popoverBookingId) ?? null
@@ -103,219 +112,283 @@ export default function AdminBookingsPage() {
     : null;
 
   const noShowThreshold = data.settings.noShowDepositThreshold ?? 2;
-  const flaggedBookings = ws.tabFilteredBookings.filter(
-    (b) =>
-      (b.client.noShowCount >= noShowThreshold || Boolean(b.noShowPolicyEnforced)) &&
-      b.status !== 'canceled',
-  );
-  const isDateRangeActive =
-    ws.tab === 'upcoming' &&
-    !ws.search.trim() &&
-    (ws.viewMode === 'schedule' || ws.viewMode === 'list');
 
-  const uncollectedTotalCents = data.uncollectedBookings.reduce(
-    (sum, item) => sum + item.remainingCents,
-    0,
+  const isScheduleView = ws.resolvedView === 'day' || ws.resolvedView === 'week';
+  const scheduleVisibleCount = isScheduleView
+    ? ws.statusFilteredBookings.filter((b) => {
+        const bDate = getDateKeyInTimezone(new Date(b.startAt), ws.tz);
+        if (ws.resolvedView === 'day') return bDate === ws.dateKey;
+        const weekEnd = shiftDateKey(ws.dateKey, 6);
+        return bDate >= ws.dateKey && bDate <= weekEnd;
+      }).length
+    : 0;
+  const firstFilteredBooking = ws.statusFilteredBookings[0];
+  const firstFilteredBookingDate = firstFilteredBooking
+    ? getDateKeyInTimezone(new Date(firstFilteredBooking.startAt), ws.tz)
+    : null;
+  const hasOffRangeFilteredMatches =
+    isScheduleView &&
+    (ws.status !== 'upcoming' || Boolean(ws.search.trim())) &&
+    ws.statusFilteredBookings.length > 0 &&
+    scheduleVisibleCount === 0;
+
+  const renderListView = () => (
+    <BookingsListView
+      bookings={ws.listBookings}
+      status={ws.status}
+      dateKey={ws.dateKey}
+      search={ws.search}
+      allServices={data.services}
+      paymentSplits={data.paymentSplits}
+      cashEntries={data.cashEntries}
+      serverNowIso={data.serverNowIso}
+      salonName={data.settings.name}
+      currency={data.settings.currency}
+      timezone={ws.tz}
+      noShowThreshold={noShowThreshold}
+      canViewClients={canViewClients}
+      busyBookingId={actions.busyAction?.bookingId ?? null}
+      busyStatus={actions.busyAction?.status ?? null}
+      requestingRescheduleId={actions.requestingRescheduleId}
+      onSelectWeekView={() => ws.setView('week')}
+      onResetFilters={() => {
+        ws.setSearch('');
+        ws.updateFilters({ status: 'upcoming', q: '' });
+      }}
+      onOpenNewBooking={() => ws.openManualModal()}
+      onSelectBooking={(bk) => ws.setPopoverBookingId(bk.id)}
+      onUpdateStatus={(id, status) => void actions.updateStatus(id, status)}
+      onOpenCheckout={ws.openCheckoutDrawer}
+      onRequestReschedule={(id) => void actions.requestReschedule(id)}
+    />
   );
-  const isScheduleView = ws.tab !== 'waitlist' && ws.viewMode === 'schedule';
+
+  const feedback = actions.feedback;
+  const freedMatch = feedback?.freedSlotMatch ?? null;
 
   return (
-    <VStack gap={3} className="ad-page">
-      <VStack gap={2} style={{ minWidth: 0, width: '100%' }}>
-        <PageHeader
-          title="Agenda"
-          meta={
-            actions.busyAction || actions.reschedulingId ? (
-              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-                Actualizando…
-              </Text>
-            ) : actions.inlineNotice.message ? (
-              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-                <Check size={12} aria-hidden="true" />
-                {actions.inlineNotice.message}
-              </Text>
-            ) : undefined
-          }
-          actions={
-            <>
-              <Button
-                type="button"
-                label="Buscar hora libre"
-                variant="secondary"
-                size="sm"
-                icon={<Sparkles size={14} aria-hidden="true" />}
-                onClick={() => ws.setQuickFinderOpen(true)}
-              />
-              <Button
-                type="button"
-                label="Bloquear día"
-                variant="ghost"
-                size="sm"
-                icon={<Ban size={14} aria-hidden="true" />}
-                onClick={ws.openBlockModal}
-              />
-            </>
-          }
-        />
-
-        <HStack
-          className="ad-cal-kpi-strip"
-          gap={2}
-          align="center"
-          wrap="wrap"
-          aria-label="Resumen de agenda"
-        >
-          <HStack gap={1.5} align="center" className="ad-cal-strip-item">
-            <Text className="lk-serif ad-cal-strip-num" hasTabularNumbers>
-              {data.kpis.todayBookingsCount}
+    <VStack gap={2} className="ad-page ad-agenda-page">
+      <HStack className="ad-agenda-header" justify="between" align="center" gap={2}>
+        <HStack gap={2} align="center" wrap="wrap">
+          <Heading level={1} className="lk-serif">
+            Agenda
+          </Heading>
+          {actions.busyAction || actions.reschedulingId || actions.checkingInId ? (
+            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+              Actualizando…
             </Text>
-            <Text type="supporting" color="secondary">
-              {data.kpis.todayBookingsCount === 1 ? 'cita hoy' : 'citas hoy'}
+          ) : actions.inlineNotice.message ? (
+            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+              <Check size={12} aria-hidden="true" />
+              {actions.inlineNotice.message}
             </Text>
-          </HStack>
-          <Text color="secondary" aria-hidden="true">·</Text>
-          <button
-            type="button"
-            className="ad-cal-strip-btn"
-            onClick={() => {
-              ws.setTab('unconfirmed');
-              ws.setViewMode('list');
-            }}
-          >
-            <Text
-              className="lk-serif ad-cal-strip-num"
-              color={data.kpis.pendingConfirmationsCount > 0 ? 'accent' : 'primary'}
-              hasTabularNumbers
-            >
-              {data.kpis.pendingConfirmationsCount}
-            </Text>
-            <Text type="supporting" color="secondary">
-              por confirmar
-            </Text>
-          </button>
-          <Text color="secondary" aria-hidden="true">·</Text>
-          <NextLink
-            href={cajaHref({ tab: 'sin-cobrar' })}
-            className="ad-cal-strip-btn"
-            style={{ textDecoration: 'none' }}
-          >
-            <Text
-              className="lk-serif ad-cal-strip-num"
-              color={data.uncollectedBookings.length > 0 ? 'accent' : 'primary'}
-              hasTabularNumbers
-            >
-              {data.uncollectedBookings.length}
-            </Text>
-            <Text type="supporting" color="secondary" hasTabularNumbers>
-              {uncollectedTotalCents > 0
-                ? `por cobrar · ${formatCurrency(uncollectedTotalCents, data.settings.currency)}`
-                : 'por cobrar'}
-            </Text>
-          </NextLink>
+          ) : null}
         </HStack>
 
-        {actions.feedback ? (
-          <Banner
-            status={actions.feedback.status}
-            role={actions.feedback.status === 'error' ? 'alert' : 'status'}
-            title={actions.feedback.title}
-            description={actions.feedback.description}
-            endContent={
-              actions.feedback.waMeUrl || actions.feedback.rescheduleUrl ? (
-                <HStack gap={1.5} wrap="wrap">
-                  {actions.feedback.waMeUrl ? (
+        <HStack gap={1.5} align="center">
+          <Button
+            type="button"
+            label="Nueva cita"
+            variant="primary"
+            size="sm"
+            icon={<Plus size={14} aria-hidden="true" />}
+            onClick={() => ws.openManualModal()}
+          />
+          <DropdownMenu
+            alignment="end"
+            placement="below"
+            presentation="adaptive"
+            menuWidth="16.5rem"
+            hasChevron
+            button={{
+              label: 'Más',
+              variant: 'secondary',
+              size: 'sm',
+            }}
+            items={[
+              {
+                id: 'quick-finder',
+                label: 'Buscar hora libre',
+                description: 'Encuentra el próximo espacio disponible',
+                icon: <Sparkles size={15} aria-hidden="true" />,
+                onClick: () => ws.setQuickFinderOpen(true),
+              },
+              {
+                id: 'block-time',
+                label: 'Bloquear horario o día',
+                description: 'Cierre puntual, descanso o vacaciones',
+                icon: <Ban size={15} aria-hidden="true" />,
+                onClick: ws.openBlockModal,
+              },
+              ...(canViewAvailability
+                ? [
+                    {
+                      id: 'troubleshoot',
+                      label: '¿Por qué no sale una hora?',
+                      description: 'Diagnosticar bloqueos y horarios',
+                      icon: <HelpCircle size={15} aria-hidden="true" />,
+                      href: horariosHref({
+                        tab: 'diagnostico',
+                        staff:
+                          ws.selectedStaffFilter !== 'all'
+                            ? ws.selectedStaffFilter
+                            : undefined,
+                        date: ws.dateKey,
+                      }),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </HStack>
+      </HStack>
+
+      <AgendaToolbar
+        resolvedView={ws.resolvedView}
+        dateKey={ws.dateKey}
+        todayKey={ws.todayKey}
+        timezone={ws.tz}
+        selectedStaffFilter={ws.selectedStaffFilter}
+        search={ws.search}
+        isSpecialistOnly={ws.isSpecialistOnly}
+        visibleStaff={visibleStaff}
+        allStaffColorIndex={ws.allStaffColorIndex}
+        onChangeView={ws.setView}
+        onChangeDate={ws.setDate}
+        onChangeStaffFilter={ws.setStaff}
+        onChangeSearch={ws.setSearch}
+      />
+
+      <AgendaStatusChips
+        status={ws.status}
+        pendingCount={ws.chipCounts.pendingCount}
+        uncollectedCount={ws.chipCounts.uncollectedCount}
+        uncollectedTotalCents={ws.chipCounts.uncollectedTotalCents}
+        currency={data.settings.currency}
+        todayWaitingCount={ws.chipCounts.todayWaitingCount}
+        totalWaitingCount={ws.chipCounts.totalWaitingCount}
+        waitlistOpen={ws.waitlistOpen}
+        canViewWaitlist={canViewWaitlist}
+        onChangeStatus={ws.setStatus}
+        onToggleWaitlist={() => ws.setWaitlistOpen(!ws.waitlistOpen)}
+      />
+
+      {feedback ? (
+        <Banner
+          status={feedback.status}
+          role={feedback.status === 'error' ? 'alert' : 'status'}
+          title={feedback.title}
+          description={feedback.description}
+          endContent={
+            freedMatch || feedback.waMeUrl || feedback.rescheduleUrl ? (
+              <HStack gap={1.5} wrap="wrap">
+                {freedMatch ? (
+                  <>
                     <Button
-                      label="Abrir WhatsApp"
+                      label="Avisar a la lista de espera"
                       variant="primary"
                       size="sm"
                       icon={<MessageCircle size={14} aria-hidden="true" />}
-                      href={actions.feedback.waMeUrl}
+                      href={freedMatch.waMeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                    />
-                  ) : null}
-                  {actions.feedback.rescheduleUrl ? (
-                    <Button
-                      label={actions.rescheduleCopy.feedback ?? 'Copiar enlace'}
-                      variant="secondary"
-                      size="sm"
-                      icon={<Copy size={14} aria-hidden="true" />}
                       onClick={() =>
-                        actions.feedback?.rescheduleUrl &&
-                        void actions.rescheduleCopy.copy(
-                          actions.feedback.rescheduleUrl,
-                          'Enlace copiado',
-                          'Copia el enlace manualmente',
-                        )
+                        void actions.notifyWaitlistCandidate(freedMatch.candidate.id)
                       }
                     />
-                  ) : null}
-                </HStack>
-              ) : undefined
-            }
-            isDismissable
-            onDismiss={() => actions.setFeedback(null)}
-          />
-        ) : null}
-
-        <BookingsFiltersBar
-          tab={ws.tab}
-          viewMode={ws.viewMode}
-          agendaRange={ws.agendaRange}
-          selectedStaffFilter={ws.selectedStaffFilter}
-          search={ws.search}
-          pendingConfirmationsCount={data.kpis.pendingConfirmationsCount}
-          waitlistCount={data.kpis.waitlistCount}
-          isDateRangeActive={isDateRangeActive}
-          isTodaySelected={ws.agendaRange === 'today' && activeVisualDate === ws.todayKey}
-          isTomorrowSelected={ws.agendaRange === 'tomorrow' && activeVisualDate === ws.tomorrowKey}
-          listCount={ws.listBookings.length}
-          isSpecialistOnly={ws.isSpecialistOnly}
-          visibleStaff={visibleStaff}
-          allStaffColorIndex={ws.allStaffColorIndex}
-          flaggedBookings={flaggedBookings}
-          noShowThreshold={noShowThreshold}
-          showSecondaryRow={!isScheduleView}
-          onChangeTab={(nextTab) => {
-            ws.setTab(nextTab);
-            if (nextTab === 'past' || nextTab === 'canceled' || nextTab === 'unconfirmed') {
-              ws.setViewMode('list');
-            }
-          }}
-          onChangeSearch={(val) => {
-            ws.setSearch(val);
-            if (val.trim() && ws.viewMode === 'schedule') ws.setViewMode('list');
-          }}
-          onChangeViewMode={ws.setViewMode}
-          onSelectRange={ws.handleSelectRange}
-          onChangeStaffFilter={ws.setSelectedStaffFilter}
-          onInspectFlaggedBooking={ws.setPopoverBookingId}
+                    {canViewWaitlist ? (
+                      <Button
+                        type="button"
+                        label="Ver lista"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => ws.setWaitlistOpen(true)}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+                {feedback.waMeUrl ? (
+                  <Button
+                    label="Abrir WhatsApp"
+                    variant="primary"
+                    size="sm"
+                    icon={<MessageCircle size={14} aria-hidden="true" />}
+                    href={feedback.waMeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                ) : null}
+                {feedback.rescheduleUrl ? (
+                  <Button
+                    type="button"
+                    label={actions.rescheduleCopy.feedback ?? 'Copiar enlace'}
+                    variant="secondary"
+                    size="sm"
+                    icon={<Copy size={14} aria-hidden="true" />}
+                    onClick={() =>
+                      feedback.rescheduleUrl &&
+                      void actions.rescheduleCopy.copy(
+                        feedback.rescheduleUrl,
+                        'Enlace copiado',
+                        'Copia el enlace manualmente',
+                      )
+                    }
+                  />
+                ) : null}
+              </HStack>
+            ) : undefined
+          }
+          isDismissable
+          onDismiss={() => actions.setFeedback(null)}
         />
-      </VStack>
+      ) : null}
 
-      {ws.tab === 'waitlist' ? (
-        <WaitlistPanel
-          waitlist={data.waitlist}
-          services={data.services}
-          salonName={data.settings.name}
-          onStatusUpdated={async (message) => {
-            await ws.refresh();
-            actions.inlineNotice.show(message);
-          }}
-          onBookEntry={(entry) =>
-            ws.openManualModal('any', {
-              serviceId: entry.serviceId,
-              startDate: entry.desiredDate,
-              clientName: entry.clientName,
-              clientPhone: entry.clientPhoneE164,
-              internalNotes: entry.notes || 'Agendada desde lista de espera',
-            })
+      {hasOffRangeFilteredMatches ? (
+        <Banner
+          status="info"
+          role="status"
+          title={`Hay ${ws.statusFilteredBookings.length} ${
+            ws.statusFilteredBookings.length === 1 ? 'cita' : 'citas'
+          } en otras fechas con este filtro`}
+          endContent={
+            <HStack gap={1.5} wrap="wrap">
+              {firstFilteredBookingDate ? (
+                <Button
+                  type="button"
+                  label="Ir a la primera"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => ws.setDate(firstFilteredBookingDate)}
+                />
+              ) : null}
+              <Button
+                type="button"
+                label="Ver en Lista"
+                variant="ghost"
+                size="sm"
+                onClick={() => ws.setView('list')}
+              />
+            </HStack>
           }
         />
-      ) : ws.viewMode === 'schedule' ? (
+      ) : null}
+
+      {ws.resolvedView === null ? (
+        <>
+          <VStack className="ad-agenda-default-mobile" gap={0}>
+            {renderListView()}
+          </VStack>
+          <VStack className="ad-agenda-default-desktop" gap={0}>
+            <ScheduleGridFallback />
+          </VStack>
+        </>
+      ) : ws.resolvedView === 'list' ? (
+        renderListView()
+      ) : (
         <VisualScheduleGrid
-          rangeMode={ws.agendaRange === 'week' ? 'week' : 'day'}
-          dateKey={activeVisualDate}
+          rangeMode={ws.resolvedView}
+          hideInternalToolbar
+          dateKey={ws.dateKey}
           todayKey={ws.todayKey}
           serverNowIso={data.serverNowIso}
           timezone={ws.tz}
@@ -326,46 +399,15 @@ export default function AdminBookingsPage() {
           recurringBlocks={data.recurringBlocks}
           paymentSplits={data.paymentSplits}
           cashEntries={data.cashEntries}
-          bookings={ws.tabFilteredBookings}
+          bookings={ws.statusFilteredBookings}
           allServices={data.services}
           isSpecialistLocked={Boolean(ws.lockedStaffId)}
           busyBookingId={actions.busyAction?.bookingId ?? null}
           busyStatus={actions.busyAction?.status ?? null}
           reschedulingBookingId={actions.reschedulingId}
-          rangeControls={
-            isDateRangeActive || ws.search.trim() ? (
-              <AgendaRangeControls
-                agendaRange={ws.agendaRange}
-                isDateRangeActive={isDateRangeActive}
-                isTodaySelected={ws.agendaRange === 'today' && activeVisualDate === ws.todayKey}
-                isTomorrowSelected={
-                  ws.agendaRange === 'tomorrow' && activeVisualDate === ws.tomorrowKey
-                }
-                search={ws.search}
-                onSelectRange={ws.handleSelectRange}
-              />
-            ) : undefined
-          }
-          staffControls={
-            <AgendaStaffControls
-              isSpecialistOnly={ws.isSpecialistOnly}
-              visibleStaff={visibleStaff}
-              allStaffColorIndex={ws.allStaffColorIndex}
-              selectedStaffFilter={ws.selectedStaffFilter}
-              onChangeStaffFilter={ws.setSelectedStaffFilter}
-            />
-          }
-          onChangeDate={(nextDateKey) => {
-            ws.setSelectedVisualDate(nextDateKey);
-            if (ws.agendaRange !== 'week') {
-              if (nextDateKey === ws.todayKey) ws.setAgendaRange('today');
-              else if (nextDateKey === ws.tomorrowKey) ws.setAgendaRange('tomorrow');
-            }
-          }}
+          onChangeDate={ws.setDate}
           onJumpToDay={(nextDateKey) => {
-            ws.setSelectedVisualDate(nextDateKey);
-            ws.setAgendaRange(nextDateKey === ws.tomorrowKey ? 'tomorrow' : 'today');
-            ws.setViewMode('schedule');
+            ws.updateFilters({ view: 'day', dateKey: nextDateKey });
           }}
           onOpenNewForStaff={(staffId, preferredDate, preferredStartAt) =>
             ws.openManualModal(
@@ -384,39 +426,13 @@ export default function AdminBookingsPage() {
           onRescheduleBooking={actions.rescheduleAdmin}
           onOpenCheckout={ws.openCheckoutDrawer}
         />
-      ) : (
-        <BookingsListView
-          bookings={ws.listBookings}
-          tab={ws.tab}
-          agendaRange={ws.agendaRange}
-          search={ws.search}
-          allServices={data.services}
-          paymentSplits={data.paymentSplits}
-          cashEntries={data.cashEntries}
-          serverNowIso={data.serverNowIso}
-          salonName={data.settings.name}
-          currency={data.settings.currency}
-          timezone={ws.tz}
-          noShowThreshold={noShowThreshold}
-          canViewClients={canViewClients}
-          busyBookingId={actions.busyAction?.bookingId ?? null}
-          busyStatus={actions.busyAction?.status ?? null}
-          requestingRescheduleId={actions.requestingRescheduleId}
-          onSelectRangeWeek={() => ws.handleSelectRange('week')}
-          onClearSearch={() => ws.setSearch('')}
-          onOpenNewBooking={() => ws.openManualModal()}
-          onSelectBooking={(bk) => ws.setPopoverBookingId(bk.id)}
-          onUpdateStatus={(id, status) => void actions.updateStatus(id, status)}
-          onOpenCheckout={ws.openCheckoutDrawer}
-          onRequestReschedule={(id) => void actions.requestReschedule(id)}
-        />
       )}
 
       <CitasDialogsHost
         data={data}
         tz={ws.tz}
         todayKey={ws.todayKey}
-        activeVisualDate={activeVisualDate}
+        activeVisualDate={ws.dateKey}
         lockedStaffId={ws.lockedStaffId}
         visibleStaff={visibleStaff}
         hasActiveOwnerPin={hasActiveOwnerPin}
@@ -435,8 +451,12 @@ export default function AdminBookingsPage() {
         blockOpen={ws.blockOpen}
         blockSessionKey={ws.blockSessionKey}
         onBlockOpenChange={ws.setBlockOpen}
+        waitlistOpen={ws.waitlistOpen}
+        onWaitlistOpenChange={ws.setWaitlistOpen}
+        canViewWaitlist={canViewWaitlist}
         canViewClients={canViewClients}
         busyAction={actions.busyAction}
+        checkingInId={actions.checkingInId}
         rejectingDepositId={actions.rejectingDepositId}
         remindingId={actions.remindingId}
         requestingRescheduleId={actions.requestingRescheduleId}
@@ -464,6 +484,7 @@ export default function AdminBookingsPage() {
           });
         }}
         onUpdateStatus={actions.updateStatus}
+        onCheckIn={actions.checkInBooking}
         onRejectDeposit={actions.rejectDeposit}
         onSendReminder={(id) => void actions.sendReminder(id)}
         onRequestReschedule={(id) => void actions.requestReschedule(id)}

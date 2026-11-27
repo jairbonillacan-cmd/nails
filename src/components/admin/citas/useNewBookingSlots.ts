@@ -9,54 +9,67 @@ interface UseNewBookingSlotsParams {
   isOpen: boolean;
   serviceId: string;
   extraServiceIds: readonly string[];
-  addonIds: readonly string[];
+  addonIds?: readonly string[];
   staffId: string;
   startDate: string;
+  days?: number;
+  limit?: number;
   preferredStartAt?: string;
   preferredStaffId?: string;
-  onSyncStart: () => void;
+  onSyncStart?: () => void;
 }
 
 export function useNewBookingSlots({
   isOpen,
   serviceId,
   extraServiceIds,
-  addonIds,
+  addonIds = [],
   staffId,
   startDate,
+  days = 14,
+  limit = 16,
   preferredStartAt,
   preferredStaffId,
   onSyncStart,
 }: UseNewBookingSlotsParams) {
   const [slots, setSlots] = useState<QuickSlotOption[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<QuickSlotOption | null>(null);
 
   const syncKey = isOpen
-    ? `${serviceId}|${extraServiceIds.join(',')}|${addonIds.join(',')}|${staffId}|${startDate}|${preferredStartAt ?? ''}`
+    ? `${serviceId}|${extraServiceIds.join(',')}|${addonIds.join(',')}|${staffId}|${startDate}|${days}|${limit}|${preferredStartAt ?? ''}`
     : 'closed';
 
   useExternalSync(syncKey, async (signal, key) => {
     if (key === 'closed' || !serviceId) return;
     setLoadingSlots(true);
-    onSyncStart();
+    setErrorText(null);
+    onSyncStart?.();
     try {
-      const flattened = await fetchNewBookingRangeSlots(
-        { serviceId, extraServiceIds, addonIds, staffId, startDate },
+      const result = await fetchNewBookingRangeSlots(
+        { serviceId, extraServiceIds, addonIds, staffId, startDate, days, limit },
         signal,
       );
       if (signal.aborted) return;
-      setSlots(flattened);
+      if (result.error) {
+        setErrorText(result.error);
+        setSlots([]);
+        setSelectedSlot(null);
+        return;
+      }
+      setSlots(result.slots);
       const matchedPreferred = preferredStartAt
-        ? flattened.find(
+        ? result.slots.find(
             (s) =>
               s.startAt === preferredStartAt &&
               (!preferredStaffId || s.staffId === preferredStaffId),
           )
         : null;
-      setSelectedSlot(matchedPreferred ?? flattened[0] ?? null);
+      setSelectedSlot(matchedPreferred ?? result.slots[0] ?? null);
     } catch {
       if (!signal.aborted) {
+        setErrorText('Error de conexión al buscar horarios.');
         setSlots([]);
         setSelectedSlot(null);
       }
@@ -65,5 +78,5 @@ export function useNewBookingSlots({
     }
   });
 
-  return { slots, loadingSlots, selectedSlot, setSelectedSlot };
+  return { slots, loadingSlots, errorText, selectedSlot, setSelectedSlot };
 }
