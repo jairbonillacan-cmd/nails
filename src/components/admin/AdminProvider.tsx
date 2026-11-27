@@ -148,20 +148,29 @@ export function AdminProvider({
 
   const switchDemoUser = useCallback(
     async (email: string) => {
-      await fetch('/api/admin/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      invalidateAdminCache();
-      setAdminCacheScope(null);
-      await refresh();
+      try {
+        const res = await fetch('/api/admin/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        if (!res.ok) return;
+        invalidateAdminCache();
+        setAdminCacheScope(null);
+        await refresh();
+      } catch {
+        return;
+      }
     },
     [refresh],
   );
 
   const logout = useCallback(async () => {
-    await fetch('/api/admin/session', { method: 'DELETE' });
+    try {
+      await fetch('/api/admin/session', { method: 'DELETE' });
+    } catch {
+      void 0;
+    }
     invalidateAdminCache();
     setAdminCacheScope(null);
     setData(null);

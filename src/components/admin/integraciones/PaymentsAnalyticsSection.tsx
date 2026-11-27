@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Banner } from '@astryxdesign/core/Banner';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { CreditCard, SlidersHorizontal } from 'lucide-react';
@@ -38,7 +39,11 @@ const TechnicalSettingsSection = dynamic(
 interface PaymentsAnalyticsSectionProps {
   settings: SalonSettings;
   depositLabel: string;
+  isDemoMode: boolean;
   mercadoPagoConfigured: boolean;
+  twilioSmsConfigured: boolean;
+  timezone: string;
+  whatsappWebhookUrl: string;
   googleCalendarTechUrl: string;
   mercadoPagoTechUrl: string;
   services: Service[];
@@ -68,7 +73,11 @@ function paymentModeChip(mode: PaymentMode): {
 export function PaymentsAnalyticsSection({
   settings,
   depositLabel,
+  isDemoMode,
   mercadoPagoConfigured,
+  twilioSmsConfigured,
+  timezone,
+  whatsappWebhookUrl,
   googleCalendarTechUrl,
   mercadoPagoTechUrl,
   services,
@@ -83,6 +92,34 @@ export function PaymentsAnalyticsSection({
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [hasOpenedMore, setHasOpenedMore] = useState(false);
   const payBadge = paymentModeChip(settings.paymentMode);
+  const paymentOptions: Array<{ value: PaymentMode; label: string }> = [
+    {
+      value: 'manual_transfer',
+      label: 'Transferencia SPEI: te mandan su comprobante (sin comisión)',
+    },
+    ...(mercadoPagoConfigured || settings.paymentMode === 'mercadopago'
+      ? [
+          {
+            value: 'mercadopago' as const,
+            label: mercadoPagoConfigured
+              ? 'Mercado Pago: tarjeta, transferencia u OXXO con confirmación automática'
+              : 'Mercado Pago (faltan credenciales en producción)',
+          },
+        ]
+      : []),
+    ...(settings.paymentMode === 'stripe'
+      ? [
+          {
+            value: 'stripe' as const,
+            label: 'Stripe (no disponible aún — cambia a Transferencia o Mercado Pago)',
+          },
+        ]
+      : []),
+    {
+      value: 'none',
+      label: 'Sin anticipo: apartan sin pagar',
+    },
+  ];
 
   return (
     <VStack gap={5}>
@@ -113,31 +150,32 @@ export function PaymentsAnalyticsSection({
                 onSaveSettingsPatch({ paymentMode: v });
               }
             }}
-            options={[
-              {
-                value: 'manual_transfer',
-                label: 'Transferencia: te mandan su comprobante (sin comisión)',
-              },
-              {
-                value: 'mercadopago',
-                label: 'Mercado Pago: pagan con tarjeta, transferencia u OXXO y se confirma sola',
-              },
-              {
-                value: 'stripe',
-                label: 'Pago con tarjeta en línea',
-              },
-              {
-                value: 'none',
-                label: 'Sin anticipo: apartan sin pagar',
-              },
-            ]}
+            options={paymentOptions}
           />
+
+          {settings.paymentMode === 'mercadopago' && !mercadoPagoConfigured ? (
+            <Banner
+              status="warning"
+              role="status"
+              title="Mercado Pago aún no tiene credenciales configuradas"
+              description="Mientras se agregan los accesos de Mercado Pago, te recomendamos usar Transferencia SPEI para que tus clientas reciban tu CLABE y suban su comprobante."
+            />
+          ) : null}
+
+          {settings.paymentMode === 'stripe' ? (
+            <Banner
+              status="warning"
+              role="status"
+              title="El cobro con Stripe aún no está activado"
+              description="Cambia a Transferencia SPEI o Mercado Pago para cobrar anticipos sin interrupciones."
+            />
+          ) : null}
 
           <VStack className="ad-config-grid-equal" gap={3}>
             <VStack className="ad-subpanel" gap={2}>
               <HStack justify="between" align="center" wrap="wrap" gap={2}>
                 <Text weight="semibold" size="sm">
-                  Transferencia
+                  Transferencia SPEI
                 </Text>
                 <StatusTag tone="success" label="$0 comisión" />
               </HStack>
@@ -165,7 +203,7 @@ export function PaymentsAnalyticsSection({
                 />
               </HStack>
               <Text type="supporting" color="secondary">
-                Envía un link de pago con tarjeta, transferencia u OXXO y confirma la cita sola en cuanto se acredite el pago.
+                Envía un enlace de pago con tarjeta, transferencia u OXXO y confirma la cita sola en cuanto se acredite el pago.
               </Text>
             </VStack>
           </VStack>
@@ -185,10 +223,10 @@ export function PaymentsAnalyticsSection({
               <SlidersHorizontal size={15} aria-hidden="true" />
               <VStack gap={0}>
                 <Text weight="semibold" size="base">
-                  Más herramientas (opcional)
+                  Más herramientas
                 </Text>
                 <Text type="supporting" color="secondary">
-                  Seguimiento de anuncios, visitas de Google, mensajes de texto, reseñas de Google y prueba de WhatsApp.
+                  Anuncios, visitas de Google, reseñas, mensajes SMS, envíos recientes y enlaces de soporte.
                 </Text>
               </VStack>
             </HStack>
@@ -199,6 +237,10 @@ export function PaymentsAnalyticsSection({
         {hasOpenedMore ? (
           <TechnicalSettingsSection
             settings={settings}
+            isDemoMode={isDemoMode}
+            twilioSmsConfigured={twilioSmsConfigured}
+            timezone={timezone}
+            whatsappWebhookUrl={whatsappWebhookUrl}
             googleCalendarTechUrl={googleCalendarTechUrl}
             mercadoPagoTechUrl={mercadoPagoTechUrl}
             services={services}

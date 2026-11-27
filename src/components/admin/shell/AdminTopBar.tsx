@@ -57,10 +57,13 @@ export function AdminTopBar({
   const lowStockCount = roleCanAccess(role, 'inventory')
     ? data.inventory.filter((item) => item.isActive && item.stockQuantity <= item.minStockAlert).length
     : 0;
+  const canSeeClients = roleCanAccess(role, 'clients');
+  const canSeeIntegrations = roleCanAccess(role, 'integrations');
   const whatsappUsage = data.whatsappUsage;
   const hasWhatsAppAlert =
-    whatsappUsage?.alertLevel === 'warning_80' ||
-    whatsappUsage?.alertLevel === 'limit_100';
+    canSeeIntegrations &&
+    (whatsappUsage?.alertLevel === 'warning_80' ||
+      whatsappUsage?.alertLevel === 'limit_100');
 
   const totalAlerts =
     pendingDepositsCount + uncollectedCount + waitingCount + lowStockCount + (hasWhatsAppAlert ? 1 : 0);
@@ -86,7 +89,7 @@ export function AdminTopBar({
       ? {
           id: 'waitlist',
           label: `${waitingCount} en lista de espera`,
-          href: '/admin/citas',
+          href: '/admin/citas?tab=waitlist',
           icon: <Clock size={15} aria-hidden="true" />,
         }
       : null,
@@ -105,7 +108,7 @@ export function AdminTopBar({
             whatsappUsage.alertLevel === 'limit_100'
               ? `Límite de WhatsApp alcanzado (${whatsappUsage.sentCount}/${whatsappUsage.quotaLimit})`
               : `WhatsApp al ${whatsappUsage.percentUsed}% del límite mensual`,
-          href: roleCanAccess(role, 'integrations') ? '/admin/integraciones' : '/admin',
+          href: '/admin/integraciones',
           icon: <MessageCircle size={15} aria-hidden="true" />,
         }
       : null,
@@ -166,12 +169,12 @@ export function AdminTopBar({
         <button
           type="button"
           className="ad-topbar-search fx-press"
-          aria-label="Buscar clientas, citas o servicios"
+          aria-label={canSeeClients ? 'Buscar clientas, citas o servicios' : 'Buscar citas o servicios'}
           onClick={onOpenQuickSearch}
         >
           <Search size={15} strokeWidth={1.85} className="ad-topbar-search-icon" aria-hidden="true" />
           <Text color="inherit" size="sm" className="ad-topbar-search-text">
-            Buscar clientas, citas, servicios…
+            {canSeeClients ? 'Buscar clientas, citas, servicios…' : 'Buscar citas o servicios…'}
           </Text>
           <Text color="inherit" size="sm" className="ad-topbar-search-short">
             Buscar…

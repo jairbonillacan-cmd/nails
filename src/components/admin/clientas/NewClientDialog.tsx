@@ -101,7 +101,7 @@ export function NewClientDialog({
           ) : null}
           <TextInput
             label="Nombre completo"
-            placeholder="Ej. Sofía Ramírez"
+            placeholder="Ejemplo: Sofía Ramírez"
             value={newName}
             onChange={setNewName}
             isRequired
@@ -134,7 +134,7 @@ export function NewClientDialog({
             />
             <TextInput
               label="Cumpleaños"
-              placeholder="Ej. 1997-08-15 (año-mes-día)"
+              placeholder="Ejemplo: 1997-08-15 (año-mes-día)"
               value={newBirthday}
               onChange={setNewBirthday}
               isOptional
@@ -142,7 +142,7 @@ export function NewClientDialog({
           </Grid>
           <TextArea
             label="Notas y preferencias (uñas, tonos, alergias)"
-            placeholder="Ej. Forma almendra corta, base milky nude..."
+            placeholder="Ejemplo: Forma almendra corta, base milky nude…"
             value={newNotes}
             onChange={setNewNotes}
             rows={3}

@@ -113,7 +113,6 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                         hasHoverIndication={false}
                       >
                         <VStack
-                          as="article"
                           align="center"
                           justify="center"
                           tabIndex={0}
@@ -152,14 +151,14 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
               {LEGEND_LEVELS.map((level) => (
                 <VStack
                   key={level}
-                  width="2rem"
+                  width="1.5rem"
                   align="center"
                   justify="center"
                   className="ad-heatmap-cell"
                   data-level={String(level)}
                 >
-                  <Text color="inherit" size="sm" hasTabularNumbers>
-                    {level}
+                  <Text color="inherit" size="sm">
+                    {'\u200B'}
                   </Text>
                 </VStack>
               ))}

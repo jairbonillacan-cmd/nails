@@ -66,7 +66,7 @@ export function LandingTeamDialog({
       maxHeight="88dvh"
       padding={0}
     >
-      <VStack gap={0} height="100%" className="lk-portal fx-sheet-in">
+      <VStack gap={0} height="100%" className="lk-portal">
         <VStack gap={4} padding={5} paddingBlockEnd={3}>
           <HStack gap={3} align="center">
             {isOptimizableLocalRasterImage(avatarSrc) ? (

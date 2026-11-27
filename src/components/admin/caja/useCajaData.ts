@@ -14,6 +14,7 @@ import {
   buildCommissionsByStaff,
   buildSplitDetails,
   buildSplitSummaryByMethod,
+  type CommissionPeriod,
 } from './cajaActions';
 import {
   resolveInitialCajaRoute,
@@ -34,6 +35,7 @@ export function useCajaData(
     initialRoute.highlightUncollected,
   );
   const [promosView, setPromosView] = useState<PromosSubTab>(initialRoute.promosView);
+  const [commissionPeriod, setCommissionPeriod] = useState<CommissionPeriod>('all');
   const [packagesSeq, setPackagesSeq] = useState(0);
   const lastTabParamRef = useRef<string | null>(tabParam);
 
@@ -91,9 +93,15 @@ export function useCajaData(
     () => (data ? data.uncollectedBookings : []),
     [data],
   );
-  const splitSummaryByMethod = useMemo(() => buildSplitSummaryByMethod(data), [data]);
+  const splitSummaryByMethod = useMemo(
+    () => buildSplitSummaryByMethod(data, commissionPeriod),
+    [data, commissionPeriod],
+  );
   const splitDetails = useMemo(() => buildSplitDetails(data), [data]);
-  const commissionsByStaff = useMemo(() => buildCommissionsByStaff(data), [data]);
+  const commissionsByStaff = useMemo(
+    () => buildCommissionsByStaff(data, commissionPeriod),
+    [data, commissionPeriod],
+  );
 
   const reloadPackages = useCallback(() => {
     setPackagesSeq((prev) => prev + 1);
@@ -114,7 +122,6 @@ export function useCajaData(
           label: 'Cobrado',
           value: formatCurrency(data.kpis.totalRevenueCents, data.settings.currency),
           sub: `Te queda ${formatCurrency(data.kpis.netCashCents, data.settings.currency)} · Gastos ${formatCurrency(data.kpis.totalExpensesCents, data.settings.currency)}`,
-          interactive: true,
         },
         {
           id: 'pending',
@@ -126,14 +133,12 @@ export function useCajaData(
           sub: `${uncollectedBookings.length} sin cobrar · ${pendingDeposits.length} ${pendingDeposits.length === 1 ? 'anticipo' : 'anticipos'}`,
           tone:
             uncollectedTotalCents + pendingDepositsTotalCents > 0 ? 'warning' : 'success',
-          interactive: true,
         },
         {
           id: 'tips',
           label: 'Propinas',
           value: formatCurrency(data.kpis.totalTipsCents, data.settings.currency),
           sub: 'Para tus profesionales',
-          interactive: true,
         },
       ]
     : [];
@@ -146,6 +151,8 @@ export function useCajaData(
     setHighlightUncollected,
     promosView,
     setPromosView,
+    commissionPeriod,
+    setCommissionPeriod,
     packagesCatalog,
     packagesLoading,
     reloadPackages,

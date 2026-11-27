@@ -8,13 +8,17 @@ import {
   executeWhatsAppBookingFlow,
   verifyMetaWebhookSignatureAsync,
 } from '@/lib/integrations/whatsapp-booking';
-import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
+import {
+  getWhatsAppMonthKey,
+  parseInboundAttendanceIntent,
+} from '@/lib/integrations/whatsapp-templates';
 import { logError, logInfo, logWarn } from '@/lib/logger';
 import {
   claimWebhookEventIdempotent,
   confirmBookingAttendanceFromWebhook,
   getRepository,
   incrementWhatsAppMonthlyUsage,
+  updateNotificationDeliveryByProviderId,
 } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
@@ -232,12 +236,27 @@ export async function POST(request: NextRequest) {
         statusesProcessed += 1;
 
         if (statusName === 'failed') {
+          const errorSummary =
+            (statusItem.errors ?? [])
+              .map((errItem) =>
+                [errItem.code ? `#${errItem.code}` : '', errItem.title ?? '']
+                  .filter(Boolean)
+                  .join(' '),
+              )
+              .filter(Boolean)
+              .join('; ') || 'No se pudo entregar el mensaje por WhatsApp.';
+          if (statusId) {
+            await updateNotificationDeliveryByProviderId(statusId, 'failed', errorSummary);
+          }
           logWarn('webhook_whatsapp_message_failed', {
             messageId: statusId ?? null,
             recipient: statusItem.recipient_id ?? null,
             errors: statusItem.errors ?? [],
           });
         } else {
+          if (statusId && (statusName === 'delivered' || statusName === 'read')) {
+            await updateNotificationDeliveryByProviderId(statusId, 'sent', null);
+          }
           logInfo('webhook_whatsapp_status_updated', {
             messageId: statusId ?? null,
             status: statusName,
@@ -384,6 +403,69 @@ export async function POST(request: NextRequest) {
                 settingsTimezone: tz,
               });
             }
+          }
+        } else if (message.from && message.type === 'text' && message.text?.body) {
+          const textIntent = parseInboundAttendanceIntent(message.text.body);
+          if (textIntent) {
+            const phoneE164 = `+${message.from.replace(/^\+/, '')}`;
+            const nowMs = Date.now();
+            const windowEndMs = nowMs + 36 * 60 * 60 * 1000;
+            const candidateBooking = (snapshot.bookings ?? [])
+              .filter((b) => {
+                if (
+                  b.status === 'canceled' ||
+                  b.status === 'completed' ||
+                  b.status === 'no_show'
+                ) {
+                  return false;
+                }
+                const startMs = new Date(b.startAt).getTime();
+                if (startMs < nowMs - 60 * 60 * 1000 || startMs > windowEndMs) {
+                  return false;
+                }
+                if (textIntent === 'confirm' && b.attendanceStatus === 'confirmed') {
+                  return false;
+                }
+                const matchedClient = (snapshot.clients ?? []).find(
+                  (cl) => cl.id === b.clientId,
+                );
+                return matchedClient?.phoneE164 === phoneE164;
+              })
+              .toSorted(
+                (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+              )[0];
+
+            if (candidateBooking && textIntent === 'confirm') {
+              const confirmed = await confirmBookingAttendanceFromWebhook({
+                bookingId: candidateBooking.id,
+                phoneE164,
+                via: 'whatsapp',
+              });
+              if (confirmed) {
+                attendanceConfirmedCount += 1;
+                await dispatchWhatsAppNotification({
+                  toPhoneE164: phoneE164,
+                  bodyText: `¡Perfecto ${confirmed.client.fullName}! Confirmamos tu asistencia para ${confirmed.service.name} (${confirmed.bookingCode}). Te esperamos en ${snapshot.settings.name}.`,
+                  withinServiceWindow: true,
+                  settingsTimezone: tz,
+                });
+              }
+            } else if (candidateBooking && textIntent === 'reschedule') {
+              const env = getRuntimeIntegrationStatus();
+              const rescheduleUrl = `${env.appUrl.replace(/\/+$/, '')}/cita/${candidateBooking.manageToken}?action=reschedule`;
+              await dispatchWhatsAppNotification({
+                toPhoneE164: phoneE164,
+                bodyText: `Sin problema, elige tu nuevo horario en segundos aquí: ${rescheduleUrl}`,
+                withinServiceWindow: true,
+                settingsTimezone: tz,
+              });
+            }
+          } else {
+            logInfo('webhook_whatsapp_inbound_message', {
+              messageId: message.id ?? null,
+              from: message.from ?? null,
+              type: message.type ?? 'unknown',
+            });
           }
         } else {
           logInfo('webhook_whatsapp_inbound_message', {

@@ -6,6 +6,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Check } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
   ConfirmActionDialog,
   PageHeader,
@@ -142,6 +143,7 @@ export default function AdminTeamPage() {
       : 'Esta persona ya no podrá entrar al panel del salón hasta que reactives su acceso.';
 
   return (
+    <AdminAccessGuard role={data.session.user.role} section="team" sectionLabel="Equipo">
     <VStack className="ad-page">
       <PageHeader
         title="Equipo"
@@ -149,7 +151,7 @@ export default function AdminTeamPage() {
         meta={
           busyId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando...
+              Guardando…
             </Text>
           ) : saveNotice.message ? (
             <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
@@ -228,5 +230,6 @@ export default function AdminTeamPage() {
         }}
       />
     </VStack>
+    </AdminAccessGuard>
   );
 }

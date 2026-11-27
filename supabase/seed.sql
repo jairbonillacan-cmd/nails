@@ -769,6 +769,30 @@ VALUES
     'UTILITY',
     'es_MX',
     true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001207',
+    'deposit_rejected',
+    'laikona_comprobante_rechazado',
+    'UTILITY',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001208',
+    'client_otp',
+    'laikona_codigo_acceso',
+    'AUTHENTICATION',
+    'es_MX',
+    true
+  ),
+  (
+    '10000000-0000-4000-8000-000000001209',
+    'touchup_invite',
+    'laikona_invitacion_retoque',
+    'MARKETING',
+    'es_MX',
+    true
   )
 ON CONFLICT (trigger_key) DO NOTHING;
 

@@ -65,6 +65,14 @@ import {
 import { GET as getPublicAvailability } from '@/app/api/availability/route';
 import { GET as getPublicBootstrap } from '@/app/api/public/bootstrap/route';
 import { POST as postWhatsAppSimulate } from '@/app/api/admin/integrations/whatsapp-simulate/route';
+import {
+  GET as getAdminWhatsApp,
+  POST as postAdminWhatsApp,
+} from '@/app/api/admin/integrations/whatsapp/route';
+import {
+  GET as getAdminPackages,
+  POST as postAdminPackages,
+} from '@/app/api/admin/packages/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
 import { POST as postSlotHold } from '@/app/api/slot-holds/route';
 import { GET as getMediaFile } from '@/app/api/media/[...path]/route';
@@ -4123,6 +4131,166 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         { params: Promise.resolve({ token: 'demo-token-andrea-1044' }) },
       );
       expect(externalManageRes.status).toBe(400);
+    });
+
+    it('SEC-08: scopes GET /api/admin/packages clientPackages to specialist bookings only', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-sec08');
+      const ownerCookie = getOwnerCookieHeader();
+      const specialistCookie = getSpecialistCookieHeader();
+      const db = getSnapshot();
+      const karlaBooking = db.bookings.find((b) => b.staffId === 'staff-karla');
+      const tereBooking = db.bookings.find((b) => b.staffId === 'staff-tere');
+      expect(karlaBooking).toBeDefined();
+      expect(tereBooking).toBeDefined();
+      if (!karlaBooking || !tereBooking) throw new Error('Missing seed bookings');
+
+      const pkgRes = await postAdminPackages(
+        makeRequest('http://localhost:3000/api/admin/packages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({
+            kind: 'catalog',
+            name: 'Paquete Seguridad 3 Sesiones',
+            description: 'Prueba RBAC',
+            serviceId: 'srv-rubber',
+            totalSessions: 3,
+            priceCents: 120000,
+            validDays: 90,
+            isActive: true,
+          }),
+        }),
+      );
+      expect(pkgRes.status).toBe(201);
+      const createdPkg = (await pkgRes.json()) as { servicePackage: { id: string } };
+
+      const assignKarlaClient = await postAdminPackages(
+        makeRequest('http://localhost:3000/api/admin/packages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({
+            kind: 'assign',
+            clientId: karlaBooking.clientId,
+            packageId: createdPkg.servicePackage.id,
+            notes: 'Solo Karla',
+          }),
+        }),
+      );
+      expect(assignKarlaClient.status).toBe(201);
+
+      const assignTereClient = await postAdminPackages(
+        makeRequest('http://localhost:3000/api/admin/packages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({
+            kind: 'assign',
+            clientId: tereBooking.clientId,
+            packageId: createdPkg.servicePackage.id,
+            notes: 'Solo Tere',
+          }),
+        }),
+      );
+      expect(assignTereClient.status).toBe(201);
+
+      const specialistRes = await getAdminPackages(
+        makeRequest('http://localhost:3000/api/admin/packages', {
+          headers: { cookie: specialistCookie },
+        }),
+      );
+      expect(specialistRes.status).toBe(200);
+      const specJson = (await specialistRes.json()) as {
+        clientPackages: Array<{ clientId: string; notes: string }>;
+      };
+      const returnedClientIds = new Set(specJson.clientPackages.map((p) => p.clientId));
+      expect(returnedClientIds.has(tereBooking.clientId)).toBe(true);
+      if (karlaBooking.clientId !== tereBooking.clientId) {
+        expect(returnedClientIds.has(karlaBooking.clientId)).toBe(false);
+      }
+    });
+
+    it('SEC-09: restricts /api/admin/integrations/whatsapp to owner and validates template updates', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-sec09');
+      const ownerCookie = getOwnerCookieHeader();
+      const adminCookie = getAdminCookieHeader();
+      const specialistCookie = getSpecialistCookieHeader();
+
+      const unauthGet = await getAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp'),
+      );
+      expect(unauthGet.status).toBe(401);
+
+      const adminGet = await getAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          headers: { cookie: adminCookie },
+        }),
+      );
+      expect(adminGet.status).toBe(403);
+
+      const specGet = await getAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          headers: { cookie: specialistCookie },
+        }),
+      );
+      expect(specGet.status).toBe(403);
+
+      const adminPost = await postAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ action: 'sync_meta_templates' }),
+        }),
+      );
+      expect(adminPost.status).toBe(403);
+
+      const ownerGet = await getAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          headers: { cookie: ownerCookie },
+        }),
+      );
+      expect(ownerGet.status).toBe(200);
+      const ownerJson = (await ownerGet.json()) as {
+        templates: Array<{ triggerKey: string; templateName: string }>;
+      };
+      expect(ownerJson.templates.length).toBe(9);
+
+      const invalidNameRes = await postAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({
+            action: 'update_template',
+            triggerKey: 'client_otp',
+            templateName: 'Invalid Name!',
+          }),
+        }),
+      );
+      expect(invalidNameRes.status).toBe(400);
+
+      const validUpdateRes = await postAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({
+            action: 'update_template',
+            triggerKey: 'client_otp',
+            templateName: 'laikona_otp_v2',
+            isActive: true,
+          }),
+        }),
+      );
+      expect(validUpdateRes.status).toBe(200);
+      const updatedJson = (await validUpdateRes.json()) as {
+        template: { triggerKey: string; templateName: string };
+      };
+      expect(updatedJson.template.templateName).toBe('laikona_otp_v2');
+
+      const syncWithoutCreds = await postAdminWhatsApp(
+        makeRequest('http://localhost:3000/api/admin/integrations/whatsapp', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({ action: 'sync_meta_templates' }),
+        }),
+      );
+      expect(syncWithoutCreds.status).toBe(400);
     });
   });
 });

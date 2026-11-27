@@ -36,6 +36,7 @@ import type {
   AvailabilitySchedule,
   BookingStatus,
   BookingWithRelations,
+  DateOverride,
   PaymentSplit,
   RecurringBlock,
   Service,
@@ -75,6 +76,7 @@ interface VisualScheduleGridProps {
   staff: StaffMember[];
   allStaffColorIndex: ReadonlyMap<string, number>;
   schedules: AvailabilitySchedule[];
+  dateOverrides?: DateOverride[];
   recurringBlocks?: RecurringBlock[];
   paymentSplits?: PaymentSplit[];
   bookings: BookingWithRelations[];
@@ -113,6 +115,7 @@ export function VisualScheduleGrid({
   staff,
   allStaffColorIndex,
   schedules,
+  dateOverrides = [],
   recurringBlocks = [],
   paymentSplits = [],
   bookings,
@@ -161,6 +164,20 @@ export function VisualScheduleGrid({
     () => buildFixedTimesByStaff(activeStaff, schedules, dow),
     [activeStaff, schedules, dow],
   );
+  const unavailableOverrideByStaffId = useMemo(() => {
+    const map = new Map<string, DateOverride>();
+    for (const ov of dateOverrides) {
+      if (ov.overrideDate !== dateKey || !ov.isUnavailable) continue;
+      if (ov.staffId === 'all') {
+        for (const st of activeStaff) {
+          if (!map.has(st.id)) map.set(st.id, ov);
+        }
+      } else {
+        map.set(ov.staffId, ov);
+      }
+    }
+    return map;
+  }, [activeStaff, dateOverrides, dateKey]);
 
   const splitsByBookingId = useMemo(() => {
     const map = new Map<string, PaymentSplit[]>();
@@ -211,6 +228,10 @@ export function VisualScheduleGrid({
   const openSlotsByStaffId = useMemo(() => {
     const map = new Map<string, CalendarOpenSlot[]>();
     for (const st of activeStaff) {
+      if (unavailableOverrideByStaffId.has(st.id)) {
+        map.set(st.id, []);
+        continue;
+      }
       const staffBookings = dayBookingsByStaffId.get(st.id) ?? EMPTY_BOOKINGS;
       const staffBlocks = activeBlocksByStaff.get(st.id) ?? [];
       const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
@@ -226,7 +247,15 @@ export function VisualScheduleGrid({
       );
     }
     return map;
-  }, [activeStaff, dayBookingsByStaffId, activeBlocksByStaff, fixedTimesByStaff, timezone, elapsedMinutes]);
+  }, [
+    activeStaff,
+    unavailableOverrideByStaffId,
+    dayBookingsByStaffId,
+    activeBlocksByStaff,
+    fixedTimesByStaff,
+    timezone,
+    elapsedMinutes,
+  ]);
 
   const nowIndicator = useMemo(
     () => computeNowIndicator(nowMs, dateKey, todayKey, timezone),
@@ -263,14 +292,15 @@ export function VisualScheduleGrid({
       pendingProposal.mode === 'resize'
         ? `Duración ajustada a ${formatDuration(pendingProposal.targetDurationMinutes)}`
         : `Cita movida a ${nextTime} con ${targetStaffName}`;
-    const ok = await onRescheduleBooking({
-      bookingId: pendingProposal.booking.id,
-      startAt: nextStartIso,
-      staffId: pendingProposal.targetStaffId,
-      durationMinutes: pendingProposal.targetDurationMinutes,
-      summaryLabel,
-    });
-    if (ok) {
+    try {
+      await onRescheduleBooking({
+        bookingId: pendingProposal.booking.id,
+        startAt: nextStartIso,
+        staffId: pendingProposal.targetStaffId,
+        durationMinutes: pendingProposal.targetDurationMinutes,
+        summaryLabel,
+      });
+    } finally {
       setPendingProposal(null);
     }
   };
@@ -431,7 +461,7 @@ export function VisualScheduleGrid({
               <Button
                 type="button"
                 data-no-drag="true"
-                label={busyBookingId === booking.id && busyStatus === 'confirmed' ? '...' : 'Confirmar'}
+                label={busyBookingId === booking.id && busyStatus === 'confirmed' ? '…' : 'Confirmar'}
                 size="sm"
                 variant="primary"
                 icon={<Check size={12} aria-hidden="true" />}
@@ -538,8 +568,9 @@ export function VisualScheduleGrid({
 
         <HStack gap={2} align="center" wrap="wrap">
           {staffControls}
-          <Badge
-            variant="neutral"
+          <StatusTag
+            tone="neutral"
+            hasTabularNumbers
             label={`${visibleBookingsCount} ${visibleBookingsCount === 1 ? 'cita' : 'citas'}`}
           />
         </HStack>
@@ -565,6 +596,7 @@ export function VisualScheduleGrid({
                 const count = activeBookingCountByStaffId.get(st.id) ?? 0;
                 const colorIdx = allStaffColorIndex.get(st.id) ?? 0;
                 const fixedTimes = fixedTimesByStaff.get(st.id) ?? [];
+                const closedOverride = unavailableOverrideByStaffId.get(st.id) ?? null;
                 return (
                   <HStack
                     key={st.id}
@@ -584,7 +616,11 @@ export function VisualScheduleGrid({
                         <Badge variant="neutral" label={String(count)} />
                       </HStack>
                       <Text type="supporting" color="secondary" maxLines={1} hasTabularNumbers>
-                        {fixedTimes.length > 0 ? fixedTimes.join(' · ') : st.roleTitle.trim() || 'Nail Artist'}
+                        {closedOverride
+                          ? `Cerrado · ${closedOverride.reason || 'Día bloqueado'}`
+                          : fixedTimes.length > 0
+                            ? fixedTimes.join(' · ')
+                            : st.roleTitle.trim() || 'Nail Artist'}
                       </Text>
                     </VStack>
                     <Button
@@ -625,6 +661,7 @@ export function VisualScheduleGrid({
                 const staffBookings = dayBookingsByStaffId.get(st.id) ?? EMPTY_BOOKINGS;
                 const staffBlocks = activeBlocksByStaff.get(st.id) ?? [];
                 const openSlots = openSlotsByStaffId.get(st.id) ?? EMPTY_OPEN_SLOTS;
+                const closedOverride = unavailableOverrideByStaffId.get(st.id) ?? null;
                 const isDropTarget =
                   Boolean(drag.activeDrag?.isDragging) &&
                   drag.activeDrag?.targetStaffId === st.id &&
@@ -650,7 +687,12 @@ export function VisualScheduleGrid({
                         key={hour}
                         type="button"
                         className="ad-cal-hour-slot"
-                        aria-label={`Agendar con ${st.name} a las ${String(hour).padStart(2, '0')}:00`}
+                        disabled={Boolean(closedOverride)}
+                        aria-label={
+                          closedOverride
+                            ? `${st.name} sin disponibilidad (${closedOverride.reason || 'Día bloqueado'})`
+                            : `Agendar con ${st.name} a las ${String(hour).padStart(2, '0')}:00`
+                        }
                         onClick={() =>
                           onOpenNewForStaff(
                             st.id,
@@ -659,9 +701,11 @@ export function VisualScheduleGrid({
                           )
                         }
                       >
-                        <Text type="supporting" className="ad-cal-slot-hover-hint">
-                          + {`${String(hour).padStart(2, '0')}:00`}
-                        </Text>
+                        {!closedOverride ? (
+                          <Text type="supporting" className="ad-cal-slot-hover-hint">
+                            + {`${String(hour).padStart(2, '0')}:00`}
+                          </Text>
+                        ) : null}
                       </button>
                     ))}
 
@@ -672,6 +716,18 @@ export function VisualScheduleGrid({
                         aria-hidden="true"
                         gap={0}
                       />
+                    ) : null}
+
+                    {closedOverride ? (
+                      <VStack
+                        className="ad-cal-block"
+                        style={{ top: '0%', height: '100%' }}
+                        gap={0.5}
+                      >
+                        <Text type="supporting" weight="semibold" maxLines={2}>
+                          Cerrado · {closedOverride.reason || 'Día bloqueado'}
+                        </Text>
+                      </VStack>
                     ) : null}
 
                     {staffBlocks.map((blk) => {

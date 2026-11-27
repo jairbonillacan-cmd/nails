@@ -9,6 +9,7 @@ import {
 import {
   assignClientPackage,
   cancelClientPackage,
+  getRepository,
   listClientPackagesAsync,
   listServicePackagesAsync,
   PolicyError,
@@ -25,8 +26,33 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId')?.trim() || undefined;
+  const servicePackages = await listServicePackagesAsync();
+
+  if (session.user.role === 'specialist') {
+    const staffMemberId = session.user.staffMemberId;
+    if (!staffMemberId) {
+      return NextResponse.json({ servicePackages, clientPackages: [] });
+    }
+    const snap = await getRepository().getSnapshot();
+    const visibleClientIds = new Set(
+      snap.bookings
+        .filter((b) => b.staffId === staffMemberId)
+        .map((b) => b.clientId),
+    );
+    if (clientId && !visibleClientIds.has(clientId)) {
+      return NextResponse.json({ servicePackages, clientPackages: [] });
+    }
+    const allClientPackages = await listClientPackagesAsync(clientId);
+    return NextResponse.json({
+      servicePackages,
+      clientPackages: allClientPackages.filter((pkg) =>
+        visibleClientIds.has(pkg.clientId),
+      ),
+    });
+  }
+
   return NextResponse.json({
-    servicePackages: await listServicePackagesAsync(),
+    servicePackages,
     clientPackages: await listClientPackagesAsync(clientId),
   });
 }

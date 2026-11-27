@@ -55,7 +55,11 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
         <SurfaceCard
           id="ad-caja"
           title="Caja y cobros"
-          subtitle="Ingresos de los últimos 7 días"
+          subtitle={
+            metrics.cash.hasTodayEntries
+              ? 'Resumen de hoy y últimos 7 días'
+              : 'Saldo acumulado y últimos 7 días'
+          }
           headingLevel={3}
           padded
           className="ad-card"
@@ -69,7 +73,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             <HStack gap={5} wrap="wrap" align="end">
               <VStack gap={0.5}>
                 <Text type="supporting" color="secondary">
-                  {metrics.cash.hasTodayEntries ? 'Te queda hoy' : 'Registrado'}
+                  {metrics.cash.hasTodayEntries ? 'Te queda hoy' : 'Saldo acumulado'}
                 </Text>
                 <Text className="ad-sub-figure fx-tabular" hasTabularNumbers>
                   {formatCurrency(

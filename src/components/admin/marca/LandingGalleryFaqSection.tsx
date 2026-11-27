@@ -19,7 +19,12 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
+import {
+  ConfirmActionDialog,
+  EmptyStateCard,
+  StatusTag,
+  SurfaceCard,
+} from '@/components/ui';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import {
   formatFileSize,
@@ -72,6 +77,7 @@ export function LandingGalleryFaqSection({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState<GalleryItem | null>(null);
 
   const patchLanding = (patch: Partial<LandingContent>) => {
     onUpdateDraft({
@@ -106,7 +112,7 @@ export function LandingGalleryFaqSection({
     }
     const cleanTitle = title.trim();
     if (!cleanTitle) {
-      setUploadError('Ponle un nombre corto al diseño (ej. French perlado).');
+      setUploadError('Ponle un nombre corto al diseño (ejemplo: French perlado).');
       return;
     }
     setUploading(true);
@@ -269,7 +275,7 @@ export function LandingGalleryFaqSection({
             <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
               <TextInput
                 label="Nombre del diseño"
-                placeholder="Ej. French cherry con perlas"
+                placeholder="Ejemplo: French cherry con perlas"
                 value={title}
                 onChange={setTitle}
                 isDisabled={uploading}
@@ -293,7 +299,7 @@ export function LandingGalleryFaqSection({
               />
               <TextInput
                 label="Nota breve (opcional)"
-                placeholder="Ej. Largo M en punta almendra"
+                placeholder="Ejemplo: Largo M en punta almendra"
                 value={caption}
                 onChange={setCaption}
                 isOptional
@@ -304,7 +310,7 @@ export function LandingGalleryFaqSection({
             <HStack justify="end">
               <Button
                 type="button"
-                label={uploading ? 'Subiendo foto...' : 'Publicar en galería'}
+                label={uploading ? 'Subiendo foto…' : 'Publicar en galería'}
                 variant="primary"
                 size="sm"
                 icon={<Upload size={14} aria-hidden="true" />}
@@ -353,12 +359,12 @@ export function LandingGalleryFaqSection({
                       <HStack justify="end" paddingBlockStart={1}>
                         <Button
                           type="button"
-                          label={deletingId === item.id ? 'Quitando...' : 'Quitar'}
+                          label={deletingId === item.id ? 'Quitando…' : 'Quitar'}
                           variant="ghost"
                           size="sm"
                           icon={<Trash2 size={14} aria-hidden="true" />}
                           isDisabled={deletingId === item.id}
-                          onClick={() => void handleDeleteGalleryItem(item.id)}
+                          onClick={() => setConfirmDeleteItem(item)}
                         />
                       </HStack>
                     </VStack>
@@ -393,7 +399,7 @@ export function LandingGalleryFaqSection({
             />
             <TextInput
               label="Subtítulo"
-              placeholder="Anticipos, reagendado, retoques y todo lo que necesitas saber..."
+              placeholder="Anticipos, reagendado, retoques y todo lo que necesitas saber…"
               value={draft.landingContent.faqSubtitle ?? ''}
               onChange={(v) => patchLanding({ faqSubtitle: v })}
               isOptional
@@ -448,14 +454,14 @@ export function LandingGalleryFaqSection({
                   <TextInput
                     label={`Pregunta ${idx + 1}`}
                     isLabelHidden
-                    placeholder="Ej. ¿Atienden con diseño que yo traiga?"
+                    placeholder="Ejemplo: ¿Atienden con diseño que yo traiga?"
                     value={faq.question}
                     onChange={(v) => updateFaq(idx, { question: v })}
                   />
                   <TextArea
                     label={`Respuesta ${idx + 1}`}
                     isLabelHidden
-                    placeholder="Escribe una respuesta clara y amable..."
+                    placeholder="Escribe una respuesta clara y amable…"
                     value={faq.answer}
                     onChange={(v) => updateFaq(idx, { answer: v })}
                     rows={2}
@@ -486,6 +492,26 @@ export function LandingGalleryFaqSection({
           )}
         </VStack>
       </SurfaceCard>
+
+      {confirmDeleteItem ? (
+        <ConfirmActionDialog
+          isOpen
+          onOpenChange={(open) => {
+            if (!open && !deletingId) setConfirmDeleteItem(null);
+          }}
+          title={`¿Quitar "${confirmDeleteItem.title}" de tu galería?`}
+          description="Dejará de aparecer en el carrusel de tu portada pública."
+          confirmLabel="Sí, quitar foto"
+          cancelLabel="Volver"
+          variant="destructive"
+          isLoading={deletingId === confirmDeleteItem.id}
+          onConfirm={async () => {
+            const targetId = confirmDeleteItem.id;
+            await handleDeleteGalleryItem(targetId);
+            setConfirmDeleteItem(null);
+          }}
+        />
+      ) : null}
     </VStack>
   );
 }

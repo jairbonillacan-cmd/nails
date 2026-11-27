@@ -337,8 +337,8 @@ export function NewBookingDialog({
             label={
               saving
                 ? advanced.isRecurring
-                  ? 'Agendando retoques...'
-                  : 'Guardando cita...'
+                  ? 'Agendando retoques…'
+                  : 'Guardando cita…'
                 : advanced.isRecurring
                   ? `Guardar serie (${advanced.recurrenceCount} citas)`
                   : 'Guardar cita'

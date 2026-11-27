@@ -44,8 +44,8 @@ export async function adjustInventoryRequest(
           reason === 'retail_sale'
             ? 'Venta registrada en Caja y descontada del inventario.'
             : reason === 'restock'
-              ? 'Entrada (+1) sumada al inventario.'
-              : 'Consumo (-1) descontado del inventario.',
+              ? `Entrada (+${Math.abs(delta)}) sumada al inventario.`
+              : `Consumo (−${Math.abs(delta)}) descontado del inventario.`,
       };
     }
     const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -67,7 +67,8 @@ export async function createInventoryItemRequest(
     if (res.ok) {
       return { status: 'success', text: 'Producto agregado a tu inventario.' };
     }
-    return { status: 'error', text: 'No se pudo guardar el producto.' };
+    const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+    return { status: 'error', text: errJson?.error || 'No se pudo guardar el producto.' };
   } catch {
     return { status: 'error', text: 'No se pudo conectar para guardar el producto.' };
   }

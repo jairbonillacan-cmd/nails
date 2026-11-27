@@ -1962,10 +1962,8 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
 
   it('Wave 6: manages WhatsApp templates/monthly quota alerts, webhook idempotency, and slot-hold keep-alive cleanup', async () => {
     const templates = await getWhatsAppTemplates();
-    expect(templates).toHaveLength(6);
-    expect(templates.every((t) => t.category === 'UTILITY' && t.languageCode === 'es_MX')).toBe(
-      true,
-    );
+    expect(templates).toHaveLength(9);
+    expect(templates.every((t) => t.languageCode === 'es_MX')).toBe(true);
 
     const prevOverride = process.env.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED;
     process.env.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED = 'laikona_override_confirmada';

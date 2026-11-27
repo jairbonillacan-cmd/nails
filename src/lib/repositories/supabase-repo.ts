@@ -24,6 +24,10 @@ import {
   getConfiguredWhatsAppMonthlyQuota,
   getWhatsAppTemplateNameOverrides,
 } from '../env';
+import {
+  getOfficialWhatsAppTemplateSpec,
+  sanitizeWhatsAppTemplateName,
+} from '../integrations/whatsapp-templates';
 import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
 import { logError } from '../logger';
 import {
@@ -894,6 +898,9 @@ const VALID_WHATSAPP_TRIGGERS = new Set<WhatsAppTemplateTriggerKey>([
   'booking_rescheduled',
   'booking_canceled',
   'waitlist_offer',
+  'deposit_rejected',
+  'client_otp',
+  'touchup_invite',
 ]);
 
 function isWhatsAppTriggerKey(value: string): value is WhatsAppTemplateTriggerKey {
@@ -4349,15 +4356,94 @@ export function createSupabaseRepository(
       const mapped = (data ?? [])
         .map(mapWhatsAppTemplateRow)
         .filter((tpl): tpl is WhatsAppTemplateConfig => tpl !== null);
-      const base =
-        mapped.length > 0
-          ? mapped
-          : createDefaultWhatsAppTemplates(clock.now().toISOString());
+      const defaults = createDefaultWhatsAppTemplates(clock.now().toISOString());
+      const byTrigger = new Map<WhatsAppTemplateTriggerKey, WhatsAppTemplateConfig>();
+      for (const tpl of defaults) {
+        byTrigger.set(tpl.triggerKey, tpl);
+      }
+      for (const tpl of mapped) {
+        byTrigger.set(tpl.triggerKey, tpl);
+      }
       const overrides = getWhatsAppTemplateNameOverrides();
-      return base.map((tpl) => ({
+      return Array.from(byTrigger.values()).map((tpl) => ({
         ...tpl,
         templateName: overrides[tpl.triggerKey] ?? tpl.templateName,
       }));
+    },
+
+    async updateWhatsAppTemplate(
+      triggerKey: WhatsAppTemplateTriggerKey,
+      patch: { templateName?: string; isActive?: boolean },
+    ): Promise<WhatsAppTemplateConfig> {
+      const supabase = getClient();
+      const spec = getOfficialWhatsAppTemplateSpec(triggerKey);
+      const nowIso = clock.now().toISOString();
+      const { data: existing } = await supabase
+        .from('whatsapp_templates')
+        .select('*')
+        .eq('trigger_key', triggerKey)
+        .maybeSingle();
+
+      const nextName =
+        patch.templateName !== undefined
+          ? sanitizeWhatsAppTemplateName(patch.templateName, triggerKey)
+          : existing?.template_name ?? spec.defaultTemplateName;
+      const nextActive =
+        patch.isActive !== undefined ? patch.isActive : existing?.is_active ?? true;
+
+      const { data, error } = await supabase
+        .from('whatsapp_templates')
+        .upsert(
+          {
+            ...(existing?.id ? { id: existing.id } : {}),
+            trigger_key: triggerKey,
+            template_name: nextName,
+            category: existing?.category ?? spec.category,
+            language_code: existing?.language_code ?? spec.languageCode,
+            is_active: nextActive,
+            updated_at: nowIso,
+          },
+          { onConflict: 'trigger_key' },
+        )
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        throw new PolicyError(
+          'WHATSAPP_TEMPLATE_UPDATE_FAILED',
+          error?.message || 'No se pudo actualizar la plantilla de WhatsApp.',
+        );
+      }
+
+      const mapped = mapWhatsAppTemplateRow(data);
+      if (!mapped) {
+        throw new PolicyError(
+          'WHATSAPP_TEMPLATE_UPDATE_FAILED',
+          'Plantilla de WhatsApp inválida.',
+        );
+      }
+      return mapped;
+    },
+
+    async updateNotificationDeliveryByProviderId(
+      providerMessageId: string,
+      status: 'sent' | 'failed',
+      errorMessage: string | null = null,
+    ): Promise<boolean> {
+      const cleanId = providerMessageId.trim();
+      if (!cleanId) return false;
+      const supabase = getClient();
+      const nowIso = clock.now().toISOString();
+      const { data, error } = await supabase
+        .from('scheduled_notifications')
+        .update({
+          status,
+          error_message: errorMessage,
+          ...(status === 'sent' ? { sent_at: nowIso } : {}),
+        })
+        .eq('provider_message_id', cleanId)
+        .select('id');
+      return !error && Boolean(data && data.length > 0);
     },
 
     async getWhatsAppMonthlyUsage(

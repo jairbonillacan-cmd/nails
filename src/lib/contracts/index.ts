@@ -94,7 +94,10 @@ export {
   ReportPeriodSchema,
 } from './brand';
 
-export { AdminOperationsPostSchema } from './operations';
+export {
+  AdminOperationsPostSchema,
+  AdminWhatsAppActionSchema,
+} from './operations';
 
 export {
   AdminTeamPostSchema,

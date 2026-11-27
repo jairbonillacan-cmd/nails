@@ -75,6 +75,7 @@ export interface WhatsAppDispatchParams {
   templateName?: string;
   templateParameters?: readonly string[];
   interactiveButtons?: ReadonlyArray<{ id: string; title: string }>;
+  authOtpCode?: string;
   withinServiceWindow?: boolean;
   fallbackEmail?: {
     to: string;
@@ -1031,6 +1032,8 @@ export async function dispatchWhatsAppNotification(
               params.templateParameters && params.templateParameters.length > 0
                 ? params.templateParameters
                 : [params.bodyText],
+            quickReplyPayloads: params.interactiveButtons?.map((btn) => btn.id),
+            authOtpCode: params.authOtpCode,
           })
         : cleanButtons.length > 0
           ? {
@@ -1203,11 +1206,12 @@ function mapImmediateTriggerToWhatsAppTemplate(
   return 'booking_confirmed';
 }
 
-function buildBookingTemplateParameters(params: {
+export function buildBookingTemplateParameters(params: {
   triggerKey: WhatsAppTemplateTriggerKey;
   booking: BookingWithRelations;
   settings: SalonSettings;
   appUrl: string;
+  touchUpUrl?: string;
 }): string[] {
   const normalizedUrl = params.appUrl.replace(/\/+$/, '');
   const manageUrl = `${normalizedUrl}/cita/${params.booking.manageToken}`;
@@ -1232,6 +1236,34 @@ function buildBookingTemplateParameters(params: {
       timeLabel,
       params.booking.staff.name,
       manageUrl,
+    ];
+  }
+  if (params.triggerKey === 'deposit_rejected') {
+    return [
+      params.booking.client.fullName,
+      params.booking.bookingCode,
+      serviceName,
+      manageUrl,
+    ];
+  }
+  if (params.triggerKey === 'touchup_invite') {
+    const suggestedTouchUpDate = computeSuggestedTouchUpDateKey({
+      startAt: params.booking.endAt || params.booking.startAt,
+      daysAhead: 21,
+      timezone: tz,
+    });
+    const resolvedTouchUpUrl =
+      params.touchUpUrl ??
+      `${normalizedUrl}${buildTouchUpBookingUrl({
+        serviceSlug: params.booking.service.slug,
+        staffSlug: params.booking.staff.bookingSlug,
+        suggestedDateKey: suggestedTouchUpDate,
+      })}`;
+    return [
+      params.booking.client.fullName,
+      serviceName,
+      params.booking.staff.name,
+      resolvedTouchUpUrl,
     ];
   }
   return [
@@ -1426,6 +1458,13 @@ export async function dispatchDepositRejectedNotification(params: {
   return dispatchWhatsAppNotification({
     toPhoneE164: params.booking.client.phoneE164,
     bodyText,
+    triggerKey: 'deposit_rejected',
+    templateParameters: buildBookingTemplateParameters({
+      triggerKey: 'deposit_rejected',
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: normalizedUrl,
+    }),
     withinServiceWindow: false,
     settingsTimezone: params.settings.timezone,
     fallbackEmail: params.booking.client.email
@@ -1458,6 +1497,14 @@ export async function dispatchTouchUpInviteNotification(params: {
   const whatsapp = await dispatchWhatsAppNotification({
     toPhoneE164: params.booking.client.phoneE164,
     bodyText,
+    triggerKey: 'touchup_invite',
+    templateParameters: buildBookingTemplateParameters({
+      triggerKey: 'touchup_invite',
+      booking: params.booking,
+      settings: params.settings,
+      appUrl: normalizedUrl,
+      touchUpUrl: fullTouchUpUrl,
+    }),
     withinServiceWindow: false,
     settingsTimezone: params.settings.timezone,
     fallbackEmail: params.booking.client.email

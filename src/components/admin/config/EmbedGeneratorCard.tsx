@@ -229,17 +229,6 @@ export function EmbedGeneratorCard({
               icon={<Eye size={14} aria-hidden="true" />}
               onClick={() => setPreviewOpen(true)}
             />
-            {mode === 'inline' ? (
-              <Button
-                label="Abrir vista compacta"
-                variant="ghost"
-                size="sm"
-                icon={<ExternalLink size={14} aria-hidden="true" />}
-                href={compactBookingPath}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            ) : null}
           </HStack>
         </VStack>
 

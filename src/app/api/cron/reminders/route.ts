@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { constantTimeEqual } from '@/lib/auth/admin-session';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
-import { formatTimeInTimezone } from '@/lib/format';
 import {
+  buildBookingTemplateParameters,
   dispatchEmailNotification,
   dispatchSmsNotification,
   dispatchWhatsAppNotification,
@@ -25,7 +25,7 @@ import type {
 export const dynamic = 'force-dynamic';
 
 function resolveReminderWhatsAppTemplate(
-  notification: ScheduledNotification,
+  situation: EmailTemplateSituation,
   booking: BookingWithRelations,
   settings: SalonSettings,
   appUrl: string,
@@ -33,31 +33,39 @@ function resolveReminderWhatsAppTemplate(
   triggerKey?: WhatsAppTemplateTriggerKey;
   templateParameters?: string[];
 } {
-  const tz = settings.timezone || 'America/Mexico_City';
-  const timeLabel = formatTimeInTimezone(booking.startAt, tz, false);
-  const manageUrl = `${appUrl.replace(/\/+$/, '')}/cita/${booking.manageToken}`;
-
-  if (notification.workflowId === 'wf-24h') {
+  if (situation === 'reminder_24h') {
     return {
       triggerKey: 'reminder_24h',
-      templateParameters: [
-        booking.client.fullName,
-        booking.service.name,
-        timeLabel,
-        booking.staff.name,
-        manageUrl,
-      ],
+      templateParameters: buildBookingTemplateParameters({
+        triggerKey: 'reminder_24h',
+        booking,
+        settings,
+        appUrl,
+      }),
     };
   }
 
-  if (notification.workflowId === 'wf-2h') {
+  if (situation === 'reminder_2h') {
     return {
       triggerKey: 'reminder_2h',
-      templateParameters: [
-        booking.client.fullName,
-        timeLabel,
-        settings.address,
-      ],
+      templateParameters: buildBookingTemplateParameters({
+        triggerKey: 'reminder_2h',
+        booking,
+        settings,
+        appUrl,
+      }),
+    };
+  }
+
+  if (situation === 'touchup') {
+    return {
+      triggerKey: 'touchup_invite',
+      templateParameters: buildBookingTemplateParameters({
+        triggerKey: 'touchup_invite',
+        booking,
+        settings,
+        appUrl,
+      }),
     };
   }
 
@@ -133,7 +141,7 @@ export async function POST(request: NextRequest) {
         }
         if (notification.channel === 'whatsapp') {
           const templateMeta = resolveReminderWhatsAppTemplate(
-            notification,
+            emailSituation,
             booking,
             settings,
             env.appUrl,

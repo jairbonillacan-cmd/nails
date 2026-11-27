@@ -20,6 +20,7 @@ import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
 import { useCitasBookingActions } from '@/components/admin/citas/useCitasBookingActions';
 import { useCitasWorkspace } from '@/components/admin/citas/useCitasWorkspace';
 import { WaitlistPanel } from '@/components/admin/citas/WaitlistPanel';
+import { roleCanAccess } from '@/lib/rbac';
 
 function ScheduleGridFallback() {
   return (
@@ -54,6 +55,7 @@ export default function AdminBookingsPage() {
   }
 
   const data = ws.data;
+  const canViewClients = roleCanAccess(data.session.user.role, 'clients');
   const visibleStaff = ws.lockedStaffId
     ? ws.orderedStaff.filter((s) => s.id === ws.lockedStaffId)
     : ws.orderedStaff;
@@ -95,7 +97,7 @@ export default function AdminBookingsPage() {
           meta={
             actions.busyAction || actions.reschedulingId ? (
               <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-                Actualizando...
+                Actualizando…
               </Text>
             ) : actions.inlineNotice.message ? (
               <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
@@ -264,10 +266,19 @@ export default function AdminBookingsPage() {
           waitlist={data.waitlist}
           services={data.services}
           salonName={data.settings.name}
-          onNotified={async () => {
+          onStatusUpdated={async (message) => {
             await ws.refresh();
-            actions.inlineNotice.show('Clienta marcada como avisada');
+            actions.inlineNotice.show(message);
           }}
+          onBookEntry={(entry) =>
+            ws.openManualModal('any', {
+              serviceId: entry.serviceId,
+              startDate: entry.desiredDate,
+              clientName: entry.clientName,
+              clientPhone: entry.clientPhoneE164,
+              internalNotes: entry.notes || 'Agendada desde lista de espera',
+            })
+          }
         />
       ) : ws.viewMode === 'schedule' ? (
         <VisualScheduleGrid
@@ -279,6 +290,7 @@ export default function AdminBookingsPage() {
           staff={scheduleStaff}
           allStaffColorIndex={ws.allStaffColorIndex}
           schedules={data.schedules}
+          dateOverrides={data.dateOverrides}
           recurringBlocks={data.recurringBlocks}
           paymentSplits={data.paymentSplits}
           bookings={ws.tabFilteredBookings}
@@ -350,6 +362,7 @@ export default function AdminBookingsPage() {
           currency={data.settings.currency}
           timezone={ws.tz}
           noShowThreshold={noShowThreshold}
+          canViewClients={canViewClients}
           busyBookingId={actions.busyAction?.bookingId ?? null}
           busyStatus={actions.busyAction?.status ?? null}
           requestingRescheduleId={actions.requestingRescheduleId}
@@ -386,7 +399,9 @@ export default function AdminBookingsPage() {
         blockOpen={ws.blockOpen}
         blockSessionKey={ws.blockSessionKey}
         onBlockOpenChange={ws.setBlockOpen}
+        canViewClients={canViewClients}
         busyAction={actions.busyAction}
+        rejectingDepositId={actions.rejectingDepositId}
         remindingId={actions.remindingId}
         requestingRescheduleId={actions.requestingRescheduleId}
         pendingCancelBooking={pendingCancelBooking}
@@ -400,6 +415,7 @@ export default function AdminBookingsPage() {
         onOpenCheckout={ws.openCheckoutDrawer}
         onScheduleRetouch={ws.handleScheduleRetouch}
         onUpdateStatus={actions.updateStatus}
+        onRejectDeposit={actions.rejectDeposit}
         onSendReminder={(id) => void actions.sendReminder(id)}
         onRequestReschedule={(id) => void actions.requestReschedule(id)}
         onRefresh={ws.refresh}

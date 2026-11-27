@@ -588,6 +588,9 @@ const WhatsAppTemplateTriggerKeySchema = z.enum([
   'booking_rescheduled',
   'booking_canceled',
   'waitlist_offer',
+  'deposit_rejected',
+  'client_otp',
+  'touchup_invite',
 ]);
 
 const WhatsAppTemplateConfigSchema = z.object({

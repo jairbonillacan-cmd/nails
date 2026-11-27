@@ -96,7 +96,6 @@ export default function AdminReportsPage() {
           value: formatCurrency(report.summary.totalRevenueCollectedCents, currency),
           sub: `${report.summary.completedCount} completada${report.summary.completedCount === 1 ? '' : 's'}`,
           tone: 'default',
-          interactive: true,
         },
         {
           id: 'avg-ticket',
@@ -107,7 +106,6 @@ export default function AdminReportsPage() {
               : '—',
           sub: 'Por cita cobrada',
           tone: 'default',
-          interactive: true,
         },
         {
           id: 'completion-rate',
@@ -115,15 +113,16 @@ export default function AdminReportsPage() {
           value: `${report.summary.completionRatePercent}%`,
           sub: `${report.summary.totalBookings} cita${report.summary.totalBookings === 1 ? '' : 's'} en este período`,
           tone: report.summary.completionRatePercent >= 80 ? 'success' : 'default',
-          interactive: true,
         },
         {
           id: 'noshow-rate',
           label: 'Inasistencias',
           value: `${report.summary.noShowRatePercent}%`,
-          sub: `${report.summary.noShowCount} no llegaron`,
+          sub:
+            report.summary.noShowCount === 1
+              ? '1 no llegó'
+              : `${report.summary.noShowCount} no llegaron`,
           tone: report.summary.noShowRatePercent >= 15 ? 'warning' : 'default',
-          interactive: true,
         },
         {
           id: 'cancel-rate',
@@ -131,7 +130,6 @@ export default function AdminReportsPage() {
           value: `${report.summary.cancellationRatePercent}%`,
           sub: `${report.summary.canceledCount} cancelada${report.summary.canceledCount === 1 ? '' : 's'}`,
           tone: report.summary.cancellationRatePercent >= 20 ? 'warning' : 'default',
-          interactive: true,
         },
         {
           id: 'rating-tips',
@@ -140,9 +138,8 @@ export default function AdminReportsPage() {
             report.summary.averageRating !== null
               ? `${report.summary.averageRating.toFixed(1)} ★`
               : '—',
-          sub: `${report.summary.reviewsCount} reseña${report.summary.reviewsCount === 1 ? '' : 's'} · ${formatCurrency(report.summary.totalTipsCents, currency)} propinas`,
+          sub: `${report.summary.reviewsCount} reseña${report.summary.reviewsCount === 1 ? '' : 's'} · ${formatCurrency(report.summary.totalTipsCents, currency)} en propinas`,
           tone: 'default',
-          interactive: true,
         },
       ]
     : [];

@@ -9,9 +9,11 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { MessageCircle, UserPlus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import { ClientDirectoryTab } from '@/components/admin/clientas/ClientDirectoryTab';
 import {
   assignClientPackageRequest,
+  cancelClientPackageRequest,
   createClientProfileRequest,
   dispatchRetentionCampaignRequest,
   redeemClientPackageSessionRequest,
@@ -117,6 +119,7 @@ export default function AdminClientsPage() {
   const [dispatchingKey, setDispatchingKey] = useState<string | null>(null);
   const [assigningPkg, setAssigningPkg] = useState(false);
   const [redeemingPkgId, setRedeemingPkgId] = useState<string | null>(null);
+  const [cancelingPkgId, setCancelingPkgId] = useState<string | null>(null);
 
   if (!data || !data.retention) {
     return <PageSkeleton kpiCount={0} withSplit={false} ariaLabel="Cargando clientas" />;
@@ -211,12 +214,24 @@ export default function AdminClientsPage() {
     }
   };
 
+  const handleCancelPackage = async (pkg: ClientPackageRow) => {
+    setCancelingPkgId(pkg.id);
+    try {
+      const result = await cancelClientPackageRequest(pkg);
+      if (result.ok) reloadPackages();
+      setBannerMsg(result.notice);
+    } finally {
+      setCancelingPkgId(null);
+    }
+  };
+
   const openClientById = (clientId: string) => {
     const found = data.clients.find((c) => c.id === clientId);
     if (found) setSelected(found);
   };
 
   return (
+    <AdminAccessGuard role={data.session.user.role} section="clients" sectionLabel="Clientas">
     <VStack gap={5} className="ad-page fx-fade-up">
       <PageHeader
         title="Clientas"
@@ -329,9 +344,11 @@ export default function AdminClientsPage() {
           currency={currency}
           assigningPkg={assigningPkg}
           redeemingPkgId={redeemingPkgId}
+          cancelingPkgId={cancelingPkgId}
           onOpenClientById={openClientById}
           onAssignPackage={handleAssignPackage}
           onRedeemPackageSession={handleRedeemPackageSession}
+          onCancelPackage={handleCancelPackage}
         />
       )}
 
@@ -359,11 +376,18 @@ export default function AdminClientsPage() {
           bookings={data.bookings}
           assigningPkg={assigningPkg}
           redeemingPkgId={redeemingPkgId}
+          cancelingPkgId={cancelingPkgId}
+          packageNotice={
+            bannerMsg ? { status: bannerMsg.status, title: bannerMsg.title } : null
+          }
+          onDismissPackageNotice={() => setBannerMsg(null)}
           onSaveClient={handleSaveClient}
           onAssignPackage={handleAssignPackage}
           onRedeemPackageSession={handleRedeemPackageSession}
+          onCancelPackage={handleCancelPackage}
         />
       ) : null}
     </VStack>
+    </AdminAccessGuard>
   );
 }

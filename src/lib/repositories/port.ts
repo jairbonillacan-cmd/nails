@@ -42,6 +42,7 @@ import type {
   WaitlistEntry,
   WhatsAppMonthlyUsageSummary,
   WhatsAppTemplateConfig,
+  WhatsAppTemplateTriggerKey,
 } from '../types';
 
 type OutboxEventStatus = 'pending' | 'processing' | 'processed' | 'failed';
@@ -392,6 +393,15 @@ export interface SalonRepository {
   ): Promise<MediaAssetRecord | null>;
   markMediaAssetPurged(id: string, atIso?: string): Promise<MediaAssetRecord | null>;
   getWhatsAppTemplates(): Promise<WhatsAppTemplateConfig[]>;
+  updateWhatsAppTemplate(
+    triggerKey: WhatsAppTemplateTriggerKey,
+    patch: { templateName?: string; isActive?: boolean },
+  ): Promise<WhatsAppTemplateConfig>;
+  updateNotificationDeliveryByProviderId(
+    providerMessageId: string,
+    status: 'sent' | 'failed',
+    errorMessage?: string | null,
+  ): Promise<boolean>;
   getWhatsAppMonthlyUsage(monthKey?: string): Promise<WhatsAppMonthlyUsageSummary>;
   incrementWhatsAppMonthlyUsage(
     monthKey?: string,

@@ -183,19 +183,22 @@ El Worker dispara diariamente a las `09:00 UTC` (`03:00 AM` hora de Puebla) `POS
    - `smb_message_echoes` (ecos de mensajes enviados manualmente desde la app móvil de Karla; la plataforma los registra en auditoría/deduplicación sin responder en bucle)
 3. Todas las peticiones `POST` verifican `X-Hub-Signature-256` con HMAC-SHA256 en Web Crypto (`crypto.subtle`) y deduplican eventos en `public.webhook_events`. Sin `WHATSAPP_APP_SECRET`, el webhook falla cerrado (`401`/`503`).
 
-### 5.3 Crear y aprobar las 6 plantillas `UTILITY` (`es_MX`)
-En **Meta WhatsApp Manager → Message Templates**, crea estas **6 plantillas** en categoría **`UTILITY`** e idioma **`Spanish (MEX)` (`es_MX`)** (Meta rechaza saltos de línea `\n` o tabuladores `\t` dentro de parámetros; la app los sanitiza automáticamente):
+### 5.3 Crear y aprobar las 9 plantillas oficiales (`es_MX`)
+Puedes crear y revisar automáticamente las 9 plantillas con `npm run whatsapp:sync-templates` (o desde `/admin/integraciones` → **Sincronizar plantillas con Meta**). Meta rechaza saltos de línea `\n` o tabuladores `\t` dentro de parámetros; la app los sanitiza automáticamente:
 
-| `trigger_key` | Nombre de plantilla (`template_name`) | Variables (`{{1}}`..`{{N}}`) | Texto sugerido (`UTILITY`, `es_MX`) |
-| :--- | :--- | :--- | :--- |
-| `booking_confirmed` | `laikona_cita_confirmada` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha y hora, `{{4}}` Manicurista, `{{5}}` Código, `{{6}}` Enlace mágico | `Hola {{1}}, tu cita de {{2}} en LAIKONA NAILS quedó confirmada para el {{3}} con {{4}}. Código: {{5}}. Consulta detalles o cambios aquí: {{6}}` |
-| `reminder_24h` | `laikona_recordatorio_24h` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha y hora, `{{4}}` Manicurista, `{{5}}` Enlace mágico | `Hola {{1}}, te recordamos tu cita mañana en LAIKONA NAILS: {{2}} el {{3}} con {{4}}. Si necesitas reagendar (con al menos 12 h de anticipación): {{5}}` |
-| `reminder_2h` | `laikona_recordatorio_2h` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Hora, `{{4}}` Dirección, `{{5}}` Enlace mágico | `Hola {{1}}, ¡nos vemos pronto! Tu cita de {{2}} es hoy a las {{3}} en {{4}}. Detalles de tu reserva: {{5}}` |
-| `booking_rescheduled` | `laikona_cita_reagendada` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Nueva fecha y hora, `{{4}}` Manicurista, `{{5}}` Enlace mágico | `Hola {{1}}, tu cita de {{2}} en LAIKONA NAILS fue reagendada para el {{3}} con {{4}}. Tu enlace actualizado: {{5}}` |
-| `booking_canceled` | `laikona_cita_cancelada` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha y hora, `{{4}}` Enlace nueva reserva | `Hola {{1}}, confirmamos la cancelación de tu cita de {{2}} del {{3}} en LAIKONA NAILS. Cuando gustes agendar de nuevo: {{4}}` |
-| `waitlist_offer` | `laikona_lista_espera` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Horario liberado, `{{4}}` Enlace de reserva | `Hola {{1}}, se liberó un espacio en LAIKONA NAILS para {{2}} el {{3}}. Apártalo antes de que se ocupe aquí: {{4}}` |
+| `trigger_key` | Nombre (`template_name`) | Categoría | Variables (`{{1}}`..`{{N}}`) | Texto canónico (`es_MX`) |
+| :--- | :--- | :--- | :--- | :--- |
+| `booking_confirmed` | `laikona_cita_confirmada` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha, `{{4}}` Hora, `{{5}}` Profesional, `{{6}}` Enlace | `Hola {{1}}, tu cita de {{2}} en LAIKONA NAILS quedó confirmada para el {{3}} a las {{4}} con {{5}}. Consulta detalles, ubicación o cambios aquí: {{6}}` |
+| `reminder_24h` | `laikona_recordatorio_24h` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Hora, `{{4}}` Profesional, `{{5}}` Enlace + Quick Replies (`Confirmo`, `Necesito reagendar`) | `Hola {{1}}, te recordamos tu cita mañana en LAIKONA NAILS: {{2}} a las {{3}} con {{4}}. Si necesitas mover tu horario hazlo aquí: {{5}}` |
+| `reminder_2h` | `laikona_recordatorio_2h` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Hora, `{{3}}` Dirección | `Hola {{1}}, ¡nos vemos muy pronto! Tu cita es hoy a las {{2}} en {{3}}. Te esperamos con 15 minutos máximos de tolerancia.` |
+| `booking_rescheduled` | `laikona_cita_reagendada` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha, `{{4}}` Hora, `{{5}}` Enlace | `Hola {{1}}, actualizamos tu cita de {{2}} en LAIKONA NAILS para el {{3}} a las {{4}}. Aquí tienes tu enlace actualizado: {{5}}` |
+| `booking_canceled` | `laikona_cita_cancelada` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha | `Hola {{1}}, confirmamos la cancelación de tu cita de {{2}} del {{3}} en LAIKONA NAILS. Tu espacio quedó liberado y cuando gustes puedes volver a agendar.` |
+| `waitlist_offer` | `laikona_lista_espera` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Fecha, `{{4}}` Hora, `{{5}}` Enlace | `Hola {{1}}, se liberó un espacio en LAIKONA NAILS para {{2}} el {{3}} a las {{4}}. Apártalo con prioridad antes de que se ocupe aquí: {{5}}` |
+| `deposit_rejected` | `laikona_comprobante_rechazado` | `UTILITY` | `{{1}}` Clienta, `{{2}}` Código, `{{3}}` Servicio, `{{4}}` Enlace | `Hola {{1}}, no pudimos validar el comprobante de anticipo de tu cita {{2}} ({{3}}) en LAIKONA NAILS. Tu horario sigue apartado mientras subes uno nuevo aquí: {{4}}` |
+| `client_otp` | `laikona_codigo_acceso` | `AUTHENTICATION` | `{{1}}` Código + botón `COPY_CODE` (`Copiar código`) + vencimiento `5 min` | `{{1}} es tu código de verificación. Por tu seguridad, no lo compartas.` |
+| `touchup_invite` | `laikona_invitacion_retoque` | `MARKETING` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Profesional, `{{4}}` Enlace | `Hola {{1}}, ya casi cumplen 3 semanas tus uñas de {{2}} con {{3}} en LAIKONA NAILS. Aparta tu retoque en un toque aquí: {{4}}` |
 
-> Si Meta te pide renombrar alguna plantilla, actualiza `template_name` en `public.whatsapp_templates` o define su override opcional (`WHATSAPP_TEMPLATE_BOOKING_CONFIRMED`, `WHATSAPP_TEMPLATE_REMINDER_24H`, etc.).
+> Si Meta te pide renombrar alguna plantilla, puedes editar su nombre desde `/admin/integraciones`, actualizar `template_name` en `public.whatsapp_templates`, o definir su override opcional (`WHATSAPP_TEMPLATE_BOOKING_CONFIRMED`, `WHATSAPP_TEMPLATE_REMINDER_24H`, `WHATSAPP_TEMPLATE_CLIENT_OTP`, etc.).
 
 ---
 

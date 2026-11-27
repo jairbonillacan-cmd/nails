@@ -7,23 +7,41 @@ import { Button } from '@astryxdesign/core/Button';
 import { Table } from '@astryxdesign/core/Table';
 import { Token } from '@astryxdesign/core/Token';
 import { formatCurrency } from '@/lib/format';
-import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
+import {
+  EmptyStateCard,
+  FilterPillBar,
+  StatusTag,
+  SurfaceCard,
+  type FilterPillOption,
+} from '@/components/ui';
+import type { CommissionPeriod } from './cajaActions';
 import {
   splitMethodTokenColor,
   type CommissionStaffRow,
   type MethodSummaryRow,
 } from './cajaTypes';
 
+const COMMISSION_PERIOD_OPTIONS: FilterPillOption<CommissionPeriod>[] = [
+  { value: 'today', label: 'Hoy' },
+  { value: '7d', label: '7 días' },
+  { value: '30d', label: '30 días' },
+  { value: 'all', label: 'Todo' },
+];
+
 interface CajaCommissionsTabProps {
   commissionsByStaff: readonly CommissionStaffRow[];
   splitSummaryByMethod: readonly MethodSummaryRow[];
   currency: 'MXN' | 'USD';
+  commissionPeriod: CommissionPeriod;
+  onChangeCommissionPeriod: (period: CommissionPeriod) => void;
 }
 
 export function CajaCommissionsTab({
   commissionsByStaff,
   splitSummaryByMethod,
   currency,
+  commissionPeriod,
+  onChangeCommissionPeriod,
 }: CajaCommissionsTabProps) {
   return (
     <VStack gap={4} className="fx-step-in">
@@ -31,6 +49,16 @@ export function CajaCommissionsTab({
         title="Comisiones y propinas"
         subtitle="Lo que le corresponde a cada profesional según sus servicios cobrados y propinas."
         count={commissionsByStaff.length}
+        actions={
+          <FilterPillBar
+            ariaLabel="Periodo de comisiones"
+            mode="segmented"
+            size="sm"
+            value={commissionPeriod}
+            options={COMMISSION_PERIOD_OPTIONS}
+            onChange={onChangeCommissionPeriod}
+          />
+        }
       >
         {commissionsByStaff.length === 0 ? (
           <VStack padding={4}>

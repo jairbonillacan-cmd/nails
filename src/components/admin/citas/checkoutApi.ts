@@ -127,19 +127,27 @@ export async function submitCheckoutSplitRequest(params: {
     ...(row.reference.trim() ? { reference: row.reference.trim() } : {}),
   }));
 
-  const res = await fetch('/api/admin/bookings', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'checkout_split',
-      bookingId: params.bookingId,
-      splits: payloadSplits,
-      extraItem: params.extraItem,
-      markCompleted: true,
-      redeemLoyaltyReward: params.redeemLoyaltyReward,
-      ...(params.selectedPackage ? { redeemClientPackageId: params.selectedPackage.id } : {}),
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch('/api/admin/bookings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'checkout_split',
+        bookingId: params.bookingId,
+        splits: payloadSplits,
+        extraItem: params.extraItem,
+        markCompleted: true,
+        redeemLoyaltyReward: params.redeemLoyaltyReward,
+        ...(params.selectedPackage ? { redeemClientPackageId: params.selectedPackage.id } : {}),
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      error: 'Sin conexión. No se pudo registrar el cobro.',
+    };
+  }
 
   const json = (await res.json().catch(() => null)) as {
     error?: string;

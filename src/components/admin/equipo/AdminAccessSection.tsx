@@ -10,14 +10,14 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Shield, UserPlus } from 'lucide-react';
+import { Pencil, Save, Shield, UserPlus } from 'lucide-react';
 import {
   ActionRow,
   StatusTag,
   SurfaceCard,
   type StatusTagTone,
 } from '@/components/ui';
-import type { FormDialogControls } from '@/components/ui/FormDialog';
+import { FormDialog, type FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import {
   FORM_SUBMIT_OK,
@@ -62,23 +62,28 @@ interface AdminAccessSectionProps {
 }
 
 function AccessFormBody({
+  initialUser,
   staff,
   onRefresh,
   onNotice,
   controls,
 }: {
+  initialUser?: AdminUser | null;
   staff: StaffMember[];
   onRefresh: () => Promise<void>;
   onNotice: (message: string) => void;
   controls: FormDialogControls;
 }) {
-  const [aName, setAName] = useState('');
-  const [aEmail, setAEmail] = useState('');
-  const [aRole, setARole] = useState<AdminRole>('admin');
-  const [aStaffId, setAStaffId] = useState<string>('none');
+  const [aName, setAName] = useState(
+    initialUser ? cleanAccessDisplayName(initialUser.fullName) : '',
+  );
+  const [aEmail, setAEmail] = useState(initialUser?.email ?? '');
+  const [aRole, setARole] = useState<AdminRole>(initialUser?.role ?? 'admin');
+  const [aStaffId, setAStaffId] = useState<string>(initialUser?.staffMemberId ?? 'none');
   const { isSubmitting } = controls;
+  const isEditing = Boolean(initialUser);
 
-  const addAccess = async (): Promise<FormSubmitResult> => {
+  const saveAccess = async (): Promise<FormSubmitResult> => {
     try {
       const res = await fetch('/api/admin/team', {
         method: 'POST',
@@ -86,27 +91,34 @@ function AccessFormBody({
         body: JSON.stringify({
           kind: 'admin_user',
           data: {
+            ...(initialUser ? { id: initialUser.id, isActive: initialUser.isActive } : { isActive: true }),
             fullName: aName.trim(),
             email: aEmail.trim(),
             role: aRole,
             staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
-            isActive: true,
           },
         }),
       });
-      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo dar acceso a esta persona.');
+      if (!res.ok) {
+        return formSubmitResultFromResponse(
+          res,
+          isEditing
+            ? 'No se pudieron guardar los cambios de acceso.'
+            : 'No se pudo dar acceso a esta persona.',
+        );
+      }
       await onRefresh();
-      onNotice('Acceso creado');
+      onNotice(isEditing ? 'Acceso actualizado' : 'Acceso creado');
       return FORM_SUBMIT_OK;
     } catch {
-      return formSubmitError('Sin conexión. No se pudo dar acceso a esta persona.');
+      return formSubmitError('Sin conexión. No se pudo guardar el acceso.');
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!aEmail.trim() || !aName.trim()) return;
-    controls.submit(addAccess);
+    controls.submit(saveAccess);
   };
 
   return (
@@ -119,6 +131,7 @@ function AccessFormBody({
           value={aEmail}
           onChange={setAEmail}
           autoComplete="off"
+          isDisabled={isEditing}
           isRequired
         />
         <Selector
@@ -152,9 +165,9 @@ function AccessFormBody({
           />
           <Button
             type="submit"
-            label="Dar acceso"
+            label={isEditing ? 'Guardar cambios' : 'Dar acceso'}
             variant="primary"
-            icon={<UserPlus size={15} aria-hidden="true" />}
+            icon={isEditing ? <Save size={15} aria-hidden="true" /> : <UserPlus size={15} aria-hidden="true" />}
             isLoading={isSubmitting}
             isDisabled={!aName.trim() || !aEmail.trim() || isSubmitting}
           />
@@ -174,6 +187,7 @@ export function AdminAccessSection({
   onRefresh,
   onNotice,
 }: AdminAccessSectionProps) {
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const staffNameById = new Map(staff.map((st) => [st.id, st.name]));
 
   return (
@@ -235,15 +249,26 @@ export function AdminAccessSection({
                   status={<StatusTag label={roleMeta.label} tone={roleMeta.tone} />}
                   actions={
                     isOwner && !isSelf ? (
-                      <Switch
-                        label={`Acceso de ${displayName}`}
-                        isLabelHidden
-                        size="sm"
-                        value={u.isActive}
-                        isLoading={isRowBusy}
-                        isDisabled={Boolean(busyId) && !isRowBusy}
-                        onChange={(checked) => onRequestToggleAccessActive(u, checked)}
-                      />
+                      <HStack gap={2} align="center" wrap="wrap">
+                        <Button
+                          type="button"
+                          label="Editar"
+                          variant="ghost"
+                          size="sm"
+                          icon={<Pencil size={13} aria-hidden="true" />}
+                          isDisabled={Boolean(busyId)}
+                          onClick={() => setEditingUser(u)}
+                        />
+                        <Switch
+                          label={`Acceso de ${displayName}`}
+                          isLabelHidden
+                          size="sm"
+                          value={u.isActive}
+                          isLoading={isRowBusy}
+                          isDisabled={Boolean(busyId) && !isRowBusy}
+                          onChange={(checked) => onRequestToggleAccessActive(u, checked)}
+                        />
+                      </HStack>
                     ) : undefined
                   }
                 />
@@ -252,6 +277,33 @@ export function AdminAccessSection({
           })}
         </VStack>
       </SurfaceCard>
+
+      <FormDialog
+        isOpen={Boolean(editingUser)}
+        onOpenChange={(open) => {
+          if (!open) setEditingUser(null);
+        }}
+        title={
+          editingUser
+            ? `Editar acceso de ${cleanAccessDisplayName(editingUser.fullName)}`
+            : 'Editar acceso'
+        }
+        subtitle="Cambia su rol o vincula su agenda individual."
+        width="min(30rem, 96vw)"
+      >
+        {(controls) =>
+          editingUser ? (
+            <AccessFormBody
+              key={editingUser.id}
+              initialUser={editingUser}
+              staff={staff}
+              onRefresh={onRefresh}
+              onNotice={onNotice}
+              controls={controls}
+            />
+          ) : null
+        }
+      </FormDialog>
     </VStack>
   );
 }

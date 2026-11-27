@@ -246,6 +246,40 @@ export function useCitasBookingActions({
   };
 
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+  const [rejectingDepositId, setRejectingDepositId] = useState<string | null>(null);
+
+  const rejectDeposit = async (bookingId: string, bookingCode: string): Promise<boolean> => {
+    if (!data || rejectingDepositId === bookingId) return false;
+    setRejectingDepositId(bookingId);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject_deposit', bookingId }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setFeedback({
+          status: 'error',
+          title: json?.error || 'No se pudo rechazar el comprobante.',
+        });
+        return false;
+      }
+      invalidateAdminCache('/api/admin/reports');
+      inlineNotice.show(`Comprobante ${bookingCode} rechazado`);
+      void refresh();
+      return true;
+    } catch {
+      setFeedback({
+        status: 'error',
+        title: 'Sin conexión. No se pudo rechazar el comprobante.',
+      });
+      return false;
+    } finally {
+      setRejectingDepositId(null);
+    }
+  };
 
   const rescheduleAdmin = async (params: {
     bookingId: string;
@@ -346,6 +380,7 @@ export function useCitasBookingActions({
     setFeedback,
     busyAction,
     reschedulingId,
+    rejectingDepositId,
     remindingId,
     requestingRescheduleId,
     pendingCancelBookingId,
@@ -356,6 +391,7 @@ export function useCitasBookingActions({
     inlineNotice,
     rescheduleCopy,
     updateStatus,
+    rejectDeposit,
     rescheduleAdmin,
     sendReminder,
     requestReschedule,

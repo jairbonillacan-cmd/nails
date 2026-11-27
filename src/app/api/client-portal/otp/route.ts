@@ -105,6 +105,11 @@ export async function POST(request: NextRequest) {
         const waResult = await dispatchWhatsAppNotification({
           toPhoneE164: challenge.phoneE164,
           bodyText: messageBody,
+          triggerKey: 'client_otp',
+          templateParameters: [challenge.code],
+          authOtpCode: challenge.code,
+          withinServiceWindow: false,
+          settingsTimezone: settings.timezone,
           fallbackEmail,
         });
         if (waResult.status !== 'sent' && settings.smsRemindersEnabled) {

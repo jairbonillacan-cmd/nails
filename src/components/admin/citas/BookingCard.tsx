@@ -54,9 +54,13 @@ export function buildInstagramProfileUrl(handle?: string | null): string | null 
   return `https://www.instagram.com/${cleaned}/`;
 }
 
-export function isDisplayableProofImage(url: string | null): url is string {
+export function isDisplayableProofImage(
+  url: string | null,
+  method?: BookingWithRelations['proofDeliveryMethod'],
+): url is string {
   if (!url) return false;
-  return url.startsWith('/api/media/') || url.startsWith('https://');
+  if (method === 'web_link' || url.startsWith('https://')) return false;
+  return url.startsWith('/api/media/');
 }
 
 export function getProofBadgeMeta(
@@ -81,6 +85,7 @@ interface BookingCardProps {
   salonName: string;
   currency: 'MXN' | 'USD';
   timezone: string;
+  canViewClients?: boolean;
   busyStatus?: BookingStatus | null;
   isRequestingReschedule?: boolean;
   onSelectBooking?: (booking: BookingWithRelations) => void;
@@ -96,6 +101,7 @@ export const BookingCard = memo(function BookingCard({
   salonName,
   currency,
   timezone,
+  canViewClients = true,
   busyStatus = null,
   isRequestingReschedule = false,
   onSelectBooking,
@@ -110,7 +116,7 @@ export const BookingCard = memo(function BookingCard({
   const igHandle = b.clientInstagram ?? b.client.instagramHandle ?? null;
   const igUrl = buildInstagramProfileUrl(igHandle);
   const proofMeta = getProofBadgeMeta(b);
-  const hasDisplayableProof = isDisplayableProofImage(b.paymentProofUrl);
+  const hasDisplayableProof = isDisplayableProofImage(b.paymentProofUrl, b.proofDeliveryMethod);
   const bookingSplits = paymentSplits.filter((s) => s.bookingId === b.id);
   const paymentSummary = computeBookingPaymentSummary(b.totalPriceCents, bookingSplits);
   const isPending =
@@ -167,7 +173,7 @@ export const BookingCard = memo(function BookingCard({
             <BookingStatusTag status={b.status} hasPaymentProof={Boolean(b.paymentProofUrl)} />
             {isBusy ? (
               <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-                Actualizando...
+                Actualizando…
               </Text>
             ) : null}
             {b.status !== 'canceled' && b.status !== 'no_show' ? (
@@ -277,7 +283,7 @@ export const BookingCard = memo(function BookingCard({
           {isPending ? (
             <Button
               type="button"
-              label={busyStatus === 'confirmed' ? 'Confirmando...' : 'Confirmar'}
+              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
               variant="primary"
               size="sm"
               icon={<Check size={14} />}
@@ -322,7 +328,7 @@ export const BookingCard = memo(function BookingCard({
           {canReschedule && onRequestReschedule ? (
             <Button
               type="button"
-              label={isRequestingReschedule ? 'Generando...' : 'Reagendar'}
+              label={isRequestingReschedule ? 'Generando…' : 'Reagendar'}
               variant="ghost"
               size="sm"
               icon={<CalendarClock size={14} />}
@@ -331,13 +337,15 @@ export const BookingCard = memo(function BookingCard({
               onClick={() => onRequestReschedule(b.id)}
             />
           ) : null}
-          <Button
-            label="Ver clienta"
-            variant="ghost"
-            size="sm"
-            icon={<UserRound size={14} />}
-            href={`/admin/clientas?q=${encodeURIComponent(b.client.phoneE164)}`}
-          />
+          {canViewClients ? (
+            <Button
+              label="Ver clienta"
+              variant="ghost"
+              size="sm"
+              icon={<UserRound size={14} />}
+              href={`/admin/clientas?q=${encodeURIComponent(b.client.phoneE164)}`}
+            />
+          ) : null}
         </HStack>
       </HStack>
     </VStack>

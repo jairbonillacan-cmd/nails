@@ -86,8 +86,7 @@ export function useClientasData(
     [inactiveKey],
   );
 
-  const shouldLoadPackages =
-    Boolean(providerData) && (activeTab === 'loyalty' || hasSelectedClient);
+  const shouldLoadPackages = Boolean(providerData) && (activeTab !== 'retention' || hasSelectedClient);
   const packagesQuery = useAdminCachedQuery<PackagesQueryPayload>(
     providerData ? ADMIN_CACHE_KEYS.packages : null,
     fetchPackages,

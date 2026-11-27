@@ -71,7 +71,7 @@ export function CheckoutDrawerDialog({
   onScheduleRetouch,
 }: CheckoutDrawerDialogProps) {
   const retailItems = useMemo(
-    () => inventory.filter((i) => i.isActive && i.retailPriceCents > 0),
+    () => inventory.filter((i) => i.isActive && i.retailPriceCents > 0 && i.stockQuantity > 0),
     [inventory],
   );
   const activeStaff = useMemo(
@@ -175,8 +175,20 @@ export function CheckoutDrawerDialog({
 
   const handleExtraItemChange = (nextItemId: string) => {
     setExtraItemId(nextItemId);
+    setExtraQuantity(1);
     const nextItem = nextItemId !== 'none' ? retailItems.find((i) => i.id === nextItemId) ?? null : null;
     const nextExtraCents = nextItem ? nextItem.retailPriceCents : 0;
+    const nextRemainingCents = selectedPackage
+      ? Math.max(0, nextExtraCents)
+      : Math.max(0, booking.totalPriceCents + nextExtraCents - priorPaidCents);
+    syncSingleSplitAmount(Number((nextRemainingCents / 100).toFixed(2)));
+  };
+
+  const handleExtraQuantityChange = (nextQty: number) => {
+    const maxQty = selectedExtraItem ? Math.max(1, selectedExtraItem.stockQuantity) : 50;
+    const clamped = Math.max(1, Math.min(maxQty, Math.floor(nextQty || 1)));
+    setExtraQuantity(clamped);
+    const nextExtraCents = selectedExtraItem ? selectedExtraItem.retailPriceCents * clamped : 0;
     const nextRemainingCents = selectedPackage
       ? Math.max(0, nextExtraCents)
       : Math.max(0, booking.totalPriceCents + nextExtraCents - priorPaidCents);
@@ -306,7 +318,7 @@ export function CheckoutDrawerDialog({
                     onChangeTipMxn={setTipMxn}
                     onChangeTipStaffId={setTipStaffId}
                     onChangeExtraItemId={handleExtraItemChange}
-                    onChangeExtraQuantity={setExtraQuantity}
+                    onChangeExtraQuantity={handleExtraQuantityChange}
                   />
 
                   <CheckoutLoyaltySection
@@ -347,7 +359,7 @@ export function CheckoutDrawerDialog({
                   <Button
                     type="submit"
                     form="checkout-split-form"
-                    label={submitting ? 'Registrando cobro...' : `Cobrar ${payButtonTotalLabel}`}
+                    label={submitting ? 'Registrando cobro…' : `Cobrar ${payButtonTotalLabel}`}
                     variant="primary"
                     isLoading={submitting}
                     isDisabled={submitting}

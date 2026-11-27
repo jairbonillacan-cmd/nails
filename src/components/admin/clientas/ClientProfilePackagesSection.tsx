@@ -6,9 +6,14 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Selector } from '@astryxdesign/core/Selector';
-import { Package, PackageCheck } from 'lucide-react';
+import { Package, PackageCheck, X } from 'lucide-react';
 import type { ServicePackage } from '@/lib/types';
-import { PackageStatusTag, StatusTag, SurfaceCard } from '@/components/ui';
+import {
+  ConfirmActionDialog,
+  PackageStatusTag,
+  StatusTag,
+  SurfaceCard,
+} from '@/components/ui';
 import type { ClientPackageRow } from './clientasTypes';
 
 interface ClientProfilePackagesSectionProps {
@@ -18,12 +23,14 @@ interface ClientProfilePackagesSectionProps {
   activeCatalogPackages: readonly ServicePackage[];
   assigningPkg: boolean;
   redeemingPkgId: string | null;
+  cancelingPkgId: string | null;
   onAssignPackage: (
     targetClientId: string,
     targetPackageId: string,
     notesText: string,
   ) => Promise<boolean>;
   onRedeemPackageSession: (pkg: ClientPackageRow) => Promise<void>;
+  onCancelPackage: (pkg: ClientPackageRow) => Promise<void>;
 }
 
 export function ClientProfilePackagesSection({
@@ -33,10 +40,13 @@ export function ClientProfilePackagesSection({
   activeCatalogPackages,
   assigningPkg,
   redeemingPkgId,
+  cancelingPkgId,
   onAssignPackage,
   onRedeemPackageSession,
+  onCancelPackage,
 }: ClientProfilePackagesSectionProps) {
   const [fichaPackageId, setFichaPackageId] = useState('');
+  const [confirmCancelPkg, setConfirmCancelPkg] = useState<ClientPackageRow | null>(null);
   const effectiveFichaPackageId = fichaPackageId || activeCatalogPackages[0]?.id || '';
 
   if (clientPackages.length === 0 && !(canManageClients && activeCatalogPackages.length > 0)) {
@@ -55,11 +65,9 @@ export function ClientProfilePackagesSection({
         {clientPackages.map((pkg) => {
           const totalPips = Math.min(12, Math.max(1, pkg.totalSessions));
           const usedPips = Math.min(totalPips, pkg.usedSessions);
-          const canRedeem =
-            canManageClients &&
-            pkg.status === 'active' &&
-            !pkg.isExpired &&
-            pkg.remainingSessions > 0;
+          const isActivePkg = pkg.status === 'active' && !pkg.isExpired;
+          const canRedeem = canManageClients && isActivePkg && pkg.remainingSessions > 0;
+          const isBusy = redeemingPkgId === pkg.id || cancelingPkgId === pkg.id;
           return (
             <VStack key={pkg.id} className="ad-pkg-card" gap={1.5}>
               <HStack justify="between" align="center" wrap="wrap" gap={2}>
@@ -70,7 +78,7 @@ export function ClientProfilePackagesSection({
                   <PackageStatusTag status={pkg.status} isExpired={pkg.isExpired} />
                 </HStack>
                 <StatusTag
-                  tone={pkg.status === 'active' && !pkg.isExpired ? 'accent' : 'neutral'}
+                  tone={isActivePkg ? 'accent' : 'neutral'}
                   hasTabularNumbers
                   label={`${pkg.remainingSessions}/${pkg.totalSessions} disponibles`}
                 />
@@ -87,17 +95,29 @@ export function ClientProfilePackagesSection({
                   />
                 ))}
               </ul>
-              {canRedeem ? (
-                <HStack justify="end">
+              {canManageClients && isActivePkg ? (
+                <HStack justify="end" gap={1.5} wrap="wrap">
                   <Button
                     type="button"
                     size="sm"
-                    variant="secondary"
-                    icon={<PackageCheck size={13} aria-hidden="true" />}
-                    label="Usar 1 sesión"
-                    isLoading={redeemingPkgId === pkg.id}
-                    onClick={() => void onRedeemPackageSession(pkg)}
+                    variant="ghost"
+                    icon={<X size={13} aria-hidden="true" />}
+                    label="Cancelar paquete"
+                    isDisabled={isBusy}
+                    onClick={() => setConfirmCancelPkg(pkg)}
                   />
+                  {canRedeem ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      icon={<PackageCheck size={13} aria-hidden="true" />}
+                      label="Usar 1 sesión"
+                      isLoading={redeemingPkgId === pkg.id}
+                      isDisabled={isBusy}
+                      onClick={() => void onRedeemPackageSession(pkg)}
+                    />
+                  ) : null}
                 </HStack>
               ) : null}
             </VStack>
@@ -130,6 +150,25 @@ export function ClientProfilePackagesSection({
           </HStack>
         ) : null}
       </VStack>
+
+      {confirmCancelPkg ? (
+        <ConfirmActionDialog
+          isOpen
+          onOpenChange={(open) => {
+            if (!open && !cancelingPkgId) setConfirmCancelPkg(null);
+          }}
+          title={`¿Cancelar paquete "${confirmCancelPkg.packageName}"?`}
+          description={`Quedarán sin efecto las ${confirmCancelPkg.remainingSessions} sesiones disponibles de este paquete.`}
+          confirmLabel="Sí, cancelar paquete"
+          cancelLabel="Volver"
+          variant="destructive"
+          isLoading={cancelingPkgId === confirmCancelPkg.id}
+          onConfirm={async () => {
+            await onCancelPackage(confirmCancelPkg);
+            setConfirmCancelPkg(null);
+          }}
+        />
+      ) : null}
     </SurfaceCard>
   );
 }

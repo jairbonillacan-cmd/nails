@@ -72,6 +72,7 @@ export function CajaPromosTab({
         <CouponsSubSection
           coupons={coupons}
           currency={currency}
+          canManageCoupons={canManagePackages}
           onCreateCoupon={onCreateCoupon}
         />
       ) : (

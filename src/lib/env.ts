@@ -74,6 +74,9 @@ export const EnvSchema = z.object({
   WHATSAPP_TEMPLATE_BOOKING_RESCHEDULED: optionalString,
   WHATSAPP_TEMPLATE_BOOKING_CANCELED: optionalString,
   WHATSAPP_TEMPLATE_WAITLIST_OFFER: optionalString,
+  WHATSAPP_TEMPLATE_DEPOSIT_REJECTED: optionalString,
+  WHATSAPP_TEMPLATE_CLIENT_OTP: optionalString,
+  WHATSAPP_TEMPLATE_TOUCHUP_INVITE: optionalString,
   TWILIO_ACCOUNT_SID: optionalString,
   TWILIO_AUTH_TOKEN: optionalString,
   TWILIO_FROM_NUMBER: optionalString,
@@ -98,6 +101,9 @@ export interface RuntimeIntegrationStatus {
   googleCalendarConfigured: boolean;
   resendConfigured: boolean;
   whatsappCloudConfigured: boolean;
+  whatsappCoexistenceEnabled: boolean;
+  whatsappWebhookConfigured: boolean;
+  whatsappBusinessAccountConfigured: boolean;
   twilioSmsConfigured: boolean;
   stripeConfigured: boolean;
   mercadoPagoConfigured: boolean;
@@ -168,6 +174,9 @@ export function getWhatsAppTemplateNameOverrides(
     ['booking_rescheduled', raw.WHATSAPP_TEMPLATE_BOOKING_RESCHEDULED?.trim()],
     ['booking_canceled', raw.WHATSAPP_TEMPLATE_BOOKING_CANCELED?.trim()],
     ['waitlist_offer', raw.WHATSAPP_TEMPLATE_WAITLIST_OFFER?.trim()],
+    ['deposit_rejected', raw.WHATSAPP_TEMPLATE_DEPOSIT_REJECTED?.trim()],
+    ['client_otp', raw.WHATSAPP_TEMPLATE_CLIENT_OTP?.trim()],
+    ['touchup_invite', raw.WHATSAPP_TEMPLATE_TOUCHUP_INVITE?.trim()],
   ];
   for (const [key, value] of entries) {
     if (value) {
@@ -332,6 +341,10 @@ export function getRuntimeIntegrationStatus(
   const resendApiKey = env?.RESEND_API_KEY ?? raw.RESEND_API_KEY;
   const whatsappToken = env?.WHATSAPP_ACCESS_TOKEN ?? raw.WHATSAPP_ACCESS_TOKEN;
   const whatsappPhoneId = env?.WHATSAPP_PHONE_NUMBER_ID ?? raw.WHATSAPP_PHONE_NUMBER_ID;
+  const whatsappWabaId =
+    env?.WHATSAPP_BUSINESS_ACCOUNT_ID ?? raw.WHATSAPP_BUSINESS_ACCOUNT_ID;
+  const whatsappAppSecret = env?.WHATSAPP_APP_SECRET ?? raw.WHATSAPP_APP_SECRET;
+  const whatsappVerifyToken = env?.WHATSAPP_VERIFY_TOKEN ?? raw.WHATSAPP_VERIFY_TOKEN;
   const twilioSid = env?.TWILIO_ACCOUNT_SID ?? raw.TWILIO_ACCOUNT_SID;
   const twilioAuth = env?.TWILIO_AUTH_TOKEN ?? raw.TWILIO_AUTH_TOKEN;
   const twilioFrom = env?.TWILIO_FROM_NUMBER ?? raw.TWILIO_FROM_NUMBER;
@@ -351,6 +364,9 @@ export function getRuntimeIntegrationStatus(
     googleCalendarConfigured: Boolean(googleClientId && googleClientSecret),
     resendConfigured: Boolean(resendApiKey),
     whatsappCloudConfigured: Boolean(whatsappToken && whatsappPhoneId),
+    whatsappCoexistenceEnabled: isWhatsAppCoexistenceEnabled(raw),
+    whatsappWebhookConfigured: Boolean(whatsappAppSecret && whatsappVerifyToken),
+    whatsappBusinessAccountConfigured: Boolean(whatsappToken && whatsappWabaId),
     twilioSmsConfigured: Boolean(twilioSid && twilioAuth && twilioFrom),
     stripeConfigured: Boolean(stripeKey),
     mercadoPagoConfigured: Boolean(mpToken),

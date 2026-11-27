@@ -77,6 +77,8 @@ export default function AdminCashPage() {
     setHighlightUncollected,
     promosView,
     setPromosView,
+    commissionPeriod,
+    setCommissionPeriod,
     packagesCatalog,
     packagesLoading,
     reloadPackages,
@@ -116,6 +118,8 @@ export default function AdminCashPage() {
   );
   const canManagePackages =
     data.session.user.role === 'owner' || data.session.user.role === 'admin';
+  const effectiveActiveTab: CajaTab =
+    activeTab === 'promos' && !canManagePackages ? 'summary' : activeTab;
   const hasActiveOwnerPin = Boolean(
     data.settings.ownerPinEnabled && data.settings.hasOwnerPin,
   );
@@ -296,16 +300,18 @@ export default function AdminCashPage() {
               icon={<ExternalLink size={14} aria-hidden="true" />}
               href="/admin/citas"
             />
-            <Button
-              type="button"
-              label="Exportar a Excel"
-              variant="secondary"
-              size="sm"
-              icon={<Download size={15} aria-hidden="true" />}
-              isLoading={exportingCsv}
-              isDisabled={exportingCsv}
-              onClick={() => void handleExportCsv()}
-            />
+            {canManagePackages ? (
+              <Button
+                type="button"
+                label="Exportar a Excel"
+                variant="secondary"
+                size="sm"
+                icon={<Download size={15} aria-hidden="true" />}
+                isLoading={exportingCsv}
+                isDisabled={exportingCsv}
+                onClick={() => void handleExportCsv()}
+              />
+            ) : null}
           </>
         }
       />
@@ -333,7 +339,7 @@ export default function AdminCashPage() {
       <MetricGrid ariaLabel="Resumen de caja" cols={3} items={kpiItems} />
 
       <TabList
-        value={activeTab}
+        value={effectiveActiveTab}
         onChange={(v) => {
           setActiveTab(v as CajaTab);
           if (v !== 'summary') setHighlightUncollected(false);
@@ -357,10 +363,10 @@ export default function AdminCashPage() {
           }
         />
         <Tab value="commissions" label="Comisiones" />
-        <Tab value="promos" label="Promos y paquetes" />
+        {canManagePackages ? <Tab value="promos" label="Promos y paquetes" /> : null}
       </TabList>
 
-      {activeTab === 'summary' ? (
+      {effectiveActiveTab === 'summary' ? (
         <CajaSummaryTab
           cashEntries={data.cashEntries}
           uncollectedBookings={uncollectedBookings}
@@ -371,12 +377,12 @@ export default function AdminCashPage() {
           todayKey={data.serverTodayKey}
           tz={tz}
           currency={currency}
-          canRecordCash={data.session.user.role !== 'specialist'}
+          canRecordCash={canManagePackages}
           highlightUncollected={highlightUncollected}
           onOpenDeposits={() => setActiveTab('deposits')}
           onRecordCashEntry={handleRecordCashEntry}
         />
-      ) : activeTab === 'deposits' ? (
+      ) : effectiveActiveTab === 'deposits' ? (
         <CajaDepositsTab
           pendingDeposits={pendingDeposits}
           defaultDepositLabel={defaultDepositLabel}
@@ -387,11 +393,13 @@ export default function AdminCashPage() {
           onApproveDeposit={handleApproveDeposit}
           onRejectDeposit={handleRejectDeposit}
         />
-      ) : activeTab === 'commissions' ? (
+      ) : effectiveActiveTab === 'commissions' ? (
         <CajaCommissionsTab
           commissionsByStaff={commissionsByStaff}
           splitSummaryByMethod={splitSummaryByMethod}
           currency={currency}
+          commissionPeriod={commissionPeriod}
+          onChangeCommissionPeriod={setCommissionPeriod}
         />
       ) : (
         <CajaPromosTab

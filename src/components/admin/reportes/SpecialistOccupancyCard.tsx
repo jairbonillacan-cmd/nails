@@ -118,7 +118,11 @@ export function SpecialistOccupancyCard({
                     {row.noShowCount > 0 ? (
                       <StatusTag
                         tone="warning"
-                        label={`${row.noShowCount} no llegaron`}
+                        label={
+                          row.noShowCount === 1
+                            ? '1 no llegó'
+                            : `${row.noShowCount} no llegaron`
+                        }
                         hasTabularNumbers
                       />
                     ) : (

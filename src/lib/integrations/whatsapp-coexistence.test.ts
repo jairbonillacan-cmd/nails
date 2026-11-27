@@ -31,12 +31,22 @@ const mockIncrementWhatsAppMonthlyUsage = vi.fn(
 );
 const mockCreateBookingAtomic = vi.fn();
 const mockQueryAvailability = vi.fn();
+const mockUpdateNotificationDeliveryByProviderId = vi.fn(
+  async (..._args: unknown[]) => true,
+);
+const mockConfirmBookingAttendanceFromWebhook = vi.fn(
+  async (..._args: unknown[]) => null,
+);
 
 vi.mock('../repositories/db', () => ({
   claimWebhookEventIdempotent: (provider: string, eventId: string) =>
     mockClaimWebhookEventIdempotent(provider, eventId),
   incrementWhatsAppMonthlyUsage: (monthKey?: string, count?: number) =>
     mockIncrementWhatsAppMonthlyUsage(monthKey, count),
+  updateNotificationDeliveryByProviderId: (...args: unknown[]) =>
+    mockUpdateNotificationDeliveryByProviderId(...args),
+  confirmBookingAttendanceFromWebhook: (...args: unknown[]) =>
+    mockConfirmBookingAttendanceFromWebhook(...args),
   createBookingAtomic: (...args: unknown[]) => mockCreateBookingAtomic(...args),
   queryAvailability: (...args: unknown[]) => mockQueryAvailability(...args),
   SlotConflictError: class SlotConflictError extends Error {
@@ -49,6 +59,8 @@ vi.mock('../repositories/db', () => ({
         timezone: 'America/Mexico_City',
       },
       services: [],
+      bookings: [],
+      clients: [],
     }),
     queryAvailability: async (...args: unknown[]) => mockQueryAvailability(...args),
   }),
@@ -58,6 +70,8 @@ vi.mock('../repositories/db', () => ({
       timezone: 'America/Mexico_City',
     },
     services: [],
+    bookings: [],
+    clients: [],
   }),
 }));
 

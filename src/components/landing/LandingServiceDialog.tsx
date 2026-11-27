@@ -50,7 +50,7 @@ export function LandingServiceDialog({
       maxHeight="90dvh"
       padding={0}
     >
-      <VStack gap={0} height="100%" className="lk-portal fx-sheet-in">
+      <VStack gap={0} height="100%" className="lk-portal">
         <HStack justify="between" align="start" gap={3} padding={5} paddingBlockEnd={3}>
           <VStack gap={0.5} className="lk-service-dialog-head">
             {categoryName ? (

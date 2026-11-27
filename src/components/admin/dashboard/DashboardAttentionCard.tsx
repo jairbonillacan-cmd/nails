@@ -24,6 +24,7 @@ import {
   formatUnitCount,
 } from '@/lib/format';
 import { ActionRow, EmptyStateCard, SurfaceCard } from '@/components/ui';
+import { roleCanAccess } from '@/lib/rbac';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import { isDisplayableProofUrl, type DashboardMetrics } from './dashboardMetrics';
 import type { PendingDepositItem } from './DepositProofPreviewDialog';
@@ -39,7 +40,6 @@ interface DashboardAttentionCardProps {
   metrics: DashboardMetrics;
   confirmingBookingId: string | null;
   rejectingBookingId?: string | null;
-  savedMessage?: string | null;
   onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
   onRejectDeposit?: (bookingId: string, clientName: string) => Promise<boolean>;
   maxVisible?: number;
@@ -84,13 +84,13 @@ export function DashboardAttentionCard({
   metrics,
   confirmingBookingId,
   rejectingBookingId = null,
-  savedMessage,
   onConfirmDeposit,
   onRejectDeposit,
   maxVisible = 4,
 }: DashboardAttentionCardProps) {
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositItem | null>(null);
   const currency = data.settings.currency;
+  const role = data.session.user.role;
   const tz = metrics.tz;
   const depositFallbackCents = data.settings.depositAmountCents ?? 20000;
 
@@ -138,7 +138,7 @@ export function DashboardAttentionCard({
             href: '/admin/caja?tab=anticipos',
           },
       primary: {
-        label: isLoading ? 'Confirmando...' : 'Confirmar cita',
+        label: isLoading ? 'Confirmando…' : 'Confirmar cita',
         isLoading,
         onClick: () => void onConfirmDeposit(dep.bookingId, dep.clientName),
       },
@@ -180,8 +180,8 @@ export function DashboardAttentionCard({
       title: `${entry.clientName} en lista de espera`,
       subtitle: `${serviceLabel} · ${formatDateKeyDisplay(entry.desiredDate, 'short')} (${windowLabel})`,
       secondary: {
-        label: 'Ver agenda',
-        href: '/admin/citas',
+        label: 'Ver lista de espera',
+        href: '/admin/citas?tab=waitlist',
       },
       primary: {
         label: 'Avisar por WhatsApp',
@@ -191,22 +191,25 @@ export function DashboardAttentionCard({
     });
   }
 
-  for (const item of metrics.lowStock) {
-    allTasks.push({
-      id: `stock-${item.id}`,
-      tone: 'neutral',
-      icon: <Package size={19} aria-hidden="true" />,
-      title: `${item.stockQuantity === 1 ? 'Queda' : 'Quedan'} ${formatUnitCount(item.stockQuantity, item.unit)} de ${item.name}`,
-      subtitle: `Tu mínimo es ${formatUnitCount(item.minStockAlert, item.unit)}`,
-      primary: {
-        label: 'Ir a inventario',
-        href: '/admin/inventario',
-      },
-    });
+  if (roleCanAccess(role, 'inventory')) {
+    for (const item of metrics.lowStock) {
+      allTasks.push({
+        id: `stock-${item.id}`,
+        tone: 'neutral',
+        icon: <Package size={19} aria-hidden="true" />,
+        title: `${item.stockQuantity === 1 ? 'Queda' : 'Quedan'} ${formatUnitCount(item.stockQuantity, item.unit)} de ${item.name}`,
+        subtitle: `Tu mínimo es ${formatUnitCount(item.minStockAlert, item.unit)}`,
+        primary: {
+          label: 'Ir a inventario',
+          href: '/admin/inventario',
+        },
+      });
+    }
   }
 
   const whatsappUsage = data.whatsappUsage;
   if (
+    roleCanAccess(role, 'integrations') &&
     whatsappUsage &&
     (whatsappUsage.alertLevel === 'warning_80' || whatsappUsage.alertLevel === 'limit_100')
   ) {
@@ -232,16 +235,7 @@ export function DashboardAttentionCard({
   const visibleTasks = allTasks.slice(0, maxVisible);
   const hiddenCount = Math.max(0, allTasks.length - visibleTasks.length);
 
-  const headerActions = confirmingBookingId ? (
-    <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-      Confirmando...
-    </Text>
-  ) : savedMessage ? (
-    <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-      <Check size={12} aria-hidden="true" />
-      {savedMessage}
-    </Text>
-  ) : (
+  const headerActions = (
     <Text type="supporting" color="secondary" className="ad-hide-s">
       Lo que necesita tu atención hoy
     </Text>

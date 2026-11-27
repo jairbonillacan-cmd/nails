@@ -296,7 +296,7 @@ export function OwnerPinAndNoShowCards({
             <Button
               type="button"
               label={
-                pinSaving ? 'Guardando PIN...' : hasOwnerPin ? 'Cambiar PIN' : 'Guardar PIN'
+                pinSaving ? 'Guardando PIN…' : hasOwnerPin ? 'Cambiar PIN' : 'Guardar PIN'
               }
               variant="primary"
               size="sm"
@@ -308,7 +308,7 @@ export function OwnerPinAndNoShowCards({
             {hasOwnerPin ? (
               <Button
                 type="button"
-                label={pinSaving ? 'Borrando...' : 'Quitar PIN'}
+                label={pinSaving ? 'Borrando…' : 'Quitar PIN'}
                 variant="ghost"
                 size="sm"
                 icon={<Trash2 size={14} aria-hidden="true" />}
@@ -373,7 +373,7 @@ export function OwnerAuditHistoryCard({
             return (
               <li key={entry.id}>
                 <ActionRow
-                  title={`${meta.label} · ${friendlyEntityLabel(entry.entityType)}`}
+                  title={friendlyEntityLabel(entry.entityType)}
                   meta={`${entry.actorEmail} (${roleLabel}) · ${formatDateShortInTimezone(entry.createdAt, timezone)} ${formatTimeInTimezone(entry.createdAt, timezone)}`}
                   status={<StatusTag label={meta.label} tone={meta.tone} />}
                 />

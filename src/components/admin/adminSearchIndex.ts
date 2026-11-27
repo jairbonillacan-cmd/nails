@@ -1,6 +1,6 @@
 import { formatDateShortInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
-import type { AdminRole, BookingWithRelations, ClientProfile } from '@/lib/types';
+import type { AdminRole, BookingWithRelations, ClientProfile, Service } from '@/lib/types';
 import type { AdminOverviewPayload } from './AdminProvider';
 import { getDayOfWeekFromDateKey, shiftDateKey } from './citas/scheduleGridGeometry';
 
@@ -29,6 +29,7 @@ export interface QuickSearchResults {
   dateJumps: QuickDateJumpTarget[];
   matchedBookings: BookingWithRelations[];
   matchedClients: ClientProfile[];
+  matchedServices: Service[];
   matchedNav: QuickNavTarget[];
   flatOptions: FlatSearchOption[];
 }
@@ -361,6 +362,17 @@ export function buildQuickSearchResults(
           })
           .slice(0, 5);
 
+  const matchedServices = !normalized
+    ? []
+    : data.services
+        .filter((s) => s.isActive)
+        .filter((s) =>
+          stripAccents(
+            `${s.name} ${s.description} ${Math.round(s.priceCents / 100)}`,
+          ).includes(normalized),
+        )
+        .slice(0, 5);
+
   const allowedNav = getQuickNavTargets(role).filter((item) => item.visible);
   const matchedNav = !normalized
     ? allowedNav.slice(0, 4)
@@ -391,6 +403,15 @@ export function buildQuickSearchResults(
       href: `/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`,
     });
   }
+  const serviceTargetHref = roleCanAccess(role, 'services')
+    ? '/admin/servicios'
+    : '/admin/citas?new=1';
+  for (const s of matchedServices) {
+    flatOptions.push({
+      optionId: `ad-search-opt-service-${s.id}`,
+      href: serviceTargetHref,
+    });
+  }
   matchedNav.forEach((item, idx) => {
     flatOptions.push({
       optionId: `ad-search-opt-nav-${idx}`,
@@ -398,5 +419,12 @@ export function buildQuickSearchResults(
     });
   });
 
-  return { dateJumps, matchedBookings, matchedClients, matchedNav, flatOptions };
+  return {
+    dateJumps,
+    matchedBookings,
+    matchedClients,
+    matchedServices,
+    matchedNav,
+    flatOptions,
+  };
 }

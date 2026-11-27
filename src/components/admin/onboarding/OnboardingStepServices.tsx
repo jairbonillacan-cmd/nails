@@ -32,6 +32,7 @@ interface OnboardingStepServicesProps {
   servicePriceMxn: number;
   serviceDurationMinutes: number;
   serviceIsStartingPrice: boolean;
+  currency: 'MXN' | 'USD';
   onSelectStarterService: (srv: Service) => void;
   onChangeServiceName: (value: string) => void;
   onChangeServicePriceMxn: (value: number) => void;
@@ -47,12 +48,25 @@ export function OnboardingStepServices({
   servicePriceMxn,
   serviceDurationMinutes,
   serviceIsStartingPrice,
+  currency,
   onSelectStarterService,
   onChangeServiceName,
   onChangeServicePriceMxn,
   onChangeServiceDurationMinutes,
   onChangeServiceIsStartingPrice,
 }: OnboardingStepServicesProps) {
+  const durationOptions = DURATION_OPTIONS.some(
+    (opt) => Number.parseInt(opt.value, 10) === serviceDurationMinutes,
+  )
+    ? DURATION_OPTIONS
+    : [
+        ...DURATION_OPTIONS,
+        {
+          value: String(serviceDurationMinutes),
+          label: formatDuration(serviceDurationMinutes),
+        },
+      ].toSorted((a, b) => Number.parseInt(a.value, 10) - Number.parseInt(b.value, 10));
+
   return (
     <VStack gap={4}>
       <VStack gap={1}>
@@ -92,24 +106,24 @@ export function OnboardingStepServices({
           value={serviceName}
           onChange={onChangeServiceName}
           isRequired
-          placeholder="Ej. Rubber"
+          placeholder="Ejemplo: Rubber"
           startIcon={<Scissors size={16} aria-hidden="true" />}
         />
         <NumberInput
-          label="Precio (MXN)"
+          label={`Precio (${currency})`}
           value={servicePriceMxn}
           onChange={onChangeServicePriceMxn}
           min={0}
           max={100000}
           step={10}
-          units="MXN"
+          units={currency}
           isIntegerOnly
         />
       </Grid>
 
       <Switch
         label='Precio "Desde"'
-        description='Muestra "Desde $..." si el total cambia según el largo o diseño.'
+        description='Muestra "Desde $…" si el total cambia según el largo o diseño.'
         value={serviceIsStartingPrice}
         onChange={onChangeServiceIsStartingPrice}
       />
@@ -121,7 +135,7 @@ export function OnboardingStepServices({
         <FilterPillBar
           ariaLabel="Duración"
           value={String(serviceDurationMinutes)}
-          options={DURATION_OPTIONS}
+          options={durationOptions}
           onChange={(val) => {
             const parsed = Number.parseInt(val, 10);
             if (!Number.isNaN(parsed)) {

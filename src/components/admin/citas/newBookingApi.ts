@@ -94,35 +94,44 @@ export async function submitAdminBookingRequest(params: {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (params.ownerPin) headers['x-owner-pin'] = params.ownerPin;
 
-  const res = await fetch('/api/admin/bookings', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      serviceId: params.serviceId,
-      extraServiceIds: params.extraServiceIds,
-      addonIds: params.addonIds,
-      staffId: params.staffId,
-      startAt: params.startAt,
-      clientName: params.clientName,
-      clientPhone: params.clientPhone,
-      clientInstagram: params.clientInstagram,
-      internalNotes: params.internalNotes,
-      ...(params.useCustomOverride
-        ? {
-            customDurationMinutes: Math.max(15, Math.min(480, Math.round(params.customDuration))),
-            customPriceCents: params.customPriceCents,
-          }
-        : {}),
-      ...(params.isRecurring
-        ? { recurrence: { intervalWeeks: params.recurrenceIntervalWeeks, count: clampedCount } }
-        : {}),
-      ...(params.ownerPin ? { ownerPin: params.ownerPin } : {}),
-      notifyEmail: params.notifyEmail,
-      notifyWhatsapp: params.notifyWhatsapp,
-      source: params.source,
-      forceConfirmed: true,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch('/api/admin/bookings', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        serviceId: params.serviceId,
+        extraServiceIds: params.extraServiceIds,
+        addonIds: params.addonIds,
+        staffId: params.staffId,
+        startAt: params.startAt,
+        clientName: params.clientName,
+        clientPhone: params.clientPhone,
+        clientInstagram: params.clientInstagram,
+        internalNotes: params.internalNotes,
+        ...(params.useCustomOverride
+          ? {
+              customDurationMinutes: Math.max(15, Math.min(480, Math.round(params.customDuration))),
+              customPriceCents: params.customPriceCents,
+            }
+          : {}),
+        ...(params.isRecurring
+          ? { recurrence: { intervalWeeks: params.recurrenceIntervalWeeks, count: clampedCount } }
+          : {}),
+        ...(params.ownerPin ? { ownerPin: params.ownerPin } : {}),
+        notifyEmail: params.notifyEmail,
+        notifyWhatsapp: params.notifyWhatsapp,
+        source: params.source,
+        forceConfirmed: true,
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      pinRequired: false,
+      error: 'Sin conexión. No se pudo guardar la cita.',
+    };
+  }
 
   if (!res.ok) {
     const errJson = (await res.json().catch(() => null)) as {

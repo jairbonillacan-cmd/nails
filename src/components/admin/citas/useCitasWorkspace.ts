@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useAdminData,
   type AdminOverviewPayload,
@@ -24,6 +24,7 @@ import { shiftDateKey } from './scheduleGridGeometry';
 
 export function useCitasWorkspace() {
   const { data: providerData, refresh } = useAdminData();
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const overviewQuery = useAdminCachedQuery<AdminOverviewPayload>(
@@ -43,6 +44,7 @@ export function useCitasWorkspace() {
   const paramQuery = searchParams.get('q')?.trim() ?? '';
   const paramDate = searchParams.get('date')?.trim() ?? '';
   const paramStaff = searchParams.get('staff')?.trim() ?? '';
+  const paramTab = searchParams.get('tab')?.trim() ?? '';
 
   const [tab, setTab] = useState('upcoming');
   const [viewMode, setViewMode] = useState<'schedule' | 'list'>('schedule');
@@ -78,7 +80,7 @@ export function useCitasWorkspace() {
 
   const tz = data?.settings.timezone || 'America/Mexico_City';
   const urlSyncKey = data
-    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}|${paramDate}|${paramStaff}`
+    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}|${paramDate}|${paramStaff}|${paramTab}`
     : 'citas-loading';
 
   useExternalSync(urlSyncKey, async (signal, key) => {
@@ -98,6 +100,15 @@ export function useCitasWorkspace() {
     }
     lastParamStaffRef.current = paramStaff;
 
+    if (paramTab === 'waitlist') {
+      setTab('waitlist');
+      return;
+    }
+    if (paramTab === 'unconfirmed') {
+      setTab('unconfirmed');
+      setViewMode('list');
+      return;
+    }
     if (paramDate && /^\d{4}-\d{2}-\d{2}$/.test(paramDate)) {
       setSelectedVisualDate(paramDate);
       setTab('upcoming');
@@ -116,6 +127,7 @@ export function useCitasWorkspace() {
       if (target) {
         setCheckoutBookingId(target.id);
         setCheckoutSessionKey((prev) => prev + 1);
+        router.replace('/admin/citas', { scroll: false });
         return;
       }
     }
@@ -124,6 +136,7 @@ export function useCitasWorkspace() {
       setManualPrefill(null);
       setManualSessionKey((prev) => prev + 1);
       setManualOpen(true);
+      router.replace('/admin/citas', { scroll: false });
       return;
     }
     if (paramQuery) {

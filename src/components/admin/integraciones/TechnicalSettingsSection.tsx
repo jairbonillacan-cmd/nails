@@ -26,11 +26,19 @@ import type {
   ScheduledNotification,
   Service,
 } from '@/lib/types';
-import { formatPhoneDisplay } from '@/lib/format';
+import {
+  formatDateShortInTimezone,
+  formatPhoneDisplay,
+  formatTimeInTimezone,
+} from '@/lib/format';
 import { describeWorkflowMoment } from '@/lib/notifications/template-preview';
 
 interface TechnicalSettingsSectionProps {
   settings: SalonSettings;
+  isDemoMode: boolean;
+  twilioSmsConfigured: boolean;
+  timezone: string;
+  whatsappWebhookUrl: string;
   googleCalendarTechUrl: string;
   mercadoPagoTechUrl: string;
   services: Service[];
@@ -65,6 +73,10 @@ function friendlyNotificationStatus(status: ScheduledNotification['status']): {
 
 export function TechnicalSettingsSection({
   settings,
+  isDemoMode,
+  twilioSmsConfigured,
+  timezone,
+  whatsappWebhookUrl,
   googleCalendarTechUrl,
   mercadoPagoTechUrl,
   services,
@@ -127,7 +139,7 @@ export function TechnicalSettingsSection({
 
   return (
     <VStack gap={4} paddingBlockStart={4}>
-      <VStack className="ad-config-grid-equal" gap={4}>
+      <VStack className={isDemoMode ? 'ad-config-grid-equal' : undefined} gap={4}>
         <SurfaceCard
           id="analytics-heading"
           icon={<BarChart3 size={16} aria-hidden="true" />}
@@ -137,21 +149,21 @@ export function TechnicalSettingsSection({
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
             <TextInput
               label="Anuncios de Instagram y Facebook"
-              placeholder="Ej. 123456789012345"
+              placeholder="Ejemplo: 123456789012345"
               value={activeMetaPixel}
               onChange={setMetaPixel}
               isOptional
             />
             <TextInput
               label="Estadísticas de visitas (Google)"
-              placeholder="Ej. G-XXXXXXXXXX"
+              placeholder="Ejemplo: G-XXXXXXXXXX"
               value={activeGa4}
               onChange={setGa4Id}
               isOptional
             />
             <TextInput
               label="Enlace para reseñas en Google"
-              placeholder="https://g.page/r/.../review"
+              placeholder="https://g.page/r/tu-salon/review"
               value={activeReviewUrl}
               onChange={setGoogleReviewUrl}
               isOptional
@@ -175,41 +187,54 @@ export function TechnicalSettingsSection({
           </VStack>
         </SurfaceCard>
 
-        <SurfaceCard
-          id="whatsapp-test-heading"
-          icon={<Send size={16} aria-hidden="true" />}
-          title="Simulador de prueba de WhatsApp"
-          subtitle="Crea una cita de prueba para verificar cómo llega a tu agenda."
-        >
-          <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-            <TextInput label="Nombre de prueba" value={simName} onChange={setSimName} />
-            <Grid columns={{ minWidth: 150, max: 2 }} gap={2}>
-              <TextInput label="WhatsApp" value={simPhone} onChange={setSimPhone} />
-              <Selector
-                label="Servicio"
-                value={simServiceId || services[0]?.id || ''}
-                onChange={(v) => v && setSimServiceId(v)}
-                options={services.map((s) => ({ value: s.id, label: s.name }))}
+        {isDemoMode ? (
+          <SurfaceCard
+            id="whatsapp-test-heading"
+            icon={<Send size={16} aria-hidden="true" />}
+            title="Simulador de prueba de WhatsApp"
+            subtitle="Solo en modo prueba: crea una cita simulada para ver cómo llega a tu agenda."
+          >
+            <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
+              <TextInput label="Nombre de prueba" value={simName} onChange={setSimName} />
+              <Grid columns={{ minWidth: 150, max: 2 }} gap={2}>
+                <TextInput label="WhatsApp" value={simPhone} onChange={setSimPhone} />
+                <Selector
+                  label="Servicio"
+                  value={simServiceId || services[0]?.id || ''}
+                  onChange={(v) => v && setSimServiceId(v)}
+                  options={services.map((s) => ({ value: s.id, label: s.name }))}
+                />
+              </Grid>
+              <Button
+                type="button"
+                label="Probar cita de WhatsApp"
+                variant="primary"
+                size="sm"
+                icon={<Send size={14} aria-hidden="true" />}
+                isLoading={simLoading}
+                onClick={() => void simulateWhatsAppBooking()}
               />
-            </Grid>
-            <Button
-              type="button"
-              label="Probar cita de WhatsApp"
-              variant="primary"
-              size="sm"
-              icon={<Send size={14} aria-hidden="true" />}
-              isLoading={simLoading}
-              onClick={() => void simulateWhatsAppBooking()}
-            />
-          </VStack>
-        </SurfaceCard>
+            </VStack>
+          </SurfaceCard>
+        ) : null}
       </VStack>
 
       <SurfaceCard
         id="sms-twilio-heading"
         icon={<Bell size={16} aria-hidden="true" />}
         title="Recordatorios por mensaje de texto (SMS)"
-        subtitle="Opcional si también quieres enviar mensajes de texto tradicionales."
+        subtitle={
+          twilioSmsConfigured
+            ? 'Opcional si también quieres enviar mensajes de texto tradicionales.'
+            : 'Requiere activar Twilio SMS en el entorno para enviar mensajes de texto reales.'
+        }
+        badge={
+          <StatusTag
+            tone={twilioSmsConfigured ? 'success' : 'neutral'}
+            showDot={twilioSmsConfigured}
+            label={twilioSmsConfigured ? 'Conectado' : 'Por activar'}
+          />
+        }
         actions={
           <Switch
             label="Activar mensajes de texto (SMS)"
@@ -256,13 +281,18 @@ export function TechnicalSettingsSection({
             </VStack>
           ) : (
             <VStack as="ul" className="ad-row-list" gap={0}>
-              {notifications.slice(0, 5).map((n) => {
+              {notifications.slice(0, 6).map((n) => {
                 const statusMeta = friendlyNotificationStatus(n.status);
+                const recipientLabel =
+                  n.channel === 'email' ? n.recipient : formatPhoneDisplay(n.recipient);
+                const ts = n.sentAt ?? n.scheduledFor ?? n.createdAt;
+                const timeLabel = `${formatDateShortInTimezone(ts, timezone)} · ${formatTimeInTimezone(ts, timezone, true)}`;
                 return (
                   <li key={n.id}>
                     <ActionRow
-                      title={`${friendlyChannelName(n.channel)} a ${formatPhoneDisplay(n.recipient)}`}
-                      subtitle={n.previewText}
+                      title={`${friendlyChannelName(n.channel)} a ${recipientLabel}`}
+                      subtitle={n.errorMessage ? `${n.previewText} · ${n.errorMessage}` : n.previewText}
+                      meta={timeLabel}
                       status={<StatusTag tone={statusMeta.tone} label={statusMeta.label} />}
                     />
                   </li>
@@ -275,9 +305,15 @@ export function TechnicalSettingsSection({
         <SurfaceCard
           id="technical-links-heading"
           title="Enlaces para soporte"
-          subtitle="Solo compártelos si alguien te ayuda a conectar Google Calendar o Mercado Pago."
+          subtitle="Solo compártelos si alguien te ayuda a conectar WhatsApp, Google Calendar o Mercado Pago."
         >
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
+            <CopyableField
+              label="Webhook de WhatsApp Business (Meta)"
+              value={whatsappWebhookUrl}
+              feedbackMessage="Enlace de WhatsApp copiado."
+              monospace
+            />
             <CopyableField
               label="Enlace de conexión para Google Calendar"
               value={googleCalendarTechUrl}

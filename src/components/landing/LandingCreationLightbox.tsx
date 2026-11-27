@@ -82,7 +82,7 @@ export function LandingCreationLightbox({
       maxHeight="90dvh"
       padding={0}
     >
-      <VStack gap={0} className="lk-portal fx-sheet-in">
+      <VStack gap={0} className="lk-portal">
         <HStack justify="between" align="center" gap={3} padding={5} paddingBlockEnd={3}>
           <VStack gap={0.5} style={{ minWidth: 0 }}>
             <Heading level={2} id="lk-lightbox-title" className="lk-serif" style={{ fontSize: '1.65rem' }}>

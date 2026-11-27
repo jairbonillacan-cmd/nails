@@ -13,7 +13,7 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Check, Copy, Pencil, Save, UserPlus, Users } from 'lucide-react';
+import { Check, Copy, Save, UserPlus, Users } from 'lucide-react';
 import {
   ActionRow,
   CopyableField,
@@ -206,14 +206,6 @@ export function StaffEditorSection({
                           icon={isCopied ? <Check size={13} aria-hidden="true" className="fx-pop" /> : <Copy size={13} aria-hidden="true" />}
                           onClick={() => void handleCopyStaffLink(st.bookingSlug, st.name)}
                         />
-                        <Button
-                          type="button"
-                          label="Editar"
-                          variant="ghost"
-                          size="sm"
-                          icon={<Pencil size={13} aria-hidden="true" />}
-                          onClick={() => startEditingStaff(st)}
-                        />
                         <Switch
                           label={`Activa ${st.name}`}
                           isLabelHidden
@@ -263,9 +255,9 @@ export function StaffEditorSection({
               />
             ) : null}
 
-            <TextInput label="Nombre" placeholder="Ej. Fernanda Ruiz" value={sName} onChange={setSName} isRequired />
+            <TextInput label="Nombre" placeholder="Ejemplo: Fernanda Ruiz" value={sName} onChange={setSName} isRequired />
             <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
-              <TextInput label="Puesto" placeholder="Ej. Nail Artist" value={sRoleTitle} onChange={setSRoleTitle} />
+              <TextInput label="Puesto" placeholder="Ejemplo: Nail Artist" value={sRoleTitle} onChange={setSRoleTitle} />
               <NumberInput
                 label="Comisión (%)"
                 description="Lo que gana de cada servicio."

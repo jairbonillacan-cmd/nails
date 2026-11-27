@@ -66,10 +66,15 @@ export function CajaSummaryTab({
 }: CajaSummaryTabProps) {
   const [countedCashMxn, setCountedCashMxn] = useState<number>(0);
 
+  const todayEntries = useMemo(
+    () =>
+      cashEntries.filter(
+        (entry) => getDateKeyInTimezone(new Date(entry.occurredAt), tz) === todayKey,
+      ),
+    [cashEntries, todayKey, tz],
+  );
+
   const todaySummary = useMemo(() => {
-    const todayEntries = cashEntries.filter(
-      (entry) => getDateKeyInTimezone(new Date(entry.occurredAt), tz) === todayKey,
-    );
     const hasToday = todayEntries.length > 0;
     const source = hasToday ? todayEntries : cashEntries;
 
@@ -91,11 +96,11 @@ export function CajaSummaryTab({
     }
 
     return { hasToday, cashCents, cardCents, transferCents, expensesCents };
-  }, [cashEntries, todayKey, tz]);
+  }, [cashEntries, todayEntries]);
 
   const cashOnlyExpectedCents = useMemo(
     () =>
-      cashEntries
+      todayEntries
         .filter((e) => e.paymentMethod === 'cash')
         .reduce(
           (sum, e) =>
@@ -105,7 +110,7 @@ export function CajaSummaryTab({
               : e.amountCents + e.tipCents),
           0,
         ),
-    [cashEntries],
+    [todayEntries],
   );
 
   const cashDiffCents = Math.round(countedCashMxn * 100) - cashOnlyExpectedCents;
@@ -290,47 +295,49 @@ export function CajaSummaryTab({
           currency={currency}
         />
 
-        <VStack gap={4}>
-          {canRecordCash ? <CashMovementForm onRecordCashEntry={onRecordCashEntry} /> : null}
+        {canRecordCash ? (
+          <VStack gap={4}>
+            <CashMovementForm onRecordCashEntry={onRecordCashEntry} />
 
-          <SurfaceCard
-            title="Corte de caja"
-            subtitle="Cuenta tu efectivo en caja y compáralo con lo registrado."
-            headingLevel={3}
-            padded
-          >
-            <VStack gap={3}>
-              <HStack justify="between" align="center" className="ad-cash-row">
-                <Text type="supporting" color="secondary">
-                  Efectivo que debería haber
-                </Text>
-                <Text weight="semibold" hasTabularNumbers>
-                  {formatCurrency(cashOnlyExpectedCents, currency)}
-                </Text>
-              </HStack>
-              <NumberInput
-                label="Efectivo que contaste (MXN)"
-                value={countedCashMxn}
-                min={0}
-                onChange={setCountedCashMxn}
-              />
-              <HStack justify="start">
-                <StatusTag
-                  tone={cashDiffCents === 0 ? 'success' : 'warning'}
-                  hasTabularNumbers
-                  showDot
-                  label={
-                    cashDiffCents === 0
-                      ? 'Caja cuadrada'
-                      : cashDiffCents > 0
-                        ? `Sobran ${formatCurrency(cashDiffCents, currency)}`
-                        : `Faltan ${formatCurrency(Math.abs(cashDiffCents), currency)}`
-                  }
+            <SurfaceCard
+              title="Corte de caja de hoy"
+              subtitle="Cuenta tu efectivo en caja hoy y compáralo con lo registrado en el día."
+              headingLevel={3}
+              padded
+            >
+              <VStack gap={3}>
+                <HStack justify="between" align="center" className="ad-cash-row">
+                  <Text type="supporting" color="secondary">
+                    Efectivo esperado hoy
+                  </Text>
+                  <Text weight="semibold" hasTabularNumbers>
+                    {formatCurrency(cashOnlyExpectedCents, currency)}
+                  </Text>
+                </HStack>
+                <NumberInput
+                  label={`Efectivo que contaste (${currency})`}
+                  value={countedCashMxn}
+                  min={0}
+                  onChange={setCountedCashMxn}
                 />
-              </HStack>
-            </VStack>
-          </SurfaceCard>
-        </VStack>
+                <HStack justify="start">
+                  <StatusTag
+                    tone={cashDiffCents === 0 ? 'success' : 'warning'}
+                    hasTabularNumbers
+                    showDot
+                    label={
+                      cashDiffCents === 0
+                        ? 'Caja cuadrada'
+                        : cashDiffCents > 0
+                          ? `Sobran ${formatCurrency(cashDiffCents, currency)}`
+                          : `Faltan ${formatCurrency(Math.abs(cashDiffCents), currency)}`
+                    }
+                  />
+                </HStack>
+              </VStack>
+            </SurfaceCard>
+          </VStack>
+        ) : null}
       </VStack>
     </VStack>
   );

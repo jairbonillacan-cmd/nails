@@ -32,6 +32,7 @@ type CreateCouponHandler = (input: {
 interface CouponsSubSectionProps {
   coupons: readonly Coupon[];
   currency: 'MXN' | 'USD';
+  canManageCoupons?: boolean;
   onCreateCoupon: CreateCouponHandler;
 }
 
@@ -42,13 +43,15 @@ const COUPON_KIND_OPTIONS: Array<{ value: CouponKind; label: string }> = [
 
 const DISCOUNT_TYPE_OPTIONS: Array<{ value: CouponDiscountType; label: string }> = [
   { value: 'percent', label: 'Porcentaje (%)' },
-  { value: 'fixed_cents', label: 'Cantidad fija en pesos' },
+  { value: 'fixed_cents', label: 'Cantidad fija' },
 ];
 
 function CouponFormBody({
+  currency,
   onCreateCoupon,
   controls,
 }: {
+  currency: 'MXN' | 'USD';
   onCreateCoupon: CreateCouponHandler;
   controls: FormDialogControls;
 }) {
@@ -80,7 +83,7 @@ function CouponFormBody({
         <TextInput
           label="Código"
           description="La palabra que tu clienta escribe al agendar."
-          placeholder="Ej. CUMPLE20"
+          placeholder="Ejemplo: CUMPLE20"
           value={cpCode}
           onChange={setCpCode}
           isRequired
@@ -107,7 +110,11 @@ function CouponFormBody({
         ) : null}
         <NumberInput
           label={
-            cpKind === 'gift_card' ? 'Saldo de la tarjeta (MXN)' : isMoney ? 'Descuento (MXN)' : 'Descuento (%)'
+            cpKind === 'gift_card'
+              ? `Saldo de la tarjeta (${currency})`
+              : isMoney
+                ? `Descuento (${currency})`
+                : 'Descuento (%)'
           }
           value={cpValue}
           min={1}
@@ -116,7 +123,7 @@ function CouponFormBody({
         />
         <TextInput
           label="Para quién es"
-          placeholder="Ej. Regalo para Ana"
+          placeholder="Ejemplo: Regalo para Ana"
           value={cpRecipient}
           onChange={setCpRecipient}
           isOptional
@@ -145,6 +152,7 @@ function CouponFormBody({
 export function CouponsSubSection({
   coupons,
   currency,
+  canManageCoupons = true,
   onCreateCoupon,
 }: CouponsSubSectionProps) {
   return (
@@ -154,15 +162,23 @@ export function CouponsSubSection({
         subtitle="Códigos de descuento y tarjetas con saldo que tus clientas pueden usar al agendar."
         count={coupons.length}
         actions={
-          <FormDialogLauncher
-            triggerLabel="Crear código"
-            title="Crear cupón o tarjeta de regalo"
-            subtitle="Tus clientas lo escriben al agendar y se descuenta solo."
-            triggerVariant="secondary"
-            triggerSize="sm"
-          >
-            {(controls) => <CouponFormBody onCreateCoupon={onCreateCoupon} controls={controls} />}
-          </FormDialogLauncher>
+          canManageCoupons ? (
+            <FormDialogLauncher
+              triggerLabel="Crear código"
+              title="Crear cupón o tarjeta de regalo"
+              subtitle="Tus clientas lo escriben al agendar y se descuenta solo."
+              triggerVariant="secondary"
+              triggerSize="sm"
+            >
+              {(controls) => (
+                <CouponFormBody
+                  currency={currency}
+                  onCreateCoupon={onCreateCoupon}
+                  controls={controls}
+                />
+              )}
+            </FormDialogLauncher>
+          ) : undefined
         }
       >
         {coupons.length === 0 ? (

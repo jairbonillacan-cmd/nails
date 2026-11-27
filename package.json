@@ -20,6 +20,8 @@
     "verify": "npm run typecheck && npm run guardrails && npm run deadcode && npm run test && npm run build && npm run doctor",
     "resend:sync-templates": "node scripts/sync-resend-templates.mjs",
     "resend:preview-templates": "node scripts/sync-resend-templates.mjs --serve",
+    "whatsapp:check": "node scripts/sync-whatsapp-templates.mjs",
+    "whatsapp:sync-templates": "node scripts/sync-whatsapp-templates.mjs --apply",
     "astryx": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs"
   },
   "keywords": [],

@@ -1,4 +1,6 @@
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
+import { shiftDateKey } from '@/components/admin/citas/scheduleGridGeometry';
+import { getDateKeyInTimezone } from '@/lib/format';
 import {
   ADMIN_CACHE_KEYS,
   applyOptimisticBookingStatus,
@@ -21,15 +23,36 @@ import {
   type SplitDetailRow,
 } from './cajaTypes';
 
+export type CommissionPeriod = 'today' | '7d' | '30d' | 'all';
+
+function getCommissionCutoffKey(
+  todayKey: string,
+  period: CommissionPeriod,
+): string | null {
+  if (period === 'today') return todayKey;
+  if (period === '7d') return shiftDateKey(todayKey, -6);
+  if (period === '30d') return shiftDateKey(todayKey, -29);
+  return null;
+}
+
 export function buildSplitSummaryByMethod(
   data: AdminOverviewPayload | null,
+  period: CommissionPeriod = 'all',
 ): MethodSummaryRow[] {
   if (!data) return [];
+  const tz = data.settings.timezone || 'America/Mexico_City';
+  const cutoffKey = getCommissionCutoffKey(data.serverTodayKey, period);
   const grouped = new Map<
     PaymentSplitMethod,
     { count: number; amountCents: number; tipCents: number }
   >();
   for (const split of data.paymentSplits) {
+    if (
+      cutoffKey &&
+      getDateKeyInTimezone(new Date(split.createdAt), tz) < cutoffKey
+    ) {
+      continue;
+    }
     const current = grouped.get(split.method) ?? {
       count: 0,
       amountCents: 0,
@@ -81,14 +104,27 @@ export function buildSplitDetails(data: AdminOverviewPayload | null): SplitDetai
 
 export function buildCommissionsByStaff(
   data: AdminOverviewPayload | null,
+  period: CommissionPeriod = 'all',
 ): CommissionStaffRow[] {
   if (!data) return [];
+  const tz = data.settings.timezone || 'America/Mexico_City';
+  const cutoffKey = getCommissionCutoffKey(data.serverTodayKey, period);
+  const scopedCashEntries = cutoffKey
+    ? data.cashEntries.filter(
+        (e) => getDateKeyInTimezone(new Date(e.occurredAt), tz) >= cutoffKey,
+      )
+    : data.cashEntries;
+  const scopedSplits = cutoffKey
+    ? data.paymentSplits.filter(
+        (split) => getDateKeyInTimezone(new Date(split.createdAt), tz) >= cutoffKey,
+      )
+    : data.paymentSplits;
   return data.staff.map((st) => {
-    const entries = data.cashEntries.filter((e) => e.staffId === st.id);
+    const entries = scopedCashEntries.filter((e) => e.staffId === st.id);
     const sales = entries.reduce((s, e) => s + e.amountCents, 0);
     const commission = entries.reduce((s, e) => s + e.commissionCents, 0);
     const tips = entries.reduce((s, e) => s + e.tipCents, 0);
-    const splitTipsEntries = data.paymentSplits.filter(
+    const splitTipsEntries = scopedSplits.filter(
       (split) => split.tipStaffId === st.id && split.tipCents > 0,
     );
     const splitTipsCents = splitTipsEntries.reduce((s, item) => s + item.tipCents, 0);
@@ -295,7 +331,8 @@ export async function recordCajaCashEntry(input: {
       }),
     });
     if (!res.ok) {
-      return { ok: false, error: 'No se pudo guardar el movimiento.' };
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      return { ok: false, error: json?.error || 'No se pudo guardar el movimiento.' };
     }
     const message =
       input.entryType === 'expense'
@@ -339,7 +376,8 @@ export async function createCajaCoupon(input: {
       }),
     });
     if (!res.ok) {
-      return { ok: false, error: 'No se pudo crear el código.' };
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      return { ok: false, error: json?.error || 'No se pudo crear el código.' };
     }
     return {
       ok: true,

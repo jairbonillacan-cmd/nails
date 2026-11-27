@@ -110,17 +110,23 @@ function DateOverrideFormBody({
             redirectStaffId: cleanRedirect,
           };
 
-    const res = await fetch('/api/admin/availability', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch('/api/admin/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo guardar la fecha.');
+    }
     if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar la fecha.');
     const json = (await res.json().catch(() => ({}))) as { overrides?: DateOverride[] };
     await onRefresh();
+    const count = json.overrides?.length ?? 1;
     onSavedNotice(
       ovrMode === 'range'
-        ? `Fechas guardadas (${json.overrides?.length ?? 1} días)`
+        ? `Fechas guardadas (${count} ${count === 1 ? 'día' : 'días'})`
         : `Fecha guardada (${ovrDate})`,
     );
     return FORM_SUBMIT_OK;

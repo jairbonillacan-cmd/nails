@@ -6,12 +6,18 @@ import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Check } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import { PageHeader, PageSkeleton } from '@/components/ui';
 import { GoogleCalendarSection } from '@/components/admin/integraciones/GoogleCalendarSection';
 import { WhatsAppSection } from '@/components/admin/integraciones/WhatsAppSection';
 import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/PaymentsAnalyticsSection';
 import { buildWhatsAppCopyTemplates } from '@/components/admin/integraciones/integrationsHelpers';
 import { formatCurrency } from '@/lib/format';
+import {
+  FORM_SUBMIT_OK,
+  formSubmitError,
+  type FormSubmitResult,
+} from '@/lib/forms/form-submit';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { summarizeCascadeMetrics } from '@/lib/notifications/cascade';
 import type {
@@ -20,6 +26,7 @@ import type {
   NotificationWorkflow,
   PaymentMode,
   SalonSettings,
+  WhatsAppTemplateTriggerKey,
 } from '@/lib/types';
 
 function isPaymentMode(value: unknown): value is PaymentMode {
@@ -82,7 +89,16 @@ export default function AdminIntegrationsPage() {
   }, [data]);
 
   const whatsappTemplates = useMemo(
-    () => (data ? buildWhatsAppCopyTemplates(data.settings) : []),
+    () =>
+      data
+        ? buildWhatsAppCopyTemplates(
+            data.settings,
+            data.staff
+              .filter((st) => st.isActive)
+              .toSorted((a, b) => a.displayOrder - b.displayOrder)
+              .map((st) => st.name),
+          )
+        : [],
     [data],
   );
 
@@ -132,6 +148,7 @@ export default function AdminIntegrationsPage() {
   const depositLabel = formatCurrency(settings.depositAmountCents ?? 20000, settings.currency);
   const timezone = settings.timezone || 'America/Mexico_City';
   const normalizedAppUrl = integration.appUrl.replace(/\/+$/, '');
+  const whatsappWebhookUrl = `${normalizedAppUrl}/api/webhooks/whatsapp`;
   const mercadoPagoTechUrl = `${normalizedAppUrl}/api/webhooks/mercadopago`;
   const googleCalendarTechUrl = `${normalizedAppUrl}/api/webhooks/google-calendar`;
   const whatsappUsage = data.whatsappUsage ?? {
@@ -288,6 +305,56 @@ export default function AdminIntegrationsPage() {
     }
   };
 
+  const handleUpdateWorkflowContent = async (
+    workflowId: string,
+    patch: { subjectTemplate: string; messageTemplate: string; offsetMinutes?: number },
+  ): Promise<FormSubmitResult> => {
+    try {
+      const res = await fetch('/api/admin/operations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'workflow', id: workflowId, patch }),
+      });
+      if (!res.ok) {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        return formSubmitError(errJson?.error || 'No se pudo guardar el mensaje.');
+      }
+      await refresh();
+      saveNotice.show('Mensaje actualizado');
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo guardar el mensaje.');
+    }
+  };
+
+  const handleUpdateOfficialTemplate = async (
+    triggerKey: WhatsAppTemplateTriggerKey,
+    patch: { templateName?: string; isActive?: boolean },
+  ): Promise<FormSubmitResult> => {
+    try {
+      const res = await fetch('/api/admin/integrations/whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_template',
+          triggerKey,
+          ...patch,
+        }),
+      });
+      if (!res.ok) {
+        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
+        return formSubmitError(
+          errJson?.error || 'No se pudo actualizar la plantilla de WhatsApp.',
+        );
+      }
+      await refresh();
+      saveNotice.show('Plantilla actualizada');
+      return FORM_SUBMIT_OK;
+    } catch {
+      return formSubmitError('Sin conexión. No se pudo actualizar la plantilla.');
+    }
+  };
+
   const handleToggleCalendarConnection = async (staffId: string, isConnected: boolean) => {
     if (busyCalendarStaffId) return;
     setBusyCalendarStaffId(staffId);
@@ -320,6 +387,7 @@ export default function AdminIntegrationsPage() {
   };
 
   return (
+    <AdminAccessGuard role={data.session.user.role} section="integrations" sectionLabel="Conexiones">
     <VStack className="ad-page">
       <PageHeader
         title="Conexiones"
@@ -327,7 +395,7 @@ export default function AdminIntegrationsPage() {
         meta={
           isAnyMutationBusy ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando...
+              Guardando…
             </Text>
           ) : saveNotice.message ? (
             <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
@@ -351,6 +419,8 @@ export default function AdminIntegrationsPage() {
       <GoogleCalendarSection
         staff={data.staff}
         calendarConnections={displayCalendarConnections}
+        googleCalendarConfigured={integration.googleCalendarConfigured}
+        isDemoMode={integration.mode === 'demo'}
         busyCalendarStaffId={busyCalendarStaffId}
         onUpdateDestination={(staffId, destinationCalendarId) =>
           busyCalendarStaffId
@@ -371,8 +441,11 @@ export default function AdminIntegrationsPage() {
         gap={0}
       >
         <WhatsAppSection
+          integration={integration}
           salonName={settings.name}
           salonAddress={settings.address}
+          salonPhone={settings.whatsappNumber}
+          webhookUrl={whatsappWebhookUrl}
           whatsappBookingEnabled={settings.whatsappBookingEnabled}
           whatsappUsage={whatsappUsage}
           reminderSummary={reminderSummary}
@@ -386,13 +459,21 @@ export default function AdminIntegrationsPage() {
           onToggleReminderChannel={(id, channels, channel, enabled) =>
             void toggleReminderChannel(id, channels, channel, enabled)
           }
+          onUpdateWorkflowContent={handleUpdateWorkflowContent}
+          onUpdateOfficialTemplate={handleUpdateOfficialTemplate}
+          onBanner={setMsg}
+          onRefresh={refresh}
         />
       </VStack>
 
       <PaymentsAnalyticsSection
         settings={settings}
         depositLabel={depositLabel}
+        isDemoMode={integration.mode === 'demo'}
         mercadoPagoConfigured={integration.mercadoPagoConfigured}
+        twilioSmsConfigured={integration.twilioSmsConfigured}
+        timezone={timezone}
+        whatsappWebhookUrl={whatsappWebhookUrl}
         googleCalendarTechUrl={googleCalendarTechUrl}
         mercadoPagoTechUrl={mercadoPagoTechUrl}
         services={data.services}
@@ -407,5 +488,6 @@ export default function AdminIntegrationsPage() {
         onBanner={setMsg}
       />
     </VStack>
+    </AdminAccessGuard>
   );
 }

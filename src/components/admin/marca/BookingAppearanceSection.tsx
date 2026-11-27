@@ -198,7 +198,7 @@ export function BookingAppearanceSection({
                 label={
                   colorReadability.darkPassesAA
                     ? 'Se lee bien'
-                    : 'Color muy claro, cuesta leer'
+                    : 'Color muy oscuro, cuesta leer'
                 }
               />
             </HStack>

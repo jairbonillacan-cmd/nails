@@ -74,12 +74,18 @@ export function AddonsManagerSection({
         body: JSON.stringify({
           kind: 'addon',
           data: {
-            ...(existingAddon ? { id: existingAddon.id, isActive: existingAddon.isActive } : {}),
+            ...(existingAddon
+              ? {
+                  id: existingAddon.id,
+                  isActive: existingAddon.isActive,
+                  appliesToAll: existingAddon.appliesToAll,
+                  serviceIds: existingAddon.serviceIds,
+                }
+              : { appliesToAll: true }),
             name: addonName.trim(),
             description: addonDesc.trim(),
             extraMinutes: addonMin,
             extraPriceCents: Math.round(addonPrice * 100),
-            appliesToAll: true,
           },
         }),
       });
@@ -223,7 +229,7 @@ export function AddonsManagerSection({
           >
             <TextInput
               label="Nombre"
-              placeholder="Ej. Efecto Aura / Piedrería"
+              placeholder="Ejemplo: Efecto Aura o Piedrería"
               value={addonName}
               onChange={setAddonName}
               isRequired
@@ -244,7 +250,7 @@ export function AddonsManagerSection({
                 onChange={setAddonMin}
               />
               <NumberInput
-                label="Precio extra (MXN)"
+                label={`Precio extra (${currency})`}
                 value={addonPrice}
                 min={0}
                 onChange={setAddonPrice}
@@ -255,7 +261,7 @@ export function AddonsManagerSection({
               type="submit"
               label={
                 savingAddon
-                  ? 'Guardando...'
+                  ? 'Guardando…'
                   : editingAddonId
                     ? 'Guardar cambios'
                     : 'Agregar extra'

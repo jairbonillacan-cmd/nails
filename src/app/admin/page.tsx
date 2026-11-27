@@ -192,14 +192,14 @@ export default function AdminOverviewPage() {
           </button>
         </Tooltip>
       ) : null}
-      {confirmingBookingId ? (
+      {confirmingBookingId || rejectingBookingId ? (
         <Text
           role="status"
           aria-live="polite"
           className="fx-save-pill"
           data-state="saving"
         >
-          Confirmando cita...
+          {rejectingBookingId ? 'Rechazando comprobante…' : 'Confirmando cita…'}
         </Text>
       ) : savedNotice.message ? (
         <Text
@@ -256,7 +256,6 @@ export default function AdminOverviewPage() {
           data={data}
           metrics={metrics}
           confirmingBookingId={confirmingBookingId}
-          savedMessage={savedNotice.message}
           onConfirmDeposit={handleConfirmDeposit}
         />
         <DashboardAttentionCard
@@ -264,7 +263,6 @@ export default function AdminOverviewPage() {
           metrics={metrics}
           confirmingBookingId={confirmingBookingId}
           rejectingBookingId={rejectingBookingId}
-          savedMessage={savedNotice.message}
           onConfirmDeposit={handleConfirmDeposit}
           onRejectDeposit={handleRejectDeposit}
         />

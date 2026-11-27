@@ -335,3 +335,40 @@ export async function redeemClientPackageSessionRequest(
     };
   }
 }
+
+export async function cancelClientPackageRequest(
+  pkg: ClientPackageRow,
+): Promise<{ ok: boolean; notice: BannerNotice }> {
+  try {
+    const res = await fetch('/api/admin/packages', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancel', clientPackageId: pkg.id }),
+    });
+    const json = (await res.json().catch(() => null)) as { error?: string } | null;
+    if (!res.ok) {
+      return {
+        ok: false,
+        notice: {
+          status: 'error',
+          title: json?.error || 'No se pudo cancelar el paquete.',
+        },
+      };
+    }
+    return {
+      ok: true,
+      notice: {
+        status: 'success',
+        title: `Paquete "${pkg.packageName}" de ${pkg.clientName} cancelado.`,
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      notice: {
+        status: 'error',
+        title: 'No se pudo conectar para cancelar el paquete.',
+      },
+    };
+  }
+}

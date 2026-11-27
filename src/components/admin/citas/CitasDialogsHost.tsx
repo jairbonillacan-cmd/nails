@@ -60,7 +60,9 @@ interface CitasDialogsHostProps {
   blockOpen: boolean;
   blockSessionKey: number;
   onBlockOpenChange: (open: boolean) => void;
+  canViewClients: boolean;
   busyAction: { bookingId: string; status: BookingStatus } | null;
+  rejectingDepositId: string | null;
   remindingId: string | null;
   requestingRescheduleId: string | null;
   pendingCancelBooking: BookingWithRelations | null;
@@ -71,6 +73,7 @@ interface CitasDialogsHostProps {
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onScheduleRetouch: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus, pin?: string) => Promise<boolean>;
+  onRejectDeposit: (bookingId: string, bookingCode: string) => Promise<boolean>;
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
   onRefresh: () => Promise<void>;
@@ -101,7 +104,9 @@ export function CitasDialogsHost({
   blockOpen,
   blockSessionKey,
   onBlockOpenChange,
+  canViewClients,
   busyAction,
+  rejectingDepositId,
   remindingId,
   requestingRescheduleId,
   pendingCancelBooking,
@@ -112,6 +117,7 @@ export function CitasDialogsHost({
   onOpenCheckout,
   onScheduleRetouch,
   onUpdateStatus,
+  onRejectDeposit,
   onSendReminder,
   onRequestReschedule,
   onRefresh,
@@ -150,13 +156,16 @@ export function CitasDialogsHost({
           salonName={data.settings.name}
           currency={data.settings.currency}
           timezone={tz}
+          canViewClients={canViewClients}
           busyStatus={
             busyAction?.bookingId === popoverBooking.id ? busyAction.status : null
           }
+          isRejectingDeposit={rejectingDepositId === popoverBooking.id}
           isReminding={remindingId === popoverBooking.id}
           isRequestingReschedule={requestingRescheduleId === popoverBooking.id}
           onClose={onClosePopover}
           onUpdateStatus={(id, status) => onUpdateStatus(id, status)}
+          onRejectDeposit={onRejectDeposit}
           onOpenCheckout={onOpenCheckout}
           onSendReminder={onSendReminder}
           onRequestReschedule={onRequestReschedule}

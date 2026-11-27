@@ -59,6 +59,33 @@ export function createDefaultWhatsAppTemplates(
       isActive: true,
       updatedAt,
     },
+    {
+      id: 'watpl-deposit-rejected',
+      triggerKey: 'deposit_rejected',
+      templateName: 'laikona_comprobante_rechazado',
+      category: 'UTILITY',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-client-otp',
+      triggerKey: 'client_otp',
+      templateName: 'laikona_codigo_acceso',
+      category: 'AUTHENTICATION',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
+    {
+      id: 'watpl-touchup-invite',
+      triggerKey: 'touchup_invite',
+      templateName: 'laikona_invitacion_retoque',
+      category: 'MARKETING',
+      languageCode: 'es_MX',
+      isActive: true,
+      updatedAt,
+    },
   ];
 }
 

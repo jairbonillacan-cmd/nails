@@ -114,6 +114,7 @@ export default function AdminOnboardingPage() {
         stepIndex,
         profile,
         fallbackSalonName: data.settings.name,
+        currentPaymentMode: data.settings.paymentMode,
         depositEnabled,
         depositAmountMxn,
         depositBank,
@@ -138,9 +139,9 @@ export default function AdminOnboardingPage() {
   };
 
   const handleActivateNotifications = async () => {
+    setErrorMessage(null);
     const permission = await requestBrowserNotifications();
     await playBookingChime();
-    setProfileDraft((prev) => ({ ...prev, soundAlertsEnabled: true }));
     setSaving(true);
     try {
       const res = await postOnboardingJson(
@@ -149,7 +150,12 @@ export default function AdminOnboardingPage() {
         { soundAlertsEnabled: true, onboardingCompleted: true },
         'No se pudieron guardar las alertas.',
       );
-      if (res.ok) await refresh();
+      if (!res.ok) {
+        setErrorMessage(res.error);
+        return;
+      }
+      setProfileDraft((prev) => ({ ...prev, soundAlertsEnabled: true }));
+      await refresh();
     } finally {
       setSaving(false);
     }
@@ -162,6 +168,8 @@ export default function AdminOnboardingPage() {
           : 'Sonido de nuevas citas activado.',
     );
   };
+
+  const effectiveMaxReachedStep = data.settings.onboardingCompleted ? 3 : maxReachedStep;
 
   const baseOrigin = (
     data.integration.appUrl.trim() ||
@@ -177,7 +185,7 @@ export default function AdminOnboardingPage() {
 
       <OnboardingProgressCard
         stepIndex={stepIndex}
-        maxReachedStep={maxReachedStep}
+        maxReachedStep={effectiveMaxReachedStep}
         onSelectStep={(idx) => {
           setErrorMessage(null);
           setStepIndex(idx);
@@ -204,6 +212,7 @@ export default function AdminOnboardingPage() {
           staffShiftSummaries={buildStaffShiftSummaries(data.staff, data.schedules)}
           starterServices={starterServices}
           serviceDraft={serviceDraft}
+          currency={data.settings.currency}
           onPatchProfile={(patch) => setProfileDraft((p) => ({ ...p, ...patch }))}
           onPatchDeposit={(patch) => setDepositDraft((d) => ({ ...d, ...patch }))}
           onPatchService={(patch) => setServiceDraftOverrides((s) => ({ ...s, ...patch }))}

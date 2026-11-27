@@ -1630,11 +1630,12 @@ section:first-child > .ad-letter-divider {
 .ad-cal-scroll {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  max-height: min(76vh, 52rem);
+  overflow: auto;
   background: var(--ad-surface);
   border: 1px solid var(--ad-border);
   border-radius: var(--ad-card-radius);
-  overscroll-behavior-x: contain;
+  overscroll-behavior: contain;
 }
 
 .ad-cal-view {
@@ -2181,7 +2182,8 @@ section:first-child > .ad-letter-divider {
   transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.ad-row-list > .ad-row-item + .ad-row-item {
+.ad-row-list > .ad-row-item + .ad-row-item,
+.ad-row-list > li + li {
   border-top: 1px solid var(--ad-border-soft);
 }
 
@@ -3154,8 +3156,14 @@ input.ad-pin-input,
   }
 }
 
+@media (pointer: coarse) {
+  .ad-cal-resize-handle {
+    display: none;
+  }
+}
+
 @media (max-width: 47.5rem), (pointer: coarse) {
-  .ad-shell button:not([role='switch']):not([role='checkbox']):not([role='gridcell'] button):not(.astryx-number-input-stepper),
+  .ad-shell button:not([role='switch']):not([role='checkbox']):not([role='gridcell'] button):not(.astryx-number-input-stepper):not(.ad-cal-resize-handle),
   .ad-login-wrap button:not([role='switch']):not([role='checkbox']):not(.astryx-number-input-stepper) {
     min-block-size: 2.75rem;
     min-inline-size: 2.75rem;

@@ -9,6 +9,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Check, Plus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
   ConfirmActionDialog,
   PageHeader,
@@ -205,6 +206,7 @@ export default function AdminServicesPage() {
     (activeDraft.depositAmountCents ?? defaultDepositCents) !== defaultDepositCents;
 
   return (
+    <AdminAccessGuard role={data.session.user.role} section="services" sectionLabel="Servicios">
     <VStack className="ad-page">
       <PageHeader
         title="Servicios"
@@ -212,7 +214,7 @@ export default function AdminServicesPage() {
         meta={
           togglingId ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando...
+              Guardando…
             </Text>
           ) : saveNotice.message ? (
             <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
@@ -298,6 +300,7 @@ export default function AdminServicesPage() {
             <ServiceEditorPanel
               draft={activeDraft}
               categoryOptions={categoryOptions}
+              currency={currency}
               defaultDepositCents={defaultDepositCents}
               hasCleanupTime={hasCleanupTime}
               hasCustomAdvancedValues={hasCustomAdvancedValues}
@@ -346,5 +349,6 @@ export default function AdminServicesPage() {
         }}
       />
     </VStack>
+    </AdminAccessGuard>
   );
 }

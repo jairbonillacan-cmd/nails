@@ -194,7 +194,7 @@ export function PaymentSplitsEditor({
                 </Grid>
                 <TextInput
                   label="Referencia o folio (opcional)"
-                  placeholder="Ej. Folio terminal o transferencia"
+                  placeholder="Ejemplo: folio de terminal o transferencia"
                   value={row.reference}
                   autoCapitalize="none"
                   hasAutoCorrect={false}
@@ -295,7 +295,7 @@ export function PaymentSplitsEditor({
                   label="Cantidad"
                   value={extraQuantity}
                   min={1}
-                  max={50}
+                  max={Math.max(1, selectedExtraItem.stockQuantity)}
                   onChange={(val) => onChangeExtraQuantity(val || 1)}
                 />
               ) : null}

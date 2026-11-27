@@ -64,7 +64,6 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
           ? 'Efectivo, tarjeta y transferencia'
           : undefined,
       tone: 'default',
-      interactive: true,
     },
     {
       id: 'period-bookings',
@@ -79,7 +78,6 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
       delta: formatDeltaBadge(periodMetrics.bookingsDeltaPercent, periodMetrics.compareLabel),
       sub: periodMetrics.bookingsDeltaPercent === null ? bookingsSub : undefined,
       tone: 'default',
-      interactive: true,
     },
     {
       id: 'uncollected',
@@ -91,7 +89,6 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
           ? `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} pendiente${uncollectedCount === 1 ? '' : 's'}`
           : 'Todo cobrado',
       tone: metrics.uncollectedTotalCents > 0 ? 'accent' : 'success',
-      interactive: true,
     },
     {
       id: 'pending-deposits',
@@ -103,7 +100,6 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
           ? `${pendingDepositsCount} ${pendingDepositsCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`
           : 'Todo revisado',
       tone: pendingDepositsCount > 0 ? 'accent' : 'success',
-      interactive: true,
     },
   ];
 

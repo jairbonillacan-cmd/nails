@@ -77,16 +77,16 @@ export function OnboardingStepAlerts({
               ¡{displaySalonName} está lista para recibir citas!
             </Heading>
             <Text color="secondary">
-              Ya puedes pegar tu link en Instagram, enviarlo por WhatsApp o imprimir tu QR para el mostrador.
+              Ya puedes pegar tu enlace en Instagram, enviarlo por WhatsApp o imprimir tu QR para el mostrador.
             </Text>
           </VStack>
 
           <CopyableField
-            label="Tu link de citas (para tu bio de Instagram o WhatsApp)"
+            label="Tu enlace de citas (para tu bio de Instagram o WhatsApp)"
             value={bookingUrl}
-            copyLabel="Copiar link"
-            copiedLabel="Link copiado"
-            feedbackMessage="Link de citas copiado"
+            copyLabel="Copiar enlace"
+            copiedLabel="Enlace copiado"
+            feedbackMessage="Enlace de citas copiado"
             monospace
             endExtra={
               <Button
@@ -153,7 +153,9 @@ export function OnboardingStepAlerts({
                     ? 'activas'
                     : notificationPermission === 'denied'
                       ? 'bloqueadas'
-                      : 'pendientes'}
+                      : notificationPermission === 'unsupported'
+                        ? 'no disponibles en este navegador'
+                        : 'pendientes'}
                   .
                 </Text>
               </VStack>

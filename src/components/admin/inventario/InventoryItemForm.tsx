@@ -30,10 +30,11 @@ export interface NewInventoryItemInput {
 }
 
 interface InventoryItemFormProps {
+  currency: 'MXN' | 'USD';
   onCreateItem: (item: NewInventoryItemInput) => Promise<FormSubmitResult>;
 }
 
-export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
+export function InventoryItemForm({ currency, onCreateItem }: InventoryItemFormProps) {
   return (
     <FormDialogLauncher
       triggerLabel="Agregar producto"
@@ -41,7 +42,13 @@ export function InventoryItemForm({ onCreateItem }: InventoryItemFormProps) {
       subtitle="Cuánto tienes, cuándo avisarte y si también lo vendes."
       icon={<PackagePlus size={16} aria-hidden="true" />}
     >
-      {(controls) => <InventoryItemFormBody onCreateItem={onCreateItem} controls={controls} />}
+      {(controls) => (
+        <InventoryItemFormBody
+          currency={currency}
+          onCreateItem={onCreateItem}
+          controls={controls}
+        />
+      )}
     </FormDialogLauncher>
   );
 }
@@ -59,6 +66,7 @@ export function inventoryCategoryLabel(category: InventoryItem['category']): str
 }
 
 function InventoryItemFormBody({
+  currency,
   onCreateItem,
   controls,
 }: InventoryItemFormProps & { controls: FormDialogControls }) {
@@ -98,7 +106,7 @@ function InventoryItemFormBody({
       <VStack gap={3}>
         <TextInput
           label="Nombre"
-          placeholder="Ej. Top coat brillante"
+          placeholder="Ejemplo: Top coat brillante"
           value={name}
           onChange={setName}
           isRequired
@@ -115,7 +123,7 @@ function InventoryItemFormBody({
           />
           <TextInput
             label="Se cuenta por"
-            placeholder="Ej. frasco o pieza"
+            placeholder="Ejemplo: frasco o pieza"
             value={unit}
             onChange={setUnit}
           />
@@ -137,7 +145,7 @@ function InventoryItemFormBody({
           />
         </Grid>
         <NumberInput
-          label="Te costó (MXN)"
+          label={`Te costó (${currency})`}
           value={costMxn}
           min={0}
           onChange={setCostMxn}
@@ -150,7 +158,7 @@ function InventoryItemFormBody({
         />
         {isForRetail ? (
           <NumberInput
-            label="Precio de venta (MXN)"
+            label={`Precio de venta (${currency})`}
             value={retailMxn}
             min={0}
             onChange={setRetailMxn}
@@ -159,7 +167,7 @@ function InventoryItemFormBody({
         <TextInput
           label="Código interno"
           description="Si lo dejas vacío lo creamos por ti."
-          placeholder="Ej. GEL-01"
+          placeholder="Ejemplo: GEL-01"
           value={sku}
           onChange={setSku}
           isOptional

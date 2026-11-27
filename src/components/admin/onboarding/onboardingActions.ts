@@ -2,6 +2,7 @@ import type {
   OnboardingProfileState,
   OnboardingServiceState,
 } from '@/components/admin/onboarding/OnboardingStepFormCard';
+import type { PaymentMode } from '@/lib/types';
 
 export async function postOnboardingJson(
   url: string,
@@ -29,6 +30,7 @@ export async function submitOnboardingStep(params: {
   stepIndex: number;
   profile: OnboardingProfileState;
   fallbackSalonName: string;
+  currentPaymentMode: PaymentMode;
   depositEnabled: boolean;
   depositAmountMxn: number;
   depositBank: string;
@@ -41,6 +43,7 @@ export async function submitOnboardingStep(params: {
     stepIndex,
     profile,
     fallbackSalonName,
+    currentPaymentMode,
     depositEnabled,
     depositAmountMxn,
     depositBank,
@@ -68,11 +71,16 @@ export async function submitOnboardingStep(params: {
   }
 
   if (stepIndex === 1) {
+    const nextPaymentMode: PaymentMode = depositEnabled
+      ? currentPaymentMode === 'none'
+        ? 'manual_transfer'
+        : currentPaymentMode
+      : 'none';
     const result = await postOnboardingJson(
       '/api/admin/brand',
       'PATCH',
       {
-        paymentMode: depositEnabled ? 'manual_transfer' : 'none',
+        paymentMode: nextPaymentMode,
         depositAmountCents: Math.max(0, Math.round(depositAmountMxn * 100)),
         depositBankName: depositBank.trim(),
         depositBeneficiary: depositHolder.trim(),

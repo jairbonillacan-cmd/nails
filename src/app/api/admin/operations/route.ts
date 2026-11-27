@@ -74,21 +74,36 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const currency = db.settings.currency || 'MXN';
+    const entryTypeLabels: Record<string, string> = {
+      service_income: 'Servicio',
+      product_sale: 'Venta de producto',
+      deposit: 'Anticipo',
+      expense: 'Gasto',
+      tip: 'Propina',
+      refund: 'Devolución',
+    };
+    const paymentMethodLabels: Record<string, string> = {
+      cash: 'Efectivo',
+      card: 'Tarjeta',
+      transfer: 'Transferencia',
+      gift_card: 'Tarjeta de regalo',
+    };
     const headers = [
       'Fecha',
       'Tipo',
       'Descripción',
-      'Método',
-      'Monto MXN',
-      'Propina MXN',
-      'Comisión MXN',
+      'Forma de pago',
+      `Monto (${currency})`,
+      `Propina (${currency})`,
+      `Comisión (${currency})`,
       'Registrado por',
     ];
     const rows = db.cashEntries.map((e) => [
       e.occurredAt,
-      e.entryType,
+      entryTypeLabels[e.entryType] ?? e.entryType,
       e.description,
-      e.paymentMethod,
+      paymentMethodLabels[e.paymentMethod] ?? e.paymentMethod,
       (e.amountCents / 100).toFixed(2),
       (e.tipCents / 100).toFixed(2),
       (e.commissionCents / 100).toFixed(2),

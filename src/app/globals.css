@@ -75,6 +75,11 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   overflow-x: clip;
 }
 
+.lk-portal {
+  background: var(--color-background-surface);
+  color: var(--lk-tinta);
+}
+
 .lk-ic {
   display: inline-block;
   flex: none;

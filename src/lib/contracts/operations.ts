@@ -122,3 +122,50 @@ export const AdminOperationsPostSchema = z.discriminatedUnion('kind', [
     patch: WorkflowPatchSchema,
   }),
 ]);
+
+const WhatsAppTemplateTriggerKeySchema = z.enum([
+  'booking_confirmed',
+  'reminder_24h',
+  'reminder_2h',
+  'booking_rescheduled',
+  'booking_canceled',
+  'waitlist_offer',
+  'deposit_rejected',
+  'client_otp',
+  'touchup_invite',
+]);
+
+export const AdminWhatsAppActionSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('update_template'),
+      triggerKey: WhatsAppTemplateTriggerKeySchema,
+      templateName: z
+        .string()
+        .trim()
+        .min(2, 'Escribe un nombre válido de plantilla')
+        .max(120)
+        .regex(
+          /^[a-z0-9_]+$/,
+          'Usa solo letras minúsculas, números y guion bajo (_).',
+        )
+        .optional(),
+      isActive: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('sync_meta_templates'),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('send_test'),
+      toPhone: z
+        .string()
+        .trim()
+        .min(10, 'Escribe un número de WhatsApp válido de al menos 10 dígitos.')
+        .max(24),
+    })
+    .strict(),
+]);

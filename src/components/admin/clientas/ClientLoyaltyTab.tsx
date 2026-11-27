@@ -9,7 +9,7 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
-import { MessageCircle, Package, PackageCheck } from 'lucide-react';
+import { MessageCircle, Package, PackageCheck, X } from 'lucide-react';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
   buildWhatsAppLink,
@@ -20,6 +20,7 @@ import {
 import type { ClientProfile, LoyaltyProgram, ServicePackage } from '@/lib/types';
 import {
   ActionRow,
+  ConfirmActionDialog,
   EmptyStateCard,
   PackageStatusTag,
   SkeletonBlock,
@@ -46,6 +47,7 @@ interface ClientLoyaltyTabProps {
   currency: 'MXN' | 'USD';
   assigningPkg: boolean;
   redeemingPkgId: string | null;
+  cancelingPkgId: string | null;
   onOpenClientById: (clientId: string) => void;
   onAssignPackage: (
     targetClientId: string,
@@ -53,6 +55,7 @@ interface ClientLoyaltyTabProps {
     notesText: string,
   ) => Promise<boolean>;
   onRedeemPackageSession: (pkg: ClientPackageRow) => Promise<void>;
+  onCancelPackage: (pkg: ClientPackageRow) => Promise<void>;
 }
 
 export function ClientLoyaltyTab({
@@ -69,13 +72,16 @@ export function ClientLoyaltyTab({
   currency,
   assigningPkg,
   redeemingPkgId,
+  cancelingPkgId,
   onOpenClientById,
   onAssignPackage,
   onRedeemPackageSession,
+  onCancelPackage,
 }: ClientLoyaltyTabProps) {
   const [assignClientId, setAssignClientId] = useState('');
   const [assignPackageId, setAssignPackageId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
+  const [confirmCancelPkg, setConfirmCancelPkg] = useState<ClientPackageRow | null>(null);
 
   const effectiveAssignClientId = assignClientId || clients[0]?.id || '';
   const effectiveAssignPackageId = assignPackageId || activeCatalogPackages[0]?.id || '';
@@ -277,6 +283,17 @@ export function ClientLoyaltyTab({
 
                       <HStack gap={1.5} align="center" wrap="wrap">
                         <PackageStatusTag status={pkg.status} isExpired={pkg.isExpired} />
+                        {canManageClients && pkg.status === 'active' && !pkg.isExpired ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            icon={<X size={14} aria-hidden="true" />}
+                            label="Cancelar"
+                            isDisabled={redeemingPkgId === pkg.id || cancelingPkgId === pkg.id}
+                            onClick={() => setConfirmCancelPkg(pkg)}
+                          />
+                        ) : null}
                         {canRedeem ? (
                           <Button
                             type="button"
@@ -285,6 +302,7 @@ export function ClientLoyaltyTab({
                             icon={<PackageCheck size={14} aria-hidden="true" />}
                             label="Usar 1 sesión"
                             isLoading={redeemingPkgId === pkg.id}
+                            isDisabled={redeemingPkgId === pkg.id || cancelingPkgId === pkg.id}
                             onClick={() => void onRedeemPackageSession(pkg)}
                           />
                         ) : null}
@@ -351,7 +369,7 @@ export function ClientLoyaltyTab({
                 />
                 <TextInput
                   label="Nota (opcional)"
-                  placeholder="Ej. Pagado en efectivo o transferencia"
+                  placeholder="Ejemplo: pagado en efectivo o transferencia"
                   value={assignNotes}
                   onChange={setAssignNotes}
                   isOptional
@@ -372,6 +390,25 @@ export function ClientLoyaltyTab({
           </SurfaceCard>
         ) : null}
       </VStack>
+
+      {confirmCancelPkg ? (
+        <ConfirmActionDialog
+          isOpen
+          onOpenChange={(open) => {
+            if (!open && !cancelingPkgId) setConfirmCancelPkg(null);
+          }}
+          title={`¿Cancelar paquete "${confirmCancelPkg.packageName}"?`}
+          description={`Se cancelará el paquete de ${confirmCancelPkg.clientName} y sus ${confirmCancelPkg.remainingSessions} sesiones pendientes quedarán sin efecto.`}
+          confirmLabel="Sí, cancelar paquete"
+          cancelLabel="Volver"
+          variant="destructive"
+          isLoading={cancelingPkgId === confirmCancelPkg.id}
+          onConfirm={async () => {
+            await onCancelPackage(confirmCancelPkg);
+            setConfirmCancelPkg(null);
+          }}
+        />
+      ) : null}
     </VStack>
   );
 }

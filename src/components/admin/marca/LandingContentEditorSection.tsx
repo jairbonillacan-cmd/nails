@@ -30,7 +30,6 @@ import {
 } from '@/components/booking/bookingHelpers';
 import {
   DEFAULT_HERO_DESKTOP_IMAGE,
-  DEFAULT_HERO_MOBILE_IMAGE,
   resolveLandingContent,
 } from '@/lib/landing-config';
 import { formatCurrency } from '@/lib/format';
@@ -345,7 +344,7 @@ export function LandingContentEditorSection({
                   helperText={
                     customDesktopHero
                       ? 'Si la dejas vacía, usaremos tu foto de portada principal.'
-                      : `Si la dejas vacía, mostramos ${DEFAULT_HERO_MOBILE_IMAGE.replace('/landing/', '')}.`
+                      : 'Si la dejas vacía, mostramos la portada vertical original del estudio.'
                   }
                   placeholder="Elige una foto vertical (opcional)"
                   readyLabel="Portada móvil lista"
@@ -448,7 +447,7 @@ export function LandingContentEditorSection({
                       <TextInput
                         label={`Frase ${idx + 1}`}
                         isLabelHidden={idx > 0}
-                        placeholder="Ej. Promo de mayo · 10% en tu primer Softgel"
+                        placeholder="Ejemplo: Promo de mayo · 10% en tu primer Softgel"
                         value={phrase}
                         onChange={(v) => updateMarqueeItem(idx, v)}
                       />
@@ -536,7 +535,7 @@ export function LandingContentEditorSection({
 
           <TextInput
             label="Aviso opcional encima del menú"
-            placeholder="Ej. Todas nuestras aplicaciones incluyen preparación en seco"
+            placeholder="Ejemplo: Todas nuestras aplicaciones incluyen preparación en seco"
             value={draft.landingContent.menuBannerText ?? ''}
             onChange={(v) => patchLanding({ menuBannerText: v })}
             isOptional
@@ -589,7 +588,7 @@ export function LandingContentEditorSection({
                 />
                 <TextInput
                   label="Subtítulo de creaciones"
-                  placeholder="Del french minimal al 3D con charms..."
+                  placeholder="Del french minimal al 3D con charms…"
                   value={draft.landingContent.creationsSubtitle ?? ''}
                   onChange={(v) => patchLanding({ creationsSubtitle: v })}
                   isOptional
@@ -605,7 +604,7 @@ export function LandingContentEditorSection({
                 />
                 <TextInput
                   label="Subtítulo de reseñas"
-                  placeholder="Opiniones verificadas de clientas..."
+                  placeholder="Opiniones verificadas de clientas…"
                   value={draft.landingContent.reviewsSubtitle ?? ''}
                   onChange={(v) => patchLanding({ reviewsSubtitle: v })}
                   isOptional
@@ -621,7 +620,7 @@ export function LandingContentEditorSection({
                 />
                 <TextInput
                   label="Subtítulo del equipo"
-                  placeholder="Una clienta por bloque..."
+                  placeholder="Una clienta por bloque…"
                   value={draft.landingContent.teamSubtitle ?? ''}
                   onChange={(v) => patchLanding({ teamSubtitle: v })}
                   isOptional
@@ -637,7 +636,7 @@ export function LandingContentEditorSection({
                 />
                 <TextInput
                   label="Subtítulo de Instagram"
-                  placeholder="Sets nuevos cada semana..."
+                  placeholder="Sets nuevos cada semana…"
                   value={draft.landingContent.connectSubtitle ?? ''}
                   onChange={(v) => patchLanding({ connectSubtitle: v })}
                   isOptional

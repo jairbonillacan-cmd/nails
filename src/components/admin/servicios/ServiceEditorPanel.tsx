@@ -15,6 +15,7 @@ import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Save, SlidersHorizontal } from 'lucide-react';
 import { StatusTag } from '@/components/ui';
+import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 
 interface CategoryOption {
@@ -25,6 +26,7 @@ interface CategoryOption {
 interface ServiceEditorPanelProps {
   draft: Partial<Service>;
   categoryOptions: readonly CategoryOption[];
+  currency: 'MXN' | 'USD';
   defaultDepositCents: number;
   hasCleanupTime: boolean;
   hasCustomAdvancedValues: boolean;
@@ -39,6 +41,7 @@ interface ServiceEditorPanelProps {
 export function ServiceEditorPanel({
   draft,
   categoryOptions,
+  currency,
   defaultDepositCents,
   hasCleanupTime,
   hasCustomAdvancedValues,
@@ -49,12 +52,16 @@ export function ServiceEditorPanel({
   onCancel,
   onSubmit,
 }: ServiceEditorPanelProps) {
+  const isDepositRequired = draft.depositRequired ?? true;
+  const effectiveDepositCents = draft.depositAmountCents ?? defaultDepositCents;
+  const hasCustomDeposit = isDepositRequired && effectiveDepositCents !== defaultDepositCents;
+
   return (
       <form onSubmit={onSubmit}>
         <VStack gap={3}>
           <TextInput
             label="Nombre"
-            placeholder="Ej. Uñas acrílicas"
+            placeholder="Ejemplo: Uñas acrílicas"
             value={draft.name || ''}
             onChange={(v) => onChangeDraft({ ...draft, name: v })}
             isRequired
@@ -63,7 +70,7 @@ export function ServiceEditorPanel({
           <VStack gap={2}>
             <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
               <NumberInput
-                label="Precio (MXN)"
+                label={`Precio (${currency})`}
                 value={(draft.priceCents ?? 0) / 100}
                 min={0}
                 onChange={(v) =>
@@ -109,7 +116,7 @@ export function ServiceEditorPanel({
                   </Text>
                 </HStack>
                 <Text type="supporting" color="secondary">
-                  {hasCustomAdvancedValues ? 'Personalizado' : 'Limpieza, anticipo, link privado'}
+                  {hasCustomAdvancedValues ? 'Personalizado' : 'Limpieza, anticipo, enlace privado'}
                 </Text>
               </HStack>
             }
@@ -162,31 +169,64 @@ export function ServiceEditorPanel({
 
               <VStack gap={2}>
                 <Switch
-                  label="Anticipo diferente al del salón"
-                  description="Pide otro monto de anticipo solo para este servicio."
-                  value={Boolean(draft.depositRequired)}
-                  onChange={(v) => onChangeDraft({ ...draft, depositRequired: v })}
+                  label="Pedir anticipo en este servicio"
+                  description={`Por defecto del salón se piden ${formatCurrency(defaultDepositCents, currency)}. Desactívalo solo si este servicio no requiere anticipo.`}
+                  value={isDepositRequired}
+                  onChange={(v) =>
+                    onChangeDraft({
+                      ...draft,
+                      depositRequired: v,
+                      depositAmountCents: v
+                        ? effectiveDepositCents > 0
+                          ? effectiveDepositCents
+                          : defaultDepositCents
+                        : draft.depositAmountCents ?? defaultDepositCents,
+                    })
+                  }
                 />
-                {draft.depositRequired ? (
-                  <NumberInput
-                    label="Anticipo (MXN)"
-                    value={(draft.depositAmountCents ?? defaultDepositCents) / 100}
-                    min={0}
-                    onChange={(v) =>
-                      onChangeDraft({
-                        ...draft,
-                        depositAmountCents: Math.round(v * 100),
-                      })
-                    }
-                  />
+                {isDepositRequired ? (
+                  <VStack gap={2}>
+                    <NumberInput
+                      label={`Anticipo (${currency})`}
+                      description={
+                        hasCustomDeposit
+                          ? `Monto personalizado (el anticipo general del salón es ${formatCurrency(defaultDepositCents, currency)}).`
+                          : 'Usa el mismo monto que el anticipo general del salón.'
+                      }
+                      value={effectiveDepositCents / 100}
+                      min={0}
+                      onChange={(v) =>
+                        onChangeDraft({
+                          ...draft,
+                          depositAmountCents: Math.round(v * 100),
+                        })
+                      }
+                    />
+                    {hasCustomDeposit ? (
+                      <HStack justify="start">
+                        <Button
+                          type="button"
+                          label={`Usar anticipo del salón (${formatCurrency(defaultDepositCents, currency)})`}
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            onChangeDraft({
+                              ...draft,
+                              depositAmountCents: defaultDepositCents,
+                            })
+                          }
+                        />
+                      </HStack>
+                    ) : null}
+                  </VStack>
                 ) : null}
               </VStack>
 
               <Divider />
 
               <Switch
-                label="Solo con link privado"
-                description="No aparece en tu página; solo reserva quien tenga el link."
+                label="Solo con enlace privado"
+                description="No aparece en tu página; solo reserva quien tenga el enlace."
                 value={Boolean(draft.isPrivate)}
                 onChange={(v) => onChangeDraft({ ...draft, isPrivate: v })}
               />
@@ -214,7 +254,7 @@ export function ServiceEditorPanel({
             <Button type="button" label="Cancelar" variant="secondary" isDisabled={saving} onClick={onCancel} />
             <Button
               type="submit"
-              label={saving ? 'Guardando...' : draft.id ? 'Guardar cambios' : 'Crear servicio'}
+              label={saving ? 'Guardando…' : draft.id ? 'Guardar cambios' : 'Crear servicio'}
               variant="primary"
               icon={<Save size={15} aria-hidden="true" />}
               isLoading={saving}

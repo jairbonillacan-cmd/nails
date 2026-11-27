@@ -8,7 +8,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Token } from '@astryxdesign/core/Token';
 import { Link } from '@astryxdesign/core/Link';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { AtSign } from 'lucide-react';
+import { AtSign, ExternalLink, XCircle } from 'lucide-react';
 import {
   BookingStatusTag,
   ConfirmActionDialog,
@@ -47,11 +47,14 @@ interface BookingQuickPopoverProps {
   salonName: string;
   currency: 'MXN' | 'USD';
   timezone: string;
+  canViewClients?: boolean;
   busyStatus?: BookingStatus | null;
+  isRejectingDeposit?: boolean;
   isReminding: boolean;
   isRequestingReschedule: boolean;
   onClose: () => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => Promise<boolean>;
+  onRejectDeposit?: (bookingId: string, bookingCode: string) => Promise<boolean>;
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
@@ -71,17 +74,22 @@ export function BookingQuickPopover({
   salonName,
   currency,
   timezone,
+  canViewClients = true,
   busyStatus = null,
+  isRejectingDeposit = false,
   isReminding,
   isRequestingReschedule,
   onClose,
   onUpdateStatus,
+  onRejectDeposit,
   onOpenCheckout,
   onSendReminder,
   onRequestReschedule,
 }: BookingQuickPopoverProps) {
   const [proofZoomOpen, setProofZoomOpen] = useState(false);
-  const [pendingConfirm, setPendingConfirm] = useState<'canceled' | 'no_show' | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<
+    'canceled' | 'no_show' | 'reject_deposit' | null
+  >(null);
 
   if (!booking) {
     return (
@@ -91,7 +99,7 @@ export function BookingQuickPopover({
     );
   }
 
-  const isBusy = Boolean(busyStatus);
+  const isBusy = Boolean(busyStatus) || isRejectingDeposit;
   const allowedNext: readonly BookingStatus[] = BOOKING_TRANSITIONS[booking.status];
   const extraServiceNames = (booking.extraServiceIds ?? [])
     .map((id) => allServices.find((s) => s.id === id)?.name)
@@ -99,12 +107,23 @@ export function BookingQuickPopover({
   const igHandle = booking.clientInstagram ?? booking.client.instagramHandle ?? null;
   const igUrl = buildInstagramProfileUrl(igHandle);
   const proofMeta = getProofBadgeMeta(booking);
-  const hasDisplayableProof = isDisplayableProofImage(booking.paymentProofUrl);
+  const hasDisplayableProof = isDisplayableProofImage(
+    booking.paymentProofUrl,
+    booking.proofDeliveryMethod,
+  );
+  const hasExternalProofLink = Boolean(
+    booking.paymentProofUrl &&
+      !hasDisplayableProof &&
+      booking.paymentProofUrl.startsWith('https://'),
+  );
+  const hasUploadedProof =
+    booking.proofDeliveryMethod !== 'none' || Boolean(booking.paymentProofUrl);
   const paymentSummary = computeBookingPaymentSummary(
     booking.totalPriceCents,
     paymentSplits.filter((s) => s.bookingId === booking.id),
   );
   const isPending = allowedNext.includes('confirmed');
+  const canRejectProof = Boolean(isPending && hasUploadedProof && onRejectDeposit);
   const canRemind =
     booking.status === 'confirmed' ||
     booking.status === 'pending_confirmation' ||
@@ -129,8 +148,16 @@ export function BookingQuickPopover({
 
   const handleStatusAction = async (nextStatus: BookingStatus) => {
     if (isBusy) return;
-    await onUpdateStatus(booking.id, nextStatus);
-    handleClose();
+    const ok = await onUpdateStatus(booking.id, nextStatus);
+    if (ok) handleClose();
+    else setPendingConfirm(null);
+  };
+
+  const handleRejectDepositAction = async () => {
+    if (isBusy || !onRejectDeposit) return;
+    const ok = await onRejectDeposit(booking.id, booking.bookingCode);
+    setPendingConfirm(null);
+    if (ok) handleClose();
   };
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -165,7 +192,7 @@ export function BookingQuickPopover({
             />
             {isBusy ? (
               <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-                Actualizando...
+                Actualizando…
               </Text>
             ) : null}
             <Token size="sm" label={`Con ${booking.staff.name}`} />
@@ -215,18 +242,66 @@ export function BookingQuickPopover({
                       alt={`Comprobante de anticipo de ${booking.client.fullName}`}
                     />
                   </button>
-                  <VStack gap={0.5} className="rb-grow">
+                  <VStack gap={1} className="rb-grow">
                     <Text size="sm" weight="semibold">
                       Comprobante de anticipo
                     </Text>
+                    <HStack gap={1.5} wrap="wrap">
+                      <Button
+                        type="button"
+                        label="Ver comprobante"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setProofZoomOpen(true)}
+                      />
+                      {canRejectProof ? (
+                        <Button
+                          type="button"
+                          label="Rechazar comprobante"
+                          variant="ghost"
+                          size="sm"
+                          icon={<XCircle size={14} aria-hidden="true" />}
+                          isDisabled={isBusy}
+                          onClick={() => setPendingConfirm('reject_deposit')}
+                        />
+                      ) : null}
+                    </HStack>
+                  </VStack>
+                </HStack>
+              ) : hasExternalProofLink && booking.paymentProofUrl ? (
+                <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
+                  <Button
+                    label="Ver enlace del comprobante"
+                    variant="secondary"
+                    size="sm"
+                    icon={<ExternalLink size={14} aria-hidden="true" />}
+                    href={booking.paymentProofUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                  {canRejectProof ? (
                     <Button
                       type="button"
-                      label="Ver comprobante"
-                      variant="secondary"
+                      label="Rechazar comprobante"
+                      variant="ghost"
                       size="sm"
-                      onClick={() => setProofZoomOpen(true)}
+                      icon={<XCircle size={14} aria-hidden="true" />}
+                      isDisabled={isBusy}
+                      onClick={() => setPendingConfirm('reject_deposit')}
                     />
-                  </VStack>
+                  ) : null}
+                </HStack>
+              ) : canRejectProof ? (
+                <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
+                  <Button
+                    type="button"
+                    label="Rechazar comprobante"
+                    variant="ghost"
+                    size="sm"
+                    icon={<XCircle size={14} aria-hidden="true" />}
+                    isDisabled={isBusy}
+                    onClick={() => setPendingConfirm('reject_deposit')}
+                  />
                 </HStack>
               ) : null}
             </VStack>
@@ -278,6 +353,7 @@ export function BookingQuickPopover({
             busyStatus={busyStatus}
             isReminding={isReminding}
             isRequestingReschedule={isRequestingReschedule}
+            canViewClients={canViewClients}
             waHref={waHref}
             clientProfileHref={clientProfileHref}
             onConfirm={() => void handleStatusAction('confirmed')}
@@ -308,8 +384,17 @@ export function BookingQuickPopover({
           paymentProofUrl={booking.paymentProofUrl}
           canConfirm={isPending}
           isConfirming={busyStatus === 'confirmed'}
+          isRejecting={isRejectingDeposit}
           isBusy={isBusy}
           onConfirm={() => void handleStatusAction('confirmed')}
+          onReject={
+            canRejectProof
+              ? () => {
+                  setProofZoomOpen(false);
+                  setPendingConfirm('reject_deposit');
+                }
+              : undefined
+          }
         />
       ) : null}
 
@@ -319,20 +404,34 @@ export function BookingQuickPopover({
           if (!open && !isBusy) setPendingConfirm(null);
         }}
         title={
-          pendingConfirm === 'no_show'
-            ? `¿Marcar a ${booking.client.fullName} como no asistió?`
-            : `¿Cancelar la cita de ${booking.client.fullName}?`
+          pendingConfirm === 'reject_deposit'
+            ? '¿Rechazar este comprobante?'
+            : pendingConfirm === 'no_show'
+              ? `¿Marcar a ${booking.client.fullName} como no asistió?`
+              : `¿Cancelar la cita de ${booking.client.fullName}?`
         }
         description={
-          pendingConfirm === 'no_show'
-            ? 'La cita quedará registrada como inasistencia (no llegó) y contará para la política de faltas.'
-            : 'Se liberará este horario en la agenda y la cita cambiará a estado cancelada.'
+          pendingConfirm === 'reject_deposit'
+            ? `Le avisaremos a ${booking.client.fullName} que no pudimos validar su comprobante para que suba uno nuevo. Su horario seguirá apartado mientras tanto.`
+            : pendingConfirm === 'no_show'
+              ? 'La cita quedará registrada como inasistencia (no llegó) y contará para la política de faltas.'
+              : 'Se liberará este horario en la agenda y la cita cambiará a estado cancelada.'
         }
-        confirmLabel={pendingConfirm === 'no_show' ? 'Sí, marcar no llegó' : 'Sí, cancelar cita'}
+        confirmLabel={
+          pendingConfirm === 'reject_deposit'
+            ? 'Sí, rechazar'
+            : pendingConfirm === 'no_show'
+              ? 'Sí, marcar no llegó'
+              : 'Sí, cancelar cita'
+        }
         variant="destructive"
         isLoading={isBusy}
         onConfirm={async () => {
-          if (pendingConfirm) await handleStatusAction(pendingConfirm);
+          if (pendingConfirm === 'reject_deposit') {
+            await handleRejectDepositAction();
+          } else if (pendingConfirm) {
+            await handleStatusAction(pendingConfirm);
+          }
         }}
       />
     </>

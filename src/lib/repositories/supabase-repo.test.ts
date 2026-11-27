@@ -1984,8 +1984,10 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     ).toBe(false);
 
     const templates = await repo.getWhatsAppTemplates();
-    expect(templates).toHaveLength(1);
-    expect(templates[0]?.templateName).toBe('laikona_cita_confirmada');
+    expect(templates).toHaveLength(9);
+    expect(
+      templates.find((tpl) => tpl.triggerKey === 'booking_confirmed')?.templateName,
+    ).toBe('laikona_cita_confirmada');
 
     const usageBefore = await repo.getWhatsAppMonthlyUsage('2026-12');
     expect(usageBefore).toMatchObject({

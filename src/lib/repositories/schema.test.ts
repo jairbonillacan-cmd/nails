@@ -269,8 +269,8 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     expect(parsed.settings.retentionNoticeEmail).toBe('hola@laikonanails.mx');
     expect(parsed.settings.whatsappMonthlyQuota).toBe(500);
     expect(parsed.mediaAssets?.length).toBeGreaterThanOrEqual(1);
-    expect(parsed.whatsappTemplates?.length).toBe(6);
-    expect(parsed.whatsappTemplates?.every((t) => t.category === 'UTILITY' && t.languageCode === 'es_MX')).toBe(true);
+    expect(parsed.whatsappTemplates?.length).toBe(9);
+    expect(parsed.whatsappTemplates?.every((t) => t.languageCode === 'es_MX')).toBe(true);
     expect(parsed.whatsappMonthlyUsage?.length).toBe(1);
     expect(parsed.webhookEvents).toEqual([]);
 
@@ -587,6 +587,8 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
       'markMediaRetentionWarned',
       'markMediaAssetPurged',
       'getWhatsAppTemplates',
+      'updateWhatsAppTemplate',
+      'updateNotificationDeliveryByProviderId',
       'getWhatsAppMonthlyUsage',
       'incrementWhatsAppMonthlyUsage',
       'claimWebhookEventIdempotent',
@@ -594,6 +596,6 @@ describe('DemoDatabase Zod Schema & SQL-to-TS Parity (A4 / M1 / M2 / S5 / S6)', 
     ];
 
     expect(sampleArgKey).toBe('p_hold_id');
-    expect(requiredPortMethods).toHaveLength(21);
+    expect(requiredPortMethods).toHaveLength(23);
   });
 });

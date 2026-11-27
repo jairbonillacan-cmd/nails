@@ -100,6 +100,7 @@ interface OnboardingStepFormCardProps {
   staffShiftSummaries: readonly StaffShiftSummary[];
   starterServices: Service[];
   serviceDraft: OnboardingServiceState;
+  currency: 'MXN' | 'USD';
   onPatchProfile: (patch: Partial<OnboardingProfileState>) => void;
   onPatchDeposit: (patch: Partial<OnboardingDepositState>) => void;
   onPatchService: (patch: Partial<OnboardingServiceState>) => void;
@@ -121,6 +122,7 @@ export function OnboardingStepFormCard({
   staffShiftSummaries,
   starterServices,
   serviceDraft,
+  currency,
   onPatchProfile,
   onPatchDeposit,
   onPatchService,
@@ -171,6 +173,7 @@ export function OnboardingStepFormCard({
               servicePriceMxn={serviceDraft.priceMxn}
               serviceDurationMinutes={serviceDraft.durationMinutes}
               serviceIsStartingPrice={serviceDraft.isStartingPrice}
+              currency={currency}
               onSelectStarterService={onSelectStarterService}
               onChangeServiceName={(name) => onPatchService({ name })}
               onChangeServicePriceMxn={(priceMxn) => onPatchService({ priceMxn })}

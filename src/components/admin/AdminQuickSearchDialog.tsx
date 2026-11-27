@@ -8,9 +8,16 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
-import { Calendar, CalendarDays, Search, Sparkles, Users } from 'lucide-react';
-import { formatDateShortInTimezone, formatTimeInTimezone, formatPhoneDisplay } from '@/lib/format';
+import { Calendar, CalendarDays, Search, Sparkles, Tag, Users } from 'lucide-react';
+import {
+  formatCurrency,
+  formatDateShortInTimezone,
+  formatDuration,
+  formatPhoneDisplay,
+  formatTimeInTimezone,
+} from '@/lib/format';
 import { useQuickSearchKeyboardNav } from '@/lib/hooks/useAdminCache';
+import { roleCanAccess } from '@/lib/rbac';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import type { AdminOverviewPayload } from './AdminProvider';
@@ -32,11 +39,20 @@ export function AdminQuickSearchDialog({
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const tz = data.settings.timezone || 'America/Mexico_City';
+  const currency = data.settings.currency;
+  const canViewClients = roleCanAccess(data.session.user.role, 'clients');
+  const serviceTargetHref = roleCanAccess(data.session.user.role, 'services')
+    ? '/admin/servicios'
+    : '/admin/citas?new=1';
 
-  const { dateJumps, matchedBookings, matchedClients, matchedNav, flatOptions } = useMemo(
-    () => buildQuickSearchResults(data, query),
-    [data, query],
-  );
+  const {
+    dateJumps,
+    matchedBookings,
+    matchedClients,
+    matchedServices,
+    matchedNav,
+    flatOptions,
+  } = useMemo(() => buildQuickSearchResults(data, query), [data, query]);
 
   const safeActiveIndex =
     flatOptions.length === 0 ? -1 : Math.min(activeIndex, flatOptions.length - 1);
@@ -103,7 +119,8 @@ export function AdminQuickSearchDialog({
   const hasResults = flatOptions.length > 0;
   const bookingsOffset = dateJumps.length;
   const clientsOffset = bookingsOffset + matchedBookings.length;
-  const navOffset = clientsOffset + matchedClients.length;
+  const servicesOffset = clientsOffset + matchedClients.length;
+  const navOffset = servicesOffset + matchedServices.length;
 
   return (
     <Dialog
@@ -128,7 +145,11 @@ export function AdminQuickSearchDialog({
           ref={inputRef}
           label="Buscar en el panel"
           isLabelHidden
-          placeholder="Clienta, teléfono, código NL-..., fecha (mañana, 15 dic) o sección..."
+          placeholder={
+            canViewClients
+              ? 'Clienta, teléfono, servicio, código NL-…, fecha (mañana, 15 dic) o sección…'
+              : 'Cita, servicio, código NL-…, fecha (mañana, 15 dic) o sección…'
+          }
           value={query}
           onChange={handleQueryChange}
           role="combobox"
@@ -147,7 +168,11 @@ export function AdminQuickSearchDialog({
               framed={false}
               isCompact
               title="Sin coincidencias"
-              description={`No encontramos resultados para «${query}». Prueba con un nombre, teléfono, fecha (ej. viernes o 15 dic) o sección.`}
+              description={
+                canViewClients
+                  ? `No encontramos resultados para «${query}». Prueba con una clienta, servicio, teléfono, fecha (ejemplo: viernes o 15 dic) o sección.`
+                  : `No encontramos resultados para «${query}». Prueba con una cita, servicio, fecha (ejemplo: viernes o 15 dic) o sección.`
+              }
             />
           </VStack>
         ) : (
@@ -287,6 +312,49 @@ export function AdminQuickSearchDialog({
                         onClick={() =>
                           handleNavigate(`/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`)
                         }
+                      />
+                    );
+                  })}
+                </List>
+              </VStack>
+            ) : null}
+
+            {matchedServices.length > 0 ? (
+              <VStack className="ad-surface" gap={0}>
+                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                  <HStack gap={1.5} align="center">
+                    <Tag size={14} aria-hidden="true" />
+                    <Text type="label" color="secondary" weight="semibold">
+                      Servicios
+                    </Text>
+                  </HStack>
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {matchedServices.length}
+                  </Text>
+                </HStack>
+                <List hasDividers density="compact" role="presentation">
+                  {matchedServices.map((s, idx) => {
+                    const flatIdx = servicesOffset + idx;
+                    const isActive = safeActiveIndex === flatIdx;
+                    const optionId = `ad-search-opt-service-${s.id}`;
+                    return (
+                      <ListItem
+                        key={s.id}
+                        id={optionId}
+                        role="option"
+                        aria-selected={isActive}
+                        isSelected={isActive}
+                        className="ad-search-item"
+                        data-active={isActive ? 'true' : 'false'}
+                        label={s.name}
+                        description={
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {formatCurrency(s.priceCents, currency)} ·{' '}
+                            {formatDuration(s.durationMinutes)}
+                          </Text>
+                        }
+                        onMouseEnter={() => setActiveIndex(flatIdx)}
+                        onClick={() => handleNavigate(serviceTargetHref)}
                       />
                     );
                   })}

@@ -67,7 +67,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const data = overviewCacheQuery.data ?? providerData;
   const soundConfigured = data?.settings.soundAlertsEnabled ?? true;
   const { playBookingChime, isMuted, toggleMute } = useBookingAlertSound({
-    enabled: Boolean(data) && !isLoginRoute && soundConfigured,
+    enabled: Boolean(data) && !isLoginRoute,
+    defaultEnabled: soundConfigured,
     eventSeq: bookingEventSeq,
     salonName: data?.settings.name,
   });
@@ -195,7 +196,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const soundActive = soundConfigured && !isMuted;
+  const soundActive = !isMuted;
   const brandLogo = isDark ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
 
   return (

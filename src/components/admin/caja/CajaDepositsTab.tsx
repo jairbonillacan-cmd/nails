@@ -174,7 +174,7 @@ export function CajaDepositsTab({
                       {isUploaded && onRejectDeposit ? (
                         <Button
                           type="button"
-                          label={isRejecting ? 'Rechazando...' : 'Rechazar'}
+                          label={isRejecting ? 'Rechazando…' : 'Rechazar'}
                           variant="ghost"
                           size="sm"
                           isLoading={isRejecting}
@@ -210,7 +210,7 @@ export function CajaDepositsTab({
       <Dialog
         isOpen={Boolean(previewDeposit)}
         onOpenChange={(open) => {
-          if (!open && !approvingId) setPreviewDeposit(null);
+          if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
         }}
         width={520}
         padding={5}
@@ -221,7 +221,7 @@ export function CajaDepositsTab({
               title="Comprobante de anticipo"
               subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
               onOpenChange={(open) => {
-                if (!open && !approvingId) setPreviewDeposit(null);
+                if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
               }}
             />
 
@@ -317,7 +317,7 @@ export function CajaDepositsTab({
                   type="button"
                   label={
                     rejectingId === previewDeposit.bookingId
-                      ? 'Rechazando...'
+                      ? 'Rechazando…'
                       : 'Rechazar comprobante'
                   }
                   variant="ghost"

@@ -9,6 +9,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Package, Search, ShoppingBag } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
   InventoryItemForm,
   inventoryCategoryLabel,
@@ -109,11 +110,12 @@ export default function AdminInventoryPage() {
   };
 
   return (
+    <AdminAccessGuard role={data.session.user.role} section="inventory" sectionLabel="Inventario">
     <VStack className="ad-page" gap={5}>
       <PageHeader
         title="Inventario"
         subtitle="Te avisamos cuando algo se esté acabando."
-        actions={<InventoryItemForm onCreateItem={handleCreateItem} />}
+        actions={<InventoryItemForm currency={currency} onCreateItem={handleCreateItem} />}
       />
 
       <InventoryLowStockAlert
@@ -164,7 +166,7 @@ export default function AdminInventoryPage() {
                 label="Buscar producto"
                 isLabelHidden
                 size="sm"
-                placeholder="Buscar producto o categoría..."
+                placeholder="Buscar producto o categoría…"
                 value={searchQuery}
                 onChange={setSearchQuery}
                 startIcon={<Search size={14} aria-hidden="true" />}
@@ -179,7 +181,7 @@ export default function AdminInventoryPage() {
                 isCompact
                 icon={<Package size={22} aria-hidden="true" />}
                 title="Sin productos en este filtro"
-                description='Cambia el filtro o agrega un producto nuevo con el botón "Agregar producto" arriba a la derecha.'
+                description='Cambia el filtro o agrega un producto nuevo con el botón "Agregar producto".'
                 actions={
                   filterMode !== 'all' || searchQuery ? (
                     <Button
@@ -248,6 +250,16 @@ export default function AdminInventoryPage() {
                         />
                         <Button
                           type="button"
+                          label="+5 Compré"
+                          size="sm"
+                          variant="ghost"
+                          isDisabled={isRowBusy}
+                          onClick={() =>
+                            void adjust(item.id, 5, 'restock', 'Reposición rápida (+5)')
+                          }
+                        />
+                        <Button
+                          type="button"
                           label="−1 Usé"
                           size="sm"
                           variant="ghost"
@@ -282,5 +294,6 @@ export default function AdminInventoryPage() {
 
       </VStack>
     </VStack>
+    </AdminAccessGuard>
   );
 }

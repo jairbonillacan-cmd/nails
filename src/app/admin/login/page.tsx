@@ -29,17 +29,17 @@ interface ActiveSessionInfo {
 
 const ROLE_META: Record<
   AdminRole,
-  { label: string; hint: string; tone: 'accent' | 'info' | 'neutral' }
+  { label: string; hint: string; tone: 'neutral' }
 > = {
   owner: {
     label: 'Dueña',
     hint: 'Ve y cambia todo',
-    tone: 'accent',
+    tone: 'neutral',
   },
   admin: {
     label: 'Recepción',
     hint: 'Agenda, cobros y clientas',
-    tone: 'info',
+    tone: 'neutral',
   },
   specialist: {
     label: 'Profesional',
@@ -135,7 +135,8 @@ export default function AdminLoginPage() {
     }
   };
 
-  const isFormDisabled = Boolean(loadingEmail) || authMode === 'disabled';
+  const isFormDisabled =
+    loadingSession || authMode === null || Boolean(loadingEmail) || authMode === 'disabled';
 
   return (
     <VStack as="main" className="ad-login-wrap" gap={0}>
@@ -215,10 +216,10 @@ export default function AdminLoginPage() {
                 status="success"
                 role="status"
                 title={`Ya entraste como ${cleanDemoDisplayName(activeSession.user.fullName)}`}
-                description="Puedes seguir a la agenda o entrar con otra cuenta."
+                description="Puedes seguir a tu resumen o entrar con otra cuenta."
                 endContent={
                   <Button
-                    label="Ir a la agenda"
+                    label="Ir al resumen"
                     variant="primary"
                     size="md"
                     href="/admin"

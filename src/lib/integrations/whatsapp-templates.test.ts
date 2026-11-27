@@ -1,26 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
+  ALL_WHATSAPP_TEMPLATE_TRIGGERS,
+  buildMetaTemplateCreationPayload,
   buildWhatsAppTemplatePayload,
   DEFAULT_WHATSAPP_MONTHLY_QUOTA,
   evaluateWhatsAppQuota,
   getOfficialWhatsAppTemplateSpec,
   getWhatsAppMonthKey,
   OFFICIAL_WHATSAPP_TEMPLATES,
+  parseInboundAttendanceIntent,
   sanitizeWhatsAppTemplateParameter,
   selectWhatsAppDeliveryMode,
   type WhatsAppQuotaAlertLevel,
   type WhatsAppTemplateTriggerKey,
 } from './whatsapp-templates';
 
-const ALL_TRIGGERS: WhatsAppTemplateTriggerKey[] = [
-  'booking_confirmed',
-  'reminder_24h',
-  'reminder_2h',
-  'booking_rescheduled',
-  'booking_canceled',
-  'waitlist_offer',
-];
+const ALL_TRIGGERS: WhatsAppTemplateTriggerKey[] = [...ALL_WHATSAPP_TEMPLATE_TRIGGERS];
 
 const triggerArb = fc.constantFrom(...ALL_TRIGGERS);
 const alertLevelArb = fc.constantFrom<WhatsAppQuotaAlertLevel>(
@@ -29,17 +25,62 @@ const alertLevelArb = fc.constantFrom<WhatsAppQuotaAlertLevel>(
   'limit_100',
 );
 
-describe('WhatsApp Official UTILITY (es_MX) Templates Engine', () => {
-  it('defines all 6 official UTILITY es_MX templates with unique trigger keys', () => {
-    expect(OFFICIAL_WHATSAPP_TEMPLATES).toHaveLength(6);
+describe('WhatsApp Official (es_MX) Templates Engine', () => {
+  it('defines all 9 official es_MX templates with unique trigger keys, examples, and valid Meta payloads', () => {
+    expect(OFFICIAL_WHATSAPP_TEMPLATES).toHaveLength(9);
     const keys = new Set(OFFICIAL_WHATSAPP_TEMPLATES.map((t) => t.triggerKey));
-    expect(keys.size).toBe(6);
+    expect(keys.size).toBe(9);
     for (const key of ALL_TRIGGERS) {
       const spec = getOfficialWhatsAppTemplateSpec(key);
       expect(spec.triggerKey).toBe(key);
-      expect(spec.category).toBe('UTILITY');
       expect(spec.languageCode).toBe('es_MX');
+      expect(spec.parameterLabels.length).toBeGreaterThan(0);
+      expect(spec.exampleParameters).toHaveLength(spec.parameterLabels.length);
+      const creation = buildMetaTemplateCreationPayload(spec);
+      expect(creation.name).toBe(spec.defaultTemplateName);
+      expect(creation.language).toBe('es_MX');
+      expect(creation.category).toBe(spec.category);
+      expect(creation.components.length).toBeGreaterThan(0);
     }
+
+    const otpSpec = getOfficialWhatsAppTemplateSpec('client_otp');
+    expect(otpSpec.category).toBe('AUTHENTICATION');
+    const otpSend = buildWhatsAppTemplatePayload({
+      triggerKey: 'client_otp',
+      toPhoneDigits: '+522221112233',
+      parameters: ['482910'],
+    });
+    expect(otpSend.template.components).toHaveLength(2);
+    expect(otpSend.template.components[1]).toEqual({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: '482910' }],
+    });
+
+    const reminder24 = buildWhatsAppTemplatePayload({
+      triggerKey: 'reminder_24h',
+      toPhoneDigits: '+522221112233',
+      parameters: ['Sofía', 'Rubber', '10:00 a.m.', 'Karla', 'https://laikona.devand.net/cita/x'],
+      quickReplyPayloads: ['confirm_booking:bk-1', 'reschedule_booking:bk-1'],
+    });
+    expect(reminder24.template.components).toHaveLength(3);
+    expect(reminder24.template.components[1]).toEqual({
+      type: 'button',
+      sub_type: 'quick_reply',
+      index: '0',
+      parameters: [{ type: 'payload', payload: 'confirm_booking:bk-1' }],
+    });
+  });
+
+  it('parses only short unambiguous attendance replies without hijacking Coexistence chats', () => {
+    expect(parseInboundAttendanceIntent('Confirmo')).toBe('confirm');
+    expect(parseInboundAttendanceIntent('¡Sí, confirmo!')).toBe('confirm');
+    expect(parseInboundAttendanceIntent('asisto')).toBe('confirm');
+    expect(parseInboundAttendanceIntent('Necesito reagendar')).toBe('reschedule');
+    expect(parseInboundAttendanceIntent('cambiar cita')).toBe('reschedule');
+    expect(parseInboundAttendanceIntent('Hola, cuánto cuesta el rubber con diseño?')).toBeNull();
+    expect(parseInboundAttendanceIntent('Sí quiero agendar uñas acrílicas para el sábado')).toBeNull();
   });
 
   it('property (a): template parameters never contain raw newlines, tabs, or >4 consecutive spaces', () => {
@@ -58,11 +99,13 @@ describe('WhatsApp Official UTILITY (es_MX) Templates Engine', () => {
           });
           const bodyComponent = payload.template.components[0];
           expect(bodyComponent).toBeDefined();
-          for (const param of bodyComponent?.parameters ?? []) {
-            expect(param.type).toBe('text');
-            expect(param.text.length).toBeGreaterThan(0);
-            expect(/[\r\n\t]/.test(param.text)).toBe(false);
-            expect(/ {5,}/.test(param.text)).toBe(false);
+          if (bodyComponent?.type === 'body') {
+            for (const param of bodyComponent.parameters) {
+              expect(param.type).toBe('text');
+              expect(param.text.length).toBeGreaterThan(0);
+              expect(/[\r\n\t]/.test(param.text)).toBe(false);
+              expect(/ {5,}/.test(param.text)).toBe(false);
+            }
           }
         },
       ),

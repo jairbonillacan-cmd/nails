@@ -56,6 +56,9 @@ interface ClientProfileDialogProps {
   bookings: readonly BookingWithRelations[];
   assigningPkg: boolean;
   redeemingPkgId: string | null;
+  cancelingPkgId: string | null;
+  packageNotice?: { status: 'success' | 'error'; title: string } | null;
+  onDismissPackageNotice?: () => void;
   onSaveClient: (input: {
     clientId: string;
     notes: string;
@@ -69,6 +72,7 @@ interface ClientProfileDialogProps {
     notesText: string,
   ) => Promise<boolean>;
   onRedeemPackageSession: (pkg: ClientPackageRow) => Promise<void>;
+  onCancelPackage: (pkg: ClientPackageRow) => Promise<void>;
 }
 
 export function ClientProfileDialog({
@@ -85,9 +89,13 @@ export function ClientProfileDialog({
   bookings,
   assigningPkg,
   redeemingPkgId,
+  cancelingPkgId,
+  packageNotice = null,
+  onDismissPackageNotice,
   onSaveClient,
   onAssignPackage,
   onRedeemPackageSession,
+  onCancelPackage,
 }: ClientProfileDialogProps) {
   const [notesDraft, setNotesDraft] = useState(client?.notes ?? '');
   const [birthdayDraft, setBirthdayDraft] = useState(client?.birthday ?? '');
@@ -183,6 +191,15 @@ export function ClientProfileDialog({
           </HStack>
 
           {editError ? <Banner status="error" role="alert" title={editError} /> : null}
+          {packageNotice ? (
+            <Banner
+              status={packageNotice.status}
+              role={packageNotice.status === 'error' ? 'alert' : 'status'}
+              title={packageNotice.title}
+              isDismissable={Boolean(onDismissPackageNotice)}
+              onDismiss={onDismissPackageNotice}
+            />
+          ) : null}
 
           {(noShowStats?.noShowCount ?? client.noShowCount) >= noShowThreshold ? (
             <SurfaceCard tone="warning" padded>
@@ -236,8 +253,10 @@ export function ClientProfileDialog({
             activeCatalogPackages={activeCatalogPackages}
             assigningPkg={assigningPkg}
             redeemingPkgId={redeemingPkgId}
+            cancelingPkgId={cancelingPkgId}
             onAssignPackage={onAssignPackage}
             onRedeemPackageSession={onRedeemPackageSession}
+            onCancelPackage={onCancelPackage}
           />
 
           {clientVisits.length > 0 ? (
@@ -271,6 +290,7 @@ export function ClientProfileDialog({
               placeholder="@usuario"
               value={instagramDraft}
               onChange={setInstagramDraft}
+              isDisabled={!canManageClients}
               isOptional
             />
             <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
@@ -279,31 +299,36 @@ export function ClientProfileDialog({
                 type="email"
                 value={emailDraft}
                 onChange={setEmailDraft}
+                isDisabled={!canManageClients}
                 isOptional
               />
               <TextInput
                 label="Cumpleaños"
-                placeholder="Ej. 1997-08-15 (año-mes-día)"
+                placeholder="Ejemplo: 1997-08-15 (año-mes-día)"
                 value={birthdayDraft}
                 onChange={setBirthdayDraft}
+                isDisabled={!canManageClients}
                 isOptional
               />
             </Grid>
             <TextArea
               label="Notas y preferencias (alergias, largo, forma o tono favorito)"
-              placeholder="Ej. Almendra corta, base milky nude, sensibilidad a acetona..."
+              placeholder="Ejemplo: Almendra corta, base milky nude, sensibilidad a acetona…"
               value={notesDraft}
               onChange={setNotesDraft}
+              isDisabled={!canManageClients}
               rows={3}
             />
-            <Button
-              type="button"
-              label="Guardar ficha"
-              variant="primary"
-              width="100%"
-              isLoading={savingEdit}
-              onClick={() => void handleSave()}
-            />
+            {canManageClients ? (
+              <Button
+                type="button"
+                label="Guardar ficha"
+                variant="primary"
+                width="100%"
+                isLoading={savingEdit}
+                onClick={() => void handleSave()}
+              />
+            ) : null}
           </VStack>
 
           {canManageClients ? (

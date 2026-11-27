@@ -6,7 +6,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Check, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import {
   EmptyStateCard,
   FilterPillBar,
@@ -23,7 +23,6 @@ interface DashboardAgendaCardProps {
   data: AdminOverviewPayload;
   metrics: DashboardMetrics;
   confirmingBookingId: string | null;
-  savedMessage?: string | null;
   onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
 }
 
@@ -31,7 +30,6 @@ export function DashboardAgendaCard({
   data,
   metrics,
   confirmingBookingId,
-  savedMessage,
   onConfirmDeposit,
 }: DashboardAgendaCardProps) {
   const [selectedDay, setSelectedDay] = useState<DayKey | null>(null);
@@ -146,17 +144,6 @@ export function DashboardAgendaCard({
     </HStack>
   );
 
-  const statusPill = confirmingBookingId ? (
-    <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-      Confirmando...
-    </Text>
-  ) : savedMessage ? (
-    <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-      <Check size={12} aria-hidden="true" />
-      {savedMessage}
-    </Text>
-  ) : undefined;
-
   return (
     <SurfaceCard
       id="ad-ag"
@@ -168,7 +155,6 @@ export function DashboardAgendaCard({
             ? 'Sin citas hoy · Mostrando tu agenda de mañana'
             : 'Vista anticipada de mañana'
       }
-      badge={statusPill}
       className="ad-card"
       actions={
         <FilterPillBar

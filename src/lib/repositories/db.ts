@@ -79,12 +79,17 @@ import {
   slugify,
 } from '../format';
 import {
+  buildBookingTemplateParameters,
   dispatchDepositRejectedNotification,
   dispatchEmailNotification,
   dispatchSalonAlertEmail,
   dispatchTouchUpInviteNotification,
   dispatchWhatsAppNotification,
 } from '../integrations/notifications';
+import {
+  getOfficialWhatsAppTemplateSpec,
+  sanitizeWhatsAppTemplateName,
+} from '../integrations/whatsapp-templates';
 import { buildWaitlistOfferTemplatePayload } from '../integrations/resend-templates';
 import {
   ClientPortalSnapshotDTOSchema,
@@ -189,6 +194,7 @@ import type {
   WhatsAppMonthlyUsageSummary,
   WhatsAppQuotaAlertLevel,
   WhatsAppTemplateConfig,
+  WhatsAppTemplateTriggerKey,
 } from '../types';
 
 const DEFAULT_DEMO_DB_PATH = path.join(process.cwd(), '.nails-demo-db.json');
@@ -787,9 +793,20 @@ async function dispatchSalonBookingAlert(params: {
   const nowIso = new Date().toISOString();
 
   if (params.settings.whatsappNumber.trim()) {
+    const salonAlertTrigger: WhatsAppTemplateTriggerKey =
+      params.kind === 'canceled' ? 'booking_canceled' : 'booking_rescheduled';
     const waRes = await dispatchWhatsAppNotification({
       toPhoneE164: params.settings.whatsappNumber,
       bodyText,
+      triggerKey: salonAlertTrigger,
+      templateParameters: buildBookingTemplateParameters({
+        triggerKey: salonAlertTrigger,
+        booking: params.booking,
+        settings: params.settings,
+        appUrl: env.appUrl,
+      }),
+      withinServiceWindow: false,
+      settingsTimezone: tz,
     });
     createdLogs.push({
       id: generateId('ntf'),
@@ -924,6 +941,15 @@ async function dispatchWaitlistPriorityOffer(
     toPhoneE164: offer.clientPhoneE164,
     bodyText,
     triggerKey: 'waitlist_offer',
+    templateParameters: [
+      offer.clientName,
+      offer.serviceName,
+      dateLabel,
+      timeLabel,
+      offerUrl,
+    ],
+    withinServiceWindow: false,
+    settingsTimezone: tz,
     fallbackEmail: offer.clientEmail
       ? {
           to: offer.clientEmail,
@@ -3674,6 +3700,30 @@ export async function sendManualBookingReminder(params: {
     const waRes = await dispatchWhatsAppNotification({
       toPhoneE164: hydrated.client.phoneE164,
       bodyText: messagePreview,
+      triggerKey: 'reminder_24h',
+      templateParameters: [
+        hydrated.client.fullName,
+        serviceSummary,
+        timeLabel,
+        hydrated.staff.name,
+        manageUrl,
+      ],
+      interactiveButtons: [
+        { id: `confirm_booking:${hydrated.id}`, title: 'Confirmo' },
+        { id: `reschedule_booking:${hydrated.id}`, title: 'Necesito reagendar' },
+      ],
+      withinServiceWindow: false,
+      settingsTimezone: tz,
+      fallbackEmail: hydrated.client.email
+        ? {
+            to: hydrated.client.email,
+            subject: `Recordatorio de tu cita en ${settings.name} (${hydrated.bookingCode})`,
+            booking: hydrated,
+            settings,
+            appUrl: env.appUrl,
+            situation: 'reminder_24h',
+          }
+        : undefined,
     });
     createdLogs.push({
       id: generateId('ntf'),
@@ -3810,6 +3860,26 @@ export async function requestBookingReschedule(params: {
   const waRes = await dispatchWhatsAppNotification({
     toPhoneE164: hydrated.client.phoneE164,
     bodyText: messagePreview,
+    triggerKey: 'booking_rescheduled',
+    templateParameters: [
+      hydrated.client.fullName,
+      hydrated.service.name,
+      dateLabel,
+      timeLabel,
+      rescheduleUrl,
+    ],
+    withinServiceWindow: false,
+    settingsTimezone: tz,
+    fallbackEmail: hydrated.client.email
+      ? {
+          to: hydrated.client.email,
+          subject: `Reagenda tu cita en ${settings.name} (${hydrated.bookingCode})`,
+          booking: hydrated,
+          settings,
+          appUrl: env.appUrl,
+          situation: 'rescheduled',
+        }
+      : undefined,
   });
   const log: ScheduledNotification = {
     id: generateId('ntf'),
@@ -6038,15 +6108,86 @@ export async function getWhatsAppTemplates(): Promise<WhatsAppTemplateConfig[]> 
     return createSupabaseRepository().getWhatsAppTemplates();
   }
   const db = getSnapshot();
-  const base =
-    db.whatsappTemplates && db.whatsappTemplates.length > 0
-      ? db.whatsappTemplates
-      : createDefaultWhatsAppTemplates();
+  const defaults = createDefaultWhatsAppTemplates();
+  const byTrigger = new Map<WhatsAppTemplateTriggerKey, WhatsAppTemplateConfig>();
+  for (const tpl of defaults) {
+    byTrigger.set(tpl.triggerKey, tpl);
+  }
+  for (const tpl of db.whatsappTemplates ?? []) {
+    byTrigger.set(tpl.triggerKey, tpl);
+  }
   const overrides = getWhatsAppTemplateNameOverrides();
-  return base.map((tpl) => ({
+  return Array.from(byTrigger.values()).map((tpl) => ({
     ...tpl,
     templateName: overrides[tpl.triggerKey] ?? tpl.templateName,
   }));
+}
+
+export async function updateWhatsAppTemplate(
+  triggerKey: WhatsAppTemplateTriggerKey,
+  patch: { templateName?: string; isActive?: boolean },
+): Promise<WhatsAppTemplateConfig> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateWhatsAppTemplate(triggerKey, patch);
+  }
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const nowIso = new Date().toISOString();
+    const spec = getOfficialWhatsAppTemplateSpec(triggerKey);
+    const existingIdx = cols.whatsappTemplates.findIndex(
+      (tpl) => tpl.triggerKey === triggerKey,
+    );
+    const existing = existingIdx >= 0 ? cols.whatsappTemplates[existingIdx] : undefined;
+    const updated: WhatsAppTemplateConfig = {
+      id: existing?.id ?? `watpl-${triggerKey.replace(/_/g, '-')}`,
+      triggerKey,
+      templateName:
+        patch.templateName !== undefined
+          ? sanitizeWhatsAppTemplateName(patch.templateName, triggerKey)
+          : existing?.templateName ?? spec.defaultTemplateName,
+      category: existing?.category ?? spec.category,
+      languageCode: existing?.languageCode ?? spec.languageCode,
+      isActive: patch.isActive !== undefined ? patch.isActive : existing?.isActive ?? true,
+      updatedAt: nowIso,
+    };
+    if (existingIdx >= 0) {
+      cols.whatsappTemplates[existingIdx] = updated;
+    } else {
+      cols.whatsappTemplates.push(updated);
+    }
+    return updated;
+  });
+}
+
+export async function updateNotificationDeliveryByProviderId(
+  providerMessageId: string,
+  status: 'sent' | 'failed',
+  errorMessage: string | null = null,
+): Promise<boolean> {
+  const cleanId = providerMessageId.trim();
+  if (!cleanId) return false;
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateNotificationDeliveryByProviderId(
+      cleanId,
+      status,
+      errorMessage,
+    );
+  }
+  return withWriteLock((db) => {
+    let matched = false;
+    const nowIso = new Date().toISOString();
+    for (const notif of db.notifications) {
+      if (notif.providerMessageId === cleanId) {
+        notif.status = status;
+        notif.errorMessage = errorMessage;
+        if (status === 'sent' && !notif.sentAt) {
+          notif.sentAt = nowIso;
+        }
+        matched = true;
+      }
+    }
+    return matched;
+  });
 }
 
 export async function getWhatsAppMonthlyUsage(
@@ -6370,6 +6511,8 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     markMediaRetentionWarned,
     markMediaAssetPurged,
     getWhatsAppTemplates,
+    updateWhatsAppTemplate,
+    updateNotificationDeliveryByProviderId,
     getWhatsAppMonthlyUsage,
     incrementWhatsAppMonthlyUsage,
     claimWebhookEventIdempotent,

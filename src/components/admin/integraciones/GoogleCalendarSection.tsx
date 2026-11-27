@@ -1,19 +1,23 @@
 'use client';
 
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Calendar } from 'lucide-react';
-import { StatusTag, SurfaceCard } from '@/components/ui';
+import { ConfirmActionDialog, StatusTag, SurfaceCard } from '@/components/ui';
 import type { CalendarConnection, StaffMember } from '@/lib/types';
 
 interface GoogleCalendarSectionProps {
   staff: StaffMember[];
   calendarConnections: CalendarConnection[];
+  googleCalendarConfigured: boolean;
+  isDemoMode: boolean;
   busyCalendarStaffId: string | null;
   onUpdateDestination: (staffId: string, destinationCalendarId: string) => Promise<void>;
   onUpdateConflictCalendars: (staffId: string, conflictCalendarIds: string[]) => Promise<void>;
@@ -23,14 +27,18 @@ interface GoogleCalendarSectionProps {
 export function GoogleCalendarSection({
   staff,
   calendarConnections,
+  googleCalendarConfigured,
+  isDemoMode,
   busyCalendarStaffId,
   onUpdateDestination,
   onUpdateConflictCalendars,
   onToggleConnection,
 }: GoogleCalendarSectionProps) {
+  const [pendingDisconnect, setPendingDisconnect] = useState<StaffMember | null>(null);
   const connectedCount = calendarConnections.filter((c) => c.isConnected).length;
 
   return (
+    <>
     <SurfaceCard
       id="gcal-heading"
       icon={<Calendar size={18} aria-hidden="true" />}
@@ -50,10 +58,20 @@ export function GoogleCalendarSection({
       }
     >
       <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
+        {!googleCalendarConfigured && !isDemoMode ? (
+          <Banner
+            status="info"
+            role="status"
+            title="Google Calendar está listo para activarse"
+            description="Falta agregar las credenciales de Google (Client ID y Secret) en el entorno de producción para vincular las cuentas reales."
+          />
+        ) : null}
+
         <Grid columns={{ minWidth: 240, max: 3 }} gap={3}>
           {staff.map((st) => {
             const conn = calendarConnections.find((c) => c.staffId === st.id);
             const isBusy = busyCalendarStaffId === st.id;
+            const isConnected = Boolean(conn?.isConnected);
             return (
               <VStack key={st.id} className="ad-subpanel" justify="between" gap={3}>
                 <VStack gap={2}>
@@ -65,13 +83,13 @@ export function GoogleCalendarSection({
                       </Text>
                     </VStack>
                     <StatusTag
-                      tone={conn?.isConnected ? 'success' : 'neutral'}
-                      showDot={Boolean(conn?.isConnected)}
-                      label={conn?.isConnected ? 'Conectado' : 'Sin conectar'}
+                      tone={isConnected ? 'success' : 'neutral'}
+                      showDot={isConnected}
+                      label={isConnected ? 'Conectado' : 'Sin conectar'}
                     />
                   </HStack>
 
-                  {conn?.isConnected ? (
+                  {isConnected && conn ? (
                     <VStack gap={2}>
                       <Selector
                         label="Guardar citas nuevas en:"
@@ -116,15 +134,22 @@ export function GoogleCalendarSection({
                 <Button
                   type="button"
                   label={
-                    conn?.isConnected
+                    isConnected
                       ? 'Desconectar calendario'
                       : 'Conectar Google Calendar'
                   }
-                  variant={conn?.isConnected ? 'secondary' : 'primary'}
+                  variant={isConnected ? 'secondary' : 'primary'}
                   size="sm"
                   width="100%"
                   isLoading={isBusy}
-                  onClick={() => void onToggleConnection(st.id, Boolean(conn?.isConnected))}
+                  isDisabled={!isConnected && !googleCalendarConfigured && !isDemoMode}
+                  onClick={() => {
+                    if (isConnected) {
+                      setPendingDisconnect(st);
+                    } else {
+                      void onToggleConnection(st.id, false);
+                    }
+                  }}
                 />
               </VStack>
             );
@@ -132,5 +157,28 @@ export function GoogleCalendarSection({
         </Grid>
       </VStack>
     </SurfaceCard>
+
+    <ConfirmActionDialog
+      isOpen={Boolean(pendingDisconnect)}
+      onOpenChange={(open) => {
+        if (!open) setPendingDisconnect(null);
+      }}
+      title={
+        pendingDisconnect
+          ? `¿Desconectar Google Calendar de ${pendingDisconnect.name}?`
+          : '¿Desconectar calendario?'
+      }
+      description="Dejaremos de sincronizar citas nuevas y revisar conflictos en este calendario hasta que vuelvas a conectarlo."
+      confirmLabel="Sí, desconectar"
+      variant="destructive"
+      isLoading={Boolean(pendingDisconnect && busyCalendarStaffId === pendingDisconnect.id)}
+      onConfirm={async () => {
+        if (!pendingDisconnect) return;
+        const target = pendingDisconnect;
+        setPendingDisconnect(null);
+        await onToggleConnection(target.id, true);
+      }}
+    />
+    </>
   );
 }

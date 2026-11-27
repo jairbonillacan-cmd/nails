@@ -95,6 +95,7 @@ interface BookingsListViewProps {
   currency: 'MXN' | 'USD';
   timezone: string;
   noShowThreshold: number;
+  canViewClients?: boolean;
   busyBookingId: string | null;
   busyStatus: BookingStatus | null;
   requestingRescheduleId: string | null;
@@ -118,6 +119,7 @@ export function BookingsListView({
   currency,
   timezone,
   noShowThreshold,
+  canViewClients = true,
   busyBookingId,
   busyStatus,
   requestingRescheduleId,
@@ -201,6 +203,7 @@ export function BookingsListView({
               salonName={salonName}
               currency={currency}
               timezone={timezone}
+              canViewClients={canViewClients}
               busyStatus={busyBookingId === b.id ? busyStatus : null}
               isRequestingReschedule={requestingRescheduleId === b.id}
               onSelectBooking={onSelectBooking}

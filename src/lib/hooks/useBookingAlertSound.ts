@@ -6,6 +6,7 @@ type BrowserNotificationPermission = NotificationPermission | 'unsupported';
 
 interface UseBookingAlertSoundOptions {
   enabled?: boolean;
+  defaultEnabled?: boolean;
   eventSeq?: number;
   salonName?: string;
 }
@@ -39,7 +40,7 @@ function getServerPermission(): BrowserNotificationPermission {
 }
 
 export function useBookingAlertSound(options: UseBookingAlertSoundOptions = {}) {
-  const { enabled = true, eventSeq = 0, salonName } = options;
+  const { enabled = true, defaultEnabled = true, eventSeq = 0, salonName } = options;
   const browserPermission = useSyncExternalStore(
     subscribeNoop,
     readNotificationPermission,
@@ -47,7 +48,8 @@ export function useBookingAlertSound(options: UseBookingAlertSoundOptions = {}) 
   );
   const [permissionOverride, setPermissionOverride] =
     useState<BrowserNotificationPermission | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [muteOverride, setMuteOverride] = useState<boolean | null>(null);
+  const isMuted = muteOverride !== null ? muteOverride : !defaultEnabled;
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastSeqRef = useRef<number>(eventSeq);
 
@@ -130,8 +132,11 @@ export function useBookingAlertSound(options: UseBookingAlertSoundOptions = {}) 
     }, []);
 
   const toggleMute = useCallback(() => {
-    setIsMuted((prev) => !prev);
-  }, []);
+    setMuteOverride((prev) => {
+      const currentMuted = prev !== null ? prev : !defaultEnabled;
+      return !currentMuted;
+    });
+  }, [defaultEnabled]);
 
   useEffect(() => {
     if (eventSeq <= lastSeqRef.current) return;

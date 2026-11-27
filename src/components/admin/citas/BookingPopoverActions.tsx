@@ -28,6 +28,7 @@ interface BookingPopoverActionsProps {
   busyStatus: BookingStatus | null;
   isReminding: boolean;
   isRequestingReschedule: boolean;
+  canViewClients?: boolean;
   waHref: string;
   clientProfileHref: string;
   onConfirm: () => void;
@@ -49,6 +50,7 @@ export function BookingPopoverActions({
   busyStatus,
   isReminding,
   isRequestingReschedule,
+  canViewClients = true,
   waHref,
   clientProfileHref,
   onConfirm,
@@ -65,7 +67,7 @@ export function BookingPopoverActions({
         {isPending ? (
           <Button
             type="button"
-            label={busyStatus === 'confirmed' ? 'Confirmando...' : 'Confirmar'}
+            label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
             variant="primary"
             size="md"
             icon={<Check size={15} aria-hidden="true" />}
@@ -88,7 +90,7 @@ export function BookingPopoverActions({
         {!isPending && allowedNext.includes('completed') && isFullyPaid ? (
           <Button
             type="button"
-            label={busyStatus === 'completed' ? 'Completando...' : 'Completar'}
+            label={busyStatus === 'completed' ? 'Completando…' : 'Completar'}
             variant="secondary"
             size="md"
             icon={<CheckCircle2 size={15} aria-hidden="true" />}
@@ -118,7 +120,7 @@ export function BookingPopoverActions({
           {canRemind ? (
             <Button
               type="button"
-              label={isRequestingReschedule ? 'Generando...' : 'Reagendar'}
+              label={isRequestingReschedule ? 'Generando…' : 'Reagendar'}
               variant="secondary"
               size="sm"
               icon={<CalendarClock size={14} aria-hidden="true" />}
@@ -127,17 +129,19 @@ export function BookingPopoverActions({
               onClick={onReschedule}
             />
           ) : null}
-          <Button
-            label="Ver clienta"
-            variant="secondary"
-            size="sm"
-            icon={<UserRound size={14} aria-hidden="true" />}
-            href={clientProfileHref}
-          />
+          {canViewClients ? (
+            <Button
+              label="Ver clienta"
+              variant="secondary"
+              size="sm"
+              icon={<UserRound size={14} aria-hidden="true" />}
+              href={clientProfileHref}
+            />
+          ) : null}
           {canRemind ? (
             <Button
               type="button"
-              label={isReminding ? 'Enviando...' : 'Recordatorio'}
+              label={isReminding ? 'Enviando…' : 'Recordatorio'}
               variant="ghost"
               size="sm"
               icon={<Bell size={14} aria-hidden="true" />}
@@ -149,7 +153,7 @@ export function BookingPopoverActions({
           {allowedNext.includes('no_show') ? (
             <Button
               type="button"
-              label={busyStatus === 'no_show' ? 'Marcando...' : 'No llegó'}
+              label={busyStatus === 'no_show' ? 'Marcando…' : 'No llegó'}
               variant="ghost"
               size="sm"
               icon={<UserX size={14} aria-hidden="true" />}
@@ -161,7 +165,7 @@ export function BookingPopoverActions({
           {allowedNext.includes('canceled') ? (
             <Button
               type="button"
-              label={busyStatus === 'canceled' ? 'Cancelando...' : 'Cancelar'}
+              label={busyStatus === 'canceled' ? 'Cancelando…' : 'Cancelar'}
               variant="ghost"
               size="sm"
               icon={<Ban size={14} aria-hidden="true" />}

@@ -4,7 +4,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { Check, ExternalLink } from 'lucide-react';
+import { Check, ExternalLink, XCircle } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 
 interface BookingProofModalProps {
@@ -17,8 +17,10 @@ interface BookingProofModalProps {
   paymentProofUrl: string;
   canConfirm: boolean;
   isConfirming: boolean;
+  isRejecting?: boolean;
   isBusy: boolean;
   onConfirm: () => void;
+  onReject?: () => void;
 }
 
 export function BookingProofModal({
@@ -31,8 +33,10 @@ export function BookingProofModal({
   paymentProofUrl,
   canConfirm,
   isConfirming,
+  isRejecting = false,
   isBusy,
   onConfirm,
+  onReject,
 }: BookingProofModalProps) {
   return (
     <Dialog
@@ -63,18 +67,32 @@ export function BookingProofModal({
             target="_blank"
             rel="noopener noreferrer"
           />
-          {canConfirm ? (
-            <Button
-              type="button"
-              label={isConfirming ? 'Confirmando...' : 'Confirmar cita'}
-              variant="primary"
-              size="sm"
-              icon={<Check size={14} aria-hidden="true" />}
-              isLoading={isConfirming}
-              isDisabled={isBusy}
-              onClick={onConfirm}
-            />
-          ) : null}
+          <HStack gap={2} align="center" wrap="wrap">
+            {canConfirm && onReject ? (
+              <Button
+                type="button"
+                label={isRejecting ? 'Rechazando…' : 'Rechazar'}
+                variant="secondary"
+                size="sm"
+                icon={<XCircle size={14} aria-hidden="true" />}
+                isLoading={isRejecting}
+                isDisabled={isBusy || isRejecting}
+                onClick={onReject}
+              />
+            ) : null}
+            {canConfirm ? (
+              <Button
+                type="button"
+                label={isConfirming ? 'Confirmando…' : 'Confirmar cita'}
+                variant="primary"
+                size="sm"
+                icon={<Check size={14} aria-hidden="true" />}
+                isLoading={isConfirming}
+                isDisabled={isBusy || isRejecting}
+                onClick={onConfirm}
+              />
+            ) : null}
+          </HStack>
         </HStack>
       </VStack>
     </Dialog>

@@ -654,7 +654,10 @@ export type WhatsAppTemplateTriggerKey =
   | 'reminder_2h'
   | 'booking_rescheduled'
   | 'booking_canceled'
-  | 'waitlist_offer';
+  | 'waitlist_offer'
+  | 'deposit_rejected'
+  | 'client_otp'
+  | 'touchup_invite';
 
 type WhatsAppTemplateCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
 

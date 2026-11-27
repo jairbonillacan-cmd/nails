@@ -17,6 +17,7 @@ import {
   Store,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
   FilterPillBar,
   PageHeader,
@@ -180,6 +181,7 @@ export default function AdminBrandPage() {
   };
 
   return (
+    <AdminAccessGuard role={data.session.user.role} section="brand" sectionLabel="Mi página">
     <VStack className="ad-page">
       <PageHeader
         title="Mi página"
@@ -187,7 +189,7 @@ export default function AdminBrandPage() {
         meta={
           saving ? (
             <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando...
+              Guardando…
             </Text>
           ) : saveNotice.message ? (
             <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
@@ -211,7 +213,7 @@ export default function AdminBrandPage() {
               />
               <Button
                 type="button"
-                label={saving ? 'Guardando...' : 'Guardar cambios'}
+                label={saving ? 'Guardando…' : 'Guardar cambios'}
                 variant="primary"
                 icon={<Save size={15} aria-hidden="true" />}
                 isLoading={saving}
@@ -388,7 +390,7 @@ export default function AdminBrandPage() {
             />
             <Button
               type="button"
-              label={saving ? 'Guardando...' : 'Guardar cambios'}
+              label={saving ? 'Guardando…' : 'Guardar cambios'}
               variant="primary"
               size="sm"
               icon={<Save size={14} aria-hidden="true" />}
@@ -400,5 +402,6 @@ export default function AdminBrandPage() {
         </HStack>
       ) : null}
     </VStack>
+    </AdminAccessGuard>
   );
 }
