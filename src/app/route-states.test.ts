@@ -34,6 +34,7 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
       'src/app/admin/loading.tsx',
       'src/app/admin/login/loading.tsx',
       'src/app/admin/citas/loading.tsx',
+      'src/app/admin/whatsapp/loading.tsx',
       'src/app/admin/clientas/loading.tsx',
       'src/app/admin/caja/loading.tsx',
       'src/app/admin/servicios/loading.tsx',

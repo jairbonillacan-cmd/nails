@@ -97,7 +97,7 @@ const metaSmbEchoSchema = z.object({
   image: z.object({ caption: z.string().optional() }).optional(),
 });
 
-export const metaWebhookPayloadSchema = z.object({
+const metaWebhookPayloadSchema = z.object({
   entry: z
     .array(
       z.object({

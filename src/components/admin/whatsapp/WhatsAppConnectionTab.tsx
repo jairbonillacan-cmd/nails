@@ -42,8 +42,8 @@ import type { AdminRole } from '@/lib/types';
 import { WhatsAppSimulatorCard } from './WhatsAppSimulatorCard';
 import { WhatsAppTemplatesTable } from './WhatsAppTemplatesTable';
 
-export type WhatsAppSettingsActionInput = z.infer<typeof WhatsAppSettingsActionSchema>;
-export type WhatsAppSimulateEventInput = z.infer<typeof WhatsAppSimulateEventSchema>;
+type WhatsAppSettingsActionInput = z.infer<typeof WhatsAppSettingsActionSchema>;
+type WhatsAppSimulateEventInput = z.infer<typeof WhatsAppSimulateEventSchema>;
 
 export interface WhatsAppConnectionTabProps {
   data: WhatsAppSettingsResponseDTO | null;

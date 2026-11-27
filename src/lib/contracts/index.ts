@@ -120,7 +120,6 @@ export {
   WhatsAppRemindersActionSchema,
   WhatsAppSendMessageSchema,
   WhatsAppSettingsActionSchema,
-  WhatsAppSettingsPatchSchema,
   WhatsAppSimulateEventSchema,
   WhatsAppThreadsQuerySchema,
 } from './whatsapp';

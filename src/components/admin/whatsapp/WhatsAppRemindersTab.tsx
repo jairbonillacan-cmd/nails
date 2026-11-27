@@ -22,7 +22,7 @@ import type { AdminRole } from '@/lib/types';
 import { WhatsAppAutomationCards } from './WhatsAppAutomationCards';
 import { WhatsAppReminderQueue } from './WhatsAppReminderQueue';
 
-export type WhatsAppRemindersActionInput = z.infer<typeof WhatsAppRemindersActionSchema>;
+type WhatsAppRemindersActionInput = z.infer<typeof WhatsAppRemindersActionSchema>;
 export type WhatsAppReminderFilter = 'pending' | 'sent' | 'failed' | 'canceled';
 
 export interface WhatsAppRemindersTabProps {

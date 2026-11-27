@@ -29,7 +29,7 @@ export type WhatsAppThreadFilter = 'all' | 'unread' | 'window_open' | 'failed';
 
 export type WhatsAppBubbleDirection = 'inbound' | 'outbound' | 'bot' | 'echo' | 'system';
 
-export interface WhatsAppSendTextInput {
+interface WhatsAppSendTextInput {
   mode: 'text';
   threadId?: string;
   clientId?: string;
@@ -39,7 +39,7 @@ export interface WhatsAppSendTextInput {
   bodyText: string;
 }
 
-export interface WhatsAppSendTemplateInput {
+interface WhatsAppSendTemplateInput {
   mode: 'template';
   threadId?: string;
   clientId?: string;
@@ -153,7 +153,7 @@ export function formatWhatsAppRelativeTime(
   return formatDayMonthShort(iso, timezone);
 }
 
-export function formatWhatsAppDateDivider(
+function formatWhatsAppDateDivider(
   dateKey: string,
   todayKey: string,
   yesterdayKey: string,

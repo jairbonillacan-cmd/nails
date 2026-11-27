@@ -188,7 +188,7 @@ export const WhatsAppSimulateEventSchema = z.discriminatedUnion('event', [
     .strict(),
 ]);
 
-export const WhatsAppSettingsPatchSchema = z
+const WhatsAppSettingsPatchSchema = z
   .object({
     whatsappBookingEnabled: z.boolean().optional(),
     whatsappMonthlyQuota: z.number().int().min(50).max(50_000).optional(),
