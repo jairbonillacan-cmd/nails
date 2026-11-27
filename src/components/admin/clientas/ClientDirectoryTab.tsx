@@ -9,7 +9,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Cake, MessageCircle, Search } from 'lucide-react';
-import { buildWhatsAppLink, formatBirthdayDisplay, formatPhoneDisplay } from '@/lib/format';
+import { formatBirthdayDisplay, formatPhoneDisplay } from '@/lib/format';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { ClientProfile } from '@/lib/types';
 import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
@@ -50,7 +50,6 @@ export function ClientDirectoryTab({
   loyaltyByClientId,
   packagesByClientId,
   noShowThreshold,
-  salonName,
   canManageClients,
   onSelectClient,
   onOpenNewClient,
@@ -215,16 +214,11 @@ export function ClientDirectoryTab({
                             onClick={() => onSelectClient(c)}
                           />
                           <Button
-                            label="WhatsApp"
+                            label="Abrir chat"
                             size="sm"
                             variant="ghost"
                             icon={<MessageCircle size={14} aria-hidden="true" />}
-                            href={buildWhatsAppLink(
-                              c.phoneE164,
-                              `¡Hola, ${c.fullName.trim().split(/\s+/)[0] ?? c.fullName}! Te escribimos de ${salonName}.`,
-                            )}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            href={`/admin/whatsapp?phone=${encodeURIComponent(c.phoneE164)}`}
                           />
                         </HStack>
                       }

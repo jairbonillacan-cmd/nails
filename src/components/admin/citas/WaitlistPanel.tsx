@@ -17,6 +17,8 @@ import {
 } from '@/components/ui';
 import type { Service, WaitlistEntry } from '@/lib/types';
 import { buildWhatsAppLink, formatDateKeyDisplay, formatPhoneDisplay } from '@/lib/format';
+import { roleCanAccess } from '@/lib/rbac';
+import { useAdminData } from '../AdminProvider';
 
 const WAITLIST_WINDOW_LABELS: Record<WaitlistEntry['preferredWindow'], string> = {
   morning: 'Mañana',
@@ -39,6 +41,10 @@ export function WaitlistPanel({
   onStatusUpdated,
   onBookEntry,
 }: WaitlistPanelProps) {
+  const { data: adminData } = useAdminData();
+  const canOpenWhatsAppInbox = Boolean(
+    adminData && roleCanAccess(adminData.session.user.role, 'whatsapp'),
+  );
   const [busyEntry, setBusyEntry] = useState<{
     id: string;
     status: WaitlistEntry['status'];
@@ -183,6 +189,15 @@ export function WaitlistPanel({
                             )
                           }
                         />
+                        {canOpenWhatsAppInbox ? (
+                          <Button
+                            label="Abrir chat"
+                            variant="secondary"
+                            size="sm"
+                            icon={<MessageCircle size={14} aria-hidden="true" />}
+                            href={`/admin/whatsapp?phone=${encodeURIComponent(w.clientPhoneE164)}`}
+                          />
+                        ) : null}
                         <Button
                           type="button"
                           label="Ya agendó"

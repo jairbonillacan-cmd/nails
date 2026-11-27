@@ -25,7 +25,6 @@ import {
   Shield,
 } from 'lucide-react';
 import {
-  buildWhatsAppLink,
   formatDateShortInTimezone,
   formatTimeInTimezone,
   formatPhoneDisplay,
@@ -79,7 +78,6 @@ interface ClientProfileDialogProps {
 export function ClientProfileDialog({
   client,
   onClose,
-  salonName,
   tz,
   noShowThreshold,
   noShowStats,
@@ -193,16 +191,11 @@ export function ClientProfileDialog({
                   </HStack>
 
                   <Button
-                    label="WhatsApp"
+                    label="Abrir chat"
                     variant="primary"
                     size="sm"
                     icon={<MessageCircle size={14} aria-hidden="true" />}
-                    href={buildWhatsAppLink(
-                      client.phoneE164,
-                      `Hola ${client.fullName}, te saludamos de ${salonName}!`,
-                    )}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={`/admin/whatsapp?phone=${encodeURIComponent(client.phoneE164)}`}
                   />
                 </HStack>
 

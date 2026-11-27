@@ -212,6 +212,13 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
       visible: true,
     },
     {
+      label: 'WhatsApp',
+      description: 'Mensajes con clientas, recordatorios automáticos y plantillas (G W)',
+      href: '/admin/whatsapp',
+      keywords: 'whatsapp mensajes inbox chat recordatorios plantillas meta simulador',
+      visible: roleCanAccess(role, 'whatsapp'),
+    },
+    {
       label: 'Resumen',
       description: 'Resumen del día, pendientes y tus citas de hoy (G R)',
       href: '/admin',
@@ -276,9 +283,9 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
     },
     {
       label: 'Conexiones',
-      description: 'Google Calendar, recordatorios por WhatsApp y cobros',
+      description: 'Google Calendar, cobros en línea y enlaces técnicos',
       href: '/admin/integraciones',
-      keywords: 'conexiones whatsapp google calendar mercado pago spei',
+      keywords: 'conexiones google calendar mercado pago spei sms reseñas',
       visible: roleCanAccess(role, 'integrations'),
     },
     {

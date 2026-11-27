@@ -32,6 +32,7 @@ interface BookingPopoverActionsProps {
   isRequestingReschedule: boolean;
   canViewClients?: boolean;
   canManageIntegrations?: boolean;
+  whatsappChatHref?: string | null;
   waHref: string;
   reviewWaHref: string | null;
   reviewSettingsHref: string;
@@ -58,6 +59,7 @@ export function BookingPopoverActions({
   isRequestingReschedule,
   canViewClients = true,
   canManageIntegrations = false,
+  whatsappChatHref = null,
   waHref,
   reviewWaHref,
   reviewSettingsHref,
@@ -131,15 +133,25 @@ export function BookingPopoverActions({
               href={reviewSettingsHref}
             />
           ) : null}
-          <Button
-            label="WhatsApp"
-            variant={!isPending && !canCollect && !showReviewLink ? 'primary' : 'secondary'}
-            size="md"
-            icon={<MessageCircle size={15} aria-hidden="true" />}
-            href={waHref}
-            target="_blank"
-            rel="noopener noreferrer"
-          />
+          {whatsappChatHref ? (
+            <Button
+              label="Abrir chat"
+              variant={!isPending && !canCollect && !showReviewLink ? 'primary' : 'secondary'}
+              size="md"
+              icon={<MessageCircle size={15} aria-hidden="true" />}
+              href={whatsappChatHref}
+            />
+          ) : (
+            <Button
+              label="WhatsApp"
+              variant={!isPending && !canCollect && !showReviewLink ? 'primary' : 'secondary'}
+              size="md"
+              icon={<MessageCircle size={15} aria-hidden="true" />}
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          )}
         </HStack>
         {isCompleted && !reviewWaHref ? (
           <Text type="supporting" color="secondary">
