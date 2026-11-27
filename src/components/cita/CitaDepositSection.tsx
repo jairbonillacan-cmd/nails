@@ -212,7 +212,7 @@ export function CitaDepositSection({
         {showSpei && cleanClabe ? (
           <>
             <Text type="supporting" textWrap="pretty">
-              SPEI a {settings.depositBankName} · {beneficiary}
+              Transferencia a {settings.depositBankName} · {beneficiary}
             </Text>
 
             <CopyableField

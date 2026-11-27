@@ -98,7 +98,7 @@ export function DepositCard({
     >
       <VStack gap={3}>
         <Text type="supporting">
-          SPEI a {settings.depositBankName} · {beneficiary}
+          Transferencia a {settings.depositBankName} · {beneficiary}
         </Text>
 
         {noShowNotice ? (

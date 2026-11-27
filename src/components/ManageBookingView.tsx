@@ -109,7 +109,7 @@ export function ManageBookingView({
       key: 'staff',
       label: 'Profesional',
       value: booking.staff.name,
-      sub: booking.client.fullName,
+      sub: `Cita a nombre de ${booking.client.fullName}`,
       mark: '3',
       isDone: true,
     },
@@ -228,7 +228,9 @@ export function ManageBookingView({
               </>
             ) : (
               <>
-                {manage.canModify ? (
+                {manage.canModify &&
+                booking.status !== 'pending_confirmation' &&
+                booking.status !== 'pending_payment' ? (
                   <SurfaceCard
                     id="ck-attendance-title"
                     tone={booking.attendanceStatus === 'confirmed' ? 'subtle' : 'default'}
