@@ -67,7 +67,7 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     expect(brandLoader).toContain('role="status"');
     expect(brandLoader).toContain('aria-busy="true"');
     expect(brandLoader).toContain('logoFullWhite');
-    expect(brandLoader).toContain('lk-orb');
+    expect(brandLoader).toContain('<MorphLoader');
 
     const publicLoaderCss: Record<string, string> = {
       'src/app/reservar/loading.tsx': '../booking.css',

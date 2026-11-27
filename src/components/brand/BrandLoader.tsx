@@ -4,6 +4,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { LANDING_ASSETS } from '@/components/landing/landingContent';
 import { BrandLight } from './BrandLight';
+import { MorphLoader } from './MorphLoader';
 
 interface BrandLoaderProps {
   label: string;
@@ -28,7 +29,7 @@ export function BrandLoader({ label }: BrandLoaderProps) {
           height={414}
           className="lk-loader-logo"
         />
-        <VStack className="lk-orb" aria-hidden="true" />
+        <MorphLoader size="lg" tone="light" />
       </VStack>
       <Text className="rb-sr-only">{label}…</Text>
     </VStack>

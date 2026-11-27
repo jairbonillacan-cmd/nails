@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { SkeletonBlock } from '@/components/ui/SkeletonBlock';
+import { MorphLoader } from '@/components/brand/MorphLoader';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import type { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
 import type { BookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
@@ -25,7 +26,7 @@ function BookingStepFallback() {
       className="fx-step-in"
     >
       <HStack align="center">
-        <VStack className="lk-orb" data-size="sm" aria-hidden="true" />
+        <MorphLoader size="sm" tone="cherry" />
       </HStack>
       <VStack gap={1.5} aria-hidden="true">
         <SkeletonBlock width="min(100%, 15rem)" height="1.875rem" radius={2} index={0} />

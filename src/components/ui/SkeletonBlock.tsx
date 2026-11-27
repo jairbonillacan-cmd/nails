@@ -5,6 +5,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { BrandLoader } from '@/components/brand/BrandLoader';
+import { MorphLoader } from '@/components/brand/MorphLoader';
 
 interface SkeletonBlockProps {
   width?: number | string;
@@ -77,7 +78,7 @@ export function PageSkeleton({
       >
         <VStack gap={2} style={{ minWidth: 0, flex: '1 1 16rem' }}>
           <HStack align="center" gap={2}>
-            <VStack className="lk-orb" data-size="sm" aria-hidden="true" />
+            <MorphLoader size="sm" tone="cherry" />
           </HStack>
           <SkeletonBlock width="min(100%, 14rem)" height="2.25rem" radius={2} index={0} />
           <SkeletonBlock width="min(100%, 24rem)" height="0.9375rem" radius={1} index={1} />

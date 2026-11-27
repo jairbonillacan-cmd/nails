@@ -1,6 +1,7 @@
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { MorphLoader } from '@/components/brand/MorphLoader';
 
 const KPI_SLOTS = [0, 1, 2, 3] as const;
 const AGENDA_ROWS = [0, 1, 2, 3] as const;
@@ -26,7 +27,7 @@ export default function AdminLoading() {
       >
         <VStack gap={2} className="ad-head-copy">
           <HStack align="center">
-            <VStack className="lk-orb" data-size="sm" aria-hidden="true" />
+            <MorphLoader size="sm" tone="cherry" />
           </HStack>
           <VStack className="sk-bar" data-size="lg" data-w="40" aria-hidden="true" />
           <VStack className="sk-bar" data-size="sm" data-w="60" aria-hidden="true" />
