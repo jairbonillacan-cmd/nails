@@ -22,6 +22,8 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import { FormDialog } from '@/components/ui/FormDialog';
+import { UploadDropzone } from '@/components/ui/UploadDropzone';
+import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
 import { staffAvatar } from '@/components/landing/landingContent';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import {
@@ -60,6 +62,8 @@ export function StaffEditorSection({
   const [sBio, setSBio] = useState('');
   const [sCommission, setSCommission] = useState(defaultCommissionPercent || 35);
   const [sServiceIds, setSServiceIds] = useState<string[] | null>(null);
+  const [sAvatarUrl, setSAvatarUrl] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const clipboard = useCopyToClipboard(2400);
 
@@ -81,6 +85,8 @@ export function StaffEditorSection({
     setSBio(st.bio);
     setSCommission(st.commissionPercent);
     setSServiceIds(st.serviceIds.length > 0 ? [...st.serviceIds] : [...allServiceIds]);
+    setSAvatarUrl(st.avatarUrl);
+    setAvatarError(null);
   };
 
   const resetStaffForm = () => {
@@ -91,6 +97,23 @@ export function StaffEditorSection({
     setSBio('');
     setSCommission(defaultCommissionPercent || 35);
     setSServiceIds(null);
+    setSAvatarUrl(null);
+    setAvatarError(null);
+  };
+
+  const handleAvatarFile = async (file: File | null) => {
+    if (!file) return;
+    setAvatarError(null);
+    const err = await validateClientImageFile(file);
+    if (err) {
+      setAvatarError(err);
+      return;
+    }
+    try {
+      setSAvatarUrl(await readFileAsDataUrl(file));
+    } catch {
+      setAvatarError('No se pudo leer esa foto. Intenta con otra.');
+    }
   };
 
   const toggleStaffService = (serviceId: string, checked: boolean) => {
@@ -116,6 +139,7 @@ export function StaffEditorSection({
             name: sName.trim(),
             roleTitle: sRoleTitle.trim() || 'Nail Artist',
             bio: sBio.trim(),
+            avatarUrl: sAvatarUrl,
             commissionPercent: sCommission,
             serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
           },
@@ -275,6 +299,25 @@ export function StaffEditorSection({
               value={sBio}
               onChange={setSBio}
               isOptional
+            />
+
+            <UploadDropzone
+              label="Foto"
+              helperText={
+                sAvatarUrl
+                  ? 'Aparece en tu página y al elegir profesional.'
+                  : 'Sin foto se usa una imagen de la marca. Una foto real genera más confianza.'
+              }
+              previewUrl={sAvatarUrl}
+              previewAlt={sName ? `Foto de ${sName}` : 'Foto de la profesional'}
+              placeholder="Elige una foto de su rostro o de su trabajo"
+              readyLabel="Foto lista"
+              replaceLabel="Cambiar foto"
+              clearLabel="Quitar foto"
+              error={avatarError}
+              isOptional
+              onSelectFile={(file) => void handleAvatarFile(file)}
+              onClear={() => setSAvatarUrl(null)}
             />
 
             {services.length > 0 ? (

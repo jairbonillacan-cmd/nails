@@ -1,6 +1,7 @@
 'use client';
 
 import type React from 'react';
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -15,6 +16,8 @@ import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Save, SlidersHorizontal } from 'lucide-react';
 import { StatusTag } from '@/components/ui';
+import { UploadDropzone } from '@/components/ui/UploadDropzone';
+import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 
@@ -55,6 +58,24 @@ export function ServiceEditorPanel({
   const isDepositRequired = draft.depositRequired ?? true;
   const effectiveDepositCents = draft.depositAmountCents ?? defaultDepositCents;
   const hasCustomDeposit = isDepositRequired && effectiveDepositCents !== defaultDepositCents;
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const customPhoto = draft.imageUrl?.trim() || null;
+
+  const handlePhotoFile = async (file: File | null) => {
+    if (!file) return;
+    setPhotoError(null);
+    const err = await validateClientImageFile(file);
+    if (err) {
+      setPhotoError(err);
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      onChangeDraft({ ...draft, imageUrl: dataUrl });
+    } catch {
+      setPhotoError('No se pudo leer esa foto. Intenta con otra.');
+    }
+  };
 
   return (
       <form onSubmit={onSubmit}>
@@ -100,6 +121,26 @@ export function ServiceEditorPanel({
             value={draft.categoryId ?? ''}
             onChange={(v) => onChangeDraft({ ...draft, categoryId: v || null })}
             options={[...categoryOptions]}
+          />
+
+          <UploadDropzone
+            label="Foto del servicio"
+            helperText={
+              customPhoto
+                ? 'Esta foto aparece en tu menú y al reservar.'
+                : 'Sin foto propia se usa una foto de ejemplo. Sube una de tus trabajos para que se vea tuyo.'
+            }
+            previewUrl={customPhoto}
+            previewAlt={draft.name ? `Foto de ${draft.name}` : 'Foto del servicio'}
+            placeholder="Elige una foto de este servicio"
+            readyLabel="Foto lista"
+            replaceLabel="Cambiar foto"
+            clearLabel="Usar foto de ejemplo"
+            error={photoError}
+            isDisabled={saving}
+            isOptional
+            onSelectFile={(file) => void handlePhotoFile(file)}
+            onClear={() => onChangeDraft({ ...draft, imageUrl: null })}
           />
 
           <Divider />

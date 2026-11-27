@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { CatalogMutationSchema } from '@/lib/contracts';
-import { PolicyError, upsertAddon, upsertService } from '@/lib/repositories/db';
+import {
+  persistBrandMediaField,
+  PolicyError,
+  upsertAddon,
+  upsertService,
+} from '@/lib/repositories/db';
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -25,7 +30,11 @@ export async function POST(request: NextRequest) {
       const addon = await upsertAddon(parsed.data);
       return NextResponse.json({ addon });
     }
-    const service = await upsertService(parsed.data);
+    const serviceInput =
+      parsed.data.imageUrl === undefined
+        ? parsed.data
+        : { ...parsed.data, imageUrl: await persistBrandMediaField(parsed.data.imageUrl) };
+    const service = await upsertService(serviceInput);
     return NextResponse.json({ service });
   } catch (err) {
     if (err instanceof PolicyError) {

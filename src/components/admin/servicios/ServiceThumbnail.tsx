@@ -53,7 +53,8 @@ export function isServiceDraftDirty(
     (draft.depositAmountCents ?? 0) !== original.depositAmountCents ||
     Boolean(draft.allowInspoPhoto) !== original.allowInspoPhoto ||
     Boolean(draft.isActive) !== original.isActive ||
-    Boolean(draft.isPrivate) !== Boolean(original.isPrivate)
+    Boolean(draft.isPrivate) !== Boolean(original.isPrivate) ||
+    (draft.imageUrl ?? null) !== (original.imageUrl ?? null)
   );
 }
 

@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { AdminTeamPostSchema } from '@/lib/contracts';
-import { upsertAdminUser, upsertStaffMember } from '@/lib/repositories/db';
+import {
+  persistBrandMediaField,
+  PolicyError,
+  upsertAdminUser,
+  upsertStaffMember,
+} from '@/lib/repositories/db';
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -38,9 +43,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
     }
 
-    const staff = await upsertStaffMember(parsed.data);
+    const staffInput =
+      parsed.data.avatarUrl === undefined
+        ? parsed.data
+        : { ...parsed.data, avatarUrl: await persistBrandMediaField(parsed.data.avatarUrl) };
+    const staff = await upsertStaffMember(staffInput);
     return NextResponse.json({ staff });
   } catch (err) {
+    if (err instanceof PolicyError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+    }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos del equipo.' },
