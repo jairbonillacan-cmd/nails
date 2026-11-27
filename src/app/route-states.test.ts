@@ -62,8 +62,12 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
 
   it('imports the required route-scoped stylesheet in every public loading.tsx', () => {
     const homeLoader = readText('src/app/loading.tsx');
-    expect(homeLoader).toContain('<BrandStage');
-    expect(homeLoader).toContain('role="status"');
+    expect(homeLoader).toContain('<BrandLoader');
+    const brandLoader = readText('src/components/brand/BrandLoader.tsx');
+    expect(brandLoader).toContain('role="status"');
+    expect(brandLoader).toContain('aria-busy="true"');
+    expect(brandLoader).toContain('logoFullWhite');
+    expect(brandLoader).toContain('lk-orb');
 
     const publicLoaderCss: Record<string, string> = {
       'src/app/reservar/loading.tsx': '../booking.css',
@@ -76,9 +80,7 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     for (const [loaderRel, cssImport] of Object.entries(publicLoaderCss)) {
       const source = readText(loaderRel);
       expect(source, `${loaderRel} must import ${cssImport}`).toContain(`'${cssImport}'`);
-      expect(source, `${loaderRel} must expose role="status"`).toContain('role="status"');
-      expect(source, `${loaderRel} must expose aria-busy="true"`).toContain('aria-busy="true"');
-      expect(source, `${loaderRel} must include editorial sk-eyebrow`).toContain('sk-eyebrow');
+      expect(source, `${loaderRel} must render the shared brand loader`).toContain('<BrandLoader');
       expect(source, `${loaderRel} must not use slop sk-loading-pill`).not.toContain('sk-loading-pill');
     }
   });
@@ -176,7 +178,6 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     ];
     for (const rel of publicLoaders) {
       const source = readText(rel);
-      expect(source, `${rel} must render the white header logo`).toContain('className="rb-header"');
       expect(source, `${rel} must not render the black logo on cherry`).not.toContain('logoBlack');
     }
 

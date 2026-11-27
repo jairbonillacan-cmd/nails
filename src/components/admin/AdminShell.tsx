@@ -189,10 +189,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (loading || !data) {
     return (
-      <AdminShellSkeleton
-        isDark={isDark}
-        ariaLabel="Abriendo tu panel"
-      />
+      <AdminShellSkeleton ariaLabel="Abriendo tu panel" />
     );
   }
 

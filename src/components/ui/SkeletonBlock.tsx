@@ -4,8 +4,7 @@ import { Skeleton, type SkeletonRadius } from '@astryxdesign/core/Skeleton';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Text } from '@astryxdesign/core/Text';
-import { LANDING_ASSETS } from '@/components/landing/landingContent';
+import { BrandLoader } from '@/components/brand/BrandLoader';
 
 interface SkeletonBlockProps {
   width?: number | string;
@@ -24,13 +23,10 @@ interface PageSkeletonProps {
 }
 
 interface AdminShellSkeletonProps {
-  isDark?: boolean;
   ariaLabel?: string;
 }
 
 const LIST_PLACEHOLDERS = [0, 1, 2, 3] as const;
-const NAV_GROUP_ONE = [0, 1, 2, 3, 4] as const;
-const NAV_GROUP_TWO = [0, 1, 2, 3] as const;
 
 export function SkeletonBlock({
   width = '100%',
@@ -81,9 +77,7 @@ export function PageSkeleton({
       >
         <VStack gap={2} style={{ minWidth: 0, flex: '1 1 16rem' }}>
           <HStack align="center" gap={2}>
-            <Text color="inherit" className="sk-eyebrow">
-              {ariaLabel}…
-            </Text>
+            <VStack className="lk-orb" data-size="sm" aria-hidden="true" />
           </HStack>
           <SkeletonBlock width="min(100%, 14rem)" height="2.25rem" radius={2} index={0} />
           <SkeletonBlock width="min(100%, 24rem)" height="0.9375rem" radius={1} index={1} />
@@ -166,64 +160,7 @@ export function PageSkeleton({
 }
 
 export function AdminShellSkeleton({
-  isDark = false,
   ariaLabel = 'Abriendo tu panel de LAIKONA NAILS',
 }: AdminShellSkeletonProps) {
-  const brandLogo = isDark ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
-
-  return (
-    <VStack className="ad-shell" gap={0} role="status" aria-busy="true" aria-label={ariaLabel}>
-      <Text className="rb-sr-only">{ariaLabel}…</Text>
-
-      <HStack className="ad-frame" gap={0} align="stretch">
-        <VStack className="ad-side" justify="between" gap={4} aria-hidden="true">
-          <VStack gap={5}>
-            <HStack className="ad-side-top" align="center" gap={2}>
-              <img src={brandLogo} alt="" width={116} height={34} className="ad-logo" />
-            </HStack>
-
-            <VStack gap={1.5}>
-              <SkeletonBlock width="38%" height="0.75rem" radius={1} index={1} />
-              {NAV_GROUP_ONE.map((idx) => (
-                <SkeletonBlock key={idx} width="100%" height="2rem" radius={2} index={idx + 2} />
-              ))}
-            </VStack>
-
-            <VStack gap={1.5}>
-              <SkeletonBlock width="34%" height="0.75rem" radius={1} index={4} />
-              {NAV_GROUP_TWO.map((idx) => (
-                <SkeletonBlock key={idx} width="100%" height="2rem" radius={2} index={idx + 5} />
-              ))}
-            </VStack>
-          </VStack>
-
-          <HStack gap={2} align="center" padding={2} className="ad-sk-user">
-            <SkeletonBlock width="2.25rem" height="2.25rem" radius="rounded" index={7} />
-            <VStack gap={1} className="rb-grow">
-              <SkeletonBlock width="70%" height="0.8125rem" radius={1} index={7} />
-              <SkeletonBlock width="48%" height="0.6875rem" radius={1} index={8} />
-            </VStack>
-          </HStack>
-        </VStack>
-
-        <VStack className="ad-main-wrap" gap={0}>
-          <HStack className="ad-topbar" justify="between" align="center" gap={3} aria-hidden="true">
-            <HStack gap={2} align="center">
-              <SkeletonBlock width="2.125rem" height="2.125rem" radius={2} index={0} />
-              <SkeletonBlock width="14rem" height="2.25rem" radius="rounded" index={1} />
-            </HStack>
-            <HStack gap={2} align="center">
-              <SkeletonBlock width="2.125rem" height="2.125rem" radius="rounded" index={2} />
-              <SkeletonBlock width="7rem" height="2.25rem" radius="rounded" index={3} />
-            </HStack>
-          </HStack>
-          <VStack className="ad-sheet" gap={5}>
-            <VStack gap={5} width="100%" className="ad-content-inner">
-              <PageSkeleton kpiCount={4} withSplit ariaLabel={ariaLabel} />
-            </VStack>
-          </VStack>
-        </VStack>
-      </HStack>
-    </VStack>
-  );
+  return <BrandLoader label={ariaLabel} />;
 }

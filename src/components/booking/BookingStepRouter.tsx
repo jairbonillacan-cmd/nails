@@ -4,7 +4,6 @@ import type React from 'react';
 import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Text } from '@astryxdesign/core/Text';
 import { SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import type { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
@@ -26,9 +25,7 @@ function BookingStepFallback() {
       className="fx-step-in"
     >
       <HStack align="center">
-        <Text color="inherit" className="sk-eyebrow">
-          Preparando siguiente paso…
-        </Text>
+        <VStack className="lk-orb" data-size="sm" aria-hidden="true" />
       </HStack>
       <VStack gap={1.5} aria-hidden="true">
         <SkeletonBlock width="min(100%, 15rem)" height="1.875rem" radius={2} index={0} />

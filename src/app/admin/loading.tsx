@@ -26,9 +26,7 @@ export default function AdminLoading() {
       >
         <VStack gap={2} className="ad-head-copy">
           <HStack align="center">
-            <Text color="inherit" className="sk-eyebrow">
-              Preparando tu día…
-            </Text>
+            <VStack className="lk-orb" data-size="sm" aria-hidden="true" />
           </HStack>
           <VStack className="sk-bar" data-size="lg" data-w="40" aria-hidden="true" />
           <VStack className="sk-bar" data-size="sm" data-w="60" aria-hidden="true" />
