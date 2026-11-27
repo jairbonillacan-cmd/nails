@@ -81,6 +81,7 @@ export default function AdminBookingsPage() {
   );
   const actions = useCitasBookingActions({
     data: ws.data,
+    bookings: ws.bookings,
     hasActiveOwnerPin,
     refresh: ws.refresh,
   });
@@ -102,13 +103,13 @@ export default function AdminBookingsPage() {
       : visibleStaff.filter((s) => s.id === ws.selectedStaffFilter);
 
   const popoverBooking = ws.popoverBookingId
-    ? data.bookings.find((b) => b.id === ws.popoverBookingId) ?? null
+    ? ws.bookings.find((b) => b.id === ws.popoverBookingId) ?? null
     : null;
   const checkoutBooking = ws.checkoutBookingId
-    ? data.bookings.find((b) => b.id === ws.checkoutBookingId) ?? null
+    ? ws.bookings.find((b) => b.id === ws.checkoutBookingId) ?? null
     : null;
   const pendingCancelBooking = actions.pendingCancelBookingId
-    ? data.bookings.find((b) => b.id === actions.pendingCancelBookingId) ?? null
+    ? ws.bookings.find((b) => b.id === actions.pendingCancelBookingId) ?? null
     : null;
 
   const noShowThreshold = data.settings.noShowDepositThreshold ?? 2;
@@ -139,8 +140,8 @@ export default function AdminBookingsPage() {
       dateKey={ws.dateKey}
       search={ws.search}
       allServices={data.services}
-      paymentSplits={data.paymentSplits}
-      cashEntries={data.cashEntries}
+      paymentSplits={ws.paymentSplits}
+      cashEntries={ws.cashEntries}
       serverNowIso={data.serverNowIso}
       salonName={data.settings.name}
       currency={data.settings.currency}
@@ -397,8 +398,8 @@ export default function AdminBookingsPage() {
           schedules={data.schedules}
           dateOverrides={data.dateOverrides}
           recurringBlocks={data.recurringBlocks}
-          paymentSplits={data.paymentSplits}
-          cashEntries={data.cashEntries}
+          paymentSplits={ws.paymentSplits}
+          cashEntries={ws.cashEntries}
           bookings={ws.statusFilteredBookings}
           allServices={data.services}
           isSpecialistLocked={Boolean(ws.lockedStaffId)}
@@ -429,68 +430,77 @@ export default function AdminBookingsPage() {
       )}
 
       <CitasDialogsHost
-        data={data}
-        tz={ws.tz}
-        todayKey={ws.todayKey}
-        activeVisualDate={ws.dateKey}
-        lockedStaffId={ws.lockedStaffId}
-        visibleStaff={visibleStaff}
-        hasActiveOwnerPin={hasActiveOwnerPin}
-        quickFinderOpen={ws.quickFinderOpen}
-        onQuickFinderOpenChange={ws.setQuickFinderOpen}
-        manualOpen={ws.manualOpen}
-        onManualOpenChange={ws.setManualOpen}
-        manualInitStaffId={ws.manualInitStaffId}
-        manualPrefill={ws.manualPrefill}
-        manualSessionKey={ws.manualSessionKey}
-        popoverBooking={popoverBooking}
-        onClosePopover={() => ws.setPopoverBookingId(null)}
-        checkoutBooking={checkoutBooking}
-        checkoutSessionKey={ws.checkoutSessionKey}
-        onCloseCheckout={() => ws.setCheckoutBookingId(null)}
-        blockOpen={ws.blockOpen}
-        blockSessionKey={ws.blockSessionKey}
-        onBlockOpenChange={ws.setBlockOpen}
-        waitlistOpen={ws.waitlistOpen}
-        onWaitlistOpenChange={ws.setWaitlistOpen}
-        canViewWaitlist={canViewWaitlist}
-        canViewClients={canViewClients}
-        busyAction={actions.busyAction}
-        checkingInId={actions.checkingInId}
-        rejectingDepositId={actions.rejectingDepositId}
-        remindingId={actions.remindingId}
-        requestingRescheduleId={actions.requestingRescheduleId}
-        pendingCancelBooking={pendingCancelBooking}
-        pinSubmitting={actions.pinSubmitting}
-        pinError={actions.pinError}
-        onDismissCancelPin={() => {
-          actions.setPendingCancelBookingId(null);
-          actions.setPinError(null);
+        scope={{
+          data,
+          allBookings: ws.bookings,
+          paymentSplits: ws.paymentSplits,
+          cashEntries: ws.cashEntries,
+          tz: ws.tz,
+          todayKey: ws.todayKey,
+          activeVisualDate: ws.dateKey,
+          lockedStaffId: ws.lockedStaffId,
+          visibleStaff,
+          hasActiveOwnerPin,
+          canViewWaitlist,
+          canViewClients,
         }}
-        onOpenManualModal={ws.openManualModal}
-        onOpenCheckout={ws.openCheckoutDrawer}
-        onScheduleRetouch={(booking) => {
-          const prefill = buildRetouchPrefill(booking, data.settings, ws.tz);
-          ws.setCheckoutBookingId(null);
-          ws.openManualModal(prefill.staffId, {
-            serviceId: prefill.serviceId,
-            extraServiceIds: prefill.extraServiceIds,
-            staffId: prefill.staffId,
-            startDate: prefill.startDate,
-            clientName: prefill.clientName,
-            clientPhone: prefill.clientPhone,
-            clientInstagram: prefill.clientInstagram,
-            internalNotes: prefill.internalNotes,
-          });
+        state={{
+          quickFinderOpen: ws.quickFinderOpen,
+          manualOpen: ws.manualOpen,
+          manualInitStaffId: ws.manualInitStaffId,
+          manualPrefill: ws.manualPrefill,
+          manualSessionKey: ws.manualSessionKey,
+          popoverBooking,
+          checkoutBooking,
+          checkoutSessionKey: ws.checkoutSessionKey,
+          blockOpen: ws.blockOpen,
+          blockSessionKey: ws.blockSessionKey,
+          waitlistOpen: ws.waitlistOpen,
+          pendingCancelBooking,
+          busyAction: actions.busyAction,
+          checkingInId: actions.checkingInId,
+          rejectingDepositId: actions.rejectingDepositId,
+          remindingId: actions.remindingId,
+          requestingRescheduleId: actions.requestingRescheduleId,
+          pinSubmitting: actions.pinSubmitting,
+          pinError: actions.pinError,
         }}
-        onUpdateStatus={actions.updateStatus}
-        onCheckIn={actions.checkInBooking}
-        onRejectDeposit={actions.rejectDeposit}
-        onSendReminder={(id) => void actions.sendReminder(id)}
-        onRequestReschedule={(id) => void actions.requestReschedule(id)}
-        onRefresh={ws.refresh}
-        onShowNotice={actions.inlineNotice.show}
-        onSetFeedback={actions.setFeedback}
+        handlers={{
+          onQuickFinderOpenChange: ws.setQuickFinderOpen,
+          onManualOpenChange: ws.setManualOpen,
+          onClosePopover: () => ws.setPopoverBookingId(null),
+          onCloseCheckout: () => ws.setCheckoutBookingId(null),
+          onBlockOpenChange: ws.setBlockOpen,
+          onWaitlistOpenChange: ws.setWaitlistOpen,
+          onDismissCancelPin: () => {
+            actions.setPendingCancelBookingId(null);
+            actions.setPinError(null);
+          },
+          onOpenManualModal: ws.openManualModal,
+          onOpenCheckout: ws.openCheckoutDrawer,
+          onScheduleRetouch: (booking) => {
+            const prefill = buildRetouchPrefill(booking, data.settings, ws.tz);
+            ws.setCheckoutBookingId(null);
+            ws.openManualModal(prefill.staffId, {
+              serviceId: prefill.serviceId,
+              extraServiceIds: prefill.extraServiceIds,
+              staffId: prefill.staffId,
+              startDate: prefill.startDate,
+              clientName: prefill.clientName,
+              clientPhone: prefill.clientPhone,
+              clientInstagram: prefill.clientInstagram,
+              internalNotes: prefill.internalNotes,
+            });
+          },
+          onUpdateStatus: actions.updateStatus,
+          onCheckIn: actions.checkInBooking,
+          onRejectDeposit: actions.rejectDeposit,
+          onSendReminder: (id) => void actions.sendReminder(id),
+          onRequestReschedule: (id) => void actions.requestReschedule(id),
+          onRefresh: ws.refresh,
+          onShowNotice: actions.inlineNotice.show,
+          onSetFeedback: actions.setFeedback,
+        }}
       />
 
       {slotChoice ? (

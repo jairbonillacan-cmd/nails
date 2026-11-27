@@ -42,16 +42,16 @@ export async function GET(request: NextRequest) {
         }
       : null;
 
-  const db = await getRepository().getSnapshot();
   const now = new Date();
-  const tz = db.settings.timezone || 'America/Mexico_City';
   const isSpecialist = session.user.role === 'specialist';
   const scopeStaffId = isSpecialist ? session.user.staffMemberId : null;
 
   if (isSpecialist && !scopeStaffId) {
+    const settings = await getRepository().getSalonSettings();
+    const tz = settings.timezone || 'America/Mexico_City';
     const emptyReport = buildExecutiveReport({
       bookings: [],
-      services: db.services,
+      services: [],
       staff: [],
       schedules: [],
       clients: [],
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
         scope: 'specialist' as const,
         scopeStaffId: null,
         scopeStaffName: session.user.fullName,
-        currency: db.settings.currency,
+        currency: settings.currency,
         timezone: tz,
         generatedAt: now.toISOString(),
         ...emptyReport,
@@ -83,50 +83,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const scopedBookings = isSpecialist
-    ? db.bookings.filter((b) => b.staffId === scopeStaffId)
-    : db.bookings;
-  const scopedBookingIds = new Set(scopedBookings.map((b) => b.id));
-  const scopedClientIds = new Set(scopedBookings.map((b) => b.clientId));
-  const scopedStaff = isSpecialist
-    ? db.staff.filter((s) => s.id === scopeStaffId)
-    : db.staff;
-  const scopedSchedules = isSpecialist
-    ? db.schedules.filter((sc) => sc.staffId === scopeStaffId)
-    : db.schedules;
-  const scopedClients = isSpecialist
-    ? db.clients.filter((c) => scopedClientIds.has(c.id))
-    : db.clients;
-  const scopedReviews = isSpecialist
-    ? db.reviews.filter(
-        (r) =>
-          r.staffId === scopeStaffId ||
-          (r.staffId === null && scopedBookingIds.has(r.bookingId)),
-      )
-    : db.reviews;
-  const allPaymentSplits = db.paymentSplits ?? [];
-  const scopedPaymentSplits = isSpecialist
-    ? allPaymentSplits.filter((ps) => scopedBookingIds.has(ps.bookingId))
-    : allPaymentSplits;
-  const allCashEntries = db.cashEntries ?? [];
-  const scopedCashEntries = isSpecialist
-    ? allCashEntries.filter(
-        (entry) =>
-          entry.staffId === scopeStaffId ||
-          (entry.bookingId !== null && scopedBookingIds.has(entry.bookingId)),
-      )
-    : allCashEntries;
+  const reportData = await getRepository().getExecutiveReportData({
+    scopeStaffId: isSpecialist ? scopeStaffId : null,
+  });
+  const tz = reportData.settings.timezone || 'America/Mexico_City';
 
   const report = buildExecutiveReport({
-    bookings: scopedBookings,
-    services: db.services,
-    staff: scopedStaff,
-    schedules: scopedSchedules,
-    clients: scopedClients,
-    reviews: scopedReviews,
-    paymentSplits: scopedPaymentSplits,
-    cashEntries: scopedCashEntries,
-    funnelEvents: isSpecialist ? [] : (db.funnelEvents ?? []),
+    bookings: reportData.bookings,
+    services: reportData.services,
+    staff: reportData.staff,
+    schedules: reportData.schedules,
+    clients: [],
+    reviews: reportData.reviews,
+    paymentSplits: reportData.paymentSplits,
+    cashEntries: reportData.cashEntries,
+    funnelEvents: isSpecialist ? [] : reportData.funnelEvents,
     period,
     customRange,
     nowMs: now.getTime(),
@@ -139,9 +110,9 @@ export async function GET(request: NextRequest) {
       scope: isSpecialist ? ('specialist' as const) : ('studio' as const),
       scopeStaffId: isSpecialist ? scopeStaffId : null,
       scopeStaffName: isSpecialist
-        ? (scopedStaff[0]?.name ?? session.user.fullName)
+        ? (reportData.staff[0]?.name ?? session.user.fullName)
         : null,
-      currency: db.settings.currency,
+      currency: reportData.settings.currency,
       timezone: tz,
       generatedAt: now.toISOString(),
       ...report,

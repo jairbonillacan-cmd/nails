@@ -16,6 +16,7 @@ import {
   invalidateAdminCache,
   mutateAdminCache,
 } from '@/lib/hooks/useAdminCache';
+import { invalidateAgendaRangeCache } from '@/lib/hooks/useAgendaRangeBookings';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type { BookingStatus, BookingWithRelations } from '@/lib/types';
@@ -38,12 +39,14 @@ export interface CitasFeedbackState {
 
 interface UseCitasBookingActionsParams {
   data: AdminOverviewPayload | null;
+  bookings?: readonly BookingWithRelations[];
   hasActiveOwnerPin: boolean;
   refresh: () => Promise<void>;
 }
 
 export function useCitasBookingActions({
   data,
+  bookings,
   hasActiveOwnerPin,
   refresh,
 }: UseCitasBookingActionsParams) {
@@ -65,7 +68,8 @@ export function useCitasBookingActions({
 
   const findWaitlistForFreedBooking = (bookingId: string): FreedSlotWaitlistMatch | null => {
     if (!data || data.waitlist.length === 0) return null;
-    const freed = data.bookings.find((b) => b.id === bookingId);
+    const pool = bookings ?? data.bookings;
+    const freed = pool.find((b) => b.id === bookingId);
     if (!freed) return null;
     return findFreedSlotWaitlistMatch({
       waitlist: data.waitlist,
@@ -128,6 +132,7 @@ export function useCitasBookingActions({
         setPendingCancelBookingId(null);
         setPinError(null);
         invalidateAdminCache('/api/admin/reports');
+        invalidateAgendaRangeCache();
         inlineNotice.show(`Estado: ${BOOKING_STATUS_BADGE[status].label}`);
         if (status === 'canceled') {
           const match = findWaitlistForFreedBooking(bookingId);
@@ -402,6 +407,7 @@ export function useCitasBookingActions({
       });
       if (res.ok) {
         invalidateAdminCache('/api/admin/reports');
+        invalidateAgendaRangeCache();
         inlineNotice.show(params.summaryLabel);
         const match = findWaitlistForFreedBooking(params.bookingId);
         if (match) {

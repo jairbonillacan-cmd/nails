@@ -7,7 +7,13 @@ import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { ADMIN_CACHE_KEYS, invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import { roleCanAccess } from '@/lib/rbac';
-import type { BookingStatus, BookingWithRelations, StaffMember } from '@/lib/types';
+import type {
+  BookingStatus,
+  BookingWithRelations,
+  CashRegisterEntry,
+  PaymentSplit,
+  StaffMember,
+} from '@/lib/types';
 import type { NewBookingPrefill } from './NewBookingDialog';
 import type { CitasFeedbackState } from './useCitasBookingActions';
 
@@ -49,41 +55,50 @@ const WaitlistPanel = dynamic(
   { ssr: false },
 );
 
-interface CitasDialogsHostProps {
+interface CitasDialogScope {
   data: AdminOverviewPayload;
+  allBookings: readonly BookingWithRelations[];
+  paymentSplits: PaymentSplit[];
+  cashEntries: CashRegisterEntry[];
   tz: string;
   todayKey: string;
   activeVisualDate: string;
   lockedStaffId: string | null;
   visibleStaff: StaffMember[];
   hasActiveOwnerPin: boolean;
+  canViewWaitlist: boolean;
+  canViewClients: boolean;
+}
+
+interface CitasDialogState {
   quickFinderOpen: boolean;
-  onQuickFinderOpenChange: (open: boolean) => void;
   manualOpen: boolean;
-  onManualOpenChange: (open: boolean) => void;
   manualInitStaffId: string;
   manualPrefill: NewBookingPrefill | null;
   manualSessionKey: number;
   popoverBooking: BookingWithRelations | null;
-  onClosePopover: () => void;
   checkoutBooking: BookingWithRelations | null;
   checkoutSessionKey: number;
-  onCloseCheckout: () => void;
   blockOpen: boolean;
   blockSessionKey: number;
-  onBlockOpenChange: (open: boolean) => void;
   waitlistOpen: boolean;
-  onWaitlistOpenChange: (open: boolean) => void;
-  canViewWaitlist: boolean;
-  canViewClients: boolean;
+  pendingCancelBooking: BookingWithRelations | null;
   busyAction: { bookingId: string; status: BookingStatus } | null;
   checkingInId: string | null;
   rejectingDepositId: string | null;
   remindingId: string | null;
   requestingRescheduleId: string | null;
-  pendingCancelBooking: BookingWithRelations | null;
   pinSubmitting: boolean;
   pinError: string | null;
+}
+
+interface CitasDialogHandlers {
+  onQuickFinderOpenChange: (open: boolean) => void;
+  onManualOpenChange: (open: boolean) => void;
+  onClosePopover: () => void;
+  onCloseCheckout: () => void;
+  onBlockOpenChange: (open: boolean) => void;
+  onWaitlistOpenChange: (open: boolean) => void;
   onDismissCancelPin: () => void;
   onOpenManualModal: (staffId?: string, prefill?: NewBookingPrefill | null) => void;
   onOpenCheckout: (booking: BookingWithRelations) => void;
@@ -98,63 +113,40 @@ interface CitasDialogsHostProps {
   onSetFeedback: (feedback: CitasFeedbackState | null) => void;
 }
 
+interface CitasDialogsHostProps {
+  scope: CitasDialogScope;
+  state: CitasDialogState;
+  handlers: CitasDialogHandlers;
+}
+
 export function CitasDialogsHost({
-  data,
-  tz,
-  todayKey,
-  activeVisualDate,
-  lockedStaffId,
-  visibleStaff,
-  hasActiveOwnerPin,
-  quickFinderOpen,
-  onQuickFinderOpenChange,
-  manualOpen,
-  onManualOpenChange,
-  manualInitStaffId,
-  manualPrefill,
-  manualSessionKey,
-  popoverBooking,
-  onClosePopover,
-  checkoutBooking,
-  checkoutSessionKey,
-  onCloseCheckout,
-  blockOpen,
-  blockSessionKey,
-  onBlockOpenChange,
-  waitlistOpen,
-  onWaitlistOpenChange,
-  canViewWaitlist,
-  canViewClients,
-  busyAction,
-  checkingInId,
-  rejectingDepositId,
-  remindingId,
-  requestingRescheduleId,
-  pendingCancelBooking,
-  pinSubmitting,
-  pinError,
-  onDismissCancelPin,
-  onOpenManualModal,
-  onOpenCheckout,
-  onScheduleRetouch,
-  onUpdateStatus,
-  onCheckIn,
-  onRejectDeposit,
-  onSendReminder,
-  onRequestReschedule,
-  onRefresh,
-  onShowNotice,
-  onSetFeedback,
+  scope,
+  state,
+  handlers,
 }: CitasDialogsHostProps) {
+  const {
+    data,
+    allBookings,
+    paymentSplits,
+    cashEntries,
+    tz,
+    todayKey,
+    activeVisualDate,
+    lockedStaffId,
+    visibleStaff,
+    hasActiveOwnerPin,
+    canViewWaitlist,
+    canViewClients,
+  } = scope;
   const touchUpDays = normalizeTouchUpDays(data.settings.landingContent?.touchUpDays);
   const activeWaitingCount = data.waitlist.filter((w) => w.status === 'waiting').length;
 
   return (
     <>
-      {quickFinderOpen ? (
+      {state.quickFinderOpen ? (
         <QuickSlotFinderDialog
-          isOpen={quickFinderOpen}
-          onOpenChange={onQuickFinderOpenChange}
+          isOpen={state.quickFinderOpen}
+          onOpenChange={handlers.onQuickFinderOpenChange}
           services={data.services}
           staff={data.staff}
           currency={data.settings.currency}
@@ -162,7 +154,7 @@ export function CitasDialogsHost({
           todayKey={todayKey}
           lockedStaffId={lockedStaffId}
           onPickSlot={(selection) =>
-            onOpenManualModal(selection.staffId, {
+            handlers.onOpenManualModal(selection.staffId, {
               serviceId: selection.serviceId,
               extraServiceIds: selection.extraServiceIds,
               staffId: selection.staffId,
@@ -173,16 +165,16 @@ export function CitasDialogsHost({
         />
       ) : null}
 
-      {popoverBooking ? (
+      {state.popoverBooking ? (
         <BookingQuickPopover
-          booking={popoverBooking}
-          allBookings={data.bookings}
+          booking={state.popoverBooking}
+          allBookings={allBookings}
           allServices={data.services}
           clients={data.clients}
           loyaltyProgram={data.loyaltyProgram}
           loyaltyStamps={data.loyaltyStamps}
-          paymentSplits={data.paymentSplits}
-          cashEntries={data.cashEntries}
+          paymentSplits={paymentSplits}
+          cashEntries={cashEntries}
           serverNowIso={data.serverNowIso}
           noShowThreshold={data.settings.noShowDepositThreshold ?? 2}
           touchUpDays={touchUpDays}
@@ -193,31 +185,33 @@ export function CitasDialogsHost({
           canViewClients={canViewClients}
           canManageIntegrations={roleCanAccess(data.session.user.role, 'integrations')}
           busyStatus={
-            busyAction?.bookingId === popoverBooking.id ? busyAction.status : null
+            state.busyAction?.bookingId === state.popoverBooking.id
+              ? state.busyAction.status
+              : null
           }
-          isCheckingIn={checkingInId === popoverBooking.id}
-          isRejectingDeposit={rejectingDepositId === popoverBooking.id}
-          isReminding={remindingId === popoverBooking.id}
-          isRequestingReschedule={requestingRescheduleId === popoverBooking.id}
-          onClose={onClosePopover}
-          onUpdateStatus={(id, status) => onUpdateStatus(id, status)}
-          onCheckIn={onCheckIn}
-          onRejectDeposit={onRejectDeposit}
-          onOpenCheckout={onOpenCheckout}
+          isCheckingIn={state.checkingInId === state.popoverBooking.id}
+          isRejectingDeposit={state.rejectingDepositId === state.popoverBooking.id}
+          isReminding={state.remindingId === state.popoverBooking.id}
+          isRequestingReschedule={state.requestingRescheduleId === state.popoverBooking.id}
+          onClose={handlers.onClosePopover}
+          onUpdateStatus={(id, status) => handlers.onUpdateStatus(id, status)}
+          onCheckIn={handlers.onCheckIn}
+          onRejectDeposit={handlers.onRejectDeposit}
+          onOpenCheckout={handlers.onOpenCheckout}
           onScheduleRetouch={(booking) => {
-            onClosePopover();
-            onScheduleRetouch(booking);
+            handlers.onClosePopover();
+            handlers.onScheduleRetouch(booking);
           }}
-          onSendReminder={onSendReminder}
-          onRequestReschedule={onRequestReschedule}
+          onSendReminder={handlers.onSendReminder}
+          onRequestReschedule={handlers.onRequestReschedule}
         />
       ) : null}
 
-      {manualOpen ? (
+      {state.manualOpen ? (
         <NewBookingDialog
-          key={`${manualInitStaffId}-${manualSessionKey}`}
-          isOpen={manualOpen}
-          onOpenChange={onManualOpenChange}
+          key={`${state.manualInitStaffId}-${state.manualSessionKey}`}
+          isOpen={state.manualOpen}
+          onOpenChange={handlers.onManualOpenChange}
           services={data.services}
           addons={data.addons}
           staff={data.staff}
@@ -225,49 +219,51 @@ export function CitasDialogsHost({
           todayKey={todayKey}
           currency={data.settings.currency}
           timezone={tz}
-          initialStaffId={manualInitStaffId}
+          initialStaffId={state.manualInitStaffId}
           lockedStaffId={lockedStaffId}
-          prefill={manualPrefill}
+          prefill={state.manualPrefill}
           requireOwnerPinForPriceOverride={hasActiveOwnerPin}
           onCreated={async (message, description) => {
             invalidateAdminCache('/api/admin/reports');
-            await onRefresh();
+            invalidateAdminCache(ADMIN_CACHE_KEYS.bookings);
+            await handlers.onRefresh();
             if (description) {
-              onSetFeedback({ status: 'success', title: message, description });
+              handlers.onSetFeedback({ status: 'success', title: message, description });
             } else {
-              onShowNotice(message);
+              handlers.onShowNotice(message);
             }
           }}
         />
       ) : null}
 
-      {checkoutBooking ? (
+      {state.checkoutBooking ? (
         <CheckoutDrawerDialog
-          key={`${checkoutBooking.id}-${checkoutSessionKey}`}
-          booking={checkoutBooking}
-          existingSplits={data.paymentSplits.filter((s) => s.bookingId === checkoutBooking.id)}
-          existingCashEntries={data.cashEntries.filter((e) => e.bookingId === checkoutBooking.id)}
+          key={`${state.checkoutBooking.id}-${state.checkoutSessionKey}`}
+          booking={state.checkoutBooking}
+          existingSplits={paymentSplits.filter((s) => s.bookingId === state.checkoutBooking?.id)}
+          existingCashEntries={cashEntries.filter((e) => e.bookingId === state.checkoutBooking?.id)}
           inventory={data.inventory}
           staff={data.staff}
           loyaltyProgram={data.loyaltyProgram}
           loyaltyStamps={data.loyaltyStamps}
           currency={data.settings.currency}
           touchUpDays={touchUpDays}
-          onClose={onCloseCheckout}
+          onClose={handlers.onCloseCheckout}
           onCompleted={async () => {
             invalidateAdminCache('/api/admin/reports');
             invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
-            await onRefresh();
+            invalidateAdminCache(ADMIN_CACHE_KEYS.bookings);
+            await handlers.onRefresh();
           }}
-          onScheduleRetouch={onScheduleRetouch}
+          onScheduleRetouch={handlers.onScheduleRetouch}
         />
       ) : null}
 
-      {blockOpen ? (
+      {state.blockOpen ? (
         <BlockTimeForm
-          key={`block-${blockSessionKey}`}
-          isOpen={blockOpen}
-          onOpenChange={onBlockOpenChange}
+          key={`block-${state.blockSessionKey}`}
+          isOpen={state.blockOpen}
+          onOpenChange={handlers.onBlockOpenChange}
           visibleStaff={visibleStaff}
           allStaff={data.staff}
           lockedStaffId={lockedStaffId}
@@ -278,16 +274,16 @@ export function CitasDialogsHost({
             dateKey: activeVisualDate || todayKey,
           }}
           onSaved={async (notice) => {
-            await onRefresh();
-            onShowNotice(notice);
+            await handlers.onRefresh();
+            handlers.onShowNotice(notice);
           }}
         />
       ) : null}
 
       {canViewWaitlist ? (
         <Drawer
-          isOpen={waitlistOpen}
-          onOpenChange={onWaitlistOpenChange}
+          isOpen={state.waitlistOpen}
+          onOpenChange={handlers.onWaitlistOpenChange}
           side="end"
           width={460}
           label="Lista de espera"
@@ -301,25 +297,25 @@ export function CitasDialogsHost({
                     ? `${activeWaitingCount} ${activeWaitingCount === 1 ? 'clienta esperando espacio' : 'clientas esperando espacio'}`
                     : 'Sin solicitudes activas por ahora'
                 }
-                onOpenChange={onWaitlistOpenChange}
+                onOpenChange={handlers.onWaitlistOpenChange}
                 hasDivider
               />
             }
             content={
               <LayoutContent>
-                {waitlistOpen ? (
+                {state.waitlistOpen ? (
                   <WaitlistPanel
                     embedded
                     waitlist={data.waitlist}
                     services={data.services}
                     salonName={data.settings.name}
                     onStatusUpdated={async (message) => {
-                      await onRefresh();
-                      onShowNotice(message);
+                      await handlers.onRefresh();
+                      handlers.onShowNotice(message);
                     }}
                     onBookEntry={(entry) => {
-                      onWaitlistOpenChange(false);
-                      onOpenManualModal('any', {
+                      handlers.onWaitlistOpenChange(false);
+                      handlers.onOpenManualModal('any', {
                         serviceId: entry.serviceId,
                         startDate: entry.desiredDate,
                         clientName: entry.clientName,
@@ -335,19 +331,20 @@ export function CitasDialogsHost({
         </Drawer>
       ) : null}
 
-      {pendingCancelBooking ? (
+      {state.pendingCancelBooking ? (
         <OwnerPinDialog
           isOpen
           onOpenChange={(open) => {
-            if (!open) onDismissCancelPin();
+            if (!open) handlers.onDismissCancelPin();
           }}
           title="Autorizar cancelación"
-          description={`Cancelar la cita ${pendingCancelBooking.bookingCode} de ${pendingCancelBooking.client.fullName} requiere el PIN de autorización de Dueña.`}
+          description={`Cancelar la cita ${state.pendingCancelBooking.bookingCode} de ${state.pendingCancelBooking.client.fullName} requiere el PIN de autorización de Dueña.`}
           actionLabel="Confirmar cancelación"
-          isSubmitting={pinSubmitting}
-          error={pinError}
+          isSubmitting={state.pinSubmitting}
+          error={state.pinError}
           onConfirm={async (pin) => {
-            await onUpdateStatus(pendingCancelBooking.id, 'canceled', pin);
+            if (!state.pendingCancelBooking) return;
+            await handlers.onUpdateStatus(state.pendingCancelBooking.id, 'canceled', pin);
           }}
         />
       ) : null}

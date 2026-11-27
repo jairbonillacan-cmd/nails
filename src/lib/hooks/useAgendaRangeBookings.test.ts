@@ -1,0 +1,181 @@
+import { describe, expect, it } from 'vitest';
+import type {
+  BookingWithRelations,
+  CashRegisterEntry,
+  PaymentSplit,
+} from '@/lib/types';
+import {
+  buildAgendaBookingsRangeUrl,
+  computeAgendaFetchWindow,
+  mergeAgendaRangeData,
+} from './useAgendaRangeBookings';
+
+function makeBookingStub(id: string, status: BookingWithRelations['status']): BookingWithRelations {
+  return {
+    id,
+    bookingCode: `LK-${id}`,
+    manageToken: `tok-${id}`,
+    idempotencyKey: null,
+    serviceId: 'svc-1',
+    staffId: 'staff-1',
+    clientId: 'client-1',
+    startAt: '2026-11-27T16:00:00.000Z',
+    endAt: '2026-11-27T17:00:00.000Z',
+    occupiedStartAt: '2026-11-27T16:00:00.000Z',
+    occupiedEndAt: '2026-11-27T17:00:00.000Z',
+    totalDurationMinutes: 60,
+    subtotalCents: 50000,
+    discountCents: 0,
+    totalPriceCents: 50000,
+    depositAmountCents: 15000,
+    couponCode: null,
+    status,
+    source: 'web',
+    clientNotes: '',
+    internalNotes: '',
+    inspoPhotoUrl: null,
+    paymentProofUrl: null,
+    googleEventId: null,
+    cancellationReason: null,
+    rescheduledFromId: null,
+    addons: [],
+    createdAt: '2026-11-20T12:00:00.000Z',
+    updatedAt: '2026-11-20T12:00:00.000Z',
+    client: {
+      id: 'client-1',
+      fullName: 'Sofía Ramírez',
+      phoneE164: '+522224123987',
+      email: null,
+      birthday: null,
+      notes: '',
+      noShowCount: 0,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+    staff: {
+      id: 'staff-1',
+      name: 'Karla',
+      roleTitle: 'Nail Artist',
+      bio: '',
+      avatarUrl: null,
+      bookingSlug: 'karla',
+      commissionPercent: 40,
+      isActive: true,
+      displayOrder: 0,
+      serviceIds: ['svc-1'],
+    },
+    service: {
+      id: 'svc-1',
+      categoryId: null,
+      name: 'Rubber',
+      slug: 'rubber',
+      description: '',
+      durationMinutes: 60,
+      priceCents: 50000,
+      bufferBeforeMinutes: 0,
+      bufferAfterMinutes: 0,
+      requiresConfirmation: false,
+      depositRequired: true,
+      depositAmountCents: 20000,
+      allowInspoPhoto: false,
+      isActive: true,
+      isFeatured: false,
+      displayOrder: 0,
+      imageUrl: null,
+    },
+  };
+}
+
+describe('useAgendaRangeBookings helpers', () => {
+  it('computes bounded calendar windows for day, week, and list views across month boundaries', () => {
+    expect(computeAgendaFetchWindow('day', '2026-11-30')).toEqual({
+      from: '2026-11-27',
+      to: '2026-12-03',
+    });
+    expect(computeAgendaFetchWindow('week', '2026-11-27')).toEqual({
+      from: '2026-11-27',
+      to: '2026-12-03',
+    });
+    expect(computeAgendaFetchWindow('list', '2026-12-02')).toEqual({
+      from: '2026-11-25',
+      to: '2026-12-09',
+    });
+    expect(computeAgendaFetchWindow('day', 'invalid')).toBeNull();
+  });
+
+  it('builds range query URLs omitting staff when all', () => {
+    expect(
+      buildAgendaBookingsRangeUrl({
+        from: '2026-11-24',
+        to: '2026-11-30',
+        staffFilter: 'all',
+      }),
+    ).toBe('/api/admin/bookings?from=2026-11-24&to=2026-11-30');
+
+    expect(
+      buildAgendaBookingsRangeUrl({
+        from: '2026-11-24',
+        to: '2026-11-30',
+        staffFilter: 'staff-karla',
+      }),
+    ).toBe('/api/admin/bookings?from=2026-11-24&to=2026-11-30&staff=staff-karla');
+  });
+
+  it('merges range bookings, paymentSplits, and cashEntries with range precedence by id', () => {
+    const overviewBookings = [
+      makeBookingStub('bk-1', 'confirmed'),
+      makeBookingStub('bk-outside', 'pending_confirmation'),
+    ];
+    const rangeBookings = [
+      makeBookingStub('bk-1', 'completed'),
+      makeBookingStub('bk-distant', 'confirmed'),
+    ];
+    const overviewSplit: PaymentSplit = {
+      id: 'sp-1',
+      bookingId: 'bk-1',
+      method: 'cash',
+      amountCents: 20000,
+      tipCents: 0,
+      tipStaffId: null,
+      createdAt: '2026-11-27T17:00:00.000Z',
+    };
+    const rangeSplit: PaymentSplit = {
+      ...overviewSplit,
+      amountCents: 50000,
+    };
+    const rangeCash: CashRegisterEntry = {
+      id: 'cash-distant',
+      bookingId: 'bk-distant',
+      staffId: 'staff-1',
+      entryType: 'service_income',
+      description: 'Cobro',
+      amountCents: 50000,
+      tipCents: 0,
+      commissionCents: 20000,
+      paymentMethod: 'card',
+      occurredAt: '2026-12-20T17:00:00.000Z',
+      recordedBy: 'duena@nails.studio',
+    };
+
+    const merged = mergeAgendaRangeData({
+      overviewBookings,
+      overviewSplits: [overviewSplit],
+      overviewCashEntries: [],
+      rangeData: {
+        bookings: rangeBookings,
+        paymentSplits: [rangeSplit],
+        cashEntries: [rangeCash],
+        range: { from: '2026-11-24', to: '2026-12-30', staffId: null },
+        timezone: 'America/Mexico_City',
+      },
+    });
+
+    expect(merged.bookings.map((b) => `${b.id}:${b.status}`)).toEqual([
+      'bk-1:completed',
+      'bk-outside:pending_confirmation',
+      'bk-distant:confirmed',
+    ]);
+    expect(merged.paymentSplits).toEqual([rangeSplit]);
+    expect(merged.cashEntries).toEqual([rangeCash]);
+  });
+});

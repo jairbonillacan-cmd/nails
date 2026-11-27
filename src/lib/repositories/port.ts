@@ -18,6 +18,8 @@ import type {
   AuditAction,
   AuditLogEntry,
   AvailabilityRule,
+  AvailabilitySchedule,
+  Booking,
   BookingReview,
   BookingSource,
   BookingStatus,
@@ -29,6 +31,7 @@ import type {
   Coupon,
   DateOverride,
   DemoDatabase,
+  FunnelEventRecord,
   GalleryItem,
   InventoryItem,
   LoyaltyProgram,
@@ -466,14 +469,46 @@ export interface OutboxSummary {
   processedCount: number;
 }
 
+export interface BookingsRangeFilter {
+  from?: string;
+  to?: string;
+  staffId?: string | null;
+  role?: AdminRole;
+  staffMemberId?: string | null;
+}
+
+export interface AdminBookingsRangeData {
+  bookings: BookingWithRelations[];
+  paymentSplits: PaymentSplit[];
+  cashEntries: CashRegisterEntry[];
+  timezone: string;
+}
+
+export interface ExecutiveReportData {
+  settings: Pick<SalonSettings, 'timezone' | 'currency'>;
+  bookings: Booking[];
+  services: Service[];
+  staff: StaffMember[];
+  schedules: AvailabilitySchedule[];
+  reviews: BookingReview[];
+  paymentSplits: PaymentSplit[];
+  cashEntries: CashRegisterEntry[];
+  funnelEvents: FunnelEventRecord[];
+}
+
 export interface SalonRepository {
   getSalonSettings(): Promise<SalonSettings>;
   getSnapshot(): Promise<Readonly<DemoDatabase>>;
   getPublicBootstrap(): Promise<PublicBootstrapData>;
   getBookingsWithRelations(
-    role?: AdminRole,
-    staffMemberId?: string | null,
+    filter?: BookingsRangeFilter,
   ): Promise<BookingWithRelations[]>;
+  getAdminBookingsRange(
+    filter?: BookingsRangeFilter,
+  ): Promise<AdminBookingsRangeData>;
+  getExecutiveReportData(options?: {
+    scopeStaffId?: string | null;
+  }): Promise<ExecutiveReportData>;
   getBookingByToken(token: string): Promise<BookingWithRelations | null>;
   queryAvailability(params: QueryAvailabilityInput): Promise<QueryAvailabilityOutput>;
   getNextQuickSlots(

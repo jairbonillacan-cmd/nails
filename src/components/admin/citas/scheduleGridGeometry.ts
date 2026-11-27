@@ -5,7 +5,13 @@ import type {
   RecurringBlock,
   StaffMember,
 } from '@/lib/types';
-import { formatDateShortInTimezone, getDateKeyInTimezone } from '@/lib/format';
+import {
+  formatDateShortInTimezone,
+  formatDuration,
+  formatMinutes12h,
+  getDateKeyInTimezone,
+} from '@/lib/format';
+import type { ScheduleDragProposal } from '@/lib/hooks/useScheduleDrag';
 
 const CALENDAR_START_HOUR = 9;
 const CALENDAR_END_HOUR = 20;
@@ -14,7 +20,7 @@ export const CALENDAR_END_MIN = CALENDAR_END_HOUR * 60;
 const CALENDAR_TOTAL_MIN = CALENDAR_END_MIN - CALENDAR_START_MIN;
 export const CALENDAR_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] as const;
 
-interface WeekScheduleDay {
+export interface WeekScheduleDay {
   dateKey: string;
   label: string;
   shortDay: string;
@@ -441,5 +447,79 @@ export function resolveSuggestedBlockWindow(params: {
     endTimeHHMM: formatMinutesHHMM(endMinutes),
     workStartMinutes,
     workEndMinutes,
+  };
+}
+
+export function groupScheduleItemsByKey<T>(
+  items: readonly T[],
+  getKey: (item: T) => string | null,
+): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = getKey(item);
+    if (!key) continue;
+    const list = map.get(key);
+    if (list) list.push(item);
+    else map.set(key, [item]);
+  }
+  return map;
+}
+
+export function buildScheduleDragProposalCopy(
+  proposal: ScheduleDragProposal,
+  activeStaff: readonly StaffMember[],
+  timezone: string,
+): { title: string; description: string; confirmLabel: string } {
+  const origTime = formatMinutes12h(proposal.originalStartMinutes);
+  const nextTime = formatMinutes12h(proposal.targetStartMinutes);
+  const origStaff =
+    activeStaff.find((st) => st.id === proposal.originalStaffId)?.name ??
+    proposal.booking.staff.name;
+  const nextStaff =
+    activeStaff.find((st) => st.id === proposal.targetStaffId)?.name ?? origStaff;
+  const nextDateLabel = formatDateShortInTimezone(`${proposal.targetDateKey}T18:00:00Z`, timezone);
+  if (proposal.mode === 'resize') {
+    return {
+      title: `¿Ajustar duración de ${proposal.booking.client.fullName}?`,
+      description: `${proposal.booking.service.name} cambiará de ${formatDuration(proposal.originalDurationMinutes)} a ${formatDuration(proposal.targetDurationMinutes)} (${origTime} – ${formatMinutes12h(proposal.targetStartMinutes + proposal.targetDurationMinutes)}).`,
+      confirmLabel: 'Guardar duración',
+    };
+  }
+  return {
+    title: `¿Mover cita de ${proposal.booking.client.fullName}?`,
+    description: `De ${origTime} (${origStaff}) a ${nextDateLabel} ${nextTime} con ${nextStaff} (${formatDuration(proposal.targetDurationMinutes)}).`,
+    confirmLabel: 'Confirmar movimiento',
+  };
+}
+
+export function buildScheduleReschedulePayload(
+  proposal: ScheduleDragProposal,
+  activeStaff: readonly StaffMember[],
+  timezone: string,
+): {
+  bookingId: string;
+  startAt: string;
+  staffId: string;
+  durationMinutes: number;
+  summaryLabel: string;
+} {
+  const startAt = buildZonedIsoForDateAndMinutes(
+    proposal.targetDateKey,
+    proposal.targetStartMinutes,
+    timezone,
+  );
+  const targetStaffName =
+    activeStaff.find((st) => st.id === proposal.targetStaffId)?.name ??
+    proposal.booking.staff.name;
+  const summaryLabel =
+    proposal.mode === 'resize'
+      ? `Duración ajustada a ${formatDuration(proposal.targetDurationMinutes)}`
+      : `Cita movida a ${formatMinutes12h(proposal.targetStartMinutes)} con ${targetStaffName}`;
+  return {
+    bookingId: proposal.booking.id,
+    startAt,
+    staffId: proposal.targetStaffId,
+    durationMinutes: proposal.targetDurationMinutes,
+    summaryLabel,
   };
 }

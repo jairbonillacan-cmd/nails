@@ -38,6 +38,7 @@ import {
 } from '../format';
 import { logError } from '../logger';
 import { computeClientLoyaltySummary } from '../loyalty/stamps';
+import { shiftMetricDateKey } from '../metrics';
 import { shouldSkipWhatsappCascade } from '../notifications/cascade';
 import {
   canonicalizeWhatsAppPhoneE164,
@@ -116,11 +117,14 @@ import {
   PolicyError,
   SlotConflictError,
   type AdjustInventoryInput,
+  type AdminBookingsRangeData,
   type AwardLoyaltyStampInput,
+  type BookingsRangeFilter,
   type CleanupExpiredSlotHoldsResult,
   type ClientArcoExport,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type ExecutiveReportData,
   type GetWhatsAppThreadDetailParams,
   type InactiveClientRecord,
   type ListScheduledNotificationsParams,
@@ -1844,6 +1848,174 @@ export function createSupabaseRepository(
     };
   }
 
+  async function loadTargetedBookingsRange(
+    filter: BookingsRangeFilter | undefined,
+    includePayments: boolean,
+  ): Promise<AdminBookingsRangeData> {
+    const supabase = getClient();
+    const isSpecialist = filter?.role === 'specialist';
+    if (isSpecialist && !filter?.staffMemberId) {
+      const settingsRes = await supabase
+        .from('salon_settings')
+        .select('*')
+        .eq('id', 'default')
+        .maybeSingle();
+      return {
+        bookings: [],
+        paymentSplits: [],
+        cashEntries: [],
+        timezone: settingsRes.data?.timezone || 'America/Mexico_City',
+      };
+    }
+
+    const effectiveStaffId = isSpecialist
+      ? (filter?.staffMemberId ?? null)
+      : filter?.staffId && filter.staffId !== 'all'
+        ? filter.staffId
+        : null;
+    const fromKey = filter?.from?.trim() || null;
+    const toKey = filter?.to?.trim() || null;
+    const bufferedFromIso = fromKey
+      ? `${shiftMetricDateKey(fromKey, -1)}T00:00:00.000Z`
+      : null;
+    const bufferedToIso = toKey
+      ? `${shiftMetricDateKey(toKey, 1)}T23:59:59.999Z`
+      : null;
+
+    let bookingsQuery = supabase.from('bookings').select('*');
+    if (effectiveStaffId) {
+      bookingsQuery = bookingsQuery.eq('staff_id', effectiveStaffId);
+    }
+    if (bufferedFromIso) {
+      bookingsQuery = bookingsQuery.gte('start_at', bufferedFromIso);
+    }
+    if (bufferedToIso) {
+      bookingsQuery = bookingsQuery.lte('start_at', bufferedToIso);
+    }
+
+    const staffQuery = effectiveStaffId
+      ? supabase.from('staff_members').select('*').eq('id', effectiveStaffId)
+      : supabase.from('staff_members').select('*');
+
+    const [settingsRes, bookingsRes, servicesRes, staffRes] = await Promise.all([
+      supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+      bookingsQuery,
+      supabase.from('services').select('*'),
+      staffQuery,
+    ]);
+
+    const timezone = settingsRes.data?.timezone || 'America/Mexico_City';
+    const rawBookingRows = bookingsRes.data ?? [];
+    const filteredRows = rawBookingRows.filter((row) => {
+      if (effectiveStaffId && row.staff_id !== effectiveStaffId) return false;
+      if (fromKey || toKey) {
+        const startDate = new Date(row.start_at);
+        if (Number.isNaN(startDate.getTime())) return false;
+        const dateKey = getDateKeyInTimezone(startDate, timezone);
+        if (fromKey && dateKey < fromKey) return false;
+        if (toKey && dateKey > toKey) return false;
+      }
+      return true;
+    });
+
+    if (filteredRows.length === 0) {
+      return { bookings: [], paymentSplits: [], cashEntries: [], timezone };
+    }
+
+    const services = (servicesRes.data ?? []).map(mapServiceRow);
+    const servicesById = new Map<string, Service>(services.map((s) => [s.id, s]));
+    const staffMembers = (staffRes.data ?? []).map((row) => mapStaffRow(row, []));
+    const staffById = new Map<string, StaffMember>(staffMembers.map((s) => [s.id, s]));
+
+    const bookingIds = filteredRows.map((row) => row.id);
+    const bookingIdSet = new Set(bookingIds);
+    const clientIds = Array.from(new Set(filteredRows.map((row) => row.client_id)));
+
+    const candidateAddonBookingIds = includePayments
+      ? filteredRows
+          .filter((row) => {
+            const baseService = servicesById.get(row.service_id);
+            if (!baseService) return false;
+            const extraIds = Array.isArray(row.extra_service_ids)
+              ? row.extra_service_ids
+              : [];
+            let expectedPrice = baseService.priceCents;
+            let expectedDuration = baseService.durationMinutes;
+            for (const extraId of extraIds) {
+              const extraService = servicesById.get(extraId);
+              if (extraService) {
+                expectedPrice += extraService.priceCents;
+                expectedDuration += extraService.durationMinutes;
+              }
+            }
+            return (
+              row.subtotal_cents !== expectedPrice ||
+              row.total_duration_minutes !== expectedDuration
+            );
+          })
+          .map((row) => row.id)
+      : bookingIds;
+
+    const [clientsRes, addonsRes, splitsRes, cashRes] = await Promise.all([
+      supabase.from('clients').select('*').in('id', clientIds),
+      candidateAddonBookingIds.length > 0
+        ? supabase
+            .from('booking_addons')
+            .select('*')
+            .in('booking_id', candidateAddonBookingIds)
+        : Promise.resolve({ data: [] as Tables['booking_addons']['Row'][] }),
+      includePayments
+        ? supabase.from('payment_splits').select('*').in('booking_id', bookingIds)
+        : Promise.resolve({ data: [] as Tables['payment_splits']['Row'][] }),
+      includePayments
+        ? supabase
+            .from('cash_register_entries')
+            .select('*')
+            .in('booking_id', bookingIds)
+        : Promise.resolve({ data: [] as Tables['cash_register_entries']['Row'][] }),
+    ]);
+
+    const clientsById = new Map<string, ClientProfile>(
+      (clientsRes.data ?? []).map((row) => {
+        const mapped = mapClientRow(row);
+        return [mapped.id, mapped];
+      }),
+    );
+    const bookingAddonRows = addonsRes.data ?? [];
+
+    const bookings: BookingWithRelations[] = filteredRows
+      .map((row) => {
+        const mapped = mapBookingRow(row, bookingAddonRows);
+        const service =
+          servicesById.get(mapped.serviceId) ?? buildFallbackServiceForBooking(mapped);
+        const staff =
+          staffById.get(mapped.staffId) ??
+          buildFallbackStaffForBooking(
+            mapped,
+            settingsRes.data?.default_commission_percent ?? 35,
+          );
+        const client =
+          clientsById.get(mapped.clientId) ?? buildFallbackClientForBooking(mapped);
+        return { ...mapped, service, staff, client, review: null };
+      })
+      .toSorted(
+        (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+      );
+
+    const paymentSplits = includePayments
+      ? (splitsRes.data ?? [])
+          .map(mapPaymentSplitRow)
+          .filter((split) => bookingIdSet.has(split.bookingId))
+      : [];
+    const cashEntries = includePayments
+      ? (cashRes.data ?? [])
+          .map(mapCashEntryRow)
+          .filter((entry) => entry.bookingId !== null && bookingIdSet.has(entry.bookingId))
+      : [];
+
+    return { bookings, paymentSplits, cashEntries, timezone };
+  }
+
   async function registerMediaAssetInternal(
     input: RegisterMediaAssetInput,
   ): Promise<MediaAssetRecord> {
@@ -2099,19 +2271,118 @@ export function createSupabaseRepository(
     },
 
     async getBookingsWithRelations(
-      role?: AdminRole,
-      staffMemberId?: string | null,
+      filter?: BookingsRangeFilter,
     ): Promise<BookingWithRelations[]> {
-      const snapshot = await getSnapshot();
-      const filtered =
-        role === 'specialist' && staffMemberId
-          ? snapshot.bookings.filter((b) => b.staffId === staffMemberId)
-          : snapshot.bookings;
-      return filtered
-        .map((b) => hydrateBookingFromSnapshot(snapshot, b))
-        .toSorted(
-          (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
-        );
+      const result = await loadTargetedBookingsRange(filter, false);
+      return result.bookings;
+    },
+
+    async getAdminBookingsRange(
+      filter?: BookingsRangeFilter,
+    ): Promise<AdminBookingsRangeData> {
+      return loadTargetedBookingsRange(filter, true);
+    },
+
+    async getExecutiveReportData(options?: {
+      scopeStaffId?: string | null;
+    }): Promise<ExecutiveReportData> {
+      const supabase = getClient();
+      const scopeStaffId = options?.scopeStaffId?.trim() || null;
+
+      const staffQuery = scopeStaffId
+        ? supabase.from('staff_members').select('*').eq('id', scopeStaffId)
+        : supabase.from('staff_members').select('*');
+      const schedulesQuery = scopeStaffId
+        ? supabase.from('availability_schedules').select('*').eq('staff_id', scopeStaffId)
+        : supabase.from('availability_schedules').select('*');
+      const bookingsQuery = scopeStaffId
+        ? supabase.from('bookings').select('*').eq('staff_id', scopeStaffId)
+        : supabase.from('bookings').select('*');
+
+      const [
+        settingsRes,
+        servicesRes,
+        staffRes,
+        schedulesRes,
+        rulesRes,
+        bookingsRes,
+        reviewsRes,
+        paymentSplitsRes,
+        cashRes,
+        funnelEventsRes,
+      ] = await Promise.all([
+        supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('services').select('*'),
+        staffQuery,
+        schedulesQuery,
+        supabase.from('availability_rules').select('*'),
+        bookingsQuery,
+        supabase.from('booking_reviews').select('*'),
+        supabase.from('payment_splits').select('*'),
+        supabase.from('cash_register_entries').select('*'),
+        scopeStaffId
+          ? Promise.resolve({ data: [] as Tables['funnel_events']['Row'][] })
+          : supabase.from('funnel_events').select('*'),
+      ]);
+
+      const settings = settingsRes.data
+        ? mapSettingsRow(settingsRes.data)
+        : { timezone: 'America/Mexico_City', currency: 'MXN' as const };
+      const services = (servicesRes.data ?? []).map(mapServiceRow);
+      const allBookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      const bookings = scopeStaffId
+        ? allBookings.filter((b) => b.staffId === scopeStaffId)
+        : allBookings;
+      const bookingIds = new Set(bookings.map((b) => b.id));
+      const allStaff = (staffRes.data ?? []).map((row) => mapStaffRow(row, []));
+      const staff = scopeStaffId
+        ? allStaff.filter((s) => s.id === scopeStaffId)
+        : allStaff;
+      const ruleRows = rulesRes.data ?? [];
+      const allSchedules = (schedulesRes.data ?? []).map((row) =>
+        mapScheduleRow(row, ruleRows),
+      );
+      const schedules = scopeStaffId
+        ? allSchedules.filter((sc) => sc.staffId === scopeStaffId)
+        : allSchedules;
+      const allReviews = (reviewsRes.data ?? []).map(mapReviewRow);
+      const reviews = scopeStaffId
+        ? allReviews.filter(
+            (r) =>
+              r.staffId === scopeStaffId ||
+              (r.staffId === null && bookingIds.has(r.bookingId)),
+          )
+        : allReviews;
+      const allSplits = (paymentSplitsRes.data ?? []).map(mapPaymentSplitRow);
+      const paymentSplits = scopeStaffId
+        ? allSplits.filter((ps) => bookingIds.has(ps.bookingId))
+        : allSplits;
+      const allCash = (cashRes.data ?? []).map(mapCashEntryRow);
+      const cashEntries = scopeStaffId
+        ? allCash.filter(
+            (entry) =>
+              entry.staffId === scopeStaffId ||
+              (entry.bookingId !== null && bookingIds.has(entry.bookingId)),
+          )
+        : allCash;
+      const funnelEvents = scopeStaffId
+        ? []
+        : (funnelEventsRes.data ?? []).map(mapFunnelEventRow);
+
+      return {
+        settings: {
+          timezone: settings.timezone || 'America/Mexico_City',
+          currency: settings.currency,
+        },
+        bookings,
+        services,
+        staff,
+        schedules,
+        reviews,
+        paymentSplits,
+        cashEntries,
+        funnelEvents,
+      };
     },
 
     async getBookingByToken(token: string): Promise<BookingWithRelations | null> {

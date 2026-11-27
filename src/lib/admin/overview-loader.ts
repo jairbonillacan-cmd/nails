@@ -1,3 +1,4 @@
+import { ajustesHref } from '@/lib/admin-links';
 import type { AdminSession } from '@/lib/auth/admin-session';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getDateKeyInTimezone } from '@/lib/format';
@@ -204,7 +205,7 @@ export async function buildAdminOverviewPayload(
     {
       id: 'deposit-bank',
       label: 'Configura banco y CLABE para anticipo SPEI',
-      href: '/admin/marca',
+      href: ajustesHref({ tab: 'cobro', focus: 'clabe' }),
       done: Boolean(db.settings.depositClabe.trim() && db.settings.depositBankName.trim()),
     },
     {

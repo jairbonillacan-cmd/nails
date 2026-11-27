@@ -149,10 +149,13 @@ import {
 import {
   PolicyError,
   SlotConflictError,
+  type AdminBookingsRangeData,
+  type BookingsRangeFilter,
   type CleanupExpiredSlotHoldsResult,
   type ClientArcoExport,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type ExecutiveReportData,
   type GetWhatsAppThreadDetailParams,
   type InactiveClientRecord,
   type ListScheduledNotificationsParams,
@@ -463,18 +466,120 @@ export function hydrateBookingsWithRelationsFromDb(
   db: Readonly<DemoDatabase>,
   role?: AdminRole,
   staffMemberId?: string | null,
+  filter?: BookingsRangeFilter,
 ): BookingWithRelations[] {
-  const filtered =
-    role === 'specialist' && staffMemberId
-      ? db.bookings.filter((b) => b.staffId === staffMemberId)
-      : db.bookings;
+  const effectiveRole = filter?.role ?? role;
+  const effectiveStaffMemberId =
+    filter?.staffMemberId !== undefined ? filter.staffMemberId : staffMemberId;
+  if (effectiveRole === 'specialist' && !effectiveStaffMemberId) {
+    return [];
+  }
+  const effectiveStaffId =
+    effectiveRole === 'specialist'
+      ? (effectiveStaffMemberId ?? null)
+      : filter?.staffId && filter.staffId !== 'all'
+        ? filter.staffId
+        : null;
+  const tz = db.settings.timezone || 'America/Mexico_City';
+  const fromKey = filter?.from?.trim() || null;
+  const toKey = filter?.to?.trim() || null;
+
+  const filtered = db.bookings.filter((b) => {
+    if (effectiveStaffId && b.staffId !== effectiveStaffId) return false;
+    if (fromKey || toKey) {
+      const dateKey = getDateKeyInTimezone(new Date(b.startAt), tz);
+      if (fromKey && dateKey < fromKey) return false;
+      if (toKey && dateKey > toKey) return false;
+    }
+    return true;
+  });
+
   return filtered
     .map((b) => hydrateBooking(db, b))
     .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 }
 
-function getBookingsWithRelations(role?: AdminRole, staffMemberId?: string | null): BookingWithRelations[] {
-  return hydrateBookingsWithRelationsFromDb(getSnapshot(), role, staffMemberId);
+function getBookingsWithRelations(filter?: BookingsRangeFilter): BookingWithRelations[] {
+  return hydrateBookingsWithRelationsFromDb(
+    getSnapshot(),
+    filter?.role,
+    filter?.staffMemberId,
+    filter,
+  );
+}
+
+function getAdminBookingsRangeFromDemo(
+  filter?: BookingsRangeFilter,
+): AdminBookingsRangeData {
+  const db = getSnapshot();
+  const timezone = db.settings.timezone || 'America/Mexico_City';
+  if (filter?.role === 'specialist' && !filter.staffMemberId) {
+    return { bookings: [], paymentSplits: [], cashEntries: [], timezone };
+  }
+  const bookings = hydrateBookingsWithRelationsFromDb(
+    db,
+    filter?.role,
+    filter?.staffMemberId,
+    filter,
+  );
+  const bookingIds = new Set(bookings.map((b) => b.id));
+  const paymentSplits = (db.paymentSplits ?? []).filter((split) =>
+    bookingIds.has(split.bookingId),
+  );
+  const cashEntries = (db.cashEntries ?? []).filter(
+    (entry) => entry.bookingId !== null && bookingIds.has(entry.bookingId),
+  );
+  return { bookings, paymentSplits, cashEntries, timezone };
+}
+
+function getExecutiveReportDataFromDemo(options?: {
+  scopeStaffId?: string | null;
+}): ExecutiveReportData {
+  const db = getSnapshot();
+  const scopeStaffId = options?.scopeStaffId?.trim() || null;
+  const bookings = scopeStaffId
+    ? db.bookings.filter((b) => b.staffId === scopeStaffId)
+    : [...db.bookings];
+  const bookingIds = new Set(bookings.map((b) => b.id));
+  const staff = scopeStaffId
+    ? db.staff.filter((s) => s.id === scopeStaffId)
+    : [...db.staff];
+  const schedules = scopeStaffId
+    ? db.schedules.filter((sc) => sc.staffId === scopeStaffId)
+    : [...db.schedules];
+  const reviews = scopeStaffId
+    ? db.reviews.filter(
+        (r) =>
+          r.staffId === scopeStaffId ||
+          (r.staffId === null && bookingIds.has(r.bookingId)),
+      )
+    : [...db.reviews];
+  const allPaymentSplits = db.paymentSplits ?? [];
+  const paymentSplits = scopeStaffId
+    ? allPaymentSplits.filter((ps) => bookingIds.has(ps.bookingId))
+    : [...allPaymentSplits];
+  const allCashEntries = db.cashEntries ?? [];
+  const cashEntries = scopeStaffId
+    ? allCashEntries.filter(
+        (entry) =>
+          entry.staffId === scopeStaffId ||
+          (entry.bookingId !== null && bookingIds.has(entry.bookingId)),
+      )
+    : [...allCashEntries];
+  return {
+    settings: {
+      timezone: db.settings.timezone || 'America/Mexico_City',
+      currency: db.settings.currency,
+    },
+    bookings,
+    services: [...db.services],
+    staff,
+    schedules,
+    reviews,
+    paymentSplits,
+    cashEntries,
+    funnelEvents: scopeStaffId ? [] : [...(db.funnelEvents ?? [])],
+  };
 }
 
 export function getBookingByToken(token: string): BookingWithRelations | null {
@@ -7829,8 +7934,14 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
         reviewsSummary: { count: reviewsCount, average },
       };
     },
-    async getBookingsWithRelations(role, staffMemberId) {
-      return getBookingsWithRelations(role, staffMemberId);
+    async getBookingsWithRelations(filter) {
+      return getBookingsWithRelations(filter);
+    },
+    async getAdminBookingsRange(filter) {
+      return getAdminBookingsRangeFromDemo(filter);
+    },
+    async getExecutiveReportData(options) {
+      return getExecutiveReportDataFromDemo(options);
     },
     async getBookingByToken(token) {
       return getBookingByToken(token);

@@ -57,10 +57,13 @@ function buildMockSupabase(options: {
   serviceCategoriesRows?: Array<Database['public']['Tables']['service_categories']['Row']>;
   serviceOverrides?: Partial<Database['public']['Tables']['services']['Row']>;
   extraServicesRows?: Array<Database['public']['Tables']['services']['Row']>;
+  extraStaffRows?: Array<Database['public']['Tables']['staff_members']['Row']>;
   clientOverrides?: Partial<Database['public']['Tables']['clients']['Row']>;
   extraClientsRows?: Array<Database['public']['Tables']['clients']['Row']>;
   rulesRows?: Array<Database['public']['Tables']['availability_rules']['Row']>;
   bookingsRows?: Array<Database['public']['Tables']['bookings']['Row']>;
+  reviewsRows?: Array<Database['public']['Tables']['booking_reviews']['Row']>;
+  funnelEventsRows?: Array<Database['public']['Tables']['funnel_events']['Row']>;
   outboxRows?: Array<Database['public']['Tables']['outbox_events']['Row']>;
   paymentSplitsRows?: Array<Database['public']['Tables']['payment_splits']['Row']>;
   recurringBlocksRows?: Array<Database['public']['Tables']['recurring_blocks']['Row']>;
@@ -84,6 +87,8 @@ function buildMockSupabase(options: {
   const requests: RecordedRequest[] = [];
   const serviceCategoriesRows = [...(options.serviceCategoriesRows ?? [])];
   const bookingsRows = options.bookingsRows ?? [];
+  const reviewsRows = options.reviewsRows ?? [];
+  const funnelEventsRows = options.funnelEventsRows ?? [];
   const outboxRows = options.outboxRows ?? [];
   const extraServicesRows = options.extraServicesRows ?? [];
   const paymentSplitsRows = options.paymentSplitsRows ?? [];
@@ -380,7 +385,10 @@ function buildMockSupabase(options: {
       return jsonResponse(wantsSingleObject ? serviceRow : allServicesRows);
     }
     if (table === 'staff_members') {
-      return jsonResponse(wantsSingleObject ? staffRow : [staffRow]);
+      const allStaff = [staffRow, ...(options.extraStaffRows ?? [])];
+      const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+      const filtered = idFilter ? allStaff.filter((s) => s.id === idFilter) : allStaff;
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'staff_services') {
       return jsonResponse(
@@ -491,6 +499,11 @@ function buildMockSupabase(options: {
       let filtered = [...allClientsRows];
       if (eqId) filtered = filtered.filter((c) => c.id === eqId);
       if (neqId) filtered = filtered.filter((c) => c.id !== neqId);
+      const idInParam = idParams.find((v) => v.startsWith('in.(') && v.endsWith(')'));
+      if (idInParam) {
+        const allowedIds = new Set(idInParam.slice(4, -1).split(','));
+        filtered = filtered.filter((c) => allowedIds.has(c.id));
+      }
       if (phoneInParam?.startsWith('in.(') && phoneInParam.endsWith(')')) {
         const allowed = new Set(
           phoneInParam
@@ -538,10 +551,22 @@ function buildMockSupabase(options: {
         return jsonResponse(null);
       }
       const clientIdFilter = url.searchParams.get('client_id')?.replace(/^eq\./, '');
-      const filtered = clientIdFilter
-        ? bookingsRows.filter((b) => b.client_id === clientIdFilter)
-        : bookingsRows;
+      const staffIdFilter = url.searchParams.get('staff_id')?.replace(/^eq\./, '');
+      const startFilters = url.searchParams.getAll('start_at');
+      const gteStart = startFilters.find((v) => v.startsWith('gte.'))?.slice(4);
+      const lteStart = startFilters.find((v) => v.startsWith('lte.'))?.slice(4);
+      let filtered = [...bookingsRows];
+      if (clientIdFilter) filtered = filtered.filter((b) => b.client_id === clientIdFilter);
+      if (staffIdFilter) filtered = filtered.filter((b) => b.staff_id === staffIdFilter);
+      if (gteStart) filtered = filtered.filter((b) => b.start_at >= gteStart);
+      if (lteStart) filtered = filtered.filter((b) => b.start_at <= lteStart);
       return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
+    if (table === 'booking_reviews') {
+      return jsonResponse(wantsSingleObject ? reviewsRows[0] ?? null : reviewsRows);
+    }
+    if (table === 'funnel_events') {
+      return jsonResponse(funnelEventsRows);
     }
     if (table === 'payment_splits') {
       if (method === 'POST' && Array.isArray(rawBody)) {
@@ -557,6 +582,11 @@ function buildMockSupabase(options: {
           ...(item as Record<string, unknown>),
         }));
         return jsonResponse(created, 201);
+      }
+      const bookingInFilter = url.searchParams.get('booking_id');
+      if (bookingInFilter?.startsWith('in.(') && bookingInFilter.endsWith(')')) {
+        const ids = new Set(bookingInFilter.slice(4, -1).split(','));
+        return jsonResponse(paymentSplitsRows.filter((s) => ids.has(s.booking_id)));
       }
       return jsonResponse(paymentSplitsRows);
     }
@@ -669,9 +699,13 @@ function buildMockSupabase(options: {
         cashEntriesRows.push(...remaining);
         return jsonResponse([]);
       }
-      const filtered = idFilter
+      let filtered = idFilter
         ? cashEntriesRows.filter((e) => e.id === idFilter)
-        : cashEntriesRows;
+        : [...cashEntriesRows];
+      if (bookingNullFilter?.startsWith('in.(') && bookingNullFilter.endsWith(')')) {
+        const ids = new Set(bookingNullFilter.slice(4, -1).split(','));
+        filtered = filtered.filter((e) => e.booking_id !== null && ids.has(e.booking_id));
+      }
       return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'coupon_redemptions') {
@@ -3114,5 +3148,302 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
         (r) => r.method === 'POST' && r.path === '/rest/v1/cash_register_entries',
       ),
     ).toBe(false);
+  });
+
+  it('Phase 5: getExecutiveReportData uses <= 10 Supabase requests (<= 9 for specialist), skips snapshot-only tables, and enforces specialist scope', async () => {
+    const otherStaffId = '11111111-1111-4111-8111-111111111122';
+    const otherBookingId = '44444444-4444-4444-8444-444444444455';
+    const ownBooking: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-REP01',
+      manage_token: 'tok-rep-1',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: '2026-12-02T16:00:00.000Z',
+      end_at: '2026-12-02T17:00:00.000Z',
+      occupied_start_at: '2026-12-02T16:00:00.000Z',
+      occupied_end_at: '2026-12-02T17:15:00.000Z',
+      occupied_range: '[2026-12-02T16:00:00.000Z,2026-12-02T17:15:00.000Z)',
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 0,
+      coupon_code: null,
+      status: 'completed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-02T17:00:00.000Z',
+    };
+    const otherBooking: Database['public']['Tables']['bookings']['Row'] = {
+      ...ownBooking,
+      id: otherBookingId,
+      booking_code: 'NL-REP02',
+      manage_token: 'tok-rep-2',
+      staff_id: otherStaffId,
+    };
+
+    const mock = buildMockSupabase({
+      extraStaffRows: [
+        {
+          id: otherStaffId,
+          name: 'Otra Especialista',
+          role_title: 'Nail Artist',
+          bio: '',
+          avatar_url: null,
+          booking_slug: 'otra',
+          commission_percent: 35,
+          is_active: true,
+          display_order: 1,
+          created_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      bookingsRows: [ownBooking, otherBooking],
+      paymentSplitsRows: [
+        {
+          id: SPLIT_ID,
+          booking_id: BOOKING_ID,
+          method: 'card',
+          amount_cents: 38000,
+          tip_cents: 4000,
+          tip_staff_id: STAFF_ID,
+          reference: null,
+          created_at: '2026-12-02T17:00:00.000Z',
+        },
+        {
+          id: '99999999-9999-4999-8999-999999999911',
+          booking_id: otherBookingId,
+          method: 'cash',
+          amount_cents: 38000,
+          tip_cents: 0,
+          tip_staff_id: otherStaffId,
+          reference: null,
+          created_at: '2026-12-02T17:00:00.000Z',
+        },
+      ],
+      cashEntriesRows: [
+        {
+          id: '10000000-0000-4000-8000-000000000911',
+          booking_id: BOOKING_ID,
+          staff_id: STAFF_ID,
+          entry_type: 'service_income',
+          description: 'Cobro Valeria',
+          amount_cents: 38000,
+          tip_cents: 4000,
+          commission_cents: 15200,
+          payment_method: 'card',
+          occurred_at: '2026-12-02T17:00:00.000Z',
+          recorded_by: 'Dueña',
+          created_at: '2026-12-02T17:00:00.000Z',
+        },
+        {
+          id: '10000000-0000-4000-8000-000000000912',
+          booking_id: otherBookingId,
+          staff_id: otherStaffId,
+          entry_type: 'service_income',
+          description: 'Cobro Otra',
+          amount_cents: 38000,
+          tip_cents: 0,
+          commission_cents: 13300,
+          payment_method: 'cash',
+          occurred_at: '2026-12-02T17:00:00.000Z',
+          recorded_by: 'Dueña',
+          created_at: '2026-12-02T17:00:00.000Z',
+        },
+      ],
+      funnelEventsRows: [
+        {
+          id: 'fe-1',
+          session_id: 'sess-1',
+          event_type: 'page_view',
+          service_slug: null,
+          staff_slug: null,
+          created_at: '2026-12-02T15:00:00.000Z',
+        },
+      ],
+    });
+    const repo = createSupabaseRepository(
+      createFixedClock('2026-12-02T18:00:00.000Z', 'phase5-report'),
+      mock.client,
+    );
+
+    const studioData = await repo.getExecutiveReportData({ scopeStaffId: null });
+    expect(mock.requests.length).toBeLessThanOrEqual(10);
+    expect(studioData.bookings).toHaveLength(2);
+    expect(studioData.funnelEvents).toHaveLength(1);
+    for (const forbiddenTable of [
+      '/rest/v1/audit_logs',
+      '/rest/v1/whatsapp_messages',
+      '/rest/v1/whatsapp_threads',
+      '/rest/v1/inventory_items',
+      '/rest/v1/waitlist_entries',
+      '/rest/v1/gallery_items',
+      '/rest/v1/clients',
+    ]) {
+      expect(mock.requests.some((r) => r.path === forbiddenTable)).toBe(false);
+    }
+
+    const beforeSpec = mock.requests.length;
+    const specData = await repo.getExecutiveReportData({ scopeStaffId: STAFF_ID });
+    const specRequests = mock.requests.slice(beforeSpec);
+    expect(specRequests.length).toBeLessThanOrEqual(9);
+    expect(specRequests.some((r) => r.path === '/rest/v1/funnel_events')).toBe(false);
+    expect(specData.bookings.map((b) => b.id)).toEqual([BOOKING_ID]);
+    expect(specData.staff.map((s) => s.id)).toEqual([STAFF_ID]);
+    expect(specData.paymentSplits.map((s) => s.bookingId)).toEqual([BOOKING_ID]);
+    expect(specData.cashEntries.map((c) => c.bookingId)).toEqual([BOOKING_ID]);
+    expect(specData.funnelEvents).toEqual([]);
+  });
+
+  it('Phase 5: getBookingsWithRelations & getAdminBookingsRange avoid getSnapshot(), stay <= 7 requests, honor timezone midnight boundaries, and enforce specialist lock', async () => {
+    const otherStaffId = '11111111-1111-4111-8111-111111111133';
+    const lateLocalBookingId = '44444444-4444-4444-8444-444444444466';
+    const outsideBookingId = '44444444-4444-4444-8444-444444444477';
+    const otherStaffBookingId = '44444444-4444-4444-8444-444444444488';
+
+    const lateLocalBooking: Database['public']['Tables']['bookings']['Row'] = {
+      id: lateLocalBookingId,
+      booking_code: 'NL-MID01',
+      manage_token: 'tok-mid-1',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: '2026-12-03T01:30:00.000Z',
+      end_at: '2026-12-03T02:30:00.000Z',
+      occupied_start_at: '2026-12-03T01:30:00.000Z',
+      occupied_end_at: '2026-12-03T02:45:00.000Z',
+      occupied_range: '[2026-12-03T01:30:00.000Z,2026-12-03T02:45:00.000Z)',
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 0,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+    const outsideBooking: Database['public']['Tables']['bookings']['Row'] = {
+      ...lateLocalBooking,
+      id: outsideBookingId,
+      booking_code: 'NL-OUT01',
+      manage_token: 'tok-out-1',
+      start_at: '2026-12-10T16:00:00.000Z',
+      end_at: '2026-12-10T17:00:00.000Z',
+    };
+    const otherStaffBooking: Database['public']['Tables']['bookings']['Row'] = {
+      ...lateLocalBooking,
+      id: otherStaffBookingId,
+      booking_code: 'NL-OTH01',
+      manage_token: 'tok-oth-1',
+      staff_id: otherStaffId,
+      start_at: '2026-12-02T17:00:00.000Z',
+      end_at: '2026-12-02T18:00:00.000Z',
+    };
+
+    const mock = buildMockSupabase({
+      extraStaffRows: [
+        {
+          id: otherStaffId,
+          name: 'Tere',
+          role_title: 'Nail Artist',
+          bio: '',
+          avatar_url: null,
+          booking_slug: 'tere',
+          commission_percent: 35,
+          is_active: true,
+          display_order: 1,
+          created_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      bookingsRows: [lateLocalBooking, outsideBooking, otherStaffBooking],
+      paymentSplitsRows: [
+        {
+          id: SPLIT_ID,
+          booking_id: lateLocalBookingId,
+          method: 'transfer',
+          amount_cents: 20000,
+          tip_cents: 0,
+          tip_staff_id: null,
+          reference: 'Anticipo SPEI',
+          created_at: '2026-12-01T11:00:00.000Z',
+        },
+      ],
+      cashEntriesRows: [
+        {
+          id: '10000000-0000-4000-8000-000000000921',
+          booking_id: lateLocalBookingId,
+          staff_id: STAFF_ID,
+          entry_type: 'deposit',
+          description: 'Anticipo SPEI',
+          amount_cents: 20000,
+          tip_cents: 0,
+          commission_cents: 0,
+          payment_method: 'transfer',
+          occurred_at: '2026-12-01T11:00:00.000Z',
+          recorded_by: 'Dueña',
+          created_at: '2026-12-01T11:00:00.000Z',
+        },
+      ],
+    });
+    const repo = createSupabaseRepository(
+      createFixedClock('2026-12-02T12:00:00.000Z', 'phase5-range'),
+      mock.client,
+    );
+
+    const rangeRes = await repo.getAdminBookingsRange({
+      from: '2026-12-02',
+      to: '2026-12-02',
+      role: 'owner',
+    });
+    expect(mock.requests.length).toBeLessThanOrEqual(7);
+    expect(rangeRes.timezone).toBe(TZ);
+    expect(rangeRes.bookings.map((b) => b.id)).toEqual([
+      otherStaffBookingId,
+      lateLocalBookingId,
+    ]);
+    expect(rangeRes.paymentSplits).toHaveLength(1);
+    expect(rangeRes.cashEntries).toHaveLength(1);
+    for (const forbiddenTable of [
+      '/rest/v1/audit_logs',
+      '/rest/v1/whatsapp_messages',
+      '/rest/v1/inventory_items',
+      '/rest/v1/waitlist_entries',
+      '/rest/v1/gallery_items',
+      '/rest/v1/funnel_events',
+    ]) {
+      expect(mock.requests.some((r) => r.path === forbiddenTable)).toBe(false);
+    }
+
+    const beforeSpec = mock.requests.length;
+    const specBookings = await repo.getBookingsWithRelations({
+      from: '2026-12-02',
+      to: '2026-12-02',
+      staffId: otherStaffId,
+      role: 'specialist',
+      staffMemberId: STAFF_ID,
+    });
+    expect(mock.requests.slice(beforeSpec).length).toBeLessThanOrEqual(6);
+    expect(specBookings.map((b) => b.id)).toEqual([lateLocalBookingId]);
   });
 });

@@ -11,6 +11,8 @@ import {
   RequestRescheduleSchema,
   SendReminderSchema,
 } from '@/lib/contracts';
+import { diffMetricCalendarDaysInclusive } from '@/lib/metrics';
+import { roleCanAccess } from '@/lib/rbac';
 import {
   checkInBookingAdmin,
   createBookingAtomic,
@@ -31,17 +33,123 @@ import {
 } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
+const MAX_BOOKINGS_RANGE_DAYS = 366;
+
+function isValidCalendarDateKey(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+const BookingsRangeQuerySchema = z.object({
+  from: z
+    .string()
+    .trim()
+    .refine(isValidCalendarDateKey, 'Parámetro "from" inválido. Usa formato YYYY-MM-DD.')
+    .optional(),
+  to: z
+    .string()
+    .trim()
+    .refine(isValidCalendarDateKey, 'Parámetro "to" inválido. Usa formato YYYY-MM-DD.')
+    .optional(),
+  staff: z.string().trim().max(120).optional(),
+});
+
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  if (session.user.role === 'specialist' && !session.user.staffMemberId) {
-    return NextResponse.json({ bookings: [] });
+  if (!roleCanAccess(session.user.role, 'bookings')) {
+    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
   }
-  const bookings = await getRepository().getBookingsWithRelations(
-    session.user.role,
-    session.user.staffMemberId,
+
+  const { searchParams } = new URL(request.url);
+  const rawFrom = searchParams.get('from')?.trim();
+  const rawTo = searchParams.get('to')?.trim();
+  const rawStaff = searchParams.get('staff')?.trim();
+
+  const parsedQuery = BookingsRangeQuerySchema.safeParse({
+    ...(rawFrom ? { from: rawFrom } : {}),
+    ...(rawTo ? { to: rawTo } : {}),
+    ...(rawStaff ? { staff: rawStaff } : {}),
+  });
+  if (!parsedQuery.success) {
+    return NextResponse.json(
+      { error: parsedQuery.error.issues[0]?.message || 'Parámetros de rango inválidos.' },
+      { status: 400 },
+    );
+  }
+
+  const from = parsedQuery.data.from;
+  const to = parsedQuery.data.to;
+  if (from && to) {
+    if (from > to) {
+      return NextResponse.json(
+        { error: 'La fecha inicial no puede ser posterior a la fecha final.' },
+        { status: 400 },
+      );
+    }
+    if (diffMetricCalendarDaysInclusive(from, to) > MAX_BOOKINGS_RANGE_DAYS) {
+      return NextResponse.json(
+        { error: `El rango máximo permitido es de ${MAX_BOOKINGS_RANGE_DAYS} días.` },
+        { status: 400 },
+      );
+    }
+  }
+
+  const isSpecialist = session.user.role === 'specialist';
+  const requestedStaffId =
+    parsedQuery.data.staff && parsedQuery.data.staff !== 'all'
+      ? parsedQuery.data.staff
+      : null;
+
+  if (isSpecialist && !session.user.staffMemberId) {
+    const settings = await getRepository().getSalonSettings();
+    return NextResponse.json(
+      {
+        bookings: [],
+        paymentSplits: [],
+        cashEntries: [],
+        range: { from: from ?? null, to: to ?? null, staffId: null },
+        timezone: settings.timezone || 'America/Mexico_City',
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+
+  const effectiveStaffId = isSpecialist
+    ? session.user.staffMemberId
+    : requestedStaffId;
+
+  const result = await getRepository().getAdminBookingsRange({
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    staffId: effectiveStaffId,
+    role: session.user.role,
+    staffMemberId: session.user.staffMemberId,
+  });
+
+  return NextResponse.json(
+    {
+      bookings: result.bookings,
+      paymentSplits: result.paymentSplits,
+      cashEntries: result.cashEntries,
+      range: {
+        from: from ?? null,
+        to: to ?? null,
+        staffId: effectiveStaffId,
+      },
+      timezone: result.timezone,
+    },
+    { headers: { 'Cache-Control': 'no-store' } },
   );
-  return NextResponse.json({ bookings });
 }
 
 async function checkOwnerPinGate(

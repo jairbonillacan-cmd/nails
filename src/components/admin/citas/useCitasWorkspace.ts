@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   useAdminData,
   type AdminOverviewPayload,
@@ -14,10 +14,18 @@ import {
   fetchAdminJson,
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
+import {
+  invalidateAgendaRangeCache,
+  useAgendaRangeBookings,
+} from '@/lib/hooks/useAgendaRangeBookings';
 import { useAgendaUrlState } from '@/lib/hooks/useAgendaUrlState';
 import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import type { BookingWithRelations } from '@/lib/types';
+import type {
+  BookingWithRelations,
+  CashRegisterEntry,
+  PaymentSplit,
+} from '@/lib/types';
 import { phonesMatchE164 } from '@/lib/format';
 import {
   filterBookingsForAgendaStatus,
@@ -25,6 +33,10 @@ import {
 } from './BookingsListView';
 import type { NewBookingPrefill } from './NewBookingDialog';
 import { shiftDateKey } from './scheduleGridGeometry';
+
+const EMPTY_BOOKINGS: readonly BookingWithRelations[] = [];
+const EMPTY_PAYMENT_SPLITS: readonly PaymentSplit[] = [];
+const EMPTY_CASH_ENTRIES: readonly CashRegisterEntry[] = [];
 
 export function useCitasWorkspace() {
   const { data: providerData, refresh } = useAdminData();
@@ -71,6 +83,27 @@ export function useCitasWorkspace() {
     validStaffIds,
   });
 
+  const {
+    bookings: rangeBookings,
+    paymentSplits: rangePaymentSplits,
+    cashEntries: rangeCashEntries,
+    isValidating: isValidatingRange,
+    revalidate: revalidateRange,
+  } = useAgendaRangeBookings({
+    enabled: Boolean(data),
+    view: urlState.resolvedView,
+    dateKey: urlState.dateKey,
+    staffFilter: urlState.staffFilter,
+    overviewBookings: data?.bookings ?? EMPTY_BOOKINGS,
+    overviewSplits: data?.paymentSplits ?? EMPTY_PAYMENT_SPLITS,
+    overviewCashEntries: data?.cashEntries ?? EMPTY_CASH_ENTRIES,
+  });
+
+  const refreshAgenda = useCallback(async () => {
+    invalidateAgendaRangeCache();
+    await Promise.all([refresh(), revalidateRange()]);
+  }, [refresh, revalidateRange]);
+
   const [searchDraft, setSearchDraft] = useState<{ baseQ: string; value: string } | null>(null);
   const search =
     searchDraft && searchDraft.baseQ === urlState.q ? searchDraft.value : urlState.q;
@@ -104,7 +137,7 @@ export function useCitasWorkspace() {
     lastHandledOneShotKeyRef.current = key;
 
     if (oneShot.collectId) {
-      const target = data.bookings.find((b) => b.id === oneShot.collectId);
+      const target = rangeBookings.find((b) => b.id === oneShot.collectId);
       if (target) {
         setPopoverBookingId(null);
         setCheckoutBookingId(target.id);
@@ -164,9 +197,9 @@ export function useCitasWorkspace() {
   const statusFilteredBookings = useMemo(() => {
     if (!data) return [];
     const filtered = filterBookingsForAgendaStatus({
-      bookings: data.bookings,
-      paymentSplits: data.paymentSplits,
-      cashEntries: data.cashEntries,
+      bookings: rangeBookings,
+      paymentSplits: rangePaymentSplits,
+      cashEntries: rangeCashEntries,
       serverNowIso: data.serverNowIso,
       status: urlState.status,
       search,
@@ -176,15 +209,23 @@ export function useCitasWorkspace() {
       return filtered;
     }
     return filterBookingsForAgendaStatus({
-      bookings: data.bookings,
-      paymentSplits: data.paymentSplits,
-      cashEntries: data.cashEntries,
+      bookings: rangeBookings,
+      paymentSplits: rangePaymentSplits,
+      cashEntries: rangeCashEntries,
       serverNowIso: data.serverNowIso,
       status: 'all',
       search,
       selectedStaffFilter: urlState.staffFilter,
     });
-  }, [data, urlState.status, search, urlState.staffFilter]);
+  }, [
+    data,
+    rangeBookings,
+    rangePaymentSplits,
+    rangeCashEntries,
+    urlState.status,
+    search,
+    urlState.staffFilter,
+  ]);
 
   const listBookings = useMemo(
     () =>
@@ -214,8 +255,8 @@ export function useCitasWorkspace() {
     }
     const scopedBookings =
       urlState.staffFilter === 'all'
-        ? data.bookings
-        : data.bookings.filter((b) => b.staffId === urlState.staffFilter);
+        ? rangeBookings
+        : rangeBookings.filter((b) => b.staffId === urlState.staffFilter);
 
     let pendingCount = 0;
     let uncollectedCount = 0;
@@ -226,8 +267,8 @@ export function useCitasWorkspace() {
       }
       const balance = computeBookingBalance(
         booking,
-        data.paymentSplits,
-        data.cashEntries,
+        rangePaymentSplits,
+        rangeCashEntries,
         nowMs,
       );
       if (balance.isUncollected) {
@@ -248,7 +289,16 @@ export function useCitasWorkspace() {
       todayWaitingCount,
       totalWaitingCount: activeWaiting.length,
     };
-  }, [data, urlState.staffFilter, urlState.dateKey, todayKey, nowMs]);
+  }, [
+    data,
+    rangeBookings,
+    rangePaymentSplits,
+    rangeCashEntries,
+    urlState.staffFilter,
+    urlState.dateKey,
+    todayKey,
+    nowMs,
+  ]);
 
   const openManualModal = (preferredStaffId = 'any', prefill: NewBookingPrefill | null = null) => {
     const resolvedStaff =
@@ -272,6 +322,10 @@ export function useCitasWorkspace() {
 
   return {
     data,
+    bookings: rangeBookings,
+    paymentSplits: rangePaymentSplits,
+    cashEntries: rangeCashEntries,
+    isValidatingRange,
     tz,
     todayKey,
     tomorrowKey,
@@ -282,7 +336,7 @@ export function useCitasWorkspace() {
     statusFilteredBookings,
     listBookings,
     chipCounts,
-    refresh,
+    refresh: refreshAgenda,
     explicitView: urlState.explicitView,
     resolvedView: urlState.resolvedView,
     isNarrow: urlState.isNarrow,
