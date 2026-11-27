@@ -33,7 +33,21 @@ function cloneLandingContent(content: LandingContent): LandingContent {
       ? { customFaqs: content.customFaqs.map((faq) => ({ ...faq })) }
       : {}),
     ...(content.sections ? { sections: { ...content.sections } } : {}),
+    ...(content.cajaConfig
+      ? {
+          cajaConfig: {
+            ...content.cajaConfig,
+            expenseCategories: [...content.cajaConfig.expenseCategories],
+            closeSummary: { ...content.cajaConfig.closeSummary },
+          },
+        }
+      : {}),
   };
+}
+
+function toPublicLandingContent(content: LandingContent): LandingContent {
+  const { cajaConfig: _cajaConfig, ...publicContent } = cloneLandingContent(content);
+  return publicContent;
 }
 
 const PublicGalleryItemDTOSchema = z.object({
@@ -398,7 +412,7 @@ export function toPublicSettingsDTO(settings: SalonSettings): PublicSettingsDTO 
     serviceMode: settings.serviceMode,
     privacyPolicyVersion: settings.privacyPolicyVersion,
     optimizeContinuousSlots: settings.optimizeContinuousSlots,
-    landingContent: cloneLandingContent(settings.landingContent),
+    landingContent: toPublicLandingContent(settings.landingContent),
     whatsappBookingEnabled: settings.whatsappBookingEnabled,
     metaPixelId: settings.metaPixelId,
     ga4MeasurementId: settings.ga4MeasurementId,

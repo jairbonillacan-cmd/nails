@@ -110,7 +110,7 @@ export function ClientLoyaltyTab({
   const effectiveAssignPackageId = assignPackageId || activeCatalogPackages[0]?.id || '';
 
   return (
-    <VStack gap={5} className="fx-step-in">
+    <VStack gap={5}>
       <SurfaceCard
         title="Cerca de su premio"
         subtitle={
@@ -140,7 +140,7 @@ export function ClientLoyaltyTab({
             />
           </VStack>
         ) : (
-          <VStack className="ad-row-list fx-stagger" gap={0}>
+          <VStack className="ad-row-list" gap={0}>
             {nearRewardClients.map((entry) => {
               const required = Math.max(1, entry.summary.stampsRequired);
               const totalSlots = Math.min(12, required);

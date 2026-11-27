@@ -92,7 +92,6 @@ export function WaitlistPanel({
     <SurfaceCard
       title="Lista de espera"
       headingLevel={2}
-      className="fx-step-in"
       actions={
         <StatusTag
           label={`${waitlist.length} ${waitlist.length === 1 ? 'clienta' : 'clientas'}`}
@@ -130,7 +129,7 @@ export function WaitlistPanel({
           }
         />
       ) : (
-        <VStack className="ad-row-list fx-stagger" gap={0}>
+        <VStack className="ad-row-list" gap={0}>
           {waitlist.map((w) => {
             const srv = services.find((s) => s.id === w.serviceId);
             const isBusy = busyEntry?.id === w.id;

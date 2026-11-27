@@ -133,7 +133,7 @@ export function AddonsManagerSection({
   };
 
   return (
-    <VStack key="tab-addons" className="ad-split fx-step-in" gap={5}>
+    <VStack key="tab-addons" className="ad-split" gap={5}>
       <SurfaceCard
         id="addons-catalog-heading"
         title="Extras y diseños"

@@ -138,7 +138,7 @@ export function WhatsAppRemindersTab({
   };
 
   return (
-    <VStack gap={4} className="fx-step-in" style={{ minWidth: 0 }}>
+    <VStack gap={4} style={{ minWidth: 0 }}>
       <MetricGrid ariaLabel="Métricas de recordatorios" cols={4} items={kpiItems} />
 
       {metrics.bookingsWithoutRemindersCount > 0 ? (

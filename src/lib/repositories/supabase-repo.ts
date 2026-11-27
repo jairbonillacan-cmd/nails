@@ -3766,6 +3766,15 @@ export function createSupabaseRepository(
         if (mergedContent.touchUpDays !== undefined) {
           serializedLanding.touchUpDays = mergedContent.touchUpDays;
         }
+        if (mergedContent.cajaConfig !== undefined) {
+          serializedLanding.cajaConfig = {
+            openingFloatCents: mergedContent.cajaConfig.openingFloatCents,
+            expenseCategories: [...mergedContent.cajaConfig.expenseCategories],
+            retailCommissionPercent: mergedContent.cajaConfig.retailCommissionPercent,
+            defaultPeriod: mergedContent.cajaConfig.defaultPeriod,
+            closeSummary: { ...mergedContent.cajaConfig.closeSummary },
+          };
+        }
         if (mergedContent.sections !== undefined) {
           serializedLanding.sections = { ...mergedContent.sections };
         }

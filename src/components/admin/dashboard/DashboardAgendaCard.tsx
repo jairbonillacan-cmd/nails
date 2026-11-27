@@ -200,7 +200,7 @@ export function DashboardAgendaCard({
 
       <VStack
         key={`${day}-${effectiveStaffId}`}
-        className={filteredBookings.length === 0 ? 'fx-step-in ad-card-empty-center' : 'fx-step-in ad-agenda-list'}
+        className={filteredBookings.length === 0 ? 'ad-card-empty-center' : 'ad-agenda-list'}
         gap={0}
       >
         {filteredBookings.length === 0 ? (

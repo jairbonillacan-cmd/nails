@@ -22,7 +22,7 @@ export default function AdminError({
 
   return (
     <VStack as="main" className="ad-login-wrap" gap={0}>
-      <VStack className="ad-boundary-card fx-fade-up" gap={0}>
+      <VStack className="ad-boundary-card" gap={0}>
         <VStack className="ad-boundary-hero" gap={3} align="center">
           <img
             src={LANDING_ASSETS.logoWhite}

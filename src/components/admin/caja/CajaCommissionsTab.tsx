@@ -27,6 +27,7 @@ interface CajaCommissionsTabProps {
   splitSummaryByMethod: readonly MethodSummaryRow[];
   currency: 'MXN' | 'USD';
   commissionPeriod: CajaPeriod;
+  periodLabel: string;
   canManageCommissions: boolean;
   isSpecialistView?: boolean;
   onChangeCommissionPeriod: (period: CajaPeriod) => void;
@@ -39,6 +40,7 @@ export function CajaCommissionsTab({
   splitSummaryByMethod,
   currency,
   commissionPeriod,
+  periodLabel,
   canManageCommissions,
   isSpecialistView = false,
   onChangeCommissionPeriod,
@@ -50,11 +52,18 @@ export function CajaCommissionsTab({
     0,
   );
   const showAdminActions = canManageCommissions && !isSpecialistView;
+  const periodOptions = CAJA_PERIOD_OPTIONS.filter(
+    (option) => option.value !== 'custom' || commissionPeriod === 'custom',
+  );
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={4}>
       <SurfaceCard
-        title={isSpecialistView ? 'Tus comisiones y propinas' : 'Comisiones y propinas'}
+        title={
+          isSpecialistView
+            ? `Tus comisiones y propinas · ${periodLabel}`
+            : `Comisiones y propinas · ${periodLabel}`
+        }
         subtitle={
           isSpecialistView
             ? 'Desglose de tus servicios cobrados, comisión estimada y propinas del periodo.'
@@ -76,7 +85,7 @@ export function CajaCommissionsTab({
             mode="segmented"
             size="sm"
             value={commissionPeriod}
-            options={CAJA_PERIOD_OPTIONS}
+            options={periodOptions}
             onChange={onChangeCommissionPeriod}
           />
         }

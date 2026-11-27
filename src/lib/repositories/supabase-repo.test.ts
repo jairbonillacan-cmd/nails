@@ -2616,6 +2616,51 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     });
   });
 
+  it('updateSalonSettings serializes cajaConfig inside landing_content and keeps it on later landing patches', async () => {
+    const { client, requests } = buildMockSupabase({});
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'caja-config-supabase');
+    const repo = createSupabaseRepository(clock, client);
+    const cajaConfig = {
+      openingFloatCents: 50_000,
+      expenseCategories: ['Acetona', 'Algodón'],
+      retailCommissionPercent: 12,
+      defaultPeriod: 'today' as const,
+      closeSummary: { includeStaffBreakdown: true, includeTips: false, includePending: true },
+    };
+
+    const saved = await repo.updateSalonSettings({ landingContent: { cajaConfig } });
+    expect(saved.landingContent.cajaConfig).toEqual(cajaConfig);
+    const firstPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/salon_settings',
+    );
+    expect(firstPatch?.body).toMatchObject({
+      landing_content: expect.objectContaining({ cajaConfig }),
+    });
+
+    const stored = buildMockSupabase({
+      settingsOverrides: {
+        landing_content: {
+          heroEyebrow: '',
+          heroTitle: 'Title',
+          heroSubtitle: '',
+          aboutTitle: '',
+          aboutBody: '',
+          cajaConfig,
+        },
+      },
+    });
+    const storedRepo = createSupabaseRepository(clock, stored.client);
+    const next = await storedRepo.updateSalonSettings({ landingContent: { touchUpDays: 30 } });
+    expect(next.landingContent.touchUpDays).toBe(30);
+    expect(next.landingContent.cajaConfig).toEqual(cajaConfig);
+    const secondPatch = stored.requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/salon_settings',
+    );
+    expect(secondPatch?.body).toMatchObject({
+      landing_content: expect.objectContaining({ cajaConfig, touchUpDays: 30 }),
+    });
+  });
+
   it('Wave 4 Supabase: edits coupons with duplicate-code guard, edits/deletes manual cash entries in <=2 queries, and blocks booking-linked cash mutations', async () => {
     const secondCouponId = '99999999-9999-4999-8999-999999999990';
     const manualCashId = '88888888-8888-4888-8888-888888888881';

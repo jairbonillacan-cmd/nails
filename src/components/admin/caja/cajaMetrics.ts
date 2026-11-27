@@ -1,3 +1,5 @@
+import type { ISODateString } from '@astryxdesign/core/Calendar';
+import { DEFAULT_RETAIL_COMMISSION_PERCENT } from '@/lib/caja/caja-config';
 import { shiftDateKey } from '@/components/admin/citas/scheduleGridGeometry';
 import type { FilterPillOption } from '@/components/ui/FilterPillBar';
 import type { StatusTagTone } from '@/components/ui/StatusTag';
@@ -8,6 +10,7 @@ import {
 } from '@/lib/format';
 import type {
   AdminRole,
+  CajaCloseSummaryPrefs,
   CashRegisterEntry,
   Coupon,
   PaymentMethod,
@@ -20,51 +23,112 @@ import {
   type SplitDetailRow,
 } from './cajaTypes';
 
-export type CajaPeriod = 'today' | '7d' | 'month' | 'all';
+export type CajaPeriod = 'today' | '7d' | 'month' | 'last_month' | 'custom' | 'all';
 export type CajaMethodFilter = 'all' | 'cash' | 'card' | 'transfer';
 export type MovementTypeFilter = 'all' | 'income' | 'deposits' | 'expenses';
+
+export interface CajaCustomRange {
+  fromKey: string;
+  toKey: string;
+}
+
+export interface CajaDateRange {
+  startKey: string | null;
+  endKey: string | null;
+}
 
 export const CAJA_PERIOD_OPTIONS: readonly FilterPillOption<CajaPeriod>[] = [
   { value: 'today', label: 'Hoy' },
   { value: '7d', label: '7 días' },
   { value: 'month', label: 'Este mes' },
+  { value: 'last_month', label: 'Mes pasado' },
+  { value: 'custom', label: 'Fechas' },
   { value: 'all', label: 'Todo' },
 ];
 
-export const CAJA_METHOD_FILTER_OPTIONS: readonly FilterPillOption<CajaMethodFilter>[] = [
-  { value: 'all', label: 'Todos' },
-  { value: 'cash', label: 'Efectivo' },
-  { value: 'card', label: 'Tarjeta' },
-  { value: 'transfer', label: 'Transferencia' },
-];
 
-export const NAIL_SALON_EXPENSE_PRESETS: readonly string[] = [
-  'Geles / acrílico',
-  'Limas y desechables',
-  'Esterilización',
-  'Renta / servicios',
-  'Pago a profesional',
-];
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export function cajaPeriodLabel(period: CajaPeriod): string {
-  if (period === 'today') return 'Hoy';
-  if (period === '7d') return 'Últimos 7 días';
-  if (period === 'month') return 'Este mes';
-  return 'Histórico';
+function isDateKey(value: string | null | undefined): value is string {
+  return typeof value === 'string' && DATE_KEY_RE.test(value.trim());
+}
+
+function isIsoDateString(value: string): value is ISODateString {
+  return DATE_KEY_RE.test(value);
+}
+
+export function toIsoDateValue(value: string | null | undefined): ISODateString | undefined {
+  const clean = value?.trim() ?? '';
+  return isIsoDateString(clean) ? clean : undefined;
+}
+
+function monthStartKey(dateKey: string): string {
+  return `${dateKey.slice(0, 7)}-01`;
+}
+
+export function getCajaPeriodRange(
+  todayKey: string,
+  period: CajaPeriod,
+  custom?: CajaCustomRange | null,
+): CajaDateRange {
+  if (period === 'all') return { startKey: null, endKey: null };
+  if (period === 'today') return { startKey: todayKey, endKey: todayKey };
+  if (period === '7d') return { startKey: shiftDateKey(todayKey, -6), endKey: todayKey };
+  if (period === 'month') {
+    return { startKey: isDateKey(todayKey) ? monthStartKey(todayKey) : todayKey, endKey: todayKey };
+  }
+  if (period === 'last_month') {
+    if (!isDateKey(todayKey)) return { startKey: todayKey, endKey: todayKey };
+    const lastDayPrev = shiftDateKey(monthStartKey(todayKey), -1);
+    return { startKey: monthStartKey(lastDayPrev), endKey: lastDayPrev };
+  }
+  const from = isDateKey(custom?.fromKey) ? custom.fromKey.trim() : null;
+  const to = isDateKey(custom?.toKey) ? custom.toKey.trim() : null;
+  if (from && to && from > to) return { startKey: to, endKey: from };
+  return { startKey: from, endKey: to };
 }
 
 export function getCajaPeriodStartKey(
   todayKey: string,
   period: CajaPeriod,
+  custom?: CajaCustomRange | null,
 ): string | null {
-  if (period === 'today') return todayKey;
-  if (period === '7d') return shiftDateKey(todayKey, -6);
-  if (period === 'month') {
-    const match = /^(\d{4}-\d{2})-\d{2}$/.exec(todayKey.trim());
-    if (match) return `${match[1]}-01`;
-    return todayKey;
+  return getCajaPeriodRange(todayKey, period, custom).startKey;
+}
+
+function formatRangeKey(key: string): string {
+  return formatDateKeyDisplay(key, 'short').replace(/^[^,]+,\s*/, '');
+}
+
+export function cajaPeriodLabel(
+  period: CajaPeriod,
+  custom?: CajaCustomRange | null,
+  todayKey?: string,
+): string {
+  if (period === 'today') return 'Hoy';
+  if (period === '7d') return 'Últimos 7 días';
+  if (period === 'month') return 'Este mes';
+  if (period === 'last_month') return 'Mes pasado';
+  if (period === 'all') return 'Histórico';
+  const range = getCajaPeriodRange(todayKey ?? '', 'custom', custom);
+  if (range.startKey && range.endKey) {
+    return range.startKey === range.endKey
+      ? formatRangeKey(range.startKey)
+      : `${formatRangeKey(range.startKey)} – ${formatRangeKey(range.endKey)}`;
   }
-  return null;
+  if (range.startKey) return `Desde ${formatRangeKey(range.startKey)}`;
+  if (range.endKey) return `Hasta ${formatRangeKey(range.endKey)}`;
+  return 'Rango personalizado';
+}
+
+function isIsoInCajaRange(iso: string, range: CajaDateRange, tz: string): boolean {
+  if (!range.startKey && !range.endKey) return true;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const entryKey = getDateKeyInTimezone(parsed, tz);
+  if (range.startKey && entryKey < range.startKey) return false;
+  if (range.endKey && entryKey > range.endKey) return false;
+  return true;
 }
 
 export function isIsoInCajaPeriod(
@@ -72,21 +136,15 @@ export function isIsoInCajaPeriod(
   todayKey: string,
   tz: string,
   period: CajaPeriod,
+  custom?: CajaCustomRange | null,
 ): boolean {
-  if (period === 'all') return true;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return false;
-  const entryKey = getDateKeyInTimezone(parsed, tz);
-  if (period === 'today') return entryKey === todayKey;
-  const startKey = getCajaPeriodStartKey(todayKey, period);
-  if (!startKey) return true;
-  return entryKey >= startKey && entryKey <= todayKey;
+  return isIsoInCajaRange(iso, getCajaPeriodRange(todayKey, period, custom), tz);
 }
 
 function normalizeSearchToken(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .trim();
 }
@@ -101,43 +159,32 @@ export function isCashEntryEditable(entry: CashRegisterEntry): boolean {
   return entry.bookingId === null;
 }
 
+export interface CajaFilterScope {
+  period: CajaPeriod;
+  custom?: CajaCustomRange | null;
+  todayKey: string;
+  tz: string;
+}
+
 export function filterCashEntries(
   entries: readonly CashRegisterEntry[],
-  options: {
-    period: CajaPeriod;
+  options: CajaFilterScope & {
     method: CajaMethodFilter;
     entryType?: MovementTypeFilter;
     query: string;
-    todayKey: string;
-    tz: string;
     bookingLookup?: ReadonlyMap<string, CajaBookingSearchMeta>;
   },
 ): CashRegisterEntry[] {
-  const {
-    period,
-    method,
-    entryType = 'all',
-    query,
-    todayKey,
-    tz,
-    bookingLookup,
-  } = options;
+  const { method, entryType = 'all', query, tz, bookingLookup } = options;
+  const range = getCajaPeriodRange(options.todayKey, options.period, options.custom);
   const cleanQuery = normalizeSearchToken(query);
 
   return entries
     .filter((entry) => {
-      if (!isIsoInCajaPeriod(entry.occurredAt, todayKey, tz, period)) {
-        return false;
-      }
-      if (method !== 'all' && entry.paymentMethod !== method) {
-        return false;
-      }
-      if (entryType === 'deposits' && entry.entryType !== 'deposit') {
-        return false;
-      }
-      if (entryType === 'expenses' && entry.entryType !== 'expense') {
-        return false;
-      }
+      if (!isIsoInCajaRange(entry.occurredAt, range, tz)) return false;
+      if (method !== 'all' && entry.paymentMethod !== method) return false;
+      if (entryType === 'deposits' && entry.entryType !== 'deposit') return false;
+      if (entryType === 'expenses' && entry.entryType !== 'expense') return false;
       if (
         entryType === 'income' &&
         (entry.entryType === 'expense' || entry.entryType === 'deposit')
@@ -165,32 +212,18 @@ export function filterCashEntries(
 
 export function filterSplitDetails(
   splits: readonly SplitDetailRow[],
-  options: {
-    period: CajaPeriod;
-    method: CajaMethodFilter;
-    query: string;
-    todayKey: string;
-    tz: string;
-  },
+  options: CajaFilterScope & { method: CajaMethodFilter; query: string },
 ): SplitDetailRow[] {
-  const { period, method, query, todayKey, tz } = options;
+  const { method, query, tz } = options;
+  const range = getCajaPeriodRange(options.todayKey, options.period, options.custom);
   const cleanQuery = normalizeSearchToken(query);
 
   return splits.filter((row) => {
-    if (!isIsoInCajaPeriod(row.createdAt, todayKey, tz, period)) {
-      return false;
-    }
-    if (method !== 'all' && row.method !== method) {
-      return false;
-    }
+    if (!isIsoInCajaRange(row.createdAt, range, tz)) return false;
+    if (method !== 'all' && row.method !== method) return false;
     if (!cleanQuery) return true;
     const haystack = normalizeSearchToken(
-      [
-        row.clientName,
-        row.bookingCode,
-        row.reference ?? '',
-        row.tipStaffName ?? '',
-      ].join(' '),
+      [row.clientName, row.bookingCode, row.reference ?? '', row.tipStaffName ?? ''].join(' '),
     );
     return haystack.includes(cleanQuery);
   });
@@ -271,16 +304,34 @@ export function computeCajaPeriodSummary(
   };
 }
 
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
 export function computeEntryCommissionCents(
   entry: CashRegisterEntry,
   commissionPercent: number,
+  retailCommissionPercent: number = DEFAULT_RETAIL_COMMISSION_PERCENT,
 ): number {
   if (entry.entryType === 'expense') return 0;
+  const amount = Math.max(0, entry.amountCents);
   if (entry.entryType === 'service_income') {
-    const safePct = Math.max(0, Math.min(100, commissionPercent));
-    return Math.round((Math.max(0, entry.amountCents) * safePct) / 100);
+    return Math.round((amount * clampPercent(commissionPercent)) / 100);
+  }
+  if (entry.entryType === 'product_sale') {
+    return Math.round((amount * clampPercent(retailCommissionPercent)) / 100);
   }
   return Math.max(0, entry.commissionCents);
+}
+
+export function previewStaffCommission(
+  row: Pick<CommissionStaffRow, 'serviceSales' | 'retailCommission' | 'otherCommission' | 'tips'>,
+  servicePercent: number,
+): { serviceCommission: number; commission: number; totalPayout: number } {
+  const serviceCommission = Math.round((row.serviceSales * clampPercent(servicePercent)) / 100);
+  const commission = serviceCommission + row.retailCommission + row.otherCommission;
+  return { serviceCommission, commission, totalPayout: commission + row.tips };
 }
 
 export function computeCommissionsByStaff(params: {
@@ -290,6 +341,8 @@ export function computeCommissionsByStaff(params: {
   todayKey: string;
   tz: string;
   period: CajaPeriod;
+  custom?: CajaCustomRange | null;
+  retailCommissionPercent?: number;
   viewerRole: AdminRole;
   viewerStaffId: string | null;
 }): CommissionStaffRow[] {
@@ -300,9 +353,13 @@ export function computeCommissionsByStaff(params: {
     todayKey,
     tz,
     period,
+    custom,
+    retailCommissionPercent = DEFAULT_RETAIL_COMMISSION_PERCENT,
     viewerRole,
     viewerStaffId,
   } = params;
+  const range = getCajaPeriodRange(todayKey, period, custom);
+  const retailPct = clampPercent(retailCommissionPercent);
 
   const visibleStaff =
     viewerRole === 'specialist'
@@ -312,10 +369,10 @@ export function computeCommissionsByStaff(params: {
       : staff;
 
   const scopedCashEntries = cashEntries.filter((entry) =>
-    isIsoInCajaPeriod(entry.occurredAt, todayKey, tz, period),
+    isIsoInCajaRange(entry.occurredAt, range, tz),
   );
   const scopedSplits = paymentSplits.filter((split) =>
-    isIsoInCajaPeriod(split.createdAt, todayKey, tz, period),
+    isIsoInCajaRange(split.createdAt, range, tz),
   );
 
   return visibleStaff
@@ -323,25 +380,44 @@ export function computeCommissionsByStaff(params: {
       const entries = scopedCashEntries.filter(
         (entry) => entry.staffId === st.id && entry.entryType !== 'expense',
       );
+      let serviceSales = 0;
+      let retailSales = 0;
+      let retailCommission = 0;
+      let otherCommission = 0;
+      let tips = 0;
+      for (const entry of entries) {
+        const amount = Math.max(0, entry.amountCents);
+        tips += Math.max(0, entry.tipCents);
+        if (entry.entryType === 'service_income') {
+          serviceSales += amount;
+        } else if (entry.entryType === 'product_sale') {
+          retailSales += amount;
+          retailCommission += computeEntryCommissionCents(entry, st.commissionPercent, retailPct);
+        } else {
+          otherCommission += computeEntryCommissionCents(entry, st.commissionPercent, retailPct);
+        }
+      }
       const sales = entries.reduce((sum, entry) => sum + Math.max(0, entry.amountCents), 0);
-      const commission = entries.reduce(
-        (sum, entry) => sum + computeEntryCommissionCents(entry, st.commissionPercent),
-        0,
+      const serviceCommission = Math.round(
+        (serviceSales * clampPercent(st.commissionPercent)) / 100,
       );
-      const tips = entries.reduce((sum, entry) => sum + Math.max(0, entry.tipCents), 0);
+      const commission = serviceCommission + retailCommission + otherCommission;
       const splitTipsEntries = scopedSplits.filter(
         (split) => split.tipStaffId === st.id && split.tipCents > 0,
       );
-      const splitTipsCents = splitTipsEntries.reduce(
-        (sum, item) => sum + item.tipCents,
-        0,
-      );
+      const splitTipsCents = splitTipsEntries.reduce((sum, item) => sum + item.tipCents, 0);
       return {
         id: st.id,
         name: st.name,
         percent: st.commissionPercent,
+        retailPercent: retailPct,
         servicesCount: entries.filter((entry) => entry.amountCents > 0).length,
         sales,
+        serviceSales,
+        serviceCommission,
+        retailSales,
+        retailCommission,
+        otherCommission,
         commission,
         tips,
         splitTipsCents,
@@ -365,16 +441,38 @@ export interface CashMovementDraft {
   staffId: string | null;
 }
 
+export interface CommissionPayoutDraft extends CashMovementDraft {
+  entryType: 'expense';
+  staffName: string;
+  periodLabel: string;
+  serviceCommissionCents: number;
+  retailCommissionCents: number;
+  otherCommissionCents: number;
+  tipsCents: number;
+  totalCents: number;
+}
+
 export function buildCommissionPayoutDraft(
   row: CommissionStaffRow,
   period: CajaPeriod,
-): CashMovementDraft {
+  custom?: CajaCustomRange | null,
+  todayKey?: string,
+): CommissionPayoutDraft {
+  const periodLabel = cajaPeriodLabel(period, custom, todayKey);
+  const totalCents = Math.max(0, row.totalPayout);
   return {
     entryType: 'expense',
-    description: `Pago de comisiones y propinas · ${row.name} (${cajaPeriodLabel(period)})`,
-    amountMxn: Number((Math.max(0, row.totalPayout) / 100).toFixed(2)),
+    description: `Pago de comisiones y propinas · ${row.name} (${periodLabel})`,
+    amountMxn: Number((totalCents / 100).toFixed(2)),
     method: 'cash',
     staffId: row.id,
+    staffName: row.name,
+    periodLabel,
+    serviceCommissionCents: row.serviceCommission,
+    retailCommissionCents: row.retailCommission,
+    otherCommissionCents: row.otherCommission,
+    tipsCents: row.tips,
+    totalCents,
   };
 }
 
@@ -396,12 +494,63 @@ export function classifyCouponStatus(coupon: Coupon, nowMs: number): CouponStatu
   }
   const isGiftCardEmpty =
     coupon.kind === 'gift_card' && (coupon.remainingBalanceCents ?? 0) <= 0;
-  const isMaxUsesReached =
-    coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses;
+  const isMaxUsesReached = coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses;
   if (isGiftCardEmpty || isMaxUsesReached) {
     return { status: 'exhausted', label: 'Agotado', tone: 'warning' };
   }
   return { status: 'active', label: 'Activo', tone: 'success' };
+}
+
+export type CouponListFilter = 'all' | 'coupon' | 'gift_card' | 'active' | 'inactive';
+
+export const COUPON_LIST_FILTER_OPTIONS: readonly FilterPillOption<CouponListFilter>[] = [
+  { value: 'all', label: 'Todos' },
+  { value: 'coupon', label: 'Cupones' },
+  { value: 'gift_card', label: 'Tarjetas' },
+  { value: 'active', label: 'Activos' },
+  { value: 'inactive', label: 'Pausados o vencidos' },
+];
+
+export function filterCoupons(
+  coupons: readonly Coupon[],
+  options: { filter: CouponListFilter; query: string; nowMs: number },
+): Coupon[] {
+  const cleanQuery = normalizeSearchToken(options.query);
+  return coupons.filter((coupon) => {
+    const status = classifyCouponStatus(coupon, options.nowMs).status;
+    if (options.filter === 'coupon' && coupon.kind !== 'coupon') return false;
+    if (options.filter === 'gift_card' && coupon.kind !== 'gift_card') return false;
+    if (options.filter === 'active' && status !== 'active') return false;
+    if (options.filter === 'inactive' && status === 'active') return false;
+    if (!cleanQuery) return true;
+    return normalizeSearchToken(`${coupon.code} ${coupon.recipientName ?? ''}`).includes(
+      cleanQuery,
+    );
+  });
+}
+
+const COUPON_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+export function generateCouponCode(
+  kind: 'coupon' | 'gift_card',
+  random: () => number,
+  existingCodes: readonly string[] = [],
+): string {
+  const prefix = kind === 'gift_card' ? 'REGALO' : 'PROMO';
+  const taken = new Set(existingCodes.map((code) => code.trim().toUpperCase()));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let suffix = '';
+    for (let i = 0; i < 5; i += 1) {
+      const idx = Math.min(
+        COUPON_CODE_ALPHABET.length - 1,
+        Math.floor(Math.max(0, random()) * COUPON_CODE_ALPHABET.length),
+      );
+      suffix += COUPON_CODE_ALPHABET[idx];
+    }
+    const candidate = `${prefix}-${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${prefix}-${String(taken.size + 1).padStart(5, '0')}`;
 }
 
 export interface CouponEditorInput {
@@ -438,6 +587,47 @@ export function formatExpiryDateInput(expiresAt: string | null): string {
   return match?.[1] ?? '';
 }
 
+export function describeCouponPreview(
+  input: CouponEditorInput,
+  currency: 'MXN' | 'USD',
+): { headline: string; details: string[] } {
+  const money = (mxn: number) =>
+    formatCurrency(Math.round((Number.isFinite(mxn) ? Math.max(0, mxn) : 0) * 100), currency);
+  const code = input.code.trim().toUpperCase() || 'TU-CÓDIGO';
+  const isGiftCard = input.kind === 'gift_card';
+  const isFixed = isGiftCard || input.discountType === 'fixed_cents';
+  const headline = isGiftCard
+    ? `${code}: tarjeta de regalo con ${money(input.value)} de saldo`
+    : isFixed
+      ? `${code}: ${money(input.value)} de descuento`
+      : `${code}: ${Math.round(Number.isFinite(input.value) ? input.value : 0)}% de descuento`;
+
+  const details: string[] = [];
+  if (isGiftCard && input.id) {
+    details.push(`Saldo disponible: ${money(input.remainingBalanceMxn)}`);
+  }
+  details.push(
+    input.minSubtotalMxn > 0
+      ? `Aplica en compras desde ${money(input.minSubtotalMxn)}`
+      : 'Aplica sin compra mínima',
+  );
+  const trimmedDate = input.expiresDate.trim();
+  details.push(
+    DATE_KEY_RE.test(trimmedDate)
+      ? `Vence el ${formatDateKeyDisplay(trimmedDate, 'long')}`
+      : 'No vence',
+  );
+  if (isGiftCard) details.push('Se descuenta del saldo hasta agotarlo');
+  details.push(
+    Number.isFinite(input.maxUses) && input.maxUses > 0
+      ? `Hasta ${Math.round(input.maxUses)} ${Math.round(input.maxUses) === 1 ? 'canje' : 'canjes'} en total`
+      : 'Canjes ilimitados',
+  );
+  if (input.recipientName.trim()) details.push(`Para ${input.recipientName.trim()}`);
+  if (!input.isActive) details.push('Pausado: no se acepta en nuevas reservas');
+  return { headline, details };
+}
+
 export function validateCouponEditorInput(
   input: CouponEditorInput,
 ): { ok: true; data: CouponPayloadData } | { ok: false; error: string } {
@@ -457,9 +647,7 @@ export function validateCouponEditorInput(
     return { ok: false, error: 'El descuento en porcentaje debe estar entre 1% y 100%.' };
   }
 
-  const discountValue = isFixed
-    ? Math.round(input.value * 100)
-    : Math.round(input.value);
+  const discountValue = isFixed ? Math.round(input.value * 100) : Math.round(input.value);
 
   const remainingBalanceCents =
     input.kind === 'gift_card'
@@ -467,9 +655,7 @@ export function validateCouponEditorInput(
         ? Math.max(
             0,
             Math.round(
-              (Number.isFinite(input.remainingBalanceMxn)
-                ? input.remainingBalanceMxn
-                : 0) * 100,
+              (Number.isFinite(input.remainingBalanceMxn) ? input.remainingBalanceMxn : 0) * 100,
             ),
           )
         : discountValue
@@ -488,8 +674,8 @@ export function validateCouponEditorInput(
   const trimmedDate = input.expiresDate.trim();
   let expiresAt: string | null = null;
   if (trimmedDate.length > 0) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
-      return { ok: false, error: 'La fecha de vencimiento debe tener formato AAAA-MM-DD.' };
+    if (!DATE_KEY_RE.test(trimmedDate)) {
+      return { ok: false, error: 'Elige una fecha de vencimiento válida.' };
     }
     const parsed = Date.parse(`${trimmedDate}T23:59:59.000Z`);
     if (Number.isNaN(parsed)) {
@@ -511,32 +697,84 @@ export function validateCouponEditorInput(
     isActive: input.isActive,
   };
 
-  if (input.id) {
-    data.id = input.id;
-  }
+  if (input.id) data.id = input.id;
 
   return { ok: true, data };
+}
+
+export interface PackageEconomics {
+  perSessionCents: number;
+  regularTotalCents: number;
+  savingsCents: number;
+  savingsPercent: number;
+  isMoreExpensive: boolean;
+}
+
+export function computePackageEconomics(params: {
+  priceCents: number;
+  totalSessions: number;
+  servicePriceCents: number | null;
+}): PackageEconomics {
+  const sessions = Math.max(1, Math.round(params.totalSessions || 1));
+  const price = Math.max(0, Math.round(params.priceCents));
+  const unit = Math.max(0, Math.round(params.servicePriceCents ?? 0));
+  const regularTotalCents = unit * sessions;
+  const savingsCents = regularTotalCents - price;
+  return {
+    perSessionCents: Math.round(price / sessions),
+    regularTotalCents,
+    savingsCents,
+    savingsPercent:
+      regularTotalCents > 0 ? Math.round((savingsCents / regularTotalCents) * 100) : 0,
+    isMoreExpensive: regularTotalCents > 0 && price > regularTotalCents,
+  };
+}
+
+export interface CashDrawerBreakdown {
+  openingFloatCents: number;
+  cashSalesCents: number;
+  cashTipsCents: number;
+  cashExpensesCents: number;
+  expectedCents: number;
+}
+
+export function computeCashDrawer(params: {
+  cashEntries: readonly CashRegisterEntry[];
+  todayKey: string;
+  tz: string;
+  openingFloatCents?: number;
+}): CashDrawerBreakdown {
+  const range: CajaDateRange = { startKey: params.todayKey, endKey: params.todayKey };
+  const openingFloatCents = Math.max(0, Math.round(params.openingFloatCents ?? 0));
+  let cashSalesCents = 0;
+  let cashTipsCents = 0;
+  let cashExpensesCents = 0;
+  for (const entry of params.cashEntries) {
+    if (entry.paymentMethod !== 'cash') continue;
+    if (!isIsoInCajaRange(entry.occurredAt, range, params.tz)) continue;
+    if (entry.entryType === 'expense') {
+      cashExpensesCents += Math.abs(entry.amountCents);
+      continue;
+    }
+    cashSalesCents += entry.amountCents;
+    cashTipsCents += Math.max(0, entry.tipCents);
+  }
+  return {
+    openingFloatCents,
+    cashSalesCents,
+    cashTipsCents,
+    cashExpensesCents,
+    expectedCents: openingFloatCents + cashSalesCents + cashTipsCents - cashExpensesCents,
+  };
 }
 
 export function computeTodayExpectedCashCents(
   cashEntries: readonly CashRegisterEntry[],
   todayKey: string,
   tz: string,
+  openingFloatCents = 0,
 ): number {
-  return cashEntries
-    .filter(
-      (entry) =>
-        entry.paymentMethod === 'cash' &&
-        isIsoInCajaPeriod(entry.occurredAt, todayKey, tz, 'today'),
-    )
-    .reduce(
-      (sum, entry) =>
-        sum +
-        (entry.entryType === 'expense'
-          ? -Math.abs(entry.amountCents)
-          : entry.amountCents + entry.tipCents),
-      0,
-    );
+  return computeCashDrawer({ cashEntries, todayKey, tz, openingFloatCents }).expectedCents;
 }
 
 export interface CashReconciliation {
@@ -585,13 +823,59 @@ export function computeCashReconciliation(
   };
 }
 
+export function buildCashAdjustmentDraft(
+  reconciliation: CashReconciliation,
+  note: string,
+  todayKey: string,
+): CashMovementDraft | null {
+  if (reconciliation.status === 'balanced') return null;
+  const cleanNote = note.replace(/\s+/g, ' ').trim().slice(0, 120);
+  const label = reconciliation.status === 'short' ? 'Faltante' : 'Sobrante';
+  const base = `Ajuste de arqueo · ${label} (${todayKey})`;
+  return {
+    entryType: reconciliation.status === 'short' ? 'expense' : 'service_income',
+    description: cleanNote ? `${base} · ${cleanNote}` : base,
+    amountMxn: Number((Math.abs(reconciliation.diffCents) / 100).toFixed(2)),
+    method: 'cash',
+    staffId: null,
+  };
+}
+
+export function suggestQuickAmounts(
+  entries: readonly CashRegisterEntry[],
+  entryType: 'expense' | 'product_sale' | 'service_income',
+  fallbackMxn: readonly number[] = [100, 150, 200, 300],
+  limit = 4,
+): number[] {
+  const counts = new Map<number, number>();
+  for (const entry of entries) {
+    if (entry.bookingId !== null || entry.entryType !== entryType) continue;
+    const mxn = Math.round(Math.abs(entry.amountCents) / 100);
+    if (mxn <= 0) continue;
+    counts.set(mxn, (counts.get(mxn) ?? 0) + 1);
+  }
+  const frequent = [...counts.entries()]
+    .toSorted((a, b) => b[1] - a[1] || a[0] - b[0])
+    .map(([amount]) => amount);
+  const merged: number[] = [];
+  for (const amount of [...frequent, ...fallbackMxn]) {
+    if (merged.length >= limit) break;
+    if (!merged.includes(amount)) merged.push(amount);
+  }
+  return merged.toSorted((a, b) => a - b);
+}
+
 export function formatCashCloseWhatsAppSummary(params: {
   salonName: string;
   todayKey: string;
   currency: 'MXN' | 'USD';
   todaySummary: CajaPeriodSummary;
+  drawer?: CashDrawerBreakdown;
   expectedCashCents: number;
   countedMxn: number;
+  closeNote?: string;
+  prefs?: CajaCloseSummaryPrefs;
+  staffRows?: readonly CommissionStaffRow[];
   uncollectedCount: number;
   uncollectedTotalCents: number;
   pendingDepositsCount: number;
@@ -602,8 +886,12 @@ export function formatCashCloseWhatsAppSummary(params: {
     todayKey,
     currency,
     todaySummary,
+    drawer,
     expectedCashCents,
     countedMxn,
+    closeNote,
+    prefs = { includeStaffBreakdown: true, includeTips: true, includePending: true },
+    staffRows = [],
     uncollectedCount,
     uncollectedTotalCents,
     pendingDepositsCount,
@@ -634,32 +922,58 @@ export function formatCashCloseWhatsAppSummary(params: {
       `• Tarjeta de regalo: ${money(todaySummary.giftCardCents)} (${todaySummary.giftCardCount})`,
     );
   }
-
+  if (prefs.includeTips) {
+    lines.push(`• Propinas: ${money(todaySummary.tipsCents)}`);
+  }
   lines.push(
-    `• Propinas: ${money(todaySummary.tipsCents)}`,
     `• Gastos: ${money(todaySummary.expensesCents)}`,
     `• Neto del día: ${money(todaySummary.netCents)}`,
     '',
     '*Arqueo de efectivo*',
+  );
+  if (drawer && drawer.openingFloatCents > 0) {
+    lines.push(`• Fondo inicial: ${money(drawer.openingFloatCents)}`);
+  }
+  if (drawer) {
+    lines.push(
+      `• Cobros en efectivo: ${money(drawer.cashSalesCents + drawer.cashTipsCents)}`,
+      `• Gastos en efectivo: -${money(drawer.cashExpensesCents)}`,
+    );
+  }
+  lines.push(
     `• Efectivo esperado: ${money(reconciliation.expectedCents)}`,
     `• Efectivo contado: ${money(reconciliation.countedCents)}`,
     `• Diferencia: ${diffDisplay}`,
   );
+  const cleanNote = closeNote?.replace(/\s+/g, ' ').trim();
+  if (cleanNote) lines.push(`• Nota: ${cleanNote}`);
 
-  if (uncollectedCount > 0 || pendingDepositsCount > 0) {
-    lines.push('', '*Pendientes*');
-    if (uncollectedCount > 0) {
+  const payingRows = staffRows.filter((row) => row.totalPayout > 0);
+  if (prefs.includeStaffBreakdown && payingRows.length > 0) {
+    lines.push('', '*Por profesional*');
+    for (const row of payingRows) {
       lines.push(
-        `• Citas sin cobrar: ${uncollectedCount} (${money(uncollectedTotalCents)})`,
+        prefs.includeTips
+          ? `• ${row.name}: ${money(row.commission)} comisión + ${money(row.tips)} propinas = ${money(row.totalPayout)}`
+          : `• ${row.name}: ${money(row.commission)} comisión`,
       );
     }
-    if (pendingDepositsCount > 0) {
-      lines.push(
-        `• Anticipos por confirmar: ${pendingDepositsCount} (${money(pendingDepositsTotalCents)})`,
-      );
+  }
+
+  if (prefs.includePending) {
+    if (uncollectedCount > 0 || pendingDepositsCount > 0) {
+      lines.push('', '*Pendientes*');
+      if (uncollectedCount > 0) {
+        lines.push(`• Citas sin cobrar: ${uncollectedCount} (${money(uncollectedTotalCents)})`);
+      }
+      if (pendingDepositsCount > 0) {
+        lines.push(
+          `• Anticipos por confirmar: ${pendingDepositsCount} (${money(pendingDepositsTotalCents)})`,
+        );
+      }
+    } else {
+      lines.push('', '*Pendientes*', '• Sin saldos pendientes por cobrar');
     }
-  } else {
-    lines.push('', '*Pendientes*', '• Sin saldos pendientes por cobrar');
   }
 
   return lines.join('\n');

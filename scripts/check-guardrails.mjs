@@ -182,6 +182,8 @@ const ADMIN_FORM_DIALOG_SELF_MANAGED = new Set([
   'src/components/admin/config/OwnerPinDialog.tsx',
 ]);
 
+const ADMIN_ENTRANCE_FX_RE = /(?:^|\s)(?:fx-fade-up|fx-stagger|fx-step-in)(?=\s|$)/;
+
 function isAdminUiFile(rel) {
   return rel.startsWith('src/components/admin/') || rel.startsWith('src/app/admin/');
 }
@@ -2039,6 +2041,22 @@ export function checkSourceText(rawRel, text) {
       );
     }
 
+    if (
+      (isAdminUiFile(rel) || rel.startsWith('src/components/ui/')) &&
+      !testFile &&
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) &&
+      ADMIN_ENTRANCE_FX_RE.test(node.text)
+    ) {
+      const { line, col } = getLineCol(sf, node.getStart(sf));
+      addViolation(
+        rel,
+        line,
+        col,
+        'admin-no-entrance-motion',
+        `Animación de entrada "${node.text.match(ADMIN_ENTRANCE_FX_RE)[0].trim()}" en /admin. El panel es herramienta de uso diario: páginas, tabs y listas aparecen al instante. Reserva fx-pop/fx-sheet-in para confirmar un cambio de estado.`,
+      );
+    }
+
     if (checkAstryx) {
       if (
         (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
@@ -2093,7 +2111,8 @@ const SCROLL_DRIVEN_PROP_RE =
   /^(?:animation-timeline|animation-range(?:-start|-end)?|view-timeline(?:-name|-axis|-inset)?|scroll-timeline(?:-name|-axis)?|timeline-scope)$/i;
 const SCROLL_DRIVEN_RESET_VALUE_RE = /^\s*(?:auto|none|normal)\s*(?:!important)?\s*$/i;
 const SCROLL_DRIVEN_FN_RE = /(?:^|[\s,(])(?:view|scroll)\(/i;
-const HIDDEN_START_RE = /^(?:opacity\s*:\s*0(?:\.0+)?\s*(?:!important)?|visibility\s*:\s*hidden\b.*)$/i;
+const HOVER_GUARD_RE = /\(\s*hover\s*:\s*hover\s*\)/i;
+const HIDDEN_START_RE =/^(?:opacity\s*:\s*0(?:\.0+)?\s*(?:!important)?|visibility\s*:\s*hidden\b.*)$/i;
 
 function collectCssDeclarations(text) {
   const declarations = [];
@@ -2228,6 +2247,23 @@ export function checkCssText(rawRel, text) {
       rule: 'css-scroll-driven-hidden-start',
       message:
         `"${target}" se revela con animation-timeline pero declara "${d.decl}" fuera del bloque @supports. Sin soporte quedaría invisible; el estado inicial oculto solo puede vivir en el keyframe.`,
+    });
+  }
+
+  let lastHoverKey = null;
+  for (const d of declarations) {
+    const key = `${d.ancestors.join(' | ')} > ${d.selector}`;
+    if (key === lastHoverKey) continue;
+    if (!/:hover\b/i.test(d.selector)) continue;
+    if (d.ancestors.some((prelude) => /^@media\b/i.test(prelude) && HOVER_GUARD_RE.test(prelude))) continue;
+    lastHoverKey = key;
+    violations.push({
+      rel,
+      line: d.line,
+      col: 1,
+      rule: 'css-hover-ungated',
+      message:
+        `"${d.selector}" aplica :hover fuera de @media (hover: hover). En iPhone/Android el estado se queda "pegado" tras un toque; envuelve la regla en @media (hover: hover) y deja :focus-visible/:active fuera.`,
     });
   }
 

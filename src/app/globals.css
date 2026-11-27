@@ -55,8 +55,10 @@ body {
   border-radius: var(--radius-full);
 }
 
-:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-thumb:hover {
-  background: var(--lk-scroll-thumb-hover);
+@media (hover: hover) {
+  :where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-thumb:hover {
+    background: var(--lk-scroll-thumb-hover);
+  }
 }
 
 :where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-corner {
@@ -563,8 +565,10 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   color: var(--lk-blanco);
 }
 
-.rb-header .rb-ghost:hover {
-  background: color-mix(in srgb, var(--lk-blanco) 14%, transparent);
+@media (hover: hover) {
+  .rb-header .rb-ghost:hover {
+    background: color-mix(in srgb, var(--lk-blanco) 14%, transparent);
+  }
 }
 
 .rb-header .rb-ghost:focus-visible,
@@ -603,8 +607,10 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1), transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.rb-ghost:hover {
-  background: var(--lk-rosa);
+@media (hover: hover) {
+  .rb-ghost:hover {
+    background: var(--lk-rosa);
+  }
 }
 
 .rb-ghost:active {
@@ -883,9 +889,11 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   font-weight: 500;
 }
 
-.ck-footer-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 0.25rem;
+@media (hover: hover) {
+  .ck-footer-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.25rem;
+  }
 }
 
 .ck-footer-link:focus-visible {
@@ -1389,11 +1397,16 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
     transition: none !important;
   }
 
-  .fx-card-lift:hover,
   .fx-card-lift:active,
   .fx-press:active,
   .rb-ghost:active {
     transform: none !important;
+  }
+
+  @media (hover: hover) {
+    .fx-card-lift:hover {
+      transform: none !important;
+    }
   }
 }
 
@@ -1574,8 +1587,10 @@ dialog.astryx-dialog:has(.lk-profile-dialog) > * {
   transition: transform var(--duration-medium) var(--ease-move);
 }
 
-a.lk-profile-portfolio-tile:hover img {
-  transform: scale(1.05);
+@media (hover: hover) {
+  a.lk-profile-portfolio-tile:hover img {
+    transform: scale(1.05);
+  }
 }
 
 a.lk-profile-portfolio-tile:focus-visible {
@@ -1628,7 +1643,9 @@ a.lk-profile-portfolio-tile:focus-visible {
     transition: none !important;
   }
 
-  a.lk-profile-portfolio-tile:hover img {
-    transform: none !important;
+  @media (hover: hover) {
+    a.lk-profile-portfolio-tile:hover img {
+      transform: none !important;
+    }
   }
 }

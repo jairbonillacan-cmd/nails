@@ -135,7 +135,6 @@ export function BookingsListView({
     return (
       <EmptyStateCard
         key={`${tab}-${agendaRange}-empty`}
-        className="fx-step-in"
         isCompact
         title="No hay citas en esta vista"
         description={
@@ -178,7 +177,7 @@ export function BookingsListView({
   }
 
   return (
-    <VStack gap={3} key={`${tab}-${agendaRange}-list`} className="fx-step-in">
+    <VStack gap={3} key={`${tab}-${agendaRange}-list`}>
       {bookings.map((b) => {
         const isRisk =
           b.client.noShowCount >= noShowThreshold || Boolean(b.noShowPolicyEnforced);

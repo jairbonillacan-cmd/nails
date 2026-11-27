@@ -616,7 +616,7 @@ export function VisualScheduleGrid({
         </HStack>
       </HStack>
 
-      <VStack key={`${rangeMode}-${dateKey}`} className="ad-cal-view ad-cal-scroll" gap={0}>
+      <VStack key={`${rangeMode}-${dateKey}`} className="ad-cal-scroll" gap={0}>
         {rangeMode === 'day' ? (
           <VStack
             className="ad-cal-grid"

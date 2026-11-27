@@ -307,7 +307,7 @@ export default function AdminServicesPage() {
       </TabList>
 
       {section === 'services' ? (
-        <VStack key="tab-services" className="fx-step-in" gap={5}>
+        <VStack key="tab-services" gap={5}>
           <ServiceCatalogSection
             services={displayServices}
             categories={data.categories}

@@ -1,23 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { Table, pixel, proportional } from '@astryxdesign/core/Table';
+import { DateInput } from '@astryxdesign/core/DateInput';
 import { Link } from '@astryxdesign/core/Link';
 import {
   AlertTriangle,
   ArrowLeftRight,
+  ArrowRight,
   Banknote,
-  Check,
   CheckCircle2,
-  ClipboardCheck,
   CreditCard,
-  Pencil,
   RotateCcw,
   Search,
   Users,
@@ -29,18 +25,12 @@ import {
   formatPhoneDisplay,
   formatTimeInTimezone,
 } from '@/lib/format';
-import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
-import type { CashRegisterEntry, InventoryItem, StaffMember } from '@/lib/types';
-import type { FormSubmitResult } from '@/lib/forms/form-submit';
+import type { CashRegisterEntry } from '@/lib/types';
 import { ActionRow, FilterPillBar, StatusTag, SurfaceCard } from '@/components/ui';
-import type { RecordCajaEntryInput } from './cajaActions';
 import {
-  CAJA_METHOD_FILTER_OPTIONS,
   CAJA_PERIOD_OPTIONS,
-  cajaPeriodLabel,
-  computeCashReconciliation,
-  computeTodayExpectedCashCents,
-  formatCashCloseWhatsAppSummary,
+  toIsoDateValue,
+  type CajaCustomRange,
   type CajaMethodFilter,
   type CajaPeriod,
   type CajaPeriodSummary,
@@ -52,27 +42,23 @@ import {
   type SplitDetailRow,
   type UncollectedBookingRow,
 } from './cajaTypes';
-import { CashMovementForm } from './CashMovementForm';
 import { CajaMovementsSection } from './CajaMovementsSection';
 
 interface CajaSummaryTabProps {
-  salonName: string;
-  allCashEntries: readonly CashRegisterEntry[];
   filteredCashEntries: readonly CashRegisterEntry[];
   periodSummary: CajaPeriodSummary;
-  todaySummary: CajaPeriodSummary;
+  periodLabel: string;
   commissionsByStaff: readonly CommissionStaffRow[];
-  inventory: readonly InventoryItem[];
-  staff: readonly StaffMember[];
   uncollectedBookings: readonly UncollectedBookingRow[];
   uncollectedTotalCents: number;
   pendingDepositsCount: number;
   pendingDepositsTotalCents: number;
   splitDetails: readonly SplitDetailRow[];
   cajaPeriod: CajaPeriod;
+  customRange: CajaCustomRange;
   methodFilter: CajaMethodFilter;
   searchQuery: string;
-  todayKey: string;
+  hasActiveFilters: boolean;
   tz: string;
   currency: 'MXN' | 'USD';
   canRecordCash: boolean;
@@ -80,36 +66,51 @@ interface CajaSummaryTabProps {
   deletingEntryId: string | null;
   highlightUncollected: boolean;
   onChangePeriod: (next: CajaPeriod) => void;
-  onChangeMethodFilter: (next: CajaMethodFilter) => void;
+  onChangeCustomRange: (next: CajaCustomRange) => void;
+  onToggleMethodFilter: (next: CajaMethodFilter) => void;
   onChangeSearchQuery: (next: string) => void;
   onResetFilters: () => void;
   onOpenDeposits: () => void;
   onOpenCommissions: () => void;
-  onRecordCashEntry: (input: RecordCajaEntryInput) => Promise<FormSubmitResult>;
   onEditCashEntry: (entry: CashRegisterEntry) => void;
   onRequestDeleteCashEntry: (entry: CashRegisterEntry) => void;
-  onEditCommissionRate: (row: CommissionStaffRow) => void;
   onRegisterPayout: (row: CommissionStaffRow) => void;
 }
 
+const METHOD_TILES = [
+  { id: 'cash', label: 'Efectivo', icon: <Banknote size={15} aria-hidden="true" /> },
+  { id: 'card', label: 'Tarjeta', icon: <CreditCard size={15} aria-hidden="true" /> },
+  {
+    id: 'transfer',
+    label: 'Transferencia',
+    icon: <ArrowLeftRight size={15} aria-hidden="true" />,
+  },
+] as const;
+
+function methodTotals(
+  summary: CajaPeriodSummary,
+  id: (typeof METHOD_TILES)[number]['id'],
+): { cents: number; count: number } {
+  if (id === 'cash') return { cents: summary.cashCents, count: summary.cashCount };
+  if (id === 'card') return { cents: summary.cardCents, count: summary.cardCount };
+  return { cents: summary.transferCents, count: summary.transferCount };
+}
+
 export function CajaSummaryTab({
-  salonName,
-  allCashEntries,
   filteredCashEntries,
   periodSummary,
-  todaySummary,
+  periodLabel,
   commissionsByStaff,
-  inventory,
-  staff,
   uncollectedBookings,
   uncollectedTotalCents,
   pendingDepositsCount,
   pendingDepositsTotalCents,
   splitDetails,
   cajaPeriod,
+  customRange,
   methodFilter,
   searchQuery,
-  todayKey,
+  hasActiveFilters,
   tz,
   currency,
   canRecordCash,
@@ -117,54 +118,24 @@ export function CajaSummaryTab({
   deletingEntryId,
   highlightUncollected,
   onChangePeriod,
-  onChangeMethodFilter,
+  onChangeCustomRange,
+  onToggleMethodFilter,
   onChangeSearchQuery,
   onResetFilters,
   onOpenDeposits,
   onOpenCommissions,
-  onRecordCashEntry,
   onEditCashEntry,
   onRequestDeleteCashEntry,
-  onEditCommissionRate,
   onRegisterPayout,
 }: CajaSummaryTabProps) {
-  const [countedCashMxn, setCountedCashMxn] = useState<number>(0);
-  const closeClipboard = useCopyToClipboard(2600);
-
-  const cashOnlyExpectedCents = useMemo(
-    () => computeTodayExpectedCashCents(allCashEntries, todayKey, tz),
-    [allCashEntries, todayKey, tz],
-  );
-
-  const reconciliation = useMemo(
-    () => computeCashReconciliation(cashOnlyExpectedCents, countedCashMxn),
-    [cashOnlyExpectedCents, countedCashMxn],
-  );
-
-  const periodLabel = cajaPeriodLabel(cajaPeriod);
-  const hasActiveFilters =
-    cajaPeriod !== 'all' || methodFilter !== 'all' || searchQuery.trim().length > 0;
-  const hasSecondaryFilters = methodFilter !== 'all' || searchQuery.trim().length > 0;
-  const showCommissionActions = canRecordCash && !isSpecialistView;
-
-  const handleCopyCloseSummary = () => {
-    const summaryText = formatCashCloseWhatsAppSummary({
-      salonName,
-      todayKey,
-      currency,
-      todaySummary,
-      expectedCashCents: cashOnlyExpectedCents,
-      countedMxn: countedCashMxn,
-      uncollectedCount: uncollectedBookings.length,
-      uncollectedTotalCents,
-      pendingDepositsCount,
-      pendingDepositsTotalCents,
-    });
-    void closeClipboard.copy(summaryText, 'Resumen del corte copiado para WhatsApp.');
-  };
+  const showPayoutActions = canRecordCash && !isSpecialistView;
+  const teamTotalCents = commissionsByStaff.reduce((sum, row) => sum + row.totalPayout, 0);
+  const visibleCommissionRows = isSpecialistView
+    ? commissionsByStaff
+    : commissionsByStaff.filter((row) => row.totalPayout > 0);
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={4}>
       {uncollectedBookings.length > 0 ? (
         <SurfaceCard
           id="citas-sin-cobrar"
@@ -193,11 +164,7 @@ export function CajaSummaryTab({
                     <Text weight="semibold">{row.clientName}</Text>
                     <StatusTag
                       tone="warning"
-                      label={
-                        row.status === 'completed'
-                          ? 'Terminada sin cobro'
-                          : 'Pasada sin cerrar'
-                      }
+                      label={row.status === 'completed' ? 'Terminada sin cobro' : 'Pasada sin cerrar'}
                     />
                   </HStack>
                 }
@@ -246,12 +213,7 @@ export function CajaSummaryTab({
       ) : highlightUncollected ? (
         <SurfaceCard id="citas-sin-cobrar" tone="subtle" padded>
           <HStack align="center" gap={3}>
-            <VStack
-              className="ad-done-circle"
-              align="center"
-              justify="center"
-              aria-hidden="true"
-            >
+            <VStack className="ad-done-circle" align="center" justify="center" aria-hidden="true">
               <CheckCircle2 size={18} />
             </VStack>
             <VStack gap={0.5} className="rb-grow">
@@ -301,15 +263,37 @@ export function CajaSummaryTab({
 
       <SurfaceCard tone="subtle" padded className="ad-card ad-caja-filter-card">
         <VStack gap={3}>
-          <HStack justify="between" align="center" wrap="wrap" gap={3}>
-            <FilterPillBar
-              ariaLabel="Periodo de ventas"
-              mode="segmented"
-              size="sm"
-              value={cajaPeriod}
-              options={CAJA_PERIOD_OPTIONS}
-              onChange={onChangePeriod}
-            />
+          <FilterPillBar
+            ariaLabel="Periodo"
+            mode="pills"
+            size="sm"
+            value={cajaPeriod}
+            options={CAJA_PERIOD_OPTIONS}
+            onChange={onChangePeriod}
+          />
+          {cajaPeriod === 'custom' ? (
+            <HStack gap={2} wrap="wrap" align="end" className="ad-caja-range">
+              <DateInput
+                label="Desde"
+                size="sm"
+                value={toIsoDateValue(customRange.fromKey)}
+                max={toIsoDateValue(customRange.toKey)}
+                hasClear
+                onChange={(next) => onChangeCustomRange({ ...customRange, fromKey: next ?? '' })}
+                containerClassName="ad-caja-range-field"
+              />
+              <DateInput
+                label="Hasta"
+                size="sm"
+                value={toIsoDateValue(customRange.toKey)}
+                min={toIsoDateValue(customRange.fromKey)}
+                hasClear
+                onChange={(next) => onChangeCustomRange({ ...customRange, toKey: next ?? '' })}
+                containerClassName="ad-caja-range-field"
+              />
+            </HStack>
+          ) : null}
+          <HStack justify="between" align="center" wrap="wrap" gap={2}>
             <TextInput
               type="search"
               size="sm"
@@ -321,17 +305,6 @@ export function CajaSummaryTab({
               startIcon={<Search size={14} aria-hidden="true" />}
               hasClear
               containerClassName="ad-caja-search"
-            />
-          </HStack>
-
-          <HStack justify="between" align="center" wrap="wrap" gap={2}>
-            <FilterPillBar
-              ariaLabel="Filtrar por forma de pago"
-              mode="pills"
-              size="sm"
-              value={methodFilter}
-              options={CAJA_METHOD_FILTER_OPTIONS}
-              onChange={onChangeMethodFilter}
             />
             <HStack gap={2} align="center" wrap="wrap">
               <Text type="supporting" color="secondary" hasTabularNumbers>
@@ -356,9 +329,9 @@ export function CajaSummaryTab({
       <SurfaceCard
         title={`Cobrado por forma de pago · ${periodLabel}`}
         subtitle={
-          periodSummary.collectedCents > 0
-            ? `Total registrado: ${formatCurrency(periodSummary.collectedCents, currency)} (${periodSummary.ticketCount} ${periodSummary.ticketCount === 1 ? 'cobro' : 'cobros'})`
-            : 'Distribución de ingresos por método de cobro en el periodo.'
+          methodFilter === 'all'
+            ? 'Toca una forma de pago para ver solo sus movimientos.'
+            : 'Filtrando movimientos. Toca de nuevo para ver todos.'
         }
         headingLevel={3}
         padded
@@ -380,42 +353,24 @@ export function CajaSummaryTab({
           </HStack>
         }
       >
-        <VStack className="ad-caja-methods" gap={0}>
-          {[
-            {
-              id: 'cash' as const,
-              label: 'Efectivo',
-              cents: periodSummary.cashCents,
-              count: periodSummary.cashCount,
-              icon: <Banknote size={15} aria-hidden="true" />,
-            },
-            {
-              id: 'card' as const,
-              label: 'Tarjeta',
-              cents: periodSummary.cardCents,
-              count: periodSummary.cardCount,
-              icon: <CreditCard size={15} aria-hidden="true" />,
-            },
-            {
-              id: 'transfer' as const,
-              label: 'Transferencia',
-              cents: periodSummary.transferCents,
-              count: periodSummary.transferCount,
-              icon: <ArrowLeftRight size={15} aria-hidden="true" />,
-            },
-          ].map((method) => {
+        <HStack className="ad-caja-methods" gap={0} role="group" aria-label="Filtrar por forma de pago">
+          {METHOD_TILES.map((method) => {
+            const totals = methodTotals(periodSummary, method.id);
             const sharePct =
               periodSummary.collectedCents > 0
-                ? Math.round((method.cents / periodSummary.collectedCents) * 100)
+                ? Math.round((totals.cents / periodSummary.collectedCents) * 100)
                 : 0;
             const isSelected = methodFilter === method.id;
             return (
-              <VStack
+              <button
                 key={method.id}
+                type="button"
                 className="ad-caja-method-tile"
                 data-active={isSelected ? 'true' : undefined}
-                gap={2}
-                justify="between"
+                data-dimmed={methodFilter !== 'all' && !isSelected ? 'true' : undefined}
+                aria-pressed={isSelected}
+                aria-label={`${method.label}: ${formatCurrency(totals.cents, currency)}, ${totals.count} ${totals.count === 1 ? 'cobro' : 'cobros'}. ${isSelected ? 'Quitar filtro' : 'Filtrar'}`}
+                onClick={() => onToggleMethodFilter(method.id)}
               >
                 <HStack justify="between" align="center" gap={2}>
                   <HStack gap={1.5} align="center" className="ad-caja-method-label">
@@ -430,368 +385,92 @@ export function CajaSummaryTab({
                     </Text>
                   ) : null}
                 </HStack>
-                <Text className="ad-caja-method-val fx-tabular" hasTabularNumbers>
-                  {formatCurrency(method.cents, currency)}
+                <Text className="ad-caja-method-val" hasTabularNumbers>
+                  {formatCurrency(totals.cents, currency)}
                 </Text>
                 <Text type="supporting" color="secondary" hasTabularNumbers>
-                  {method.count === 0
+                  {totals.count === 0
                     ? 'Sin cobros'
-                    : `${method.count} ${method.count === 1 ? 'cobro' : 'cobros'}`}
+                    : `${totals.count} ${totals.count === 1 ? 'cobro' : 'cobros'}`}
                 </Text>
-              </VStack>
+              </button>
             );
           })}
-        </VStack>
+        </HStack>
       </SurfaceCard>
 
-      <VStack className="ad-split ad-split-table" gap={0}>
-        <VStack gap={4} className="ad-card-grow">
-          <CajaMovementsSection
-            cashEntries={filteredCashEntries}
-            splitDetails={splitDetails}
-            tz={tz}
-            currency={currency}
-            periodLabel={periodLabel}
-            canManageCash={canRecordCash}
-            deletingEntryId={deletingEntryId}
-            hasExternalFilters={hasSecondaryFilters || cajaPeriod !== 'all'}
-            onResetExternalFilters={onResetFilters}
-            onEditEntry={onEditCashEntry}
-            onRequestDeleteEntry={onRequestDeleteCashEntry}
-          />
+      <CajaMovementsSection
+        cashEntries={filteredCashEntries}
+        splitDetails={splitDetails}
+        tz={tz}
+        currency={currency}
+        periodLabel={periodLabel}
+        canManageCash={canRecordCash}
+        deletingEntryId={deletingEntryId}
+        hasExternalFilters={hasActiveFilters}
+        onResetExternalFilters={onResetFilters}
+        onEditEntry={onEditCashEntry}
+        onRequestDeleteEntry={onRequestDeleteCashEntry}
+      />
 
-          {commissionsByStaff.length > 0 ? (
-            <SurfaceCard
-              title={
-                isSpecialistView
-                  ? `Tus comisiones y propinas · ${periodLabel}`
-                  : `Comisiones y propinas por profesional · ${periodLabel}`
-              }
-              subtitle={
-                isSpecialistView
-                  ? 'Resumen de tus cobros, comisión estimada y propinas en el periodo.'
-                  : 'Cálculo en vivo de ventas, comisión estimada y propinas por especialista.'
-              }
-              icon={<Users size={16} aria-hidden="true" />}
-              headingLevel={3}
-              actions={
-                <Button
-                  type="button"
-                  label="Ver detalle"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onOpenCommissions}
-                />
-              }
-            >
-              <VStack className="ad-table-scroll ad-caja-desktop-table" gap={0}>
-                <Table
-                  idKey="id"
-                  hasHover
-                  data={[...commissionsByStaff]}
-                  columns={[
-                    {
-                      key: 'name',
-                      header: 'Profesional',
-                      width: proportional(1.4, { minWidth: 145 }),
-                      renderCell: (row) => (
-                        <VStack gap={0}>
-                          <Text weight="medium">{row.name}</Text>
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {row.servicesCount}{' '}
-                            {row.servicesCount === 1 ? 'cobro' : 'cobros'} · {row.percent}%
-                          </Text>
-                        </VStack>
-                      ),
-                    },
-                    {
-                      key: 'sales',
-                      header: 'Ventas',
-                      align: 'end',
-                      width: pixel(96),
-                      renderCell: (row) => (
-                        <Text hasTabularNumbers>{formatCurrency(row.sales, currency)}</Text>
-                      ),
-                    },
-                    {
-                      key: 'commission',
-                      header: 'Comisión',
-                      align: 'end',
-                      width: pixel(96),
-                      renderCell: (row) => (
-                        <Text hasTabularNumbers>
-                          {formatCurrency(row.commission, currency)}
-                        </Text>
-                      ),
-                    },
-                    {
-                      key: 'tips',
-                      header: 'Propinas',
-                      align: 'end',
-                      width: pixel(96),
-                      renderCell: (row) => (
-                        <Text hasTabularNumbers>{formatCurrency(row.tips, currency)}</Text>
-                      ),
-                    },
-                    {
-                      key: 'totalPayout',
-                      header: 'Total',
-                      align: 'end',
-                      width: pixel(104),
-                      renderCell: (row) => (
-                        <Text weight="bold" hasTabularNumbers>
-                          {formatCurrency(row.totalPayout, currency)}
-                        </Text>
-                      ),
-                    },
-                    ...(showCommissionActions
-                      ? [
-                          {
-                            key: 'id' as const,
-                            header: 'Acciones',
-                            align: 'end' as const,
-                            width: pixel(260),
-                            renderCell: (row: CommissionStaffRow) => (
-                              <HStack
-                                gap={1.5}
-                                align="center"
-                                justify="end"
-                                className="ad-caja-row-actions"
-                              >
-                                <Button
-                                  type="button"
-                                  label="Editar %"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="ad-caja-row-btn"
-                                  icon={<Pencil size={13} aria-hidden="true" />}
-                                  onClick={() => onEditCommissionRate(row)}
-                                />
-                                {row.totalPayout > 0 ? (
-                                  <Button
-                                    type="button"
-                                    label="Registrar pago"
-                                    variant="secondary"
-                                    size="sm"
-                                    className="ad-caja-row-btn"
-                                    icon={<Banknote size={13} aria-hidden="true" />}
-                                    onClick={() => onRegisterPayout(row)}
-                                  />
-                                ) : null}
-                              </HStack>
-                            ),
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-              </VStack>
-
-              <VStack className="ad-caja-mobile-cards" gap={3}>
-                {commissionsByStaff.map((row) => (
-                  <VStack key={row.id} className="ad-caja-mcard" gap={2}>
-                    <HStack justify="between" align="center" gap={2}>
-                      <VStack gap={0}>
-                        <Text weight="semibold">{row.name}</Text>
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {row.servicesCount} {row.servicesCount === 1 ? 'cobro' : 'cobros'}
-                        </Text>
-                      </VStack>
-                      <StatusTag tone="neutral" hasTabularNumbers label={`${row.percent}%`} />
-                    </HStack>
-                    <VStack className="ad-caja-mcard-grid" gap={0}>
-                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
-                        <Text type="supporting" color="secondary">
-                          Ventas
-                        </Text>
-                        <Text weight="semibold" hasTabularNumbers>
-                          {formatCurrency(row.sales, currency)}
-                        </Text>
-                      </VStack>
-                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
-                        <Text type="supporting" color="secondary">
-                          Comisión
-                        </Text>
-                        <Text weight="semibold" hasTabularNumbers>
-                          {formatCurrency(row.commission, currency)}
-                        </Text>
-                      </VStack>
-                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
-                        <Text type="supporting" color="secondary">
-                          Propinas
-                        </Text>
-                        <Text weight="semibold" hasTabularNumbers>
-                          {formatCurrency(row.tips, currency)}
-                        </Text>
-                      </VStack>
-                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
-                        <Text type="supporting" color="secondary">
-                          Total
-                        </Text>
-                        <Text weight="bold" hasTabularNumbers>
-                          {formatCurrency(row.totalPayout, currency)}
-                        </Text>
-                      </VStack>
-                    </VStack>
-                    {showCommissionActions ? (
-                      <HStack gap={2} wrap="wrap" className="ad-caja-mcard-foot">
+      {commissionsByStaff.length > 0 ? (
+        <SurfaceCard
+          title={isSpecialistView ? `Tus comisiones · ${periodLabel}` : `Por pagar a tu equipo · ${periodLabel}`}
+          subtitle={
+            isSpecialistView
+              ? 'Comisión estimada y propinas del periodo.'
+              : `Total ${formatCurrency(teamTotalCents, currency)} entre comisiones y propinas.`
+          }
+          icon={<Users size={16} aria-hidden="true" />}
+          headingLevel={3}
+          actions={
+            <Button
+              type="button"
+              label="Ver comisiones"
+              variant="ghost"
+              size="sm"
+              icon={<ArrowRight size={14} aria-hidden="true" />}
+              onClick={onOpenCommissions}
+            />
+          }
+        >
+          {visibleCommissionRows.length === 0 ? (
+            <VStack padding={4}>
+              <Text type="supporting" color="secondary">
+                Nadie tiene comisiones ni propinas pendientes en este periodo.
+              </Text>
+            </VStack>
+          ) : (
+            <VStack className="ad-row-list" gap={0}>
+              {visibleCommissionRows.map((row) => (
+                <ActionRow
+                  key={row.id}
+                  title={<Text weight="semibold">{row.name}</Text>}
+                  subtitle={`Comisión ${formatCurrency(row.commission, currency)} · Propinas ${formatCurrency(row.tips, currency)}`}
+                  actions={
+                    <HStack gap={3} align="center" wrap="wrap">
+                      <Text weight="bold" hasTabularNumbers className="ad-caja-row-amount">
+                        {formatCurrency(row.totalPayout, currency)}
+                      </Text>
+                      {showPayoutActions && row.totalPayout > 0 ? (
                         <Button
                           type="button"
-                          label="Editar %"
+                          label="Pagar"
                           variant="secondary"
                           size="sm"
-                          className="ad-caja-touch-btn rb-grow"
-                          icon={<Pencil size={14} aria-hidden="true" />}
-                          onClick={() => onEditCommissionRate(row)}
+                          className="ad-caja-touch-btn"
+                          icon={<Banknote size={14} aria-hidden="true" />}
+                          onClick={() => onRegisterPayout(row)}
                         />
-                        {row.totalPayout > 0 ? (
-                          <Button
-                            type="button"
-                            label="Registrar pago"
-                            variant="primary"
-                            size="sm"
-                            className="ad-caja-touch-btn rb-grow"
-                            icon={<Banknote size={14} aria-hidden="true" />}
-                            onClick={() => onRegisterPayout(row)}
-                          />
-                        ) : null}
-                      </HStack>
-                    ) : null}
-                  </VStack>
-                ))}
-              </VStack>
-            </SurfaceCard>
-          ) : null}
-        </VStack>
-
-        {canRecordCash ? (
-          <VStack className="ad-caja-tools" gap={4}>
-            <SurfaceCard
-              title="Movimiento rápido"
-              subtitle="Vende productos del inventario o registra gastos e ingresos fuera de cita."
-              headingLevel={3}
-              padded
-              className="ad-card ad-caja-tool-card"
-            >
-              <VStack gap={3} justify="between" className="ad-card-grow">
-                <Text type="supporting" color="secondary">
-                  Si eliges un producto del inventario, el stock se descuenta y el ingreso se
-                  anota en el corte al instante.
-                </Text>
-                <CashMovementForm
-                  inventory={inventory}
-                  staff={staff}
-                  currency={currency}
-                  onRecordCashEntry={onRecordCashEntry}
-                />
-              </VStack>
-            </SurfaceCard>
-
-            <SurfaceCard
-              title="Corte de caja de hoy"
-              subtitle="Cuadra el efectivo físico del cajón contra los cobros y gastos en efectivo de hoy."
-              headingLevel={3}
-              padded
-              className="ad-card ad-caja-tool-card"
-            >
-              <VStack gap={3} className="ad-card-grow">
-                <VStack className="ad-subpanel ad-caja-reconcile" gap={0}>
-                  <HStack justify="between" align="center" className="ad-kv-row">
-                    <Text type="supporting" color="secondary">
-                      Efectivo esperado
-                    </Text>
-                    <Text weight="bold" hasTabularNumbers>
-                      {formatCurrency(reconciliation.expectedCents, currency)}
-                    </Text>
-                  </HStack>
-                  <HStack justify="between" align="center" className="ad-kv-row">
-                    <Text type="supporting" color="secondary">
-                      Efectivo contado
-                    </Text>
-                    <Text weight="semibold" hasTabularNumbers>
-                      {formatCurrency(reconciliation.countedCents, currency)}
-                    </Text>
-                  </HStack>
-                  <HStack
-                    justify="between"
-                    align="center"
-                    wrap="wrap"
-                    gap={2}
-                    className="ad-kv-row"
-                  >
-                    <Text type="supporting" color="secondary">
-                      Diferencia
-                    </Text>
-                    <StatusTag
-                      tone={reconciliation.tone}
-                      hasTabularNumbers
-                      showDot
-                      label={
-                        reconciliation.status === 'balanced'
-                          ? `Cuadra (${formatCurrency(0, currency)})`
-                          : reconciliation.status === 'over'
-                            ? `Sobrante +${formatCurrency(reconciliation.diffCents, currency)}`
-                            : `Faltante −${formatCurrency(Math.abs(reconciliation.diffCents), currency)}`
-                      }
-                    />
-                  </HStack>
-                </VStack>
-
-                <VStack gap={1.5}>
-                  <NumberInput
-                    label={`Efectivo que contaste (${currency})`}
-                    value={countedCashMxn}
-                    min={0}
-                    onChange={setCountedCashMxn}
-                  />
-                  {reconciliation.expectedCents > 0 && reconciliation.diffCents !== 0 ? (
-                    <HStack justify="end">
-                      <Button
-                        type="button"
-                        label="Igualar al esperado"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setCountedCashMxn(
-                            Number((reconciliation.expectedCents / 100).toFixed(2)),
-                          )
-                        }
-                      />
+                      ) : null}
                     </HStack>
-                  ) : null}
-                </VStack>
-
-                <VStack gap={1}>
-                  <Button
-                    type="button"
-                    label={
-                      closeClipboard.copied
-                        ? 'Resumen copiado'
-                        : 'Copiar resumen del corte'
-                    }
-                    variant="secondary"
-                    size="sm"
-                    width="100%"
-                    className="ad-caja-touch-btn"
-                    icon={
-                      closeClipboard.copied ? (
-                        <Check size={14} aria-hidden="true" />
-                      ) : (
-                        <ClipboardCheck size={14} aria-hidden="true" />
-                      )
-                    }
-                    onClick={handleCopyCloseSummary}
-                  />
-                  <Text type="supporting" color="secondary">
-                    {closeClipboard.feedback ??
-                      'Formato listo para pegar y enviar el cierre por WhatsApp.'}
-                  </Text>
-                </VStack>
-              </VStack>
-            </SurfaceCard>
-          </VStack>
-        ) : null}
-      </VStack>
+                  }
+                />
+              ))}
+            </VStack>
+          )}
+        </SurfaceCard>
+      ) : null}
     </VStack>
   );
 }

@@ -117,7 +117,7 @@ export default function AdminBookingsPage() {
   const isScheduleView = ws.tab !== 'waitlist' && ws.viewMode === 'schedule';
 
   return (
-    <VStack gap={3} className="ad-page fx-fade-up">
+    <VStack gap={3} className="ad-page">
       <VStack gap={2} style={{ minWidth: 0, width: '100%' }}>
         <PageHeader
           title="Agenda"

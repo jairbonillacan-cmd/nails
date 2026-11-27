@@ -140,7 +140,7 @@ export default function AdminLoginPage() {
 
   return (
     <VStack as="main" className="ad-login-wrap" gap={0}>
-      <VStack className="ad-login-frame fx-fade-up" gap={0}>
+      <VStack className="ad-login-frame" gap={0}>
         <VStack className="ad-login-mobile-bar" gap={0} aria-hidden="true" />
         <VStack as="aside" className="ad-login-brand" justify="between" gap={6} aria-label={settings.name}>
           <img
@@ -325,7 +325,7 @@ export default function AdminLoginPage() {
               <VStack gap={3}>
                 <Divider label="Cuentas de prueba" />
                 <VStack className="ad-surface" gap={0}>
-                  <VStack className="ad-row-list fx-stagger" gap={0}>
+                  <VStack className="ad-row-list" gap={0}>
                     {demoUsers.map((u) => {
                       const meta = ROLE_META[u.role];
                       const displayName = cleanDemoDisplayName(u.fullName);

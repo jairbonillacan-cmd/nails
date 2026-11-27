@@ -43,8 +43,10 @@
   transition: transform var(--duration-fast) ease, background-color var(--duration-fast) ease;
 }
 
-.ck-code-btn:hover {
-  background: var(--lk-rosa);
+@media (hover: hover) {
+  .ck-code-btn:hover {
+    background: var(--lk-rosa);
+  }
 }
 
 .ck-code-btn:focus-visible {
@@ -123,9 +125,11 @@
   transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
-.ck-anchor-pill:hover {
-  border-color: var(--lk-cereza);
-  color: var(--lk-cereza);
+@media (hover: hover) {
+  .ck-anchor-pill:hover {
+    border-color: var(--lk-cereza);
+    color: var(--lk-cereza);
+  }
 }
 
 .ck-anchor-pill:focus-visible {

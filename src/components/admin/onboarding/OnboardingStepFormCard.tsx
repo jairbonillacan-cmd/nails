@@ -133,7 +133,7 @@ export function OnboardingStepFormCard({
   return (
     <form onSubmit={onSubmit}>
       <SurfaceCard padded>
-        <VStack key={`wizard-step-${stepIndex}`} gap={5} className="fx-step-in">
+        <VStack key={`wizard-step-${stepIndex}`} gap={5}>
           {stepIndex === 0 ? (
             <OnboardingStepProfile
               salonName={profile.salonName}

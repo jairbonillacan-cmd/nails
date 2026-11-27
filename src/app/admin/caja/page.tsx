@@ -5,12 +5,12 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
+import { IconButton } from '@astryxdesign/core/IconButton';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Download, ExternalLink } from 'lucide-react';
+import { Calculator, Download, Plus, SlidersHorizontal } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { CajaSummaryTab } from '@/components/admin/caja/CajaSummaryTab';
-import { CashMovementDraftDialog } from '@/components/admin/caja/CashMovementForm';
 import {
   approveCajaDeposit,
   deleteCajaCashEntry,
@@ -18,6 +18,7 @@ import {
   exportCajaCsv,
   recordCajaCashEntry,
   rejectCajaDeposit,
+  saveCajaConfig,
   saveCajaCoupon,
   saveCajaPackage,
   toggleCajaCouponActive,
@@ -30,7 +31,7 @@ import {
 } from '@/components/admin/caja/cajaActions';
 import {
   buildCommissionPayoutDraft,
-  type CashMovementDraft,
+  type CommissionPayoutDraft,
   type CouponPayloadData,
 } from '@/components/admin/caja/cajaMetrics';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
@@ -47,7 +48,7 @@ import {
   SkeletonBlock,
 } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
-import type { CashRegisterEntry, Coupon, StaffMember } from '@/lib/types';
+import type { CajaConfig, CashRegisterEntry, Coupon, StaffMember } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 function CajaTabFallback() {
@@ -60,38 +61,51 @@ function CajaTabFallback() {
 }
 
 const CajaDepositsTab = dynamic(
-  () =>
-    import('@/components/admin/caja/CajaDepositsTab').then((mod) => mod.CajaDepositsTab),
+  () => import('@/components/admin/caja/CajaDepositsTab').then((mod) => mod.CajaDepositsTab),
   { ssr: false, loading: CajaTabFallback },
 );
 
 const CajaCommissionsTab = dynamic(
   () =>
-    import('@/components/admin/caja/CajaCommissionsTab').then(
-      (mod) => mod.CajaCommissionsTab,
-    ),
+    import('@/components/admin/caja/CajaCommissionsTab').then((mod) => mod.CajaCommissionsTab),
   { ssr: false, loading: CajaTabFallback },
 );
 
 const CajaPromosTab = dynamic(
-  () =>
-    import('@/components/admin/caja/CajaPromosTab').then((mod) => mod.CajaPromosTab),
+  () => import('@/components/admin/caja/CajaPromosTab').then((mod) => mod.CajaPromosTab),
   { ssr: false, loading: CajaTabFallback },
+);
+
+const CashMovementDialog = dynamic(
+  () => import('@/components/admin/caja/CashMovementForm').then((mod) => mod.CashMovementDialog),
+  { ssr: false },
+);
+
+const CommissionPayoutDialog = dynamic(
+  () =>
+    import('@/components/admin/caja/CashMovementForm').then((mod) => mod.CommissionPayoutDialog),
+  { ssr: false },
+);
+
+const CashCloseDialog = dynamic(
+  () => import('@/components/admin/caja/CashCloseDialog').then((mod) => mod.CashCloseDialog),
+  { ssr: false },
+);
+
+const CajaSettingsDialog = dynamic(
+  () => import('@/components/admin/caja/CajaSettingsDialog').then((mod) => mod.CajaSettingsDialog),
+  { ssr: false },
 );
 
 const CommissionRateDialog = dynamic(
   () =>
-    import('@/components/admin/caja/CommissionRateDialog').then(
-      (mod) => mod.CommissionRateDialog,
-    ),
+    import('@/components/admin/caja/CommissionRateDialog').then((mod) => mod.CommissionRateDialog),
   { ssr: false },
 );
 
 const ManualCashEditDialog = dynamic(
   () =>
-    import('@/components/admin/caja/ManualCashEditDialog').then(
-      (mod) => mod.ManualCashEditDialog,
-    ),
+    import('@/components/admin/caja/ManualCashEditDialog').then((mod) => mod.ManualCashEditDialog),
   { ssr: false },
 );
 
@@ -105,6 +119,7 @@ export default function AdminCashPage() {
   const searchParams = useSearchParams();
   const {
     data,
+    cajaConfig,
     activeTab,
     setActiveTab,
     highlightUncollected,
@@ -113,8 +128,12 @@ export default function AdminCashPage() {
     setPromosView,
     cajaPeriod,
     setCajaPeriod,
+    customRange,
+    setCustomRange,
+    activeCustom,
+    activePeriodText,
     methodFilter,
-    setMethodFilter,
+    toggleMethodFilter,
     searchQuery,
     setSearchQuery,
     resetSalesFilters,
@@ -132,6 +151,7 @@ export default function AdminCashPage() {
     filteredSplitDetails,
     splitSummaryByMethod,
     commissionsByStaff,
+    todayCommissionsByStaff,
   } = useCajaData(providerData, searchParams.get('tab'));
 
   const [msg, setMsg] = useState<string | null>(null);
@@ -149,10 +169,11 @@ export default function AdminCashPage() {
   const [editingCashEntry, setEditingCashEntry] = useState<CashRegisterEntry | null>(null);
   const [deleteCashTarget, setDeleteCashTarget] = useState<CashRegisterEntry | null>(null);
   const [deletingCashEntryId, setDeletingCashEntryId] = useState<string | null>(null);
-  const [editingCommissionStaffId, setEditingCommissionStaffId] = useState<string | null>(
-    null,
-  );
-  const [payoutDraft, setPayoutDraft] = useState<CashMovementDraft | null>(null);
+  const [editingCommissionStaffId, setEditingCommissionStaffId] = useState<string | null>(null);
+  const [payoutDraft, setPayoutDraft] = useState<CommissionPayoutDraft | null>(null);
+  const [movementOpen, setMovementOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
@@ -165,18 +186,16 @@ export default function AdminCashPage() {
   const tz = data.settings.timezone || 'America/Mexico_City';
   const currency = data.settings.currency;
   const nowMs = Date.parse(data.serverNowIso) || 0;
-  const defaultDepositLabel = formatCurrency(
-    data.settings.depositAmountCents ?? 20000,
-    currency,
-  );
+  const defaultDepositLabel = formatCurrency(data.settings.depositAmountCents ?? 20000, currency);
   const isSpecialistView = data.session.user.role === 'specialist';
-  const canManagePackages =
-    data.session.user.role === 'owner' || data.session.user.role === 'admin';
+  const canManageCaja = data.session.user.role === 'owner' || data.session.user.role === 'admin';
   const effectiveActiveTab: CajaTab =
-    activeTab === 'promos' && !canManagePackages ? 'summary' : activeTab;
-  const hasActiveOwnerPin = Boolean(
-    data.settings.ownerPinEnabled && data.settings.hasOwnerPin,
-  );
+    activeTab === 'promos' && !canManageCaja ? 'summary' : activeTab;
+  const hasActiveOwnerPin = Boolean(data.settings.ownerPinEnabled && data.settings.hasOwnerPin);
+  const hasActiveFilters =
+    cajaPeriod !== cajaConfig.defaultPeriod ||
+    methodFilter !== 'all' ||
+    searchQuery.trim().length > 0;
 
   const editingCommissionMember = editingCommissionStaffId
     ? (data.staff.find((member) => member.id === editingCommissionStaffId) ?? null)
@@ -191,10 +210,7 @@ export default function AdminCashPage() {
     resolve?.(ok);
   };
 
-  const handleApproveDeposit = async (
-    bookingId: string,
-    bookingCode: string,
-  ): Promise<boolean> => {
+  const handleApproveDeposit = async (bookingId: string, bookingCode: string): Promise<boolean> => {
     setApprovingId(bookingId);
     setErrorMsg(null);
     setMsg(null);
@@ -212,10 +228,7 @@ export default function AdminCashPage() {
     }
   };
 
-  const handleRejectDeposit = (
-    bookingId: string,
-    bookingCode: string,
-  ): Promise<boolean> => {
+  const handleRejectDeposit = (bookingId: string, bookingCode: string): Promise<boolean> => {
     settlePendingReject(false);
     setRejectConfirmTarget({ bookingId, bookingCode });
     return new Promise<boolean>((resolve) => {
@@ -246,9 +259,7 @@ export default function AdminCashPage() {
     }
   };
 
-  const handleRecordCashEntry = async (
-    input: RecordCajaEntryInput,
-  ): Promise<FormSubmitResult> => {
+  const handleRecordCashEntry = async (input: RecordCajaEntryInput): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await recordCajaCashEntry(input);
     if (!result.ok) {
@@ -296,9 +307,7 @@ export default function AdminCashPage() {
     }
   };
 
-  const handleSaveCoupon = async (
-    payload: CouponPayloadData,
-  ): Promise<FormSubmitResult> => {
+  const handleSaveCoupon = async (payload: CouponPayloadData): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await saveCajaCoupon(payload);
     if (!result.ok) {
@@ -363,19 +372,27 @@ export default function AdminCashPage() {
     return FORM_SUBMIT_OK;
   };
 
+  const handleSaveCajaConfig = async (next: CajaConfig): Promise<FormSubmitResult> => {
+    setMsg(null);
+    const result = await saveCajaConfig(next);
+    if (!result.ok) return formSubmitError(result.error);
+    setErrorMsg(null);
+    setMsg(result.message);
+    await refresh();
+    return FORM_SUBMIT_OK;
+  };
+
   const handleOpenCommissionEditor = (row: CommissionStaffRow) => {
-    if (!canManagePackages) return;
+    if (!canManageCaja) return;
     setEditingCommissionStaffId(row.id);
   };
 
   const handleOpenPayoutDraft = (row: CommissionStaffRow) => {
-    if (!canManagePackages || row.totalPayout <= 0) return;
-    setPayoutDraft(buildCommissionPayoutDraft(row, cajaPeriod));
+    if (!canManageCaja || row.totalPayout <= 0) return;
+    setPayoutDraft(buildCommissionPayoutDraft(row, cajaPeriod, activeCustom, data.serverTodayKey));
   };
 
-  const handleSavePackage = async (
-    input: SaveCajaPackageInput,
-  ): Promise<FormSubmitResult> => {
+  const handleSavePackage = async (input: SaveCajaPackageInput): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await saveCajaPackage(input);
     if (!result.ok) {
@@ -387,10 +404,7 @@ export default function AdminCashPage() {
     return FORM_SUBMIT_OK;
   };
 
-  const handleTogglePackage = async (
-    pkg: ServicePackageCatalogRow,
-    nextActive: boolean,
-  ) => {
+  const handleTogglePackage = async (pkg: ServicePackageCatalogRow, nextActive: boolean) => {
     setTogglingPkgId(pkg.id);
     setErrorMsg(null);
     try {
@@ -435,43 +449,59 @@ export default function AdminCashPage() {
   };
 
   return (
-    <VStack gap={5} className="ad-page fx-fade-up">
+    <VStack gap={5} className="ad-page">
       <PageHeader
         title="Caja"
-        subtitle="Ventas, arqueo diario, comisiones y promociones en un solo lugar."
+        className="ad-caja-head"
+        subtitle="Cobros, gastos, corte del día, comisiones y promociones."
         actions={
-          <>
-            <Button
-              label="Ver agenda"
-              variant="ghost"
-              size="sm"
-              icon={<ExternalLink size={14} aria-hidden="true" />}
-              href="/admin/citas"
-            />
-            {canManagePackages ? (
+          canManageCaja ? (
+            <>
               <Button
                 type="button"
-                label="Exportar a Excel"
+                label="Registrar movimiento"
+                variant="primary"
+                size="sm"
+                className="ad-caja-touch-btn ad-caja-primary-action"
+                icon={<Plus size={15} aria-hidden="true" />}
+                onClick={() => setMovementOpen(true)}
+              />
+              <Button
+                type="button"
+                label="Corte de caja"
                 variant="secondary"
                 size="sm"
-                icon={<Download size={15} aria-hidden="true" />}
+                className="ad-caja-touch-btn ad-caja-secondary-action"
+                icon={<Calculator size={15} aria-hidden="true" />}
+                onClick={() => setCloseOpen(true)}
+              />
+              <IconButton
+                type="button"
+                label="Personalizar caja"
+                tooltip="Personalizar caja"
+                variant="ghost"
+                size="md"
+                icon={<SlidersHorizontal size={16} aria-hidden="true" />}
+                onClick={() => setSettingsOpen(true)}
+              />
+              <IconButton
+                type="button"
+                label="Exportar a Excel (CSV)"
+                tooltip="Exportar a Excel"
+                variant="ghost"
+                size="md"
+                icon={<Download size={16} aria-hidden="true" />}
                 isLoading={exportingCsv}
                 isDisabled={exportingCsv}
                 onClick={() => void handleExportCsv()}
               />
-            ) : null}
-          </>
+            </>
+          ) : undefined
         }
       />
 
       {msg ? (
-        <Banner
-          status="success"
-          role="status"
-          title={msg}
-          isDismissable
-          onDismiss={() => setMsg(null)}
-        />
+        <Banner status="success" role="status" title={msg} isDismissable onDismiss={() => setMsg(null)} />
       ) : null}
 
       {errorMsg ? (
@@ -496,59 +526,47 @@ export default function AdminCashPage() {
       >
         <Tab
           value="summary"
-          label={
-            uncollectedBookings.length > 0
-              ? `Resumen (${uncollectedBookings.length})`
-              : 'Resumen'
-          }
+          label={uncollectedBookings.length > 0 ? `Resumen (${uncollectedBookings.length})` : 'Resumen'}
         />
         <Tab
           value="deposits"
-          label={
-            pendingDeposits.length > 0
-              ? `Anticipos (${pendingDeposits.length})`
-              : 'Anticipos'
-          }
+          label={pendingDeposits.length > 0 ? `Anticipos (${pendingDeposits.length})` : 'Anticipos'}
         />
         <Tab value="commissions" label="Comisiones" />
-        {canManagePackages ? <Tab value="promos" label="Promos y paquetes" /> : null}
+        {canManageCaja ? <Tab value="promos" label="Promos" /> : null}
       </TabList>
 
       {effectiveActiveTab === 'summary' ? (
         <CajaSummaryTab
-          salonName={data.settings.name}
-          allCashEntries={data.cashEntries}
           filteredCashEntries={filteredCashEntries}
           periodSummary={periodSummary}
-          todaySummary={todaySummary}
+          periodLabel={activePeriodText}
           commissionsByStaff={commissionsByStaff}
-          inventory={data.inventory}
-          staff={data.staff}
           uncollectedBookings={uncollectedBookings}
           uncollectedTotalCents={uncollectedTotalCents}
           pendingDepositsCount={pendingDeposits.length}
           pendingDepositsTotalCents={pendingDepositsTotalCents}
           splitDetails={filteredSplitDetails}
           cajaPeriod={cajaPeriod}
+          customRange={customRange}
           methodFilter={methodFilter}
           searchQuery={searchQuery}
-          todayKey={data.serverTodayKey}
+          hasActiveFilters={hasActiveFilters}
           tz={tz}
           currency={currency}
-          canRecordCash={canManagePackages}
+          canRecordCash={canManageCaja}
           isSpecialistView={isSpecialistView}
           deletingEntryId={deletingCashEntryId}
           highlightUncollected={highlightUncollected}
           onChangePeriod={setCajaPeriod}
-          onChangeMethodFilter={setMethodFilter}
+          onChangeCustomRange={setCustomRange}
+          onToggleMethodFilter={toggleMethodFilter}
           onChangeSearchQuery={setSearchQuery}
           onResetFilters={resetSalesFilters}
           onOpenDeposits={() => setActiveTab('deposits')}
           onOpenCommissions={() => setActiveTab('commissions')}
-          onRecordCashEntry={handleRecordCashEntry}
           onEditCashEntry={setEditingCashEntry}
           onRequestDeleteCashEntry={setDeleteCashTarget}
-          onEditCommissionRate={handleOpenCommissionEditor}
           onRegisterPayout={handleOpenPayoutDraft}
         />
       ) : effectiveActiveTab === 'deposits' ? (
@@ -568,7 +586,8 @@ export default function AdminCashPage() {
           splitSummaryByMethod={splitSummaryByMethod}
           currency={currency}
           commissionPeriod={cajaPeriod}
-          canManageCommissions={canManagePackages}
+          periodLabel={activePeriodText}
+          canManageCommissions={canManageCaja}
           isSpecialistView={isSpecialistView}
           onChangeCommissionPeriod={setCajaPeriod}
           onEditCommissionRate={handleOpenCommissionEditor}
@@ -584,8 +603,9 @@ export default function AdminCashPage() {
           services={data.services}
           currency={currency}
           tz={tz}
+          todayKey={data.serverTodayKey}
           nowMs={nowMs}
-          canManagePackages={canManagePackages}
+          canManagePackages={canManageCaja}
           togglingCouponId={togglingCouponId}
           deletingCouponId={deletingCouponId}
           togglingPkgId={togglingPkgId}
@@ -597,10 +617,55 @@ export default function AdminCashPage() {
         />
       )}
 
-      {canManagePackages && editingCommissionMember ? (
+      {canManageCaja && movementOpen ? (
+        <CashMovementDialog
+          isOpen
+          onOpenChange={setMovementOpen}
+          inventory={data.inventory}
+          staff={data.staff}
+          currency={currency}
+          expenseCategories={cajaConfig.expenseCategories}
+          retailCommissionPercent={cajaConfig.retailCommissionPercent}
+          recentEntries={data.cashEntries}
+          onRecordCashEntry={handleRecordCashEntry}
+        />
+      ) : null}
+
+      {canManageCaja && closeOpen ? (
+        <CashCloseDialog
+          onOpenChange={setCloseOpen}
+          salonName={data.settings.name}
+          cashEntries={data.cashEntries}
+          todayKey={data.serverTodayKey}
+          tz={tz}
+          currency={currency}
+          config={cajaConfig}
+          todaySummary={todaySummary}
+          todayStaffRows={todayCommissionsByStaff}
+          uncollectedCount={uncollectedBookings.length}
+          uncollectedTotalCents={uncollectedTotalCents}
+          pendingDepositsCount={pendingDeposits.length}
+          pendingDepositsTotalCents={pendingDepositsTotalCents}
+          canRecordAdjustment={canManageCaja}
+          onRecordCashEntry={handleRecordCashEntry}
+        />
+      ) : null}
+
+      {canManageCaja && settingsOpen ? (
+        <CajaSettingsDialog
+          config={cajaConfig}
+          currency={currency}
+          onOpenChange={setSettingsOpen}
+          onSave={handleSaveCajaConfig}
+        />
+      ) : null}
+
+      {canManageCaja && editingCommissionMember ? (
         <CommissionRateDialog
           staffMember={editingCommissionMember}
           staffRow={editingCommissionRow}
+          retailCommissionPercent={cajaConfig.retailCommissionPercent}
+          periodLabel={activePeriodText}
           currency={currency}
           onOpenChange={(open) => {
             if (!open) setEditingCommissionStaffId(null);
@@ -609,11 +674,9 @@ export default function AdminCashPage() {
         />
       ) : null}
 
-      {canManagePackages && payoutDraft ? (
-        <CashMovementDraftDialog
+      {canManageCaja && payoutDraft ? (
+        <CommissionPayoutDialog
           draft={payoutDraft}
-          inventory={data.inventory}
-          staff={data.staff}
           currency={currency}
           onOpenChange={(open) => {
             if (!open) setPayoutDraft(null);
@@ -622,13 +685,19 @@ export default function AdminCashPage() {
         />
       ) : null}
 
-      {canManagePackages && editingCashEntry ? (
+      {canManageCaja && editingCashEntry ? (
         <ManualCashEditDialog
           entry={editingCashEntry}
           staff={data.staff}
           currency={currency}
+          tz={tz}
+          expenseCategories={cajaConfig.expenseCategories}
           onOpenChange={(open) => {
             if (!open) setEditingCashEntry(null);
+          }}
+          onRequestDelete={(entry) => {
+            setEditingCashEntry(null);
+            setDeleteCashTarget(entry);
           }}
           onUpdateEntry={handleUpdateCashEntry}
         />
@@ -661,8 +730,8 @@ export default function AdminCashPage() {
               setDeleteCashTarget(null);
             }
           }}
-          title="¿Eliminar este movimiento manual?"
-          description={`Se eliminará "${deleteCashTarget.description}" (${formatCurrency(Math.abs(deleteCashTarget.amountCents), currency)}) del historial y del corte de caja.`}
+          title="¿Eliminar este movimiento?"
+          description={`Se eliminará "${deleteCashTarget.description}" (${formatCurrency(Math.abs(deleteCashTarget.amountCents), currency)}) del historial y del corte de caja. No se puede deshacer.`}
           confirmLabel="Sí, eliminar"
           cancelLabel="Cancelar"
           variant="destructive"

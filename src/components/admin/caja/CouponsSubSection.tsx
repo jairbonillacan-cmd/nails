@@ -1,26 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { Switch } from '@astryxdesign/core/Switch';
+import { TextInput } from '@astryxdesign/core/TextInput';
 import { Table, pixel, proportional } from '@astryxdesign/core/Table';
-import { Check, Copy, Gift, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Check, Copy, Gift, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { formatCurrency, formatDateShortInTimezone } from '@/lib/format';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import type { Coupon } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
-import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
-import { classifyCouponStatus, type CouponPayloadData } from './cajaMetrics';
+import { EmptyStateCard, FilterPillBar, StatusTag, SurfaceCard } from '@/components/ui';
+import {
+  COUPON_LIST_FILTER_OPTIONS,
+  classifyCouponStatus,
+  filterCoupons,
+  type CouponListFilter,
+  type CouponPayloadData,
+} from './cajaMetrics';
 import { CouponEditorDialog } from './CouponEditorDialog';
 
 interface CouponsSubSectionProps {
   coupons: readonly Coupon[];
   currency: 'MXN' | 'USD';
   tz: string;
+  todayKey: string;
   nowMs: number;
   canManageCoupons?: boolean;
   togglingCouponId: string | null;
@@ -34,6 +42,7 @@ export function CouponsSubSection({
   coupons,
   currency,
   tz,
+  todayKey,
   nowMs,
   canManageCoupons = true,
   togglingCouponId,
@@ -46,6 +55,13 @@ export function CouponsSubSection({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+  const [listFilter, setListFilter] = useState<CouponListFilter>('all');
+  const [query, setQuery] = useState('');
+  const visibleCoupons = useMemo(
+    () => filterCoupons(coupons, { filter: listFilter, query, nowMs }),
+    [coupons, listFilter, query, nowMs],
+  );
+  const existingCodes = useMemo(() => coupons.map((c) => c.code), [coupons]);
 
   const handleCopyCode = async (coupon: Coupon) => {
     setCopiedId(coupon.id);
@@ -106,11 +122,58 @@ export function CouponsSubSection({
             </VStack>
           ) : (
             <>
-              <VStack className="ad-table-scroll ad-caja-desktop-table" gap={0}>
+              <VStack className="ad-caja-list-toolbar" gap={2}>
+                <TextInput
+                  type="search"
+                  size="sm"
+                  label="Buscar código"
+                  isLabelHidden
+                  placeholder="Buscar código o destinataria..."
+                  value={query}
+                  onChange={setQuery}
+                  startIcon={<Search size={14} aria-hidden="true" />}
+                  hasClear
+                />
+                <FilterPillBar
+                  ariaLabel="Filtrar cupones y tarjetas"
+                  mode="pills"
+                  size="sm"
+                  value={listFilter}
+                  options={COUPON_LIST_FILTER_OPTIONS}
+                  onChange={setListFilter}
+                />
+              </VStack>
+              {visibleCoupons.length === 0 ? (
+                <VStack padding={4}>
+                  <EmptyStateCard
+                    framed={false}
+                    isCompact
+                    title="Sin códigos con este filtro"
+                    description="Cambia la búsqueda o el filtro para ver otros códigos."
+                    actions={
+                      <Button
+                        type="button"
+                        label="Ver todos"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setListFilter('all');
+                          setQuery('');
+                        }}
+                      />
+                    }
+                  />
+                </VStack>
+              ) : null}
+              <VStack
+                className="ad-table-scroll ad-caja-desktop-table"
+                gap={0}
+                hidden={visibleCoupons.length === 0}
+              >
                 <Table
                   idKey="id"
                   hasHover
-                  data={[...coupons]}
+                  data={visibleCoupons}
                   columns={[
                     {
                       key: 'code',
@@ -320,7 +383,7 @@ export function CouponsSubSection({
               </VStack>
 
               <VStack className="ad-caja-mobile-cards" gap={3}>
-                {coupons.map((c) => {
+                {visibleCoupons.map((c) => {
                   const meta = classifyCouponStatus(c, nowMs);
                   const isCopied = clipboard.copied && copiedId === c.id;
                   const isBusy = togglingCouponId === c.id || deletingCouponId === c.id;
@@ -475,6 +538,8 @@ export function CouponsSubSection({
       <CouponEditorDialog
         isOpen={editorOpen}
         coupon={editingCoupon}
+        existingCodes={existingCodes}
+        todayKey={todayKey}
         currency={currency}
         onOpenChange={(open) => {
           setEditorOpen(open);

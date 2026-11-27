@@ -42,8 +42,14 @@ export type CommissionStaffRow = {
   id: string;
   name: string;
   percent: number;
+  retailPercent: number;
   servicesCount: number;
   sales: number;
+  serviceSales: number;
+  serviceCommission: number;
+  retailSales: number;
+  retailCommission: number;
+  otherCommission: number;
   commission: number;
   tips: number;
   splitTipsCents: number;

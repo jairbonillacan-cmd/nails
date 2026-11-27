@@ -68,7 +68,7 @@ export function OnboardingStepAlerts({
   return (
     <>
       <SurfaceCard padded>
-        <VStack key="wizard-step-live" gap={5} className="fx-step-in">
+        <VStack key="wizard-step-live" gap={5}>
           <VStack gap={2}>
             <HStack gap={2} align="center">
               <StatusDot variant="success" label="Lista para compartir" isPulsing />

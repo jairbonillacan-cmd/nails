@@ -22,6 +22,7 @@ interface FormDialogSubmitFooter {
   readonly submitIcon?: ReactNode;
   readonly isSubmitDisabled?: boolean;
   readonly cancelLabel?: string;
+  readonly secondaryAction?: ReactNode;
 }
 
 interface FormDialogProps {
@@ -120,7 +121,12 @@ export function FormDialog({
         footer={
           isOpen && submitFooter ? (
             <LayoutFooter hasDivider>
-              <HStack gap={2} justify="end" wrap="wrap">
+              <HStack gap={2} justify="end" align="center" wrap="wrap">
+                {submitFooter.secondaryAction ? (
+                  <HStack className="rb-grow" align="center">
+                    {submitFooter.secondaryAction}
+                  </HStack>
+                ) : null}
                 <Button
                   type="button"
                   label={submitFooter.cancelLabel ?? 'Cancelar'}

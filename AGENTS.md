@@ -46,6 +46,7 @@ To remove this block, run `astryx init --remove-agents`, which removes it from t
   - Cero comentarios en `src/**` (única excepción: `// INVARIANT:` auditado cuando una restricción de negocio no puede expresarse en tipos).
   - Prohibido `useEffect` y `setTimeout` en `src/app/**` y `src/components/**`; los efectos de infraestructura viven únicamente en `src/lib/hooks/`.
   - Prohibidos `<div>`/`<span>` crudos y valores `#hex`/`px` inline en `src/app/**` y `src/components/**` (usar Astryx, tokens y `src/lib/theme-presets.ts`).
+  - CSS en `src/**`: todo `:hover` vive dentro de `@media (hover: hover)` (`css-hover-ungated`). En `/admin` (y `src/components/ui/`) no hay animaciones de entrada `fx-fade-up`/`fx-stagger`/`fx-step-in` (`admin-no-entrance-motion`).
   - Prohibido `any`, `as any`, `as unknown as`, `@ts-ignore` y `@ts-expect-error`.
   - Fronteras de dependencias: el dominio puro (`src/lib/availability/**`, `types.ts`, `format.ts`, `ics.ts`) no importa React, Next, Supabase, repositorios ni integraciones; `src/components/**` no importa `repositories/`, `integrations/` ni `auth/`.
 - **Error-Driven System Hardening:** Cada bug o error repetido se corrige primero en el sistema (tipos/diseño -> regla en `scripts/check-guardrails.mjs` -> property test en `fast-check`), nunca agregando advertencias en prosa ni comentarios en el código.

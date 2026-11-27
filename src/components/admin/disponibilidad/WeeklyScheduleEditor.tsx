@@ -134,7 +134,7 @@ export function WeeklyScheduleEditor({
   };
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={4}>
       <SurfaceCard
         id="weekly-schedule-heading"
         title={`Turnos de ${staffName}`}

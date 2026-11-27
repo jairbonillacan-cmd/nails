@@ -106,7 +106,7 @@ export function WeeklyDayRow({
         </HStack>
 
         {isExpanded ? (
-          <VStack gap={3} className="fx-step-in">
+          <VStack gap={3}>
             <Divider />
             <HStack justify="between" align="center" wrap="wrap" gap={2}>
               <Switch

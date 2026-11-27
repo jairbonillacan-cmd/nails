@@ -9,6 +9,7 @@ import {
 } from '@/lib/hooks/useAdminCache';
 import type {
   BookingWithRelations,
+  CajaConfig,
   CashRegisterEntry,
   Coupon,
   PaymentMethod,
@@ -18,6 +19,7 @@ import type {
 import {
   computeCommissionsByStaff,
   isIsoInCajaPeriod,
+  type CajaCustomRange,
   type CajaPeriod,
   type CouponPayloadData,
 } from './cajaMetrics';
@@ -33,6 +35,7 @@ import {
 export function buildSplitSummaryByMethod(
   data: AdminOverviewPayload | null,
   period: CajaPeriod = 'all',
+  custom?: CajaCustomRange | null,
 ): MethodSummaryRow[] {
   if (!data) return [];
   const tz = data.settings.timezone || 'America/Mexico_City';
@@ -41,7 +44,7 @@ export function buildSplitSummaryByMethod(
     { count: number; amountCents: number; tipCents: number }
   >();
   for (const split of data.paymentSplits) {
-    if (!isIsoInCajaPeriod(split.createdAt, data.serverTodayKey, tz, period)) {
+    if (!isIsoInCajaPeriod(split.createdAt, data.serverTodayKey, tz, period, custom)) {
       continue;
     }
     const current = grouped.get(split.method) ?? {
@@ -96,6 +99,8 @@ export function buildSplitDetails(data: AdminOverviewPayload | null): SplitDetai
 export function buildCommissionsByStaff(
   data: AdminOverviewPayload | null,
   period: CajaPeriod = 'all',
+  custom?: CajaCustomRange | null,
+  retailCommissionPercent?: number,
 ): CommissionStaffRow[] {
   if (!data) return [];
   return computeCommissionsByStaff({
@@ -105,6 +110,8 @@ export function buildCommissionsByStaff(
     todayKey: data.serverTodayKey,
     tz: data.settings.timezone || 'America/Mexico_City',
     period,
+    custom,
+    retailCommissionPercent,
     viewerRole: data.session.user.role,
     viewerStaffId: data.session.user.staffMemberId,
   });
@@ -344,6 +351,7 @@ export interface UpdateCajaCashEntryInput {
   amountMxn: number;
   method: PaymentMethod;
   staffId: string | null;
+  tipMxn?: number;
 }
 
 export async function updateCajaCashEntry(
@@ -363,7 +371,10 @@ export async function updateCajaCashEntry(
           description: input.description.trim(),
           amountCents: Math.round(input.amountMxn * 100),
           paymentMethod: input.method,
-          staffId: input.entryType === 'expense' ? input.staffId : input.staffId,
+          staffId: input.staffId,
+          ...(input.tipMxn !== undefined
+            ? { tipCents: Math.max(0, Math.round(input.tipMxn * 100)) }
+            : {}),
         },
       }),
     });
@@ -749,6 +760,7 @@ export async function exportCajaCsv(
     const res = await fetch('/api/admin/operations?export=csv', {
       method: 'GET',
       headers,
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS * 2),
     });
     if (res.status === 403) {
       const errJson = (await res.json().catch(() => null)) as {
@@ -785,7 +797,52 @@ export async function exportCajaCsv(
     document.body.removeChild(link);
     URL.revokeObjectURL(objectUrl);
     return { status: 'ok' };
-  } catch {
-    return { status: 'error', error: 'No se pudo conectar para descargar el archivo.' };
+  } catch (err) {
+    return {
+      status: 'error',
+      error: isCajaTimeoutError(err)
+        ? 'La descarga tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para descargar el archivo.',
+    };
+  }
+}
+
+export async function saveCajaConfig(
+  config: CajaConfig,
+): Promise<{ ok: true; config: CajaConfig; message: string } | { ok: false; error: string }> {
+  try {
+    const res = await fetch('/api/admin/caja-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
+      body: JSON.stringify({ cajaConfig: config }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      cajaConfig?: CajaConfig;
+      error?: string;
+    } | null;
+    if (!res.ok || !json?.cajaConfig) {
+      return { ok: false, error: json?.error || 'No se pudo guardar la configuración de caja.' };
+    }
+    const saved = json.cajaConfig;
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      current
+        ? {
+            ...current,
+            settings: {
+              ...current.settings,
+              landingContent: { ...current.settings.landingContent, cajaConfig: saved },
+            },
+          }
+        : current,
+    );
+    return { ok: true, config: saved, message: 'Preferencias de caja guardadas.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'Guardar la configuración tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para guardar la configuración de caja.',
+    };
   }
 }

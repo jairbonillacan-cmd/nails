@@ -199,7 +199,7 @@ export default function AdminAvailabilityPage() {
           onSavingStateChange={setSavingWeekly}
         />
       ) : tab === 'breaks' ? (
-        <VStack key={`breaks-${staffId}`} gap={5} className="fx-step-in">
+        <VStack key={`breaks-${staffId}`} gap={5}>
           <DateOverridesSection
             key={`overrides-${staffId}`}
             staffId={staffId}
@@ -226,7 +226,7 @@ export default function AdminAvailabilityPage() {
           />
         </VStack>
       ) : (
-        <VStack key="tab-help" className="fx-step-in" gap={0}>
+        <VStack key="tab-help" gap={0}>
           <VisualTroubleshooter
             staffId={staffId}
             staffMembers={data.staff}

@@ -406,6 +406,13 @@ describe('cajaMetrics specialist commissions, live rate recalculation & payouts'
       amountMxn: 415,
       method: 'cash',
       staffId: 'st-2',
+      staffName: 'Camila',
+      periodLabel: 'Este mes',
+      serviceCommissionCents: 31500,
+      retailCommissionCents: 0,
+      otherCommissionCents: 0,
+      tipsCents: 10000,
+      totalCents: 41500,
     });
   });
 

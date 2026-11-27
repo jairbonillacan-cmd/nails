@@ -36,6 +36,35 @@ const LandingSectionsSchema = z
 
 const LandingGalleryModeSchema = z.enum(['mix', 'custom_only']);
 
+const CAJA_DEFAULT_PERIODS = ['today', '7d', 'month', 'all'] as const;
+export const CAJA_EXPENSE_CATEGORY_MAX = 12;
+
+const CajaExpenseCategorySchema = z.string().trim().min(2).max(40);
+
+const CajaCloseSummaryPrefsSchema = z.object({
+  includeStaffBreakdown: z.boolean(),
+  includeTips: z.boolean(),
+  includePending: z.boolean(),
+});
+
+export const CajaConfigSchema = z
+  .object({
+    openingFloatCents: CentsNonNegativeSchema.max(10_000_000),
+    expenseCategories: z
+      .array(CajaExpenseCategorySchema)
+      .max(CAJA_EXPENSE_CATEGORY_MAX)
+      .refine(
+        (items) =>
+          new Set(items.map((item) => item.toLocaleLowerCase('es'))).size === items.length,
+        { message: 'Las categorías de gasto no pueden repetirse.' },
+      ),
+    retailCommissionPercent: z.number().int().min(0).max(100),
+    defaultPeriod: z.enum(CAJA_DEFAULT_PERIODS),
+    closeSummary: CajaCloseSummaryPrefsSchema,
+  })
+  .strict();
+
+
 export const LandingContentSchema = z.object({
   heroEyebrow: z.string(),
   heroTitle: z.string(),
@@ -66,6 +95,7 @@ export const LandingContentSchema = z.object({
   visitHoursText: z.string().max(180).optional(),
   showBookingQr: z.boolean().optional(),
   touchUpDays: z.number().int().min(7).max(60).optional(),
+  cajaConfig: CajaConfigSchema.optional().catch(undefined),
   sections: LandingSectionsSchema.optional(),
 });
 

@@ -12,6 +12,7 @@ Registro histórico de las decisiones de arquitectura más relevantes de **LAIKO
 | [ADR-0004](./0004-seguridad-rbac-otp-pin-media-r2-y-qr-recepcion.md) | Seguridad, RBAC multi-rol, endurecimiento OTP/PIN, media privada en R2 y barra QR de recepción | Aceptado | Seguridad, Privacidad (LFPDPPP) y RBAC | 2026-11-27 |
 | [ADR-0005](./0005-caja-ventas-integridad-contable-y-configuracion-sin-migraciones.md) | Evolución de Caja/Ventas, integridad contable y configuración de `/cita/[token]` sin migraciones SQL | Aceptado | Caja/Ventas y Configuración Dinámica | 2026-11-27 |
 | [ADR-0006](./0006-modulo-clientas-crm-ficha-tecnica-y-consultas-puntuales.md) | Rediseño del módulo Clientas (CRM), ficha técnica de uñas y consultas puntuales | Aceptado | CRM de Clientas y Rendimiento Serverless | 2026-11-27 |
+| [ADR-0007](./0007-caja-personalizable-corte-con-fondo-y-comision-retail-configurable.md) | Caja personalizable (`cajaConfig`), corte con fondo inicial y comisión retail configurable | Aceptado | Caja/Ventas y Configuración Dinámica | 2026-11-27 |
 
 ## Cómo añadir un nuevo ADR
 

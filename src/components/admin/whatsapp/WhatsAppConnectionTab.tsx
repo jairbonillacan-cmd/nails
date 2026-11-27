@@ -198,7 +198,7 @@ export function WhatsAppConnectionTab({
   };
 
   return (
-    <VStack gap={4} className="fx-step-in" style={{ minWidth: 0 }}>
+    <VStack gap={4} style={{ minWidth: 0 }}>
       <SurfaceCard
         id="wa-connection-status-heading"
         icon={<ShieldCheck size={17} aria-hidden="true" />}

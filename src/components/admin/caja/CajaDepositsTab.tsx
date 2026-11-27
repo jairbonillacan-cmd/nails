@@ -9,10 +9,10 @@ import { Link } from '@astryxdesign/core/Link';
 import { Token } from '@astryxdesign/core/Token';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
-import { AspectRatio } from '@astryxdesign/core/AspectRatio';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Check, ExternalLink, ImageIcon, Wallet } from 'lucide-react';
+import { Check, ExternalLink, ImageIcon, MessageCircle, Phone, Wallet } from 'lucide-react';
 import {
+  buildWhatsAppLink,
   formatCurrency,
   formatDateShortInTimezone,
   formatPhoneDisplay,
@@ -60,7 +60,7 @@ export function CajaDepositsTab({
       : null;
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={4}>
       <SurfaceCard
         title={`Anticipos por validar (${defaultDepositLabel})`}
         subtitle="Comprobantes de transferencia que llegaron por tu página o por Instagram."
@@ -301,6 +301,36 @@ export function CajaDepositsTab({
                         label={formatCurrency(previewDeposit.depositAmountCents, currency)}
                       />
                     </HStack>
+                    {previewDeposit.clientPhone ? (
+                      <HStack justify="between" align="center" gap={2} wrap="wrap">
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {formatPhoneDisplay(previewDeposit.clientPhone)}
+                        </Text>
+                        <HStack gap={1.5} wrap="wrap">
+                          <Button
+                            label="WhatsApp"
+                            variant="secondary"
+                            size="sm"
+                            className="ad-caja-touch-btn"
+                            icon={<MessageCircle size={14} aria-hidden="true" />}
+                            href={buildWhatsAppLink(
+                              previewDeposit.clientPhone,
+                              `Hola ${previewDeposit.clientName}, revisamos el comprobante de tu anticipo para la cita ${previewDeposit.bookingCode}. ¿Nos compartes una foto completa donde se vea el monto y el folio? Gracias.`,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          />
+                          <Button
+                            label="Llamar"
+                            variant="ghost"
+                            size="sm"
+                            className="ad-caja-touch-btn"
+                            icon={<Phone size={14} aria-hidden="true" />}
+                            href={`tel:${previewDeposit.clientPhone.replace(/[^\d+]/g, '')}`}
+                          />
+                        </HStack>
+                      </HStack>
+                    ) : null}
                   </VStack>
 
                   {isImageProofHref(
@@ -308,22 +338,23 @@ export function CajaDepositsTab({
                     previewDeposit.proofDeliveryMethod,
                   ) && previewDeposit.paymentProofUrl ? (
                     <VStack gap={2}>
-                      <AspectRatio ratio={4 / 3} fit="contain">
-                        <img
-                          src={previewDeposit.paymentProofUrl}
-                          alt={`Comprobante de anticipo de ${previewDeposit.clientName}`}
-                          className="ad-proof-img"
-                        />
-                      </AspectRatio>
-                      <Button
-                        label="Abrir imagen completa"
-                        variant="ghost"
-                        size="sm"
-                        icon={<ExternalLink size={14} aria-hidden="true" />}
+                      <a
                         href={previewDeposit.paymentProofUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                      />
+                        className="ad-proof-viewer"
+                        aria-label="Abrir el comprobante completo en otra pestaña"
+                      >
+                        <img
+                          src={previewDeposit.paymentProofUrl}
+                          alt={`Comprobante de anticipo de ${previewDeposit.clientName}`}
+                          className="ad-proof-img ad-proof-img-full"
+                        />
+                      </a>
+                      <Text type="supporting" color="secondary">
+                        Desliza para ver todo el recibo. Tócalo para abrirlo completo y hacer zoom
+                        al monto o folio.
+                      </Text>
                     </VStack>
                   ) : isSafeProofHref(previewDeposit.paymentProofUrl) ? (
                     <VStack gap={2} className="ad-proof-note">

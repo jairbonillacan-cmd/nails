@@ -20,6 +20,7 @@ interface CajaPromosTabProps {
   services: readonly Service[];
   currency: 'MXN' | 'USD';
   tz: string;
+  todayKey: string;
   nowMs: number;
   canManagePackages: boolean;
   togglingCouponId: string | null;
@@ -41,6 +42,7 @@ export function CajaPromosTab({
   services,
   currency,
   tz,
+  todayKey,
   nowMs,
   canManagePackages,
   togglingCouponId,
@@ -58,7 +60,7 @@ export function CajaPromosTab({
   ];
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={4}>
       <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={2}>
         <FilterPillBar
           ariaLabel="Sección de promociones y paquetes"
@@ -74,6 +76,7 @@ export function CajaPromosTab({
           coupons={coupons}
           currency={currency}
           tz={tz}
+          todayKey={todayKey}
           nowMs={nowMs}
           canManageCoupons={canManagePackages}
           togglingCouponId={togglingCouponId}

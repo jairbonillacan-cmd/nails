@@ -62,6 +62,22 @@ export interface LandingSectionToggles {
   showMapEmbed?: boolean;
 }
 
+export type CajaDefaultPeriod = 'today' | '7d' | 'month' | 'all';
+
+export interface CajaCloseSummaryPrefs {
+  includeStaffBreakdown: boolean;
+  includeTips: boolean;
+  includePending: boolean;
+}
+
+export interface CajaConfig {
+  openingFloatCents: number;
+  expenseCategories: string[];
+  retailCommissionPercent: number;
+  defaultPeriod: CajaDefaultPeriod;
+  closeSummary: CajaCloseSummaryPrefs;
+}
+
 export interface LandingContent {
   heroEyebrow: string;
   heroTitle: string;
@@ -92,6 +108,7 @@ export interface LandingContent {
   visitHoursText?: string;
   showBookingQr?: boolean;
   touchUpDays?: number;
+  cajaConfig?: CajaConfig;
   sections?: LandingSectionToggles;
 }
 

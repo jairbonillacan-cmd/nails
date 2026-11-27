@@ -227,7 +227,7 @@ export default function AdminOverviewPage() {
   );
 
   return (
-    <VStack gap={5} className="ad-dashboard fx-fade-up">
+    <VStack gap={5} className="ad-dashboard">
       <PageHeader
         eyebrow={`${metrics.greetingLabel}, ${firstName}`}
         title="Resumen"

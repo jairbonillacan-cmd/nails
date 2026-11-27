@@ -108,7 +108,7 @@ export function NewBookingAdvancedSection({
           />
 
           {state.isRecurring ? (
-            <VStack gap={2} paddingBlockStart={1} className="fx-step-in">
+            <VStack gap={2} paddingBlockStart={1}>
               <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
                 <Selector
                   label="Cada cuándo"

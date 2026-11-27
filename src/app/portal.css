@@ -95,8 +95,10 @@
   transition: border-color 160ms ease, background-color 160ms ease;
 }
 
-.pt-booking-row:hover {
-  border-color: color-mix(in srgb, var(--lk-cereza) 45%, var(--lk-tinte));
+@media (hover: hover) {
+  .pt-booking-row:hover {
+    border-color: color-mix(in srgb, var(--lk-cereza) 45%, var(--lk-tinte));
+  }
 }
 
 .ad-pkg-card {

@@ -8,6 +8,7 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { resolveCajaConfig } from '@/lib/caja/caja-config';
 import { formatCurrency } from '@/lib/format';
 import type { MetricTileItem } from '@/components/ui';
 import {
@@ -21,6 +22,7 @@ import {
   filterCashEntries,
   filterSplitDetails,
   type CajaBookingSearchMeta,
+  type CajaCustomRange,
   type CajaMethodFilter,
   type CajaPeriod,
 } from './cajaMetrics';
@@ -33,6 +35,8 @@ import {
   type UncollectedBookingRow,
 } from './cajaTypes';
 
+const EMPTY_CUSTOM_RANGE: CajaCustomRange = { fromKey: '', toKey: '' };
+
 export function useCajaData(
   providerData: AdminOverviewPayload | null,
   tabParam: string | null,
@@ -43,7 +47,8 @@ export function useCajaData(
     initialRoute.highlightUncollected,
   );
   const [promosView, setPromosView] = useState<PromosSubTab>(initialRoute.promosView);
-  const [cajaPeriod, setCajaPeriod] = useState<CajaPeriod>('all');
+  const [periodChoice, setPeriodChoice] = useState<CajaPeriod | null>(null);
+  const [customRange, setCustomRange] = useState<CajaCustomRange>(EMPTY_CUSTOM_RANGE);
   const [methodFilter, setMethodFilter] = useState<CajaMethodFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [packagesSeq, setPackagesSeq] = useState(0);
@@ -95,6 +100,13 @@ export function useCajaData(
   const packagesCatalog = packagesQuery.data?.servicePackages ?? [];
   const packagesLoading = packagesQuery.isLoading;
 
+  const cajaConfig = useMemo(
+    () => resolveCajaConfig(data?.settings.landingContent),
+    [data?.settings.landingContent],
+  );
+  const cajaPeriod: CajaPeriod = periodChoice ?? cajaConfig.defaultPeriod;
+  const activeCustom = cajaPeriod === 'custom' ? customRange : null;
+
   const tz = data?.settings.timezone || 'America/Mexico_City';
   const todayKey = data?.serverTodayKey ?? '';
 
@@ -121,57 +133,62 @@ export function useCajaData(
   }, [data]);
 
   const splitSummaryByMethod = useMemo(
-    () => buildSplitSummaryByMethod(data, cajaPeriod),
-    [data, cajaPeriod],
+    () => buildSplitSummaryByMethod(data, cajaPeriod, activeCustom),
+    [data, cajaPeriod, activeCustom],
   );
   const splitDetails = useMemo(() => buildSplitDetails(data), [data]);
   const commissionsByStaff = useMemo(
-    () => buildCommissionsByStaff(data, cajaPeriod),
-    [data, cajaPeriod],
+    () =>
+      buildCommissionsByStaff(
+        data,
+        cajaPeriod,
+        activeCustom,
+        cajaConfig.retailCommissionPercent,
+      ),
+    [data, cajaPeriod, activeCustom, cajaConfig.retailCommissionPercent],
+  );
+  const todayCommissionsByStaff = useMemo(
+    () => buildCommissionsByStaff(data, 'today', null, cajaConfig.retailCommissionPercent),
+    [data, cajaConfig.retailCommissionPercent],
+  );
+
+  const scope = useMemo(
+    () => ({ period: cajaPeriod, custom: activeCustom, todayKey, tz }),
+    [cajaPeriod, activeCustom, todayKey, tz],
   );
 
   const periodCashEntries = useMemo(
     () =>
       data
         ? filterCashEntries(data.cashEntries, {
-            period: cajaPeriod,
+            ...scope,
             method: 'all',
             query: searchQuery,
-            todayKey,
-            tz,
             bookingLookup,
           })
         : [],
-    [data, cajaPeriod, searchQuery, todayKey, tz, bookingLookup],
+    [data, scope, searchQuery, bookingLookup],
   );
 
   const filteredCashEntries = useMemo(
     () =>
       data
         ? filterCashEntries(data.cashEntries, {
-            period: cajaPeriod,
+            ...scope,
             method: methodFilter,
             query: searchQuery,
-            todayKey,
-            tz,
             bookingLookup,
           })
         : [],
-    [data, cajaPeriod, methodFilter, searchQuery, todayKey, tz, bookingLookup],
+    [data, scope, methodFilter, searchQuery, bookingLookup],
   );
 
   const filteredSplitDetails = useMemo(
     () =>
       data
-        ? filterSplitDetails(splitDetails, {
-            period: cajaPeriod,
-            method: methodFilter,
-            query: searchQuery,
-            todayKey,
-            tz,
-          })
+        ? filterSplitDetails(splitDetails, { ...scope, method: methodFilter, query: searchQuery })
         : [],
-    [data, splitDetails, cajaPeriod, methodFilter, searchQuery, todayKey, tz],
+    [data, splitDetails, scope, methodFilter, searchQuery],
   );
 
   const periodSummary = useMemo(
@@ -204,8 +221,17 @@ export function useCajaData(
     setPackagesSeq((prev) => prev + 1);
   }, []);
 
+  const setCajaPeriod = useCallback((next: CajaPeriod) => {
+    setPeriodChoice(next);
+  }, []);
+
+  const toggleMethodFilter = useCallback((next: CajaMethodFilter) => {
+    setMethodFilter((current) => (current === next ? 'all' : next));
+  }, []);
+
   const resetSalesFilters = useCallback(() => {
-    setCajaPeriod('all');
+    setPeriodChoice(null);
+    setCustomRange(EMPTY_CUSTOM_RANGE);
     setMethodFilter('all');
     setSearchQuery('');
   }, []);
@@ -219,39 +245,36 @@ export function useCajaData(
     0,
   );
 
-  const activePeriodText = cajaPeriodLabel(cajaPeriod);
+  const activePeriodText = cajaPeriodLabel(cajaPeriod, activeCustom, todayKey);
   const isFilteredByMethodOrSearch = methodFilter !== 'all' || searchQuery.trim().length > 0;
   const activeSummary = isFilteredByMethodOrSearch ? filteredSummary : periodSummary;
+  const currency = data?.settings.currency ?? 'MXN';
 
   const kpiItems: MetricTileItem[] = data
     ? [
         {
           id: 'collected',
           label: `Cobrado · ${activePeriodText}`,
-          value: formatCurrency(activeSummary.collectedCents, data.settings.currency),
+          value: formatCurrency(activeSummary.collectedCents, currency),
           sub:
             activeSummary.ticketCount > 0
-              ? `Neto ${formatCurrency(activeSummary.netCents, data.settings.currency)} · Ticket prom. ${formatCurrency(activeSummary.averageTicketCents, data.settings.currency)}`
-              : `Neto ${formatCurrency(activeSummary.netCents, data.settings.currency)} · Gastos ${formatCurrency(activeSummary.expensesCents, data.settings.currency)}`,
+              ? `Neto ${formatCurrency(activeSummary.netCents, currency)} · Ticket prom. ${formatCurrency(activeSummary.averageTicketCents, currency)}`
+              : `Neto ${formatCurrency(activeSummary.netCents, currency)} · Gastos ${formatCurrency(activeSummary.expensesCents, currency)}`,
         },
         {
           id: 'pending',
           label: 'Por cobrar',
-          value: formatCurrency(
-            uncollectedTotalCents + pendingDepositsTotalCents,
-            data.settings.currency,
-          ),
+          value: formatCurrency(uncollectedTotalCents + pendingDepositsTotalCents, currency),
           sub: `${uncollectedBookings.length} sin cobrar · ${pendingDeposits.length} ${pendingDeposits.length === 1 ? 'anticipo' : 'anticipos'}`,
-          tone:
-            uncollectedTotalCents + pendingDepositsTotalCents > 0 ? 'warning' : 'success',
+          tone: uncollectedTotalCents + pendingDepositsTotalCents > 0 ? 'warning' : 'success',
         },
         {
           id: 'tips',
           label: `Propinas · ${activePeriodText}`,
-          value: formatCurrency(activeSummary.tipsCents, data.settings.currency),
+          value: formatCurrency(activeSummary.tipsCents, currency),
           sub:
             activeSummary.expensesCents > 0
-              ? `Para profesionales · Gastos ${formatCurrency(activeSummary.expensesCents, data.settings.currency)}`
+              ? `Para profesionales · Gastos ${formatCurrency(activeSummary.expensesCents, currency)}`
               : 'Para tus profesionales',
         },
       ]
@@ -259,6 +282,7 @@ export function useCajaData(
 
   return {
     data,
+    cajaConfig,
     activeTab,
     setActiveTab,
     highlightUncollected,
@@ -267,8 +291,13 @@ export function useCajaData(
     setPromosView,
     cajaPeriod,
     setCajaPeriod,
+    customRange,
+    setCustomRange,
+    activeCustom,
+    activePeriodText,
     methodFilter,
     setMethodFilter,
+    toggleMethodFilter,
     searchQuery,
     setSearchQuery,
     resetSalesFilters,
@@ -286,5 +315,6 @@ export function useCajaData(
     filteredSplitDetails,
     splitSummaryByMethod,
     commissionsByStaff,
+    todayCommissionsByStaff,
   };
 }

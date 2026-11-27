@@ -145,7 +145,7 @@ export default function AdminReportsPage() {
     : [];
 
   return (
-    <VStack gap={6} className="ad-page fx-fade-up">
+    <VStack gap={6} className="ad-page">
       <PageHeader
         eyebrow={
           report ? formatDateRangeDisplay(report.rangeStartDate, report.rangeEndDate) : PERIOD_LABELS[period]

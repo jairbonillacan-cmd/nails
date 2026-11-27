@@ -970,12 +970,59 @@ test('css-scroll-driven-hidden-start: hidden start state of a view() reveal must
   assert.deepEqual(violations.map((v) => [v.rule, v.line]), [['css-scroll-driven-hidden-start', 1]]);
 });
 
-test('css-scroll-driven: real stylesheets under src/app are clean', async () => {
+test('css-hover-ungated: :hover rules must live inside @media (hover: hover)', async () => {
   const { checkCssText } = await import('./check-guardrails.mjs');
-  for (const file of ['src/app/landing.css', 'src/app/globals.css', 'src/app/booking.css']) {
+  const hoverViolations = (css) =>
+    checkCssText('src/app/admin/admin.css', css)
+      .filter((v) => v.rule === 'css-hover-ungated')
+      .map((v) => v.line);
+
+  assert.deepEqual(hoverViolations('.a:hover {\n  color: red;\n  background: blue;\n}'), [2]);
+  assert.deepEqual(hoverViolations('.a:focus-visible, .b:hover { color: red; }\n.a:hover { color: blue; }'), [1, 2]);
+  assert.deepEqual(hoverViolations('@media (max-width: 40rem) { .a:hover { color: red; } }'), [1]);
+  assert.deepEqual(hoverViolations('@media (hover: hover) { .a:hover { color: red; } }'), []);
+  assert.deepEqual(hoverViolations('@media (hover: hover) and (pointer: fine) { .a:hover .b { opacity: 1; } }'), []);
+  assert.deepEqual(
+    hoverViolations('@media (prefers-reduced-motion: reduce) { @media (hover: hover) { .a:hover { transform: none; } } }'),
+    [],
+  );
+  assert.deepEqual(hoverViolations('.a:focus-visible, .a:active { color: red; }'), []);
+});
+
+test('css guardrails: real stylesheets under src are clean', async () => {
+  const { checkCssText } = await import('./check-guardrails.mjs');
+  for (const file of [
+    'src/app/landing.css',
+    'src/app/globals.css',
+    'src/app/booking.css',
+    'src/app/cita.css',
+    'src/app/portal.css',
+    'src/app/admin/admin.css',
+  ]) {
     if (!fs.existsSync(file)) continue;
     assert.deepEqual(checkCssText(file, fs.readFileSync(file, 'utf-8')), [], file);
   }
+});
+
+test('admin-no-entrance-motion: page/tab/list entrance classes are banned in /admin only', () => {
+  const rulesOf = (rel, text) =>
+    checkSourceText(rel, text)
+      .filter((v) => v.rule === 'admin-no-entrance-motion')
+      .map((v) => v.line);
+  const component = (cls) =>
+    [
+      "import { VStack } from '@astryxdesign/core/VStack';",
+      `export function X({ ok }: { ok: boolean }) { return <VStack className=${cls} gap={2}>x</VStack>; }`,
+    ].join('\n');
+
+  assert.deepEqual(rulesOf('src/app/admin/caja/page.tsx', component('"ad-page fx-fade-up"')), [2]);
+  assert.deepEqual(rulesOf('src/components/admin/caja/CajaSummaryTab.tsx', component('"fx-step-in"')), [2]);
+  assert.deepEqual(rulesOf('src/components/admin/citas/WaitlistPanel.tsx', component("{ok ? 'ad-row-list fx-stagger' : 'ad-row-list'}")), [2]);
+  assert.deepEqual(rulesOf('src/components/admin/citas/WaitlistPanel.tsx', component('{`fx-step-in ${ok ? "a" : "b"}`}')), [2]);
+  assert.deepEqual(rulesOf('src/components/ui/PageHeader.tsx', component('{`ad-page-head fx-fade-up ${ok ? "a" : "b"}`}')), [2]);
+  assert.deepEqual(rulesOf('src/components/admin/citas/WaitlistPanel.tsx', component('"fx-pop fx-press"')), []);
+  assert.deepEqual(rulesOf('src/components/admin/citas/WaitlistPanel.tsx', component('"fx-step-inner"')), []);
+  assert.deepEqual(rulesOf('src/components/booking/ScheduleStep.tsx', component('"fx-step-in"')), []);
 });
 
 test('admin-form-dialog: raw <Dialog purpose="form"> in admin must go through FormDialog', () => {

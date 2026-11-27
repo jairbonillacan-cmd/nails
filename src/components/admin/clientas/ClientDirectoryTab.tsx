@@ -269,7 +269,7 @@ export function ClientDirectoryTab({
   };
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={4}>
       <SurfaceCard tone="subtle" padded className="ad-card ad-cl-filter-card">
         <VStack gap={3}>
           <HStack justify="between" align="center" wrap="wrap" gap={3}>

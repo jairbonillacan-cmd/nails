@@ -357,7 +357,7 @@ export default function AdminClientsPage() {
 
   return (
     <AdminAccessGuard role={data.session.user.role} section="clients" sectionLabel="Clientas">
-      <VStack gap={5} className="ad-page fx-fade-up">
+      <VStack gap={5} className="ad-page">
         <PageHeader
           title="Clientas"
           subtitle="Historial, ficha técnica de uñas, seguimiento y retención en un solo lugar."

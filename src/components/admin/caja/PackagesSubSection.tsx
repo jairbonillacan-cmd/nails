@@ -12,7 +12,7 @@ import { TextArea } from '@astryxdesign/core/TextArea';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Check, Package, Pencil, Plus } from 'lucide-react';
+import { Check, Package, Pencil, Plus, UserPlus } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
@@ -26,6 +26,7 @@ import {
 import { FormDialog, type FormDialogControls } from '@/components/ui/FormDialog';
 import type { SaveCajaPackageInput } from './cajaActions';
 import type { ServicePackageCatalogRow } from './cajaTypes';
+import { computePackageEconomics } from './cajaMetrics';
 
 const PACKAGE_EDITOR_FORM_ID = 'caja-package-editor-form';
 
@@ -66,6 +67,12 @@ function PackageFormBody({
   const [pkgActive, setPkgActive] = useState(editingPkg?.isActive ?? true);
 
   const effectivePkgServiceId = pkgServiceId || activeServices[0]?.id || '';
+  const selectedService = activeServices.find((srv) => srv.id === effectivePkgServiceId) ?? null;
+  const economics = computePackageEconomics({
+    priceCents: Math.round((pkgPriceMxn || 0) * 100),
+    totalSessions: pkgTotalSessions,
+    servicePriceCents: selectedService?.priceCents ?? null,
+  });
 
   const handlePackageSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,8 +126,8 @@ function PackageFormBody({
             onChange={setPkgPriceMxn}
           />
           <NumberInput
-            label="Vence en (días)"
-            description="0 = no vence"
+            label="Vigencia (días)"
+            labelTooltip="0 = no vence"
             value={pkgValidDays}
             min={0}
             max={730}
@@ -128,6 +135,31 @@ function PackageFormBody({
             onChange={setPkgValidDays}
           />
         </Grid>
+        <VStack
+          className="ad-subpanel ad-caja-impact"
+          data-tone={economics.isMoreExpensive ? 'warn' : 'in'}
+          gap={1}
+          role="status"
+          aria-live="polite"
+        >
+          <HStack justify="between" align="center" gap={2}>
+            <Text type="supporting" color="secondary">
+              Precio por sesión
+            </Text>
+            <Text weight="bold" hasTabularNumbers>
+              {formatCurrency(economics.perSessionCents, currency)}
+            </Text>
+          </HStack>
+          {selectedService && economics.regularTotalCents > 0 ? (
+            <Text type="supporting" color="secondary" hasTabularNumbers>
+              {economics.isMoreExpensive
+                ? `Ojo: sale ${formatCurrency(Math.abs(economics.savingsCents), currency)} más caro que pagar ${pkgTotalSessions} sesiones sueltas (${formatCurrency(economics.regularTotalCents, currency)}).`
+                : economics.savingsCents > 0
+                  ? `Tu clienta ahorra ${formatCurrency(economics.savingsCents, currency)} (${economics.savingsPercent}%) frente a ${pkgTotalSessions} sesiones sueltas de ${formatCurrency(selectedService.priceCents, currency)}.`
+                  : `Mismo precio que ${pkgTotalSessions} sesiones sueltas (${formatCurrency(economics.regularTotalCents, currency)}).`}
+            </Text>
+          ) : null}
+        </VStack>
         <TextArea
           label="Notas"
           placeholder="Ej. Precio especial pagando por adelantado."
@@ -227,6 +259,11 @@ export function PackagesSubSection({
                 const perSessionCents =
                   pkg.totalSessions > 0 ? Math.round(pkg.priceCents / pkg.totalSessions) : 0;
                 const totalPips = Math.min(12, Math.max(1, pkg.totalSessions));
+                const economics = computePackageEconomics({
+                  priceCents: pkg.priceCents,
+                  totalSessions: pkg.totalSessions,
+                  servicePriceCents: srv?.priceCents ?? null,
+                });
                 return (
                   <VStack key={pkg.id} className="ad-pkg-card" gap={3}>
                     <HStack justify="between" align="start" wrap="wrap" gap={2}>
@@ -239,6 +276,15 @@ export function PackagesSubSection({
                             showDot
                             label={pkg.isActive ? 'Activo' : 'Pausado'}
                           />
+                          {economics.savingsCents > 0 ? (
+                            <StatusTag
+                              tone="accent"
+                              hasTabularNumbers
+                              label={`Ahorra ${economics.savingsPercent}%`}
+                            />
+                          ) : economics.isMoreExpensive ? (
+                            <StatusTag tone="warning" label="Más caro que sesiones sueltas" />
+                          ) : null}
                         </HStack>
                         {pkg.description ? (
                           <Text type="supporting" color="secondary">
@@ -270,6 +316,16 @@ export function PackagesSubSection({
                               isDisabled={togglingPkgId === pkg.id}
                               onClick={() => handleOpenEdit(pkg)}
                             />
+                            {pkg.isActive ? (
+                              <Button
+                                label="Asignar"
+                                variant="ghost"
+                                size="sm"
+                                className="ad-caja-touch-btn"
+                                icon={<UserPlus size={13} aria-hidden="true" />}
+                                href="/admin/clientas?tab=paquetes"
+                              />
+                            ) : null}
                             <Switch
                               label={`Activar paquete ${pkg.name}`}
                               isLabelHidden

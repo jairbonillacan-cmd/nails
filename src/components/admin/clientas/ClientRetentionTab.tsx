@@ -122,7 +122,7 @@ export function ClientRetentionTab({
   );
 
   return (
-    <VStack gap={5} className="fx-step-in">
+    <VStack gap={5}>
       {nearRewardCount > 0 ? (
         <SurfaceCard tone="accent" padded>
           <HStack justify="between" align="center" wrap="wrap" gap={3}>
@@ -294,7 +294,7 @@ export function ClientRetentionTab({
             />
           </VStack>
         ) : (
-          <VStack className="ad-row-list fx-stagger" gap={0}>
+          <VStack className="ad-row-list" gap={0}>
             {displayedInactiveClients.map((item) => {
               const reactivationMatch = reactivationByClientId.get(item.clientId) ?? null;
               const dispatchKey = `reactivation:${item.clientId}`;

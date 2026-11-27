@@ -338,7 +338,7 @@ export function QuickSlotFinderDialog({
                   />
                 </VStack>
               ) : (
-                <VStack gap={3} className="fx-stagger">
+                <VStack gap={3}>
                   {groupedSlots.map(([dateKey, periods]) => {
                     const totalInDay =
                       periods.Mañana.length + periods.Tarde.length + periods.Noche.length;

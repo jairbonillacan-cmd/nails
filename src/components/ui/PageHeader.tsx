@@ -24,8 +24,8 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   const rootClass = className
-    ? `ad-page-head fx-fade-up ${className}`
-    : 'ad-page-head fx-fade-up';
+    ? `ad-page-head ${className}`
+    : 'ad-page-head';
 
   return (
     <HStack

@@ -190,7 +190,7 @@ export default function AdminWhatsAppPage() {
       section="whatsapp"
       sectionLabel="WhatsApp"
     >
-      <VStack gap={4} className="ad-page fx-fade-up">
+      <VStack gap={4} className="ad-page">
         <PageHeader
           title="WhatsApp"
           subtitle="Conversaciones con clientas, recordatorios automáticos y conexión con WhatsApp Business."

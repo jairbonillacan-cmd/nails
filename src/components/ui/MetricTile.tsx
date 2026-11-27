@@ -209,7 +209,6 @@ export function MetricGrid({
       <Grid
         columns={{ minWidth: 200, max: effectiveCols }}
         gap={3}
-        className="fx-stagger"
         style={{ minWidth: 0, fontVariantNumeric: 'tabular-nums' }}
       >
         {items.map((item) => (
