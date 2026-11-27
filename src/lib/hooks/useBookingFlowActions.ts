@@ -52,7 +52,6 @@ interface UseBookingFlowActionsInput {
   selectedService: PublicServiceDTO | undefined;
   selectedExtraServices: PublicServiceDTO[];
   activeSelectedAddons: ServiceAddon[];
-  hasExtrasOptions: boolean;
   isPinned: boolean;
   pinnedStaffId: string;
   skipsStaffStep: boolean;
@@ -80,7 +79,6 @@ export function useBookingFlowActions({
   selectedService,
   selectedExtraServices,
   activeSelectedAddons,
-  hasExtrasOptions,
   isPinned,
   pinnedStaffId,
   skipsStaffStep,
@@ -123,11 +121,6 @@ export function useBookingFlowActions({
   };
 
   const goToStep = (nextStep: BookingStep) => {
-    if (nextStep === 'extras' && !hasExtrasOptions) {
-      dispatch({ type: 'GO_TO_STEP', step: flow.step === 'service' ? 'schedule' : 'service' });
-      revealPanel();
-      return;
-    }
     dispatch({ type: 'GO_TO_STEP', step: nextStep });
     revealPanel();
   };

@@ -8,20 +8,18 @@ type BookingPhase =
   | 'confirmed'
   | 'conflict';
 
-export type BookingStep = 'service' | 'extras' | 'schedule' | 'staff' | 'design' | 'details' | 'payment';
+export type BookingStep = 'service' | 'schedule' | 'staff' | 'details' | 'payment';
 
 export const BOOKING_STEPS: readonly BookingStep[] = [
   'service',
-  'extras',
   'schedule',
   'staff',
-  'design',
   'details',
   'payment',
 ];
 
 export function isPostHoldStep(step: BookingStep): boolean {
-  return step === 'design' || step === 'details' || step === 'payment';
+  return step === 'details' || step === 'payment';
 }
 
 export interface BookingConflictState {

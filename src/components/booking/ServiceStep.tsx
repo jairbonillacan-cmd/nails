@@ -9,17 +9,24 @@ import { Text } from '@astryxdesign/core/Text';
 import { Check } from 'lucide-react';
 import { formatDuration } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
-import type { ServiceCategory } from '@/lib/types';
+import type { ServiceAddon, ServiceCategory } from '@/lib/types';
 import { servicePhoto } from '../landing/landingContent';
 import { formatServicePrice, isOptimizableLocalRasterImage } from './bookingHelpers';
+import { ServiceExtrasSection } from './ExtrasStep';
 
 interface ServiceStepProps {
   currency: PublicSettingsDTO['currency'];
   categories: ServiceCategory[];
   services: PublicServiceDTO[];
   selectedService: PublicServiceDTO | undefined;
+  extraServices: PublicServiceDTO[];
+  selectedExtraServiceIds: string[];
+  compatibleAddons: ServiceAddon[];
+  selectedAddonIds: string[];
   onSelectService: (serviceId: string) => void;
   onPrefetchService?: (serviceId: string) => void;
+  onToggleExtraService: (serviceId: string, checked: boolean) => void;
+  onToggleAddon: (addonId: string, checked: boolean) => void;
 }
 
 const UNCATEGORIZED = 'otros';
@@ -29,8 +36,14 @@ export function ServiceStep({
   categories,
   services,
   selectedService,
+  extraServices,
+  selectedExtraServiceIds,
+  compatibleAddons,
+  selectedAddonIds,
   onSelectService,
   onPrefetchService,
+  onToggleExtraService,
+  onToggleAddon,
 }: ServiceStepProps) {
   const tabs = categories
     .filter((category) => services.some((service) => service.categoryId === category.id))
@@ -52,7 +65,7 @@ export function ServiceStep({
         <Heading level={2} className="lk-serif rb-h2">
           Servicios
         </Heading>
-        <Text color="secondary">Selecciona el servicio principal. En el siguiente paso podrás agregar nail art o extras.</Text>
+        <Text color="secondary">Selecciona el servicio principal. Si deseas, agrega nail art o extras abajo.</Text>
       </VStack>
 
       {tabs.length > 1 ? (
@@ -138,6 +151,19 @@ export function ServiceStep({
           );
         })}
       </ul>
+
+      {selectedService ? (
+        <ServiceExtrasSection
+          currency={currency}
+          selectedServiceName={selectedService.name}
+          extraServices={extraServices}
+          selectedExtraServiceIds={selectedExtraServiceIds}
+          compatibleAddons={compatibleAddons}
+          selectedAddonIds={selectedAddonIds}
+          onToggleExtraService={onToggleExtraService}
+          onToggleAddon={onToggleAddon}
+        />
+      ) : null}
     </VStack>
   );
 }

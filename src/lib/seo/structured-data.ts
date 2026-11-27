@@ -274,7 +274,7 @@ export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqIt
       id: 'faq-extras',
       question: '¿Puedo agregar nail art o quitarme el gel que traigo?',
       answer:
-        'Sí. Al reservar, en el paso de Extras eliges nail art, chrome, cat eye, largo extra o retiro de gel. El tiempo y el precio se suman solos.',
+        'Sí. Al elegir tu servicio despliega la sección Extras y nail art para sumar nail art, chrome, cat eye, largo extra o retiro de gel. El tiempo y el precio se suman solos.',
     },
     {
       id: 'faq-sellos',

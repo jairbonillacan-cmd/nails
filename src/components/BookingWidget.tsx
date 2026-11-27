@@ -1,6 +1,5 @@
 'use client';
 
-import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useCallback, useMemo, useReducer, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -108,9 +107,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   const bookingMemory = useBookingMemory();
   const clientAuthEnabled = isClientAuthMethodEnabled('whatsapp_otp');
   const [signInRequest, setSignInRequest] = useState<{ intent: ClientSignInIntent; phone: string } | null>(null);
-  const [isStartPromptDismissed, setIsStartPromptDismissed] = useState(false);
   const [isRepeatDismissed, setIsRepeatDismissed] = useState(false);
-  const [justSignedInOnStart, setJustSignedInOnStart] = useState(false);
 
   const applyContactPatch = (patch: ClientContactPatch) => {
     const form = selection.clientForm;
@@ -134,13 +131,11 @@ export function BookingWidget(props: BookingWidgetProps) {
     const profile = await account.refreshProfile();
     if (profile) {
       applyContactPatch(resolveAccountTransitionPatch(before, previous, profile));
-      if (flow.step === 'service') setJustSignedInOnStart(true);
     }
   };
   const handleSignOut = async () => {
     const before = currentContact();
     const previous = await account.signOut();
-    setJustSignedInOnStart(false);
     if (previous) applyContactPatch(resolveSignOutClear(before, previous));
   };
   const clientAccountBinding: ClientAccountBinding = {
@@ -264,7 +259,6 @@ export function BookingWidget(props: BookingWidgetProps) {
     selectedService: selection.selectedService,
     selectedExtraServices: selection.selectedExtraServices,
     activeSelectedAddons: selection.activeSelectedAddons,
-    hasExtrasOptions: selection.hasExtrasOptions,
     isPinned: selection.isPinned,
     pinnedStaffId: selection.pinnedStaffId,
     skipsStaffStep: selection.skipsStaffStep,
@@ -309,7 +303,7 @@ export function BookingWidget(props: BookingWidgetProps) {
     selection.setSelectedAddonIds([]);
     selection.setPinnedStaffId(repeatCandidate.staff?.id ?? 'any');
     actions.resetSelection();
-    prefetchBookingNextStep('service', false);
+    prefetchBookingNextStep('service');
     funnel.track('booking_started', {
       serviceSlug: repeatCandidate.service.slug,
       staffSlug: repeatCandidate.staff
@@ -354,7 +348,6 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const nav = computeStepNavigation({
     flow,
-    hasExtrasOptions: selection.hasExtrasOptions,
     hasSelectedService: Boolean(selection.selectedService),
     requiresConfirmation: Boolean(selection.selectedService?.requiresConfirmation),
     totalDurationMinutes: selection.totalDurationMinutes,
@@ -364,19 +357,16 @@ export function BookingWidget(props: BookingWidgetProps) {
     showsDeposit: selection.showsDeposit,
     proofDataUrl: selection.clientForm.proofDataUrl,
     proofDeliveryMethod: selection.clientForm.proofDeliveryMethod,
-    hasDesignDetails: Boolean(selection.clientForm.clientNotes.trim() || selection.clientForm.inspoFile),
   });
 
   const handleBack =
     nav.backTarget && !actions.isSubmittingBooking ? () => actions.goToStep(nav.backTarget!) : null;
 
   const handleNext = () => {
-    prefetchBookingNextStep(flow.step, selection.hasExtrasOptions);
-    if (flow.step === 'service') actions.goToStep(selection.hasExtrasOptions ? 'extras' : 'schedule');
-    else if (flow.step === 'extras') actions.goToStep('schedule');
+    prefetchBookingNextStep(flow.step);
+    if (flow.step === 'service') actions.goToStep('schedule');
     else if (flow.step === 'schedule' && flow.selectedSlot) actions.goToStep('staff');
-    else if (flow.step === 'staff' && flow.selectedSlot) actions.goToStep('design');
-    else if (flow.step === 'design') actions.goToStep('details');
+    else if (flow.step === 'staff' && flow.selectedSlot) actions.goToStep('details');
   };
 
   const summaryRows = useMemo(
@@ -480,57 +470,6 @@ export function BookingWidget(props: BookingWidgetProps) {
                   onClick={() => setIsRepeatDismissed(true)}
                 />
               </HStack>
-            ) : null}
-
-            {flow.step === 'service' && clientAuthEnabled && !account.profile && !isStartPromptDismissed ? (
-              <HStack gap={3} align="center" className="rb-signin-card fx-sheet-in">
-                <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
-                  <BrandIcon name="iniciar-sesion" size={1.625} />
-                </VStack>
-                <VStack gap={0.5} className="rb-grow">
-                  <Text weight="semibold">¿Ya eres clienta?</Text>
-                  <Text type="supporting" color="secondary" textWrap="pretty">
-                    Entra con tu WhatsApp para completar tus datos.
-                  </Text>
-                </VStack>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  label="Entrar"
-                  className="rb-signin-card-cta fx-press"
-                  onClick={() => openSignIn('signin', selection.clientForm.clientPhone)}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  isIconOnly
-                  label="Ahora no"
-                  icon={<X size={16} aria-hidden="true" />}
-                  className="rb-signin-card-close"
-                  onClick={() => setIsStartPromptDismissed(true)}
-                />
-              </HStack>
-            ) : null}
-
-            {flow.step === 'service' && account.profile && justSignedInOnStart ? (
-              <Banner
-                status="success"
-                title={
-                  account.profile.fullName
-                    ? `Hola, ${account.profile.fullName.split(/\s+/)[0]}`
-                    : 'WhatsApp verificado'
-                }
-                description={
-                  account.profile.isRegistered
-                    ? 'Llenamos tus datos para cuando llegues a ese paso.'
-                    : 'Tu WhatsApp ya quedó listo para tu reserva.'
-                }
-                isDismissable
-                dismissLabel="Cerrar"
-                onDismiss={() => setJustSignedInOnStart(false)}
-              />
             ) : null}
 
             {bookingDraft.hasRestoredDraft ? (

@@ -9,7 +9,7 @@ import type { BookingLayoutView, ServiceAddon } from '@/lib/types';
 import type { SummaryRow } from './BookingSummaryCard';
 import type { ScheduleLayout } from './ScheduleCalendarView';
 import type { ProofDeliveryMethod } from './bookingHelpers';
-import { BOOKING_STEPS, isPostHoldStep, type BookingFlowState, type BookingStep } from './bookingMachine';
+import { isPostHoldStep, type BookingFlowState, type BookingStep } from './bookingMachine';
 
 export function shiftPlainDateKey(dateKey: string, deltaDays: number): string {
   const parts = dateKey.split('-').map(Number);
@@ -135,7 +135,6 @@ export function buildSummaryRows(input: {
 
 export function computeStepNavigation(input: {
   flow: BookingFlowState;
-  hasExtrasOptions: boolean;
   hasSelectedService: boolean;
   requiresConfirmation: boolean;
   totalDurationMinutes: number;
@@ -145,43 +144,31 @@ export function computeStepNavigation(input: {
   showsDeposit: boolean;
   proofDataUrl: string | null;
   proofDeliveryMethod: ProofDeliveryMethod;
-  hasDesignDetails?: boolean;
 }) {
-  const { flow, hasExtrasOptions } = input;
+  const { flow } = input;
   const step = flow.step;
-  const stepIndex = BOOKING_STEPS.indexOf(step);
   const hasSlot = Boolean(flow.selectedSlot);
 
   const completedSteps = new Set<BookingStep>(['service']);
-  if (stepIndex > BOOKING_STEPS.indexOf('extras') || !hasExtrasOptions) {
-    completedSteps.add('extras');
-  }
   if (hasSlot) completedSteps.add('schedule');
   if (hasSlot && isPostHoldStep(step)) completedSteps.add('staff');
-  if (hasSlot && (step === 'details' || step === 'payment')) completedSteps.add('design');
   if (hasSlot && step === 'payment') completedSteps.add('details');
 
   const backTarget: BookingStep | null =
     step === 'payment'
       ? 'details'
       : step === 'details'
-      ? 'design'
-      : step === 'design'
         ? 'staff'
-      : step === 'staff'
-        ? 'schedule'
-        : step === 'schedule'
-          ? hasExtrasOptions
-            ? 'extras'
-            : 'service'
-          : step === 'extras'
+        : step === 'staff'
+          ? 'schedule'
+          : step === 'schedule'
             ? 'service'
             : null;
 
   const canContinue =
-    step === 'service' || step === 'extras'
+    step === 'service'
       ? input.hasSelectedService
-      : step === 'schedule' || step === 'staff' || step === 'design' || step === 'details'
+      : step === 'schedule' || step === 'staff' || step === 'details'
         ? hasSlot
         : !flow.holdExpired;
 
@@ -198,25 +185,19 @@ export function computeStepNavigation(input: {
 
   const nextHint =
     step === 'service'
-      ? `${formatDuration(input.totalDurationMinutes)} en total`
-      : step === 'extras'
-        ? input.extrasSelectedCount > 0
-          ? `${input.extrasSelectedCount} extra${input.extrasSelectedCount > 1 ? 's' : ''} · ${formatDuration(input.totalDurationMinutes)}`
-          : 'Paso opcional · Sin extras'
-        : step === 'schedule'
-          ? hasSlot
-            ? 'Horario apartado'
-            : 'Elige un horario'
-          : step === 'staff'
-            ? input.chosenStaffId === 'any'
-              ? 'Cualquier profesional'
-              : ''
-            : step === 'design'
-              ? input.hasDesignDetails
-                ? 'Tu profesional ya tiene tu idea'
-                : 'Paso opcional · Puedes saltarlo'
-            : step === 'details'
-              ? ''
+      ? input.extrasSelectedCount > 0
+        ? `${input.extrasSelectedCount} extra${input.extrasSelectedCount > 1 ? 's' : ''} · ${formatDuration(input.totalDurationMinutes)}`
+        : `${formatDuration(input.totalDurationMinutes)} en total`
+      : step === 'schedule'
+        ? hasSlot
+          ? 'Horario apartado'
+          : 'Elige un horario'
+        : step === 'staff'
+          ? input.chosenStaffId === 'any'
+            ? 'Cualquier profesional'
+            : ''
+          : step === 'details'
+            ? ''
             : flow.holdExpired
               ? 'Reverifica tu horario arriba'
               : input.isSubmittingBooking

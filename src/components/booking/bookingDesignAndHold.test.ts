@@ -19,7 +19,6 @@ const SLOT: AvailableSlot = {
 };
 
 const NAV_BASE = {
-  hasExtrasOptions: true,
   hasSelectedService: true,
   requiresConfirmation: false,
   totalDurationMinutes: 90,
@@ -31,7 +30,7 @@ const NAV_BASE = {
   proofDeliveryMethod: 'web_upload' as const,
 };
 
-function heldOn(step: 'schedule' | 'staff' | 'design' | 'details') {
+function heldOn(step: 'schedule' | 'staff' | 'details' | 'payment') {
   return bookingReducer(createInitialBookingFlowState(), {
     type: 'SELECT_SLOT_HOLD_ACQUIRED',
     slot: SLOT,
@@ -41,28 +40,21 @@ function heldOn(step: 'schedule' | 'staff' | 'design' | 'details') {
   });
 }
 
-describe('design step', () => {
-  it('keeps slot and step when the hold expires while writing notes for the artist', () => {
-    const expired = bookingReducer(heldOn('design'), { type: 'HOLD_EXPIRED', message: 'Se acabó el tiempo.' });
-    expect(expired.step).toBe('design');
+describe('details & design hold recovery', () => {
+  it('keeps slot and details step when the hold expires while writing contact or design notes', () => {
+    const expired = bookingReducer(heldOn('details'), { type: 'HOLD_EXPIRED', message: 'Se acabó el tiempo.' });
+    expect(expired.step).toBe('details');
     expect(expired.selectedSlot?.startAt).toBe(SLOT.startAt);
     expect(expired.holdExpired).toBe(true);
   });
 
-  it('always goes back from design to the artist step, even with a single artist', () => {
-    const onDesign = computeStepNavigation({ ...NAV_BASE, flow: heldOn('design') });
-    expect(onDesign.backTarget).toBe('staff');
-    expect(onDesign.canContinue).toBe(true);
-    expect(onDesign.nextLabel).toBe('Continuar');
-    expect(onDesign.nextHint).toBe('Paso opcional · Puedes saltarlo');
-    expect(onDesign.completedSteps.has('staff')).toBe(true);
-
-    const withNotes = computeStepNavigation({ ...NAV_BASE, hasDesignDetails: true, flow: heldOn('design') });
-    expect(withNotes.nextHint).toBe('Tu profesional ya tiene tu idea');
-
+  it('goes back from details directly to the artist step', () => {
     const onDetails = computeStepNavigation({ ...NAV_BASE, flow: heldOn('details') });
-    expect(onDetails.backTarget).toBe('design');
-    expect(onDetails.completedSteps.has('design')).toBe(true);
+    expect(onDetails.backTarget).toBe('staff');
+    expect(onDetails.canContinue).toBe(true);
+    expect(onDetails.nextLabel).toBe('Continuar');
+    expect(onDetails.completedSteps.has('schedule')).toBe(true);
+    expect(onDetails.completedSteps.has('staff')).toBe(true);
   });
 
   it('keeps slot and step when the hold expires on the payment step', () => {
@@ -72,7 +64,7 @@ describe('design step', () => {
     expect(expired.selectedSlot?.startAt).toBe(SLOT.startAt);
   });
 
-  it('labels a hold that ran out before the design step as expired, not as taken by someone else', () => {
+  it('labels a hold that ran out before details as expired, not as taken by someone else', () => {
     for (const step of ['schedule', 'staff'] as const) {
       const expired = bookingReducer(heldOn(step), { type: 'HOLD_EXPIRED', message: 'Soltamos tu horario.' });
       expect(expired.step).toBe('schedule');
@@ -87,12 +79,12 @@ describe('design step', () => {
     expect(taken.conflict?.kind).toBe('taken');
   });
 
-  it('flags design, details and payment as post-hold steps', () => {
-    expect(isPostHoldStep('design')).toBe(true);
+  it('flags details and payment as post-hold steps', () => {
     expect(isPostHoldStep('details')).toBe(true);
     expect(isPostHoldStep('payment')).toBe(true);
     expect(isPostHoldStep('staff')).toBe(false);
     expect(isPostHoldStep('schedule')).toBe(false);
+    expect(isPostHoldStep('service')).toBe(false);
   });
 
 });

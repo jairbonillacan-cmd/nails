@@ -19,13 +19,11 @@ const BookingHelpDialog = dynamic(
 );
 
 export const STEP_LABELS: Readonly<Record<BookingStep, string>> = {
-  service: 'Servicio',
-  extras: 'Extras',
-  schedule: 'Día y hora',
+  service: 'Servicios',
+  schedule: 'Fecha y hora',
   staff: 'Profesional',
-  design: 'Tu diseño',
   details: 'Tus datos',
-  payment: 'Pago',
+  payment: 'Anticipo',
 };
 
 export function formatHoldClock(totalSeconds: number): string {

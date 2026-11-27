@@ -42,11 +42,6 @@ function BookingStepFallback() {
   );
 }
 
-const ExtrasStep = dynamic(
-  () => import('./ExtrasStep').then((mod) => mod.ExtrasStep),
-  { ssr: false, loading: BookingStepFallback },
-);
-
 const ScheduleStep = dynamic(
   () => import('./ScheduleStep').then((mod) => mod.ScheduleStep),
   { ssr: false, loading: BookingStepFallback },
@@ -57,44 +52,25 @@ const StaffStep = dynamic(
   { ssr: false, loading: BookingStepFallback },
 );
 
-const DesignStep = dynamic(
-  () => import('./DesignStep').then((mod) => mod.DesignStep),
-  { ssr: false, loading: BookingStepFallback },
-);
-
 const ClientConfirmStep = dynamic(
   () => import('./ClientConfirmStep').then((mod) => mod.ClientConfirmStep),
   { ssr: false, loading: BookingStepFallback },
 );
 
-let prefetchedExtras = false;
 let prefetchedSchedule = false;
 let prefetchedConfirm = false;
 
-export function prefetchBookingNextStep(
-  step: BookingStep,
-  hasExtrasOptions: boolean,
-): void {
+export function prefetchBookingNextStep(step: BookingStep): void {
   if (step === 'service') {
-    if (hasExtrasOptions && !prefetchedExtras) {
-      prefetchedExtras = true;
-      void import('./ExtrasStep');
-    }
     if (!prefetchedSchedule) {
       prefetchedSchedule = true;
       void import('./ScheduleStep');
     }
     return;
   }
-  if (step === 'extras' && !prefetchedSchedule) {
-    prefetchedSchedule = true;
-    void import('./ScheduleStep');
-    return;
-  }
   if (step === 'schedule' && !prefetchedConfirm) {
     prefetchedConfirm = true;
     void import('./StaffStep');
-    void import('./DesignStep');
     void import('./ClientConfirmStep');
   }
 }
@@ -157,39 +133,30 @@ export function BookingStepRouter({
         categories={categories}
         services={services}
         selectedService={selection.selectedService}
+        extraServices={selection.extraServices}
+        selectedExtraServiceIds={selection.activeExtraServiceIds}
+        compatibleAddons={selection.compatibleAddons}
+        selectedAddonIds={selection.selectedAddonIds}
         onSelectService={(serviceId) => {
-          prefetchBookingNextStep('service', selection.hasExtrasOptions);
+          prefetchBookingNextStep('service');
           if (serviceId === selection.selectedService?.id) return;
           selection.setSelectedServiceId(serviceId);
           selection.setSelectedExtraServiceIds((prev) => prev.filter((id) => id !== serviceId));
           actions.resetSelection();
         }}
         onPrefetchService={(serviceId) => {
-          prefetchBookingNextStep('service', selection.hasExtrasOptions);
+          prefetchBookingNextStep('service');
           schedule.onPrefetchService(serviceId);
         }}
-      />
-    );
-  }
-
-  if (flow.step === 'extras') {
-    return (
-      <ExtrasStep
-        currency={settings.currency}
-        selectedServiceName={selection.selectedService?.name ?? null}
-        extraServices={selection.extraServices}
-        selectedExtraServiceIds={selection.activeExtraServiceIds}
-        compatibleAddons={selection.compatibleAddons}
-        selectedAddonIds={selection.selectedAddonIds}
         onToggleExtraService={(serviceId, checked) => {
-          prefetchBookingNextStep('extras', selection.hasExtrasOptions);
+          prefetchBookingNextStep('service');
           const nextIds = selection.nextExtraServiceIds(serviceId, checked);
           if (nextIds.join(',') === selection.activeExtraServiceIds.join(',')) return;
           selection.setSelectedExtraServiceIds(nextIds);
           actions.resetSelection();
         }}
         onToggleAddon={(addonId, checked) => {
-          prefetchBookingNextStep('extras', selection.hasExtrasOptions);
+          prefetchBookingNextStep('service');
           const nextIds = checked
             ? Array.from(new Set([...selection.selectedAddonIds, addonId]))
             : selection.selectedAddonIds.filter((id) => id !== addonId);
@@ -224,11 +191,11 @@ export function BookingStepRouter({
         isViewingFutureWindow={selection.windowStartDate > schedule.todayKey}
         onChangeTimeFormat={selection.setTimeFormat}
         onSelectDate={(nextDate) => {
-          prefetchBookingNextStep('schedule', selection.hasExtrasOptions);
+          prefetchBookingNextStep('schedule');
           schedule.onSelectDate(nextDate);
         }}
         onSelectSlot={(next: AvailableSlot) => {
-          prefetchBookingNextStep('schedule', selection.hasExtrasOptions);
+          prefetchBookingNextStep('schedule');
           void actions.handleSelectSlot(next);
         }}
         onShowAllStaff={() => {
@@ -267,25 +234,11 @@ export function BookingStepRouter({
     );
   }
 
-  if (flow.step === 'design') {
+  if (flow.step === 'details' || flow.step === 'payment') {
     const allowInspo =
       Boolean(selection.selectedService?.allowInspoPhoto) ||
       selection.selectedExtraServices.some((srv) => srv.allowInspoPhoto);
     const artistName = flow.selectedSlot?.staffName?.trim() || null;
-    return (
-      <DesignStep
-        artistName={artistName}
-        clientNotes={selection.clientForm.clientNotes}
-        allowInspo={allowInspo}
-        inspoFile={selection.clientForm.inspoFile}
-        inspoDataUrl={selection.clientForm.inspoDataUrl}
-        onChangeClientNotes={selection.clientForm.onChangeClientNotes}
-        onChangeInspoFile={selection.clientForm.onChangeInspoFile}
-      />
-    );
-  }
-
-  if (flow.step === 'details' || flow.step === 'payment') {
     return (
       <ClientConfirmStep
         key={flow.step}
@@ -299,6 +252,11 @@ export function BookingStepRouter({
         selectedExtraServices={selection.selectedExtraServices}
         activeSelectedAddons={selection.activeSelectedAddons}
         selectedSlot={flow.selectedSlot}
+        artistName={artistName}
+        allowInspo={allowInspo}
+        clientNotes={selection.clientForm.clientNotes}
+        inspoFile={selection.clientForm.inspoFile}
+        inspoDataUrl={selection.clientForm.inspoDataUrl}
         timeFormat={selection.timeFormat}
         totalDurationMinutes={selection.totalDurationMinutes}
         subtotalCents={selection.subtotalCents}
@@ -332,6 +290,8 @@ export function BookingStepRouter({
         onChangeClientInstagram={selection.clientForm.onChangeClientInstagram}
         onChangeClientEmail={selection.clientForm.onChangeClientEmail}
         onChangeClientBirthday={selection.clientForm.onChangeClientBirthday}
+        onChangeClientNotes={selection.clientForm.onChangeClientNotes}
+        onChangeInspoFile={selection.clientForm.onChangeInspoFile}
         onChangeProofMethod={selection.clientForm.onChangeProofMethod}
         onChangeProofFile={selection.clientForm.onChangeProofFile}
         onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}

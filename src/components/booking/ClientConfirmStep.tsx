@@ -26,6 +26,7 @@ import { ClientExtraDetailsBox } from './ClientExtraDetailsBox';
 import type { ClientSignInIntent } from './ClientSignInDialog';
 import { CouponRedeemBox } from './CouponRedeemBox';
 import { DepositCard } from './DepositCard';
+import { DesignDetailsSection } from './DesignStep';
 import {
   formatMxPhoneDisplay,
   hasClientFieldErrors,
@@ -57,6 +58,11 @@ export interface ClientConfirmStepProps {
   selectedExtraServices: PublicServiceDTO[];
   activeSelectedAddons: ServiceAddon[];
   selectedSlot: AvailableSlot | null;
+  artistName: string | null;
+  allowInspo: boolean;
+  clientNotes: string;
+  inspoFile: File | null;
+  inspoDataUrl: string | null;
   timeFormat: '12h' | '24h';
   totalDurationMinutes: number;
   subtotalCents: number;
@@ -90,6 +96,8 @@ export interface ClientConfirmStepProps {
   onChangeClientInstagram: (value: string) => void;
   onChangeClientEmail: (value: string) => void;
   onChangeClientBirthday: (value: string) => void;
+  onChangeClientNotes: (value: string) => void;
+  onChangeInspoFile: (file: File | null, dataUrl: string | null) => void;
   onChangeProofMethod: (method: ProofDeliveryMethod) => void;
   onChangeProofFile: (file: File | null, dataUrl: string | null) => void;
   onChangePrivacyConsent: (accepted: boolean) => void;
@@ -503,6 +511,17 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           />
         </>
         ) : null}
+
+        <DesignDetailsSection
+          artistName={props.artistName}
+          clientNotes={props.clientNotes}
+          allowInspo={props.allowInspo}
+          inspoFile={props.inspoFile}
+          inspoDataUrl={props.inspoDataUrl}
+          isDisabled={props.isSubmitting}
+          onChangeClientNotes={props.onChangeClientNotes}
+          onChangeInspoFile={props.onChangeInspoFile}
+        />
         </>
         ) : (
         <>

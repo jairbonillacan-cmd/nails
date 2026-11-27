@@ -142,7 +142,6 @@ export function useBookingSelectionState({
         : [],
     [addons, selectedService, selectedExtraServices, selectedServiceIdSet],
   );
-  const hasExtrasOptions = compatibleAddons.length > 0 || extraServices.length > 0;
   const activeSelectedAddons = useMemo(
     () => compatibleAddons.filter((a) => selectedAddonIds.includes(a.id)),
     [compatibleAddons, selectedAddonIds],
@@ -288,7 +287,6 @@ export function useBookingSelectionState({
     selectedExtraServices,
     extraServices,
     compatibleAddons,
-    hasExtrasOptions,
     activeSelectedAddons,
     eligibleStaff,
     isPinned,
