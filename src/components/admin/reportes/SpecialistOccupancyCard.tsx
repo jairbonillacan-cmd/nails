@@ -58,7 +58,7 @@ export function SpecialistOccupancyCard({
                       {row.staffName}
                     </Text>
                     <Text type="supporting" color="secondary" size="sm">
-                      {row.roleTitle}
+                      {row.roleTitle.trim() || 'Nail Artist'}
                     </Text>
                   </VStack>
                 ),

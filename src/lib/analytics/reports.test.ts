@@ -22,7 +22,7 @@ function makeStaff(overrides: Partial<StaffMember> = {}): StaffMember {
   return {
     id: 'staff-karla',
     name: 'Karla',
-    roleTitle: 'Master Nail Artist',
+    roleTitle: 'Nail Artist',
     bio: '',
     avatarUrl: null,
     bookingSlug: 'karla',

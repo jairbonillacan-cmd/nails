@@ -52,6 +52,8 @@ export function LandingTeamDialog({
   const firstName = member.name.split(' ')[0] ?? '';
   const schedule = getStaffScheduleLabel(member);
   const avatarSrc = staffAvatar(member.avatarUrl, memberIndex);
+  const roleLabel = member.roleTitle.trim() || 'Nail Artist';
+  const memberBio = member.bio.trim();
 
   return (
     <Dialog
@@ -102,7 +104,7 @@ export function LandingTeamDialog({
                 {member.name}
               </Heading>
               <Text type="supporting" color="secondary">
-                {member.roleTitle}
+                {roleLabel}
               </Text>
             </VStack>
             <Button
@@ -136,7 +138,7 @@ export function LandingTeamDialog({
         >
           {tab === 'perfil' ? (
             <VStack key="perfil" gap={4} className="fx-step-in">
-              <Text textWrap="pretty">{member.bio}</Text>
+              {memberBio ? <Text textWrap="pretty">{memberBio}</Text> : null}
               <VStack gap={2} padding={5} className="lk-card">
                 <HStack justify="between" gap={4} wrap="wrap">
                   <Text color="secondary">Turnos</Text>

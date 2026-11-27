@@ -75,20 +75,21 @@ export function LandingTeam({
           {staff.map((person, index) => {
             const personSchedule = getStaffScheduleLabel(person);
             const avatarSrc = staffAvatar(person.avatarUrl, index);
+            const roleLabel = person.roleTitle.trim() || 'Nail Artist';
             return (
               <VStack role="listitem" key={person.id} className="lk-pop lk-artist-item">
                 <button
                   type="button"
                   className="lk-artist fx-press"
                   aria-haspopup="dialog"
-                  aria-label={`${person.name}, ${person.roleTitle}. Ver perfil, servicios y portafolio`}
+                  aria-label={`${person.name}, ${roleLabel}. Ver perfil, servicios y portafolio`}
                   onClick={() => setOpenId(person.id)}
                 >
                   {isOptimizableLocalRasterImage(avatarSrc) ? (
                     <Image
                       className="lk-artist-photo"
                       src={avatarSrc}
-                      alt={`Retrato de ${person.name}, ${person.roleTitle} en LAIKONA NAILS`}
+                      alt={`Retrato de ${person.name}, ${roleLabel} en LAIKONA NAILS`}
                       width={220}
                       height={220}
                       sizes="(max-width: 47.5rem) 60vw, 13.75rem"
@@ -99,7 +100,7 @@ export function LandingTeam({
                     <img
                       className="lk-artist-photo"
                       src={avatarSrc}
-                      alt={`Retrato de ${person.name}, ${person.roleTitle} en LAIKONA NAILS`}
+                      alt={`Retrato de ${person.name}, ${roleLabel} en LAIKONA NAILS`}
                       width={220}
                       height={220}
                       loading="lazy"
@@ -107,7 +108,7 @@ export function LandingTeam({
                     />
                   )}
                   <Text className="lk-artist-chip" color="inherit">
-                    ✿ {person.roleTitle}
+                    ✿ {roleLabel}
                   </Text>
                   <Heading
                     level={3}

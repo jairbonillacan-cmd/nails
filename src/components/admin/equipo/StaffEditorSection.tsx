@@ -56,7 +56,7 @@ export function StaffEditorSection({
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [sName, setSName] = useState('');
-  const [sRoleTitle, setSRoleTitle] = useState('Profesional');
+  const [sRoleTitle, setSRoleTitle] = useState('Nail Artist');
   const [sBio, setSBio] = useState('');
   const [sCommission, setSCommission] = useState(defaultCommissionPercent || 35);
   const [sServiceIds, setSServiceIds] = useState<string[] | null>(null);
@@ -87,7 +87,7 @@ export function StaffEditorSection({
     setIsEditorOpen(false);
     setEditingStaffId(null);
     setSName('');
-    setSRoleTitle('Profesional');
+    setSRoleTitle('Nail Artist');
     setSBio('');
     setSCommission(defaultCommissionPercent || 35);
     setSServiceIds(null);
@@ -114,7 +114,7 @@ export function StaffEditorSection({
           data: {
             ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
             name: sName.trim(),
-            roleTitle: sRoleTitle.trim() || 'Profesional',
+            roleTitle: sRoleTitle.trim() || 'Nail Artist',
             bio: sBio.trim(),
             commissionPercent: sCommission,
             serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
@@ -192,7 +192,7 @@ export function StaffEditorSection({
                         <StatusTag tone="neutral" label={`${st.serviceIds.length} servicios`} hasTabularNumbers />
                       </HStack>
                     }
-                    subtitle={`${st.roleTitle}${st.bio ? ` · ${st.bio}` : ''}`}
+                    subtitle={`${st.roleTitle.trim() || 'Nail Artist'}${st.bio.trim() ? ` · ${st.bio.trim()}` : ''}`}
                     isSelected={isEditingThis}
                     isMuted={!st.isActive}
                     onClick={() => startEditingStaff(st)}
@@ -265,7 +265,7 @@ export function StaffEditorSection({
 
             <TextInput label="Nombre" placeholder="Ej. Fernanda Ruiz" value={sName} onChange={setSName} isRequired />
             <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
-              <TextInput label="Puesto" placeholder="Ej. Profesional" value={sRoleTitle} onChange={setSRoleTitle} />
+              <TextInput label="Puesto" placeholder="Ej. Nail Artist" value={sRoleTitle} onChange={setSRoleTitle} />
               <NumberInput
                 label="Comisión (%)"
                 description="Lo que gana de cada servicio."
@@ -279,7 +279,7 @@ export function StaffEditorSection({
             <TextInput
               label="Presentación"
               description="Se ve en tu página de citas."
-              placeholder="Ej. Experta en Rubber y diseños finos"
+              placeholder="Opcional"
               value={sBio}
               onChange={setSBio}
               isOptional

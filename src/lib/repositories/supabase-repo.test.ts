@@ -172,8 +172,8 @@ function buildMockSupabase(options: {
   const staffRow: Database['public']['Tables']['staff_members']['Row'] = {
     id: STAFF_ID,
     name: 'Valeria Mendoza',
-    role_title: 'Master Nail Artist',
-    bio: 'Bio',
+    role_title: 'Nail Artist',
+    bio: '',
     avatar_url: null,
     booking_slug: 'valeria',
     commission_percent: 40,

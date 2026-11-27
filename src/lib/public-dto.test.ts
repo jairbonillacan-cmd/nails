@@ -50,8 +50,8 @@ describe('Public DTO schemas and mappers (S3)', () => {
     const parsed = PublicStaffDTOSchema.parse({
       id: 'staff-1',
       name: 'Karla',
-      roleTitle: 'Master',
-      bio: 'Bio',
+      roleTitle: 'Nail Artist',
+      bio: '',
       avatarUrl: null,
       bookingSlug: 'karla',
       displayOrder: 0,

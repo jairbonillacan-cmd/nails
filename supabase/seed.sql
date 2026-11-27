@@ -130,8 +130,8 @@ VALUES
   (
     '10000000-0000-4000-8000-000000000101',
     'Karla',
-    'Fundadora & Master Nail Artist',
-    'Especialista en acrílico escultural, Softgel, Rubber y diseños editoriales en LAIKONA NAILS Puebla.',
+    'Nail Artist',
+    '',
     NULL,
     'karla',
     40.00,
@@ -141,8 +141,8 @@ VALUES
   (
     '10000000-0000-4000-8000-000000000102',
     'Paty',
-    'Senior Nail Artist',
-    'Experta en Rubber, retoques de alta retención, gel semipermanente y PediSpa.',
+    'Nail Artist',
+    '',
     NULL,
     'paty',
     35.00,
@@ -152,8 +152,8 @@ VALUES
   (
     '10000000-0000-4000-8000-000000000103',
     'Tere',
-    'Nail Artist · Turno Vespertino',
-    'Especialista en Softgel, acrílico, gel en manos/pies y acabados modernos en horario de tarde.',
+    'Nail Artist',
+    '',
     NULL,
     'tere',
     35.00,

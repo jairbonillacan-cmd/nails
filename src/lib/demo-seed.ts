@@ -235,8 +235,8 @@ export function createInitialDemoDatabase(): DemoDatabase {
       {
         id: staffKarla,
         name: 'Karla',
-        roleTitle: 'Fundadora & Master Nail Artist',
-        bio: 'Especialista en acrílico escultural, Softgel, Rubber y diseños editoriales en LAIKONA NAILS Puebla.',
+        roleTitle: 'Nail Artist',
+        bio: '',
         avatarUrl: null,
         bookingSlug: 'karla',
         commissionPercent: 40,
@@ -247,8 +247,8 @@ export function createInitialDemoDatabase(): DemoDatabase {
       {
         id: staffPaty,
         name: 'Paty',
-        roleTitle: 'Senior Nail Artist',
-        bio: 'Experta en Rubber, retoques de alta retención, gel semipermanente y PediSpa.',
+        roleTitle: 'Nail Artist',
+        bio: '',
         avatarUrl: null,
         bookingSlug: 'paty',
         commissionPercent: 35,
@@ -259,8 +259,8 @@ export function createInitialDemoDatabase(): DemoDatabase {
       {
         id: staffTere,
         name: 'Tere',
-        roleTitle: 'Nail Artist · Turno Vespertino',
-        bio: 'Especialista en Softgel, acrílico, gel en manos/pies y acabados modernos en horario de tarde.',
+        roleTitle: 'Nail Artist',
+        bio: '',
         avatarUrl: null,
         bookingSlug: 'tere',
         commissionPercent: 35,

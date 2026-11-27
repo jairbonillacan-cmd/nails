@@ -5207,13 +5207,16 @@ export async function upsertStaffMember(
     const existing = input.id ? db.staff.find((s) => s.id === input.id) : null;
     if (existing) {
       Object.assign(existing, input);
+      if (typeof input.roleTitle === 'string' && !input.roleTitle.trim()) {
+        existing.roleTitle = 'Nail Artist';
+      }
       return existing;
     }
     const created: StaffMember = {
       id: `staff-${crypto.randomUUID().slice(0, 8)}`,
       name: input.name,
-      roleTitle: input.roleTitle || 'Nail Artist',
-      bio: input.bio || '',
+      roleTitle: input.roleTitle?.trim() || 'Nail Artist',
+      bio: input.bio?.trim() || '',
       avatarUrl: input.avatarUrl ?? null,
       bookingSlug: input.bookingSlug || slugify(input.name),
       commissionPercent: input.commissionPercent ?? db.settings.defaultCommissionPercent,

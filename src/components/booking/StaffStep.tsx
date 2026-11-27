@@ -160,7 +160,7 @@ export function StaffStep({
                     {member.name}
                   </Text>
                   <Text type="supporting" color="accent" weight="semibold">
-                    {member.roleTitle}
+                    {member.roleTitle.trim() || 'Nail Artist'}
                   </Text>
                   <Text type="supporting" color="secondary">
                     {isPending

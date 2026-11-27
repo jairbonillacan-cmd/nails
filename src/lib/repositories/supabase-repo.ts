@@ -3368,8 +3368,11 @@ export function createSupabaseRepository(
             .from('staff_members')
             .update({
               name: input.name,
-              role_title: input.roleTitle,
-              bio: input.bio,
+              role_title:
+                input.roleTitle === undefined
+                  ? undefined
+                  : input.roleTitle.trim() || 'Nail Artist',
+              bio: input.bio === undefined ? undefined : input.bio.trim(),
               avatar_url: input.avatarUrl,
               booking_slug: input.bookingSlug,
               commission_percent: input.commissionPercent,
@@ -3384,8 +3387,8 @@ export function createSupabaseRepository(
             .from('staff_members')
             .insert({
               name: input.name,
-              role_title: input.roleTitle || 'Nail Artist',
-              bio: input.bio || '',
+              role_title: input.roleTitle?.trim() || 'Nail Artist',
+              bio: input.bio?.trim() || '',
               avatar_url: input.avatarUrl ?? null,
               booking_slug: input.bookingSlug || slugify(input.name),
               commission_percent: input.commissionPercent ?? 30,

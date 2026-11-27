@@ -584,7 +584,7 @@ export function VisualScheduleGrid({
                         <Badge variant="neutral" label={String(count)} />
                       </HStack>
                       <Text type="supporting" color="secondary" maxLines={1} hasTabularNumbers>
-                        {fixedTimes.length > 0 ? fixedTimes.join(' · ') : st.roleTitle}
+                        {fixedTimes.length > 0 ? fixedTimes.join(' · ') : st.roleTitle.trim() || 'Nail Artist'}
                       </Text>
                     </VStack>
                     <Button
