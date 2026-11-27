@@ -185,6 +185,7 @@ import type {
   SalonSettings,
   ScheduledNotification,
   Service,
+  ServiceCategory,
   ServiceAddon,
   ServicePackage,
   SlotHold,
@@ -4579,6 +4580,35 @@ export async function saveOnboardingSetup(params: {
   });
 }
 
+export async function upsertServiceCategory(input: {
+  id?: string;
+  name: string;
+  displayOrder?: number;
+}): Promise<ServiceCategory> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().upsertServiceCategory(input);
+  }
+  return withWriteLock((db) => {
+    const name = input.name.trim();
+    const existing = input.id ? db.categories.find((c) => c.id === input.id) : null;
+    if (existing) {
+      existing.name = name;
+      if (input.displayOrder !== undefined) existing.displayOrder = input.displayOrder;
+      publishRealtimeEvent('availability_updated');
+      return existing;
+    }
+    const created: ServiceCategory = {
+      id: generateId('cat'),
+      name,
+      slug: `${slugify(name)}-${generateId().slice(0, 6)}`,
+      displayOrder: input.displayOrder ?? db.categories.length,
+    };
+    db.categories.push(created);
+    publishRealtimeEvent('availability_updated');
+    return created;
+  });
+}
+
 export async function upsertService(
   input: Partial<Service> & { name: string; durationMinutes: number; priceCents: number },
 ): Promise<Service> {
@@ -6417,6 +6447,7 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     },
     updateSalonSettings,
     upsertService,
+    upsertServiceCategory,
     upsertAddon,
     saveStaffSchedule,
     addDateOverride,

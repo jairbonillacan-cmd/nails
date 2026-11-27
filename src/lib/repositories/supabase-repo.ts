@@ -3162,6 +3162,52 @@ export function createSupabaseRepository(
       return mapSettingsRow(data);
     },
 
+    async upsertServiceCategory(input: {
+      id?: string;
+      name: string;
+      displayOrder?: number;
+    }): Promise<ServiceCategory> {
+      const supabase = getClient();
+      const name = input.name.trim();
+      if (input.id) {
+        const { data, error } = await supabase
+          .from('service_categories')
+          .update({
+            name,
+            ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
+          })
+          .eq('id', input.id)
+          .select('*')
+          .single();
+        if (error || !data) {
+          throw new PolicyError(
+            'CATEGORY_UPDATE_FAILED',
+            error?.message ?? 'No se pudo guardar la categoría.',
+          );
+        }
+        return mapCategoryRow(data);
+      }
+      const { count } = await supabase
+        .from('service_categories')
+        .select('id', { count: 'exact', head: true });
+      const { data, error } = await supabase
+        .from('service_categories')
+        .insert({
+          name,
+          slug: `${slugify(name)}-${clock.randomCode(4).toLowerCase()}`,
+          display_order: input.displayOrder ?? count ?? 0,
+        })
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError(
+          'CATEGORY_CREATE_FAILED',
+          error?.message ?? 'No se pudo crear la categoría.',
+        );
+      }
+      return mapCategoryRow(data);
+    },
+
     async upsertService(
       input: Partial<Service> & {
         name: string;

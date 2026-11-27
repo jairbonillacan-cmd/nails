@@ -36,6 +36,7 @@ import type {
   SalonSettings,
   ScheduledNotification,
   Service,
+  ServiceCategory,
   ServiceAddon,
   SlotHold,
   StaffMember,
@@ -326,6 +327,11 @@ export interface SalonRepository {
       landingContent?: Partial<SalonSettings['landingContent']>;
     },
   ): Promise<SalonSettings>;
+  upsertServiceCategory(input: {
+    id?: string;
+    name: string;
+    displayOrder?: number;
+  }): Promise<ServiceCategory>;
   upsertService(
     input: Partial<Service> & {
       name: string;

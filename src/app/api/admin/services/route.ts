@@ -7,6 +7,7 @@ import {
   PolicyError,
   upsertAddon,
   upsertService,
+  upsertServiceCategory,
 } from '@/lib/repositories/db';
 
 export async function POST(request: NextRequest) {
@@ -26,6 +27,10 @@ export async function POST(request: NextRequest) {
         : raw;
     const parsed = CatalogMutationSchema.parse(normalized);
 
+    if (parsed.kind === 'category') {
+      const category = await upsertServiceCategory(parsed.data);
+      return NextResponse.json({ category });
+    }
     if (parsed.kind === 'addon') {
       const addon = await upsertAddon(parsed.data);
       return NextResponse.json({ addon });

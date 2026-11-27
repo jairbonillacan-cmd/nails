@@ -7,7 +7,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
-import { Check, Plus } from 'lucide-react';
+import { Check, FolderTree, Plus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui';
 import { FormDialog } from '@/components/ui/FormDialog';
 import { ServiceCatalogSection } from '@/components/admin/servicios/ServiceCatalogSection';
+import { CategoryManagerDialog } from '@/components/admin/servicios/CategoryManagerDialog';
 import {
   buildNewServiceDraft,
   isServiceDraftDirty,
@@ -73,6 +74,7 @@ export default function AdminServicesPage() {
   const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
   const [pendingPauseService, setPendingPauseService] = useState<Service | null>(null);
   const [menuPosition, setMenuPosition] = useState<number | null>(null);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const saveNotice = useEphemeralMessage(3200);
   const [savedMsg, setSavedMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(
     null,
@@ -258,15 +260,35 @@ export default function AdminServicesPage() {
           ) : undefined
         }
         actions={
-          <Button
-            type="button"
-            label="Nuevo servicio"
-            variant="primary"
-            size="md"
-            icon={<Plus size={16} aria-hidden="true" />}
-            onClick={startNewService}
-          />
+          <>
+            <Button
+              type="button"
+              label="Categorías"
+              variant="secondary"
+              size="md"
+              icon={<FolderTree size={16} aria-hidden="true" />}
+              onClick={() => setCategoriesOpen(true)}
+            />
+            <Button
+              type="button"
+              label="Nuevo servicio"
+              variant="primary"
+              size="md"
+              icon={<Plus size={16} aria-hidden="true" />}
+              onClick={startNewService}
+            />
+          </>
         }
+      />
+
+      <CategoryManagerDialog
+        isOpen={categoriesOpen}
+        categories={data.categories}
+        onOpenChange={setCategoriesOpen}
+        onSaved={async () => {
+          await refresh();
+          saveNotice.show('Categorías guardadas');
+        }}
       />
 
       {savedMsg ? (

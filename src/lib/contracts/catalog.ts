@@ -35,7 +35,17 @@ const AddonInputSchema = z.object({
   displayOrder: z.number().int().min(0).optional(),
 });
 
+const CategoryInputSchema = z.object({
+  id: NonEmptyIdSchema.optional(),
+  name: z.string().trim().min(2, 'Escribe el nombre de la categoría').max(60),
+  displayOrder: z.number().int().min(0).optional(),
+});
+
 export const CatalogMutationSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('category'),
+    data: CategoryInputSchema,
+  }),
   z.object({
     kind: z.literal('addon'),
     data: AddonInputSchema,
