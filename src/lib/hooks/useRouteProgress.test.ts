@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createRouteProgressController,
   nextTrickleProgress,
+  schedulePendingNavigationFallback,
   shouldStartRouteProgress,
   type AnchorClickInfo,
   type RouteProgressScheduler,
@@ -181,5 +182,45 @@ describe('createRouteProgressController', () => {
     }
     expect(value).toBeLessThanOrEqual(0.92);
     expect(value).toBeGreaterThan(0.85);
+  });
+});
+
+describe('schedulePendingNavigationFallback', () => {
+  it('triggers hard navigation fallback after delay when navigation has not unmounted', () => {
+    const fake = createFakeScheduler();
+    const navigate = vi.fn();
+    const cancel = schedulePendingNavigationFallback(
+      '/cita/tok-123',
+      navigate,
+      4000,
+      fake.scheduler,
+    );
+
+    expect(fake.timeouts.size).toBe(1);
+    expect(navigate).not.toHaveBeenCalled();
+
+    fake.flushTimeouts();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith('/cita/tok-123');
+    cancel();
+  });
+
+  it('cancels the fallback cleanly on unmount and ignores non-relative URLs', () => {
+    const fake = createFakeScheduler();
+    const navigate = vi.fn();
+    const cancel = schedulePendingNavigationFallback(
+      '/cita/tok-456',
+      navigate,
+      4000,
+      fake.scheduler,
+    );
+
+    cancel();
+    fake.flushTimeouts();
+    expect(navigate).not.toHaveBeenCalled();
+
+    schedulePendingNavigationFallback('https://evil.example', navigate, 4000, fake.scheduler);
+    expect(fake.timeouts.size).toBe(0);
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

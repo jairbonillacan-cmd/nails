@@ -67,7 +67,7 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - **Bio-Link (`/links`):**
   - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, dirección desde `settings.address`, chips de turnos fijos y anticipo `$200 MXN`, botones apilados a `/reservar`, `/mis-citas` (`Mis citas`), `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios públicos (excluyendo `isPrivate: true`, sin `commissionPercent`).
 - **Aviso de Privacidad LFPDPPP (`/aviso-de-privacidad`):**
-  - Detalla Responsable (`LAIKONA NAILS / Karla Patricia Carrillo Rodríguez`), datos recabados, finalidades primarias vs. secundarias opcionales, tarjeta destacada de **Derechos ARCO** (acceso/descarga JSON, rectificación, cancelación, oposición, plazo 20 días hábiles) y versión vigente (`privacyPolicyVersion`, ej. `2026-11`).
+  - Detalla Responsable comercial (`LAIKONA NAILS`, sin exponer datos personales de la dueña), datos recabados, finalidades primarias vs. secundarias opcionales, tarjeta destacada de **Derechos ARCO** (acceso/descarga JSON, rectificación, cancelación, oposición, plazo 20 días hábiles) y versión vigente (`privacyPolicyVersion`, ej. `2026-11`).
 
 ---
 

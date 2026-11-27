@@ -124,7 +124,7 @@ export function VisualTroubleshooter({
   };
 
   return (
-    <VStack className="ad-split" gap={5}>
+    <VStack className="ad-split ad-split-troubleshooter" gap={5}>
       <SurfaceCard
         id="slot-help-results-heading"
         title={`${selectedDate} · ${selectedStaff?.name ?? 'Profesional'}`}
@@ -185,13 +185,14 @@ export function VisualTroubleshooter({
 
         <VStack
           gap={4}
-          padding={5}
+          padding={4}
           className={loading && slotChecks.length > 0 ? 'fx-busy' : undefined}
           aria-busy={loading || undefined}
+          style={{ minWidth: 0 }}
         >
           {inspectedSlot ? (
             <SurfaceCard tone={inspectedSlot.isAvailable ? 'subtle' : 'warning'} padded>
-              <VStack gap={1.5} role="status" aria-live="polite">
+              <VStack gap={1.5} role="status" aria-live="polite" style={{ minWidth: 0 }}>
                 <HStack justify="between" align="center" wrap="wrap" gap={2}>
                   <HStack gap={2} align="center" wrap="wrap">
                     <StatusDot
@@ -208,7 +209,7 @@ export function VisualTroubleshooter({
                     label={inspectedSlot.isAvailable ? 'Sí sale libre' : 'No aparece libre'}
                   />
                 </HStack>
-                <Text type="supporting" weight="medium">
+                <Text type="supporting" weight="medium" style={{ overflowWrap: 'anywhere' }}>
                   {explainSlotInPlainSpanish(inspectedSlot)}
                 </Text>
               </VStack>
@@ -219,7 +220,7 @@ export function VisualTroubleshooter({
 
           {loading && slotChecks.length === 0 ? (
             <Grid
-              columns={{ minWidth: 110, max: 4 }}
+              columns={{ minWidth: 152, max: 4 }}
               gap={2}
               role="status"
               aria-label="Revisando horarios del día"
@@ -248,16 +249,21 @@ export function VisualTroubleshooter({
               }
             />
           ) : (
-            <VStack gap={4}>
+            <VStack gap={4} style={{ minWidth: 0 }}>
               {groups.map((group) => (
-                <VStack key={group.key} gap={2}>
+                <VStack key={group.key} gap={2} style={{ minWidth: 0 }}>
                   <HStack gap={1.5} align="center">
                     <Clock size={14} aria-hidden="true" />
                     <Text type="label" weight="semibold" color="secondary" className="fx-tabular" hasTabularNumbers>
                       {group.label} ({group.items.length})
                     </Text>
                   </HStack>
-                  <section aria-label={group.label} className="ad-slot-grid">
+                  <Grid
+                    columns={{ minWidth: 152, max: 4 }}
+                    gap={2}
+                    role="group"
+                    aria-label={group.label}
+                  >
                     {group.items.map((slot) => {
                       const isInspected = inspectedSlot?.time24 === slot.time24;
                       return (
@@ -269,13 +275,19 @@ export function VisualTroubleshooter({
                           elevation={isInspected ? 'low' : 'none'}
                           onClick={() => setInspectedTime(slot.time24)}
                         >
-                          <HStack justify="between" align="center" gap={1.5}>
-                            <HStack gap={1.5} align="center">
+                          <HStack justify="between" align="center" gap={1.5} wrap="wrap">
+                            <HStack gap={1.5} align="center" style={{ minWidth: 0 }}>
                               <StatusDot
                                 variant={slot.isAvailable ? 'success' : 'error'}
                                 label={slot.isAvailable ? 'Libre' : 'No disponible'}
                               />
-                              <Text weight="semibold" className="fx-tabular" hasTabularNumbers>
+                              <Text
+                                size="sm"
+                                weight="semibold"
+                                className="fx-tabular"
+                                hasTabularNumbers
+                                textWrap="nowrap"
+                              >
                                 {formatTimeHHMM12h(slot.time24)}
                               </Text>
                             </HStack>
@@ -284,7 +296,7 @@ export function VisualTroubleshooter({
                         </ClickableCard>
                       );
                     })}
-                  </section>
+                  </Grid>
                 </VStack>
               ))}
             </VStack>
@@ -299,8 +311,8 @@ export function VisualTroubleshooter({
         subtitle="Elige un servicio y una fecha para ver por qué una hora aparece libre o no."
         padded
       >
-        <VStack gap={4}>
-          <Grid columns={{ minWidth: 150, max: 2 }} gap={3}>
+        <VStack gap={4} style={{ minWidth: 0 }}>
+          <Grid columns={{ minWidth: 176, max: 2 }} gap={3}>
             <Selector
               label="Servicio"
               value={serviceId}
@@ -336,10 +348,11 @@ export function VisualTroubleshooter({
             options={quickDateOptions}
           />
 
-          <VStack className="ad-table-scroll" align="center">
+          <VStack width="100%" style={{ minWidth: 0, overflowX: 'auto' }}>
             <Calendar
               mode="single"
               weekStartsOn="mon"
+              style={{ marginInline: 'auto' }}
               value={selectedDate as ISODateString}
               onChange={(val) => {
                 if (typeof val === 'string') handleSelectDate(val);

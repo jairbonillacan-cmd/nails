@@ -219,4 +219,20 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     expect(scheduleStepSource).toContain("slot.availableStaffIds.length === 1 ? 'libre' : 'libres'");
     expect(visitSource).toContain('sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"');
   });
+
+  it('keeps personal legal owner names out of /aviso-de-privacidad and prevents full-DB getSnapshot scans in booking hot paths', () => {
+    const privacySource = readText('src/app/aviso-de-privacidad/page.tsx');
+    const bookingApiRoute = readText('src/app/api/bookings/route.ts');
+    const citaPageSource = readText('src/app/cita/[token]/page.tsx');
+
+    expect(privacySource).not.toContain('depositBeneficiary');
+    expect(privacySource).not.toContain('depositAccountHolder');
+    expect(privacySource).not.toContain('Karla Patricia Carrillo');
+    expect(privacySource).toContain('<strong>{settings.name}</strong>');
+
+    expect(bookingApiRoute).not.toContain('getSnapshot(');
+    expect(bookingApiRoute).not.toContain('getPublicBootstrap(');
+    expect(citaPageSource).not.toContain('getSnapshot(');
+    expect(citaPageSource).toContain('cache(');
+  });
 });

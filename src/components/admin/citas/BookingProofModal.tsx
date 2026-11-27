@@ -4,6 +4,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { Check, ExternalLink, XCircle } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 
@@ -44,57 +45,72 @@ export function BookingProofModal({
       onOpenChange={onOpenChange}
       purpose="info"
       width={560}
+      maxHeight="min(90dvh, calc(100dvh - 2rem))"
       padding={5}
     >
-      <DialogHeader
-        title={`Comprobante · ${clientName}`}
-        subtitle={`${bookingCode} · Anticipo ${formatCurrency(depositAmountCents, currency)}`}
-        onOpenChange={onOpenChange}
-      />
-      <VStack gap={3} paddingBlockStart={4}>
-        <img
-          src={paymentProofUrl}
-          alt={`Comprobante ampliado de ${clientName}`}
-          className="ad-proof-img"
-        />
-        <HStack justify="between" align="center" wrap="wrap" gap={2}>
-          <Button
-            label="Abrir imagen completa"
-            variant="secondary"
-            size="sm"
-            icon={<ExternalLink size={14} aria-hidden="true" />}
-            href={paymentProofUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+      <Layout
+        header={
+          <DialogHeader
+            title={`Comprobante · ${clientName}`}
+            subtitle={`${bookingCode} · Anticipo ${formatCurrency(depositAmountCents, currency)}`}
+            hasDivider
+            onOpenChange={onOpenChange}
           />
-          <HStack gap={2} align="center" wrap="wrap">
-            {canConfirm && onReject ? (
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={3} align="center">
+              <img
+                src={paymentProofUrl}
+                alt={`Comprobante ampliado de ${clientName}`}
+                className="ad-proof-img"
+                style={{ maxHeight: '58dvh', objectFit: 'contain' }}
+              />
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter hasDivider>
+            <HStack justify="between" align="center" wrap="wrap" gap={2}>
               <Button
-                type="button"
-                label={isRejecting ? 'Rechazando…' : 'Rechazar'}
+                label="Abrir imagen completa"
                 variant="secondary"
                 size="sm"
-                icon={<XCircle size={14} aria-hidden="true" />}
-                isLoading={isRejecting}
-                isDisabled={isBusy || isRejecting}
-                onClick={onReject}
+                icon={<ExternalLink size={14} aria-hidden="true" />}
+                href={paymentProofUrl}
+                target="_blank"
+                rel="noopener noreferrer"
               />
-            ) : null}
-            {canConfirm ? (
-              <Button
-                type="button"
-                label={isConfirming ? 'Confirmando…' : 'Confirmar cita'}
-                variant="primary"
-                size="sm"
-                icon={<Check size={14} aria-hidden="true" />}
-                isLoading={isConfirming}
-                isDisabled={isBusy || isRejecting}
-                onClick={onConfirm}
-              />
-            ) : null}
-          </HStack>
-        </HStack>
-      </VStack>
+              <HStack gap={2} align="center" wrap="wrap">
+                {canConfirm && onReject ? (
+                  <Button
+                    type="button"
+                    label={isRejecting ? 'Rechazando…' : 'Rechazar'}
+                    variant="secondary"
+                    size="sm"
+                    icon={<XCircle size={14} aria-hidden="true" />}
+                    isLoading={isRejecting}
+                    isDisabled={isBusy || isRejecting}
+                    onClick={onReject}
+                  />
+                ) : null}
+                {canConfirm ? (
+                  <Button
+                    type="button"
+                    label={isConfirming ? 'Confirmando…' : 'Confirmar cita'}
+                    variant="primary"
+                    size="sm"
+                    icon={<Check size={14} aria-hidden="true" />}
+                    isLoading={isConfirming}
+                    isDisabled={isBusy || isRejecting}
+                    onClick={onConfirm}
+                  />
+                ) : null}
+              </HStack>
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

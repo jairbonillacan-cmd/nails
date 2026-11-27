@@ -69,9 +69,9 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             </NextLink>
           }
         >
-          <VStack gap={4}>
-            <HStack gap={5} wrap="wrap" align="end">
-              <VStack gap={0.5}>
+          <VStack gap={4} className="ad-card-grow">
+            <VStack className="ad-dash-stat-pair" gap={0}>
+              <VStack gap={0.5} className="ad-dash-stat-box">
                 <Text type="supporting" color="secondary">
                   {metrics.cash.hasTodayEntries ? 'Te queda hoy' : 'Saldo acumulado'}
                 </Text>
@@ -84,7 +84,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
                   )}
                 </Text>
               </VStack>
-              <VStack gap={0.5}>
+              <VStack gap={0.5} className="ad-dash-stat-box">
                 <Text type="supporting" color="secondary">
                   Por cobrar
                 </Text>
@@ -96,54 +96,59 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
                   {formatCurrency(metrics.uncollectedTotalCents, currency)}
                 </Text>
               </VStack>
-            </HStack>
+            </VStack>
 
-            <HStack
-              className="ad-mini-bars"
-              align="end"
-              gap={2}
-              role="img"
-              aria-label={`Ingresos diarios de los últimos 7 días: ${metrics.dailySeries
-                .map((day) => `${day.shortLabel} ${formatCurrency(day.revenueCents, currency)}`)
-                .join(', ')}`}
-            >
-              {metrics.dailySeries.map((day) => {
-                const heightPct =
-                  day.revenueCents > 0
-                    ? Math.max(16, Math.round((day.revenueCents / maxDailyRevenue) * 100))
-                    : 4;
-                return (
-                  <VStack
-                    key={day.dateKey}
-                    gap={1.5}
-                    align="center"
-                    className="ad-mini-bar-col"
-                  >
-                    <VStack className="ad-mini-bar-track" justify="end">
+            <VStack gap={1.5}>
+              <Text type="supporting" color="secondary" className="ad-sub-kicker">
+                Ingresos últimos 7 días
+              </Text>
+              <HStack
+                className="ad-mini-bars"
+                align="end"
+                gap={2}
+                role="img"
+                aria-label={`Ingresos diarios de los últimos 7 días: ${metrics.dailySeries
+                  .map((day) => `${day.shortLabel} ${formatCurrency(day.revenueCents, currency)}`)
+                  .join(', ')}`}
+              >
+                {metrics.dailySeries.map((day) => {
+                  const heightPct =
+                    day.revenueCents > 0
+                      ? Math.max(16, Math.round((day.revenueCents / maxDailyRevenue) * 100))
+                      : 4;
+                  return (
+                    <VStack
+                      key={day.dateKey}
+                      gap={1.5}
+                      align="center"
+                      className="ad-mini-bar-col"
+                    >
+                      <VStack className="ad-mini-bar-track" justify="end">
+                        <Text
+                          className="ad-mini-bar-fill"
+                          data-current={day.isToday ? 'true' : 'false'}
+                          data-empty={day.revenueCents > 0 ? 'false' : 'true'}
+                          style={{ height: `${heightPct}%` }}
+                          aria-hidden="true"
+                        >
+                          {'\u200B'}
+                        </Text>
+                      </VStack>
                       <Text
-                        className="ad-mini-bar-fill"
-                        data-current={day.isToday ? 'true' : 'false'}
-                        data-empty={day.revenueCents > 0 ? 'false' : 'true'}
-                        style={{ height: `${heightPct}%` }}
-                        aria-hidden="true"
+                        type="supporting"
+                        color={day.isToday ? 'primary' : 'secondary'}
+                        weight={day.isToday ? 'semibold' : 'normal'}
+                        className="ad-mini-bar-label"
                       >
-                        {'\u200B'}
+                        {day.shortLabel}
                       </Text>
                     </VStack>
-                    <Text
-                      type="supporting"
-                      color={day.isToday ? 'primary' : 'secondary'}
-                      weight={day.isToday ? 'semibold' : 'normal'}
-                      className="ad-mini-bar-label"
-                    >
-                      {day.shortLabel}
-                    </Text>
-                  </VStack>
-                );
-              })}
-            </HStack>
+                  );
+                })}
+              </HStack>
+            </VStack>
 
-            <VStack gap={2}>
+            <VStack gap={0} className="ad-kv-list">
               {cashRows.map((row) => (
                 <HStack key={row.label} justify="between" align="center" gap={2} className="ad-kv-row">
                   <Text color="secondary" size="sm">
@@ -174,59 +179,60 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
           ) : undefined
         }
       >
-        <VStack gap={4}>
-          <VStack gap={3}>
-            {nearRewardClients.length === 0 ? (
-              <Text type="supporting" color="secondary">
-                Cuando tus clientas acumulen sellos cerca del objetivo aparecerán aquí.
-              </Text>
-            ) : (
-              nearRewardClients.slice(0, 3).map((client) => {
-                const required = Math.max(1, client.summary.stampsRequired);
-                const pct = Math.min(100, Math.round((client.summary.currentStamps / required) * 100));
-                const content = (
-                  <VStack gap={1}>
-                    <HStack justify="between" align="center" gap={2} wrap="wrap">
-                      <Text weight="medium" size="sm">
-                        {client.fullName}
-                      </Text>
-                      <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {client.summary.currentStamps} / {required} · {client.summary.rewardLabel}
-                      </Text>
-                    </HStack>
-                    <VStack className="ad-thin-track">
-                      <Text
-                        className="ad-thin-fill"
-                        data-accent="true"
-                        style={{ width: `${pct}%` }}
-                        aria-hidden="true"
-                      >
-                        {'\u200B'}
-                      </Text>
-                    </VStack>
-                  </VStack>
-                );
-
-                if (roleCanAccess(role, 'clients')) {
-                  return (
-                    <NextLink
-                      key={client.clientId}
-                      href={`/admin/clientas?q=${encodeURIComponent(client.phoneE164)}`}
-                      className="ad-loyalty-link"
+        <VStack gap={0} className={nearRewardClients.length === 0 ? 'ad-card-empty-center' : 'ad-card-grow ad-loyalty-list'}>
+          {nearRewardClients.length === 0 ? (
+            <Text type="supporting" color="secondary">
+              Cuando tus clientas acumulen sellos cerca del objetivo aparecerán aquí.
+            </Text>
+          ) : (
+            nearRewardClients.slice(0, 3).map((client) => {
+              const required = Math.max(1, client.summary.stampsRequired);
+              const pct = Math.min(100, Math.round((client.summary.currentStamps / required) * 100));
+              const content = (
+                <VStack gap={1.5} className="ad-loyalty-item">
+                  <HStack justify="between" align="center" gap={2}>
+                    <Text weight="semibold" size="sm" maxLines={1}>
+                      {client.fullName}
+                    </Text>
+                    <Text type="supporting" color="accent" weight="semibold" hasTabularNumbers>
+                      {client.summary.currentStamps}/{required}
+                    </Text>
+                  </HStack>
+                  <VStack className="ad-thin-track">
+                    <Text
+                      className="ad-thin-fill"
+                      data-accent="true"
+                      style={{ width: `${pct}%` }}
+                      aria-hidden="true"
                     >
-                      {content}
-                    </NextLink>
-                  );
-                }
-
-                return (
-                  <VStack key={client.clientId} gap={0}>
-                    {content}
+                      {'\u200B'}
+                    </Text>
                   </VStack>
+                  <Text type="supporting" color="secondary" maxLines={1}>
+                    {client.summary.rewardLabel}
+                  </Text>
+                </VStack>
+              );
+
+              if (roleCanAccess(role, 'clients')) {
+                return (
+                  <NextLink
+                    key={client.clientId}
+                    href={`/admin/clientas?q=${encodeURIComponent(client.phoneE164)}`}
+                    className="ad-loyalty-link"
+                  >
+                    {content}
+                  </NextLink>
                 );
-              })
-            )}
-          </VStack>
+              }
+
+              return (
+                <VStack key={client.clientId} gap={0} className="ad-loyalty-row">
+                  {content}
+                </VStack>
+              );
+            })
+          )}
         </VStack>
       </SurfaceCard>
 

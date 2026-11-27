@@ -235,19 +235,13 @@ export function DashboardAttentionCard({
   const visibleTasks = allTasks.slice(0, maxVisible);
   const hiddenCount = Math.max(0, allTasks.length - visibleTasks.length);
 
-  const headerActions = (
-    <Text type="supporting" color="secondary" className="ad-hide-s">
-      Lo que necesita tu atención hoy
-    </Text>
-  );
-
   return (
     <>
       <SurfaceCard
         id="ad-att"
         title="Pendientes de hoy"
+        subtitle="Lo que necesita tu atención hoy"
         count={allTasks.length > 0 ? allTasks.length : undefined}
-        actions={headerActions}
         className="ad-card ad-enter"
         footer={
           hiddenCount > 0 ? (
@@ -261,7 +255,7 @@ export function DashboardAttentionCard({
         }
       >
         {visibleTasks.length === 0 ? (
-          <VStack padding={4}>
+          <VStack padding={5} className="ad-card-empty-center">
             <EmptyStateCard
               framed={false}
               isCompact
@@ -280,7 +274,7 @@ export function DashboardAttentionCard({
             />
           </VStack>
         ) : (
-          <VStack gap={0}>
+          <VStack gap={0} className="ad-task-list">
             {visibleTasks.map((task) => (
               <ActionRow
                 key={task.id}

@@ -8,6 +8,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Link } from '@astryxdesign/core/Link';
 import { Token } from '@astryxdesign/core/Token';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { AspectRatio } from '@astryxdesign/core/AspectRatio';
 import { Check, ExternalLink, ImageIcon, Wallet } from 'lucide-react';
 import {
@@ -213,165 +214,177 @@ export function CajaDepositsTab({
           if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
         }}
         width={520}
+        maxHeight="min(90dvh, calc(100dvh - 2rem))"
         padding={5}
       >
         {previewDeposit ? (
-          <VStack gap={4}>
-            <DialogHeader
-              title="Comprobante de anticipo"
-              subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
-              onOpenChange={(open) => {
-                if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
-              }}
-            />
-
-            <VStack gap={2} className="ad-proof-meta">
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  Servicio y profesional
-                </Text>
-                <Text weight="semibold" size="sm">
-                  {previewDeposit.serviceName} · {previewDeposit.staffName}
-                </Text>
-              </HStack>
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  Fecha y hora
-                </Text>
-                <Text weight="semibold" size="sm" hasTabularNumbers>
-                  {formatDateShortInTimezone(previewDeposit.startAt, tz)} ·{' '}
-                  {formatTimeInTimezone(previewDeposit.startAt, tz)}
-                </Text>
-              </HStack>
-              <HStack justify="between" align="center" gap={2} wrap="wrap">
-                <Text type="supporting" color="secondary">
-                  Anticipo esperado
-                </Text>
-                <StatusTag
-                  tone="info"
-                  hasTabularNumbers
-                  label={formatCurrency(previewDeposit.depositAmountCents, currency)}
-                />
-              </HStack>
-            </VStack>
-
-            {isImageProofHref(
-              previewDeposit.paymentProofUrl,
-              previewDeposit.proofDeliveryMethod,
-            ) && previewDeposit.paymentProofUrl ? (
-              <VStack gap={2}>
-                <AspectRatio ratio={4 / 3} fit="contain">
-                  <img
-                    src={previewDeposit.paymentProofUrl}
-                    alt={`Comprobante de anticipo de ${previewDeposit.clientName}`}
-                    className="ad-proof-img"
-                  />
-                </AspectRatio>
-                <Button
-                  label="Abrir imagen completa"
-                  variant="ghost"
-                  size="sm"
-                  icon={<ExternalLink size={14} aria-hidden="true" />}
-                  href={previewDeposit.paymentProofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              </VStack>
-            ) : isSafeProofHref(previewDeposit.paymentProofUrl) ? (
-              <VStack gap={2} className="ad-proof-note">
-                <Text weight="semibold" size="sm">
-                  Enlace de comprobante externo
-                </Text>
-                <Text type="supporting" color="secondary">
-                  Abre el recibo para verificar el depósito antes de confirmar.
-                </Text>
-                <Button
-                  label="Abrir enlace del recibo"
-                  variant="secondary"
-                  size="sm"
-                  icon={<ExternalLink size={14} aria-hidden="true" />}
-                  href={previewDeposit.paymentProofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              </VStack>
-            ) : (
-              <VStack gap={1.5} className="ad-proof-note">
-                <Text weight="semibold" size="sm">
-                  {previewDeposit.proofDeliveryMethod === 'instagram_dm'
-                    ? 'Enviado por mensaje de Instagram'
-                    : 'Comprobante aún pendiente'}
-                </Text>
-                <Text type="supporting" color="secondary">
-                  Revisa los mensajes de {previewDeposit.clientInstagram || previewDeposit.clientName}{' '}
-                  para confirmar la transferencia.
-                </Text>
-              </VStack>
-            )}
-
-            <HStack justify="end" gap={2} wrap="wrap">
-              {onRejectDeposit &&
-              (previewDeposit.proofDeliveryMethod !== 'none' ||
-                Boolean(previewDeposit.paymentProofUrl)) ? (
-                <Button
-                  type="button"
-                  label={
-                    rejectingId === previewDeposit.bookingId
-                      ? 'Rechazando…'
-                      : 'Rechazar comprobante'
-                  }
-                  variant="ghost"
-                  size="sm"
-                  isLoading={rejectingId === previewDeposit.bookingId}
-                  isDisabled={
-                    approvingId === previewDeposit.bookingId ||
-                    rejectingId === previewDeposit.bookingId
-                  }
-                  onClick={async () => {
-                    const ok = await onRejectDeposit(
-                      previewDeposit.bookingId,
-                      previewDeposit.bookingCode,
-                    );
-                    if (ok) {
-                      setPreviewDeposit(null);
-                    }
-                  }}
-                />
-              ) : null}
-              <Button
-                type="button"
-                label="Cerrar"
-                variant="secondary"
-                size="sm"
-                isDisabled={
-                  approvingId === previewDeposit.bookingId ||
-                  rejectingId === previewDeposit.bookingId
-                }
-                onClick={() => setPreviewDeposit(null)}
-              />
-              <Button
-                type="button"
-                label="Confirmar anticipo"
-                variant="primary"
-                size="sm"
-                icon={<Check size={14} aria-hidden="true" />}
-                isLoading={approvingId === previewDeposit.bookingId}
-                isDisabled={
-                  approvingId === previewDeposit.bookingId ||
-                  rejectingId === previewDeposit.bookingId
-                }
-                onClick={async () => {
-                  const ok = await onApproveDeposit(
-                    previewDeposit.bookingId,
-                    previewDeposit.bookingCode,
-                  );
-                  if (ok) {
-                    setPreviewDeposit(null);
-                  }
+          <Layout
+            header={
+              <DialogHeader
+                title="Comprobante de anticipo"
+                subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
+                hasDivider
+                onOpenChange={(open) => {
+                  if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
                 }}
               />
-            </HStack>
-          </VStack>
+            }
+            content={
+              <LayoutContent>
+                <VStack gap={4}>
+                  <VStack gap={2} className="ad-proof-meta">
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <Text type="supporting" color="secondary">
+                        Servicio y profesional
+                      </Text>
+                      <Text weight="semibold" size="sm">
+                        {previewDeposit.serviceName} · {previewDeposit.staffName}
+                      </Text>
+                    </HStack>
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <Text type="supporting" color="secondary">
+                        Fecha y hora
+                      </Text>
+                      <Text weight="semibold" size="sm" hasTabularNumbers>
+                        {formatDateShortInTimezone(previewDeposit.startAt, tz)} ·{' '}
+                        {formatTimeInTimezone(previewDeposit.startAt, tz)}
+                      </Text>
+                    </HStack>
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <Text type="supporting" color="secondary">
+                        Anticipo esperado
+                      </Text>
+                      <StatusTag
+                        tone="info"
+                        hasTabularNumbers
+                        label={formatCurrency(previewDeposit.depositAmountCents, currency)}
+                      />
+                    </HStack>
+                  </VStack>
+
+                  {isImageProofHref(
+                    previewDeposit.paymentProofUrl,
+                    previewDeposit.proofDeliveryMethod,
+                  ) && previewDeposit.paymentProofUrl ? (
+                    <VStack gap={2}>
+                      <AspectRatio ratio={4 / 3} fit="contain">
+                        <img
+                          src={previewDeposit.paymentProofUrl}
+                          alt={`Comprobante de anticipo de ${previewDeposit.clientName}`}
+                          className="ad-proof-img"
+                        />
+                      </AspectRatio>
+                      <Button
+                        label="Abrir imagen completa"
+                        variant="ghost"
+                        size="sm"
+                        icon={<ExternalLink size={14} aria-hidden="true" />}
+                        href={previewDeposit.paymentProofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    </VStack>
+                  ) : isSafeProofHref(previewDeposit.paymentProofUrl) ? (
+                    <VStack gap={2} className="ad-proof-note">
+                      <Text weight="semibold" size="sm">
+                        Enlace de comprobante externo
+                      </Text>
+                      <Text type="supporting" color="secondary">
+                        Abre el recibo para verificar el depósito antes de confirmar.
+                      </Text>
+                      <Button
+                        label="Abrir enlace del recibo"
+                        variant="secondary"
+                        size="sm"
+                        icon={<ExternalLink size={14} aria-hidden="true" />}
+                        href={previewDeposit.paymentProofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    </VStack>
+                  ) : (
+                    <VStack gap={1.5} className="ad-proof-note">
+                      <Text weight="semibold" size="sm">
+                        {previewDeposit.proofDeliveryMethod === 'instagram_dm'
+                          ? 'Enviado por mensaje de Instagram'
+                          : 'Comprobante aún pendiente'}
+                      </Text>
+                      <Text type="supporting" color="secondary">
+                        Revisa los mensajes de {previewDeposit.clientInstagram || previewDeposit.clientName}{' '}
+                        para confirmar la transferencia.
+                      </Text>
+                    </VStack>
+                  )}
+                </VStack>
+              </LayoutContent>
+            }
+            footer={
+              <LayoutFooter hasDivider>
+                <HStack justify="end" gap={2} wrap="wrap">
+                  {onRejectDeposit &&
+                  (previewDeposit.proofDeliveryMethod !== 'none' ||
+                    Boolean(previewDeposit.paymentProofUrl)) ? (
+                    <Button
+                      type="button"
+                      label={
+                        rejectingId === previewDeposit.bookingId
+                          ? 'Rechazando…'
+                          : 'Rechazar comprobante'
+                      }
+                      variant="ghost"
+                      size="sm"
+                      isLoading={rejectingId === previewDeposit.bookingId}
+                      isDisabled={
+                        approvingId === previewDeposit.bookingId ||
+                        rejectingId === previewDeposit.bookingId
+                      }
+                      onClick={async () => {
+                        const ok = await onRejectDeposit(
+                          previewDeposit.bookingId,
+                          previewDeposit.bookingCode,
+                        );
+                        if (ok) {
+                          setPreviewDeposit(null);
+                        }
+                      }}
+                    />
+                  ) : null}
+                  <Button
+                    type="button"
+                    label="Cerrar"
+                    variant="secondary"
+                    size="sm"
+                    isDisabled={
+                      approvingId === previewDeposit.bookingId ||
+                      rejectingId === previewDeposit.bookingId
+                    }
+                    onClick={() => setPreviewDeposit(null)}
+                  />
+                  <Button
+                    type="button"
+                    label="Confirmar anticipo"
+                    variant="primary"
+                    size="sm"
+                    icon={<Check size={14} aria-hidden="true" />}
+                    isLoading={approvingId === previewDeposit.bookingId}
+                    isDisabled={
+                      approvingId === previewDeposit.bookingId ||
+                      rejectingId === previewDeposit.bookingId
+                    }
+                    onClick={async () => {
+                      const ok = await onApproveDeposit(
+                        previewDeposit.bookingId,
+                        previewDeposit.bookingCode,
+                      );
+                      if (ok) {
+                        setPreviewDeposit(null);
+                      }
+                    }}
+                  />
+                </HStack>
+              </LayoutFooter>
+            }
+          />
         ) : null}
       </Dialog>
     </VStack>

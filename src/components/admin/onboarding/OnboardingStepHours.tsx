@@ -5,7 +5,6 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Clock } from 'lucide-react';
-import { StatusTag } from '@/components/ui';
 
 export interface StaffShiftSummary {
   id: string;
@@ -41,7 +40,14 @@ export function OnboardingStepHours({
             <Text size="sm" weight="medium">
               {st.name}
             </Text>
-            <StatusTag tone="neutral" label={st.summary} hasTabularNumbers />
+            <Text
+              type="supporting"
+              color="secondary"
+              hasTabularNumbers
+              style={{ overflowWrap: 'anywhere' }}
+            >
+              {st.summary}
+            </Text>
           </HStack>
         ))}
       </VStack>

@@ -7,6 +7,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import {
@@ -212,61 +213,73 @@ export function OnboardingStepAlerts({
         isOpen={notifDialogOpen}
         onOpenChange={onSetNotifDialogOpen}
         width={480}
+        maxHeight="min(90dvh, calc(100dvh - 2rem))"
         padding={5}
         purpose="info"
       >
-        <VStack gap={4}>
-          <DialogHeader
-            title="Entérate cuando alguien agende"
-            subtitle="Recibe avisos suaves mientras trabajas en mesa"
-            onOpenChange={onSetNotifDialogOpen}
-          />
-          <List hasDividers>
-            <ListItem
-              label="Nuevas citas y cambios"
-              description={
-                <Text type="supporting" color="secondary">
-                  Aviso inmediato cuando una clienta reserva, cambia de hora o cancela.
-                </Text>
-              }
-              startContent={<CalendarPlus size={17} aria-hidden="true" />}
+        <Layout
+          header={
+            <DialogHeader
+              title="Entérate cuando alguien agende"
+              subtitle="Recibe avisos suaves mientras trabajas en mesa"
+              hasDivider
+              onOpenChange={onSetNotifDialogOpen}
             />
-            <ListItem
-              label="Anticipos listos para revisar"
-              description={
-                <Text type="supporting" color="secondary">
-                  Te avisamos cuando una clienta sube su comprobante.
-                </Text>
-              }
-              startContent={<Bell size={17} aria-hidden="true" />}
-            />
-            <ListItem
-              label="Timbre suave de nueva cita"
-              description={
-                <Text type="supporting" color="secondary">
-                  Puedes silenciarlo cuando quieras desde el menú del salón.
-                </Text>
-              }
-              startContent={<Volume2 size={17} aria-hidden="true" />}
-            />
-          </List>
-          <HStack justify="end" gap={2} wrap="wrap">
-            <Button
-              type="button"
-              label="Ahora no"
-              variant="secondary"
-              onClick={() => onSetNotifDialogOpen(false)}
-            />
-            <Button
-              type="button"
-              label="Activar avisos"
-              variant="primary"
-              icon={<Bell size={15} aria-hidden="true" />}
-              isLoading={saving}
-              onClick={onActivateNotifications}
-            />
-          </HStack>
-        </VStack>
+          }
+          content={
+            <LayoutContent>
+              <List hasDividers>
+                <ListItem
+                  label="Nuevas citas y cambios"
+                  description={
+                    <Text type="supporting" color="secondary">
+                      Aviso inmediato cuando una clienta reserva, cambia de hora o cancela.
+                    </Text>
+                  }
+                  startContent={<CalendarPlus size={17} aria-hidden="true" />}
+                />
+                <ListItem
+                  label="Anticipos listos para revisar"
+                  description={
+                    <Text type="supporting" color="secondary">
+                      Te avisamos cuando una clienta sube su comprobante.
+                    </Text>
+                  }
+                  startContent={<Bell size={17} aria-hidden="true" />}
+                />
+                <ListItem
+                  label="Timbre suave de nueva cita"
+                  description={
+                    <Text type="supporting" color="secondary">
+                      Puedes silenciarlo cuando quieras desde el menú del salón.
+                    </Text>
+                  }
+                  startContent={<Volume2 size={17} aria-hidden="true" />}
+                />
+              </List>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              <HStack justify="end" gap={2} wrap="wrap">
+                <Button
+                  type="button"
+                  label="Ahora no"
+                  variant="secondary"
+                  onClick={() => onSetNotifDialogOpen(false)}
+                />
+                <Button
+                  type="button"
+                  label="Activar avisos"
+                  variant="primary"
+                  icon={<Bell size={15} aria-hidden="true" />}
+                  isLoading={saving}
+                  onClick={onActivateNotifications}
+                />
+              </HStack>
+            </LayoutFooter>
+          }
+        />
       </Dialog>
     </>
   );

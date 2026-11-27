@@ -5,6 +5,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { Download } from 'lucide-react';
 import { generateQrSvg } from '@/lib/qr';
 import { CopyableField } from '@/components/ui';
@@ -51,52 +52,63 @@ export function DashboardQrDialog({
   };
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={onOpenChange} width={440} padding={5}>
-      <VStack gap={4}>
-        <DialogHeader
-          title="Código QR de tu salón"
-          subtitle="Muéstralo en mostrador o descárgalo para que tus clientas agenden con su cámara."
-          onOpenChange={onOpenChange}
-        />
-        <VStack className="ad-subpanel" gap={3} align="center">
-          {qrDataUri ? (
-            <VStack className="ad-qr-stage" align="center" justify="center">
-              <img
-                src={qrDataUri}
-                alt={`Código QR para agendar en ${salonName}`}
-                width={200}
-                height={200}
-                style={{
-                  display: 'block',
-                  maxWidth: '100%',
-                  height: 'auto',
-                  borderRadius: 'var(--radius-inner)',
-                }}
+    <Dialog isOpen={isOpen} onOpenChange={onOpenChange} width={440} maxHeight="90dvh" padding={5}>
+      <Layout
+        header={
+          <DialogHeader
+            title="Código QR de tu salón"
+            subtitle="Muéstralo en mostrador o descárgalo para que tus clientas agenden con su cámara."
+            hasDivider
+            onOpenChange={onOpenChange}
+          />
+        }
+        content={
+          <LayoutContent>
+            <VStack className="ad-subpanel" gap={3} align="center">
+              {qrDataUri ? (
+                <VStack className="ad-qr-stage" align="center" justify="center">
+                  <img
+                    src={qrDataUri}
+                    alt={`Código QR para agendar en ${salonName}`}
+                    width={200}
+                    height={200}
+                    style={{
+                      display: 'block',
+                      maxWidth: '100%',
+                      height: 'auto',
+                      borderRadius: 'var(--radius-inner)',
+                    }}
+                  />
+                </VStack>
+              ) : null}
+              <CopyableField
+                value={targetUrl}
+                monospace
+                copyLabel="Copiar enlace"
+                copiedLabel="¡Copiado!"
+                feedbackMessage="¡Link de reservas copiado!"
               />
             </VStack>
-          ) : null}
-          <CopyableField
-            value={targetUrl}
-            monospace
-            copyLabel="Copiar enlace"
-            copiedLabel="¡Copiado!"
-            feedbackMessage="¡Link de reservas copiado!"
-          />
-        </VStack>
-        <HStack gap={2} justify="end" wrap="wrap">
-          {canCustomizeBrand ? (
-            <Button label="Personalizar en Mi página" variant="ghost" size="sm" href="/admin/marca" />
-          ) : null}
-          <Button
-            type="button"
-            label="Descargar QR"
-            variant="primary"
-            size="sm"
-            icon={<Download size={14} aria-hidden="true" />}
-            onClick={handleDownloadQrSvg}
-          />
-        </HStack>
-      </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter hasDivider>
+            <HStack gap={2} justify="end" wrap="wrap" width="100%">
+              {canCustomizeBrand ? (
+                <Button label="Personalizar en Mi página" variant="ghost" size="sm" href="/admin/marca" />
+              ) : null}
+              <Button
+                type="button"
+                label="Descargar QR"
+                variant="primary"
+                size="sm"
+                icon={<Download size={14} aria-hidden="true" />}
+                onClick={handleDownloadQrSvg}
+              />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

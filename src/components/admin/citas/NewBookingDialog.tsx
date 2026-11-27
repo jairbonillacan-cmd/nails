@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { Banner } from '@astryxdesign/core/Banner';
 import { OwnerPinDialog } from '@/components/admin/config/OwnerPinDialog';
 import type { ClientProfile, Service, ServiceAddon, StaffMember } from '@/lib/types';
@@ -242,115 +243,137 @@ export function NewBookingDialog({
   };
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={handleOpenChange} width={620} padding={5}>
-      <DialogHeader
-        title="Nueva cita"
-        subtitle="Clienta, servicio y horario."
+    <>
+      <Dialog
+        isOpen={isOpen}
         onOpenChange={handleOpenChange}
-      />
-      <form
-        onSubmit={(e: React.FormEvent) => {
-          e.preventDefault();
-          void submitBookingRequest();
-        }}
+        width={620}
+        maxHeight="min(90dvh, calc(100dvh - 2rem))"
+        padding={5}
       >
-        <VStack
-          gap={4}
-          paddingBlockStart={4}
-          className={saving ? 'fx-sheet-in fx-busy' : 'fx-sheet-in'}
-          aria-busy={saving || undefined}
-        >
-          {formError ? (
-            <Banner status="error" role="alert" title={formError} isDismissable onDismiss={() => setFormError(null)} />
-          ) : null}
+        <Layout
+          header={
+            <DialogHeader
+              title="Nueva cita"
+              subtitle="Clienta, servicio y horario."
+              hasDivider
+              onOpenChange={handleOpenChange}
+            />
+          }
+          content={
+            <LayoutContent>
+              <form
+                id="new-booking-form"
+                onSubmit={(e: React.FormEvent) => {
+                  e.preventDefault();
+                  void submitBookingRequest();
+                }}
+              >
+                <VStack
+                  gap={4}
+                  className={saving ? 'fx-busy' : undefined}
+                  aria-busy={saving || undefined}
+                >
+                  {formError ? (
+                    <Banner status="error" role="alert" title={formError} isDismissable onDismiss={() => setFormError(null)} />
+                  ) : null}
 
-          <NewBookingClientStep
-            clients={clients}
-            clientName={clientName}
-            clientPhone={clientPhone}
-            clientInstagram={clientInstagram}
-            onChangeName={(val) => {
-              setClientName(val);
-              if (formError) setFormError(null);
-            }}
-            onChangePhone={(val) => {
-              setClientPhone(val);
-              if (formError) setFormError(null);
-            }}
-            onChangeInstagram={setClientInstagram}
-            onPickExistingClient={(client) => {
-              setClientName(client.fullName);
-              setClientPhone(client.phoneE164);
-              setClientInstagram(client.instagramHandle ?? '');
-              if (formError) setFormError(null);
-            }}
-          />
+                  <NewBookingClientStep
+                    clients={clients}
+                    clientName={clientName}
+                    clientPhone={clientPhone}
+                    clientInstagram={clientInstagram}
+                    onChangeName={(val) => {
+                      setClientName(val);
+                      if (formError) setFormError(null);
+                    }}
+                    onChangePhone={(val) => {
+                      setClientPhone(val);
+                      if (formError) setFormError(null);
+                    }}
+                    onChangeInstagram={setClientInstagram}
+                    onPickExistingClient={(client) => {
+                      setClientName(client.fullName);
+                      setClientPhone(client.phoneE164);
+                      setClientInstagram(client.instagramHandle ?? '');
+                      if (formError) setFormError(null);
+                    }}
+                  />
 
-          <NewBookingServiceStep
-            activeServices={activeServices}
-            applicableAddons={applicableAddons}
-            effectiveServiceId={effectiveServiceId}
-            extraServiceIds={extraServiceIds}
-            addonIds={addonIds}
-            activeDurationMinutes={activeDurationMinutes}
-            activePriceCents={activePriceCents}
-            currency={currency}
-            onChangeService={(val) => {
-              const nextExtras = extraServiceIds.filter((id) => id !== val);
-              setServiceId(val);
-              setExtraServiceIds(nextExtras);
-              syncCustomWithCatalog(nextExtras, addonIds, val);
-            }}
-            onToggleExtra={handleToggleExtra}
-            onToggleAddon={handleToggleAddon}
-          />
+                  <NewBookingServiceStep
+                    activeServices={activeServices}
+                    applicableAddons={applicableAddons}
+                    effectiveServiceId={effectiveServiceId}
+                    extraServiceIds={extraServiceIds}
+                    addonIds={addonIds}
+                    activeDurationMinutes={activeDurationMinutes}
+                    activePriceCents={activePriceCents}
+                    currency={currency}
+                    onChangeService={(val) => {
+                      const nextExtras = extraServiceIds.filter((id) => id !== val);
+                      setServiceId(val);
+                      setExtraServiceIds(nextExtras);
+                      syncCustomWithCatalog(nextExtras, addonIds, val);
+                    }}
+                    onToggleExtra={handleToggleExtra}
+                    onToggleAddon={handleToggleAddon}
+                  />
 
-          <NewBookingSlotStep
-            activeStaff={activeStaff}
-            effectiveStaffId={effectiveStaffId}
-            lockedStaffId={lockedStaffId}
-            startDate={startDate}
-            todayKey={todayKey}
-            timezone={timezone}
-            loadingSlots={loadingSlots}
-            slots={slots}
-            selectedSlot={selectedSlot}
-            onChangeStaff={setStaffId}
-            onChangeDate={setStartDate}
-            onSelectSlot={setSelectedSlot}
-          />
+                  <NewBookingSlotStep
+                    activeStaff={activeStaff}
+                    effectiveStaffId={effectiveStaffId}
+                    lockedStaffId={lockedStaffId}
+                    startDate={startDate}
+                    todayKey={todayKey}
+                    timezone={timezone}
+                    loadingSlots={loadingSlots}
+                    slots={slots}
+                    selectedSlot={selectedSlot}
+                    onChangeStaff={setStaffId}
+                    onChangeDate={setStartDate}
+                    onSelectSlot={setSelectedSlot}
+                  />
 
-          <NewBookingAdvancedSection
-            currency={currency}
-            timezone={timezone}
-            selectedSlot={selectedSlot}
-            catalogDurationMinutes={catalogTotals.durationMinutes}
-            catalogPriceCents={catalogTotals.priceCents}
-            activeDurationMinutes={activeDurationMinutes}
-            state={advanced}
-            onPatch={patchAdvanced}
-            onToggleCustomOverride={handleToggleCustomOverride}
-          />
+                  <NewBookingAdvancedSection
+                    currency={currency}
+                    timezone={timezone}
+                    selectedSlot={selectedSlot}
+                    catalogDurationMinutes={catalogTotals.durationMinutes}
+                    catalogPriceCents={catalogTotals.priceCents}
+                    activeDurationMinutes={activeDurationMinutes}
+                    state={advanced}
+                    onPatch={patchAdvanced}
+                    onToggleCustomOverride={handleToggleCustomOverride}
+                  />
+                </VStack>
+              </form>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              <Button
+                type="submit"
+                form="new-booking-form"
+                label={
+                  saving
+                    ? advanced.isRecurring
+                      ? 'Agendando retoques…'
+                      : 'Guardando cita…'
+                    : advanced.isRecurring
+                      ? `Guardar serie (${advanced.recurrenceCount} citas)`
+                      : 'Guardar cita'
+                }
+                variant="primary"
+                size="md"
+                width="100%"
+                isLoading={saving}
+                isDisabled={!selectedSlot || saving}
+              />
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
 
-          <Button
-            type="submit"
-            label={
-              saving
-                ? advanced.isRecurring
-                  ? 'Agendando retoques…'
-                  : 'Guardando cita…'
-                : advanced.isRecurring
-                  ? `Guardar serie (${advanced.recurrenceCount} citas)`
-                  : 'Guardar cita'
-            }
-            variant="primary"
-            size="md"
-            width="100%"
-            isLoading={saving}
-            isDisabled={!selectedSlot || saving}
-          />
-        </VStack>
-      </form>
       <OwnerPinDialog
         isOpen={pinDialogOpen}
         onOpenChange={(open) => {
@@ -364,6 +387,6 @@ export function NewBookingDialog({
         error={pinError}
         onConfirm={(pin) => submitBookingRequest(pin)}
       />
-    </Dialog>
+    </>
   );
 }

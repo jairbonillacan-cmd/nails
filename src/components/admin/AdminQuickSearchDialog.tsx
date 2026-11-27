@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -133,309 +134,322 @@ export function AdminQuickSearchDialog({
         }
       }}
       width={560}
+      maxHeight="min(86dvh, calc(100dvh - 2rem))"
       padding={5}
     >
-      <DialogHeader
-        title="Búsqueda y comandos"
-        subtitle="Escribe un nombre, un teléfono o una fecha como «mañana» o «15 dic»."
-        onOpenChange={onOpenChange}
+      <Layout
+        header={
+          <DialogHeader
+            title="Búsqueda y comandos"
+            subtitle="Escribe un nombre, un teléfono o una fecha como «mañana» o «15 dic»."
+            hasDivider
+            onOpenChange={onOpenChange}
+          />
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              <TextInput
+                ref={inputRef}
+                label="Buscar en el panel"
+                isLabelHidden
+                placeholder={
+                  canViewClients
+                    ? 'Clienta, teléfono, servicio, código NL-…, fecha (mañana, 15 dic) o sección…'
+                    : 'Cita, servicio, código NL-…, fecha (mañana, 15 dic) o sección…'
+                }
+                value={query}
+                onChange={handleQueryChange}
+                role="combobox"
+                aria-expanded={hasResults}
+                aria-controls="ad-search-results"
+                aria-autocomplete="list"
+                aria-activedescendant={activeOption?.optionId}
+                startIcon={<Search size={16} aria-hidden="true" />}
+                hasClear
+                hasAutoFocus
+              />
+
+              {!hasResults ? (
+                <VStack role="status">
+                  <EmptyStateCard
+                    framed={false}
+                    isCompact
+                    title="Sin coincidencias"
+                    description={
+                      canViewClients
+                        ? `No encontramos resultados para «${query}». Prueba con una clienta, servicio, teléfono, fecha (ejemplo: viernes o 15 dic) o sección.`
+                        : `No encontramos resultados para «${query}». Prueba con una cita, servicio, fecha (ejemplo: viernes o 15 dic) o sección.`
+                    }
+                  />
+                </VStack>
+              ) : (
+                <VStack
+                  id="ad-search-results"
+                  role="listbox"
+                  aria-label="Resultados de búsqueda"
+                  gap={3}
+                >
+                  {dateJumps.length > 0 ? (
+                    <VStack className="ad-surface" gap={0}>
+                      <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                        <HStack gap={1.5} align="center">
+                          <Calendar size={14} aria-hidden="true" />
+                          <Text type="label" color="secondary" weight="semibold">
+                            Ir a fecha en Agenda
+                          </Text>
+                        </HStack>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {dateJumps.length}
+                        </Text>
+                      </HStack>
+                      <List hasDividers density="compact" role="presentation">
+                        {dateJumps.map((jump, idx) => {
+                          const isActive = safeActiveIndex === idx;
+                          const optionId = `ad-search-opt-${jump.id}`;
+                          return (
+                            <ListItem
+                              key={jump.id}
+                              id={optionId}
+                              role="option"
+                              aria-selected={isActive}
+                              isSelected={isActive}
+                              className="ad-search-item"
+                              data-active={isActive ? 'true' : 'false'}
+                              label={jump.label}
+                              description={
+                                <Text type="supporting" color="secondary" hasTabularNumbers>
+                                  {jump.description}
+                                </Text>
+                              }
+                              onMouseEnter={() => setActiveIndex(idx)}
+                              onClick={() => handleNavigate(jump.href)}
+                            />
+                          );
+                        })}
+                      </List>
+                    </VStack>
+                  ) : null}
+
+                  {matchedBookings.length > 0 ? (
+                    <VStack className="ad-surface" gap={0}>
+                      <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                        <HStack gap={1.5} align="center">
+                          <CalendarDays size={14} aria-hidden="true" />
+                          <Text type="label" color="secondary" weight="semibold">
+                            Citas
+                          </Text>
+                        </HStack>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {matchedBookings.length}
+                        </Text>
+                      </HStack>
+                      <List hasDividers density="compact" role="presentation">
+                        {matchedBookings.map((b, idx) => {
+                          const flatIdx = bookingsOffset + idx;
+                          const isActive = safeActiveIndex === flatIdx;
+                          const optionId = `ad-search-opt-booking-${b.id}`;
+                          return (
+                            <ListItem
+                              key={b.id}
+                              id={optionId}
+                              role="option"
+                              aria-selected={isActive}
+                              isSelected={isActive}
+                              className="ad-search-item"
+                              data-active={isActive ? 'true' : 'false'}
+                              label={`${b.client.fullName} — ${b.service.name}`}
+                              description={
+                                <Text type="supporting" color="secondary" hasTabularNumbers>
+                                  {b.bookingCode} · {formatDateShortInTimezone(b.startAt, tz)} ·{' '}
+                                  {formatTimeInTimezone(b.startAt, tz)} · {b.staff.name}
+                                </Text>
+                              }
+                              endContent={
+                                <BookingStatusTag
+                                  status={b.status}
+                                  hasPaymentProof={Boolean(b.paymentProofUrl)}
+                                />
+                              }
+                              onMouseEnter={() => setActiveIndex(flatIdx)}
+                              onClick={() =>
+                                handleNavigate(`/admin/citas?q=${encodeURIComponent(b.bookingCode)}`)
+                              }
+                            />
+                          );
+                        })}
+                      </List>
+                    </VStack>
+                  ) : null}
+
+                  {matchedClients.length > 0 ? (
+                    <VStack className="ad-surface" gap={0}>
+                      <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                        <HStack gap={1.5} align="center">
+                          <Users size={14} aria-hidden="true" />
+                          <Text type="label" color="secondary" weight="semibold">
+                            Clientas
+                          </Text>
+                        </HStack>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {matchedClients.length}
+                        </Text>
+                      </HStack>
+                      <List hasDividers density="compact" role="presentation">
+                        {matchedClients.map((c, idx) => {
+                          const flatIdx = clientsOffset + idx;
+                          const isActive = safeActiveIndex === flatIdx;
+                          const optionId = `ad-search-opt-client-${c.id}`;
+                          return (
+                            <ListItem
+                              key={c.id}
+                              id={optionId}
+                              role="option"
+                              aria-selected={isActive}
+                              isSelected={isActive}
+                              className="ad-search-item"
+                              data-active={isActive ? 'true' : 'false'}
+                              label={c.fullName}
+                              description={
+                                <Text type="supporting" color="secondary" hasTabularNumbers>
+                                  {formatPhoneDisplay(c.phoneE164)}
+                                  {c.instagramHandle ? ` · ${c.instagramHandle}` : ''}
+                                </Text>
+                              }
+                              onMouseEnter={() => setActiveIndex(flatIdx)}
+                              onClick={() =>
+                                handleNavigate(`/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`)
+                              }
+                            />
+                          );
+                        })}
+                      </List>
+                    </VStack>
+                  ) : null}
+
+                  {matchedServices.length > 0 ? (
+                    <VStack className="ad-surface" gap={0}>
+                      <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
+                        <HStack gap={1.5} align="center">
+                          <Tag size={14} aria-hidden="true" />
+                          <Text type="label" color="secondary" weight="semibold">
+                            Servicios
+                          </Text>
+                        </HStack>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {matchedServices.length}
+                        </Text>
+                      </HStack>
+                      <List hasDividers density="compact" role="presentation">
+                        {matchedServices.map((s, idx) => {
+                          const flatIdx = servicesOffset + idx;
+                          const isActive = safeActiveIndex === flatIdx;
+                          const optionId = `ad-search-opt-service-${s.id}`;
+                          return (
+                            <ListItem
+                              key={s.id}
+                              id={optionId}
+                              role="option"
+                              aria-selected={isActive}
+                              isSelected={isActive}
+                              className="ad-search-item"
+                              data-active={isActive ? 'true' : 'false'}
+                              label={s.name}
+                              description={
+                                <Text type="supporting" color="secondary" hasTabularNumbers>
+                                  {formatCurrency(s.priceCents, currency)} ·{' '}
+                                  {formatDuration(s.durationMinutes)}
+                                </Text>
+                              }
+                              onMouseEnter={() => setActiveIndex(flatIdx)}
+                              onClick={() => handleNavigate(serviceTargetHref)}
+                            />
+                          );
+                        })}
+                      </List>
+                    </VStack>
+                  ) : null}
+
+                  {matchedNav.length > 0 ? (
+                    <VStack className="ad-surface" gap={0}>
+                      <HStack gap={1.5} align="center" className="ad-section-head">
+                        <Sparkles size={14} aria-hidden="true" />
+                        <Text type="label" color="secondary" weight="semibold">
+                          Acciones y secciones
+                        </Text>
+                      </HStack>
+                      <List hasDividers density="compact" role="presentation">
+                        {matchedNav.map((item, idx) => {
+                          const flatIdx = navOffset + idx;
+                          const isActive = safeActiveIndex === flatIdx;
+                          const optionId = `ad-search-opt-nav-${idx}`;
+                          return (
+                            <ListItem
+                              key={item.href}
+                              id={optionId}
+                              role="option"
+                              aria-selected={isActive}
+                              isSelected={isActive}
+                              className="ad-search-item"
+                              data-active={isActive ? 'true' : 'false'}
+                              label={item.label}
+                              description={
+                                <Text type="supporting" color="secondary">
+                                  {item.description}
+                                </Text>
+                              }
+                              onMouseEnter={() => setActiveIndex(flatIdx)}
+                              onClick={() => handleNavigate(item.href)}
+                            />
+                          );
+                        })}
+                      </List>
+                    </VStack>
+                  ) : null}
+                </VStack>
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter hasDivider>
+            <HStack justify="between" align="center" gap={2} wrap="wrap">
+              <HStack gap={2} align="center" wrap="wrap">
+                <HStack gap={1} align="center">
+                  <kbd className="ad-kbd">↑ ↓</kbd>
+                  <Text type="supporting" color="secondary">
+                    mover
+                  </Text>
+                </HStack>
+                <HStack gap={1} align="center">
+                  <kbd className="ad-kbd">Enter</kbd>
+                  <Text type="supporting" color="secondary">
+                    abrir
+                  </Text>
+                </HStack>
+                <HStack gap={1} align="center">
+                  <kbd className="ad-kbd">N</kbd>
+                  <Text type="supporting" color="secondary">
+                    nueva cita
+                  </Text>
+                </HStack>
+                <HStack gap={1} align="center">
+                  <kbd className="ad-kbd">G A</kbd>
+                  <Text type="supporting" color="secondary">
+                    agenda
+                  </Text>
+                </HStack>
+              </HStack>
+              <HStack gap={1.5} align="center">
+                <kbd className="ad-kbd">Esc</kbd>
+                <Text type="supporting" color="secondary">
+                  salir
+                </Text>
+              </HStack>
+            </HStack>
+          </LayoutFooter>
+        }
       />
-      <VStack gap={4} paddingBlockStart={3} className="fx-sheet-in">
-        <TextInput
-          ref={inputRef}
-          label="Buscar en el panel"
-          isLabelHidden
-          placeholder={
-            canViewClients
-              ? 'Clienta, teléfono, servicio, código NL-…, fecha (mañana, 15 dic) o sección…'
-              : 'Cita, servicio, código NL-…, fecha (mañana, 15 dic) o sección…'
-          }
-          value={query}
-          onChange={handleQueryChange}
-          role="combobox"
-          aria-expanded={hasResults}
-          aria-controls="ad-search-results"
-          aria-autocomplete="list"
-          aria-activedescendant={activeOption?.optionId}
-          startIcon={<Search size={16} aria-hidden="true" />}
-          hasClear
-          hasAutoFocus
-        />
-
-        {!hasResults ? (
-          <VStack role="status">
-            <EmptyStateCard
-              framed={false}
-              isCompact
-              title="Sin coincidencias"
-              description={
-                canViewClients
-                  ? `No encontramos resultados para «${query}». Prueba con una clienta, servicio, teléfono, fecha (ejemplo: viernes o 15 dic) o sección.`
-                  : `No encontramos resultados para «${query}». Prueba con una cita, servicio, fecha (ejemplo: viernes o 15 dic) o sección.`
-              }
-            />
-          </VStack>
-        ) : (
-          <VStack
-            id="ad-search-results"
-            role="listbox"
-            aria-label="Resultados de búsqueda"
-            gap={3}
-          >
-            {dateJumps.length > 0 ? (
-              <VStack className="ad-surface" gap={0}>
-                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
-                  <HStack gap={1.5} align="center">
-                    <Calendar size={14} aria-hidden="true" />
-                    <Text type="label" color="secondary" weight="semibold">
-                      Ir a fecha en Agenda
-                    </Text>
-                  </HStack>
-                  <Text type="supporting" color="secondary" hasTabularNumbers>
-                    {dateJumps.length}
-                  </Text>
-                </HStack>
-                <List hasDividers density="compact" role="presentation">
-                  {dateJumps.map((jump, idx) => {
-                    const isActive = safeActiveIndex === idx;
-                    const optionId = `ad-search-opt-${jump.id}`;
-                    return (
-                      <ListItem
-                        key={jump.id}
-                        id={optionId}
-                        role="option"
-                        aria-selected={isActive}
-                        isSelected={isActive}
-                        className="ad-search-item"
-                        data-active={isActive ? 'true' : 'false'}
-                        label={jump.label}
-                        description={
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {jump.description}
-                          </Text>
-                        }
-                        onMouseEnter={() => setActiveIndex(idx)}
-                        onClick={() => handleNavigate(jump.href)}
-                      />
-                    );
-                  })}
-                </List>
-              </VStack>
-            ) : null}
-
-            {matchedBookings.length > 0 ? (
-              <VStack className="ad-surface" gap={0}>
-                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
-                  <HStack gap={1.5} align="center">
-                    <CalendarDays size={14} aria-hidden="true" />
-                    <Text type="label" color="secondary" weight="semibold">
-                      Citas
-                    </Text>
-                  </HStack>
-                  <Text type="supporting" color="secondary" hasTabularNumbers>
-                    {matchedBookings.length}
-                  </Text>
-                </HStack>
-                <List hasDividers density="compact" role="presentation">
-                  {matchedBookings.map((b, idx) => {
-                    const flatIdx = bookingsOffset + idx;
-                    const isActive = safeActiveIndex === flatIdx;
-                    const optionId = `ad-search-opt-booking-${b.id}`;
-                    return (
-                      <ListItem
-                        key={b.id}
-                        id={optionId}
-                        role="option"
-                        aria-selected={isActive}
-                        isSelected={isActive}
-                        className="ad-search-item"
-                        data-active={isActive ? 'true' : 'false'}
-                        label={`${b.client.fullName} — ${b.service.name}`}
-                        description={
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {b.bookingCode} · {formatDateShortInTimezone(b.startAt, tz)} ·{' '}
-                            {formatTimeInTimezone(b.startAt, tz)} · {b.staff.name}
-                          </Text>
-                        }
-                        endContent={
-                          <BookingStatusTag
-                            status={b.status}
-                            hasPaymentProof={Boolean(b.paymentProofUrl)}
-                          />
-                        }
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
-                        onClick={() =>
-                          handleNavigate(`/admin/citas?q=${encodeURIComponent(b.bookingCode)}`)
-                        }
-                      />
-                    );
-                  })}
-                </List>
-              </VStack>
-            ) : null}
-
-            {matchedClients.length > 0 ? (
-              <VStack className="ad-surface" gap={0}>
-                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
-                  <HStack gap={1.5} align="center">
-                    <Users size={14} aria-hidden="true" />
-                    <Text type="label" color="secondary" weight="semibold">
-                      Clientas
-                    </Text>
-                  </HStack>
-                  <Text type="supporting" color="secondary" hasTabularNumbers>
-                    {matchedClients.length}
-                  </Text>
-                </HStack>
-                <List hasDividers density="compact" role="presentation">
-                  {matchedClients.map((c, idx) => {
-                    const flatIdx = clientsOffset + idx;
-                    const isActive = safeActiveIndex === flatIdx;
-                    const optionId = `ad-search-opt-client-${c.id}`;
-                    return (
-                      <ListItem
-                        key={c.id}
-                        id={optionId}
-                        role="option"
-                        aria-selected={isActive}
-                        isSelected={isActive}
-                        className="ad-search-item"
-                        data-active={isActive ? 'true' : 'false'}
-                        label={c.fullName}
-                        description={
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {formatPhoneDisplay(c.phoneE164)}
-                            {c.instagramHandle ? ` · ${c.instagramHandle}` : ''}
-                          </Text>
-                        }
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
-                        onClick={() =>
-                          handleNavigate(`/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`)
-                        }
-                      />
-                    );
-                  })}
-                </List>
-              </VStack>
-            ) : null}
-
-            {matchedServices.length > 0 ? (
-              <VStack className="ad-surface" gap={0}>
-                <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
-                  <HStack gap={1.5} align="center">
-                    <Tag size={14} aria-hidden="true" />
-                    <Text type="label" color="secondary" weight="semibold">
-                      Servicios
-                    </Text>
-                  </HStack>
-                  <Text type="supporting" color="secondary" hasTabularNumbers>
-                    {matchedServices.length}
-                  </Text>
-                </HStack>
-                <List hasDividers density="compact" role="presentation">
-                  {matchedServices.map((s, idx) => {
-                    const flatIdx = servicesOffset + idx;
-                    const isActive = safeActiveIndex === flatIdx;
-                    const optionId = `ad-search-opt-service-${s.id}`;
-                    return (
-                      <ListItem
-                        key={s.id}
-                        id={optionId}
-                        role="option"
-                        aria-selected={isActive}
-                        isSelected={isActive}
-                        className="ad-search-item"
-                        data-active={isActive ? 'true' : 'false'}
-                        label={s.name}
-                        description={
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            {formatCurrency(s.priceCents, currency)} ·{' '}
-                            {formatDuration(s.durationMinutes)}
-                          </Text>
-                        }
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
-                        onClick={() => handleNavigate(serviceTargetHref)}
-                      />
-                    );
-                  })}
-                </List>
-              </VStack>
-            ) : null}
-
-            {matchedNav.length > 0 ? (
-              <VStack className="ad-surface" gap={0}>
-                <HStack gap={1.5} align="center" className="ad-section-head">
-                  <Sparkles size={14} aria-hidden="true" />
-                  <Text type="label" color="secondary" weight="semibold">
-                    Acciones y secciones
-                  </Text>
-                </HStack>
-                <List hasDividers density="compact" role="presentation">
-                  {matchedNav.map((item, idx) => {
-                    const flatIdx = navOffset + idx;
-                    const isActive = safeActiveIndex === flatIdx;
-                    const optionId = `ad-search-opt-nav-${idx}`;
-                    return (
-                      <ListItem
-                        key={item.href}
-                        id={optionId}
-                        role="option"
-                        aria-selected={isActive}
-                        isSelected={isActive}
-                        className="ad-search-item"
-                        data-active={isActive ? 'true' : 'false'}
-                        label={item.label}
-                        description={
-                          <Text type="supporting" color="secondary">
-                            {item.description}
-                          </Text>
-                        }
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
-                        onClick={() => handleNavigate(item.href)}
-                      />
-                    );
-                  })}
-                </List>
-              </VStack>
-            ) : null}
-          </VStack>
-        )}
-
-        <HStack justify="between" align="center" gap={2} wrap="wrap">
-          <HStack gap={2} align="center" wrap="wrap">
-            <HStack gap={1} align="center">
-              <kbd className="ad-kbd">↑ ↓</kbd>
-              <Text type="supporting" color="secondary">
-                mover
-              </Text>
-            </HStack>
-            <HStack gap={1} align="center">
-              <kbd className="ad-kbd">Enter</kbd>
-              <Text type="supporting" color="secondary">
-                abrir
-              </Text>
-            </HStack>
-            <HStack gap={1} align="center">
-              <kbd className="ad-kbd">N</kbd>
-              <Text type="supporting" color="secondary">
-                nueva cita
-              </Text>
-            </HStack>
-            <HStack gap={1} align="center">
-              <kbd className="ad-kbd">G A</kbd>
-              <Text type="supporting" color="secondary">
-                agenda
-              </Text>
-            </HStack>
-          </HStack>
-          <HStack gap={1.5} align="center">
-            <kbd className="ad-kbd">Esc</kbd>
-            <Text type="supporting" color="secondary">
-              salir
-            </Text>
-          </HStack>
-        </HStack>
-      </VStack>
     </Dialog>
   );
 }

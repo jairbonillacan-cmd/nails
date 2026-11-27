@@ -1,21 +1,27 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import '../../cita.css';
 import { notFound } from 'next/navigation';
-import { getRepository } from '@/lib/repositories/db';
+import {
+  getClientLoyaltySummaryAsync,
+  getRepository,
+  getServicesByIdsAsync,
+} from '@/lib/repositories/db';
 import { buildCalendarAddLinks } from '@/lib/ics';
 import { buildBookingWhatsAppFallbackUrl } from '@/lib/integrations/notifications';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
-import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import {
-  PublicLoyaltySummarySchema,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
-  type PublicLoyaltySummaryDTO,
 } from '@/lib/public-dto';
 import { ManageBookingView } from '@/components/ManageBookingView';
 
 export const dynamic = 'force-dynamic';
+
+const getManageBookingByToken = cache(async (token: string) =>
+  getRepository().getBookingByToken(token),
+);
 
 export async function generateMetadata({
   params,
@@ -23,7 +29,7 @@ export async function generateMetadata({
   params: Promise<{ token: string }>;
 }): Promise<Metadata> {
   const { token } = await params;
-  const booking = await getRepository().getBookingByToken(token);
+  const booking = await getManageBookingByToken(token);
   if (!booking) {
     notFound();
   }
@@ -45,11 +51,18 @@ export default async function ManageBookingPage({
   const { token } = await params;
   const query = await searchParams;
   const repo = getRepository();
-  const booking = await repo.getBookingByToken(token);
+  const booking = await getManageBookingByToken(token);
   if (!booking) {
     notFound();
   }
-  const db = await repo.getSnapshot();
+  const extraIds = (booking.extraServiceIds ?? []).filter(
+    (id) => id !== booking.serviceId,
+  );
+  const [settings, extraServiceRecords, initialLoyaltySummary] = await Promise.all([
+    repo.getSalonSettings(),
+    getServicesByIdsAsync(extraIds),
+    getClientLoyaltySummaryAsync(booking.clientId),
+  ]);
   const env = getRuntimeIntegrationStatus();
   const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
   const initialAction: 'reschedule' | 'cancel' | 'confirm' | undefined =
@@ -61,28 +74,9 @@ export default async function ManageBookingPage({
           ? 'confirm'
           : undefined;
 
-  const activeLoyaltyProgram =
-    (db.loyaltyPrograms ?? []).find((program) => program.isActive) ?? null;
-  const rewardServiceName = activeLoyaltyProgram?.rewardServiceId
-    ? db.services.find((srv) => srv.id === activeLoyaltyProgram.rewardServiceId)
-        ?.name ?? null
-    : null;
-  const initialLoyaltySummary: PublicLoyaltySummaryDTO | null =
-    activeLoyaltyProgram
-      ? PublicLoyaltySummarySchema.parse(
-          computeClientLoyaltySummary(
-            activeLoyaltyProgram,
-            db.loyaltyStamps ?? [],
-            booking.clientId,
-            rewardServiceName,
-          ),
-        )
-      : null;
-
-  const extraServices = (booking.extraServiceIds ?? [])
-    .filter((id) => id !== booking.serviceId)
-    .map((id) => db.services.find((srv) => srv.id === id))
-    .filter((srv): srv is (typeof db.services)[number] => Boolean(srv))
+  const extraServices = extraIds
+    .map((id) => extraServiceRecords.find((srv) => srv.id === id))
+    .filter((srv): srv is (typeof extraServiceRecords)[number] => Boolean(srv))
     .map(toPublicServiceDTO);
 
   const initialBooking = {
@@ -100,9 +94,9 @@ export default async function ManageBookingPage({
   return (
     <ManageBookingView
       initialBooking={initialBooking}
-      settings={toPublicSettingsDTO(db.settings)}
-      calendarLinks={buildCalendarAddLinks(booking, db.settings, manageUrl)}
-      whatsappUrl={buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl)}
+      settings={toPublicSettingsDTO(settings)}
+      calendarLinks={buildCalendarAddLinks(booking, settings, manageUrl)}
+      whatsappUrl={buildBookingWhatsAppFallbackUrl(booking, settings, env.appUrl)}
       manageUrl={manageUrl}
       initialLoyaltySummary={initialLoyaltySummary}
       initialAction={initialAction}

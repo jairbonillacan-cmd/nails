@@ -6,6 +6,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { AspectRatio } from '@astryxdesign/core/AspectRatio';
 import { ExternalLink } from 'lucide-react';
 import {
@@ -73,141 +74,156 @@ export function DepositProofPreviewDialog({
           if (!open) handleClosePreview();
         }}
         width={520}
+        maxHeight="90dvh"
         padding={5}
       >
         {deposit ? (
-          <VStack
-            gap={4}
-            className={isBusy ? 'fx-busy' : undefined}
-            aria-busy={isBusy || undefined}
-          >
-            <DialogHeader
-              title="Comprobante de anticipo"
-              subtitle={`${deposit.clientName} · ${deposit.bookingCode}`}
-              onOpenChange={(open) => {
-                if (!open) handleClosePreview();
-              }}
-            />
+          <Layout
+            header={
+              <DialogHeader
+                title="Comprobante de anticipo"
+                subtitle={`${deposit.clientName} · ${deposit.bookingCode}`}
+                hasDivider
+                onOpenChange={(open) => {
+                  if (!open) handleClosePreview();
+                }}
+              />
+            }
+            content={
+              <LayoutContent>
+                <VStack
+                  gap={4}
+                  className={isBusy ? 'fx-busy' : undefined}
+                  aria-busy={isBusy || undefined}
+                >
+                  <VStack gap={2} className="ad-proof-meta">
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <Text type="supporting" color="secondary">
+                        Servicio y profesional
+                      </Text>
+                      <Text weight="semibold" size="sm">
+                        {deposit.serviceName} · {deposit.staffName}
+                      </Text>
+                    </HStack>
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <Text type="supporting" color="secondary">
+                        Fecha de cita
+                      </Text>
+                      <Text weight="semibold" size="sm" hasTabularNumbers>
+                        {formatDateShortInTimezone(deposit.startAt, timezone)} ·{' '}
+                        {formatTimeInTimezone(deposit.startAt, timezone)}
+                      </Text>
+                    </HStack>
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <Text type="supporting" color="secondary">
+                        Anticipo esperado
+                      </Text>
+                      <StatusTag
+                        tone="info"
+                        hasTabularNumbers
+                        label={formatCurrency(
+                          deposit.depositAmountCents || depositFallbackCents,
+                          currency,
+                        )}
+                      />
+                    </HStack>
+                  </VStack>
 
-          <VStack gap={2} className="ad-proof-meta">
-            <HStack justify="between" align="center" gap={2} wrap="wrap">
-              <Text type="supporting" color="secondary">
-                Servicio y profesional
-              </Text>
-              <Text weight="semibold" size="sm">
-                {deposit.serviceName} · {deposit.staffName}
-              </Text>
-            </HStack>
-            <HStack justify="between" align="center" gap={2} wrap="wrap">
-              <Text type="supporting" color="secondary">
-                Fecha de cita
-              </Text>
-              <Text weight="semibold" size="sm" hasTabularNumbers>
-                {formatDateShortInTimezone(deposit.startAt, timezone)} ·{' '}
-                {formatTimeInTimezone(deposit.startAt, timezone)}
-              </Text>
-            </HStack>
-            <HStack justify="between" align="center" gap={2} wrap="wrap">
-              <Text type="supporting" color="secondary">
-                Anticipo esperado
-              </Text>
-              <StatusTag
-                tone="info"
-                hasTabularNumbers
-                label={formatCurrency(deposit.depositAmountCents || depositFallbackCents, currency)}
-              />
-            </HStack>
-          </VStack>
-
-          {hasImageProof && deposit.paymentProofUrl ? (
-            <VStack gap={2}>
-              <AspectRatio ratio={4 / 3} fit="contain">
-                <img
-                  src={deposit.paymentProofUrl}
-                  alt={`Comprobante de anticipo de ${deposit.clientName}`}
-                  className="ad-proof-img"
-                />
-              </AspectRatio>
-              <Button
-                label="Abrir imagen completa"
-                variant="ghost"
-                size="sm"
-                icon={<ExternalLink size={14} aria-hidden="true" />}
-                href={deposit.paymentProofUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            </VStack>
-          ) : safeExternalUrl ? (
-            <VStack gap={2} className="ad-proof-note">
-              <Text weight="semibold" size="sm">
-                Enlace de comprobante externo
-              </Text>
-              <Text type="supporting" color="secondary">
-                Abre el enlace en una pestaña nueva para validar el pago antes de confirmar.
-              </Text>
-              <Button
-                label="Abrir enlace del recibo"
-                variant="secondary"
-                size="sm"
-                icon={<ExternalLink size={14} aria-hidden="true" />}
-                href={safeExternalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            </VStack>
-          ) : (
-            <VStack gap={1.5} className="ad-proof-note">
-              <Text weight="semibold" size="sm">
-                {deposit.proofDeliveryMethod === 'instagram_dm'
-                  ? 'Enviado por mensaje de Instagram'
-                  : 'Referencia de comprobante registrada'}
-              </Text>
-              <Text type="supporting" color="secondary">
-                {deposit.proofDeliveryMethod === 'instagram_dm'
-                  ? `Revisa el mensaje de ${deposit.clientInstagram ?? deposit.clientName} en Instagram para validar la transferencia.`
-                  : `Referencia: ${deposit.paymentProofUrl ?? 'Comprobante adjunto'}`}
-              </Text>
-            </VStack>
-          )}
-
-          <HStack justify="end" gap={2} wrap="wrap">
-            {onRejectDeposit &&
-            (deposit.proofDeliveryMethod !== 'none' || Boolean(deposit.paymentProofUrl)) ? (
-              <Button
-                type="button"
-                label={isRejecting ? 'Rechazando...' : 'Rechazar comprobante'}
-                variant="ghost"
-                size="sm"
-                isLoading={isRejecting}
-                isDisabled={isBusy}
-                onClick={() => setConfirmRejectOpen(true)}
-              />
-            ) : null}
-            <Button
-              label="Ir a Anticipos en Caja"
-              variant="secondary"
-              size="sm"
-              isDisabled={isBusy}
-              href="/admin/caja?tab=anticipos"
-            />
-            <Button
-              type="button"
-              label={isConfirming ? 'Confirmando...' : 'Confirmar cita'}
-              variant="primary"
-              size="sm"
-              isLoading={isConfirming}
-              isDisabled={isBusy}
-              onClick={async () => {
-                const ok = await onConfirmDeposit(deposit.bookingId, deposit.clientName);
-                if (ok) {
-                  onClose();
-                }
-              }}
-            />
-          </HStack>
-        </VStack>
-      ) : null}
+                  {hasImageProof && deposit.paymentProofUrl ? (
+                    <VStack gap={2}>
+                      <AspectRatio ratio={4 / 3} fit="contain">
+                        <img
+                          src={deposit.paymentProofUrl}
+                          alt={`Comprobante de anticipo de ${deposit.clientName}`}
+                          className="ad-proof-img"
+                        />
+                      </AspectRatio>
+                      <Button
+                        label="Abrir imagen completa"
+                        variant="ghost"
+                        size="sm"
+                        icon={<ExternalLink size={14} aria-hidden="true" />}
+                        href={deposit.paymentProofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    </VStack>
+                  ) : safeExternalUrl ? (
+                    <VStack gap={2} className="ad-proof-note">
+                      <Text weight="semibold" size="sm">
+                        Enlace de comprobante externo
+                      </Text>
+                      <Text type="supporting" color="secondary">
+                        Abre el enlace en una pestaña nueva para validar el pago antes de confirmar.
+                      </Text>
+                      <Button
+                        label="Abrir enlace del recibo"
+                        variant="secondary"
+                        size="sm"
+                        icon={<ExternalLink size={14} aria-hidden="true" />}
+                        href={safeExternalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    </VStack>
+                  ) : (
+                    <VStack gap={1.5} className="ad-proof-note">
+                      <Text weight="semibold" size="sm">
+                        {deposit.proofDeliveryMethod === 'instagram_dm'
+                          ? 'Enviado por mensaje de Instagram'
+                          : 'Referencia de comprobante registrada'}
+                      </Text>
+                      <Text type="supporting" color="secondary">
+                        {deposit.proofDeliveryMethod === 'instagram_dm'
+                          ? `Revisa el mensaje de ${deposit.clientInstagram ?? deposit.clientName} en Instagram para validar la transferencia.`
+                          : `Referencia: ${deposit.paymentProofUrl ?? 'Comprobante adjunto'}`}
+                      </Text>
+                    </VStack>
+                  )}
+                </VStack>
+              </LayoutContent>
+            }
+            footer={
+              <LayoutFooter hasDivider>
+                <HStack justify="end" gap={2} wrap="wrap" width="100%">
+                  {onRejectDeposit &&
+                  (deposit.proofDeliveryMethod !== 'none' || Boolean(deposit.paymentProofUrl)) ? (
+                    <Button
+                      type="button"
+                      label={isRejecting ? 'Rechazando...' : 'Rechazar comprobante'}
+                      variant="ghost"
+                      size="sm"
+                      isLoading={isRejecting}
+                      isDisabled={isBusy}
+                      onClick={() => setConfirmRejectOpen(true)}
+                    />
+                  ) : null}
+                  <Button
+                    label="Ir a Anticipos en Caja"
+                    variant="secondary"
+                    size="sm"
+                    isDisabled={isBusy}
+                    href="/admin/caja?tab=anticipos"
+                  />
+                  <Button
+                    type="button"
+                    label={isConfirming ? 'Confirmando...' : 'Confirmar cita'}
+                    variant="primary"
+                    size="sm"
+                    isLoading={isConfirming}
+                    isDisabled={isBusy}
+                    onClick={async () => {
+                      const ok = await onConfirmDeposit(deposit.bookingId, deposit.clientName);
+                      if (ok) {
+                        onClose();
+                      }
+                    }}
+                  />
+                </HStack>
+              </LayoutFooter>
+            }
+          />
+        ) : null}
     </Dialog>
 
     {deposit && onRejectDeposit ? (

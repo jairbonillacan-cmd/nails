@@ -9,6 +9,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Token } from '@astryxdesign/core/Token';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Selector } from '@astryxdesign/core/Selector';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -183,217 +184,226 @@ export function QuickSlotFinderDialog({
       onOpenChange={onOpenChange}
       purpose="info"
       width={640}
+      maxHeight="min(90dvh, calc(100dvh - 2rem))"
       padding={5}
     >
-      <DialogHeader
-        title="Buscar hora libre"
-        subtitle="Encuentra los primeros espacios disponibles respetando turnos, citas y descansos."
-        onOpenChange={onOpenChange}
-      />
-
-      <VStack gap={4} paddingBlockStart={4} className="fx-sheet-in">
-        <Grid columns={{ minWidth: 220, max: 2 }} gap={3}>
-          <Selector
-            label="Servicio"
-            value={effectiveServiceId}
-            onChange={(val) => {
-              if (val) {
-                setServiceId(val);
-                setExtraServiceIds((prev) => prev.filter((id) => id !== val));
-              }
-            }}
-            options={activeServices.map((s) => ({
-              value: s.id,
-              label: `${s.name} (${formatDuration(s.durationMinutes)})`,
-            }))}
+      <Layout
+        header={
+          <DialogHeader
+            title="Buscar hora libre"
+            subtitle="Encuentra los primeros espacios disponibles respetando turnos, citas y descansos."
+            hasDivider
+            onOpenChange={onOpenChange}
           />
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              <Grid columns={{ minWidth: 220, max: 2 }} gap={3}>
+                <Selector
+                  label="Servicio"
+                  value={effectiveServiceId}
+                  onChange={(val) => {
+                    if (val) {
+                      setServiceId(val);
+                      setExtraServiceIds((prev) => prev.filter((id) => id !== val));
+                    }
+                  }}
+                  options={activeServices.map((s) => ({
+                    value: s.id,
+                    label: `${s.name} (${formatDuration(s.durationMinutes)})`,
+                  }))}
+                />
 
-          <Selector
-            label="Profesional"
-            value={effectiveStaffId}
-            isDisabled={Boolean(lockedStaffId)}
-            onChange={(val) => {
-              if (!lockedStaffId) setStaffId(val || 'any');
-            }}
-            options={[
-              { value: 'any', label: 'Cualquier profesional' },
-              ...activeStaff.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-          />
-        </Grid>
+                <Selector
+                  label="Profesional"
+                  value={effectiveStaffId}
+                  isDisabled={Boolean(lockedStaffId)}
+                  onChange={(val) => {
+                    if (!lockedStaffId) setStaffId(val || 'any');
+                  }}
+                  options={[
+                    { value: 'any', label: 'Cualquier profesional' },
+                    ...activeStaff.map((s) => ({ value: s.id, label: s.name })),
+                  ]}
+                />
+              </Grid>
 
-        <Collapsible
-          className="ad-disclosure"
-          defaultIsOpen={cleanExtras.length > 0}
-          trigger={
-            <HStack gap={2} align="center">
-              <Text weight="semibold" size="sm">
-                Agregar otro servicio en la misma visita (opcional)
-              </Text>
-              {cleanExtras.length > 0 ? (
-                <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
-                  +{cleanExtras.length}
-                </Text>
-              ) : null}
-            </HStack>
-          }
-        >
-          <VStack paddingBlockStart={2}>
-            <Grid columns={{ minWidth: 180, max: 2 }} gap={1.5}>
-              {activeServices
-                .filter((s) => s.id !== effectiveServiceId)
-                .map((srv) => (
-                  <CheckboxInput
-                    key={srv.id}
-                    size="sm"
-                    label={`${srv.name} (+${formatDuration(srv.durationMinutes)})`}
-                    value={cleanExtras.includes(srv.id)}
-                    onChange={(checked) => handleToggleExtra(srv.id, checked)}
-                  />
-                ))}
-            </Grid>
-          </VStack>
-        </Collapsible>
-
-        <HStack justify="between" align="center" wrap="wrap" gap={2}>
-          <SegmentedControl
-            label="Buscar en los próximos"
-            size="sm"
-            value={daysWindow}
-            onChange={(val) => setDaysWindow(val as '7' | '14' | '30')}
-          >
-            <SegmentedControlItem value="7" label="7 días" />
-            <SegmentedControlItem value="14" label="14 días" />
-            <SegmentedControlItem value="30" label="30 días" />
-          </SegmentedControl>
-
-          {totals ? (
-            <HStack gap={1.5} align="center">
-              <Token
-                size="sm"
-                color="default"
-                label={`Duración ${formatDuration(totals.totalDurationMinutes)}`}
-              />
-              <Token
-                size="sm"
-                color="green"
-                label={formatCurrency(totals.subtotalCents, currency)}
-              />
-            </HStack>
-          ) : null}
-        </HStack>
-
-        {errorText ? <Banner status="error" role="alert" title={errorText} /> : null}
-
-        {loading ? (
-          <VStack
-            className="ad-surface"
-            data-tone="subtle"
-            data-padded="true"
-            gap={3}
-            role="status"
-            aria-busy="true"
-          >
-            <Text className="rb-sr-only">Buscando horarios libres...</Text>
-            <VStack
-              className="ad-skeleton"
-              data-size="line"
-              data-width="short"
-              aria-hidden="true"
-            />
-            <VStack className="rb-skeleton-slots" gap={0} aria-hidden="true">
-              <VStack className="ad-skeleton" data-size="slot" />
-              <VStack className="ad-skeleton" data-size="slot" />
-              <VStack className="ad-skeleton" data-size="slot" />
-              <VStack className="ad-skeleton" data-size="slot" />
-              <VStack className="ad-skeleton" data-size="slot" />
-              <VStack className="ad-skeleton" data-size="slot" />
-            </VStack>
-          </VStack>
-        ) : groupedSlots.length === 0 ? (
-          <VStack className="ad-empty" gap={2}>
-            <EmptyState
-              isCompact
-              title="No hay horarios libres en estos días"
-              description="Prueba buscando en los próximos 30 días o eligiendo cualquier profesional."
-              actions={
-                daysWindow !== '30' || (!lockedStaffId && effectiveStaffId !== 'any') ? (
-                  <HStack gap={2} wrap="wrap" justify="center">
-                    {daysWindow !== '30' ? (
-                      <Button type="button" size="sm" variant="secondary" label="Buscar en 30 días" onClick={() => setDaysWindow('30')} />
-                    ) : null}
-                    {!lockedStaffId && effectiveStaffId !== 'any' ? (
-                      <Button type="button" size="sm" variant="secondary" label="Cualquier profesional" onClick={() => setStaffId('any')} />
-                    ) : null}
-                  </HStack>
-                ) : undefined
-              }
-            />
-          </VStack>
-        ) : (
-          <VStack gap={3} className="fx-stagger">
-            {groupedSlots.map(([dateKey, periods]) => {
-              const totalInDay =
-                periods.Mañana.length + periods.Tarde.length + periods.Noche.length;
-              return (
-                <VStack key={dateKey} className="ad-surface" gap={0}>
-                  <HStack className="ad-section-head" justify="between" align="center">
-                    <Heading level={4} className="lk-serif ad-h3">
-                      {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)}
-                    </Heading>
-                    <Text
-                      color="inherit"
-                      className="ad-chip"
-                      data-tone="accent"
-                      hasTabularNumbers
-                    >
-                      {totalInDay} {totalInDay === 1 ? 'horario' : 'horarios'}
+              <Collapsible
+                className="ad-disclosure"
+                defaultIsOpen={cleanExtras.length > 0}
+                trigger={
+                  <HStack gap={2} align="center">
+                    <Text weight="semibold" size="sm">
+                      Agregar otro servicio en la misma visita (opcional)
                     </Text>
+                    {cleanExtras.length > 0 ? (
+                      <Text color="inherit" className="ad-chip" data-tone="accent" hasTabularNumbers>
+                        +{cleanExtras.length}
+                      </Text>
+                    ) : null}
                   </HStack>
+                }
+              >
+                <VStack paddingBlockStart={2}>
+                  <Grid columns={{ minWidth: 180, max: 2 }} gap={1.5}>
+                    {activeServices
+                      .filter((s) => s.id !== effectiveServiceId)
+                      .map((srv) => (
+                        <CheckboxInput
+                          key={srv.id}
+                          size="sm"
+                          label={`${srv.name} (+${formatDuration(srv.durationMinutes)})`}
+                          value={cleanExtras.includes(srv.id)}
+                          onChange={(checked) => handleToggleExtra(srv.id, checked)}
+                        />
+                      ))}
+                  </Grid>
+                </VStack>
+              </Collapsible>
 
-                  <VStack padding={4} gap={3}>
-                    {(['Mañana', 'Tarde', 'Noche'] as const).map((period) => {
-                      const periodSlots = periods[period];
-                      if (periodSlots.length === 0) return null;
-                      return (
-                        <VStack key={period} gap={1.5}>
-                          <HStack gap={1.5} align="center">
-                            <Clock size={12} aria-hidden="true" />
-                            <Text type="supporting" weight="semibold" color="secondary">
-                              {period}
-                            </Text>
-                          </HStack>
-                          <HStack gap={1.5} wrap="wrap">
-                            {periodSlots.map((slot) => (
-                              <Button
-                                key={`${slot.staffId}-${slot.startAt}`}
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                label={`${slot.localTime12} · ${slot.staffName}`}
-                                onClick={() => {
-                                  onOpenChange(false);
-                                  onPickSlot({
-                                    serviceId: effectiveServiceId,
-                                    extraServiceIds: cleanExtras,
-                                    staffId: slot.staffId,
-                                    startAt: slot.startAt,
-                                    dateKey,
-                                  });
-                                }}
-                              />
-                            ))}
-                          </HStack>
-                        </VStack>
-                      );
-                    })}
+              <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                <SegmentedControl
+                  label="Buscar en los próximos"
+                  size="sm"
+                  value={daysWindow}
+                  onChange={(val) => setDaysWindow(val as '7' | '14' | '30')}
+                >
+                  <SegmentedControlItem value="7" label="7 días" />
+                  <SegmentedControlItem value="14" label="14 días" />
+                  <SegmentedControlItem value="30" label="30 días" />
+                </SegmentedControl>
+
+                {totals ? (
+                  <HStack gap={1.5} align="center">
+                    <Token
+                      size="sm"
+                      color="default"
+                      label={`Duración ${formatDuration(totals.totalDurationMinutes)}`}
+                    />
+                    <Token
+                      size="sm"
+                      color="green"
+                      label={formatCurrency(totals.subtotalCents, currency)}
+                    />
+                  </HStack>
+                ) : null}
+              </HStack>
+
+              {errorText ? <Banner status="error" role="alert" title={errorText} /> : null}
+
+              {loading ? (
+                <VStack
+                  className="ad-surface"
+                  data-tone="subtle"
+                  data-padded="true"
+                  gap={3}
+                  role="status"
+                  aria-busy="true"
+                >
+                  <Text className="rb-sr-only">Buscando horarios libres...</Text>
+                  <VStack
+                    className="ad-skeleton"
+                    data-size="line"
+                    data-width="short"
+                    aria-hidden="true"
+                  />
+                  <VStack className="rb-skeleton-slots" gap={0} aria-hidden="true">
+                    <VStack className="ad-skeleton" data-size="slot" />
+                    <VStack className="ad-skeleton" data-size="slot" />
+                    <VStack className="ad-skeleton" data-size="slot" />
+                    <VStack className="ad-skeleton" data-size="slot" />
+                    <VStack className="ad-skeleton" data-size="slot" />
+                    <VStack className="ad-skeleton" data-size="slot" />
                   </VStack>
                 </VStack>
-              );
-            })}
-          </VStack>
-        )}
-      </VStack>
+              ) : groupedSlots.length === 0 ? (
+                <VStack className="ad-empty" gap={2}>
+                  <EmptyState
+                    isCompact
+                    title="No hay horarios libres en estos días"
+                    description="Prueba buscando en los próximos 30 días o eligiendo cualquier profesional."
+                    actions={
+                      daysWindow !== '30' || (!lockedStaffId && effectiveStaffId !== 'any') ? (
+                        <HStack gap={2} wrap="wrap" justify="center">
+                          {daysWindow !== '30' ? (
+                            <Button type="button" size="sm" variant="secondary" label="Buscar en 30 días" onClick={() => setDaysWindow('30')} />
+                          ) : null}
+                          {!lockedStaffId && effectiveStaffId !== 'any' ? (
+                            <Button type="button" size="sm" variant="secondary" label="Cualquier profesional" onClick={() => setStaffId('any')} />
+                          ) : null}
+                        </HStack>
+                      ) : undefined
+                    }
+                  />
+                </VStack>
+              ) : (
+                <VStack gap={3} className="fx-stagger">
+                  {groupedSlots.map(([dateKey, periods]) => {
+                    const totalInDay =
+                      periods.Mañana.length + periods.Tarde.length + periods.Noche.length;
+                    return (
+                      <VStack key={dateKey} className="ad-surface" gap={0}>
+                        <HStack className="ad-section-head" justify="between" align="center">
+                          <Heading level={4} className="lk-serif ad-h3">
+                            {formatDateShortInTimezone(`${dateKey}T18:00:00Z`, timezone)}
+                          </Heading>
+                          <Text
+                            color="inherit"
+                            className="ad-chip"
+                            data-tone="accent"
+                            hasTabularNumbers
+                          >
+                            {totalInDay} {totalInDay === 1 ? 'horario' : 'horarios'}
+                          </Text>
+                        </HStack>
+
+                        <VStack padding={4} gap={3}>
+                          {(['Mañana', 'Tarde', 'Noche'] as const).map((period) => {
+                            const periodSlots = periods[period];
+                            if (periodSlots.length === 0) return null;
+                            return (
+                              <VStack key={period} gap={1.5}>
+                                <HStack gap={1.5} align="center">
+                                  <Clock size={12} aria-hidden="true" />
+                                  <Text type="supporting" weight="semibold" color="secondary">
+                                    {period}
+                                  </Text>
+                                </HStack>
+                                <HStack gap={1.5} wrap="wrap">
+                                  {periodSlots.map((slot) => (
+                                    <Button
+                                      key={`${slot.staffId}-${slot.startAt}`}
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      label={`${slot.localTime12} · ${slot.staffName}`}
+                                      onClick={() => {
+                                        onOpenChange(false);
+                                        onPickSlot({
+                                          serviceId: effectiveServiceId,
+                                          extraServiceIds: cleanExtras,
+                                          staffId: slot.staffId,
+                                          startAt: slot.startAt,
+                                          dateKey,
+                                        });
+                                      }}
+                                    />
+                                  ))}
+                                </HStack>
+                              </VStack>
+                            );
+                          })}
+                        </VStack>
+                      </VStack>
+                    );
+                  })}
+                </VStack>
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+      />
     </Dialog>
   );
 }

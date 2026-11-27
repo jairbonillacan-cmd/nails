@@ -67,10 +67,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function AvisoDePrivacidadPage() {
   const settings = await getPrivacySettings();
 
-  const responsibleName =
-    settings.depositBeneficiary ||
-    settings.depositAccountHolder ||
-    'Karla Patricia Carrillo Rodríguez';
   const cityLabel = settings.city || 'Puebla, México';
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const policyVersion = settings.privacyPolicyVersion || '2026-11';
@@ -166,7 +162,6 @@ export default async function AvisoDePrivacidadPage() {
               1. Identidad y domicilio del responsable
             </Heading>
             <Text as="p" type="body" textWrap="pretty" style={{ overflowWrap: 'anywhere' }}>
-              <strong>{responsibleName}</strong>, responsable comercial de{' '}
               <strong>{settings.name}</strong> ({instagramHandle}), con domicilio en{' '}
               {settings.address}, es responsable del uso, resguardo y protección de
               tus datos personales. Para cualquier asunto relacionado con este aviso

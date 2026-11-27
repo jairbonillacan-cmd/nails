@@ -157,12 +157,14 @@ export function DateOverridesSection({
           <Text type="supporting" color="secondary">
             {o.reason || (o.isUnavailable ? 'Día cerrado' : 'Horario especial')}
           </Text>
-          {o.publicNote || redirectStaff ? (
+          {o.publicNote ? (
+            <Text type="supporting" color="secondary" style={{ overflowWrap: 'anywhere' }}>
+              Aviso público: {o.publicNote}
+            </Text>
+          ) : null}
+          {redirectStaff ? (
             <HStack gap={1.5} wrap="wrap">
-              {o.publicNote ? <StatusTag tone="neutral" label={`Aviso: ${o.publicNote}`} /> : null}
-              {redirectStaff ? (
-                <StatusTag tone="success" label={`Sugiere a ${redirectStaff.name}`} />
-              ) : null}
+              <StatusTag tone="success" label={`Sugiere a ${redirectStaff.name}`} />
             </HStack>
           ) : null}
         </VStack>

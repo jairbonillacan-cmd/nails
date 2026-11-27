@@ -7,7 +7,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { QrCode } from 'lucide-react';
+import { ExternalLink, QrCode, Share2 } from 'lucide-react';
 import { useClientOrigin } from '@/lib/hooks/useClientOrigin';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
@@ -70,14 +70,18 @@ export function DashboardShareCard({
   return (
     <>
       <VStack as="section" className="ad-cherry-card" aria-labelledby="ad-pg" gap={3}>
-        <Heading level={2} id="ad-pg" className="lk-serif ad-cherry-title ad-cherry-layer">
-          Tu página de reservas
-        </Heading>
-
-        <Text color="inherit" className="ad-cherry-desc ad-cherry-layer" textWrap="pretty">
-          Compártela en {instagramHandle || 'Instagram'} y WhatsApp para que tus clientas
-          agenden con anticipo.
-        </Text>
+        <VStack gap={1.5} className="ad-cherry-layer">
+          <Text color="inherit" weight="semibold" className="ad-live-label">
+            RESERVAS ONLINE
+          </Text>
+          <Heading level={2} id="ad-pg" className="lk-serif ad-cherry-title">
+            Tu página de reservas
+          </Heading>
+          <Text color="inherit" className="ad-cherry-desc" textWrap="pretty">
+            Compártela en {instagramHandle || 'Instagram'} y WhatsApp para que tus clientas
+            agenden con anticipo.
+          </Text>
+        </VStack>
 
         <HStack
           justify="between"
@@ -107,13 +111,14 @@ export function DashboardShareCard({
           {liveAnnouncement}
         </Text>
 
-        <HStack gap={2} wrap="wrap" className="ad-cherry-layer">
+        <VStack className="ad-cherry-actions ad-cherry-layer" gap={0}>
           <NextLink
             href="/reservar"
             target="_blank"
             rel="noopener noreferrer"
             className="ad-cherry-chip fx-press"
           >
+            <ExternalLink size={13} aria-hidden="true" />
             Ver página
           </NextLink>
           <NextLink
@@ -122,7 +127,7 @@ export function DashboardShareCard({
             rel="noopener noreferrer"
             className="ad-cherry-chip fx-press"
           >
-            Link para Instagram
+            Link para IG
           </NextLink>
           <button
             type="button"
@@ -130,18 +135,17 @@ export function DashboardShareCard({
             onClick={() => setQrOpen(true)}
           >
             <QrCode size={13} aria-hidden="true" />
-            <Text color="inherit" size="sm" weight="semibold">
-              Código QR
-            </Text>
+            Código QR
           </button>
           <button
             type="button"
             className="ad-cherry-chip fx-press"
             onClick={() => void handleShareBookingLink()}
           >
+            <Share2 size={13} aria-hidden="true" />
             Compartir
           </button>
-        </HStack>
+        </VStack>
       </VStack>
 
       {qrOpen ? (

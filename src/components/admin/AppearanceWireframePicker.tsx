@@ -24,7 +24,7 @@ export function AppearanceWireframePicker({
         <Text type="label" weight="semibold">
           Vista predeterminada de agenda
         </Text>
-        <Grid columns={{ minWidth: 160, max: 3 }} gap={3}>
+        <Grid columns={{ minWidth: 220, max: 3 }} gap={3}>
           <SelectableCard
             label="Vista Mes de 3 columnas"
             padding={3}
@@ -35,17 +35,17 @@ export function AppearanceWireframePicker({
               <Card padding={2} variant="muted">
                 <Grid columns={3} gap={1}>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Info
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Mes
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Horas
                     </Text>
                   </Card>
@@ -73,22 +73,22 @@ export function AppearanceWireframePicker({
               <Card padding={2} variant="muted">
                 <Grid columns={4} gap={1}>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Lun
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Mar
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Mié
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Jue
                     </Text>
                   </Card>
@@ -116,17 +116,17 @@ export function AppearanceWireframePicker({
               <Card padding={2} variant="muted">
                 <Grid columns={3} gap={1}>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Karla
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Paty
                     </Text>
                   </Card>
                   <Card padding={1} variant="default">
-                    <Text type="supporting" color="secondary">
+                    <Text type="supporting" color="secondary" justify="center" display="block" maxLines={1}>
                       Tere
                     </Text>
                   </Card>

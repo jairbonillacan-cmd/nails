@@ -209,29 +209,31 @@ export function BookingsFiltersBar({
       ) : null}
 
       <HStack className="ad-toolbar" justify="between" align="center" wrap="wrap" gap={2}>
-        <TabList value={tab} onChange={onChangeTab}>
-          <Tab value="upcoming" label="Próximas" />
-          <Tab
-            value="unconfirmed"
-            label="Por confirmar"
-            endContent={
-              pendingConfirmationsCount > 0 ? (
-                <Badge variant="neutral" label={String(pendingConfirmationsCount)} />
-              ) : undefined
-            }
-          />
-          <Tab value="past" label="Pasadas" />
-          <Tab value="canceled" label="Canceladas" />
-          <Tab
-            value="waitlist"
-            label="Lista de espera"
-            endContent={
-              waitlistCount > 0 ? (
-                <Badge variant="neutral" label={String(waitlistCount)} />
-              ) : undefined
-            }
-          />
-        </TabList>
+        <VStack style={{ minWidth: 0, maxWidth: '100%' }}>
+          <TabList value={tab} onChange={onChangeTab}>
+            <Tab value="upcoming" label="Próximas" />
+            <Tab
+              value="unconfirmed"
+              label="Por confirmar"
+              endContent={
+                pendingConfirmationsCount > 0 ? (
+                  <Badge variant="neutral" label={String(pendingConfirmationsCount)} />
+                ) : undefined
+              }
+            />
+            <Tab value="past" label="Pasadas" />
+            <Tab value="canceled" label="Canceladas" />
+            <Tab
+              value="waitlist"
+              label="Lista de espera"
+              endContent={
+                waitlistCount > 0 ? (
+                  <Badge variant="neutral" label={String(waitlistCount)} />
+                ) : undefined
+              }
+            />
+          </TabList>
+        </VStack>
 
         <HStack
           gap={2}

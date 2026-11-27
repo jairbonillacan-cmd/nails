@@ -202,7 +202,7 @@ export default function AdminReportsPage() {
 
           <section
             aria-label="Días con más citas y servicios más rentables"
-            className="ad-split"
+            className="ad-split ad-split-table"
           >
             <DemandHeatmapCard heatmap={report.heatmap} />
             <ServiceProfitabilityCard

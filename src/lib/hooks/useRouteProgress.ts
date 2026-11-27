@@ -257,3 +257,48 @@ export function useRouteProgress(): RouteProgressState {
 
   return state;
 }
+
+const DEFAULT_PENDING_NAV_FALLBACK_MS = 4000;
+
+export function schedulePendingNavigationFallback(
+  targetUrl: string,
+  navigate: (url: string) => void,
+  delayMs = DEFAULT_PENDING_NAV_FALLBACK_MS,
+  scheduler?: Pick<RouteProgressScheduler, 'setTimeout' | 'clearTimeout'>,
+): () => void {
+  const trimmed = targetUrl.trim();
+  if (!trimmed.startsWith('/')) {
+    return () => undefined;
+  }
+  const timers = scheduler ?? getBrowserScheduler();
+  let cancelled = false;
+  const timeoutId = timers.setTimeout(() => {
+    if (!cancelled) {
+      navigate(trimmed);
+    }
+  }, delayMs);
+  return () => {
+    cancelled = true;
+    timers.clearTimeout(timeoutId);
+  };
+}
+
+export function usePendingNavigationFallback(
+  targetUrl: string | null,
+  delayMs = DEFAULT_PENDING_NAV_FALLBACK_MS,
+): void {
+  useEffect(() => {
+    if (!targetUrl || typeof window === 'undefined') {
+      return;
+    }
+    return schedulePendingNavigationFallback(
+      targetUrl,
+      (url) => {
+        if (window.location.pathname !== url) {
+          window.location.assign(url);
+        }
+      },
+      delayMs,
+    );
+  }, [targetUrl, delayMs]);
+}

@@ -21,11 +21,46 @@
 
 html {
   scroll-behavior: smooth;
+  --lk-scroll-thumb: light-dark(
+    color-mix(in srgb, var(--color-on-light) 14%, transparent),
+    color-mix(in srgb, var(--color-on-dark) 16%, transparent)
+  );
+  --lk-scroll-thumb-hover: light-dark(
+    color-mix(in srgb, var(--color-on-light) 24%, transparent),
+    color-mix(in srgb, var(--color-on-dark) 28%, transparent)
+  );
 }
 
 body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--lk-scroll-thumb) transparent;
+}
+
+:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar {
+  width: 0.375rem;
+  height: 0.375rem;
+}
+
+:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-thumb {
+  background: var(--lk-scroll-thumb);
+  border-radius: var(--radius-full);
+}
+
+:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-thumb:hover {
+  background: var(--lk-scroll-thumb-hover);
+}
+
+:where(html, body, .lk-root, .lk-portal, .lk-root *, .lk-portal *)::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -46,6 +81,8 @@ body {
   --lk-suave: color-mix(in srgb, var(--color-accent) 16%, var(--color-on-dark));
   --lk-linea: var(--color-border);
   --lk-sombra: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  --lk-scroll-thumb: color-mix(in srgb, var(--lk-cereza) 18%, transparent);
+  --lk-scroll-thumb-hover: color-mix(in srgb, var(--lk-cereza) 34%, transparent);
   --lk-ancho: 82.5rem;
 }
 
@@ -1410,4 +1447,119 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
 
 .astryx-field-label > span {
   white-space: nowrap;
+}
+
+dialog.astryx-dialog:has(.lk-profile-dialog) {
+  overflow: hidden;
+  border-radius: 1.5rem;
+}
+
+dialog.astryx-dialog:has(.lk-profile-dialog) > * {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: inherit;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lk-profile-dialog {
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: inherit;
+  min-height: 0;
+}
+
+.lk-profile-head {
+  flex: none;
+  padding: 1.25rem 1.25rem 0.75rem;
+}
+
+.lk-profile-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.lk-profile-title {
+  font-size: 1.85rem;
+  line-height: 1.05;
+}
+
+.lk-profile-close {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  flex: 0 0 auto;
+}
+
+.lk-profile-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--lk-rosa);
+  padding: 1.25rem;
+}
+
+.lk-profile-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--lk-linea);
+  border-radius: 1.25rem;
+  transition:
+    transform var(--duration-medium) var(--ease-move),
+    box-shadow var(--duration-medium) var(--ease-standard);
+}
+
+.lk-profile-services {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lk-profile-portfolio-tile {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: var(--lk-tinte);
+  line-height: 0;
+}
+
+.lk-profile-portfolio-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform var(--duration-medium) var(--ease-move);
+}
+
+a.lk-profile-portfolio-tile:hover img {
+  transform: scale(1.05);
+}
+
+a.lk-profile-portfolio-tile:focus-visible {
+  outline: 2px solid var(--lk-cereza);
+  outline-offset: 2px;
+}
+
+.lk-profile-foot {
+  flex: none;
+  padding: 1rem 1.25rem max(1rem, calc(0.875rem + env(safe-area-inset-bottom)));
+  border-top: 1px solid var(--lk-linea);
+  background: var(--color-background-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lk-profile-card,
+  .lk-profile-portfolio-tile img {
+    transition: none !important;
+  }
+
+  a.lk-profile-portfolio-tile:hover img {
+    transform: none !important;
+  }
 }

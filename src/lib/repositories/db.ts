@@ -113,7 +113,11 @@ import { MediaValidationError, storeMediaUpload } from '../storage/media';
 import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
 import { parseDemoDatabase } from './schema';
 import { createSupabaseAdminClient, isSupabaseEnabled } from './supabase-client';
-import { createSupabaseRepository } from './supabase-repo';
+import {
+  createSupabaseRepository,
+  fetchSupabaseClientLoyaltySummary,
+  fetchSupabaseServicesByIds,
+} from './supabase-repo';
 import {
   PolicyError,
   SlotConflictError,
@@ -5081,11 +5085,28 @@ export function getClientLoyaltySummary(clientId: string): PublicLoyaltySummaryD
   return computeClientLoyaltySummaryFromDb(getSnapshot(), clientId);
 }
 
+export async function getServicesByIdsAsync(
+  serviceIds: readonly string[],
+): Promise<Service[]> {
+  const uniqueIds = Array.from(
+    new Set(serviceIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+  );
+  if (uniqueIds.length === 0) return [];
+  if (isSupabaseEnabled()) {
+    return fetchSupabaseServicesByIds(uniqueIds);
+  }
+  const db = getSnapshot();
+  const idSet = new Set(uniqueIds);
+  return db.services.filter((srv) => idSet.has(srv.id));
+}
+
 export async function getClientLoyaltySummaryAsync(
   clientId: string,
 ): Promise<PublicLoyaltySummaryDTO | null> {
-  const db = await getRepository().getSnapshot();
-  return computeClientLoyaltySummaryFromDb(db, clientId);
+  if (isSupabaseEnabled()) {
+    return fetchSupabaseClientLoyaltySummary(clientId);
+  }
+  return computeClientLoyaltySummaryFromDb(getSnapshot(), clientId);
 }
 
 function computeNearRewardClientsFromDb(db: Readonly<DemoDatabase>): Array<{

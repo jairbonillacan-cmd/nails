@@ -3,8 +3,11 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { createSubmitGate, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 export interface FormDialogControls {
@@ -13,12 +16,21 @@ export interface FormDialogControls {
   readonly close: () => void;
 }
 
+interface FormDialogSubmitFooter {
+  readonly formId: string;
+  readonly submitLabel: string;
+  readonly submitIcon?: ReactNode;
+  readonly isSubmitDisabled?: boolean;
+  readonly cancelLabel?: string;
+}
+
 interface FormDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   subtitle?: string;
   width?: string;
+  submitFooter?: FormDialogSubmitFooter;
   children: (controls: FormDialogControls) => ReactNode;
 }
 
@@ -28,6 +40,7 @@ export function FormDialog({
   title,
   subtitle,
   width = 'min(32rem, 96vw)',
+  submitFooter,
   children,
 }: FormDialogProps) {
   const [gate] = useState(createSubmitGate);
@@ -72,30 +85,63 @@ export function FormDialog({
       onOpenChange={requestOpenChange}
       purpose="form"
       width={width}
-      maxHeight="92dvh"
+      maxHeight="min(90dvh, calc(100dvh - 2rem))"
       padding={5}
     >
-      <VStack gap={4} className="fx-sheet-in">
-        <DialogHeader title={title} subtitle={subtitle} onOpenChange={requestOpenChange} />
-        {error ? (
-          <Banner
-            status="error"
-            role="alert"
-            title={error}
-            isDismissable
-            onDismiss={() => setError(null)}
+      <Layout
+        header={
+          <DialogHeader
+            title={title}
+            subtitle={subtitle}
+            hasDivider
+            onOpenChange={requestOpenChange}
           />
-        ) : null}
-        {isOpen ? (
-          <VStack
-            gap={0}
-            className={isSubmitting ? 'fx-busy' : undefined}
-            aria-busy={isSubmitting || undefined}
-          >
-            {children(controls)}
-          </VStack>
-        ) : null}
-      </VStack>
+        }
+        content={
+          <LayoutContent>
+            <VStack
+              gap={4}
+              className={isSubmitting ? 'fx-busy' : undefined}
+              aria-busy={isSubmitting || undefined}
+            >
+              {error ? (
+                <Banner
+                  status="error"
+                  role="alert"
+                  title={error}
+                  isDismissable
+                  onDismiss={() => setError(null)}
+                />
+              ) : null}
+              {isOpen ? children(controls) : null}
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          isOpen && submitFooter ? (
+            <LayoutFooter hasDivider>
+              <HStack gap={2} justify="end" wrap="wrap">
+                <Button
+                  type="button"
+                  label={submitFooter.cancelLabel ?? 'Cancelar'}
+                  variant="secondary"
+                  isDisabled={isSubmitting}
+                  onClick={controls.close}
+                />
+                <Button
+                  type="submit"
+                  form={submitFooter.formId}
+                  label={submitFooter.submitLabel}
+                  variant="primary"
+                  icon={submitFooter.submitIcon}
+                  isLoading={isSubmitting}
+                  isDisabled={Boolean(submitFooter.isSubmitDisabled) || isSubmitting}
+                />
+              </HStack>
+            </LayoutFooter>
+          ) : undefined
+        }
+      />
     </Dialog>
   );
 }

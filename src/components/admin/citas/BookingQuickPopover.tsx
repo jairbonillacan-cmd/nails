@@ -8,6 +8,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Token } from '@astryxdesign/core/Token';
 import { Link } from '@astryxdesign/core/Link';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { AtSign, ExternalLink, XCircle } from 'lucide-react';
 import {
   BookingStatusTag,
@@ -185,90 +186,133 @@ export function BookingQuickPopover({
         onOpenChange={handleDialogOpenChange}
         purpose="info"
         width={500}
+        maxHeight="min(90dvh, calc(100dvh - 2rem))"
         padding={5}
       >
-        <DialogHeader
-          title={booking.client.fullName}
-          subtitle={headerSubtitle}
-          onOpenChange={handleDialogOpenChange}
-        />
-
-        <VStack
-          gap={3}
-          paddingBlockStart={4}
-          className={isBusy ? 'fx-sheet-in fx-busy' : 'fx-sheet-in'}
-          aria-busy={isBusy || undefined}
-        >
-          <HStack gap={2} align="center" wrap="wrap">
-            <BookingStatusTag
-              status={booking.status}
-              hasPaymentProof={Boolean(booking.paymentProofUrl)}
+        <Layout
+          header={
+            <DialogHeader
+              title={booking.client.fullName}
+              subtitle={headerSubtitle}
+              hasDivider
+              onOpenChange={handleDialogOpenChange}
             />
-            {isBusy ? (
-              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-                Actualizando…
-              </Text>
-            ) : null}
-            <Token size="sm" label={`Con ${booking.staff.name}`} />
-            <Token size="sm" label={booking.bookingCode} />
-            {proofMeta ? (
-              <StatusTag label={proofMeta.label} tone={PROOF_COLOR_TO_TONE[proofMeta.color]} />
-            ) : null}
-            {igHandle && igUrl ? (
-              <HStack gap={1} align="center">
-                <AtSign size={13} aria-hidden="true" />
-                <Link href={igUrl} isExternalLink size="sm" weight="medium">
-                  {igHandle}
-                </Link>
-              </HStack>
-            ) : null}
-          </HStack>
-
-          <SurfaceCard tone="subtle" padded>
-            <VStack gap={2}>
-              <Text weight="semibold" size="base">
-                {booking.service.name}
-                {extraServiceNames.length > 0 ? ` + ${extraServiceNames.join(' + ')}` : ''}
-              </Text>
-              {booking.addons.length > 0 ? (
-                <Text type="supporting" color="secondary">
-                  Extras: {booking.addons.map((a) => a.name).join(', ')}
-                </Text>
-              ) : null}
-              <CopyableField
-                label="WhatsApp"
-                value={booking.client.phoneE164}
-                monospace
-                iconOnly
-                copyLabel="Copiar WhatsApp"
-                feedbackMessage="Número de WhatsApp copiado"
-              />
-              {hasDisplayableProof && booking.paymentProofUrl ? (
-                <HStack gap={3} align="center" wrap="wrap" paddingBlockStart={1}>
-                  <button
-                    type="button"
-                    className="ad-proof-thumb"
-                    aria-label={`Ampliar comprobante de ${booking.client.fullName}`}
-                    onClick={() => setProofZoomOpen(true)}
-                  >
-                    <img
-                      src={booking.paymentProofUrl}
-                      alt={`Comprobante de anticipo de ${booking.client.fullName}`}
-                    />
-                  </button>
-                  <VStack gap={1} className="rb-grow">
-                    <Text size="sm" weight="semibold">
-                      Comprobante de anticipo
+          }
+          content={
+            <LayoutContent>
+              <VStack
+                gap={3}
+                className={isBusy ? 'fx-busy' : undefined}
+                aria-busy={isBusy || undefined}
+              >
+                <HStack gap={2} align="center" wrap="wrap">
+                  <BookingStatusTag
+                    status={booking.status}
+                    hasPaymentProof={Boolean(booking.paymentProofUrl)}
+                  />
+                  {isBusy ? (
+                    <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                      Actualizando…
                     </Text>
-                    <HStack gap={1.5} wrap="wrap">
-                      <Button
-                        type="button"
-                        label="Ver comprobante"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setProofZoomOpen(true)}
-                      />
-                      {canRejectProof ? (
+                  ) : null}
+                  <Token size="sm" label={`Con ${booking.staff.name}`} />
+                  <Token size="sm" label={booking.bookingCode} />
+                  {proofMeta ? (
+                    <StatusTag label={proofMeta.label} tone={PROOF_COLOR_TO_TONE[proofMeta.color]} />
+                  ) : null}
+                  {igHandle && igUrl ? (
+                    <HStack gap={1} align="center">
+                      <AtSign size={13} aria-hidden="true" />
+                      <Link href={igUrl} isExternalLink size="sm" weight="medium">
+                        {igHandle}
+                      </Link>
+                    </HStack>
+                  ) : null}
+                </HStack>
+
+                <SurfaceCard tone="subtle" padded>
+                  <VStack gap={2}>
+                    <Text weight="semibold" size="base">
+                      {booking.service.name}
+                      {extraServiceNames.length > 0 ? ` + ${extraServiceNames.join(' + ')}` : ''}
+                    </Text>
+                    {booking.addons.length > 0 ? (
+                      <Text type="supporting" color="secondary">
+                        Extras: {booking.addons.map((a) => a.name).join(', ')}
+                      </Text>
+                    ) : null}
+                    <CopyableField
+                      label="WhatsApp"
+                      value={booking.client.phoneE164}
+                      monospace
+                      iconOnly
+                      copyLabel="Copiar WhatsApp"
+                      feedbackMessage="Número de WhatsApp copiado"
+                    />
+                    {hasDisplayableProof && booking.paymentProofUrl ? (
+                      <HStack gap={3} align="center" wrap="wrap" paddingBlockStart={1}>
+                        <button
+                          type="button"
+                          className="ad-proof-thumb"
+                          aria-label={`Ampliar comprobante de ${booking.client.fullName}`}
+                          onClick={() => setProofZoomOpen(true)}
+                        >
+                          <img
+                            src={booking.paymentProofUrl}
+                            alt={`Comprobante de anticipo de ${booking.client.fullName}`}
+                          />
+                        </button>
+                        <VStack gap={1} className="rb-grow">
+                          <Text size="sm" weight="semibold">
+                            Comprobante de anticipo
+                          </Text>
+                          <HStack gap={1.5} wrap="wrap">
+                            <Button
+                              type="button"
+                              label="Ver comprobante"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setProofZoomOpen(true)}
+                            />
+                            {canRejectProof ? (
+                              <Button
+                                type="button"
+                                label="Rechazar comprobante"
+                                variant="ghost"
+                                size="sm"
+                                icon={<XCircle size={14} aria-hidden="true" />}
+                                isDisabled={isBusy}
+                                onClick={() => setPendingConfirm('reject_deposit')}
+                              />
+                            ) : null}
+                          </HStack>
+                        </VStack>
+                      </HStack>
+                    ) : hasExternalProofLink && booking.paymentProofUrl ? (
+                      <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
+                        <Button
+                          label="Ver enlace del comprobante"
+                          variant="secondary"
+                          size="sm"
+                          icon={<ExternalLink size={14} aria-hidden="true" />}
+                          href={booking.paymentProofUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                        {canRejectProof ? (
+                          <Button
+                            type="button"
+                            label="Rechazar comprobante"
+                            variant="ghost"
+                            size="sm"
+                            icon={<XCircle size={14} aria-hidden="true" />}
+                            isDisabled={isBusy}
+                            onClick={() => setPendingConfirm('reject_deposit')}
+                          />
+                        ) : null}
+                      </HStack>
+                    ) : canRejectProof ? (
+                      <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
                         <Button
                           type="button"
                           label="Rechazar comprobante"
@@ -278,117 +322,82 @@ export function BookingQuickPopover({
                           isDisabled={isBusy}
                           onClick={() => setPendingConfirm('reject_deposit')}
                         />
-                      ) : null}
-                    </HStack>
+                      </HStack>
+                    ) : null}
                   </VStack>
-                </HStack>
-              ) : hasExternalProofLink && booking.paymentProofUrl ? (
-                <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
-                  <Button
-                    label="Ver enlace del comprobante"
-                    variant="secondary"
-                    size="sm"
-                    icon={<ExternalLink size={14} aria-hidden="true" />}
-                    href={booking.paymentProofUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                  {canRejectProof ? (
-                    <Button
-                      type="button"
-                      label="Rechazar comprobante"
-                      variant="ghost"
-                      size="sm"
-                      icon={<XCircle size={14} aria-hidden="true" />}
-                      isDisabled={isBusy}
-                      onClick={() => setPendingConfirm('reject_deposit')}
+                </SurfaceCard>
+
+                <SurfaceCard tone={paymentSummary.isFullyPaid ? 'subtle' : 'warning'} padded>
+                  <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                    <VStack gap={0.5}>
+                      <Text type="supporting" color="secondary">
+                        Precio y anticipo
+                      </Text>
+                      <Text weight="semibold" hasTabularNumbers>
+                        Total {formatCurrency(paymentSummary.totalPriceCents, currency)}
+                        {paymentSummary.paidCents > 0
+                          ? ` · Anticipo ${formatCurrency(paymentSummary.paidCents, currency)}`
+                          : ''}
+                      </Text>
+                    </VStack>
+                    <StatusTag
+                      label={
+                        paymentSummary.isFullyPaid
+                          ? 'Pagado completo'
+                          : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`
+                      }
+                      tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
+                      hasTabularNumbers
                     />
-                  ) : null}
-                </HStack>
-              ) : canRejectProof ? (
-                <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
-                  <Button
-                    type="button"
-                    label="Rechazar comprobante"
-                    variant="ghost"
-                    size="sm"
-                    icon={<XCircle size={14} aria-hidden="true" />}
-                    isDisabled={isBusy}
-                    onClick={() => setPendingConfirm('reject_deposit')}
-                  />
-                </HStack>
-              ) : null}
-            </VStack>
-          </SurfaceCard>
+                  </HStack>
+                </SurfaceCard>
 
-          <SurfaceCard tone={paymentSummary.isFullyPaid ? 'subtle' : 'warning'} padded>
-            <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <VStack gap={0.5}>
-                <Text type="supporting" color="secondary">
-                  Precio y anticipo
-                </Text>
-                <Text weight="semibold" hasTabularNumbers>
-                  Total {formatCurrency(paymentSummary.totalPriceCents, currency)}
-                  {paymentSummary.paidCents > 0
-                    ? ` · Anticipo ${formatCurrency(paymentSummary.paidCents, currency)}`
-                    : ''}
-                </Text>
+                {booking.clientNotes ? (
+                  <Text type="supporting" color="secondary">
+                    Nota de la clienta: {booking.clientNotes}
+                  </Text>
+                ) : null}
+                {booking.internalNotes ? (
+                  <Text type="supporting" color="secondary">
+                    Nota interna: {booking.internalNotes}
+                  </Text>
+                ) : null}
+
+                <BookingPopoverActions
+                  allowedNext={allowedNext}
+                  isPending={isPending}
+                  isCompleted={isCompleted}
+                  canCollect={canCollect}
+                  canRemind={canRemind}
+                  isFullyPaid={paymentSummary.isFullyPaid}
+                  isBusy={isBusy}
+                  busyStatus={busyStatus}
+                  isReminding={isReminding}
+                  isRequestingReschedule={isRequestingReschedule}
+                  canViewClients={canViewClients}
+                  canManageIntegrations={canManageIntegrations}
+                  waHref={waHref}
+                  reviewWaHref={reviewWaHref}
+                  reviewSettingsHref="/admin/integraciones?section=resenas#analytics-heading"
+                  clientProfileHref={clientProfileHref}
+                  onConfirm={() => void handleStatusAction('confirmed')}
+                  onComplete={() => void handleStatusAction('completed')}
+                  onCheckout={() => {
+                    handleClose();
+                    onOpenCheckout(booking);
+                  }}
+                  onReschedule={() => {
+                    onRequestReschedule(booking.id);
+                    handleClose();
+                  }}
+                  onRemind={() => onSendReminder(booking.id)}
+                  onRequestNoShow={() => setPendingConfirm('no_show')}
+                  onRequestCancel={() => setPendingConfirm('canceled')}
+                />
               </VStack>
-              <StatusTag
-                label={
-                  paymentSummary.isFullyPaid
-                    ? 'Pagado completo'
-                    : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`
-                }
-                tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
-                hasTabularNumbers
-              />
-            </HStack>
-          </SurfaceCard>
-
-          {booking.clientNotes ? (
-            <Text type="supporting" color="secondary">
-              Nota de la clienta: {booking.clientNotes}
-            </Text>
-          ) : null}
-          {booking.internalNotes ? (
-            <Text type="supporting" color="secondary">
-              Nota interna: {booking.internalNotes}
-            </Text>
-          ) : null}
-
-          <BookingPopoverActions
-            allowedNext={allowedNext}
-            isPending={isPending}
-            isCompleted={isCompleted}
-            canCollect={canCollect}
-            canRemind={canRemind}
-            isFullyPaid={paymentSummary.isFullyPaid}
-            isBusy={isBusy}
-            busyStatus={busyStatus}
-            isReminding={isReminding}
-            isRequestingReschedule={isRequestingReschedule}
-            canViewClients={canViewClients}
-            canManageIntegrations={canManageIntegrations}
-            waHref={waHref}
-            reviewWaHref={reviewWaHref}
-            reviewSettingsHref="/admin/integraciones?section=resenas#analytics-heading"
-            clientProfileHref={clientProfileHref}
-            onConfirm={() => void handleStatusAction('confirmed')}
-            onComplete={() => void handleStatusAction('completed')}
-            onCheckout={() => {
-              handleClose();
-              onOpenCheckout(booking);
-            }}
-            onReschedule={() => {
-              onRequestReschedule(booking.id);
-              handleClose();
-            }}
-            onRemind={() => onSendReminder(booking.id)}
-            onRequestNoShow={() => setPendingConfirm('no_show')}
-            onRequestCancel={() => setPendingConfirm('canceled')}
-          />
-        </VStack>
+            </LayoutContent>
+          }
+        />
       </Dialog>
 
       {hasDisplayableProof && booking.paymentProofUrl ? (

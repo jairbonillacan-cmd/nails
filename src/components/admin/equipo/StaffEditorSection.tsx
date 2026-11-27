@@ -8,11 +8,11 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { TextInput } from '@astryxdesign/core/TextInput';
+import { TextArea } from '@astryxdesign/core/TextArea';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Divider } from '@astryxdesign/core/Divider';
-import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Check, Copy, Save, UserPlus, Users } from 'lucide-react';
 import {
   ActionRow,
@@ -288,131 +288,181 @@ export function StaffEditorSection({
           if (!open) resetStaffForm();
         }}
         title={editingStaffId ? `Editar a ${editingStaff?.name ?? 'profesional'}` : 'Agregar profesional'}
-        subtitle="Nombre, comisión y los servicios que hace."
-        width="min(34rem, 96vw)"
+        subtitle="Perfil, comisión, foto y servicios que atiende."
+        width="min(38rem, 96vw)"
+        submitFooter={{
+          formId: 'staff-editor-form',
+          submitLabel: editingStaffId ? 'Guardar cambios' : 'Agregar',
+          submitIcon: editingStaffId ? (
+            <Save size={15} aria-hidden="true" />
+          ) : (
+            <UserPlus size={15} aria-hidden="true" />
+          ),
+          isSubmitDisabled: sName.trim().length < 2,
+        }}
       >
         {(controls) => (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (sName.trim().length < 2) return;
-            controls.submit(saveStaff);
-          }}
-        >
-          <VStack gap={3}>
-            {editingStaff ? (
-              <CopyableField
-                label={`Link directo de ${editingStaff.name}`}
-                value={`${baseOrigin}/reservar?staff=${editingStaff.bookingSlug}`}
-                displayValue={`/reservar?staff=${editingStaff.bookingSlug}`}
-                copyLabel="Copiar link"
-                copiedLabel="Link copiado"
-                feedbackMessage={`Link directo de ${editingStaff.name} copiado.`}
-                monospace
-              />
-            ) : null}
+          <form
+            id="staff-editor-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (sName.trim().length < 2) return;
+              controls.submit(saveStaff);
+            }}
+          >
+            <VStack gap={4}>
+              {editingStaff ? (
+                <CopyableField
+                  label="Link directo de citas"
+                  value={`${baseOrigin}/reservar?staff=${editingStaff.bookingSlug}`}
+                  displayValue={`/reservar?staff=${editingStaff.bookingSlug}`}
+                  copyLabel="Copiar link"
+                  copiedLabel="Link copiado"
+                  feedbackMessage={`Link directo de ${editingStaff.name} copiado.`}
+                  monospace
+                />
+              ) : null}
 
-            <TextInput label="Nombre" placeholder="Ejemplo: Fernanda Ruiz" value={sName} onChange={setSName} isRequired />
-            <Grid columns={{ minWidth: 140, max: 2 }} gap={3}>
-              <TextInput label="Puesto" placeholder="Ejemplo: Nail Artist" value={sRoleTitle} onChange={setSRoleTitle} />
-              <NumberInput
-                label="Comisión (%)"
-                description="Lo que gana de cada servicio."
-                value={sCommission}
-                min={0}
-                max={100}
-                isIntegerOnly
-                onChange={setSCommission}
-              />
-            </Grid>
-            {sPosition !== null && orderedStaff.length > 1 ? (
-              <NumberInput
-                label="Lugar en tu página"
-                description="1 es la profesional destacada: sale primero en celular y al centro en computadora."
-                value={sPosition}
-                min={1}
-                max={orderedStaff.length}
-                isIntegerOnly
-                onChange={(v) => setSPosition(Math.min(orderedStaff.length, Math.max(1, Math.round(v))))}
-              />
-            ) : null}
-            <TextInput
-              label="Presentación"
-              description="Se ve en tu página de citas."
-              placeholder="Opcional"
-              value={sBio}
-              onChange={setSBio}
-              isOptional
-            />
+              <VStack gap={3}>
+                <Text type="label" weight="semibold" color="secondary">
+                  Datos principales
+                </Text>
+                <Grid columns={{ minWidth: 200, max: 2 }} gap={3}>
+                  <TextInput
+                    label="Nombre"
+                    placeholder="Ejemplo: Fernanda Ruiz"
+                    value={sName}
+                    onChange={setSName}
+                    isRequired
+                  />
+                  <TextInput
+                    label="Puesto"
+                    placeholder="Ejemplo: Nail Artist"
+                    value={sRoleTitle}
+                    onChange={setSRoleTitle}
+                  />
+                </Grid>
 
-            <UploadDropzone
-              label="Foto"
-              helperText={
-                sAvatarUrl
-                  ? 'Aparece en tu página y al elegir profesional.'
-                  : 'Sin foto se usa una imagen de la marca. Una foto real genera más confianza.'
-              }
-              previewUrl={sAvatarUrl}
-              previewAlt={sName ? `Foto de ${sName}` : 'Foto de la profesional'}
-              placeholder="Elige una foto de su rostro o de su trabajo"
-              readyLabel="Foto lista"
-              replaceLabel="Cambiar foto"
-              clearLabel="Quitar foto"
-              error={avatarError}
-              isOptional
-              onSelectFile={(file) => void handleAvatarFile(file)}
-              onClear={() => setSAvatarUrl(null)}
-            />
+                {sPosition !== null && orderedStaff.length > 1 ? (
+                  <Grid columns={{ minWidth: 200, max: 2 }} gap={3}>
+                    <NumberInput
+                      label="Comisión (%)"
+                      description="Lo que gana de cada servicio."
+                      value={sCommission}
+                      min={0}
+                      max={100}
+                      isIntegerOnly
+                      onChange={setSCommission}
+                    />
+                    <NumberInput
+                      label="Lugar en tu página"
+                      description="1 aparece como destacada."
+                      value={sPosition}
+                      min={1}
+                      max={orderedStaff.length}
+                      isIntegerOnly
+                      onChange={(v) =>
+                        setSPosition(Math.min(orderedStaff.length, Math.max(1, Math.round(v))))
+                      }
+                    />
+                  </Grid>
+                ) : (
+                  <NumberInput
+                    label="Comisión (%)"
+                    description="Lo que gana de cada servicio."
+                    value={sCommission}
+                    min={0}
+                    max={100}
+                    isIntegerOnly
+                    onChange={setSCommission}
+                  />
+                )}
 
-            {services.length > 0 ? (
-              <>
-                <Divider />
-                <Collapsible
-                  className="ad-disclosure"
-                  defaultIsOpen={Boolean(editingStaffId)}
-                  trigger={
-                    <HStack gap={2} align="center">
-                      <Text weight="semibold" size="sm">Servicios que realiza</Text>
-                      <StatusTag tone="neutral" label={`${effectiveServiceIds.length} de ${services.length}`} hasTabularNumbers />
-                    </HStack>
-                  }
-                >
-                  <VStack paddingBlockStart={2}>
-                    <Grid columns={{ minWidth: 150, max: 2 }} gap={1.5}>
-                      {services.map((srv) => (
-                        <CheckboxInput
-                          key={srv.id}
-                          size="sm"
-                          label={srv.name}
-                          value={effectiveServiceIds.includes(srv.id)}
-                          onChange={(checked) => toggleStaffService(srv.id, checked)}
+                <TextArea
+                  label="Presentación"
+                  description="Se ve en tu página pública de citas."
+                  placeholder="Ejemplo: Especialista en softgel, rubber y nail art minimalista."
+                  value={sBio}
+                  onChange={setSBio}
+                  rows={2}
+                  isOptional
+                />
+              </VStack>
+
+              <Divider />
+
+              <UploadDropzone
+                label="Foto de perfil"
+                helperText={
+                  sAvatarUrl
+                    ? 'Aparece en tu página y al elegir profesional.'
+                    : 'Sin foto se usa una imagen de la marca. Una foto real genera más confianza.'
+                }
+                previewUrl={sAvatarUrl}
+                previewAlt={sName ? `Foto de ${sName}` : 'Foto de la profesional'}
+                placeholder="Elige una foto de su rostro o de su trabajo"
+                readyLabel="Foto lista"
+                replaceLabel="Cambiar foto"
+                clearLabel="Quitar foto"
+                error={avatarError}
+                isOptional
+                onSelectFile={(file) => void handleAvatarFile(file)}
+                onClear={() => setSAvatarUrl(null)}
+              />
+
+              {services.length > 0 ? (
+                <>
+                  <Divider />
+                  <VStack gap={2}>
+                    <HStack justify="between" align="center" gap={2} wrap="wrap">
+                      <HStack gap={2} align="center">
+                        <Text type="label" weight="semibold" color="secondary">
+                          Servicios que realiza
+                        </Text>
+                        <StatusTag
+                          tone={effectiveServiceIds.length === 0 ? 'warning' : 'neutral'}
+                          label={`${effectiveServiceIds.length} de ${services.length}`}
+                          hasTabularNumbers
                         />
-                      ))}
-                    </Grid>
+                      </HStack>
+                      {services.length > 1 ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          label={
+                            effectiveServiceIds.length === services.length
+                              ? 'Quitar todos'
+                              : 'Seleccionar todos'
+                          }
+                          onClick={() =>
+                            setSServiceIds(
+                              effectiveServiceIds.length === services.length
+                                ? []
+                                : [...allServiceIds],
+                            )
+                          }
+                        />
+                      ) : null}
+                    </HStack>
+                    <VStack className="ad-subpanel" gap={0}>
+                      <Grid columns={{ minWidth: 190, max: 2 }} gap={2}>
+                        {services.map((srv) => (
+                          <CheckboxInput
+                            key={srv.id}
+                            size="sm"
+                            label={srv.name}
+                            value={effectiveServiceIds.includes(srv.id)}
+                            onChange={(checked) => toggleStaffService(srv.id, checked)}
+                          />
+                        ))}
+                      </Grid>
+                    </VStack>
                   </VStack>
-                </Collapsible>
-              </>
-            ) : null}
-
-            <HStack gap={2} justify="end" wrap="wrap">
-              <Button
-                type="button"
-                label="Cancelar"
-                variant="secondary"
-                isDisabled={controls.isSubmitting}
-                onClick={controls.close}
-              />
-              <Button
-                type="submit"
-                label={editingStaffId ? 'Guardar cambios' : 'Agregar'}
-                variant="primary"
-                icon={editingStaffId ? <Save size={15} aria-hidden="true" /> : <UserPlus size={15} aria-hidden="true" />}
-                isLoading={controls.isSubmitting}
-                isDisabled={sName.trim().length < 2 || controls.isSubmitting}
-              />
-            </HStack>
-          </VStack>
-        </form>
+                </>
+              ) : null}
+            </VStack>
+          </form>
         )}
       </FormDialog>
     </VStack>

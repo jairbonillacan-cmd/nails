@@ -10,6 +10,7 @@ import { toPublicBookingDTO } from '@/lib/public-dto';
 import {
   createBookingWithExtras,
   getRepository,
+  getServicesByIdsAsync,
   MaxActiveBookingsError,
   persistBookingMediaField,
   PolicyError,
@@ -89,29 +90,33 @@ export async function POST(request: NextRequest) {
 
     const manageUrl = `/cita/${booking.manageToken}`;
     const repo = getRepository();
-    const bootstrap = await repo.getPublicBootstrap();
+    const extraIds = (booking.extraServiceIds ?? []).filter(
+      (id) => id !== booking.serviceId,
+    );
+    const [settings, extraServices] = await Promise.all([
+      repo.getSalonSettings(),
+      getServicesByIdsAsync(extraIds),
+    ]);
     const env = getRuntimeIntegrationStatus();
     const checkout = await createDepositCheckout({
       bookingCode: booking.bookingCode,
       amountCents: booking.depositAmountCents,
-      currency: bootstrap.settings.currency,
+      currency: settings.currency,
       clientEmail: booking.client.email,
-      mode: bootstrap.settings.paymentMode,
+      mode: settings.paymentMode,
       manageUrl: `${env.appUrl}${manageUrl}`,
     });
 
-    const snapshot = await repo.getSnapshot();
-    const snapshotSettings = snapshot.settings;
     const noShowPolicy = evaluateClientNoShowPolicy({
       noShowCount: booking.client.noShowCount,
-      threshold: snapshotSettings.noShowDepositThreshold,
+      threshold: settings.noShowDepositThreshold,
       baseDepositAmountCents:
-        booking.depositAmountCents || (snapshotSettings.depositAmountCents ?? 20_000),
+        booking.depositAmountCents || (settings.depositAmountCents ?? 20_000),
     });
 
     return NextResponse.json(
       {
-        booking: toPublicBookingDTO(booking, snapshot.services),
+        booking: toPublicBookingDTO(booking, [booking.service, ...extraServices]),
         manageUrl,
         checkout,
         noShowPolicy,

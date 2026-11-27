@@ -4,6 +4,7 @@ import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import type { NavGroupConfig, NavItemConfig, SidebarStaffRow } from './adminNavConfig';
 import { AdminNavGroups } from './AdminNavGroups';
@@ -20,6 +21,7 @@ interface AdminSidebarProps {
   soundActive: boolean;
   soundFeedbackMessage: string | null;
   isDark: boolean;
+  onToggleSidebar: () => void;
   onPrefetchRoute: (routeId: string, href: string) => void;
   onToggleMute: () => void;
   onTestSound: () => void;
@@ -39,6 +41,7 @@ export function AdminSidebar({
   soundActive,
   soundFeedbackMessage,
   isDark,
+  onToggleSidebar,
   onPrefetchRoute,
   onToggleMute,
   onTestSound,
@@ -55,7 +58,7 @@ export function AdminSidebar({
       aria-label="Menú lateral"
     >
       {sidebarCollapsed ? (
-        <HStack justify="center" align="center" className="ad-side-top-compact">
+        <VStack align="center" gap={2} className="ad-side-top-compact">
           <Tooltip content={data.settings.name} placement="end" hasHoverIndication={false}>
             <NextLink
               href="/admin"
@@ -65,16 +68,27 @@ export function AdminSidebar({
               <img
                 src={brandLogo}
                 alt=""
-                width={44}
-                height={12}
+                width={40}
+                height={11}
                 aria-hidden="true"
                 className="ad-logo"
               />
             </NextLink>
           </Tooltip>
-        </HStack>
+          <Tooltip content="Expandir barra (Ctrl B)" placement="end" hasHoverIndication={false}>
+            <button
+              type="button"
+              className="ad-side-toggle ad-side-toggle-compact fx-press"
+              aria-label="Expandir barra lateral"
+              aria-expanded={false}
+              onClick={onToggleSidebar}
+            >
+              <PanelLeftOpen size={16} strokeWidth={1.85} aria-hidden="true" />
+            </button>
+          </Tooltip>
+        </VStack>
       ) : (
-        <HStack align="center" gap={2} className="ad-side-top">
+        <HStack justify="between" align="center" gap={2} className="ad-side-top">
           <NextLink
             href="/admin"
             aria-label={`${data.settings.name}, inicio del panel`}
@@ -88,6 +102,17 @@ export function AdminSidebar({
               className="ad-logo"
             />
           </NextLink>
+          <Tooltip content="Retraer barra (Ctrl B)" placement="end" hasHoverIndication={false}>
+            <button
+              type="button"
+              className="ad-side-toggle fx-press"
+              aria-label="Retraer barra lateral"
+              aria-expanded={true}
+              onClick={onToggleSidebar}
+            >
+              <PanelLeftClose size={16} strokeWidth={1.85} aria-hidden="true" />
+            </button>
+          </Tooltip>
         </HStack>
       )}
 

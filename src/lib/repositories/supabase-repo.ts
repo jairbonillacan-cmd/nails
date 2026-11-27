@@ -1,3 +1,4 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   assertSlotBookable,
@@ -30,10 +31,13 @@ import {
 } from '../integrations/whatsapp-templates';
 import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
 import { logError } from '../logger';
+import { computeClientLoyaltySummary } from '../loyalty/stamps';
 import {
+  PublicLoyaltySummarySchema,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type PublicLoyaltySummaryDTO,
 } from '../public-dto';
 import { dispatchOutboxEvent } from '../use-cases/outbox';
 import { MediaValidationError, storeMediaUpload } from '../storage/media';
@@ -1029,57 +1033,123 @@ function parsePgTstzRange(rangeStr: string): { startAt: string; endAt: string } 
   };
 }
 
+const POST_COMMIT_SIDE_EFFECT_MAX_WAIT_MS = 2500;
+
+function tryRegisterWorkerWaitUntil(promise: Promise<unknown>): boolean {
+  try {
+    const cfContext: unknown = getCloudflareContext();
+    if (!cfContext || typeof cfContext !== 'object') {
+      return false;
+    }
+    const execCtx: unknown = Reflect.get(cfContext, 'ctx');
+    if (!execCtx || typeof execCtx !== 'object') {
+      return false;
+    }
+    const waitUntil: unknown = Reflect.get(execCtx, 'waitUntil');
+    if (typeof waitUntil !== 'function') {
+      return false;
+    }
+    Reflect.apply(waitUntil, execCtx, [promise]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runPostCommitSideEffects(
+  task: Promise<void>,
+  maxWaitMs = POST_COMMIT_SIDE_EFFECT_MAX_WAIT_MS,
+): Promise<void> {
+  const safeTask = task.catch((err) => {
+    logError('booking_post_commit_side_effects_failed', { error: err });
+  });
+  const registeredInWorker = tryRegisterWorkerWaitUntil(safeTask);
+  if (!registeredInWorker) {
+    await safeTask;
+    return;
+  }
+  let timerId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timerId = setTimeout(resolve, maxWaitMs);
+  });
+  try {
+    await Promise.race([safeTask, timeoutPromise]);
+  } finally {
+    if (timerId !== null) {
+      clearTimeout(timerId);
+    }
+  }
+}
+
+function buildFallbackServiceForBooking(booking: Booking): Service {
+  return {
+    id: booking.serviceId,
+    categoryId: null,
+    name: 'Servicio',
+    slug: 'servicio',
+    description: '',
+    durationMinutes: booking.totalDurationMinutes,
+    priceCents: booking.subtotalCents,
+    bufferBeforeMinutes: 0,
+    bufferAfterMinutes: 0,
+    requiresConfirmation: false,
+    depositRequired: false,
+    depositAmountCents: booking.depositAmountCents,
+    allowInspoPhoto: false,
+    isActive: true,
+    isFeatured: false,
+    displayOrder: 0,
+    imageUrl: null,
+  };
+}
+
+function buildFallbackStaffForBooking(
+  booking: Booking,
+  defaultCommissionPercent = 35,
+): StaffMember {
+  return {
+    id: booking.staffId,
+    name: 'Profesional',
+    roleTitle: 'Nail Artist',
+    bio: '',
+    avatarUrl: null,
+    bookingSlug: 'especialista',
+    commissionPercent: defaultCommissionPercent,
+    isActive: true,
+    displayOrder: 0,
+    serviceIds: [],
+  };
+}
+
+function buildFallbackClientForBooking(booking: Booking): ClientProfile {
+  return {
+    id: booking.clientId,
+    fullName: 'Clienta',
+    phoneE164: '',
+    email: null,
+    birthday: null,
+    notes: '',
+    noShowCount: 0,
+    createdAt: booking.createdAt,
+    updatedAt: booking.updatedAt,
+  };
+}
+
 function hydrateBookingFromSnapshot(
   db: DemoDatabase,
   booking: Booking,
 ): BookingWithRelations {
   const service =
     db.services.find((s) => s.id === booking.serviceId) ??
-    db.services[0] ?? {
-      id: booking.serviceId,
-      categoryId: null,
-      name: 'Servicio',
-      slug: 'servicio',
-      description: '',
-      durationMinutes: booking.totalDurationMinutes,
-      priceCents: booking.subtotalCents,
-      bufferBeforeMinutes: 0,
-      bufferAfterMinutes: 0,
-      requiresConfirmation: false,
-      depositRequired: false,
-      depositAmountCents: booking.depositAmountCents,
-      allowInspoPhoto: false,
-      isActive: true,
-      isFeatured: false,
-      displayOrder: 0,
-      imageUrl: null,
-    };
+    db.services[0] ??
+    buildFallbackServiceForBooking(booking);
   const staff =
     db.staff.find((s) => s.id === booking.staffId) ??
-    db.staff[0] ?? {
-      id: booking.staffId,
-      name: 'Profesional',
-      roleTitle: 'Nail Artist',
-      bio: '',
-      avatarUrl: null,
-      bookingSlug: 'especialista',
-      commissionPercent: db.settings.defaultCommissionPercent,
-      isActive: true,
-      displayOrder: 0,
-      serviceIds: [],
-    };
+    db.staff[0] ??
+    buildFallbackStaffForBooking(booking, db.settings.defaultCommissionPercent);
   const client =
-    db.clients.find((c) => c.id === booking.clientId) ?? {
-      id: booking.clientId,
-      fullName: 'Clienta',
-      phoneE164: '',
-      email: null,
-      birthday: null,
-      notes: '',
-      noShowCount: 0,
-      createdAt: booking.createdAt,
-      updatedAt: booking.updatedAt,
-    };
+    db.clients.find((c) => c.id === booking.clientId) ??
+    buildFallbackClientForBooking(booking);
   const review = db.reviews.find((r) => r.bookingId === booking.id) ?? null;
   return { ...booking, service, staff, client, review };
 }
@@ -1752,13 +1822,52 @@ export function createSupabaseRepository(
     return { valid: true, coupon, discountCents };
   }
 
+  async function hydrateBookingRowTargeted(
+    bookingRow: Tables['bookings']['Row'],
+  ): Promise<BookingWithRelations> {
+    const supabase = getClient();
+    const [
+      bookingAddonsRes,
+      serviceRes,
+      staffRes,
+      staffServicesRes,
+      clientRes,
+      reviewRes,
+    ] = await Promise.all([
+      supabase.from('booking_addons').select('*').eq('booking_id', bookingRow.id),
+      supabase.from('services').select('*').eq('id', bookingRow.service_id).maybeSingle(),
+      supabase.from('staff_members').select('*').eq('id', bookingRow.staff_id).maybeSingle(),
+      supabase.from('staff_services').select('*').eq('staff_id', bookingRow.staff_id),
+      supabase.from('clients').select('*').eq('id', bookingRow.client_id).maybeSingle(),
+      supabase.from('booking_reviews').select('*').eq('booking_id', bookingRow.id).maybeSingle(),
+    ]);
+
+    const booking = mapBookingRow(bookingRow, bookingAddonsRes.data ?? []);
+    const service = serviceRes.data
+      ? mapServiceRow(serviceRes.data)
+      : buildFallbackServiceForBooking(booking);
+    const staff = staffRes.data
+      ? mapStaffRow(staffRes.data, staffServicesRes.data ?? [])
+      : buildFallbackStaffForBooking(booking);
+    const client = clientRes.data
+      ? mapClientRow(clientRes.data)
+      : buildFallbackClientForBooking(booking);
+    const review = reviewRes.data ? mapReviewRow(reviewRes.data) : null;
+
+    return { ...booking, service, staff, client, review };
+  }
+
   async function getBookingByIdHydrated(bookingId: string): Promise<BookingWithRelations> {
-    const snapshot = await getSnapshot();
-    const found = snapshot.bookings.find((b) => b.id === bookingId);
-    if (!found) {
+    const supabase = getClient();
+    const bookingRes = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .maybeSingle();
+    if (!bookingRes.data) {
       throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
     }
-    return hydrateBookingFromSnapshot(snapshot, found);
+    return hydrateBookingRowTargeted(bookingRes.data);
   }
 
   return {
@@ -1835,9 +1944,16 @@ export function createSupabaseRepository(
     },
 
     async getBookingByToken(token: string): Promise<BookingWithRelations | null> {
-      const snapshot = await getSnapshot();
-      const found = snapshot.bookings.find((b) => b.manageToken === token);
-      return found ? hydrateBookingFromSnapshot(snapshot, found) : null;
+      const supabase = getClient();
+      const bookingRes = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('manage_token', token)
+        .maybeSingle();
+      if (!bookingRes.data) {
+        return null;
+      }
+      return hydrateBookingRowTargeted(bookingRes.data);
     },
 
     async queryAvailability(
@@ -2065,6 +2181,7 @@ export function createSupabaseRepository(
         .maybeSingle();
 
       let clientId: string;
+      let clientProfile: ClientProfile;
       if (existingClientRes.data) {
         clientId = existingClientRes.data.id;
         const clientPatch: Tables['clients']['Update'] = {
@@ -2077,6 +2194,20 @@ export function createSupabaseRepository(
           clientPatch.instagram_handle = normalizedInstagram;
         }
         await supabase.from('clients').update(clientPatch).eq('id', clientId);
+        clientProfile = mapClientRow({
+          ...existingClientRes.data,
+          full_name: clientPatch.full_name ?? existingClientRes.data.full_name,
+          email: clientPatch.email !== undefined ? clientPatch.email : existingClientRes.data.email,
+          instagram_handle:
+            clientPatch.instagram_handle !== undefined
+              ? clientPatch.instagram_handle
+              : existingClientRes.data.instagram_handle,
+          birthday:
+            clientPatch.birthday !== undefined
+              ? clientPatch.birthday
+              : existingClientRes.data.birthday,
+          updated_at: nowIso,
+        });
       } else {
         const insertedClient = await supabase
           .from('clients')
@@ -2089,7 +2220,7 @@ export function createSupabaseRepository(
             notes: '',
             no_show_count: 0,
           })
-          .select('id')
+          .select('*')
           .single();
         if (insertedClient.error || !insertedClient.data) {
           throw new PolicyError(
@@ -2098,6 +2229,7 @@ export function createSupabaseRepository(
           );
         }
         clientId = insertedClient.data.id;
+        clientProfile = mapClientRow(insertedClient.data);
       }
 
       const needsManualConfirm =
@@ -2311,46 +2443,69 @@ export function createSupabaseRepository(
         });
       }
 
-      const snapshot = await getSnapshot();
-      const createdBooking = snapshot.bookings.find((b) => b.id === createdBookingId);
-      if (!createdBooking) {
+      const [createdBookingRes, createdAddonsRes, workflowsRes] = await Promise.all([
+        supabase.from('bookings').select('*').eq('id', createdBookingId).maybeSingle(),
+        supabase.from('booking_addons').select('*').eq('booking_id', createdBookingId),
+        supabase.from('notification_workflows').select('*').eq('is_enabled', true),
+      ]);
+
+      if (!createdBookingRes.data) {
         throw new PolicyError('BOOKING_NOT_FOUND', 'No se encontró la cita creada.');
       }
-      const hydrated = hydrateBookingFromSnapshot(snapshot, createdBooking);
-      const connection = snapshot.calendarConnections.find(
+
+      const createdBooking = mapBookingRow(
+        createdBookingRes.data,
+        createdAddonsRes.data ?? [],
+      );
+      const staffMember =
+        ctx.staffMembers.find((member) => member.id === createdBooking.staffId) ??
+        buildFallbackStaffForBooking(createdBooking, settings.defaultCommissionPercent);
+      const hydrated: BookingWithRelations = {
+        ...createdBooking,
+        service,
+        staff: staffMember,
+        client: clientProfile,
+        review: null,
+      };
+      const connection = ctx.calendarConnections.find(
         (c) => c.staffId === hydrated.staffId && c.isConnected,
       );
-
-      await dispatchOutboxEvent({
-        type: 'SyncCalendar',
-        booking: hydrated,
-        connection,
-        settings: snapshot.settings,
-        action: 'create',
-        onSynced: async (googleEventId) => {
-          if (!googleEventId) return;
-          hydrated.googleEventId = googleEventId;
-          await supabase
-            .from('bookings')
-            .update({ google_event_id: googleEventId })
-            .eq('id', hydrated.id);
-        },
-      });
-
-      await dispatchOutboxEvent({
-        type: 'Notify',
-        booking: hydrated,
-        workflows: snapshot.workflows,
-        settings: snapshot.settings,
-        trigger: 'booking_created',
-        onLogs: persistScheduledNotifications,
-      });
+      const enabledWorkflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
 
       await dispatchOutboxEvent({
         type: 'Realtime',
         eventType: 'slot_changed',
         payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
       });
+
+      const postCommitTask = (async () => {
+        await dispatchOutboxEvent({
+          type: 'SyncCalendar',
+          booking: hydrated,
+          connection,
+          settings,
+          action: 'create',
+          onSynced: async (googleEventId) => {
+            if (!googleEventId) return;
+            hydrated.googleEventId = googleEventId;
+            await supabase
+              .from('bookings')
+              .update({ google_event_id: googleEventId })
+              .eq('id', hydrated.id);
+          },
+        });
+
+        await dispatchOutboxEvent({
+          type: 'Notify',
+          booking: hydrated,
+          workflows: enabledWorkflows,
+          settings,
+          trigger: 'booking_created',
+          onLogs: persistScheduledNotifications,
+        });
+      })();
+
+      await runPostCommitSideEffects(postCommitTask);
 
       return hydrated;
     },
@@ -4605,4 +4760,46 @@ export function createSupabaseRepository(
       };
     },
   };
+}
+
+export async function fetchSupabaseServicesByIds(
+  serviceIds: readonly string[],
+  clientOverride?: SupabaseClient<Database>,
+): Promise<Service[]> {
+  const uniqueIds = Array.from(
+    new Set(serviceIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+  );
+  if (uniqueIds.length === 0) return [];
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const { data } = await supabase.from('services').select('*').in('id', uniqueIds);
+  return (data ?? []).map(mapServiceRow);
+}
+
+export async function fetchSupabaseClientLoyaltySummary(
+  clientId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<PublicLoyaltySummaryDTO | null> {
+  const cleanClientId = clientId.trim();
+  if (!cleanClientId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const [programsRes, stampsRes] = await Promise.all([
+    supabase.from('loyalty_programs').select('*').eq('is_active', true),
+    supabase.from('loyalty_stamps').select('*').eq('client_id', cleanClientId),
+  ]);
+  const activeProgramRow = (programsRes.data ?? [])[0] ?? null;
+  if (!activeProgramRow) return null;
+  const activeProgram = mapLoyaltyProgramRow(activeProgramRow);
+  const stamps = (stampsRes.data ?? []).map(mapLoyaltyStampRow);
+  let rewardServiceName: string | null = null;
+  if (activeProgram.rewardServiceId) {
+    const rewardRes = await supabase
+      .from('services')
+      .select('name')
+      .eq('id', activeProgram.rewardServiceId)
+      .maybeSingle();
+    rewardServiceName = rewardRes.data?.name ?? null;
+  }
+  return PublicLoyaltySummarySchema.parse(
+    computeClientLoyaltySummary(activeProgram, stamps, cleanClientId, rewardServiceName),
+  );
 }

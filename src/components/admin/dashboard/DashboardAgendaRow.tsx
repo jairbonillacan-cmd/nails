@@ -110,13 +110,9 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
         </Text>
       </VStack>
 
-      <Text className="ad-bar" data-idx={String(colorIdx)} aria-hidden="true">
-        {'\u200B'}
-      </Text>
-
-      <HStack gap={2} align="center" className="ad-row-info">
-        <Avatar name={booking.client.fullName} size={24} tooltip={false} />
-        <VStack gap={0} className="rb-grow">
+      <HStack gap={3} align="center" className="ad-row-info">
+        <Avatar name={booking.client.fullName} size={32} tooltip={false} />
+        <VStack gap={0.5} className="rb-grow">
           <HStack gap={2} align="center" wrap="wrap">
             <Text weight="semibold" size="base" maxLines={1}>
               {booking.client.fullName}
@@ -125,9 +121,14 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
               {booking.bookingCode}
             </Text>
           </HStack>
-          <Text type="supporting" color="secondary" maxLines={1}>
-            {booking.service.name} · {booking.staff.name.split(' ')[0]}
-          </Text>
+          <HStack gap={1.5} align="center" className="ad-row-sub">
+            <Text className="ad-dot" data-idx={String(colorIdx)} aria-hidden="true">
+              {'\u200B'}
+            </Text>
+            <Text type="supporting" color="secondary" maxLines={1}>
+              {booking.service.name} · {booking.staff.name.split(' ')[0]}
+            </Text>
+          </HStack>
         </VStack>
       </HStack>
 

@@ -13,6 +13,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import {
@@ -136,233 +137,251 @@ export function ClientProfileDialog({
   };
 
   return (
-    <Dialog isOpen={Boolean(client)} onOpenChange={handleOpenChange} width={540} padding={5}>
-      <DialogHeader title="Ficha de clienta" onOpenChange={handleOpenChange} />
-      {client ? (
-        <VStack gap={4} paddingBlockStart={3} className="fx-sheet-in">
-          <HStack className="ad-contact-head" justify="between" align="center" wrap="wrap" gap={3}>
-            <HStack gap={3} align="center" className="rb-grow">
-              <Avatar name={client.fullName} size="lg" />
-              <VStack gap={0.5} className="rb-grow">
-                <Heading level={3} className="lk-serif ad-h3">
-                  {client.fullName}
-                </Heading>
-                <Text type="supporting" color="secondary" hasTabularNumbers>
-                  {formatPhoneDisplay(client.phoneE164)}
-                </Text>
-                <HStack gap={2} wrap="wrap" align="center">
-                  {client.instagramHandle ? (
-                    <Link
-                      href={formatInstagramUrl(client.instagramHandle)}
-                      isExternalLink
-                      type="supporting"
-                    >
-                      {formatInstagramDisplay(client.instagramHandle)}
-                    </Link>
-                  ) : null}
-                  <StatusTag
-                    tone="neutral"
-                    hasTabularNumbers
-                    label={`${nonCanceledCount} ${nonCanceledCount === 1 ? 'visita' : 'visitas'}`}
+    <Dialog
+      isOpen={Boolean(client)}
+      onOpenChange={handleOpenChange}
+      width={560}
+      maxHeight="min(92dvh, calc(100dvh - 2rem))"
+      padding={5}
+    >
+      <Layout
+        header={
+          <DialogHeader
+            title="Ficha de clienta"
+            hasDivider
+            onOpenChange={handleOpenChange}
+          />
+        }
+        content={
+          <LayoutContent>
+            {client ? (
+              <VStack gap={4}>
+                <HStack className="ad-contact-head" justify="between" align="center" wrap="wrap" gap={3}>
+                  <HStack gap={3} align="center" className="rb-grow">
+                    <Avatar name={client.fullName} size="lg" />
+                    <VStack gap={0.5} className="rb-grow">
+                      <Heading level={3} className="lk-serif ad-h3">
+                        {client.fullName}
+                      </Heading>
+                      <Text type="supporting" color="secondary" hasTabularNumbers>
+                        {formatPhoneDisplay(client.phoneE164)}
+                      </Text>
+                      <HStack gap={2} wrap="wrap" align="center">
+                        {client.instagramHandle ? (
+                          <Link
+                            href={formatInstagramUrl(client.instagramHandle)}
+                            isExternalLink
+                            type="supporting"
+                          >
+                            {formatInstagramDisplay(client.instagramHandle)}
+                          </Link>
+                        ) : null}
+                        <StatusTag
+                          tone="neutral"
+                          hasTabularNumbers
+                          label={`${nonCanceledCount} ${nonCanceledCount === 1 ? 'visita' : 'visitas'}`}
+                        />
+                        {noShowStats && noShowStats.noShowCount > 0 ? (
+                          <StatusTag
+                            tone={noShowStats.noShowCount >= noShowThreshold ? 'warning' : 'neutral'}
+                            hasTabularNumbers
+                            label={`Faltó ${noShowStats.noShowCount} ${noShowStats.noShowCount === 1 ? 'vez' : 'veces'}`}
+                          />
+                        ) : null}
+                      </HStack>
+                    </VStack>
+                  </HStack>
+
+                  <Button
+                    label="WhatsApp"
+                    variant="primary"
+                    size="sm"
+                    icon={<MessageCircle size={14} aria-hidden="true" />}
+                    href={buildWhatsAppLink(
+                      client.phoneE164,
+                      `Hola ${client.fullName}, te saludamos de ${salonName}!`,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
                   />
-                  {noShowStats && noShowStats.noShowCount > 0 ? (
-                    <StatusTag
-                      tone={noShowStats.noShowCount >= noShowThreshold ? 'warning' : 'neutral'}
-                      hasTabularNumbers
-                      label={`Faltó ${noShowStats.noShowCount} ${noShowStats.noShowCount === 1 ? 'vez' : 'veces'}`}
+                </HStack>
+
+                {editError ? <Banner status="error" role="alert" title={editError} /> : null}
+                {packageNotice ? (
+                  <Banner
+                    status={packageNotice.status}
+                    role={packageNotice.status === 'error' ? 'alert' : 'status'}
+                    title={packageNotice.title}
+                    isDismissable={Boolean(onDismissPackageNotice)}
+                    onDismiss={onDismissPackageNotice}
+                  />
+                ) : null}
+
+                {(noShowStats?.noShowCount ?? client.noShowCount) >= noShowThreshold ? (
+                  <SurfaceCard tone="warning" padded>
+                    <HStack gap={2} align="center">
+                      <AlertTriangle size={15} aria-hidden="true" />
+                      <Text type="supporting" weight="semibold" hasTabularNumbers>
+                        {noShowStats?.noShowCount ?? client.noShowCount} inasistencias registradas
+                        {noShowStats && noShowStats.evaluatedCount > 0
+                          ? ` (${noShowStats.ratePercent}% de inasistencias)`
+                          : ''}{' '}
+                        · Al agendar se le solicita anticipo para apartar su lugar.
+                      </Text>
+                    </HStack>
+                  </SurfaceCard>
+                ) : null}
+
+                {loyalty ? (
+                  <SurfaceCard tone={loyalty.isRewardReady ? 'accent' : 'subtle'} padded>
+                    <VStack gap={2}>
+                      <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                        <HStack gap={1.5} align="center">
+                          <Award size={15} aria-hidden="true" />
+                          <Text weight="semibold">{loyalty.programName}</Text>
+                        </HStack>
+                        <StatusTag
+                          tone={loyalty.isRewardReady ? 'success' : 'accent'}
+                          hasTabularNumbers
+                          label={`${loyalty.currentStamps}/${loyalty.stampsRequired} sellos`}
+                        />
+                      </HStack>
+                      <ProgressBar
+                        label="Progreso de sellos"
+                        isLabelHidden
+                        value={loyalty.currentStamps}
+                        max={loyalty.stampsRequired}
+                        variant={loyalty.isRewardReady ? 'success' : 'accent'}
+                      />
+                      <Text type="supporting" color="secondary">
+                        {loyalty.isRewardReady
+                          ? `¡Premio listo para canjear! (${loyalty.rewardLabel})`
+                          : `Le ${loyalty.remainingForReward === 1 ? 'falta 1 visita' : `faltan ${loyalty.remainingForReward} visitas`} para: ${loyalty.rewardLabel}`}
+                      </Text>
+                    </VStack>
+                  </SurfaceCard>
+                ) : null}
+
+                <ClientProfilePackagesSection
+                  clientId={client.id}
+                  canManageClients={canManageClients}
+                  clientPackages={clientPackages}
+                  activeCatalogPackages={activeCatalogPackages}
+                  assigningPkg={assigningPkg}
+                  redeemingPkgId={redeemingPkgId}
+                  cancelingPkgId={cancelingPkgId}
+                  onAssignPackage={onAssignPackage}
+                  onRedeemPackageSession={onRedeemPackageSession}
+                  onCancelPackage={onCancelPackage}
+                />
+
+                {clientVisits.length > 0 ? (
+                  <SurfaceCard
+                    title="Últimas visitas"
+                    headingLevel={3}
+                    icon={<Calendar size={15} aria-hidden="true" />}
+                    count={Math.min(5, clientVisits.length)}
+                  >
+                    <VStack className="ad-row-list" gap={0}>
+                      {clientVisits.slice(0, 5).map((visit) => (
+                        <ActionRow
+                          key={visit.id}
+                          title={visit.service.name}
+                          subtitle={`${formatDateShortInTimezone(visit.startAt, tz)} · ${formatTimeInTimezone(visit.startAt, tz)} con ${visit.staff.name}`}
+                          status={
+                            <BookingStatusTag
+                              status={visit.status}
+                              hasPaymentProof={Boolean(visit.paymentProofUrl)}
+                            />
+                          }
+                        />
+                      ))}
+                    </VStack>
+                  </SurfaceCard>
+                ) : null}
+
+                <VStack gap={3}>
+                  <TextInput
+                    label="Instagram (@usuario)"
+                    placeholder="@usuario"
+                    value={instagramDraft}
+                    onChange={setInstagramDraft}
+                    isDisabled={!canManageClients}
+                    isOptional
+                  />
+                  <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+                    <TextInput
+                      label="Correo electrónico"
+                      type="email"
+                      value={emailDraft}
+                      onChange={setEmailDraft}
+                      isDisabled={!canManageClients}
+                      isOptional
+                    />
+                    <TextInput
+                      label="Cumpleaños"
+                      placeholder="Ejemplo: 1997-08-15 (año-mes-día)"
+                      value={birthdayDraft}
+                      onChange={setBirthdayDraft}
+                      isDisabled={!canManageClients}
+                      isOptional
+                    />
+                  </Grid>
+                  <TextArea
+                    label="Notas y preferencias (alergias, largo, forma o tono favorito)"
+                    placeholder="Ejemplo: Almendra corta, base milky nude, sensibilidad a acetona…"
+                    value={notesDraft}
+                    onChange={setNotesDraft}
+                    isDisabled={!canManageClients}
+                    rows={3}
+                  />
+                  {canManageClients ? (
+                    <Button
+                      type="button"
+                      label="Guardar ficha"
+                      variant="primary"
+                      width="100%"
+                      isLoading={savingEdit}
+                      onClick={() => void handleSave()}
                     />
                   ) : null}
-                </HStack>
-              </VStack>
-            </HStack>
+                </VStack>
 
-            <Button
-              label="WhatsApp"
-              variant="primary"
-              size="sm"
-              icon={<MessageCircle size={14} aria-hidden="true" />}
-              href={buildWhatsAppLink(
-                client.phoneE164,
-                `Hola ${client.fullName}, te saludamos de ${salonName}!`,
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-            />
-          </HStack>
-
-          {editError ? <Banner status="error" role="alert" title={editError} /> : null}
-          {packageNotice ? (
-            <Banner
-              status={packageNotice.status}
-              role={packageNotice.status === 'error' ? 'alert' : 'status'}
-              title={packageNotice.title}
-              isDismissable={Boolean(onDismissPackageNotice)}
-              onDismiss={onDismissPackageNotice}
-            />
-          ) : null}
-
-          {(noShowStats?.noShowCount ?? client.noShowCount) >= noShowThreshold ? (
-            <SurfaceCard tone="warning" padded>
-              <HStack gap={2} align="center">
-                <AlertTriangle size={15} aria-hidden="true" />
-                <Text type="supporting" weight="semibold" hasTabularNumbers>
-                  {noShowStats?.noShowCount ?? client.noShowCount} inasistencias registradas
-                  {noShowStats && noShowStats.evaluatedCount > 0
-                    ? ` (${noShowStats.ratePercent}% de inasistencias)`
-                    : ''}{' '}
-                  · Al agendar se le solicita anticipo para apartar su lugar.
-                </Text>
-              </HStack>
-            </SurfaceCard>
-          ) : null}
-
-          {loyalty ? (
-            <SurfaceCard tone={loyalty.isRewardReady ? 'accent' : 'subtle'} padded>
-              <VStack gap={2}>
-                <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <HStack gap={1.5} align="center">
-                    <Award size={15} aria-hidden="true" />
-                    <Text weight="semibold">{loyalty.programName}</Text>
-                  </HStack>
-                  <StatusTag
-                    tone={loyalty.isRewardReady ? 'success' : 'accent'}
-                    hasTabularNumbers
-                    label={`${loyalty.currentStamps}/${loyalty.stampsRequired} sellos`}
-                  />
-                </HStack>
-                <ProgressBar
-                  label="Progreso de sellos"
-                  isLabelHidden
-                  value={loyalty.currentStamps}
-                  max={loyalty.stampsRequired}
-                  variant={loyalty.isRewardReady ? 'success' : 'accent'}
-                />
-                <Text type="supporting" color="secondary">
-                  {loyalty.isRewardReady
-                    ? `¡Premio listo para canjear! (${loyalty.rewardLabel})`
-                    : `Le ${loyalty.remainingForReward === 1 ? 'falta 1 visita' : `faltan ${loyalty.remainingForReward} visitas`} para: ${loyalty.rewardLabel}`}
-                </Text>
-              </VStack>
-            </SurfaceCard>
-          ) : null}
-
-          <ClientProfilePackagesSection
-            clientId={client.id}
-            canManageClients={canManageClients}
-            clientPackages={clientPackages}
-            activeCatalogPackages={activeCatalogPackages}
-            assigningPkg={assigningPkg}
-            redeemingPkgId={redeemingPkgId}
-            cancelingPkgId={cancelingPkgId}
-            onAssignPackage={onAssignPackage}
-            onRedeemPackageSession={onRedeemPackageSession}
-            onCancelPackage={onCancelPackage}
-          />
-
-          {clientVisits.length > 0 ? (
-            <SurfaceCard
-              title="Últimas visitas"
-              headingLevel={3}
-              icon={<Calendar size={15} aria-hidden="true" />}
-              count={Math.min(5, clientVisits.length)}
-            >
-              <VStack className="ad-row-list" gap={0}>
-                {clientVisits.slice(0, 5).map((visit) => (
-                  <ActionRow
-                    key={visit.id}
-                    title={visit.service.name}
-                    subtitle={`${formatDateShortInTimezone(visit.startAt, tz)} · ${formatTimeInTimezone(visit.startAt, tz)} con ${visit.staff.name}`}
-                    status={
-                      <BookingStatusTag
-                        status={visit.status}
-                        hasPaymentProof={Boolean(visit.paymentProofUrl)}
-                      />
+                {canManageClients ? (
+                  <Collapsible
+                    className="ad-disclosure"
+                    defaultIsOpen={false}
+                    trigger={
+                      <HStack gap={2} align="center">
+                        <Shield size={15} aria-hidden="true" />
+                        <Text weight="semibold" size="sm">
+                          Privacidad
+                        </Text>
+                      </HStack>
                     }
-                  />
-                ))}
+                  >
+                    <VStack gap={2} paddingBlockStart={2}>
+                      <Text type="supporting" color="secondary">
+                        Descarga una copia del expediente de esta clienta con sus datos y citas (sin tus
+                        notas privadas del salón).
+                      </Text>
+                      <HStack justify="start">
+                        <Button
+                          label="Descargar expediente"
+                          variant="secondary"
+                          size="sm"
+                          icon={<Download size={14} aria-hidden="true" />}
+                          href={`/api/admin/clients?exportClientId=${encodeURIComponent(client.id)}`}
+                        />
+                      </HStack>
+                    </VStack>
+                  </Collapsible>
+                ) : null}
               </VStack>
-            </SurfaceCard>
-          ) : null}
-
-          <VStack gap={3}>
-            <TextInput
-              label="Instagram (@usuario)"
-              placeholder="@usuario"
-              value={instagramDraft}
-              onChange={setInstagramDraft}
-              isDisabled={!canManageClients}
-              isOptional
-            />
-            <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
-              <TextInput
-                label="Correo electrónico"
-                type="email"
-                value={emailDraft}
-                onChange={setEmailDraft}
-                isDisabled={!canManageClients}
-                isOptional
-              />
-              <TextInput
-                label="Cumpleaños"
-                placeholder="Ejemplo: 1997-08-15 (año-mes-día)"
-                value={birthdayDraft}
-                onChange={setBirthdayDraft}
-                isDisabled={!canManageClients}
-                isOptional
-              />
-            </Grid>
-            <TextArea
-              label="Notas y preferencias (alergias, largo, forma o tono favorito)"
-              placeholder="Ejemplo: Almendra corta, base milky nude, sensibilidad a acetona…"
-              value={notesDraft}
-              onChange={setNotesDraft}
-              isDisabled={!canManageClients}
-              rows={3}
-            />
-            {canManageClients ? (
-              <Button
-                type="button"
-                label="Guardar ficha"
-                variant="primary"
-                width="100%"
-                isLoading={savingEdit}
-                onClick={() => void handleSave()}
-              />
             ) : null}
-          </VStack>
-
-          {canManageClients ? (
-            <Collapsible
-              className="ad-disclosure"
-              defaultIsOpen={false}
-              trigger={
-                <HStack gap={2} align="center">
-                  <Shield size={15} aria-hidden="true" />
-                  <Text weight="semibold" size="sm">
-                    Privacidad
-                  </Text>
-                </HStack>
-              }
-            >
-              <VStack gap={2} paddingBlockStart={2}>
-                <Text type="supporting" color="secondary">
-                  Descarga una copia del expediente de esta clienta con sus datos y citas (sin tus
-                  notas privadas del salón).
-                </Text>
-                <HStack justify="start">
-                  <Button
-                    label="Descargar expediente"
-                    variant="secondary"
-                    size="sm"
-                    icon={<Download size={14} aria-hidden="true" />}
-                    href={`/api/admin/clients?exportClientId=${encodeURIComponent(client.id)}`}
-                  />
-                </HStack>
-              </VStack>
-            </Collapsible>
-          ) : null}
-        </VStack>
-      ) : null}
+          </LayoutContent>
+        }
+      />
     </Dialog>
   );
 }

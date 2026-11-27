@@ -219,6 +219,8 @@ export function BookingStepRouter({
       <StaffStep
         timezone={timezone}
         timeFormat={selection.timeFormat}
+        currency={settings.currency}
+        services={services}
         slot={flow.selectedSlot}
         eligibleStaff={selection.eligibleStaff}
         allStaff={staff}

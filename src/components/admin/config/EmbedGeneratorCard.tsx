@@ -9,6 +9,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Selector } from '@astryxdesign/core/Selector';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { ExternalLink, Eye, Globe, Sparkles } from 'lucide-react';
 import {
   CopyableField,
@@ -254,35 +255,54 @@ export function EmbedGeneratorCard({
         />
       </VStack>
 
-      <Dialog isOpen={previewOpen} onOpenChange={setPreviewOpen} width={520} padding={5}>
-        <DialogHeader
-          title={`Vista previa · ${MODE_COPY[mode].dialogTitle}`}
-          subtitle="Así verán tu agenda las clientas que entren desde otra página web."
-          onOpenChange={setPreviewOpen}
-        />
-        <VStack gap={3} paddingBlockStart={4} className="fx-sheet-in">
-          <SurfaceCard
-            tone="subtle"
-            padded
-            title={salonName}
-            subtitle="Vista compacta de reservas"
-            headingLevel={3}
-            badge={<StatusTag label="Activa" tone="success" showDot />}
-          >
-            <VStack gap={3}>
-              <VStack className="ad-subpanel" gap={1.5}>
-                <Text type="supporting" weight="semibold">
-                  {selectedService
-                    ? `Servicio seleccionado: ${selectedService.name}`
-                    : 'Paso 1 · Elegir servicio del catálogo'}
-                </Text>
-                <Text type="supporting" color="secondary">
-                  {selectedStaff
-                    ? `Horarios de ${selectedStaff.name}`
-                    : 'Horarios en tiempo real de todo el equipo'}
-                </Text>
-                <CopyableField value={compactBookingUrl} copyLabel="Copiar enlace" copiedLabel="Copiado" monospace />
+      <Dialog
+        isOpen={previewOpen}
+        onOpenChange={setPreviewOpen}
+        width={520}
+        maxHeight="min(90dvh, calc(100dvh - 2rem))"
+        padding={5}
+      >
+        <Layout
+          header={
+            <DialogHeader
+              title={`Vista previa · ${MODE_COPY[mode].dialogTitle}`}
+              subtitle="Así verán tu agenda las clientas que entren desde otra página web."
+              hasDivider
+              onOpenChange={setPreviewOpen}
+            />
+          }
+          content={
+            <LayoutContent>
+              <VStack gap={3}>
+                <SurfaceCard
+                  tone="subtle"
+                  padded
+                  title={salonName}
+                  subtitle="Vista compacta de reservas"
+                  headingLevel={3}
+                  badge={<StatusTag label="Activa" tone="success" showDot />}
+                >
+                  <VStack gap={3}>
+                    <VStack className="ad-subpanel" gap={1.5}>
+                      <Text type="supporting" weight="semibold">
+                        {selectedService
+                          ? `Servicio seleccionado: ${selectedService.name}`
+                          : 'Paso 1 · Elegir servicio del catálogo'}
+                      </Text>
+                      <Text type="supporting" color="secondary">
+                        {selectedStaff
+                          ? `Horarios de ${selectedStaff.name}`
+                          : 'Horarios en tiempo real de todo el equipo'}
+                      </Text>
+                      <CopyableField value={compactBookingUrl} copyLabel="Copiar enlace" copiedLabel="Copiado" monospace />
+                    </VStack>
+                  </VStack>
+                </SurfaceCard>
               </VStack>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
               <HStack gap={2} wrap="wrap" justify="end">
                 <Button type="button" label="Cerrar" variant="ghost" size="sm" onClick={() => setPreviewOpen(false)} />
                 <Button
@@ -295,9 +315,9 @@ export function EmbedGeneratorCard({
                   rel="noopener noreferrer"
                 />
               </HStack>
-            </VStack>
-          </SurfaceCard>
-        </VStack>
+            </LayoutFooter>
+          }
+        />
       </Dialog>
     </SurfaceCard>
   );

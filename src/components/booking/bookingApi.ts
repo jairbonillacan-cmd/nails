@@ -158,6 +158,27 @@ function parseActiveBookings(raw: unknown): ActiveBookingSummary[] {
   return items;
 }
 
+const BOOKING_SUBMIT_TIMEOUT_MS = 25_000;
+
+function createSubmitAbortSignal(): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(BOOKING_SUBMIT_TIMEOUT_MS);
+  }
+  return undefined;
+}
+
+function isAbortOrTimeoutError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return err.name === 'AbortError' || err.name === 'TimeoutError';
+  }
+  return false;
+}
+
+function isValidManageUrl(url: string): boolean {
+  const trimmed = url.trim();
+  return trimmed.startsWith('/cita/') && trimmed.length > '/cita/'.length;
+}
+
 export async function submitBookingRequest(
   idempotencyKey: string,
   payload: {
@@ -192,22 +213,63 @@ export async function submitBookingRequest(
       activeBookings?: ActiveBookingSummary[];
     }
 > {
-  const res = await fetch('/api/bookings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Idempotency-Key': idempotencyKey,
-    },
-    body: JSON.stringify(payload),
-  });
-  const data = (await res.json()) as {
+  let res: Response;
+  try {
+    res = await fetch('/api/bookings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+      signal: createSubmitAbortSignal(),
+    });
+  } catch (err) {
+    if (isAbortOrTimeoutError(err)) {
+      return {
+        kind: 'error',
+        code: 'REQUEST_TIMEOUT',
+        error:
+          'La solicitud tardó demasiado en responder. Revisa tu conexión o consulta «Mis citas» antes de intentar de nuevo.',
+      };
+    }
+    return {
+      kind: 'error',
+      code: 'NETWORK_ERROR',
+      error: 'Error de conexión. Revisa tu internet e intenta nuevamente.',
+    };
+  }
+
+  let data: {
     code?: string;
     error?: string;
     suggestedSlots?: AvailableSlot[];
     activeBookings?: unknown;
     manageUrl?: string;
     booking?: { manageToken?: string };
-  };
+  } | null = null;
+  try {
+    data = (await res.json()) as {
+      code?: string;
+      error?: string;
+      suggestedSlots?: AvailableSlot[];
+      activeBookings?: unknown;
+      manageUrl?: string;
+      booking?: { manageToken?: string };
+    };
+  } catch {
+    data = null;
+  }
+
+  if (!data) {
+    return {
+      kind: 'error',
+      code: res.ok ? 'INVALID_RESPONSE' : `HTTP_${res.status}`,
+      error:
+        'El servidor tardó demasiado o devolvió una respuesta inesperada. Intenta nuevamente en unos segundos.',
+    };
+  }
+
   if (res.status === 409 && data.code === 'SLOT_TAKEN') {
     return {
       kind: 'conflict',
@@ -243,8 +305,18 @@ export async function submitBookingRequest(
       error: data.error || 'No se pudo completar la cita. Revisa tus datos.',
     };
   }
+  const resolvedManageUrl =
+    data.manageUrl || (data.booking?.manageToken ? `/cita/${data.booking.manageToken}` : '');
+  if (!isValidManageUrl(resolvedManageUrl)) {
+    return {
+      kind: 'error',
+      code: 'MISSING_MANAGE_URL',
+      error:
+        'Tu cita se registró, pero no recibimos el enlace de seguimiento. Consúltala en «Mis citas».',
+    };
+  }
   return {
     kind: 'ok',
-    manageUrl: data.manageUrl || `/cita/${data.booking?.manageToken ?? ''}`,
+    manageUrl: resolvedManageUrl,
   };
 }

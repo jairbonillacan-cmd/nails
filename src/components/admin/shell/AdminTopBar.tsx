@@ -7,7 +7,6 @@ import { Divider } from '@astryxdesign/core/Divider';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Popover } from '@astryxdesign/core/Popover';
 import { Text } from '@astryxdesign/core/Text';
-import { Tooltip } from '@astryxdesign/core/Tooltip';
 import { VStack } from '@astryxdesign/core/VStack';
 import {
   Bell,
@@ -29,10 +28,8 @@ import type { AdminOverviewPayload } from '../AdminProvider';
 interface AdminTopBarProps {
   data: AdminOverviewPayload;
   brandLogo: string;
-  sidebarCollapsed: boolean;
   mobileMenuOpen: boolean;
   soundActive: boolean;
-  onToggleSidebar: () => void;
   onOpenMobileMenu: () => void;
   onOpenQuickSearch: () => void;
   onToggleMute: () => void;
@@ -41,10 +38,8 @@ interface AdminTopBarProps {
 export function AdminTopBar({
   data,
   brandLogo,
-  sidebarCollapsed,
   mobileMenuOpen,
   soundActive,
-  onToggleSidebar,
   onOpenMobileMenu,
   onOpenQuickSearch,
   onToggleMute,
@@ -123,22 +118,6 @@ export function AdminTopBar({
       gap={2}
     >
       <HStack gap={2} align="center" className="ad-topbar-left">
-        <Tooltip
-          content={sidebarCollapsed ? 'Expandir barra (Ctrl B)' : 'Retraer barra (Ctrl B)'}
-          placement="below"
-          hasHoverIndication={false}
-        >
-          <button
-            type="button"
-            className="ad-topbar-icon ad-topbar-toggle-d fx-press"
-            aria-label={sidebarCollapsed ? 'Expandir barra lateral' : 'Retraer barra lateral'}
-            aria-expanded={!sidebarCollapsed}
-            onClick={onToggleSidebar}
-          >
-            <PanelLeft size={17} strokeWidth={1.85} aria-hidden="true" />
-          </button>
-        </Tooltip>
-
         <button
           type="button"
           className="ad-topbar-icon ad-topbar-toggle-m ad-hide-s fx-press"

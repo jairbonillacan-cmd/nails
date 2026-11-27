@@ -6,7 +6,11 @@ import { dispatchOutboxEvent } from '../use-cases/outbox';
 import { createInitialDemoDatabase } from '../demo-seed';
 import type { Database } from './database.types';
 import { PolicyError, SlotConflictError } from './port';
-import { createSupabaseRepository } from './supabase-repo';
+import {
+  createSupabaseRepository,
+  fetchSupabaseClientLoyaltySummary,
+  fetchSupabaseServicesByIds,
+} from './supabase-repo';
 
 interface RecordedRequest {
   method: string;
@@ -2129,5 +2133,124 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
         name: 'No Existe',
       }),
     ).rejects.toMatchObject({ code: 'CATEGORY_UPDATE_FAILED' });
+  });
+
+  it('keeps createBookingAtomic, getBookingByToken, and targeted helpers within Cloudflare Workers subrequest budgets without full-DB snapshot scans', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-01', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-01', '11:00', TZ).toISOString();
+    const occEndAt = zonedDateTimeToUtc('2026-12-01', '11:15', TZ).toISOString();
+
+    const createdBookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-FAST01',
+      manage_token: 'tok-fast-123',
+      idempotency_key: 'idem-fast-1',
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: startAt,
+      end_at: endAt,
+      occupied_start_at: startAt,
+      occupied_end_at: occEndAt,
+      occupied_range: `[${startAt},${occEndAt})`,
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 0,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T13:00:00.000Z',
+      updated_at: '2026-12-01T13:00:00.000Z',
+    };
+
+    const { client, requests } = buildMockSupabase({
+      bookingsRows: [createdBookingRow],
+      loyaltyProgramsRows: [
+        {
+          id: PROGRAM_ID,
+          is_active: true,
+          name: 'Sellos LAIKONA',
+          stamps_required: 8,
+          reward_type: 'percent_discount',
+          reward_service_id: null,
+          discount_percent: 50,
+          max_discount_cents: 25000,
+          valid_days: 90,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      loyaltyStampsRows: [
+        {
+          id: STAMP_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          program_id: PROGRAM_ID,
+          stamped_date: '2026-12-01',
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      rpcHandlers: {
+        create_booking_atomic: () => ({ status: 200, data: BOOKING_ID }),
+      },
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'budget-check');
+    const repo = createSupabaseRepository(clock, client);
+
+    const created = await repo.createBookingAtomic({
+      serviceId: SERVICE_ID,
+      addonIds: [],
+      staffId: STAFF_ID,
+      startAt,
+      clientName: 'Sofía Ramírez',
+      clientPhone: '5511223344',
+      sessionToken: 'sess-budget-1',
+      holdId: HOLD_ID,
+      idempotencyKey: 'idem-fast-1',
+      privacyConsentAccepted: true,
+    });
+
+    expect(created.id).toBe(BOOKING_ID);
+    expect(created.manageToken).toBe('tok-fast-123');
+    expect(requests.length).toBeLessThanOrEqual(25);
+    const scannedPaths = new Set(requests.map((r) => r.path));
+    expect(scannedPaths.has('/rest/v1/audit_logs')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/funnel_events')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/inventory_items')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/cash_register_entries')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/gallery_items')).toBe(false);
+
+    const beforeTokenIdx = requests.length;
+    const byToken = await repo.getBookingByToken('tok-fast-123');
+    const tokenRequests = requests.slice(beforeTokenIdx);
+    expect(byToken?.id).toBe(BOOKING_ID);
+    expect(byToken?.service.id).toBe(SERVICE_ID);
+    expect(byToken?.staff.id).toBe(STAFF_ID);
+    expect(byToken?.client.id).toBe(CLIENT_ID);
+    expect(tokenRequests.length).toBeLessThanOrEqual(8);
+    expect(tokenRequests.some((r) => r.path === '/rest/v1/audit_logs')).toBe(false);
+
+    const beforeMissingIdx = requests.length;
+    const emptyMock = buildMockSupabase({ bookingsRows: [] });
+    const emptyRepo = createSupabaseRepository(clock, emptyMock.client);
+    expect(await emptyRepo.getBookingByToken('missing-token')).toBeNull();
+    expect(emptyMock.requests).toHaveLength(1);
+    expect(requests.length).toBe(beforeMissingIdx);
+
+    const beforeHelpersIdx = requests.length;
+    const fetchedServices = await fetchSupabaseServicesByIds([SERVICE_ID], client);
+    const loyalty = await fetchSupabaseClientLoyaltySummary(CLIENT_ID, client);
+    const helperRequests = requests.slice(beforeHelpersIdx);
+    expect(fetchedServices.map((s) => s.id)).toEqual([SERVICE_ID]);
+    expect(loyalty?.currentStamps).toBe(1);
+    expect(helperRequests.length).toBeLessThanOrEqual(4);
   });
 });

@@ -22,6 +22,7 @@ import type { ClientPortalProfile } from '@/lib/contracts';
 import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
+import { usePendingNavigationFallback } from '@/lib/hooks/useRouteProgress';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import { buildBookingBreadcrumbStructuredData } from '@/lib/seo/structured-data';
 import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
@@ -208,6 +209,13 @@ export function BookingWidget(props: BookingWidgetProps) {
     slot: flow.selectedSlot?.startAt ?? initialSlot ?? '',
   });
 
+  const isSubmittingOrConfirmed =
+    flow.phase === 'submitting' || flow.phase === 'confirmed';
+
+  usePendingNavigationFallback(
+    flow.phase === 'confirmed' ? flow.confirmedManageUrl : null,
+  );
+
   useRealtimeSubscription(
     useCallback(
       (evt) => {
@@ -217,10 +225,12 @@ export function BookingWidget(props: BookingWidgetProps) {
       },
       [invalidateFromRealtime, realtimePing],
     ),
+    undefined,
+    !isSubmittingOrConfirmed,
   );
 
   const holdRemainingSec = useCountdownTimer(
-    flow.holdExpiresAt,
+    isSubmittingOrConfirmed ? null : flow.holdExpiresAt,
     useCallback(() => {
       dispatch({
         type: 'HOLD_EXPIRED',
@@ -561,6 +571,25 @@ export function BookingWidget(props: BookingWidgetProps) {
               }}
             />
             </VStack>
+
+            {flow.phase === 'confirmed' && flow.confirmedManageUrl ? (
+              <VStack className="fx-fade-up">
+                <Banner
+                  status="success"
+                  role="status"
+                  title="¡Tu cita quedó apartada!"
+                  description="Te estamos llevando a tu enlace personal. Si tarda unos segundos, ábrelo directo aquí."
+                  endContent={
+                    <Button
+                      label="Abrir mi cita"
+                      variant="primary"
+                      size="sm"
+                      href={flow.confirmedManageUrl}
+                    />
+                  }
+                />
+              </VStack>
+            ) : null}
 
             <BookingDesktopActions
               {...ctaProps}

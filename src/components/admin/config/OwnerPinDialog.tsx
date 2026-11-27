@@ -6,6 +6,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Banner } from '@astryxdesign/core/Banner';
 import { KeyRound, ShieldCheck } from 'lucide-react';
@@ -54,66 +55,80 @@ export function OwnerPinDialog({
       onOpenChange={handleOpenChange}
       purpose="form"
       width={420}
+      maxHeight="min(90dvh, calc(100dvh - 2rem))"
       padding={5}
     >
-      <DialogHeader
-        title={title}
-        subtitle={description}
-        onOpenChange={handleOpenChange}
-      />
-      <form onSubmit={(e) => void handleSubmit(e)}>
-        <VStack gap={4} paddingBlockStart={4} className="fx-sheet-in">
-          {error ? (
-            <Banner status="error" role="alert" title={error} />
-          ) : null}
+      <Layout
+        header={
+          <DialogHeader
+            title={title}
+            subtitle={description}
+            hasDivider
+            onOpenChange={handleOpenChange}
+          />
+        }
+        content={
+          <LayoutContent>
+            <form id="owner-pin-form" onSubmit={(e) => void handleSubmit(e)}>
+              <VStack gap={4}>
+                {error ? (
+                  <Banner status="error" role="alert" title={error} />
+                ) : null}
 
-          <VStack gap={2} align="center" className="ad-subpanel">
-            <HStack gap={1.5} align="center">
-              <ShieldCheck size={15} aria-hidden="true" />
-              <Text type="supporting" weight="semibold">
-                PIN de dueña (4 a 6 dígitos)
-              </Text>
+                <VStack gap={2} align="center" className="ad-subpanel">
+                  <HStack gap={1.5} align="center">
+                    <ShieldCheck size={15} aria-hidden="true" />
+                    <Text type="supporting" weight="semibold">
+                      PIN de dueña (4 a 6 dígitos)
+                    </Text>
+                  </HStack>
+
+                  <TextInput
+                    type="password"
+                    label="PIN de dueña"
+                    isLabelHidden
+                    placeholder="••••"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    enterKeyHint="done"
+                    containerClassName="ad-pin-input"
+                    hasAutoFocus
+                    isRequired
+                    value={pin}
+                    onChange={(val) => setPin(val.replace(/\D/g, '').slice(0, 6))}
+                  />
+
+                  <Text type="supporting" color="secondary" hasTabularNumbers>
+                    {pin.length} / 6 dígitos ingresados
+                  </Text>
+                </VStack>
+              </VStack>
+            </form>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter hasDivider>
+            <HStack gap={2} justify="end" wrap="wrap">
+              <Button
+                type="button"
+                label="Cancelar"
+                variant="secondary"
+                isDisabled={isSubmitting}
+                onClick={() => handleOpenChange(false)}
+              />
+              <Button
+                type="submit"
+                form="owner-pin-form"
+                label={actionLabel}
+                variant="primary"
+                icon={<KeyRound size={14} aria-hidden="true" />}
+                isLoading={isSubmitting}
+                isDisabled={!isPinReady || isSubmitting}
+              />
             </HStack>
-
-            <TextInput
-              type="password"
-              label="PIN de dueña"
-              isLabelHidden
-              placeholder="••••"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              enterKeyHint="done"
-              containerClassName="ad-pin-input"
-              hasAutoFocus
-              isRequired
-              value={pin}
-              onChange={(val) => setPin(val.replace(/\D/g, '').slice(0, 6))}
-            />
-
-            <Text type="supporting" color="secondary" hasTabularNumbers>
-              {pin.length} / 6 dígitos ingresados
-            </Text>
-          </VStack>
-
-          <HStack gap={2} justify="end">
-            <Button
-              type="button"
-              label="Cancelar"
-              variant="secondary"
-              isDisabled={isSubmitting}
-              onClick={() => handleOpenChange(false)}
-            />
-            <Button
-              type="submit"
-              label={actionLabel}
-              variant="primary"
-              icon={<KeyRound size={14} aria-hidden="true" />}
-              isLoading={isSubmitting}
-              isDisabled={!isPinReady || isSubmitting}
-            />
-          </HStack>
-        </VStack>
-      </form>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

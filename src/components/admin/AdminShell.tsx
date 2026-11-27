@@ -215,6 +215,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           soundActive={soundActive}
           soundFeedbackMessage={soundFeedback.message}
           isDark={isDark}
+          onToggleSidebar={toggleSidebarCollapsed}
           onPrefetchRoute={handlePrefetchRoute}
           onToggleMute={toggleMute}
           onTestSound={handleTestSound}
@@ -227,10 +228,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <AdminTopBar
             data={data}
             brandLogo={brandLogo}
-            sidebarCollapsed={sidebarCollapsed}
             mobileMenuOpen={mobileMenuOpen}
             soundActive={soundActive}
-            onToggleSidebar={toggleSidebarCollapsed}
             onOpenMobileMenu={handleOpenMobileMenu}
             onOpenQuickSearch={handleOpenQuickSearch}
             onToggleMute={toggleMute}

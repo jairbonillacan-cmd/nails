@@ -178,7 +178,7 @@ export function DashboardAgendaCard({
       }
     >
       {!isSpecialist && metrics.activeStaff.length > 1 ? (
-        <HStack className="ad-filter-bar" paddingInline={5} paddingBlock={3}>
+        <HStack className="ad-filter-bar" align="center">
           <FilterPillBar
             ariaLabel="Filtrar por profesional"
             mode="pills"
@@ -193,13 +193,16 @@ export function DashboardAgendaCard({
       {filteredBookings.length > 0 ? (
         <HStack className="ad-tbl-head ad-row ad-hide-s" aria-hidden="true">
           <Text className="ad-tbl-th">Hora</Text>
-          <Text className="ad-tbl-th">{'\u200B'}</Text>
           <Text className="ad-tbl-th">Clienta y servicio</Text>
           <Text className="ad-tbl-th ad-tbl-th-end">Estado y acción</Text>
         </HStack>
       ) : null}
 
-      <VStack key={`${day}-${effectiveStaffId}`} className="fx-step-in" gap={0}>
+      <VStack
+        key={`${day}-${effectiveStaffId}`}
+        className={filteredBookings.length === 0 ? 'fx-step-in ad-card-empty-center' : 'fx-step-in ad-agenda-list'}
+        gap={0}
+      >
         {filteredBookings.length === 0 ? (
           <VStack padding={5}>
             <EmptyStateCard

@@ -16,8 +16,8 @@ import {
   staffAvatar,
 } from './landingContent';
 
-const LandingTeamDialog = dynamic(
-  () => import('./LandingTeamDialog').then((mod) => mod.LandingTeamDialog),
+const SpecialistProfileDialog = dynamic(
+  () => import('./SpecialistProfileDialog').then((mod) => mod.SpecialistProfileDialog),
   { ssr: false },
 );
 
@@ -40,7 +40,9 @@ export function LandingTeam({
   const openIndex = staff.findIndex((member) => member.id === openId);
   const member = openIndex >= 0 ? staff[openIndex] : undefined;
   const memberServices = member
-    ? services.filter((service) => member.serviceIds.includes(service.id))
+    ? member.serviceIds.length === 0
+      ? services
+      : services.filter((service) => member.serviceIds.includes(service.id))
     : [];
 
   const orderedStaff = staff.map((person, originalIndex) => ({ person, originalIndex }));
@@ -156,12 +158,13 @@ export function LandingTeam({
       <WaveBottom />
 
       {member ? (
-        <LandingTeamDialog
+        <SpecialistProfileDialog
           key={member.id}
           member={member}
           memberIndex={openIndex}
           memberServices={memberServices}
           currency={currency}
+          mode="landing"
           onClose={() => setOpenId(null)}
         />
       ) : null}

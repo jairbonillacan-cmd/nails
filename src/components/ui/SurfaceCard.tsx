@@ -42,9 +42,10 @@ const TONE_SURFACE_STYLES: Record<SurfaceCardTone, CSSProperties> = {
       '0.0625rem solid color-mix(in srgb, var(--color-accent) 24%, var(--color-border))',
   },
   warning: {
-    background: 'var(--ad-surface, var(--color-background-surface))',
-    border: '0.0625rem solid var(--ad-border, var(--color-border))',
-    boxShadow: 'inset 0.1875rem 0 0 var(--color-warning)',
+    background:
+      'color-mix(in srgb, var(--color-warning) 8%, var(--ad-surface, var(--color-background-surface)))',
+    border:
+      '0.0625rem solid color-mix(in srgb, var(--color-warning) 30%, var(--ad-border, var(--color-border)))',
   },
 };
 
