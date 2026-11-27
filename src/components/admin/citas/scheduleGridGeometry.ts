@@ -1,6 +1,7 @@
 import type {
   AvailabilitySchedule,
   BookingWithRelations,
+  DateOverride,
   RecurringBlock,
   StaffMember,
 } from '@/lib/types';
@@ -322,4 +323,123 @@ export function buildFixedTimesByStaff(
     map.set(st.id, Array.from(new Set(times)));
   }
   return map;
+}
+
+export interface SuggestedBlockWindow {
+  readonly startMinutes: number;
+  readonly endMinutes: number;
+  readonly startTimeHHMM: string;
+  readonly endTimeHHMM: string;
+  readonly workStartMinutes: number;
+  readonly workEndMinutes: number;
+}
+
+function snapToQuarterHour(minutes: number): number {
+  return Math.round(minutes / 15) * 15;
+}
+
+function resolveDayWorkBounds(params: {
+  dateKey: string;
+  slotStartMinutes: number;
+  schedules: readonly AvailabilitySchedule[];
+  dateOverrides: readonly DateOverride[];
+  staffId: string;
+}): { startMinutes: number; endMinutes: number } {
+  const { dateKey, slotStartMinutes, schedules, dateOverrides, staffId } = params;
+  const specificOverride = staffId
+    ? dateOverrides.find((ov) => ov.overrideDate === dateKey && ov.staffId === staffId)
+    : undefined;
+  const globalOverride = dateOverrides.find(
+    (ov) => ov.overrideDate === dateKey && ov.staffId === 'all',
+  );
+  const effectiveOverride = specificOverride ?? globalOverride;
+  if (
+    effectiveOverride &&
+    !effectiveOverride.isUnavailable &&
+    effectiveOverride.startTime &&
+    effectiveOverride.endTime
+  ) {
+    const ovStart = parseTimeMinutes(effectiveOverride.startTime);
+    const ovEnd = parseTimeMinutes(effectiveOverride.endTime);
+    if (ovEnd - ovStart >= 15) {
+      return { startMinutes: ovStart, endMinutes: ovEnd };
+    }
+  }
+
+  const dow = getDayOfWeekFromDateKey(dateKey);
+  const staffSchedule = staffId
+    ? (schedules.find((sc) => sc.staffId === staffId && sc.isDefault) ??
+      schedules.find((sc) => sc.staffId === staffId))
+    : undefined;
+  const staffDayRules = (staffSchedule?.rules ?? [])
+    .filter((r) => r.dayOfWeek === dow)
+    .map((r) => ({
+      startMinutes: parseTimeMinutes(r.startTime),
+      endMinutes: parseTimeMinutes(r.endTime),
+    }))
+    .filter((r) => r.endMinutes - r.startMinutes >= 15);
+
+  if (staffDayRules.length > 0) {
+    const containing = staffDayRules.find(
+      (r) => slotStartMinutes >= r.startMinutes && slotStartMinutes < r.endMinutes,
+    );
+    if (containing) return containing;
+    return {
+      startMinutes: Math.min(...staffDayRules.map((r) => r.startMinutes)),
+      endMinutes: Math.max(...staffDayRules.map((r) => r.endMinutes)),
+    };
+  }
+
+  const salonDayRules = schedules
+    .flatMap((sc) => sc.rules)
+    .filter((r) => r.dayOfWeek === dow)
+    .map((r) => ({
+      startMinutes: parseTimeMinutes(r.startTime),
+      endMinutes: parseTimeMinutes(r.endTime),
+    }))
+    .filter((r) => r.endMinutes - r.startMinutes >= 15);
+
+  if (salonDayRules.length > 0) {
+    return {
+      startMinutes: Math.min(...salonDayRules.map((r) => r.startMinutes)),
+      endMinutes: Math.max(...salonDayRules.map((r) => r.endMinutes)),
+    };
+  }
+
+  return { startMinutes: CALENDAR_START_MIN, endMinutes: CALENDAR_END_MIN };
+}
+
+export function resolveSuggestedBlockWindow(params: {
+  slot: { dateKey: string; startMinutes: number };
+  schedules: readonly AvailabilitySchedule[];
+  dateOverrides: readonly DateOverride[];
+  staffId: string;
+  defaultDurationMinutes?: number;
+}): SuggestedBlockWindow {
+  const { slot, schedules, dateOverrides, staffId, defaultDurationMinutes = 60 } = params;
+  const bounds = resolveDayWorkBounds({
+    dateKey: slot.dateKey,
+    slotStartMinutes: slot.startMinutes,
+    schedules,
+    dateOverrides,
+    staffId,
+  });
+  const workStartMinutes = Math.max(0, Math.min(23 * 60 + 45, bounds.startMinutes));
+  const workEndMinutes = Math.max(
+    workStartMinutes + 15,
+    Math.min(24 * 60 - 1, bounds.endMinutes),
+  );
+  const latestStartMinutes = Math.max(workStartMinutes, workEndMinutes - 15);
+  const snappedSlot = snapToQuarterHour(slot.startMinutes);
+  const startMinutes = Math.max(workStartMinutes, Math.min(latestStartMinutes, snappedSlot));
+  const duration = Math.max(15, snapToQuarterHour(defaultDurationMinutes));
+  const endMinutes = Math.min(workEndMinutes, startMinutes + duration);
+  return {
+    startMinutes,
+    endMinutes,
+    startTimeHHMM: formatMinutesHHMM(startMinutes),
+    endTimeHHMM: formatMinutesHHMM(endMinutes),
+    workStartMinutes,
+    workEndMinutes,
+  };
 }

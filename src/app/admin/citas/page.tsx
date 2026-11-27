@@ -19,15 +19,13 @@ import {
 } from '@/components/admin/citas/BookingsFiltersBar';
 import { BookingsListView } from '@/components/admin/citas/BookingsListView';
 import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
-import { formatMinutesHHMM } from '@/components/admin/citas/scheduleGridGeometry';
+import { resolveSuggestedBlockWindow } from '@/components/admin/citas/scheduleGridGeometry';
 import { useCitasBookingActions } from '@/components/admin/citas/useCitasBookingActions';
 import { useCitasWorkspace } from '@/components/admin/citas/useCitasWorkspace';
 import type { CalendarEmptySlotSelection } from '@/components/admin/citas/VisualScheduleGrid';
 import { WaitlistPanel } from '@/components/admin/citas/WaitlistPanel';
-import {
-  computeSuggestedTouchUpDateKey,
-  normalizeTouchUpDays,
-} from '@/lib/booking/recurrence';
+import { buildRetouchPrefill } from '@/lib/booking/recurrence';
+import { formatCurrency } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 
 const CalendarSlotActionDialog = dynamic(
@@ -114,6 +112,10 @@ export default function AdminBookingsPage() {
     !ws.search.trim() &&
     (ws.viewMode === 'schedule' || ws.viewMode === 'list');
 
+  const uncollectedTotalCents = data.uncollectedBookings.reduce(
+    (sum, item) => sum + item.remainingCents,
+    0,
+  );
   const isScheduleView = ws.tab !== 'waitlist' && ws.viewMode === 'schedule';
 
   return (
@@ -203,8 +205,10 @@ export default function AdminBookingsPage() {
             >
               {data.uncollectedBookings.length}
             </Text>
-            <Text type="supporting" color="secondary">
-              falta cobrar
+            <Text type="supporting" color="secondary" hasTabularNumbers>
+              {uncollectedTotalCents > 0
+                ? `por cobrar · ${formatCurrency(uncollectedTotalCents, data.settings.currency)}`
+                : 'por cobrar'}
             </Text>
           </NextLink>
         </HStack>
@@ -320,6 +324,7 @@ export default function AdminBookingsPage() {
           dateOverrides={data.dateOverrides}
           recurringBlocks={data.recurringBlocks}
           paymentSplits={data.paymentSplits}
+          cashEntries={data.cashEntries}
           bookings={ws.tabFilteredBookings}
           allServices={data.services}
           isSpecialistLocked={Boolean(ws.lockedStaffId)}
@@ -386,6 +391,8 @@ export default function AdminBookingsPage() {
           search={ws.search}
           allServices={data.services}
           paymentSplits={data.paymentSplits}
+          cashEntries={data.cashEntries}
+          serverNowIso={data.serverNowIso}
           salonName={data.settings.name}
           currency={data.settings.currency}
           timezone={ws.tz}
@@ -442,22 +449,17 @@ export default function AdminBookingsPage() {
         onOpenManualModal={ws.openManualModal}
         onOpenCheckout={ws.openCheckoutDrawer}
         onScheduleRetouch={(booking) => {
-          const touchUpDays = normalizeTouchUpDays(data.settings.landingContent?.touchUpDays);
-          const retouchDateKey = computeSuggestedTouchUpDateKey({
-            startAt: booking.startAt,
-            touchUpDays,
-            timezone: ws.tz,
-          });
+          const prefill = buildRetouchPrefill(booking, data.settings, ws.tz);
           ws.setCheckoutBookingId(null);
-          ws.openManualModal(booking.staffId, {
-            serviceId: booking.serviceId,
-            extraServiceIds: booking.extraServiceIds ?? [],
-            staffId: booking.staffId,
-            startDate: retouchDateKey,
-            clientName: booking.client.fullName,
-            clientPhone: booking.client.phoneE164,
-            clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? '',
-            internalNotes: `Retoque (+${touchUpDays} días · ${booking.bookingCode})`,
+          ws.openManualModal(prefill.staffId, {
+            serviceId: prefill.serviceId,
+            extraServiceIds: prefill.extraServiceIds,
+            staffId: prefill.staffId,
+            startDate: prefill.startDate,
+            clientName: prefill.clientName,
+            clientPhone: prefill.clientPhone,
+            clientInstagram: prefill.clientInstagram,
+            internalNotes: prefill.internalNotes,
           });
         }}
         onUpdateStatus={actions.updateStatus}
@@ -483,8 +485,6 @@ export default function AdminBookingsPage() {
           }}
           onChooseBlockTime={(slot) => {
             setSlotChoice(null);
-            const clampedStartMin = Math.max(8 * 60, Math.min(21 * 60, slot.startMinutes));
-            const suggestedEndMin = Math.min(22 * 60, clampedStartMin + 60);
             const targetStaffId =
               ws.lockedStaffId ??
               (slot.staffId !== 'any'
@@ -492,10 +492,16 @@ export default function AdminBookingsPage() {
                 : ws.selectedStaffFilter !== 'all'
                   ? ws.selectedStaffFilter
                   : (visibleStaff[0]?.id ?? ''));
+            const suggestedWindow = resolveSuggestedBlockWindow({
+              slot,
+              schedules: data.schedules,
+              dateOverrides: data.dateOverrides,
+              staffId: targetStaffId,
+            });
             setBlockTimePrefill({
               dateKey: slot.dateKey,
-              startTimeHHMM: formatMinutesHHMM(clampedStartMin),
-              endTimeHHMM: formatMinutesHHMM(suggestedEndMin),
+              startTimeHHMM: suggestedWindow.startTimeHHMM,
+              endTimeHHMM: suggestedWindow.endTimeHHMM,
               staffId: targetStaffId,
             });
             setBlockTimeSessionKey((prev) => prev + 1);

@@ -36,6 +36,7 @@ import {
   type CajaPeriodSummary,
 } from './cajaMetrics';
 import {
+  formatCajaDepositsBreakdown,
   formatInstagramDisplay,
   formatInstagramUrl,
   type CommissionStaffRow,
@@ -53,6 +54,8 @@ interface CajaSummaryTabProps {
   uncollectedTotalCents: number;
   pendingDepositsCount: number;
   pendingDepositsTotalCents: number;
+  depositsAwaitingReviewCount: number;
+  depositsMissingProofCount: number;
   splitDetails: readonly SplitDetailRow[];
   cajaPeriod: CajaPeriod;
   customRange: CajaCustomRange;
@@ -105,6 +108,8 @@ export function CajaSummaryTab({
   uncollectedTotalCents,
   pendingDepositsCount,
   pendingDepositsTotalCents,
+  depositsAwaitingReviewCount,
+  depositsMissingProofCount,
   splitDetails,
   cajaPeriod,
   customRange,
@@ -241,11 +246,15 @@ export function CajaSummaryTab({
               </VStack>
               <VStack gap={0.5} className="rb-grow">
                 <Text weight="semibold" size="sm" hasTabularNumbers>
-                  {pendingDepositsCount} anticipo{pendingDepositsCount === 1 ? '' : 's'} por
-                  confirmar ({formatCurrency(pendingDepositsTotalCents, currency)})
+                  {pendingDepositsCount} anticipo{pendingDepositsCount === 1 ? '' : 's'} pendiente
+                  {pendingDepositsCount === 1 ? '' : 's'} (
+                  {formatCurrency(pendingDepositsTotalCents, currency)})
                 </Text>
-                <Text type="supporting" color="secondary">
-                  Revisa la foto del comprobante y confirma la cita.
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  {formatCajaDepositsBreakdown(
+                    depositsAwaitingReviewCount,
+                    depositsMissingProofCount,
+                  )}
                 </Text>
               </VStack>
             </HStack>

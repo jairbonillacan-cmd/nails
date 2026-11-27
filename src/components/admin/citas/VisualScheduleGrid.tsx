@@ -10,16 +10,25 @@ import { Badge } from '@astryxdesign/core/Badge';
 import {
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   DollarSign,
   GripHorizontal,
   Plus,
+  UserX,
 } from 'lucide-react';
 import { ConfirmActionDialog } from '@/components/ui/ConfirmActionDialog';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { BookingStatusTag, StatusTag } from '@/components/ui/StatusTag';
-import { isActiveBookingStatus } from '@/lib/booking/state-machine';
+import {
+  computeBookingBalance,
+  isPendingDepositStatus,
+} from '@/lib/booking/balance';
+import {
+  canTransitionBookingStatus,
+  isActiveBookingStatus,
+} from '@/lib/booking/state-machine';
 import {
   formatDateShortInTimezone,
   formatDuration,
@@ -34,11 +43,11 @@ import {
   useScheduleDrag,
   type ScheduleDragProposal,
 } from '@/lib/hooks/useScheduleDrag';
-import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import type {
   AvailabilitySchedule,
   BookingStatus,
   BookingWithRelations,
+  CashRegisterEntry,
   DateOverride,
   PaymentSplit,
   RecurringBlock,
@@ -67,6 +76,7 @@ import {
 } from './scheduleGridGeometry';
 
 const EMPTY_PAYMENT_SPLITS: readonly PaymentSplit[] = [];
+const EMPTY_CASH_ENTRIES: readonly CashRegisterEntry[] = [];
 const EMPTY_BOOKINGS: readonly BookingWithRelations[] = [];
 const EMPTY_OPEN_SLOTS: readonly CalendarOpenSlot[] = [];
 
@@ -91,6 +101,7 @@ interface VisualScheduleGridProps {
   dateOverrides?: DateOverride[];
   recurringBlocks?: RecurringBlock[];
   paymentSplits?: PaymentSplit[];
+  cashEntries?: CashRegisterEntry[];
   bookings: BookingWithRelations[];
   allServices: Service[];
   isSpecialistLocked?: boolean;
@@ -131,6 +142,7 @@ export function VisualScheduleGrid({
   dateOverrides = [],
   recurringBlocks = [],
   paymentSplits = [],
+  cashEntries = [],
   bookings,
   allServices,
   isSpecialistLocked = false,
@@ -205,6 +217,20 @@ export function VisualScheduleGrid({
     }
     return map;
   }, [paymentSplits]);
+
+  const cashEntriesByBookingId = useMemo(() => {
+    const map = new Map<string, CashRegisterEntry[]>();
+    for (const entry of cashEntries) {
+      if (!entry.bookingId) continue;
+      const existing = map.get(entry.bookingId);
+      if (existing) {
+        existing.push(entry);
+      } else {
+        map.set(entry.bookingId, [entry]);
+      }
+    }
+    return map;
+  }, [cashEntries]);
 
   const serviceNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -381,15 +407,20 @@ export function VisualScheduleGrid({
     const isBusy =
       busyBookingId === booking.id || reschedulingBookingId === booking.id;
     const canDrag = isActiveBookingStatus(booking.status) && !isBusy;
-    const isPending =
-      booking.status === 'pending_confirmation' || booking.status === 'pending_payment';
-    const paymentSummary = computeBookingPaymentSummary(
-      booking.totalPriceCents,
+    const isPending = isPendingDepositStatus(booking.status);
+    const balance = computeBookingBalance(
+      booking,
       splitsByBookingId.get(booking.id) ?? EMPTY_PAYMENT_SPLITS,
+      cashEntriesByBookingId.get(booking.id) ?? EMPTY_CASH_ENTRIES,
+      nowMs,
     );
+    const isPastUnclosed = balance.isPastUnclosed;
     const canCollect =
       booking.status === 'confirmed' ||
-      (booking.status === 'completed' && paymentSummary.isUncollected);
+      (booking.status === 'completed' && balance.isUncollected) ||
+      isPastUnclosed;
+    const canMarkCompleted = canTransitionBookingStatus(booking.status, 'completed');
+    const canMarkNoShow = canTransitionBookingStatus(booking.status, 'no_show');
     const extraNames = (booking.extraServiceIds ?? [])
       .map((id) => serviceNameById.get(id))
       .filter((n): n is string => Boolean(n));
@@ -400,6 +431,7 @@ export function VisualScheduleGrid({
         className={`ad-cal-event${isBusy ? ' fx-busy' : ''}${isThisDragging ? ' ad-cal-event-dragging' : ''}`}
         data-idx={String(colorIdx)}
         data-status={booking.status}
+        data-past-unclosed={isPastUnclosed ? 'true' : undefined}
         data-draggable={canDrag ? 'true' : 'false'}
         aria-busy={isBusy || undefined}
         style={{
@@ -441,11 +473,15 @@ export function VisualScheduleGrid({
               </Text>
               {!compact ? (
                 <HStack gap={1} align="center" wrap="wrap">
-                  <BookingStatusTag
-                    status={booking.status}
-                    hasPaymentProof={Boolean(booking.paymentProofUrl)}
-                    showDot
-                  />
+                  {isPastUnclosed ? (
+                    <StatusTag tone="warning" showDot label="Pasada sin cerrar" />
+                  ) : (
+                    <BookingStatusTag
+                      status={booking.status}
+                      hasPaymentProof={Boolean(booking.paymentProofUrl)}
+                      showDot
+                    />
+                  )}
                   {isActiveBookingStatus(booking.status) &&
                   booking.attendanceStatus === 'confirmed' ? (
                     <StatusTag tone="success" label="Confirmó" />
@@ -454,6 +490,8 @@ export function VisualScheduleGrid({
                     <StatusTag tone="accent" label="Reagendó" />
                   ) : null}
                 </HStack>
+              ) : isPastUnclosed ? (
+                <StatusTag tone="warning" label="Pasada sin cerrar" />
               ) : null}
             </HStack>
 
@@ -470,8 +508,62 @@ export function VisualScheduleGrid({
         </button>
 
         {!compact && durationMin >= 60 ? (
-          <HStack gap={1} className="ad-cal-event-actions">
-            {isPending ? (
+          <HStack gap={1} wrap="wrap" className="ad-cal-event-actions">
+            {isPastUnclosed ? (
+              <>
+                {canCollect ? (
+                  <Button
+                    type="button"
+                    data-no-drag="true"
+                    label="Cobrar"
+                    size="sm"
+                    variant="primary"
+                    icon={<DollarSign size={12} aria-hidden="true" />}
+                    isDisabled={isBusy}
+                    onClick={() => onOpenCheckout(booking)}
+                  />
+                ) : null}
+                {canMarkCompleted ? (
+                  <Button
+                    type="button"
+                    data-no-drag="true"
+                    label={busyBookingId === booking.id && busyStatus === 'completed' ? '…' : 'Terminada'}
+                    size="sm"
+                    variant="secondary"
+                    icon={<CheckCircle2 size={12} aria-hidden="true" />}
+                    isLoading={busyBookingId === booking.id && busyStatus === 'completed'}
+                    isDisabled={isBusy}
+                    onClick={() => onUpdateStatus(booking.id, 'completed')}
+                  />
+                ) : null}
+                {canMarkNoShow ? (
+                  <Button
+                    type="button"
+                    data-no-drag="true"
+                    label={busyBookingId === booking.id && busyStatus === 'no_show' ? '…' : 'No llegó'}
+                    size="sm"
+                    variant="ghost"
+                    icon={<UserX size={12} aria-hidden="true" />}
+                    isLoading={busyBookingId === booking.id && busyStatus === 'no_show'}
+                    isDisabled={isBusy}
+                    onClick={() => onUpdateStatus(booking.id, 'no_show')}
+                  />
+                ) : null}
+                {isPending ? (
+                  <Button
+                    type="button"
+                    data-no-drag="true"
+                    label={busyBookingId === booking.id && busyStatus === 'confirmed' ? '…' : 'Confirmar'}
+                    size="sm"
+                    variant="secondary"
+                    icon={<Check size={12} aria-hidden="true" />}
+                    isLoading={busyBookingId === booking.id && busyStatus === 'confirmed'}
+                    isDisabled={isBusy}
+                    onClick={() => onUpdateStatus(booking.id, 'confirmed')}
+                  />
+                ) : null}
+              </>
+            ) : isPending ? (
               <Button
                 type="button"
                 data-no-drag="true"

@@ -26,6 +26,7 @@ interface CheckoutBalanceCardProps {
   heroRemainingCents: number;
   effectiveTotalCents: number;
   priorPaidCents: number;
+  depositPaidCents?: number;
   draftTipCents: number;
   payButtonTotalLabel: string;
   selectedPackageName: string | null;
@@ -40,6 +41,7 @@ export function CheckoutBalanceCard({
   heroRemainingCents,
   effectiveTotalCents,
   priorPaidCents,
+  depositPaidCents = 0,
   draftTipCents,
   payButtonTotalLabel,
   selectedPackageName,
@@ -59,7 +61,9 @@ export function CheckoutBalanceCard({
           {selectedPackageName
             ? `Servicio cubierto con "${selectedPackageName}" (-1 sesión)`
             : priorPaidCents > 0
-              ? `Total ${formatCurrency(effectiveTotalCents, currency)} − Anticipo ${formatCurrency(priorPaidCents, currency)}`
+              ? depositPaidCents > 0 && priorPaidCents === depositPaidCents
+                ? `Total ${formatCurrency(effectiveTotalCents, currency)} − Anticipo pagado ${formatCurrency(depositPaidCents, currency)}`
+                : `Total ${formatCurrency(effectiveTotalCents, currency)} − Pagado ${formatCurrency(priorPaidCents, currency)}`
               : `Total del servicio${hasExtraItem ? ' + producto' : ''}: ${formatCurrency(effectiveTotalCents, currency)}`}
         </Text>
         {draftTipCents > 0 ? (
@@ -78,6 +82,14 @@ export function CheckoutBalanceCard({
                 label={`${PAYMENT_METHOD_LABELS[split.method]} ${formatCurrency(split.amountCents, currency)}`}
               />
             ))}
+          </HStack>
+        ) : priorPaidCents > 0 ? (
+          <HStack gap={1.5} wrap="wrap" paddingBlockStart={1}>
+            <Token
+              size="sm"
+              color="green"
+              label={`Anticipo pagado ${formatCurrency(priorPaidCents, currency)}`}
+            />
           </HStack>
         ) : null}
         {isSplitMode && !selectedPackageName ? (

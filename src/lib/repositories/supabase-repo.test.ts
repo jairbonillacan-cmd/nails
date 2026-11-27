@@ -2470,6 +2470,19 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
       }),
     ]);
 
+    const depositCashPost = requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/cash_register_entries',
+    );
+    expect(depositCashPost?.body).toEqual(
+      expect.objectContaining({
+        booking_id: BOOKING_ID,
+        entry_type: 'deposit',
+        amount_cents: 20000,
+        commission_cents: 0,
+        payment_method: 'transfer',
+      }),
+    );
+
     const auditPost = requests.find(
       (r) => r.method === 'POST' && r.path === '/rest/v1/audit_logs',
     );
@@ -2972,5 +2985,134 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     for (const tablePath of snapshotOnlyTables) {
       expect(requests.some((r) => r.path === tablePath)).toBe(false);
     }
+  });
+
+  it('Phase 0 (C1): records only remaining unpaid balance on completion after deposit and respects skipDepositEntries', async () => {
+    const confirmedRow: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-BAL01',
+      manage_token: 'tok-bal-1',
+      idempotency_key: 'idem-bal-1',
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: '2026-12-03T16:00:00.000Z',
+      end_at: '2026-12-03T17:00:00.000Z',
+      occupied_start_at: '2026-12-03T16:00:00.000Z',
+      occupied_end_at: '2026-12-03T17:15:00.000Z',
+      occupied_range: '[2026-12-03T16:00:00.000Z,2026-12-03T17:15:00.000Z)',
+      total_duration_minutes: 60,
+      subtotal_cents: 50000,
+      discount_cents: 0,
+      total_price_cents: 50000,
+      deposit_amount_cents: 20000,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      proof_delivery_method: 'web_upload',
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+
+    const existingDepositSplit: Database['public']['Tables']['payment_splits']['Row'] = {
+      id: SPLIT_ID,
+      booking_id: BOOKING_ID,
+      method: 'transfer',
+      amount_cents: 20000,
+      tip_cents: 0,
+      tip_staff_id: null,
+      reference: 'Anticipo SPEI aprobado',
+      created_at: '2026-12-01T11:00:00.000Z',
+    };
+
+    const existingDepositCash: Database['public']['Tables']['cash_register_entries']['Row'] = {
+      id: '10000000-0000-4000-8000-000000000901',
+      booking_id: BOOKING_ID,
+      staff_id: STAFF_ID,
+      entry_type: 'deposit',
+      description: 'Anticipo SPEI NL-BAL01 — Sofía',
+      amount_cents: 20000,
+      tip_cents: 0,
+      commission_cents: 0,
+      payment_method: 'transfer',
+      occurred_at: '2026-12-01T11:00:00.000Z',
+      recorded_by: 'Dueña',
+      created_at: '2026-12-01T11:00:00.000Z',
+    };
+
+    const completeMock = buildMockSupabase({
+      bookingsRows: [confirmedRow],
+      paymentSplitsRows: [existingDepositSplit],
+      cashEntriesRows: [existingDepositCash],
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'bal-complete');
+    const completeRepo = createSupabaseRepository(clock, completeMock.client);
+
+    await completeRepo.updateBookingStatus({
+      bookingId: BOOKING_ID,
+      status: 'completed',
+      paymentMethod: 'cash',
+      tipCents: 3000,
+      recordedBy: 'Dueña',
+      skipLoyaltyStamp: true,
+    });
+
+    const cashInsert = completeMock.requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/cash_register_entries',
+    );
+    expect(cashInsert?.body).toEqual(
+      expect.objectContaining({
+        booking_id: BOOKING_ID,
+        entry_type: 'service_income',
+        amount_cents: 30000,
+        tip_cents: 3000,
+        payment_method: 'cash',
+      }),
+    );
+
+    const splitInsert = completeMock.requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/payment_splits',
+    );
+    expect(splitInsert?.body).toEqual([
+      expect.objectContaining({
+        booking_id: BOOKING_ID,
+        method: 'cash',
+        amount_cents: 30000,
+        tip_cents: 3000,
+      }),
+    ]);
+
+    const pendingRow: Database['public']['Tables']['bookings']['Row'] = {
+      ...confirmedRow,
+      status: 'pending_confirmation',
+    };
+    const skipMock = buildMockSupabase({
+      bookingsRows: [pendingRow],
+      paymentSplitsRows: [],
+      cashEntriesRows: [],
+    });
+    const skipRepo = createSupabaseRepository(clock, skipMock.client);
+    await skipRepo.updateBookingStatus({
+      bookingId: BOOKING_ID,
+      status: 'confirmed',
+      skipDepositEntries: true,
+    });
+    expect(
+      skipMock.requests.some(
+        (r) => r.method === 'POST' && r.path === '/rest/v1/payment_splits',
+      ),
+    ).toBe(false);
+    expect(
+      skipMock.requests.some(
+        (r) => r.method === 'POST' && r.path === '/rest/v1/cash_register_entries',
+      ),
+    ).toBe(false);
   });
 });

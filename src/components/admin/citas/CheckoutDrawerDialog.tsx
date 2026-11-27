@@ -12,12 +12,13 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
 import { CalendarPlus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { computeBookingBalance } from '@/lib/booking/balance';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
-import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import type {
   BookingWithRelations,
+  CashRegisterEntry,
   InventoryItem,
   LoyaltyProgram,
   LoyaltyStamp,
@@ -50,6 +51,7 @@ import {
 interface CheckoutDrawerDialogProps {
   booking: BookingWithRelations | null;
   existingSplits: PaymentSplit[];
+  existingCashEntries?: CashRegisterEntry[];
   inventory: InventoryItem[];
   staff: StaffMember[];
   loyaltyProgram: LoyaltyProgram | null;
@@ -64,6 +66,7 @@ interface CheckoutDrawerDialogProps {
 export function CheckoutDrawerDialog({
   booking,
   existingSplits,
+  existingCashEntries = [],
   inventory,
   staff,
   loyaltyProgram,
@@ -87,8 +90,8 @@ export function CheckoutDrawerDialog({
     [staff],
   );
   const initialSummary = useMemo(
-    () => (booking ? computeBookingPaymentSummary(booking.totalPriceCents, existingSplits) : null),
-    [booking, existingSplits],
+    () => (booking ? computeBookingBalance(booking, existingSplits, existingCashEntries) : null),
+    [booking, existingSplits, existingCashEntries],
   );
   const initialRemainingMxn = initialSummary
     ? Number((initialSummary.remainingCents / 100).toFixed(2))
@@ -143,6 +146,8 @@ export function CheckoutDrawerDialog({
     ? clientPackages.find((pkg) => pkg.id === redeemPackageId) ?? null
     : null;
   const priorPaidCents = initialSummary?.paidCents ?? 0;
+  const priorTipsCents = initialSummary?.totalTipsCents ?? 0;
+  const depositPaidCents = initialSummary?.depositPaidCents ?? 0;
   const loyaltySummary = loyaltyProgram
     ? computeClientLoyaltySummary(loyaltyProgram, loyaltyStamps, booking.clientId)
     : null;
@@ -150,7 +155,7 @@ export function CheckoutDrawerDialog({
   const draft = computeCheckoutDraftMetrics({
     bookingTotalCents: booking.totalPriceCents,
     priorPaidCents,
-    existingSplits,
+    priorTipsCents,
     selectedExtraItem,
     extraQuantity,
     selectedPackage,
@@ -286,6 +291,7 @@ export function CheckoutDrawerDialog({
                     heroRemainingCents={draft.heroRemainingCents}
                     effectiveTotalCents={draft.effectiveTotalCents}
                     priorPaidCents={priorPaidCents}
+                    depositPaidCents={depositPaidCents}
                     draftTipCents={draft.draftTipCents}
                     payButtonTotalLabel={payButtonTotalLabel}
                     selectedPackageName={selectedPackage?.packageName ?? null}

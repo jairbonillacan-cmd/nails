@@ -77,6 +77,9 @@ export interface AdminOverviewPayload {
     totalPriceCents: number;
     proofDeliveryMethod: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
     paymentProofUrl: string | null;
+    proofSubmitted?: boolean;
+    awaitingReview?: boolean;
+    missingProof?: boolean;
   }>;
   retention: {
     returningClientsCount: number;
@@ -106,6 +109,8 @@ export interface AdminOverviewPayload {
     totalPriceCents: number;
     paidCents: number;
     remainingCents: number;
+    depositPaidCents?: number;
+    isPastUnclosed?: boolean;
   }>;
   nearRewardClients: Array<{
     clientId: string;

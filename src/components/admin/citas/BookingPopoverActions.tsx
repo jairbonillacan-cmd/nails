@@ -23,9 +23,9 @@ interface BookingPopoverActionsProps {
   allowedNext: readonly BookingStatus[];
   isPending: boolean;
   isCompleted: boolean;
+  isPastUnclosed?: boolean;
   canCollect: boolean;
   canRemind: boolean;
-  isFullyPaid: boolean;
   isBusy: boolean;
   busyStatus: BookingStatus | null;
   isReminding: boolean;
@@ -39,6 +39,7 @@ interface BookingPopoverActionsProps {
   clientProfileHref: string;
   onConfirm: () => void;
   onComplete: () => void;
+  onNoShowDirect?: () => void;
   onCheckout: () => void;
   onReschedule: () => void;
   onRemind: () => void;
@@ -50,9 +51,9 @@ export function BookingPopoverActions({
   allowedNext,
   isPending,
   isCompleted,
+  isPastUnclosed = false,
   canCollect,
   canRemind,
-  isFullyPaid,
   isBusy,
   busyStatus,
   isReminding,
@@ -66,6 +67,7 @@ export function BookingPopoverActions({
   clientProfileHref,
   onConfirm,
   onComplete,
+  onNoShowDirect,
   onCheckout,
   onReschedule,
   onRemind,
@@ -74,12 +76,14 @@ export function BookingPopoverActions({
 }: BookingPopoverActionsProps) {
   const showReviewLink = isCompleted && Boolean(reviewWaHref);
   const showReviewSetupLink = isCompleted && !reviewWaHref && canManageIntegrations;
+  const canMarkCompleted = !isPending && allowedNext.includes('completed');
+  const showPrimaryNoShow = isPastUnclosed && allowedNext.includes('no_show');
 
   return (
     <VStack gap={3}>
       <VStack gap={1.5} paddingBlockStart={1}>
         <HStack gap={2} wrap="wrap">
-          {isPending ? (
+          {isPending && !isPastUnclosed ? (
             <Button
               type="button"
               label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
@@ -95,23 +99,47 @@ export function BookingPopoverActions({
             <Button
               type="button"
               label="Cobrar"
-              variant={isPending ? 'secondary' : 'primary'}
+              variant={isPending && !isPastUnclosed ? 'secondary' : 'primary'}
               size="md"
               icon={<DollarSign size={15} aria-hidden="true" />}
               isDisabled={isBusy}
               onClick={onCheckout}
             />
           ) : null}
-          {!isPending && allowedNext.includes('completed') && isFullyPaid ? (
+          {canMarkCompleted ? (
             <Button
               type="button"
-              label={busyStatus === 'completed' ? 'Completando…' : 'Completar'}
+              label={busyStatus === 'completed' ? 'Guardando…' : 'Terminada'}
               variant="secondary"
               size="md"
               icon={<CheckCircle2 size={15} aria-hidden="true" />}
               isLoading={busyStatus === 'completed'}
               isDisabled={isBusy}
               onClick={onComplete}
+            />
+          ) : null}
+          {showPrimaryNoShow ? (
+            <Button
+              type="button"
+              label={busyStatus === 'no_show' ? 'Marcando…' : 'No llegó'}
+              variant="secondary"
+              size="md"
+              icon={<UserX size={15} aria-hidden="true" />}
+              isLoading={busyStatus === 'no_show'}
+              isDisabled={isBusy}
+              onClick={onNoShowDirect ?? onRequestNoShow}
+            />
+          ) : null}
+          {isPending && isPastUnclosed ? (
+            <Button
+              type="button"
+              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
+              variant="secondary"
+              size="md"
+              icon={<Check size={15} aria-hidden="true" />}
+              isLoading={busyStatus === 'confirmed'}
+              isDisabled={isBusy}
+              onClick={onConfirm}
             />
           ) : null}
           {showReviewLink && reviewWaHref ? (
@@ -202,7 +230,7 @@ export function BookingPopoverActions({
               onClick={onRemind}
             />
           ) : null}
-          {allowedNext.includes('no_show') ? (
+          {allowedNext.includes('no_show') && !showPrimaryNoShow ? (
             <Button
               type="button"
               label={busyStatus === 'no_show' ? 'Marcando…' : 'No llegó'}

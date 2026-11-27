@@ -27,6 +27,8 @@ import {
   type CajaPeriod,
 } from './cajaMetrics';
 import {
+  formatCajaDepositsBreakdown,
+  hasCajaDepositProof,
   resolveInitialCajaRoute,
   type CajaTab,
   type PendingDepositRow,
@@ -40,8 +42,9 @@ const EMPTY_CUSTOM_RANGE: CajaCustomRange = { fromKey: '', toKey: '' };
 export function useCajaData(
   providerData: AdminOverviewPayload | null,
   tabParam: string | null,
+  subParam?: string | null,
 ) {
-  const initialRoute = resolveInitialCajaRoute(tabParam);
+  const initialRoute = resolveInitialCajaRoute(tabParam, subParam);
   const [activeTab, setActiveTab] = useState<CajaTab>(initialRoute.tab);
   const [highlightUncollected, setHighlightUncollected] = useState<boolean>(
     initialRoute.highlightUncollected,
@@ -52,12 +55,13 @@ export function useCajaData(
   const [methodFilter, setMethodFilter] = useState<CajaMethodFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [packagesSeq, setPackagesSeq] = useState(0);
-  const lastTabParamRef = useRef<string | null>(tabParam);
+  const routeKey = `${tabParam ?? ''}|${subParam ?? ''}`;
+  const lastRouteKeyRef = useRef<string>(routeKey);
 
-  useExternalSync(`caja-tab|${tabParam ?? ''}`, async (signal) => {
-    if (signal.aborted || lastTabParamRef.current === tabParam) return;
-    lastTabParamRef.current = tabParam;
-    const next = resolveInitialCajaRoute(tabParam);
+  useExternalSync(`caja-tab|${routeKey}`, async (signal) => {
+    if (signal.aborted || lastRouteKeyRef.current === routeKey) return;
+    lastRouteKeyRef.current = routeKey;
+    const next = resolveInitialCajaRoute(tabParam, subParam);
     setActiveTab(next.tab);
     setHighlightUncollected(next.highlightUncollected);
     setPromosView(next.promosView);
@@ -237,9 +241,18 @@ export function useCajaData(
   }, []);
 
   const pendingDepositsTotalCents = pendingDeposits.reduce(
-    (sum, item) => sum + item.depositAmountCents,
+    (sum, item) => sum + Math.max(0, item.depositAmountCents),
     0,
   );
+  let depositsAwaitingReviewCount = 0;
+  let depositsMissingProofCount = 0;
+  for (const item of pendingDeposits) {
+    if (hasCajaDepositProof(item)) {
+      depositsAwaitingReviewCount += 1;
+    } else {
+      depositsMissingProofCount += 1;
+    }
+  }
   const uncollectedTotalCents = uncollectedBookings.reduce(
     (sum, item) => sum + item.remainingCents,
     0,
@@ -264,9 +277,22 @@ export function useCajaData(
         {
           id: 'pending',
           label: 'Por cobrar',
-          value: formatCurrency(uncollectedTotalCents + pendingDepositsTotalCents, currency),
-          sub: `${uncollectedBookings.length} sin cobrar · ${pendingDeposits.length} ${pendingDeposits.length === 1 ? 'anticipo' : 'anticipos'}`,
-          tone: uncollectedTotalCents + pendingDepositsTotalCents > 0 ? 'warning' : 'success',
+          value: formatCurrency(uncollectedTotalCents, currency),
+          sub:
+            uncollectedBookings.length > 0
+              ? `${uncollectedBookings.length} cita${uncollectedBookings.length === 1 ? '' : 's'} terminada${uncollectedBookings.length === 1 ? '' : 's'} o pasada${uncollectedBookings.length === 1 ? '' : 's'}`
+              : 'Todo cobrado',
+          tone: uncollectedTotalCents > 0 ? 'warning' : 'success',
+        },
+        {
+          id: 'deposits',
+          label: 'Anticipos pendientes',
+          value: formatCurrency(pendingDepositsTotalCents, currency),
+          sub: formatCajaDepositsBreakdown(
+            depositsAwaitingReviewCount,
+            depositsMissingProofCount,
+          ),
+          tone: pendingDeposits.length > 0 ? 'warning' : 'success',
         },
         {
           id: 'tips',
@@ -307,6 +333,8 @@ export function useCajaData(
     pendingDeposits,
     uncollectedBookings,
     pendingDepositsTotalCents,
+    depositsAwaitingReviewCount,
+    depositsMissingProofCount,
     uncollectedTotalCents,
     kpiItems,
     periodSummary,

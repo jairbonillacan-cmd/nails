@@ -7,6 +7,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { MessageCircle } from 'lucide-react';
+import { isPastUnclosedBooking } from '@/lib/booking/balance';
 import {
   buildWhatsAppLink,
   formatCurrency,
@@ -33,12 +34,15 @@ function getAgendaRowMeta(
   const uncollected = metrics.uncollectedByBookingId.get(booking.id);
   const startMs = new Date(booking.startAt).getTime();
   const endMs = new Date(booking.endAt).getTime();
-  const isPast = booking.status === 'completed' || endMs < metrics.serverNowMs;
+  const isPastUnclosed = isPastUnclosedBooking(booking, metrics.serverNowMs);
+  const isPast = booking.status === 'completed' || isPastUnclosed || endMs < metrics.serverNowMs;
 
   if (uncollected) {
     return {
       customTag: {
-        label: `Sin cobrar · ${formatCurrency(uncollected.remainingCents, currency)}`,
+        label: isPastUnclosed
+          ? `Pasada sin cerrar · ${formatCurrency(uncollected.remainingCents, currency)}`
+          : `Sin cobrar · ${formatCurrency(uncollected.remainingCents, currency)}`,
         tone: 'warning',
       },
       isPast: true,

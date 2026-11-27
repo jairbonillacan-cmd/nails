@@ -1,5 +1,6 @@
 import { zonedDateTimeToUtc } from '../availability/engine';
 import { getDateKeyInTimezone } from '../format';
+import type { BookingWithRelations, SalonSettings } from '../types';
 
 export type RecurrenceIntervalWeeks = 2 | 3 | 4;
 
@@ -130,4 +131,60 @@ export function buildTouchUpBookingUrl(params: {
   }
   const qs = query.toString();
   return qs ? `${basePath}?${qs}` : basePath;
+}
+
+export type RetouchPrefillBookingInput = Pick<
+  BookingWithRelations,
+  | 'serviceId'
+  | 'extraServiceIds'
+  | 'staffId'
+  | 'startAt'
+  | 'bookingCode'
+  | 'clientInstagram'
+> & {
+  client: Pick<BookingWithRelations['client'], 'fullName' | 'phoneE164' | 'instagramHandle'>;
+};
+
+export type RetouchPrefillSettingsInput = {
+  timezone?: string | null;
+  landingContent?: Pick<SalonSettings['landingContent'], 'touchUpDays'> | null;
+};
+
+export interface RetouchBookingPrefill {
+  serviceId: string;
+  extraServiceIds: string[];
+  staffId: string;
+  startDate: string;
+  touchUpDays: number;
+  clientName: string;
+  clientPhone: string;
+  clientInstagram: string;
+  internalNotes: string;
+}
+
+export function buildRetouchPrefill(
+  booking: RetouchPrefillBookingInput,
+  settings?: RetouchPrefillSettingsInput | null,
+  timezone?: string | null,
+): RetouchBookingPrefill {
+  const touchUpDays = normalizeTouchUpDays(settings?.landingContent?.touchUpDays);
+  const effectiveTimezone =
+    timezone?.trim() || settings?.timezone?.trim() || 'America/Mexico_City';
+  const startDate = computeSuggestedTouchUpDateKey({
+    startAt: booking.startAt,
+    touchUpDays,
+    timezone: effectiveTimezone,
+  });
+
+  return {
+    serviceId: booking.serviceId,
+    extraServiceIds: [...(booking.extraServiceIds ?? [])],
+    staffId: booking.staffId,
+    startDate,
+    touchUpDays,
+    clientName: booking.client.fullName,
+    clientPhone: booking.client.phoneE164,
+    clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? '',
+    internalNotes: `Retoque (+${touchUpDays} días · ${booking.bookingCode})`,
+  };
 }

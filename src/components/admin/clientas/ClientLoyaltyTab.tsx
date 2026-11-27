@@ -264,7 +264,7 @@ export function ClientLoyaltyTab({
                       label="Crear paquetes en Caja"
                       variant="secondary"
                       size="sm"
-                      href="/admin/caja?tab=promos"
+                      href="/admin/caja?tab=promos&sub=packages"
                     />
                   ) : undefined
                 }

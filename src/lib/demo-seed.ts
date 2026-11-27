@@ -157,6 +157,7 @@ export function createInitialDemoDatabase(): DemoDatabase {
 
   const booking1Start = isoAtOffset(1, 10, 0);
   const booking1End = isoAtOffset(1, 12, 15);
+  const booking1DepositAt = isoAtOffset(-1, 16, 0);
   const booking2Start = isoAtOffset(1, 14, 0);
   const booking2End = isoAtOffset(1, 16, 0);
   const booking3Start = isoAtOffset(2, 13, 30);
@@ -1633,6 +1634,19 @@ export function createInitialDemoDatabase(): DemoDatabase {
 
     cashEntries: [
       {
+        id: 'cash-3',
+        bookingId: 'bk-1001',
+        staffId: staffKarla,
+        entryType: 'deposit',
+        description: 'Anticipo SPEI NL-1042 — Sofía Ramírez',
+        amountCents: 20000,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'transfer',
+        occurredAt: booking1DepositAt,
+        recordedBy: 'Karla Rodríguez (Dueña)',
+      },
+      {
         id: 'cash-1',
         bookingId: 'bk-1000',
         staffId: staffKarla,
@@ -1661,6 +1675,16 @@ export function createInitialDemoDatabase(): DemoDatabase {
     ],
 
     paymentSplits: [
+      {
+        id: 'ps-0',
+        bookingId: 'bk-1001',
+        method: 'transfer',
+        amountCents: 20000,
+        tipCents: 0,
+        tipStaffId: null,
+        reference: 'Anticipo SPEI aprobado',
+        createdAt: booking1DepositAt,
+      },
       {
         id: 'ps-1',
         bookingId: 'bk-1000',

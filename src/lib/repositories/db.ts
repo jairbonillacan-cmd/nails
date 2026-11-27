@@ -35,6 +35,7 @@ import {
   transitionBookingStatus,
   type BookingTransitionEffect,
 } from '../booking/state-machine';
+import { computeBookingBalance } from '../booking/balance';
 import {
   DEFAULT_NO_SHOW_DEPOSIT_THRESHOLD,
   evaluateClientNoShowPolicy,
@@ -785,6 +786,11 @@ function mapSplitMethodToCashMethod(method: PaymentSplitMethod): PaymentMethod {
   return method;
 }
 
+function mapCashMethodToSplitMethod(method: PaymentMethod): PaymentSplitMethod {
+  if (method === 'gift_card') return 'giftcard';
+  return method;
+}
+
 function getEffectiveGiftCardBalance(db: DemoDatabase, coupon: Coupon): number {
   const redemptions = (db.couponRedemptions ?? []).filter(
     (r) => r.couponId === coupon.id,
@@ -1528,24 +1534,48 @@ function applyInLockTransitionEffects(
         },
       });
     } else if (effect.type === 'RecordCash') {
-      const alreadyRecorded = db.cashEntries.some((e) => e.bookingId === effect.bookingId);
-      if (!alreadyRecorded) {
+      const cols = ensurePhase3Collections(db);
+      const hasServiceIncome = db.cashEntries.some(
+        (e) => e.bookingId === effect.bookingId && e.entryType === 'service_income',
+      );
+      const balance = computeBookingBalance(booking, cols.paymentSplits, db.cashEntries);
+      const tipCents = options.tipCents ?? 0;
+      const amountToRecord = balance.remainingCents;
+      if (!hasServiceIncome && (amountToRecord > 0 || tipCents > 0)) {
+        const nowIso = new Date().toISOString();
+        const paymentMethod = options.paymentMethod ?? 'card';
         const staff = db.staff.find((s) => s.id === effect.staffId);
         const pct = staff?.commissionPercent ?? db.settings.defaultCommissionPercent;
-        const commissionCents = Math.round((effect.amountCents * pct) / 100);
+        const commissionCents = Math.round((amountToRecord * pct) / 100);
         db.cashEntries.unshift({
           id: generateId('cash'),
           bookingId: effect.bookingId,
           staffId: effect.staffId,
           entryType: 'service_income',
           description: `${hydrated.service.name} — ${hydrated.client.fullName}`,
-          amountCents: effect.amountCents,
-          tipCents: options.tipCents ?? 0,
+          amountCents: amountToRecord,
+          tipCents,
           commissionCents,
-          paymentMethod: options.paymentMethod ?? 'card',
-          occurredAt: new Date().toISOString(),
+          paymentMethod,
+          occurredAt: nowIso,
           recordedBy: options.recordedBy ?? 'Admin',
         });
+        const existingSplitsPaid = cols.paymentSplits
+          .filter((s) => s.bookingId === effect.bookingId && s.amountCents > 0)
+          .reduce((sum, s) => sum + s.amountCents, 0);
+        const splitAmountNeeded = Math.max(0, booking.totalPriceCents - existingSplitsPaid);
+        if (splitAmountNeeded > 0 || tipCents > 0) {
+          cols.paymentSplits.push({
+            id: generateId('ps'),
+            bookingId: effect.bookingId,
+            method: mapCashMethodToSplitMethod(paymentMethod),
+            amountCents: Math.min(amountToRecord, splitAmountNeeded),
+            tipCents,
+            tipStaffId: tipCents > 0 ? effect.staffId : null,
+            reference: 'Liquidación de cita',
+            createdAt: nowIso,
+          });
+        }
       }
     } else if (effect.type === 'ReleaseCoupon') {
       const cols = ensurePhase3Collections(db);
@@ -2202,6 +2232,8 @@ export async function updateBookingStatus(params: {
   tipCents?: number;
   recordedBy?: string;
   actor?: AuditActor;
+  skipDepositEntries?: boolean;
+  skipRecordCash?: boolean;
 }): Promise<BookingWithRelations> {
   if (isSupabaseEnabled()) {
     return createSupabaseRepository().updateBookingStatus(params);
@@ -2255,20 +2287,40 @@ export async function updateBookingStatus(params: {
       transition.nextStatus === 'confirmed'
     ) {
       booking.confirmedVia = booking.confirmedVia ?? 'manual';
-      if (
-        booking.depositAmountCents > 0 &&
-        !cols.paymentSplits.some((s) => s.bookingId === booking.id)
-      ) {
-        cols.paymentSplits.push({
-          id: generateId('ps'),
-          bookingId: booking.id,
-          method: 'transfer',
-          amountCents: booking.depositAmountCents,
-          tipCents: 0,
-          tipStaffId: null,
-          reference: 'Anticipo SPEI aprobado',
-          createdAt: nowIso,
-        });
+      if (!params.skipDepositEntries && booking.depositAmountCents > 0) {
+        if (!cols.paymentSplits.some((s) => s.bookingId === booking.id)) {
+          cols.paymentSplits.push({
+            id: generateId('ps'),
+            bookingId: booking.id,
+            method: 'transfer',
+            amountCents: booking.depositAmountCents,
+            tipCents: 0,
+            tipStaffId: null,
+            reference: 'Anticipo SPEI aprobado',
+            createdAt: nowIso,
+          });
+        }
+        if (
+          !db.cashEntries.some(
+            (e) => e.bookingId === booking.id && e.entryType === 'deposit',
+          )
+        ) {
+          const clientName =
+            db.clients.find((c) => c.id === booking.clientId)?.fullName ?? 'Clienta';
+          db.cashEntries.unshift({
+            id: generateId('cash'),
+            bookingId: booking.id,
+            staffId: booking.staffId,
+            entryType: 'deposit',
+            description: `Anticipo SPEI ${booking.bookingCode} — ${clientName}`,
+            amountCents: booking.depositAmountCents,
+            tipCents: 0,
+            commissionCents: 0,
+            paymentMethod: 'transfer',
+            occurredAt: nowIso,
+            recordedBy: params.recordedBy ?? params.actor?.fullName ?? 'Admin',
+          });
+        }
       }
       if (params.actor) {
         appendAuditLog(db, {
@@ -2307,11 +2359,14 @@ export async function updateBookingStatus(params: {
     }
 
     const hydrated = hydrateBooking(db, booking);
+    const effectiveTransitionEffects = params.skipRecordCash
+      ? transition.effects.filter((effect) => effect.type !== 'RecordCash')
+      : transition.effects;
     const outboxEvents = applyInLockTransitionEffects(
       db,
       booking,
       hydrated,
-      transition.effects,
+      effectiveTransitionEffects,
       {
         paymentMethod: params.paymentMethod,
         tipCents: params.tipCents,
@@ -2397,6 +2452,7 @@ export async function confirmBookingDepositFromWebhook(params: {
         bookingId: booking.id,
         status: 'confirmed',
         recordedBy: 'Mercado Pago Webhook',
+        skipDepositEntries: true,
       });
     }
     await supabase
@@ -2405,29 +2461,40 @@ export async function confirmBookingDepositFromWebhook(params: {
       .eq('id', booking.id);
 
     if (effectiveAmountCents > 0) {
-      await repo.recordPaymentSplits({
-        bookingId: booking.id,
-        splits: [
-          {
-            method: 'online',
-            amountCents: effectiveAmountCents,
-            tipCents: 0,
-            tipStaffId: null,
-            reference: `${params.provider.toUpperCase()}-${trimmedPaymentId}`,
-          },
-        ],
-      });
-      await repo.addCashEntry({
-        bookingId: booking.id,
-        staffId: booking.staffId,
-        entryType: 'deposit',
-        description: `Anticipo en línea ${booking.bookingCode} (${params.provider})`,
-        amountCents: effectiveAmountCents,
-        tipCents: 0,
-        commissionCents: 0,
-        paymentMethod: 'card',
-        recordedBy: 'Mercado Pago Webhook',
-      });
+      const existingSplits = await fetchSupabaseBookingPaymentSplits(booking.id);
+      if (existingSplits.length === 0) {
+        await repo.recordPaymentSplits({
+          bookingId: booking.id,
+          splits: [
+            {
+              method: 'online',
+              amountCents: effectiveAmountCents,
+              tipCents: 0,
+              tipStaffId: null,
+              reference: `${params.provider.toUpperCase()}-${trimmedPaymentId}`,
+            },
+          ],
+        });
+      }
+      const existingDepositCashRes = await supabase
+        .from('cash_register_entries')
+        .select('id')
+        .eq('booking_id', booking.id)
+        .eq('entry_type', 'deposit')
+        .limit(1);
+      if ((existingDepositCashRes.data ?? []).length === 0) {
+        await repo.addCashEntry({
+          bookingId: booking.id,
+          staffId: booking.staffId,
+          entryType: 'deposit',
+          description: `Anticipo en línea ${booking.bookingCode} (${params.provider})`,
+          amountCents: effectiveAmountCents,
+          tipCents: 0,
+          commissionCents: 0,
+          paymentMethod: 'card',
+          recordedBy: 'Mercado Pago Webhook',
+        });
+      }
     }
 
     await repo.writeAuditLog({
@@ -2527,29 +2594,37 @@ export async function confirmBookingDepositFromWebhook(params: {
     }
 
     if (effectiveAmountCents > 0) {
-      cols.paymentSplits.push({
-        id: generateId('ps'),
-        bookingId: booking.id,
-        method: 'online',
-        amountCents: effectiveAmountCents,
-        tipCents: 0,
-        tipStaffId: null,
-        reference: `${params.provider.toUpperCase()}-${trimmedPaymentId}`,
-        createdAt: nowIso,
-      });
-      db.cashEntries.unshift({
-        id: generateId('cash'),
-        bookingId: booking.id,
-        staffId: booking.staffId,
-        entryType: 'deposit',
-        description: `Anticipo en línea ${booking.bookingCode} (${params.provider})`,
-        amountCents: effectiveAmountCents,
-        tipCents: 0,
-        commissionCents: 0,
-        paymentMethod: 'card',
-        occurredAt: nowIso,
-        recordedBy: 'Mercado Pago Webhook',
-      });
+      if (!cols.paymentSplits.some((s) => s.bookingId === booking.id)) {
+        cols.paymentSplits.push({
+          id: generateId('ps'),
+          bookingId: booking.id,
+          method: 'online',
+          amountCents: effectiveAmountCents,
+          tipCents: 0,
+          tipStaffId: null,
+          reference: `${params.provider.toUpperCase()}-${trimmedPaymentId}`,
+          createdAt: nowIso,
+        });
+      }
+      if (
+        !db.cashEntries.some(
+          (e) => e.bookingId === booking.id && e.entryType === 'deposit',
+        )
+      ) {
+        db.cashEntries.unshift({
+          id: generateId('cash'),
+          bookingId: booking.id,
+          staffId: booking.staffId,
+          entryType: 'deposit',
+          description: `Anticipo en línea ${booking.bookingCode} (${params.provider})`,
+          amountCents: effectiveAmountCents,
+          tipCents: 0,
+          commissionCents: 0,
+          paymentMethod: 'card',
+          occurredAt: nowIso,
+          recordedBy: 'Mercado Pago Webhook',
+        });
+      }
     }
 
     appendAuditLog(db, {
@@ -2819,6 +2894,7 @@ export async function recordBookingCheckoutAtomic(params: {
           status: 'completed',
           recordedBy,
           skipLoyaltyStamp: true,
+          skipRecordCash: true,
         })
       : {
           ...booking,

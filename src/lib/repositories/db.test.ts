@@ -102,6 +102,8 @@ import {
 import { POST as postValidateCoupon } from '@/app/api/coupons/validate/route';
 import { zonedDateTimeToUtc } from '../availability/engine';
 import { getDateKeyInTimezone } from '../format';
+import { computeBookingBalance } from '../booking/balance';
+import { buildAdminOverviewPayload } from '../admin/overview-loader';
 
 const TEMP_DB_PATH = path.join(
   os.tmpdir(),
@@ -2804,5 +2806,111 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const paulaRow = inactive.find((c) => c.clientId === 'client-paula');
     expect(paulaRow?.lastServiceId).toBe(paulaBooking?.serviceId ?? null);
     expect(paulaRow?.lastServiceName).toBe(expectedServiceName ?? null);
+  });
+
+  it('Phase 0 (C1): seeds NL-1042 deposit consistently, records deposit cash + split on approval, and records only remaining balance on completion', async () => {
+    const seeded = getSnapshot();
+    const nl1042 = seeded.bookings.find((b) => b.id === 'bk-1001');
+    expect(nl1042).toBeDefined();
+    if (!nl1042) return;
+
+    const nl1042Balance = computeBookingBalance(
+      nl1042,
+      seeded.paymentSplits ?? [],
+      seeded.cashEntries,
+    );
+    expect(nl1042Balance.totalPriceCents).toBe(46000);
+    expect(nl1042Balance.paidCents).toBe(20000);
+    expect(nl1042Balance.appliedPaidCents).toBe(20000);
+    expect(nl1042Balance.remainingCents).toBe(26000);
+    expect(nl1042Balance.depositPaidCents).toBe(20000);
+    expect(nl1042Balance.isFullyPaid).toBe(false);
+
+    const ownerUser = seeded.adminUsers.find((u) => u.role === 'owner');
+    if (!ownerUser) throw new Error('Expected owner user');
+    const overviewBefore = await buildAdminOverviewPayload({
+      user: ownerUser,
+      isDemo: true,
+    });
+    const pendingAndrea = overviewBefore.pendingDeposits.find((d) => d.bookingId === 'bk-1003');
+    expect(pendingAndrea?.proofSubmitted).toBe(true);
+    expect(pendingAndrea?.awaitingReview).toBe(true);
+    expect(pendingAndrea?.missingProof).toBe(false);
+
+    await updateBookingStatus({
+      bookingId: 'bk-1003',
+      status: 'confirmed',
+      recordedBy: 'Karla Rodríguez (Dueña)',
+      actor: {
+        id: ownerUser.id,
+        email: ownerUser.email,
+        role: ownerUser.role,
+        fullName: ownerUser.fullName,
+      },
+    });
+
+    const afterApprove = getSnapshot();
+    const bk1003 = afterApprove.bookings.find((b) => b.id === 'bk-1003');
+    expect(bk1003?.status).toBe('confirmed');
+    const bk1003SplitsAfterApprove = (afterApprove.paymentSplits ?? []).filter(
+      (s) => s.bookingId === 'bk-1003',
+    );
+    const bk1003CashAfterApprove = afterApprove.cashEntries.filter(
+      (c) => c.bookingId === 'bk-1003',
+    );
+    expect(bk1003SplitsAfterApprove).toHaveLength(1);
+    expect(bk1003SplitsAfterApprove[0]?.amountCents).toBe(20000);
+    expect(bk1003CashAfterApprove).toHaveLength(1);
+    expect(bk1003CashAfterApprove[0]?.entryType).toBe('deposit');
+    expect(bk1003CashAfterApprove[0]?.amountCents).toBe(20000);
+    expect(bk1003CashAfterApprove[0]?.commissionCents).toBe(0);
+
+    if (bk1003) {
+      const midBalance = computeBookingBalance(
+        bk1003,
+        afterApprove.paymentSplits ?? [],
+        afterApprove.cashEntries,
+      );
+      expect(midBalance.paidCents).toBe(20000);
+      expect(midBalance.remainingCents).toBe(20500);
+      expect(midBalance.depositPaidCents).toBe(20000);
+    }
+
+    await updateBookingStatus({
+      bookingId: 'bk-1003',
+      status: 'completed',
+      paymentMethod: 'cash',
+      tipCents: 3000,
+      recordedBy: 'Karla Rodríguez (Dueña)',
+      actor: {
+        id: ownerUser.id,
+        email: ownerUser.email,
+        role: ownerUser.role,
+        fullName: ownerUser.fullName,
+      },
+    });
+
+    const afterComplete = getSnapshot();
+    const bk1003Done = afterComplete.bookings.find((b) => b.id === 'bk-1003');
+    expect(bk1003Done?.status).toBe('completed');
+    const bk1003CashDone = afterComplete.cashEntries.filter((c) => c.bookingId === 'bk-1003');
+    const serviceIncomeEntry = bk1003CashDone.find((c) => c.entryType === 'service_income');
+    expect(serviceIncomeEntry?.amountCents).toBe(20500);
+    expect(serviceIncomeEntry?.tipCents).toBe(3000);
+
+    if (bk1003Done) {
+      const doneBalance = computeBookingBalance(
+        bk1003Done,
+        afterComplete.paymentSplits ?? [],
+        afterComplete.cashEntries,
+      );
+      expect(doneBalance.paidCents).toBe(40500);
+      expect(doneBalance.appliedPaidCents).toBe(40500);
+      expect(doneBalance.remainingCents).toBe(0);
+      expect(doneBalance.depositPaidCents).toBe(20000);
+      expect(doneBalance.totalTipsCents).toBe(3000);
+      expect(doneBalance.isFullyPaid).toBe(true);
+      expect(doneBalance.isUncollected).toBe(false);
+    }
   });
 });

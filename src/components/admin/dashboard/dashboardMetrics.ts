@@ -1,3 +1,4 @@
+import { hasBookingProofSubmitted } from '@/lib/booking/balance';
 import { getDateKeyInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations, InventoryItem, StaffMember, WaitlistEntry } from '@/lib/types';
@@ -9,10 +10,13 @@ type UncollectedBookingItem = AdminOverviewPayload['uncollectedBookings'][number
 
 interface DashboardCashMetrics {
   hasTodayEntries: boolean;
+  hasPeriodEntries: boolean;
   cashIncomeCents: number;
   digitalIncomeCents: number;
+  expensesCents: number;
   commissionsCents: number;
   tipsCents: number;
+  periodNetCashCents: number;
   todayNetCashCents: number;
   todayTipsCents: number;
 }
@@ -59,6 +63,10 @@ export interface DashboardMetrics {
   uncollectedByBookingId: Map<string, UncollectedBookingItem>;
   uncollectedTotalCents: number;
   pendingDepositsTotalCents: number;
+  depositsAwaitingReviewCount: number;
+  depositsMissingProofCount: number;
+  depositsAwaitingReviewCents: number;
+  depositsMissingProofCents: number;
   waitingList: WaitlistEntry[];
   lowStock: InventoryItem[];
   todayBookings: BookingWithRelations[];
@@ -134,6 +142,29 @@ export function isDisplayableProofUrl(url: string | null): url is string {
   return url.startsWith('/api/media/') || url.startsWith('https://');
 }
 
+export function hasPendingDepositProof(deposit: {
+  proofDeliveryMethod: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
+  paymentProofUrl: string | null;
+}): boolean {
+  return hasBookingProofSubmitted(deposit);
+}
+
+export function formatPendingDepositsBreakdown(
+  awaitingReviewCount: number,
+  missingProofCount: number,
+): string {
+  if (awaitingReviewCount > 0 && missingProofCount > 0) {
+    return `${awaitingReviewCount} por revisar · ${missingProofCount} sin comprobante`;
+  }
+  if (awaitingReviewCount > 0) {
+    return `${awaitingReviewCount} ${awaitingReviewCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`;
+  }
+  if (missingProofCount > 0) {
+    return `${missingProofCount} sin comprobante`;
+  }
+  return 'Todo revisado';
+}
+
 export function buildDashboardMetrics(
   data: AdminOverviewPayload,
   period: DashboardPeriod = '7d',
@@ -160,11 +191,22 @@ export function buildDashboardMetrics(
     uncollectedTotalCents += item.remainingCents;
   }
 
-  const depositFallbackCents = data.settings.depositAmountCents ?? 20000;
-  const pendingDepositsTotalCents = data.pendingDeposits.reduce(
-    (sum, item) => sum + (item.depositAmountCents || depositFallbackCents),
-    0,
-  );
+  let pendingDepositsTotalCents = 0;
+  let depositsAwaitingReviewCount = 0;
+  let depositsMissingProofCount = 0;
+  let depositsAwaitingReviewCents = 0;
+  let depositsMissingProofCents = 0;
+  for (const item of data.pendingDeposits) {
+    const amountCents = Math.max(0, item.depositAmountCents);
+    pendingDepositsTotalCents += amountCents;
+    if (hasPendingDepositProof(item)) {
+      depositsAwaitingReviewCount += 1;
+      depositsAwaitingReviewCents += amountCents;
+    } else {
+      depositsMissingProofCount += 1;
+      depositsMissingProofCents += amountCents;
+    }
+  }
 
   const waitingList = data.waitlist.filter((entry) => entry.status === 'waiting');
   const lowStock = roleCanAccess(role, 'inventory')
@@ -192,22 +234,32 @@ export function buildDashboardMetrics(
       new Date(booking.endAt).getTime() >= serverNowMs,
   ).length;
 
+  const windowDays = period === 'today' ? 1 : period === '7d' ? 7 : 30;
+  const currentStartKey = shiftDateKey(todayKey, -(windowDays - 1));
+  const prevEndKey = shiftDateKey(currentStartKey, -1);
+  const prevStartKey = shiftDateKey(prevEndKey, -(windowDays - 1));
+
   const todayCashEntries = data.cashEntries.filter((entry) => entryDateKey(entry.occurredAt) === todayKey);
+  const periodCashEntries = data.cashEntries.filter((entry) => {
+    const key = entryDateKey(entry.occurredAt);
+    return key >= currentStartKey && key <= todayKey;
+  });
   const hasTodayEntries = todayCashEntries.length > 0;
-  const activeCashEntries = hasTodayEntries ? todayCashEntries : data.cashEntries;
+  const hasPeriodEntries = periodCashEntries.length > 0;
 
   let cashIncomeCents = 0;
   let digitalIncomeCents = 0;
+  let periodExpensesCents = 0;
   let commissionsCents = 0;
   let tipsCents = 0;
 
-  for (const entry of activeCashEntries) {
-    if (entry.entryType !== 'expense') {
-      if (entry.paymentMethod === 'cash') {
-        cashIncomeCents += entry.amountCents;
-      } else {
-        digitalIncomeCents += entry.amountCents;
-      }
+  for (const entry of periodCashEntries) {
+    if (entry.entryType === 'expense') {
+      periodExpensesCents += Math.abs(entry.amountCents);
+    } else if (entry.paymentMethod === 'cash') {
+      cashIncomeCents += entry.amountCents;
+    } else {
+      digitalIncomeCents += entry.amountCents;
     }
     commissionsCents += entry.commissionCents;
     tipsCents += entry.tipCents;
@@ -220,11 +272,6 @@ export function buildDashboardMetrics(
     .filter((entry) => entry.entryType === 'expense')
     .reduce((sum, entry) => sum + Math.abs(entry.amountCents), 0);
   const todayTipsCents = todayCashEntries.reduce((sum, entry) => sum + entry.tipCents, 0);
-
-  const windowDays = period === 'today' ? 1 : period === '7d' ? 7 : 30;
-  const currentStartKey = shiftDateKey(todayKey, -(windowDays - 1));
-  const prevEndKey = shiftDateKey(currentStartKey, -1);
-  const prevStartKey = shiftDateKey(prevEndKey, -(windowDays - 1));
 
   const sumCashRange = (startKey: string, endKey: string) =>
     data.cashEntries.reduce((sum, entry) => {
@@ -251,7 +298,7 @@ export function buildDashboardMetrics(
   const periodLabel =
     period === 'today' ? 'Hoy' : period === '7d' ? 'Últimos 7 días' : 'Últimos 30 días';
   const compareLabel =
-    period === 'today' ? 'vs ayer' : period === '7d' ? 'vs semana pasada' : 'vs mes anterior';
+    period === 'today' ? 'vs ayer' : period === '7d' ? 'vs 7 días previos' : 'vs 30 días previos';
 
   const dailySeries: DailySeriesPoint[] = [];
   for (let offset = -6; offset <= 0; offset += 1) {
@@ -303,6 +350,10 @@ export function buildDashboardMetrics(
     uncollectedByBookingId,
     uncollectedTotalCents,
     pendingDepositsTotalCents,
+    depositsAwaitingReviewCount,
+    depositsMissingProofCount,
+    depositsAwaitingReviewCents,
+    depositsMissingProofCents,
     waitingList,
     lowStock,
     todayBookings,
@@ -311,10 +362,13 @@ export function buildDashboardMetrics(
     totalAttentionCount,
     cash: {
       hasTodayEntries,
+      hasPeriodEntries,
       cashIncomeCents,
       digitalIncomeCents,
+      expensesCents: periodExpensesCents,
       commissionsCents,
       tipsCents,
+      periodNetCashCents: cashIncomeCents + digitalIncomeCents - periodExpensesCents,
       todayNetCashCents: todayRevenueCents - todayExpensesCents,
       todayTipsCents,
     },

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { createInitialDemoDatabase } from '@/lib/demo-seed';
 import type { AdminOverviewPayload } from '../AdminProvider';
-import { buildDashboardMetrics, computePercentDelta } from './dashboardMetrics';
+import {
+  buildDashboardMetrics,
+  computePercentDelta,
+  formatPendingDepositsBreakdown,
+} from './dashboardMetrics';
 
 function buildFixturePayload(): AdminOverviewPayload {
   const db = createInitialDemoDatabase();
@@ -124,5 +128,113 @@ describe('buildDashboardMetrics', () => {
       ),
       { numRuns: 200 },
     );
+  });
+
+  it('never falls back silently to historical cash entries when today has zero entries', () => {
+    const payload = buildFixturePayload();
+    payload.serverNowIso = '2026-12-20T18:00:00.000Z';
+    payload.serverTodayKey = '2026-12-20';
+    payload.cashEntries = [
+      {
+        id: 'old-cash-1',
+        bookingId: null,
+        staffId: payload.staff[0]?.id ?? null,
+        entryType: 'service_income',
+        description: 'Cobro histórico',
+        amountCents: 95000,
+        tipCents: 10000,
+        commissionCents: 38000,
+        paymentMethod: 'cash',
+        occurredAt: '2026-10-01T18:00:00.000Z',
+        recordedBy: 'Dueña',
+      },
+    ];
+
+    const todayMetrics = buildDashboardMetrics(payload, 'today');
+    expect(todayMetrics.cash.hasTodayEntries).toBe(false);
+    expect(todayMetrics.cash.hasPeriodEntries).toBe(false);
+    expect(todayMetrics.cash.cashIncomeCents).toBe(0);
+    expect(todayMetrics.cash.digitalIncomeCents).toBe(0);
+    expect(todayMetrics.cash.commissionsCents).toBe(0);
+    expect(todayMetrics.cash.tipsCents).toBe(0);
+    expect(todayMetrics.cash.periodNetCashCents).toBe(0);
+    expect(todayMetrics.periodMetrics.revenueCents).toBe(0);
+
+    const sevenDayMetrics = buildDashboardMetrics(payload, '7d');
+    expect(sevenDayMetrics.periodMetrics.periodLabel).toBe('Últimos 7 días');
+    expect(sevenDayMetrics.cash.periodNetCashCents).toBe(0);
+  });
+
+  it('separates pending deposits awaiting review from deposits missing proof', () => {
+    const payload = buildFixturePayload();
+    payload.pendingDeposits = [
+      {
+        bookingId: 'bk-proof-1',
+        bookingCode: 'NL-9001',
+        status: 'pending_confirmation',
+        clientId: 'cl-1',
+        clientName: 'Andrea',
+        clientPhone: '+522221111111',
+        clientInstagram: null,
+        serviceName: 'Rubber',
+        staffId: 'st-1',
+        staffName: 'Karla',
+        startAt: '2026-11-28T16:00:00.000Z',
+        depositAmountCents: 20000,
+        totalPriceCents: 46000,
+        proofDeliveryMethod: 'web_upload',
+        paymentProofUrl: '/api/media/proofs/test.png',
+      },
+      {
+        bookingId: 'bk-missing-1',
+        bookingCode: 'NL-9002',
+        status: 'pending_confirmation',
+        clientId: 'cl-2',
+        clientName: 'Sofía',
+        clientPhone: '+522222222222',
+        clientInstagram: null,
+        serviceName: 'Gel',
+        staffId: 'st-1',
+        staffName: 'Karla',
+        startAt: '2026-11-28T18:00:00.000Z',
+        depositAmountCents: 20000,
+        totalPriceCents: 35000,
+        proofDeliveryMethod: 'none',
+        paymentProofUrl: null,
+      },
+      {
+        bookingId: 'bk-missing-2',
+        bookingCode: 'NL-9003',
+        status: 'pending_payment',
+        clientId: 'cl-3',
+        clientName: 'Valeria',
+        clientPhone: '+522223333333',
+        clientInstagram: null,
+        serviceName: 'Acrílico',
+        staffId: 'st-1',
+        staffName: 'Karla',
+        startAt: '2026-11-29T16:00:00.000Z',
+        depositAmountCents: 20000,
+        totalPriceCents: 50000,
+        proofDeliveryMethod: 'none',
+        paymentProofUrl: null,
+      },
+    ];
+
+    const metrics = buildDashboardMetrics(payload, '7d');
+    expect(metrics.depositsAwaitingReviewCount).toBe(1);
+    expect(metrics.depositsMissingProofCount).toBe(2);
+    expect(metrics.depositsAwaitingReviewCents).toBe(20000);
+    expect(metrics.depositsMissingProofCents).toBe(40000);
+    expect(metrics.pendingDepositsTotalCents).toBe(60000);
+    expect(
+      formatPendingDepositsBreakdown(
+        metrics.depositsAwaitingReviewCount,
+        metrics.depositsMissingProofCount,
+      ),
+    ).toBe('1 por revisar · 2 sin comprobante');
+    expect(formatPendingDepositsBreakdown(2, 0)).toBe('2 comprobantes por revisar');
+    expect(formatPendingDepositsBreakdown(0, 3)).toBe('3 sin comprobante');
+    expect(formatPendingDepositsBreakdown(0, 0)).toBe('Todo revisado');
   });
 });

@@ -13,15 +13,22 @@ import {
   AtSign,
   CalendarClock,
   Check,
+  CheckCircle2,
   DollarSign,
   MessageCircle,
   UserRound,
+  UserX,
 } from 'lucide-react';
-import { computeBookingPaymentSummary } from '@/lib/payments/splits';
+import {
+  computeBookingBalance,
+  isPendingDepositStatus,
+} from '@/lib/booking/balance';
+import { canTransitionBookingStatus } from '@/lib/booking/state-machine';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
   BookingWithRelations,
+  CashRegisterEntry,
   PaymentSplit,
   Service,
 } from '@/lib/types';
@@ -84,6 +91,8 @@ interface BookingCardProps {
   booking: BookingWithRelations;
   allServices: Service[];
   paymentSplits?: PaymentSplit[];
+  cashEntries?: CashRegisterEntry[];
+  nowMs?: number;
   salonName: string;
   currency: 'MXN' | 'USD';
   timezone: string;
@@ -100,6 +109,8 @@ export const BookingCard = memo(function BookingCard({
   booking: b,
   allServices,
   paymentSplits = [],
+  cashEntries = [],
+  nowMs,
   salonName,
   currency,
   timezone,
@@ -123,14 +134,16 @@ export const BookingCard = memo(function BookingCard({
   const igUrl = buildInstagramProfileUrl(igHandle);
   const proofMeta = getProofBadgeMeta(b);
   const hasDisplayableProof = isDisplayableProofImage(b.paymentProofUrl, b.proofDeliveryMethod);
-  const bookingSplits = paymentSplits.filter((s) => s.bookingId === b.id);
-  const paymentSummary = computeBookingPaymentSummary(b.totalPriceCents, bookingSplits);
-  const isPending =
-    b.status === 'pending_confirmation' || b.status === 'pending_payment';
+  const balance = computeBookingBalance(b, paymentSplits, cashEntries, nowMs);
+  const isPastUnclosed = balance.isPastUnclosed;
+  const isPending = isPendingDepositStatus(b.status);
   const canReschedule = isPending || b.status === 'confirmed';
   const canCollect =
     b.status === 'confirmed' ||
-    (b.status === 'completed' && paymentSummary.isUncollected);
+    (b.status === 'completed' && balance.isUncollected) ||
+    isPastUnclosed;
+  const canMarkCompleted = canTransitionBookingStatus(b.status, 'completed');
+  const canMarkNoShow = canTransitionBookingStatus(b.status, 'no_show');
 
   const waInboxHref = `/admin/whatsapp?phone=${encodeURIComponent(b.client.phoneE164)}&bookingId=${encodeURIComponent(b.id)}`;
   const waHref = buildWhatsAppLink(
@@ -177,7 +190,11 @@ export const BookingCard = memo(function BookingCard({
                 {b.client.fullName}
               </Text>
             )}
-            <BookingStatusTag status={b.status} hasPaymentProof={Boolean(b.paymentProofUrl)} />
+            {isPastUnclosed ? (
+              <StatusTag tone="warning" showDot label="Pasada sin cerrar" />
+            ) : (
+              <BookingStatusTag status={b.status} hasPaymentProof={Boolean(b.paymentProofUrl)} />
+            )}
             {isBusy ? (
               <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
                 Actualizando…
@@ -185,12 +202,12 @@ export const BookingCard = memo(function BookingCard({
             ) : null}
             {b.status !== 'canceled' && b.status !== 'no_show' ? (
               <StatusTag
-                tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
+                tone={balance.isFullyPaid ? 'success' : 'warning'}
                 hasTabularNumbers
                 label={
-                  paymentSummary.isFullyPaid
+                  balance.isFullyPaid
                     ? 'Pagado'
-                    : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`
+                    : `Falta cobrar ${formatCurrency(balance.remainingCents, currency)}`
                 }
               />
             ) : null}
@@ -237,7 +254,13 @@ export const BookingCard = memo(function BookingCard({
             {proofMeta ? (
               <Token size="sm" color={proofMeta.color} label={proofMeta.label} />
             ) : null}
-            {b.depositAmountCents > 0 ? (
+            {balance.depositPaidCents > 0 ? (
+              <Token
+                size="sm"
+                color="green"
+                label={`Anticipo pagado ${formatCurrency(balance.depositPaidCents, currency)}`}
+              />
+            ) : b.depositAmountCents > 0 ? (
               <Token
                 size="sm"
                 color="default"
@@ -287,29 +310,83 @@ export const BookingCard = memo(function BookingCard({
 
       <HStack gap={2} wrap="wrap" justify="between" align="center">
         <HStack gap={1.5} wrap="wrap">
-          {isPending ? (
-            <Button
-              type="button"
-              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
-              variant="primary"
-              size="sm"
-              icon={<Check size={14} />}
-              isLoading={busyStatus === 'confirmed'}
-              isDisabled={isBusy}
-              onClick={() => onUpdateStatus(b.id, 'confirmed')}
-            />
-          ) : null}
-          {canCollect ? (
-            <Button
-              type="button"
-              label="Cobrar"
-              variant="primary"
-              size="sm"
-              icon={<DollarSign size={14} aria-hidden="true" />}
-              isDisabled={isBusy}
-              onClick={() => onOpenCheckout(b)}
-            />
-          ) : null}
+          {isPastUnclosed ? (
+            <>
+              {canCollect ? (
+                <Button
+                  type="button"
+                  label="Cobrar"
+                  variant="primary"
+                  size="sm"
+                  icon={<DollarSign size={14} aria-hidden="true" />}
+                  isDisabled={isBusy}
+                  onClick={() => onOpenCheckout(b)}
+                />
+              ) : null}
+              {canMarkCompleted ? (
+                <Button
+                  type="button"
+                  label={busyStatus === 'completed' ? 'Guardando…' : 'Terminada'}
+                  variant="secondary"
+                  size="sm"
+                  icon={<CheckCircle2 size={14} aria-hidden="true" />}
+                  isLoading={busyStatus === 'completed'}
+                  isDisabled={isBusy}
+                  onClick={() => onUpdateStatus(b.id, 'completed')}
+                />
+              ) : null}
+              {canMarkNoShow ? (
+                <Button
+                  type="button"
+                  label={busyStatus === 'no_show' ? 'Marcando…' : 'No llegó'}
+                  variant="ghost"
+                  size="sm"
+                  icon={<UserX size={14} aria-hidden="true" />}
+                  isLoading={busyStatus === 'no_show'}
+                  isDisabled={isBusy}
+                  onClick={() => onUpdateStatus(b.id, 'no_show')}
+                />
+              ) : null}
+              {isPending ? (
+                <Button
+                  type="button"
+                  label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
+                  variant="secondary"
+                  size="sm"
+                  icon={<Check size={14} aria-hidden="true" />}
+                  isLoading={busyStatus === 'confirmed'}
+                  isDisabled={isBusy}
+                  onClick={() => onUpdateStatus(b.id, 'confirmed')}
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
+              {isPending ? (
+                <Button
+                  type="button"
+                  label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
+                  variant="primary"
+                  size="sm"
+                  icon={<Check size={14} />}
+                  isLoading={busyStatus === 'confirmed'}
+                  isDisabled={isBusy}
+                  onClick={() => onUpdateStatus(b.id, 'confirmed')}
+                />
+              ) : null}
+              {canCollect ? (
+                <Button
+                  type="button"
+                  label="Cobrar"
+                  variant="primary"
+                  size="sm"
+                  icon={<DollarSign size={14} aria-hidden="true" />}
+                  isDisabled={isBusy}
+                  onClick={() => onOpenCheckout(b)}
+                />
+              ) : null}
+            </>
+          )}
           {canOpenWhatsAppInbox ? (
             <Button
               label="Abrir chat"

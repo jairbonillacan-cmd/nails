@@ -14,7 +14,7 @@ import {
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import type { BookingWithRelations } from '@/lib/types';
-import { getDateKeyInTimezone, phonesMatchE164 } from '@/lib/format';
+import { phonesMatchE164 } from '@/lib/format';
 import type { AgendaRange } from './BookingsFiltersBar';
 import {
   filterBookingsForListRange,
@@ -285,21 +285,6 @@ export function useCitasWorkspace() {
     setCheckoutSessionKey((prev) => prev + 1);
   };
 
-  const handleScheduleRetouch = (booking: BookingWithRelations) => {
-    const retouchDateKey = shiftDateKey(getDateKeyInTimezone(new Date(booking.startAt), tz), 21);
-    setCheckoutBookingId(null);
-    openManualModal(booking.staffId, {
-      serviceId: booking.serviceId,
-      extraServiceIds: booking.extraServiceIds ?? [],
-      staffId: booking.staffId,
-      startDate: retouchDateKey,
-      clientName: booking.client.fullName,
-      clientPhone: booking.client.phoneE164,
-      clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? '',
-      internalNotes: `Retoque 3 semanas (${booking.bookingCode})`,
-    });
-  };
-
   const handleSelectRange = (nextRange: AgendaRange) => {
     setAgendaRange(nextRange);
     setSelectedVisualDate(
@@ -352,7 +337,6 @@ export function useCitasWorkspace() {
     },
     openManualModal,
     openCheckoutDrawer,
-    handleScheduleRetouch,
     handleSelectRange,
   };
 }

@@ -143,6 +143,8 @@ export default function AdminCashPage() {
     pendingDeposits,
     uncollectedBookings,
     pendingDepositsTotalCents,
+    depositsAwaitingReviewCount,
+    depositsMissingProofCount,
     uncollectedTotalCents,
     kpiItems,
     periodSummary,
@@ -152,7 +154,7 @@ export default function AdminCashPage() {
     splitSummaryByMethod,
     commissionsByStaff,
     todayCommissionsByStaff,
-  } = useCajaData(providerData, searchParams.get('tab'));
+  } = useCajaData(providerData, searchParams.get('tab'), searchParams.get('sub'));
 
   const [msg, setMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -180,7 +182,7 @@ export default function AdminCashPage() {
   const [csvPinError, setCsvPinError] = useState<string | null>(null);
 
   if (!data) {
-    return <PageSkeleton kpiCount={3} withSplit ariaLabel="Cargando caja" />;
+    return <PageSkeleton kpiCount={4} withSplit ariaLabel="Cargando caja" />;
   }
 
   const tz = data.settings.timezone || 'America/Mexico_City';
@@ -514,7 +516,7 @@ export default function AdminCashPage() {
         />
       ) : null}
 
-      <MetricGrid ariaLabel="Resumen de caja" cols={3} items={kpiItems} />
+      <MetricGrid ariaLabel="Resumen de caja" cols={4} items={kpiItems} />
 
       <TabList
         value={effectiveActiveTab}
@@ -546,6 +548,8 @@ export default function AdminCashPage() {
           uncollectedTotalCents={uncollectedTotalCents}
           pendingDepositsCount={pendingDeposits.length}
           pendingDepositsTotalCents={pendingDepositsTotalCents}
+          depositsAwaitingReviewCount={depositsAwaitingReviewCount}
+          depositsMissingProofCount={depositsMissingProofCount}
           splitDetails={filteredSplitDetails}
           cajaPeriod={cajaPeriod}
           customRange={customRange}

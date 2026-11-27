@@ -5,7 +5,10 @@ import { formatCurrency } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import { MetricGrid, type MetricTileItem } from '@/components/ui';
 import type { AdminOverviewPayload } from '../AdminProvider';
-import type { DashboardMetrics } from './dashboardMetrics';
+import {
+  formatPendingDepositsBreakdown,
+  type DashboardMetrics,
+} from './dashboardMetrics';
 
 interface DashboardKpiRowProps {
   data: AdminOverviewPayload;
@@ -82,23 +85,30 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
     {
       id: 'uncollected',
       label: 'Por cobrar',
-      description: 'Citas terminadas sin cobro',
+      description: 'Citas terminadas o pasadas',
       value: formatCurrency(metrics.uncollectedTotalCents, currency),
       sub:
         uncollectedCount > 0
-          ? `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} pendiente${uncollectedCount === 1 ? '' : 's'}`
+          ? `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} por cobrar`
           : 'Todo cobrado',
       tone: metrics.uncollectedTotalCents > 0 ? 'accent' : 'success',
     },
     {
       id: 'pending-deposits',
-      label: 'Anticipos',
-      description: 'Comprobantes por revisar',
+      label: 'Anticipos pendientes',
+      description:
+        metrics.depositsAwaitingReviewCount > 0 && metrics.depositsMissingProofCount > 0
+          ? 'Por revisar y sin comprobante'
+          : metrics.depositsAwaitingReviewCount > 0
+            ? 'Comprobantes por revisar'
+            : metrics.depositsMissingProofCount > 0
+              ? 'Sin comprobante todavía'
+              : 'Pendientes de confirmar',
       value: formatCurrency(metrics.pendingDepositsTotalCents, currency),
-      sub:
-        pendingDepositsCount > 0
-          ? `${pendingDepositsCount} ${pendingDepositsCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`
-          : 'Todo revisado',
+      sub: formatPendingDepositsBreakdown(
+        metrics.depositsAwaitingReviewCount,
+        metrics.depositsMissingProofCount,
+      ),
       tone: pendingDepositsCount > 0 ? 'accent' : 'success',
     },
   ];

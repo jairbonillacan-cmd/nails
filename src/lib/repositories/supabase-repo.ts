@@ -14,6 +14,7 @@ import {
   isActiveBookingStatus,
   transitionBookingStatus,
 } from '../booking/state-machine';
+import { computeBookingBalance } from '../booking/balance';
 import { generateBookingCode, systemClock, type Clock } from '../clock';
 import {
   isSafeExternalProofUrl,
@@ -1238,7 +1239,9 @@ async function hydrateBookingRowWithClient(
     supabase.from('staff_members').select('*').eq('id', bookingRow.staff_id).maybeSingle(),
     supabase.from('staff_services').select('*').eq('staff_id', bookingRow.staff_id),
     supabase.from('clients').select('*').eq('id', bookingRow.client_id).maybeSingle(),
-    supabase.from('booking_reviews').select('*').eq('booking_id', bookingRow.id).maybeSingle(),
+    bookingRow.status === 'completed'
+      ? supabase.from('booking_reviews').select('*').eq('booking_id', bookingRow.id).maybeSingle()
+      : Promise.resolve({ data: null as Tables['booking_reviews']['Row'] | null }),
   ]);
 
   const booking = mapBookingRow(bookingRow, bookingAddonsRes.data ?? []);
@@ -2769,23 +2772,53 @@ export function createSupabaseRepository(
       }
 
       if (isApprovingDeposit) {
-        if (hydrated.depositAmountCents > 0) {
-          const existingSplitRes = await supabase
-            .from('payment_splits')
-            .select('id')
-            .eq('booking_id', hydrated.id)
-            .limit(1);
+        if (!params.skipDepositEntries && hydrated.depositAmountCents > 0) {
+          const [existingSplitRes, existingDepositCashRes] = await Promise.all([
+            supabase
+              .from('payment_splits')
+              .select('id')
+              .eq('booking_id', hydrated.id)
+              .limit(1),
+            supabase
+              .from('cash_register_entries')
+              .select('id')
+              .eq('booking_id', hydrated.id)
+              .eq('entry_type', 'deposit')
+              .limit(1),
+          ]);
+          const depositWrites: Array<PromiseLike<unknown>> = [];
           if ((existingSplitRes.data ?? []).length === 0) {
-            await supabase.from('payment_splits').insert([
-              {
+            depositWrites.push(
+              supabase.from('payment_splits').insert([
+                {
+                  booking_id: hydrated.id,
+                  method: 'transfer',
+                  amount_cents: hydrated.depositAmountCents,
+                  tip_cents: 0,
+                  tip_staff_id: null,
+                  reference: 'Anticipo SPEI aprobado',
+                },
+              ]),
+            );
+          }
+          if ((existingDepositCashRes.data ?? []).length === 0) {
+            depositWrites.push(
+              supabase.from('cash_register_entries').insert({
                 booking_id: hydrated.id,
-                method: 'transfer',
+                staff_id: hydrated.staffId,
+                entry_type: 'deposit',
+                description: `Anticipo SPEI ${hydrated.bookingCode} — ${hydrated.client.fullName}`,
                 amount_cents: hydrated.depositAmountCents,
                 tip_cents: 0,
-                tip_staff_id: null,
-                reference: 'Anticipo SPEI aprobado',
-              },
-            ]);
+                commission_cents: 0,
+                payment_method: 'transfer',
+                occurred_at: nowIso,
+                recorded_by: params.recordedBy ?? params.actor?.fullName ?? 'Admin',
+              }),
+            );
+          }
+          if (depositWrites.length > 0) {
+            await Promise.all(depositWrites);
           }
         }
         if (params.actor) {
@@ -2864,27 +2897,73 @@ export function createSupabaseRepository(
           }
           notifyEffects.push(effect);
         } else if (effect.type === 'RecordCash') {
-          const existingCashRes = await supabase
-            .from('cash_register_entries')
-            .select('id')
-            .eq('booking_id', effect.bookingId)
-            .limit(1);
-          if ((existingCashRes.data ?? []).length === 0) {
-            const pct =
-              hydrated.staff.commissionPercent ?? settings.defaultCommissionPercent;
-            const commissionCents = Math.round((effect.amountCents * pct) / 100);
-            await supabase.from('cash_register_entries').insert({
-              booking_id: effect.bookingId,
-              staff_id: effect.staffId,
-              entry_type: 'service_income',
-              description: `${hydrated.service.name} — ${hydrated.client.fullName}`,
-              amount_cents: effect.amountCents,
-              tip_cents: params.tipCents ?? 0,
-              commission_cents: commissionCents,
-              payment_method: params.paymentMethod ?? 'card',
-              occurred_at: nowIso,
-              recorded_by: params.recordedBy ?? 'Admin',
-            });
+          if (!params.skipRecordCash) {
+            const [existingCashRes, existingSplitsRes] = await Promise.all([
+              supabase
+                .from('cash_register_entries')
+                .select('*')
+                .eq('booking_id', effect.bookingId),
+              supabase
+                .from('payment_splits')
+                .select('*')
+                .eq('booking_id', effect.bookingId),
+            ]);
+            const existingCash = (existingCashRes.data ?? []).map(mapCashEntryRow);
+            const existingSplits = (existingSplitsRes.data ?? []).map(mapPaymentSplitRow);
+            const hasServiceIncome = existingCash.some(
+              (entry) => entry.entryType === 'service_income',
+            );
+            const balance = computeBookingBalance(
+              hydrated,
+              existingSplits,
+              existingCash,
+              clock.nowMs(),
+            );
+            const tipCents = params.tipCents ?? 0;
+            const amountToRecord = balance.remainingCents;
+            if (!hasServiceIncome && (amountToRecord > 0 || tipCents > 0)) {
+              const paymentMethod = params.paymentMethod ?? 'card';
+              const splitMethod = paymentMethod === 'gift_card' ? 'giftcard' : paymentMethod;
+              const pct =
+                hydrated.staff.commissionPercent ?? settings.defaultCommissionPercent;
+              const commissionCents = Math.round((amountToRecord * pct) / 100);
+              const existingSplitsPaid = existingSplits
+                .filter((s) => s.amountCents > 0)
+                .reduce((sum, s) => sum + s.amountCents, 0);
+              const splitAmountNeeded = Math.max(
+                0,
+                hydrated.totalPriceCents - existingSplitsPaid,
+              );
+              const recordWrites: Array<PromiseLike<unknown>> = [
+                supabase.from('cash_register_entries').insert({
+                  booking_id: effect.bookingId,
+                  staff_id: effect.staffId,
+                  entry_type: 'service_income',
+                  description: `${hydrated.service.name} — ${hydrated.client.fullName}`,
+                  amount_cents: amountToRecord,
+                  tip_cents: tipCents,
+                  commission_cents: commissionCents,
+                  payment_method: paymentMethod,
+                  occurred_at: nowIso,
+                  recorded_by: params.recordedBy ?? 'Admin',
+                }),
+              ];
+              if (splitAmountNeeded > 0 || tipCents > 0) {
+                recordWrites.push(
+                  supabase.from('payment_splits').insert([
+                    {
+                      booking_id: effect.bookingId,
+                      method: splitMethod,
+                      amount_cents: Math.min(amountToRecord, splitAmountNeeded),
+                      tip_cents: tipCents,
+                      tip_staff_id: tipCents > 0 ? effect.staffId : null,
+                      reference: 'Liquidación de cita',
+                    },
+                  ]),
+                );
+              }
+              await Promise.all(recordWrites);
+            }
           }
         } else if (effect.type === 'ReleaseCoupon') {
           const couponRes = await supabase

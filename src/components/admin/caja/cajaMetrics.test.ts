@@ -5,7 +5,11 @@ import type {
   PaymentSplit,
   StaffMember,
 } from '@/lib/types';
-import type { SplitDetailRow } from './cajaTypes';
+import {
+  formatCajaDepositsBreakdown,
+  resolveInitialCajaRoute,
+  type SplitDetailRow,
+} from './cajaTypes';
 import {
   buildCommissionPayoutDraft,
   cajaPeriodLabel,
@@ -688,5 +692,63 @@ describe('cajaMetrics coupon status, editor validation & cash reconciliation', (
     expect(text).toContain('(Sobrante)');
     expect(text).toContain('Citas sin cobrar: 1');
     expect(text).toContain('Anticipos por confirmar: 2');
+  });
+
+  it('resolves Caja route tabs including ?tab=promos and sub-tab aliases', () => {
+    expect(resolveInitialCajaRoute('promos')).toEqual({
+      tab: 'promos',
+      highlightUncollected: false,
+      promosView: 'coupons',
+    });
+    expect(resolveInitialCajaRoute('promos', 'packages')).toEqual({
+      tab: 'promos',
+      highlightUncollected: false,
+      promosView: 'packages',
+    });
+    expect(resolveInitialCajaRoute('promos', 'paquetes')).toEqual({
+      tab: 'promos',
+      highlightUncollected: false,
+      promosView: 'packages',
+    });
+    expect(resolveInitialCajaRoute('paquetes')).toEqual({
+      tab: 'promos',
+      highlightUncollected: false,
+      promosView: 'packages',
+    });
+    expect(resolveInitialCajaRoute('cupones')).toEqual({
+      tab: 'promos',
+      highlightUncollected: false,
+      promosView: 'coupons',
+    });
+    expect(resolveInitialCajaRoute('anticipos')).toEqual({
+      tab: 'deposits',
+      highlightUncollected: false,
+      promosView: 'coupons',
+    });
+    expect(resolveInitialCajaRoute('deposits')).toEqual({
+      tab: 'deposits',
+      highlightUncollected: false,
+      promosView: 'coupons',
+    });
+    expect(resolveInitialCajaRoute('sin-cobrar')).toEqual({
+      tab: 'summary',
+      highlightUncollected: true,
+      promosView: 'coupons',
+    });
+    expect(resolveInitialCajaRoute('comisiones')).toEqual({
+      tab: 'commissions',
+      highlightUncollected: false,
+      promosView: 'coupons',
+    });
+    expect(resolveInitialCajaRoute(null)).toEqual({
+      tab: 'summary',
+      highlightUncollected: false,
+      promosView: 'coupons',
+    });
+
+    expect(formatCajaDepositsBreakdown(1, 6)).toBe('1 por revisar · 6 sin comprobante');
+    expect(formatCajaDepositsBreakdown(1, 0)).toBe('1 comprobante por revisar');
+    expect(formatCajaDepositsBreakdown(0, 4)).toBe('4 sin comprobante');
+    expect(formatCajaDepositsBreakdown(0, 0)).toBe('Todo revisado');
   });
 });

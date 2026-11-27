@@ -1,7 +1,4 @@
-import {
-  computeBookingPaymentSummary,
-  type BookingPaymentSummary,
-} from '@/lib/payments/splits';
+import type { BookingPaymentSummary } from '@/lib/payments/splits';
 import type {
   InventoryItem,
   LoyaltyStamp,
@@ -34,7 +31,7 @@ export function buildNextSplitRow(
 export function computeCheckoutDraftMetrics(params: {
   bookingTotalCents: number;
   priorPaidCents: number;
-  existingSplits: PaymentSplit[];
+  priorTipsCents?: number;
   selectedExtraItem: InventoryItem | null;
   extraQuantity: number;
   selectedPackage: ClientPackageSummaryRow | null;
@@ -64,11 +61,20 @@ export function computeCheckoutDraftMetrics(params: {
     amountCents: Math.max(0, Math.round((row.amountMxn || 0) * 100)),
     tipCents: index === 0 ? draftTipCents : 0,
   }));
-  const combinedSummary = computeBookingPaymentSummary(effectiveTotalCents, [
-    ...params.existingSplits,
-    ...draftSplitsForPreview,
-  ]);
   const draftChargeCents = draftSplitsForPreview.reduce((sum, s) => sum + s.amountCents, 0);
+  const combinedPaidCents = Math.max(0, Math.round(params.priorPaidCents)) + draftChargeCents;
+  const combinedTipsCents = Math.max(0, Math.round(params.priorTipsCents ?? 0)) + draftTipCents;
+  const combinedRemainingCents = Math.max(0, effectiveTotalCents - combinedPaidCents);
+  const combinedChangeCents = Math.max(0, combinedPaidCents - effectiveTotalCents);
+  const combinedSummary: BookingPaymentSummary = {
+    totalPriceCents: effectiveTotalCents,
+    paidCents: combinedPaidCents,
+    remainingCents: combinedRemainingCents,
+    changeCents: combinedChangeCents,
+    totalTipsCents: combinedTipsCents,
+    isFullyPaid: combinedPaidCents >= effectiveTotalCents,
+    isUncollected: effectiveTotalCents > 0 && combinedPaidCents < effectiveTotalCents,
+  };
 
   return {
     extraQty,

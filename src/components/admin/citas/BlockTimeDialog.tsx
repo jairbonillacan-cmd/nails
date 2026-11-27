@@ -27,7 +27,12 @@ import {
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
 import type { StaffMember } from '@/lib/types';
-import { getDayOfWeekFromDateKey, shiftDateKey } from './scheduleGridGeometry';
+import {
+  formatMinutesHHMM,
+  getDayOfWeekFromDateKey,
+  parseTimeMinutes,
+  shiftDateKey,
+} from './scheduleGridGeometry';
 
 export interface BlockTimePrefill {
   readonly dateKey: string;
@@ -70,8 +75,31 @@ function collectWeekdaysInRange(startDate: string, endDate: string): number[] {
   return Array.from(set).toSorted((a, b) => a - b);
 }
 
-function clampOptionTime(value: string, fallback: string): string {
-  return FIXED_TIME_OPTIONS.some((opt) => opt.value === value) ? value : fallback;
+function buildTimeOptions(
+  startHHMM: string,
+  endHHMM: string,
+): Array<{ value: string; label: string }> {
+  const startMin = parseTimeMinutes(startHHMM);
+  const endMin = parseTimeMinutes(endHHMM);
+  const minBound = Math.min(8 * 60, Math.floor(startMin / 15) * 15);
+  const maxBound = Math.max(22 * 60, Math.ceil(endMin / 15) * 15);
+  if (minBound === 8 * 60 && maxBound === 22 * 60) {
+    return FIXED_TIME_OPTIONS;
+  }
+  const options: Array<{ value: string; label: string }> = [];
+  for (let m = minBound; m <= maxBound; m += 15) {
+    const value = formatMinutesHHMM(m);
+    options.push({ value, label: formatTimeHHMM12h(value) });
+  }
+  return options;
+}
+
+function clampOptionTime(
+  value: string,
+  options: readonly { value: string; label: string }[],
+  fallback: string,
+): string {
+  return options.some((opt) => opt.value === value) ? value : fallback;
 }
 
 export function BlockTimeDialog({
@@ -92,15 +120,18 @@ export function BlockTimeDialog({
   const initialDow = getDayOfWeekFromDateKey(prefill.dateKey);
   const initialDayNum = Number(prefill.dateKey.slice(8, 10)) || 1;
 
+  const timeOptions = buildTimeOptions(prefill.startTimeHHMM, prefill.endTimeHHMM);
   const [staffId, setStaffId] = useState(resolvedStaffId);
   const [reason, setReason] = useState('');
   const [startDate, setStartDate] = useState(prefill.dateKey);
   const [endDate, setEndDate] = useState(prefill.dateKey);
   const [allDay, setAllDay] = useState(false);
   const [startTime, setStartTime] = useState(() =>
-    clampOptionTime(prefill.startTimeHHMM, '10:00'),
+    clampOptionTime(prefill.startTimeHHMM, timeOptions, '10:00'),
   );
-  const [endTime, setEndTime] = useState(() => clampOptionTime(prefill.endTimeHHMM, '11:00'));
+  const [endTime, setEndTime] = useState(() =>
+    clampOptionTime(prefill.endTimeHHMM, timeOptions, '11:00'),
+  );
   const [repeat, setRepeat] = useState(false);
   const [frequency, setFrequency] = useState<'weekly' | 'monthly'>('weekly');
   const [weekdays, setWeekdays] = useState<number[]>([initialDow]);
@@ -359,13 +390,13 @@ export function BlockTimeDialog({
                   label="Hora de inicio"
                   value={startTime}
                   onChange={(val) => val && setStartTime(val)}
-                  options={FIXED_TIME_OPTIONS}
+                  options={timeOptions}
                 />
                 <Selector
                   label="Hora de fin"
                   value={endTime}
                   onChange={(val) => val && setEndTime(val)}
-                  options={FIXED_TIME_OPTIONS}
+                  options={timeOptions}
                 />
               </Grid>
             ) : null}

@@ -19,12 +19,14 @@ import {
   SurfaceCard,
   type StatusTagTone,
 } from '@/components/ui';
+import { computeBookingBalance } from '@/lib/booking/balance';
 import { BOOKING_TRANSITIONS } from '@/lib/booking/state-machine';
-import { computeBookingPaymentSummary } from '@/lib/payments/splits';
+import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
   BookingWithRelations,
+  CashRegisterEntry,
   PaymentSplit,
   Service,
 } from '@/lib/types';
@@ -49,6 +51,8 @@ interface BookingQuickPopoverProps {
   booking: BookingWithRelations | null;
   allServices: Service[];
   paymentSplits: PaymentSplit[];
+  cashEntries?: CashRegisterEntry[];
+  serverNowIso?: string;
   salonName: string;
   googleReviewUrl?: string | null;
   currency: 'MXN' | 'USD';
@@ -78,6 +82,8 @@ export function BookingQuickPopover({
   booking,
   allServices,
   paymentSplits,
+  cashEntries = [],
+  serverNowIso,
   salonName,
   googleReviewUrl = null,
   currency,
@@ -96,6 +102,7 @@ export function BookingQuickPopover({
   onRequestReschedule,
 }: BookingQuickPopoverProps) {
   const { data: adminData } = useAdminData();
+  const nowMs = useCurrentClockTick(serverNowIso ?? adminData?.serverNowIso ?? '');
   const canOpenWhatsAppInbox = Boolean(
     adminData && roleCanAccess(adminData.session.user.role, 'whatsapp'),
   );
@@ -137,10 +144,8 @@ export function BookingQuickPopover({
   );
   const hasUploadedProof =
     booking.proofDeliveryMethod !== 'none' || Boolean(booking.paymentProofUrl);
-  const paymentSummary = computeBookingPaymentSummary(
-    booking.totalPriceCents,
-    paymentSplits.filter((s) => s.bookingId === booking.id),
-  );
+  const balance = computeBookingBalance(booking, paymentSplits, cashEntries, nowMs);
+  const isPastUnclosed = balance.isPastUnclosed;
   const isPending = allowedNext.includes('confirmed');
   const canRejectProof = Boolean(isPending && hasUploadedProof && onRejectDeposit);
   const canRemind =
@@ -150,7 +155,7 @@ export function BookingQuickPopover({
   const canCollect =
     booking.status !== 'canceled' &&
     booking.status !== 'no_show' &&
-    (allowedNext.includes('completed') || paymentSummary.isUncollected);
+    (allowedNext.includes('completed') || balance.isUncollected || isPastUnclosed);
 
   const isCompleted = booking.status === 'completed';
   const whatsappChatHref = canOpenWhatsAppInbox
@@ -269,10 +274,14 @@ export function BookingQuickPopover({
                   />
                 ) : null}
                 <HStack gap={2} align="center" wrap="wrap">
-                  <BookingStatusTag
-                    status={booking.status}
-                    hasPaymentProof={Boolean(booking.paymentProofUrl)}
-                  />
+                  {isPastUnclosed ? (
+                    <StatusTag tone="warning" showDot label="Pasada sin cerrar" />
+                  ) : (
+                    <BookingStatusTag
+                      status={booking.status}
+                      hasPaymentProof={Boolean(booking.paymentProofUrl)}
+                    />
+                  )}
                   {isBusy ? (
                     <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
                       Actualizando…
@@ -390,26 +399,31 @@ export function BookingQuickPopover({
                   </VStack>
                 </SurfaceCard>
 
-                <SurfaceCard tone={paymentSummary.isFullyPaid ? 'subtle' : 'warning'} padded>
+                <SurfaceCard tone={balance.isFullyPaid ? 'subtle' : 'warning'} padded>
                   <HStack justify="between" align="center" wrap="wrap" gap={2}>
                     <VStack gap={0.5}>
                       <Text type="supporting" color="secondary">
                         Precio y anticipo
                       </Text>
                       <Text weight="semibold" hasTabularNumbers>
-                        Total {formatCurrency(paymentSummary.totalPriceCents, currency)}
-                        {paymentSummary.paidCents > 0
-                          ? ` · Anticipo ${formatCurrency(paymentSummary.paidCents, currency)}`
-                          : ''}
+                        Total {formatCurrency(balance.totalPriceCents, currency)}
+                        {balance.depositPaidCents > 0 &&
+                        balance.paidCents === balance.depositPaidCents
+                          ? ` · Anticipo pagado ${formatCurrency(balance.depositPaidCents, currency)}`
+                          : balance.depositPaidCents > 0
+                            ? ` · Pagado ${formatCurrency(balance.paidCents, currency)} (anticipo ${formatCurrency(balance.depositPaidCents, currency)})`
+                            : balance.paidCents > 0
+                              ? ` · Pagado ${formatCurrency(balance.paidCents, currency)}`
+                              : ''}
                       </Text>
                     </VStack>
                     <StatusTag
                       label={
-                        paymentSummary.isFullyPaid
+                        balance.isFullyPaid
                           ? 'Pagado completo'
-                          : `Falta cobrar ${formatCurrency(paymentSummary.remainingCents, currency)}`
+                          : `Falta cobrar ${formatCurrency(balance.remainingCents, currency)}`
                       }
-                      tone={paymentSummary.isFullyPaid ? 'success' : 'warning'}
+                      tone={balance.isFullyPaid ? 'success' : 'warning'}
                       hasTabularNumbers
                     />
                   </HStack>
@@ -430,9 +444,9 @@ export function BookingQuickPopover({
                   allowedNext={allowedNext}
                   isPending={isPending}
                   isCompleted={isCompleted}
+                  isPastUnclosed={isPastUnclosed}
                   canCollect={canCollect}
                   canRemind={canRemind}
-                  isFullyPaid={paymentSummary.isFullyPaid}
                   isBusy={isBusy}
                   busyStatus={busyStatus}
                   isReminding={isReminding}
@@ -446,6 +460,7 @@ export function BookingQuickPopover({
                   clientProfileHref={clientProfileHref}
                   onConfirm={() => void handleStatusAction('confirmed')}
                   onComplete={() => void handleStatusAction('completed')}
+                  onNoShowDirect={() => void handleStatusAction('no_show')}
                   onCheckout={() => {
                     handleClose();
                     onOpenCheckout(booking);

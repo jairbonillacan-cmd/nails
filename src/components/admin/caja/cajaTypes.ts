@@ -1,4 +1,5 @@
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
+import { hasBookingProofSubmitted } from '@/lib/booking/balance';
 import type { PaymentMethod, PaymentSplitMethod } from '@/lib/types';
 
 export type CajaTab = 'summary' | 'deposits' | 'commissions' | 'promos';
@@ -124,7 +125,32 @@ export function isSafeProofHref(url: string | null): url is string {
   return url.startsWith('/api/media/') || url.startsWith('https://');
 }
 
-export function resolveInitialCajaRoute(param: string | null): {
+export function hasCajaDepositProof(
+  deposit: Pick<PendingDepositRow, 'proofDeliveryMethod' | 'paymentProofUrl'>,
+): boolean {
+  return hasBookingProofSubmitted(deposit);
+}
+
+export function formatCajaDepositsBreakdown(
+  awaitingReviewCount: number,
+  missingProofCount: number,
+): string {
+  if (awaitingReviewCount > 0 && missingProofCount > 0) {
+    return `${awaitingReviewCount} por revisar · ${missingProofCount} sin comprobante`;
+  }
+  if (awaitingReviewCount > 0) {
+    return `${awaitingReviewCount} ${awaitingReviewCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`;
+  }
+  if (missingProofCount > 0) {
+    return `${missingProofCount} sin comprobante`;
+  }
+  return 'Todo revisado';
+}
+
+export function resolveInitialCajaRoute(
+  param: string | null,
+  subParam?: string | null,
+): {
   tab: CajaTab;
   highlightUncollected: boolean;
   promosView: PromosSubTab;
@@ -132,13 +158,18 @@ export function resolveInitialCajaRoute(param: string | null): {
   if (param === 'comisiones' || param === 'commissions') {
     return { tab: 'commissions', highlightUncollected: false, promosView: 'coupons' };
   }
+  if (param === 'promos') {
+    const promosView: PromosSubTab =
+      subParam === 'packages' || subParam === 'paquetes' ? 'packages' : 'coupons';
+    return { tab: 'promos', highlightUncollected: false, promosView };
+  }
   if (param === 'cupones' || param === 'coupons') {
     return { tab: 'promos', highlightUncollected: false, promosView: 'coupons' };
   }
   if (param === 'paquetes' || param === 'packages') {
     return { tab: 'promos', highlightUncollected: false, promosView: 'packages' };
   }
-  if (param === 'anticipos' || param === 'receivable') {
+  if (param === 'anticipos' || param === 'receivable' || param === 'deposits') {
     return { tab: 'deposits', highlightUncollected: false, promosView: 'coupons' };
   }
   if (param === 'sin-cobrar' || param === 'uncollected') {

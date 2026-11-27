@@ -56,9 +56,13 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
           id="ad-caja"
           title="Caja y cobros"
           subtitle={
-            metrics.cash.hasTodayEntries
-              ? 'Resumen de hoy y últimos 7 días'
-              : 'Saldo acumulado y últimos 7 días'
+            metrics.periodMetrics.period === 'today'
+              ? metrics.cash.hasTodayEntries
+                ? 'Movimientos de hoy'
+                : 'Sin movimientos registrados hoy'
+              : metrics.cash.hasPeriodEntries
+                ? `Movimientos · ${metrics.periodMetrics.periodLabel}`
+                : `Sin movimientos · ${metrics.periodMetrics.periodLabel}`
           }
           headingLevel={3}
           padded
@@ -73,15 +77,12 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
             <VStack className="ad-dash-stat-pair" gap={0}>
               <VStack gap={0.5} className="ad-dash-stat-box">
                 <Text type="supporting" color="secondary">
-                  {metrics.cash.hasTodayEntries ? 'Te queda hoy' : 'Saldo acumulado'}
+                  {metrics.periodMetrics.period === 'today'
+                    ? 'Neto de hoy'
+                    : `Neto · ${metrics.periodMetrics.periodLabel}`}
                 </Text>
                 <Text className="ad-sub-figure fx-tabular" hasTabularNumbers>
-                  {formatCurrency(
-                    metrics.cash.hasTodayEntries
-                      ? metrics.cash.todayNetCashCents
-                      : data.kpis.netCashCents,
-                    currency,
-                  )}
+                  {formatCurrency(metrics.cash.periodNetCashCents, currency)}
                 </Text>
               </VStack>
               <VStack gap={0.5} className="ad-dash-stat-box">

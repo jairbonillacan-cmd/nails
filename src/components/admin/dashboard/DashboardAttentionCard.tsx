@@ -27,7 +27,11 @@ import {
 import { ActionRow, EmptyStateCard, SurfaceCard } from '@/components/ui';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminOverviewPayload } from '../AdminProvider';
-import { isDisplayableProofUrl, type DashboardMetrics } from './dashboardMetrics';
+import {
+  hasPendingDepositProof,
+  isDisplayableProofUrl,
+  type DashboardMetrics,
+} from './dashboardMetrics';
 import type { PendingDepositItem } from './DepositProofPreviewDialog';
 
 const DepositProofPreviewDialog = dynamic(
@@ -97,7 +101,11 @@ export function DashboardAttentionCard({
 
   const allTasks: AttentionTask[] = [];
 
-  for (const dep of data.pendingDeposits) {
+  const sortedPendingDeposits = data.pendingDeposits.toSorted(
+    (a, b) => Number(hasPendingDepositProof(b)) - Number(hasPendingDepositProof(a)),
+  );
+
+  for (const dep of sortedPendingDeposits) {
     const amountCents = dep.depositAmountCents || depositFallbackCents;
     const dateLabel = formatDateShortInTimezone(dep.startAt, tz);
     const timeLabel = formatTimeInTimezone(dep.startAt, tz);
@@ -108,7 +116,7 @@ export function DashboardAttentionCard({
       !isExternalLink && isDisplayableProofUrl(dep.paymentProofUrl)
         ? dep.paymentProofUrl
         : null;
-    const isUploaded = dep.proofDeliveryMethod !== 'none' || Boolean(dep.paymentProofUrl);
+    const isUploaded = hasPendingDepositProof(dep);
     const isLoading = confirmingBookingId === dep.bookingId;
     const isRejecting = rejectingBookingId === dep.bookingId;
 
@@ -125,8 +133,8 @@ export function DashboardAttentionCard({
           }
         : undefined,
       title: isUploaded
-        ? `${dep.clientName} envió su anticipo de ${formatCurrency(amountCents, currency)}`
-        : `Anticipo pendiente de ${dep.clientName} · ${formatCurrency(amountCents, currency)}`,
+        ? `Por revisar · ${dep.clientName} (${formatCurrency(amountCents, currency)})`
+        : `Sin comprobante · ${dep.clientName} (${formatCurrency(amountCents, currency)})`,
       subtitle: `${dep.serviceName} · ${dateLabel} ${timeLabel} con ${dep.staffName} · ${dep.bookingCode}`,
       isBusy: isLoading || isRejecting,
       secondary: isUploaded

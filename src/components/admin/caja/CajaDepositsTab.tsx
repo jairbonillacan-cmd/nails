@@ -18,15 +18,26 @@ import {
   formatPhoneDisplay,
   formatTimeInTimezone,
 } from '@/lib/format';
-import { ActionRow, EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import {
+  ActionRow,
+  EmptyStateCard,
+  FilterPillBar,
+  StatusTag,
+  SurfaceCard,
+  type FilterPillOption,
+} from '@/components/ui';
+import {
+  formatCajaDepositsBreakdown,
   formatInstagramDisplay,
   formatInstagramUrl,
+  hasCajaDepositProof,
   isImageProofHref,
   isSafeProofHref,
   proofMethodMeta,
   type PendingDepositRow,
 } from './cajaTypes';
+
+type DepositProofFilter = 'all' | 'review' | 'missing';
 
 interface CajaDepositsTabProps {
   pendingDeposits: readonly PendingDepositRow[];
@@ -49,6 +60,7 @@ export function CajaDepositsTab({
   onApproveDeposit,
   onRejectDeposit,
 }: CajaDepositsTabProps) {
+  const [proofFilter, setProofFilter] = useState<DepositProofFilter>('all');
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositRow | null>(null);
   const [previewError, setPreviewError] = useState<{
     bookingId: string;
@@ -59,12 +71,39 @@ export function CajaDepositsTab({
       ? previewError.message
       : null;
 
+  const sortedDeposits = pendingDeposits.toSorted(
+    (a, b) => Number(hasCajaDepositProof(b)) - Number(hasCajaDepositProof(a)),
+  );
+  const awaitingReviewCount = sortedDeposits.filter((dep) => hasCajaDepositProof(dep)).length;
+  const missingProofCount = sortedDeposits.length - awaitingReviewCount;
+  const effectiveFilter: DepositProofFilter =
+    proofFilter === 'review' && awaitingReviewCount === 0
+      ? 'all'
+      : proofFilter === 'missing' && missingProofCount === 0
+        ? 'all'
+        : proofFilter;
+  const filteredDeposits =
+    effectiveFilter === 'review'
+      ? sortedDeposits.filter((dep) => hasCajaDepositProof(dep))
+      : effectiveFilter === 'missing'
+        ? sortedDeposits.filter((dep) => !hasCajaDepositProof(dep))
+        : sortedDeposits;
+  const proofFilterOptions: FilterPillOption<DepositProofFilter>[] = [
+    { value: 'all', label: 'Todos', count: sortedDeposits.length },
+    { value: 'review', label: 'Por revisar', count: awaitingReviewCount },
+    { value: 'missing', label: 'Sin comprobante', count: missingProofCount },
+  ];
+
   return (
     <VStack gap={4}>
       <SurfaceCard
-        title={`Anticipos por validar (${defaultDepositLabel})`}
-        subtitle="Comprobantes de transferencia que llegaron por tu página o por Instagram."
-        count={pendingDeposits.length > 0 ? pendingDeposits.length : undefined}
+        title={`Anticipos pendientes (${defaultDepositLabel})`}
+        subtitle={
+          sortedDeposits.length > 0
+            ? formatCajaDepositsBreakdown(awaitingReviewCount, missingProofCount)
+            : 'Comprobantes de transferencia que llegaron por tu página o por Instagram.'
+        }
+        count={sortedDeposits.length > 0 ? sortedDeposits.length : undefined}
         actions={
           <Button
             label="Ver agenda"
@@ -75,7 +114,7 @@ export function CajaDepositsTab({
           />
         }
       >
-        {pendingDeposits.length === 0 ? (
+        {sortedDeposits.length === 0 ? (
           <VStack padding={4}>
             <EmptyStateCard
               framed={false}
@@ -88,8 +127,21 @@ export function CajaDepositsTab({
             />
           </VStack>
         ) : (
-          <VStack className="ad-row-list" gap={0}>
-            {pendingDeposits.map((dep) => {
+          <>
+            {awaitingReviewCount > 0 && missingProofCount > 0 ? (
+              <HStack className="ad-toolbar" paddingInline={4} paddingBlock={3}>
+                <FilterPillBar
+                  ariaLabel="Filtrar anticipos por estado de comprobante"
+                  mode="pills"
+                  size="sm"
+                  value={effectiveFilter}
+                  options={proofFilterOptions}
+                  onChange={setProofFilter}
+                />
+              </HStack>
+            ) : null}
+            <VStack className="ad-row-list" gap={0}>
+            {filteredDeposits.map((dep) => {
               const meta = proofMethodMeta(dep.proofDeliveryMethod);
               const proofUrl = isSafeProofHref(dep.paymentProofUrl)
                 ? dep.paymentProofUrl
@@ -98,8 +150,7 @@ export function CajaDepositsTab({
                 dep.paymentProofUrl,
                 dep.proofDeliveryMethod,
               );
-              const isUploaded =
-                dep.proofDeliveryMethod !== 'none' || Boolean(dep.paymentProofUrl);
+              const isUploaded = hasCajaDepositProof(dep);
               const isApproving = approvingId === dep.bookingId;
               const isRejecting = rejectingId === dep.bookingId;
               const isRowBusy = isApproving || isRejecting;
@@ -218,6 +269,7 @@ export function CajaDepositsTab({
               );
             })}
           </VStack>
+          </>
         )}
       </SurfaceCard>
 

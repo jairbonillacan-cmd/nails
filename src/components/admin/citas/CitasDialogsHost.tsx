@@ -154,6 +154,8 @@ export function CitasDialogsHost({
           booking={popoverBooking}
           allServices={data.services}
           paymentSplits={data.paymentSplits}
+          cashEntries={data.cashEntries}
+          serverNowIso={data.serverNowIso}
           salonName={data.settings.name}
           googleReviewUrl={data.settings.googleReviewUrl ?? null}
           currency={data.settings.currency}
@@ -208,6 +210,7 @@ export function CitasDialogsHost({
           key={`${checkoutBooking.id}-${checkoutSessionKey}`}
           booking={checkoutBooking}
           existingSplits={data.paymentSplits.filter((s) => s.bookingId === checkoutBooking.id)}
+          existingCashEntries={data.cashEntries.filter((e) => e.bookingId === checkoutBooking.id)}
           inventory={data.inventory}
           staff={data.staff}
           loyaltyProgram={data.loyaltyProgram}

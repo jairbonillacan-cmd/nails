@@ -201,6 +201,8 @@ export interface UpdateBookingStatusInput {
     fullName?: string;
   };
   skipLoyaltyStamp?: boolean;
+  skipDepositEntries?: boolean;
+  skipRecordCash?: boolean;
 }
 
 export interface ManageClientBookingInput {

@@ -6,9 +6,12 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Plus } from 'lucide-react';
 import { EmptyStateCard, StatusTag } from '@/components/ui';
+import { isPendingDepositStatus } from '@/lib/booking/balance';
+import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
 import type {
   BookingStatus,
   BookingWithRelations,
+  CashRegisterEntry,
   PaymentSplit,
   Service,
 } from '@/lib/types';
@@ -49,7 +52,7 @@ export function filterBookingsForTab(params: {
         );
       }
       if (tab === 'unconfirmed') {
-        return b.status === 'pending_confirmation' || b.status === 'pending_payment';
+        return isPendingDepositStatus(b.status);
       }
       if (tab === 'past') {
         return b.status === 'completed' || b.status === 'no_show';
@@ -91,6 +94,8 @@ interface BookingsListViewProps {
   search: string;
   allServices: Service[];
   paymentSplits: PaymentSplit[];
+  cashEntries?: CashRegisterEntry[];
+  serverNowIso: string;
   salonName: string;
   currency: 'MXN' | 'USD';
   timezone: string;
@@ -115,6 +120,8 @@ export function BookingsListView({
   search,
   allServices,
   paymentSplits,
+  cashEntries = [],
+  serverNowIso,
   salonName,
   currency,
   timezone,
@@ -131,6 +138,8 @@ export function BookingsListView({
   onOpenCheckout,
   onRequestReschedule,
 }: BookingsListViewProps) {
+  const nowMs = useCurrentClockTick(serverNowIso);
+
   if (bookings.length === 0) {
     return (
       <EmptyStateCard
@@ -199,6 +208,8 @@ export function BookingsListView({
               booking={b}
               allServices={allServices}
               paymentSplits={paymentSplits}
+              cashEntries={cashEntries}
+              nowMs={nowMs}
               salonName={salonName}
               currency={currency}
               timezone={timezone}

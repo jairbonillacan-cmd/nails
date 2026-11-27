@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildRetouchPrefill,
   buildTouchUpBookingUrl,
   computeSuggestedTouchUpDateKey,
   DEFAULT_TOUCH_UP_DAYS,
@@ -144,5 +145,55 @@ describe('Recurring Booking Series & Touch-Up URLs (U1)', () => {
         touchUpDays: 28,
       }),
     ).toBe('/reservar/rubber?staff=karla&date=2026-12-23');
+  });
+
+  it('builds consistent retouch prefill payloads using configured touchUpDays and timezone fallback', () => {
+    const booking = {
+      serviceId: 'srv-rubber',
+      extraServiceIds: ['srv-retiro'],
+      staffId: 'staff-karla',
+      startAt: '2026-11-25T16:00:00.000Z',
+      bookingCode: 'NL-1042',
+      clientInstagram: '@sofia.ramirez.pue',
+      client: {
+        fullName: 'Sofía Ramírez',
+        phoneE164: '+522224123987',
+        instagramHandle: '@fallback.ig',
+      },
+    };
+
+    const custom = buildRetouchPrefill(
+      booking,
+      { timezone: 'America/Mexico_City', landingContent: { touchUpDays: 28 } },
+      'America/Mexico_City',
+    );
+    expect(custom).toEqual({
+      serviceId: 'srv-rubber',
+      extraServiceIds: ['srv-retiro'],
+      staffId: 'staff-karla',
+      startDate: '2026-12-23',
+      touchUpDays: 28,
+      clientName: 'Sofía Ramírez',
+      clientPhone: '+522224123987',
+      clientInstagram: '@sofia.ramirez.pue',
+      internalNotes: 'Retoque (+28 días · NL-1042)',
+    });
+
+    const defaulted = buildRetouchPrefill({
+      ...booking,
+      extraServiceIds: undefined,
+      clientInstagram: undefined,
+    });
+    expect(defaulted).toEqual({
+      serviceId: 'srv-rubber',
+      extraServiceIds: [],
+      staffId: 'staff-karla',
+      startDate: '2026-12-16',
+      touchUpDays: 21,
+      clientName: 'Sofía Ramírez',
+      clientPhone: '+522224123987',
+      clientInstagram: '@fallback.ig',
+      internalNotes: 'Retoque (+21 días · NL-1042)',
+    });
   });
 });

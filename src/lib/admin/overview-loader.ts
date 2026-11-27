@@ -1,9 +1,8 @@
 import type { AdminSession } from '@/lib/auth/admin-session';
-import { isActiveBookingStatus } from '@/lib/booking/state-machine';
+import { computeBookingBalance } from '@/lib/booking/balance';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getDateKeyInTimezone } from '@/lib/format';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
-import { computeBookingPaymentSummary } from '@/lib/payments/splits';
 import {
   toAdminCalendarConnectionDTO,
   toAdminSettingsDTO,
@@ -16,7 +15,7 @@ import {
   getWhatsAppUnreadSummary,
   hydrateBookingsWithRelationsFromDb,
 } from '@/lib/repositories/db';
-import type { BookingWithRelations, ClientProfile, PaymentSplit } from '@/lib/types';
+import type { CashRegisterEntry, ClientProfile, PaymentSplit } from '@/lib/types';
 import type { AdminOverviewPayload } from './overview-types';
 
 function scopeByStaff<T extends { staffId: string | null }>(
@@ -60,15 +59,46 @@ export async function buildAdminOverviewPayload(
     string,
     { totalVisits: number; lastPastVisitMs: number | null; hasUpcoming: boolean }
   >();
-  const uncollectedCandidates: Array<{ booking: BookingWithRelations; startMs: number }> = [];
+
+  const cashEntries = scopeByStaff(db.cashEntries, isSpecialist, ownStaffId);
+  const cashByBookingId = new Map<string, CashRegisterEntry[]>();
+  for (const entry of cashEntries) {
+    if (!entry.bookingId) continue;
+    const list = cashByBookingId.get(entry.bookingId) ?? [];
+    list.push(entry);
+    cashByBookingId.set(entry.bookingId, list);
+  }
 
   for (const booking of bookings) {
     visibleBookingIds.add(booking.id);
     visibleClientIds.add(booking.clientId);
+  }
 
+  const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
+    visibleBookingIds.has(s.bookingId),
+  );
+  const splitsByBookingId = new Map<string, PaymentSplit[]>();
+  for (const split of paymentSplits) {
+    const list = splitsByBookingId.get(split.bookingId) ?? [];
+    list.push(split);
+    splitsByBookingId.set(split.bookingId, list);
+  }
+
+  const uncollectedWithTime: Array<{
+    item: AdminOverviewPayload['uncollectedBookings'][number];
+    startMs: number;
+  }> = [];
+
+  for (const booking of bookings) {
     const startDate = new Date(booking.startAt);
     const startMs = startDate.getTime();
     const status = booking.status;
+    const balance = computeBookingBalance(
+      booking,
+      splitsByBookingId.get(booking.id) ?? [],
+      cashByBookingId.get(booking.id) ?? [],
+      nowMs,
+    );
 
     if (status !== 'canceled' && getDateKeyInTimezone(startDate, tz) === todayKey) {
       todayBookingsCount += 1;
@@ -92,6 +122,9 @@ export async function buildAdminOverviewPayload(
         proofDeliveryMethod:
           booking.proofDeliveryMethod ?? (booking.paymentProofUrl ? 'web_upload' : 'none'),
         paymentProofUrl: booking.paymentProofUrl,
+        proofSubmitted: balance.hasDepositAwaitingReview,
+        awaitingReview: balance.hasDepositAwaitingReview,
+        missingProof: balance.hasDepositMissingProof,
       });
     } else if (status === 'completed') {
       completedCount += 1;
@@ -124,15 +157,32 @@ export async function buildAdminOverviewPayload(
       clientVisitStats.set(booking.clientId, stat);
     }
 
-    if (
-      status === 'completed' ||
-      (isActiveBookingStatus(status) && new Date(booking.endAt).getTime() < nowMs)
-    ) {
-      uncollectedCandidates.push({ booking, startMs });
+    if (balance.isUncollected) {
+      uncollectedWithTime.push({
+        startMs,
+        item: {
+          bookingId: booking.id,
+          bookingCode: booking.bookingCode,
+          status: booking.status,
+          clientId: booking.clientId,
+          clientName: booking.client.fullName,
+          clientPhone: booking.client.phoneE164,
+          clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? null,
+          serviceName: booking.service.name,
+          staffId: booking.staffId,
+          staffName: booking.staff.name,
+          startAt: booking.startAt,
+          endAt: booking.endAt,
+          totalPriceCents: balance.totalPriceCents,
+          paidCents: balance.appliedPaidCents,
+          remainingCents: balance.remainingCents,
+          depositPaidCents: balance.depositPaidCents,
+          isPastUnclosed: balance.isPastUnclosed,
+        },
+      });
     }
   }
 
-  const cashEntries = scopeByStaff(db.cashEntries, isSpecialist, ownStaffId);
   let totalRevenueCents = 0;
   let totalTipsCents = 0;
   let totalExpensesCents = 0;
@@ -271,48 +321,6 @@ export async function buildAdminOverviewPayload(
       (a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit,
     ),
   };
-
-  const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
-    visibleBookingIds.has(s.bookingId),
-  );
-  const splitsByBookingId = new Map<string, PaymentSplit[]>();
-  for (const split of paymentSplits) {
-    const list = splitsByBookingId.get(split.bookingId) ?? [];
-    list.push(split);
-    splitsByBookingId.set(split.bookingId, list);
-  }
-
-  const uncollectedWithTime: Array<{
-    item: AdminOverviewPayload['uncollectedBookings'][number];
-    startMs: number;
-  }> = [];
-  for (const { booking: b, startMs } of uncollectedCandidates) {
-    const summary = computeBookingPaymentSummary(
-      b.totalPriceCents,
-      splitsByBookingId.get(b.id) ?? [],
-    );
-    if (!summary.isUncollected) continue;
-    uncollectedWithTime.push({
-      startMs,
-      item: {
-        bookingId: b.id,
-        bookingCode: b.bookingCode,
-        status: b.status,
-        clientId: b.clientId,
-        clientName: b.client.fullName,
-        clientPhone: b.client.phoneE164,
-        clientInstagram: b.clientInstagram ?? b.client.instagramHandle ?? null,
-        serviceName: b.service.name,
-        staffId: b.staffId,
-        staffName: b.staff.name,
-        startAt: b.startAt,
-        endAt: b.endAt,
-        totalPriceCents: summary.totalPriceCents,
-        paidCents: summary.paidCents,
-        remainingCents: summary.remainingCents,
-      },
-    });
-  }
 
   const uncollectedBookings = uncollectedWithTime
     .toSorted((a, b) => b.startMs - a.startMs)

@@ -36,7 +36,7 @@ import type { BookingWithRelations } from '@/lib/types';
 
 const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
   { value: 'today', label: 'Hoy' },
-  { value: '7d', label: 'Esta semana' },
+  { value: '7d', label: 'Últimos 7 días' },
   { value: '30d', label: 'Últimos 30 días' },
 ];
 

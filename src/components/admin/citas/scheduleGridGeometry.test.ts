@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AvailabilitySchedule, DateOverride } from '@/lib/types';
 import {
   buildStaffOpenSlots,
   buildZonedIsoForDateAndMinutes,
@@ -8,6 +9,7 @@ import {
   computeNowIndicator,
   formatMinutesHHMM,
   getLocalMinutesInTimezone,
+  resolveSuggestedBlockWindow,
 } from './scheduleGridGeometry';
 
 describe('scheduleGridGeometry', () => {
@@ -57,5 +59,96 @@ describe('scheduleGridGeometry', () => {
       notBeforeMinutes: elapsedToday,
     });
     expect(slots.map((slot) => slot.timeHHMM)).toEqual(['16:30']);
+  });
+
+  it('resolves suggested block window from specialist schedule rules and date overrides', () => {
+    const schedules: AvailabilitySchedule[] = [
+      {
+        id: 'sch-karla',
+        staffId: 'karla',
+        name: 'Default',
+        timezone: tz,
+        isDefault: true,
+        rules: [
+          { id: 'r-k-5', dayOfWeek: 5, startTime: '10:00', endTime: '19:30' },
+        ],
+      },
+      {
+        id: 'sch-tere',
+        staffId: 'tere',
+        name: 'Default',
+        timezone: tz,
+        isDefault: true,
+        rules: [
+          { id: 'r-t-5', dayOfWeek: 5, startTime: '14:00', endTime: '20:00' },
+        ],
+      },
+      {
+        id: 'sch-early',
+        staffId: 'early',
+        name: 'Default',
+        timezone: tz,
+        isDefault: true,
+        rules: [
+          { id: 'r-e-5', dayOfWeek: 5, startTime: '07:00', endTime: '13:00' },
+        ],
+      },
+    ];
+    const dateOverrides: DateOverride[] = [
+      {
+        id: 'ov-1',
+        staffId: 'karla',
+        overrideDate: '2026-11-28',
+        isUnavailable: false,
+        startTime: '11:00',
+        endTime: '15:00',
+        reason: 'Horario especial sábado',
+      },
+    ];
+
+    const earlySlotForTere = resolveSuggestedBlockWindow({
+      slot: { dateKey: '2026-11-27', startMinutes: 10 * 60 },
+      schedules,
+      dateOverrides,
+      staffId: 'tere',
+    });
+    expect(earlySlotForTere.startTimeHHMM).toBe('14:00');
+    expect(earlySlotForTere.endTimeHHMM).toBe('15:00');
+
+    const lateSlotForKarla = resolveSuggestedBlockWindow({
+      slot: { dateKey: '2026-11-27', startMinutes: 19 * 60 },
+      schedules,
+      dateOverrides,
+      staffId: 'karla',
+    });
+    expect(lateSlotForKarla.startTimeHHMM).toBe('19:00');
+    expect(lateSlotForKarla.endTimeHHMM).toBe('19:30');
+
+    const beforeEightSpecialist = resolveSuggestedBlockWindow({
+      slot: { dateKey: '2026-11-27', startMinutes: 7 * 60 },
+      schedules,
+      dateOverrides,
+      staffId: 'early',
+    });
+    expect(beforeEightSpecialist.startTimeHHMM).toBe('07:00');
+    expect(beforeEightSpecialist.endTimeHHMM).toBe('08:00');
+
+    const overrideDay = resolveSuggestedBlockWindow({
+      slot: { dateKey: '2026-11-28', startMinutes: 14 * 60 + 30 },
+      schedules,
+      dateOverrides,
+      staffId: 'karla',
+    });
+    expect(overrideDay.startTimeHHMM).toBe('14:30');
+    expect(overrideDay.endTimeHHMM).toBe('15:00');
+
+    const closedDayFallback = resolveSuggestedBlockWindow({
+      slot: { dateKey: '2026-11-29', startMinutes: 12 * 60 },
+      schedules,
+      dateOverrides,
+      staffId: 'karla',
+    });
+    expect(closedDayFallback.startTimeHHMM).toBe('12:00');
+    expect(closedDayFallback.endTimeHHMM).toBe('13:00');
   });
 });
