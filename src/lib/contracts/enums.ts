@@ -132,6 +132,85 @@ export const AuditActionSchema = z.enum([
   'loyalty_redeemed',
   'media_retention_warned',
   'media_retention_purged',
+  'whatsapp_message_sent',
+  'reminder_retried',
+  'workflow_updated',
+]);
+
+export const ScheduledNotificationStatusSchema = z.enum([
+  'pending',
+  'sent',
+  'failed',
+  'canceled',
+]);
+
+export const WhatsAppTemplateTriggerKeySchema = z.enum([
+  'booking_confirmed',
+  'reminder_24h',
+  'reminder_2h',
+  'booking_rescheduled',
+  'booking_canceled',
+  'waitlist_offer',
+  'deposit_rejected',
+  'client_otp',
+  'touchup_invite',
+]);
+
+export const WhatsAppTemplateCategorySchema = z.enum([
+  'UTILITY',
+  'MARKETING',
+  'AUTHENTICATION',
+]);
+
+export const WhatsAppMessageDirectionSchema = z.enum(['inbound', 'outbound', 'echo']);
+
+export const WhatsAppMessageSenderKindSchema = z.enum([
+  'client',
+  'staff',
+  'automation',
+  'coexistence_phone',
+]);
+
+export const WhatsAppMessageTypeSchema = z.enum([
+  'text',
+  'template',
+  'interactive',
+  'button',
+  'media',
+  'system',
+]);
+
+export const WhatsAppDeliveryStatusSchema = z.enum([
+  'queued',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+  'received',
+]);
+
+export const WhatsAppNotificationDeliveryStatusSchema = z.enum([
+  'queued',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+]);
+
+export const WhatsAppMessageDeliveryModeSchema = z.enum([
+  'template',
+  'text',
+  'fallback_email_wame',
+  'demo',
+  'coexistence',
+  'inbound',
+]);
+
+export const WhatsAppThreadFilterSchema = z.enum([
+  'all',
+  'unread',
+  'window_open',
+  'failed',
 ]);
 
 export const InventoryCategorySchema = z.enum([

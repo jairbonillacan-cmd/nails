@@ -8,6 +8,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import {
+  AlertTriangle,
   Check,
   Clock,
   MessageCircle,
@@ -207,9 +208,45 @@ export function DashboardAttentionCard({
     }
   }
 
+  const canSeeWhatsApp = roleCanAccess(role, 'whatsapp');
+  const unreadWhatsAppCount = canSeeWhatsApp
+    ? (data.whatsappInboxSummary?.unreadCount ?? 0)
+    : 0;
+  const failedRemindersCount = canSeeWhatsApp
+    ? (data.whatsappInboxSummary?.failedRemindersCount ?? 0)
+    : 0;
+
+  if (unreadWhatsAppCount > 0) {
+    allTasks.push({
+      id: 'whatsapp-unread-alert',
+      tone: 'accent',
+      icon: <MessageCircle size={19} aria-hidden="true" />,
+      title: `${unreadWhatsAppCount} mensaje${unreadWhatsAppCount === 1 ? '' : 's'} sin leer en WhatsApp`,
+      subtitle: 'Tienes conversaciones de clientas esperando respuesta en tu bandeja.',
+      primary: {
+        label: 'Abrir mensajes',
+        href: '/admin/whatsapp?filter=unread',
+      },
+    });
+  }
+
+  if (failedRemindersCount > 0) {
+    allTasks.push({
+      id: 'whatsapp-failed-reminders-alert',
+      tone: 'warning',
+      icon: <AlertTriangle size={19} aria-hidden="true" />,
+      title: `${failedRemindersCount} recordatorio${failedRemindersCount === 1 ? '' : 's'} de WhatsApp con fallo`,
+      subtitle: 'Revisa los envíos fallidos y reinténtalos en un clic.',
+      primary: {
+        label: 'Revisar envíos',
+        href: '/admin/whatsapp?tab=recordatorios&filter=failed',
+      },
+    });
+  }
+
   const whatsappUsage = data.whatsappUsage;
   if (
-    roleCanAccess(role, 'integrations') &&
+    (canSeeWhatsApp || roleCanAccess(role, 'integrations')) &&
     whatsappUsage &&
     (whatsappUsage.alertLevel === 'warning_80' || whatsappUsage.alertLevel === 'limit_100')
   ) {
@@ -226,8 +263,8 @@ export function DashboardAttentionCard({
         ? 'Los avisos automáticos siguen saliendo por correo y enlace directo hasta el próximo mes.'
         : `${whatsappUsage.sentCount} de ${whatsappUsage.quotaLimit} mensajes usados · Te quedan ${remaining} avisos automáticos este mes.`,
       primary: {
-        label: 'Revisar en Conexiones',
-        href: '/admin/integraciones',
+        label: 'Revisar en WhatsApp',
+        href: '/admin/whatsapp?tab=conexion',
       },
     });
   }

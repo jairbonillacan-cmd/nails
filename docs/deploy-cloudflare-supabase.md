@@ -17,7 +17,7 @@ Usa esta lista corta para lanzar **`https://laikona.devand.net`** con servicios 
      npx wrangler r2 bucket create laikona-nails-media-preview
      ```
 2. **Supabase Free (creado con tu Gmail):**
-   - Ejecuta las migraciones `supabase/migrations/0001` a `0008` en el SQL Editor y luego `supabase/seed.sql`.
+   - Ejecuta las migraciones `supabase/migrations/0001` a `0012` en el SQL Editor y luego `supabase/seed.sql`.
    - En **Authentication → Users** crea el usuario con tu Gmail y contraseña, y vincúlalo como `owner`:
      ```sql
      INSERT INTO public.admin_users (auth_user_id, email, full_name, role, is_active)
@@ -87,7 +87,7 @@ Usa esta lista corta para lanzar **`https://laikona.devand.net`** con servicios 
 
 ---
 
-## 3. Configuración de Supabase (PostgreSQL, Migraciones `0001`–`0008`, Auth y Realtime)
+## 3. Configuración de Supabase (PostgreSQL, Migraciones `0001`–`0012`, Auth y Realtime)
 
 ### 3.1 Crear proyecto y aplicar migraciones
 1. Crea un proyecto nuevo en **Supabase** (región recomendada para Puebla, México: **US East** o **US West**).
@@ -100,7 +100,11 @@ Usa esta lista corta para lanzar **`https://laikona.devand.net`** con servicios 
    6. `0006_phase3a_plus_calcom_ux.sql` — recurrencia, bloqueos recurrentes, servicios VIP, embeds.
    7. `0007_phase3b_integrations_and_cascade.sql` — integraciones OAuth Google Calendar, políticas no-show, PIN dueña y paquetes de sesiones.
    8. `0008_production_r2_whatsapp_retention.sql` — tablas `media_assets`, `whatsapp_templates`, `whatsapp_monthly_usage`, RPC atómica `increment_whatsapp_usage`, `webhook_events` (deduplicación idempotente Coexistence), columnas `retention_notice_email` / `whatsapp_monthly_quota` en `salon_settings` y acciones `media_retention_warned` / `media_retention_purged` en `audit_logs`.
-3. Ejecuta `supabase/seed.sql` una sola vez para sembrar el estudio **LAIKONA NAILS**, el catálogo base, los turnos fijos (`Karla`, `Paty`, `Tere`) y las 6 plantillas `UTILITY` `es_MX` en `public.whatsapp_templates`.
+   9. `0009_public_palette.sql` — columna `public_palette` (`laikona` | `monochrome`) en `salon_settings`.
+   10. `0010_phase3_agenda_funnel_rls.sql` — confirmación de asistencia 24 h, rechazo de comprobante y link de recibo, rollover de lista de espera (30 min), retoque proactivo 18 días, embudo de reservas y endurecimiento de RLS.
+   11. `0011_whatsapp_templates_extra.sql` — 3 plantillas oficiales adicionales `es_MX` (`deposit_rejected`, `client_otp`, `touchup_invite`).
+   12. `0012_whatsapp_inbox_and_reminders.sql` — tablas `whatsapp_threads` y `whatsapp_messages` (inbox, ecos Coexistence y ventana de atención 24 h), índices/columnas de reintentos y `delivery_status` en `scheduled_notifications` y workflows completos para `/admin/whatsapp`.
+3. Ejecuta `supabase/seed.sql` una sola vez para sembrar el estudio **LAIKONA NAILS**, el catálogo base, los turnos fijos (`Karla`, `Paty`, `Tere`) y las 9 plantillas oficiales `es_MX` en `public.whatsapp_templates`.
 
 ### 3.2 Usuarios Administradores (Supabase Auth + `public.admin_users`)
 1. En **Supabase → Authentication → Users**, crea el usuario de Karla (`owner`) con correo real y contraseña robusta.
@@ -184,7 +188,7 @@ El Worker dispara diariamente a las `09:00 UTC` (`03:00 AM` hora de Puebla) `POS
 3. Todas las peticiones `POST` verifican `X-Hub-Signature-256` con HMAC-SHA256 en Web Crypto (`crypto.subtle`) y deduplican eventos en `public.webhook_events`. Sin `WHATSAPP_APP_SECRET`, el webhook falla cerrado (`401`/`503`).
 
 ### 5.3 Crear y aprobar las 9 plantillas oficiales (`es_MX`)
-Puedes crear y revisar automáticamente las 9 plantillas con `npm run whatsapp:sync-templates` (o desde `/admin/integraciones` → **Sincronizar plantillas con Meta**). Meta rechaza saltos de línea `\n` o tabuladores `\t` dentro de parámetros; la app los sanitiza automáticamente:
+Puedes crear y revisar automáticamente las 9 plantillas con `npm run whatsapp:sync-templates` (o desde `/admin/whatsapp?tab=conexion` → **Sincronizar con Meta**, accesible también desde el resumen de `/admin/integraciones`). Meta rechaza saltos de línea `\n` o tabuladores `\t` dentro de parámetros; la app los sanitiza automáticamente:
 
 | `trigger_key` | Nombre (`template_name`) | Categoría | Variables (`{{1}}`..`{{N}}`) | Texto canónico (`es_MX`) |
 | :--- | :--- | :--- | :--- | :--- |
@@ -198,7 +202,7 @@ Puedes crear y revisar automáticamente las 9 plantillas con `npm run whatsapp:s
 | `client_otp` | `laikona_codigo_acceso` | `AUTHENTICATION` | `{{1}}` Código + botón `COPY_CODE` (`Copiar código`) + vencimiento `5 min` | `{{1}} es tu código de verificación. Por tu seguridad, no lo compartas.` |
 | `touchup_invite` | `laikona_invitacion_retoque` | `MARKETING` | `{{1}}` Clienta, `{{2}}` Servicio, `{{3}}` Profesional, `{{4}}` Enlace | `Hola {{1}}, ya casi cumplen 3 semanas tus uñas de {{2}} con {{3}} en LAIKONA NAILS. Aparta tu retoque en un toque aquí: {{4}}` |
 
-> Si Meta te pide renombrar alguna plantilla, puedes editar su nombre desde `/admin/integraciones`, actualizar `template_name` en `public.whatsapp_templates`, o definir su override opcional (`WHATSAPP_TEMPLATE_BOOKING_CONFIRMED`, `WHATSAPP_TEMPLATE_REMINDER_24H`, `WHATSAPP_TEMPLATE_CLIENT_OTP`, etc.).
+> Si Meta te pide renombrar alguna plantilla, puedes editar su nombre desde `/admin/whatsapp?tab=conexion` (accesible también desde `/admin/integraciones`), actualizar `template_name` en `public.whatsapp_templates`, o definir su override opcional (`WHATSAPP_TEMPLATE_BOOKING_CONFIRMED`, `WHATSAPP_TEMPLATE_REMINDER_24H`, `WHATSAPP_TEMPLATE_CLIENT_OTP`, etc.).
 
 ---
 
@@ -340,6 +344,6 @@ Ejecuta en orden antes de pasar tráfico real:
    - [ ] Crear una cita de prueba subiendo un comprobante SPEI PNG: confirmar que se visualiza en `/cita/<token>` (`200` con `?token=...`) y devuelve `401` al abrir `/api/media/proofs/...` en una pestaña incógnita sin token.
    - [ ] Verificar recepción del correo de confirmación vía Resend con archivo `.ics` adjunto y estética LAIKONA NAILS.
    - [ ] Probar `GET /api/webhooks/whatsapp` (challenge de Meta) y enviar un `POST` sin firma válida para confirmar rechazo `401`.
-   - [ ] Confirmar en `/admin` y `/admin/integraciones` que aparece el medidor de WhatsApp (`N de 500 mensajes usados este mes`) y el estado conectado de Supabase, R2, Resend y WhatsApp.
+   - [ ] Confirmar en `/admin`, `/admin/whatsapp` (pestañas `Mensajes`, `Recordatorios` y `Conexión y plantillas`) y `/admin/integraciones` que aparece el medidor de WhatsApp (`N de 500 mensajes usados este mes`) y el estado conectado de Supabase, R2, Resend y WhatsApp.
    - [ ] Ejecutar manualmente el workflow **Supabase Daily Backup to Cloudflare R2** desde GitHub Actions (`Run workflow`) y verificar el archivo `backups/db/YYYY-MM-DD.sql.gz` dentro del bucket `laikona-nails-media`.
    - [ ] Revisar en **Cloudflare Dashboard → Workers & Pages → laikona-nails → Observability** que el tiempo de CPU esté holgadamente debajo del límite del plan y que los dos Cron Triggers (`*/15 * * * *` y `0 9 * * *`) reporten estado `Ok`.

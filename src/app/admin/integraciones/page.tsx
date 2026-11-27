@@ -12,22 +12,14 @@ import { PageHeader, PageSkeleton } from '@/components/ui';
 import { GoogleCalendarSection } from '@/components/admin/integraciones/GoogleCalendarSection';
 import { WhatsAppSection } from '@/components/admin/integraciones/WhatsAppSection';
 import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/PaymentsAnalyticsSection';
-import { buildWhatsAppCopyTemplates } from '@/components/admin/integraciones/integrationsHelpers';
 import { formatCurrency } from '@/lib/format';
-import {
-  FORM_SUBMIT_OK,
-  formSubmitError,
-  type FormSubmitResult,
-} from '@/lib/forms/form-submit';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
-import { summarizeCascadeMetrics } from '@/lib/notifications/cascade';
 import type {
   CalendarConnection,
   NotificationChannel,
   NotificationWorkflow,
   PaymentMode,
   SalonSettings,
-  WhatsAppTemplateTriggerKey,
 } from '@/lib/types';
 
 function isPaymentMode(value: unknown): value is PaymentMode {
@@ -77,42 +69,12 @@ export default function AdminIntegrationsPage() {
     Record<string, Partial<Pick<NotificationWorkflow, 'isEnabled' | 'channels'>>>
   >({});
   const [optimisticCalendars, setOptimisticCalendars] = useState<
-    Record<string, Partial<Pick<CalendarConnection, 'isConnected' | 'destinationCalendarId' | 'conflictCalendarIds'>>>
+    Record<
+      string,
+      Partial<Pick<CalendarConnection, 'isConnected' | 'destinationCalendarId' | 'conflictCalendarIds'>>
+    >
   >({});
   const saveNotice = useEphemeralMessage(3200);
-
-  const reminderSummary = useMemo(() => {
-    if (!data) return null;
-    const referenceDate = new Date(data.serverNowIso);
-    return summarizeCascadeMetrics(
-      data.bookings,
-      data.notifications,
-      Number.isNaN(referenceDate.getTime()) ? new Date(0) : referenceDate,
-    );
-  }, [data]);
-
-  const whatsappTemplates = useMemo(
-    () =>
-      data
-        ? buildWhatsAppCopyTemplates(
-            data.settings,
-            data.staff
-              .filter((st) => st.isActive)
-              .toSorted((a, b) => a.displayOrder - b.displayOrder)
-              .map((st) => st.name),
-          )
-        : [],
-    [data],
-  );
-
-  const bookingMetaById = useMemo(() => {
-    const map = new Map<string, { clientName: string; serviceName: string }>();
-    if (!data) return map;
-    for (const bk of data.bookings) {
-      map.set(bk.id, { clientName: bk.client.fullName, serviceName: bk.service.name });
-    }
-    return map;
-  }, [data]);
 
   const displayWorkflows = useMemo(
     () =>
@@ -154,6 +116,7 @@ export default function AdminIntegrationsPage() {
   const whatsappWebhookUrl = `${normalizedAppUrl}/api/webhooks/whatsapp`;
   const mercadoPagoTechUrl = `${normalizedAppUrl}/api/webhooks/mercadopago`;
   const googleCalendarTechUrl = `${normalizedAppUrl}/api/webhooks/google-calendar`;
+  const activeRemindersCount = displayWorkflows.filter((w) => w.isEnabled).length;
   const whatsappUsage = data.whatsappUsage ?? {
     monthKey: data.serverTodayKey.slice(0, 7),
     sentCount: 0,
@@ -201,37 +164,6 @@ export default function AdminIntegrationsPage() {
       }
     } catch {
       setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar este recordatorio.' });
-    } finally {
-      setBusyWorkflowId(null);
-      setOptimisticWorkflows((prev) =>
-        Object.fromEntries(Object.entries(prev).filter(([key]) => key !== workflowId)),
-      );
-    }
-  };
-
-  const toggleWorkflowEnabled = async (workflowId: string, enabled: boolean) => {
-    if (busyWorkflowId) return;
-    setBusyWorkflowId(workflowId);
-    setOptimisticWorkflows((prev) => ({
-      ...prev,
-      [workflowId]: { ...prev[workflowId], isEnabled: enabled },
-    }));
-    setMsg(null);
-    try {
-      const res = await fetch('/api/admin/operations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'workflow', id: workflowId, patch: { isEnabled: enabled } }),
-      });
-      if (res.ok) {
-        await refresh();
-        saveNotice.show(enabled ? 'Aviso activado' : 'Aviso pausado');
-      } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        setMsg({ status: 'error', text: errJson?.error || 'No se pudo actualizar este aviso.' });
-      }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar este aviso.' });
     } finally {
       setBusyWorkflowId(null);
       setOptimisticWorkflows((prev) =>
@@ -308,56 +240,6 @@ export default function AdminIntegrationsPage() {
     }
   };
 
-  const handleUpdateWorkflowContent = async (
-    workflowId: string,
-    patch: { subjectTemplate: string; messageTemplate: string; offsetMinutes?: number },
-  ): Promise<FormSubmitResult> => {
-    try {
-      const res = await fetch('/api/admin/operations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'workflow', id: workflowId, patch }),
-      });
-      if (!res.ok) {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        return formSubmitError(errJson?.error || 'No se pudo guardar el mensaje.');
-      }
-      await refresh();
-      saveNotice.show('Mensaje actualizado');
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudo guardar el mensaje.');
-    }
-  };
-
-  const handleUpdateOfficialTemplate = async (
-    triggerKey: WhatsAppTemplateTriggerKey,
-    patch: { templateName?: string; isActive?: boolean },
-  ): Promise<FormSubmitResult> => {
-    try {
-      const res = await fetch('/api/admin/integrations/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'update_template',
-          triggerKey,
-          ...patch,
-        }),
-      });
-      if (!res.ok) {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        return formSubmitError(
-          errJson?.error || 'No se pudo actualizar la plantilla de WhatsApp.',
-        );
-      }
-      await refresh();
-      saveNotice.show('Plantilla actualizada');
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudo actualizar la plantilla.');
-    }
-  };
-
   const handleToggleCalendarConnection = async (staffId: string, isConnected: boolean) => {
     if (busyCalendarStaffId) return;
     setBusyCalendarStaffId(staffId);
@@ -391,107 +273,83 @@ export default function AdminIntegrationsPage() {
 
   return (
     <AdminAccessGuard role={data.session.user.role} section="integrations" sectionLabel="Conexiones">
-    <VStack className="ad-page">
-      <PageHeader
-        title="Conexiones"
-        subtitle="Calendario, avisos por WhatsApp y cobro de anticipos."
-        meta={
-          isAnyMutationBusy ? (
-            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando…
-            </Text>
-          ) : saveNotice.message ? (
-            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-              <Check size={12} aria-hidden="true" />
-              {saveNotice.message}
-            </Text>
-          ) : undefined
-        }
-      />
-
-      {msg ? (
-        <Banner
-          status={msg.status}
-          role={msg.status === 'error' ? 'alert' : 'status'}
-          title={msg.text}
-          isDismissable
-          onDismiss={() => setMsg(null)}
+      <VStack className="ad-page">
+        <PageHeader
+          title="Conexiones"
+          subtitle="Calendario, resumen de WhatsApp y cobro de anticipos."
+          meta={
+            isAnyMutationBusy ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Guardando…
+              </Text>
+            ) : saveNotice.message ? (
+              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                <Check size={12} aria-hidden="true" />
+                {saveNotice.message}
+              </Text>
+            ) : undefined
+          }
         />
-      ) : null}
 
-      <GoogleCalendarSection
-        staff={data.staff}
-        calendarConnections={displayCalendarConnections}
-        googleCalendarConfigured={integration.googleCalendarConfigured}
-        isDemoMode={integration.mode === 'demo'}
-        busyCalendarStaffId={busyCalendarStaffId}
-        onUpdateDestination={(staffId, destinationCalendarId) =>
-          busyCalendarStaffId
-            ? Promise.resolve()
-            : patchCalendar(staffId, { destinationCalendarId })
-        }
-        onUpdateConflictCalendars={(staffId, conflictCalendarIds) =>
-          busyCalendarStaffId
-            ? Promise.resolve()
-            : patchCalendar(staffId, { conflictCalendarIds })
-        }
-        onToggleConnection={handleToggleCalendarConnection}
-      />
+        {msg ? (
+          <Banner
+            status={msg.status}
+            role={msg.status === 'error' ? 'alert' : 'status'}
+            title={msg.text}
+            isDismissable
+            onDismiss={() => setMsg(null)}
+          />
+        ) : null}
 
-      <VStack
-        className={busyWorkflowId ? 'fx-busy' : undefined}
-        aria-busy={Boolean(busyWorkflowId) || undefined}
-        gap={0}
-      >
+        <GoogleCalendarSection
+          staff={data.staff}
+          calendarConnections={displayCalendarConnections}
+          googleCalendarConfigured={integration.googleCalendarConfigured}
+          isDemoMode={integration.mode === 'demo'}
+          busyCalendarStaffId={busyCalendarStaffId}
+          onUpdateDestination={(staffId, destinationCalendarId) =>
+            busyCalendarStaffId
+              ? Promise.resolve()
+              : patchCalendar(staffId, { destinationCalendarId })
+          }
+          onUpdateConflictCalendars={(staffId, conflictCalendarIds) =>
+            busyCalendarStaffId
+              ? Promise.resolve()
+              : patchCalendar(staffId, { conflictCalendarIds })
+          }
+          onToggleConnection={handleToggleCalendarConnection}
+        />
+
         <WhatsAppSection
           integration={integration}
-          salonName={settings.name}
-          salonAddress={settings.address}
-          salonPhone={settings.whatsappNumber}
-          webhookUrl={whatsappWebhookUrl}
-          whatsappBookingEnabled={settings.whatsappBookingEnabled}
           whatsappUsage={whatsappUsage}
-          reminderSummary={reminderSummary}
-          bookingMetaById={bookingMetaById}
+          activeRemindersCount={activeRemindersCount}
+          inboxSummary={data.whatsappInboxSummary}
+        />
+
+        <PaymentsAnalyticsSection
+          settings={settings}
+          depositLabel={depositLabel}
+          isDemoMode={integration.mode === 'demo'}
+          initialOpenMore={initialOpenMore}
+          mercadoPagoConfigured={integration.mercadoPagoConfigured}
+          twilioSmsConfigured={integration.twilioSmsConfigured}
           timezone={timezone}
+          whatsappWebhookUrl={whatsappWebhookUrl}
+          googleCalendarTechUrl={googleCalendarTechUrl}
+          mercadoPagoTechUrl={mercadoPagoTechUrl}
+          services={data.services}
           workflows={displayWorkflows}
-          copyableTemplates={whatsappTemplates}
-          officialTemplates={data.whatsappTemplates ?? []}
-          onToggleWhatsappBooking={(v) => void saveIntegrationSettings({ whatsappBookingEnabled: v })}
-          onToggleWorkflowEnabled={(id, checked) => void toggleWorkflowEnabled(id, checked)}
-          onToggleReminderChannel={(id, channels, channel, enabled) =>
-            void toggleReminderChannel(id, channels, channel, enabled)
+          notifications={data.notifications}
+          savingSettings={savingSettings || Boolean(busyWorkflowId)}
+          onSaveSettingsPatch={(patch) => void saveIntegrationSettings(patch)}
+          onToggleSmsChannel={(id, channels, enabled) =>
+            void toggleReminderChannel(id, channels, 'sms', enabled)
           }
-          onUpdateWorkflowContent={handleUpdateWorkflowContent}
-          onUpdateOfficialTemplate={handleUpdateOfficialTemplate}
-          onBanner={setMsg}
           onRefresh={refresh}
+          onBanner={setMsg}
         />
       </VStack>
-
-      <PaymentsAnalyticsSection
-        settings={settings}
-        depositLabel={depositLabel}
-        isDemoMode={integration.mode === 'demo'}
-        initialOpenMore={initialOpenMore}
-        mercadoPagoConfigured={integration.mercadoPagoConfigured}
-        twilioSmsConfigured={integration.twilioSmsConfigured}
-        timezone={timezone}
-        whatsappWebhookUrl={whatsappWebhookUrl}
-        googleCalendarTechUrl={googleCalendarTechUrl}
-        mercadoPagoTechUrl={mercadoPagoTechUrl}
-        services={data.services}
-        workflows={displayWorkflows}
-        notifications={data.notifications}
-        savingSettings={savingSettings || Boolean(busyWorkflowId)}
-        onSaveSettingsPatch={(patch) => void saveIntegrationSettings(patch)}
-        onToggleSmsChannel={(id, channels, enabled) =>
-          void toggleReminderChannel(id, channels, 'sms', enabled)
-        }
-        onRefresh={refresh}
-        onBanner={setMsg}
-      />
-    </VStack>
     </AdminAccessGuard>
   );
 }

@@ -29,9 +29,29 @@ import {
   getOfficialWhatsAppTemplateSpec,
   sanitizeWhatsAppTemplateName,
 } from '../integrations/whatsapp-templates';
-import { getDateKeyInTimezone, normalizePhoneE164, slugify } from '../format';
+import {
+  getDateKeyInTimezone,
+  normalizePhoneE164,
+  phonesMatchE164,
+  slugify,
+} from '../format';
 import { logError } from '../logger';
 import { computeClientLoyaltySummary } from '../loyalty/stamps';
+import { shouldSkipWhatsappCascade } from '../notifications/cascade';
+import {
+  canonicalizeWhatsAppPhoneE164,
+  computeNotificationRetryAt,
+  computeWhatsAppServiceWindow,
+  inferReminderTriggerKey,
+  resolveNextDeliveryStatus,
+} from '../notifications/whatsapp-inbox';
+import type {
+  WhatsAppInboxSummaryDTO,
+  WhatsAppReminderItemDTO,
+  WhatsAppServiceWindowDTO,
+  WhatsAppThreadBookingContextDTO,
+  WhatsAppThreadSummaryDTO,
+} from '../contracts/whatsapp';
 import {
   PublicLoyaltySummarySchema,
   toPublicServiceDTO,
@@ -81,11 +101,13 @@ import type {
   SlotHold,
   StaffMember,
   WaitlistEntry,
+  WhatsAppMessage,
   WhatsAppMonthlyUsage,
   WhatsAppMonthlyUsageSummary,
   WhatsAppQuotaAlertLevel,
   WhatsAppTemplateConfig,
   WhatsAppTemplateTriggerKey,
+  WhatsAppThread,
 } from '../types';
 import type { Database } from './database.types';
 import { createSupabaseAdminClient } from './supabase-client';
@@ -98,25 +120,34 @@ import {
   type ClientArcoExport,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type GetWhatsAppThreadDetailParams,
   type InactiveClientRecord,
+  type ListScheduledNotificationsParams,
+  type ListWhatsAppThreadsParams,
   type ManageClientBookingInput,
   type NearRewardClientRecord,
   type NotificationDispatcher,
   type OutboxEventRecord,
+  type OutboxSummary,
   type ProcessDueNotificationsResult,
   type PublicBootstrapData,
   type QueryAvailabilityInput,
   type QueryAvailabilityOutput,
   type RecordConsentInput,
   type RecordPaymentSplitsInput,
+  type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
+  type ResolveRetriedWhatsAppMessageInput,
   type SalonRepository,
   type SlotHoldResult,
   type SubmitReviewInput,
   type UpdateBookingStatusInput,
   type UpdateCashEntryInput,
   type UpdateClientNotesInput,
+  type UpdateScheduledNotificationStatusInput,
+  type UpdateWhatsAppMessageStatusInput,
   type ValidateCouponResult,
+  type WhatsAppThreadDetailData,
   type WriteAuditLogInput,
 } from './port';
 
@@ -599,15 +630,26 @@ function mapNotificationRow(
   return {
     id: row.id,
     bookingId: row.booking_id,
+    clientId: row.client_id ?? null,
     workflowId: row.workflow_id,
+    triggerKey:
+      row.trigger_key && isWhatsAppTriggerKey(row.trigger_key)
+        ? row.trigger_key
+        : null,
     channel: row.channel,
     recipient: row.recipient,
     scheduledFor: row.scheduled_for,
     status: row.status,
+    deliveryStatus: row.delivery_status ?? null,
     subject: row.subject,
     previewText: row.preview_text,
+    bodyText: row.body_text || row.preview_text,
     providerMessageId: row.provider_message_id,
     errorMessage: row.error_message,
+    attempts: row.attempts ?? 0,
+    maxAttempts: row.max_attempts ?? 3,
+    nextRetryAt: row.next_retry_at ?? null,
+    lastAttemptAt: row.last_attempt_at ?? null,
     sentAt: row.sent_at,
     createdAt: row.created_at,
   };
@@ -898,6 +940,13 @@ function mapAuditLogRow(row: Tables['audit_logs']['Row']): AuditLogEntry {
 }
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function toUuidOrNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return UUID_RE.test(trimmed) ? trimmed : null;
+}
 
 const VALID_WHATSAPP_TRIGGERS = new Set<WhatsAppTemplateTriggerKey>([
   'booking_confirmed',
@@ -976,6 +1025,93 @@ function mapWhatsAppMonthlyUsageRow(
     warned100At: row.warned_100_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapWhatsAppThreadRow(
+  row: Tables['whatsapp_threads']['Row'],
+): WhatsAppThread {
+  return {
+    id: row.id,
+    phoneE164: row.phone_e164,
+    clientId: row.client_id,
+    contactName: row.contact_name,
+    lastMessageAt: row.last_message_at,
+    lastMessagePreview: row.last_message_preview,
+    lastMessageDirection: row.last_message_direction,
+    lastInboundAt: row.last_inbound_at,
+    unreadCount: row.unread_count,
+    lastReadAt: row.last_read_at,
+    hasFailedMessages: row.has_failed_messages,
+    isArchived: row.is_archived,
+    assignedStaffId: row.assigned_staff_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapWhatsAppMessageRow(
+  row: Tables['whatsapp_messages']['Row'],
+): WhatsAppMessage {
+  const params = Array.isArray(row.template_params)
+    ? row.template_params.filter((v): v is string => typeof v === 'string')
+    : [];
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    phoneE164: row.phone_e164,
+    clientId: row.client_id,
+    bookingId: row.booking_id,
+    notificationId: row.notification_id,
+    direction: row.direction,
+    senderKind: row.sender_kind,
+    senderName: row.sender_name,
+    messageType: row.message_type,
+    bodyText: row.body_text,
+    templateName: row.template_name,
+    templateTriggerKey:
+      row.template_trigger_key && isWhatsAppTriggerKey(row.template_trigger_key)
+        ? row.template_trigger_key
+        : null,
+    templateParams: params,
+    deliveryStatus: row.delivery_status,
+    deliveryMode: row.delivery_mode,
+    providerMessageId: row.provider_message_id,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+    sentAt: row.sent_at,
+    deliveredAt: row.delivered_at,
+    readAt: row.read_at,
+    failedAt: row.failed_at,
+    createdAt: row.created_at,
+  };
+}
+
+function phoneLookupVariants(canonicalPhone: string): string[] {
+  const variants = new Set<string>([canonicalPhone]);
+  const digits = canonicalPhone.replace(/\D/g, '');
+  if (digits.startsWith('52') && digits.length === 12) {
+    variants.add(`+521${digits.slice(2)}`);
+  } else if (digits.startsWith('521') && digits.length === 13) {
+    variants.add(`+52${digits.slice(3)}`);
+  }
+  return Array.from(variants);
+}
+
+function isSupabaseScheduledNotificationDue(
+  notification: ScheduledNotification,
+  nowMs: number,
+): boolean {
+  if (notification.status === 'pending') {
+    const scheduledMs = Date.parse(notification.scheduledFor);
+    return Number.isFinite(scheduledMs) && scheduledMs <= nowMs;
+  }
+  if (notification.status === 'failed' && notification.nextRetryAt) {
+    const attempts = notification.attempts ?? 0;
+    const maxAttempts = notification.maxAttempts ?? 3;
+    const retryMs = Date.parse(notification.nextRetryAt);
+    return attempts < maxAttempts && Number.isFinite(retryMs) && retryMs <= nowMs;
+  }
+  return false;
 }
 
 function buildWhatsAppUsageSummary(usage: {
@@ -1645,6 +1781,8 @@ export function createSupabaseRepository(
       whatsappTemplatesRes,
       whatsappMonthlyUsageRes,
       funnelEventsRes,
+      whatsappThreadsRes,
+      whatsappMessagesRes,
     ] = await Promise.all([
       supabase.from('audit_logs').select('*'),
       supabase.from('booking_payments').select('*'),
@@ -1652,6 +1790,8 @@ export function createSupabaseRepository(
       supabase.from('whatsapp_templates').select('*'),
       supabase.from('whatsapp_monthly_usage').select('*'),
       supabase.from('funnel_events').select('*'),
+      supabase.from('whatsapp_threads').select('*'),
+      supabase.from('whatsapp_messages').select('*'),
     ]);
 
     const staffLinks = staffServicesRes.data ?? [];
@@ -1695,6 +1835,8 @@ export function createSupabaseRepository(
       whatsappMonthlyUsage: (whatsappMonthlyUsageRes.data ?? []).map(
         mapWhatsAppMonthlyUsageRow,
       ),
+      whatsappThreads: (whatsappThreadsRes.data ?? []).map(mapWhatsAppThreadRow),
+      whatsappMessages: (whatsappMessagesRes.data ?? []).map(mapWhatsAppMessageRow),
       funnelEvents: (funnelEventsRes.data ?? []).map(mapFunnelEventRow),
     };
   }
@@ -1801,15 +1943,31 @@ export function createSupabaseRepository(
     await supabase.from('scheduled_notifications').insert(
       logs.map((log) => ({
         booking_id: log.bookingId,
+        client_id: log.clientId ?? null,
         workflow_id: log.workflowId,
+        trigger_key: log.triggerKey ?? null,
         channel: log.channel,
         recipient: log.recipient,
         scheduled_for: log.scheduledFor,
         status: log.status,
+        delivery_status:
+          log.deliveryStatus ??
+          (log.status === 'sent'
+            ? 'sent'
+            : log.status === 'failed'
+              ? 'failed'
+              : log.status === 'pending'
+                ? 'queued'
+                : null),
         subject: log.subject,
         preview_text: log.previewText,
+        body_text: log.bodyText ?? log.previewText,
         provider_message_id: log.providerMessageId,
         error_message: log.errorMessage,
+        attempts: log.attempts ?? (log.status === 'pending' ? 0 : 1),
+        max_attempts: log.maxAttempts ?? 3,
+        next_retry_at: log.nextRetryAt ?? null,
+        last_attempt_at: log.lastAttemptAt ?? (log.sentAt ?? null),
         sent_at: log.sentAt,
       })),
     );
@@ -3126,16 +3284,21 @@ export function createSupabaseRepository(
     ): Promise<ProcessDueNotificationsResult> {
       const supabase = getClient();
       const snapshot = await getSnapshot();
-      const due = snapshot.notifications.filter(
-        (n) => n.status === 'pending' && new Date(n.scheduledFor).getTime() <= nowMs,
+      const due = snapshot.notifications.filter((n) =>
+        isSupabaseScheduledNotificationDue(n, nowMs),
       );
 
       let sentCount = 0;
       let failedCount = 0;
       let canceledCount = 0;
+      let skippedCount = 0;
+      let retriedCount = 0;
 
       for (const item of due) {
-        const rawBooking = snapshot.bookings.find((b) => b.id === item.bookingId);
+        const isRetry = item.status === 'failed';
+        const rawBooking = item.bookingId
+          ? snapshot.bookings.find((b) => b.id === item.bookingId)
+          : undefined;
         if (
           !rawBooking ||
           rawBooking.status === 'canceled' ||
@@ -3143,15 +3306,98 @@ export function createSupabaseRepository(
         ) {
           await supabase
             .from('scheduled_notifications')
-            .update({ status: 'canceled' })
+            .update({ status: 'canceled', next_retry_at: null })
             .eq('id', item.id);
           canceledCount += 1;
           continue;
         }
 
+        const wf = item.workflowId
+          ? snapshot.workflows.find((w) => w.id === item.workflowId)
+          : null;
+        const isAfterBooking = wf?.triggerEvent === 'after_booking';
+
+        if (!isAfterBooking && rawBooking.status === 'completed') {
+          await supabase
+            .from('scheduled_notifications')
+            .update({
+              status: 'canceled',
+              error_message: 'booking_already_completed',
+              next_retry_at: null,
+            })
+            .eq('id', item.id);
+          canceledCount += 1;
+          continue;
+        }
+
+        if (isAfterBooking) {
+          if (rawBooking.status !== 'completed') {
+            const endMs = Date.parse(rawBooking.endAt);
+            if (Number.isFinite(endMs) && nowMs - endMs > 7 * 86_400_000) {
+              await supabase
+                .from('scheduled_notifications')
+                .update({
+                  status: 'canceled',
+                  error_message: 'booking_not_completed',
+                  next_retry_at: null,
+                })
+                .eq('id', item.id);
+              canceledCount += 1;
+            }
+            continue;
+          }
+          if ((wf?.offsetMinutes ?? 0) >= 1440 && rawBooking.touchupInvitedAt) {
+            await supabase
+              .from('scheduled_notifications')
+              .update({
+                status: 'canceled',
+                error_message: 'already_invited_touchup',
+                next_retry_at: null,
+              })
+              .eq('id', item.id);
+            canceledCount += 1;
+            continue;
+          }
+        }
+
+        const alreadySentEmail = snapshot.notifications.some((n) => {
+          if (n.bookingId !== rawBooking.id || n.channel !== 'email' || n.status !== 'sent') {
+            return false;
+          }
+          const nWf = n.workflowId
+            ? snapshot.workflows.find((w) => w.id === n.workflowId)
+            : null;
+          return nWf?.triggerEvent === 'before_booking';
+        });
+
+        if (
+          item.channel === 'whatsapp' &&
+          !isAfterBooking &&
+          shouldSkipWhatsappCascade(rawBooking, alreadySentEmail)
+        ) {
+          await supabase
+            .from('scheduled_notifications')
+            .update({
+              status: 'canceled',
+              error_message: 'skipped_cascade',
+              sent_at: null,
+              next_retry_at: null,
+            })
+            .eq('id', item.id);
+          skippedCount += 1;
+          canceledCount += 1;
+          continue;
+        }
+
+        const nextAttempt = (item.attempts ?? 0) + 1;
+        const maxAttempts = item.maxAttempts ?? 3;
+
         const { error: claimError } = await supabase
           .from('webhook_events')
-          .insert({ provider: 'scheduled_notification', event_id: item.id });
+          .insert({
+            provider: 'scheduled_notification',
+            event_id: `${item.id}:attempt:${nextAttempt}`,
+          });
         if (claimError) {
           if (claimError.code !== '23505') {
             failedCount += 1;
@@ -3161,23 +3407,50 @@ export function createSupabaseRepository(
 
         const hydrated = hydrateBookingFromSnapshot(snapshot, rawBooking);
         const res = await dispatcher({
-          notification: { ...item },
+          notification: { ...item, bodyText: item.bodyText || item.previewText },
           booking: hydrated,
           settings: snapshot.settings,
         });
+
+        const attemptIso = new Date(nowMs).toISOString();
+        const nextRetryAt =
+          res.status === 'failed' && nextAttempt < maxAttempts
+            ? computeNotificationRetryAt(nextAttempt, nowMs)
+            : null;
 
         await supabase
           .from('scheduled_notifications')
           .update({
             status: res.status,
+            delivery_status: res.status === 'sent' ? 'sent' : 'failed',
             provider_message_id: res.providerMessageId,
             error_message: res.errorMessage,
-            sent_at: res.status === 'sent' ? clock.now().toISOString() : null,
+            attempts: nextAttempt,
+            max_attempts: maxAttempts,
+            last_attempt_at: attemptIso,
+            next_retry_at: nextRetryAt,
+            sent_at: res.status === 'sent' ? attemptIso : null,
           })
           .eq('id', item.id);
 
-        if (res.status === 'sent') sentCount += 1;
-        else failedCount += 1;
+        if (res.status === 'sent') {
+          if (wf?.triggerEvent === 'before_booking' && wf.offsetMinutes >= 720) {
+            await supabase
+              .from('bookings')
+              .update({ reminder_24h_sent_at: attemptIso, updated_at: attemptIso })
+              .eq('id', rawBooking.id);
+          }
+          if (isAfterBooking && (wf?.offsetMinutes ?? 0) >= 1440) {
+            await supabase
+              .from('bookings')
+              .update({ touchup_invited_at: attemptIso, updated_at: attemptIso })
+              .eq('id', rawBooking.id);
+          }
+          sentCount += 1;
+          if (isRetry) retriedCount += 1;
+        } else {
+          failedCount += 1;
+        }
       }
 
       return {
@@ -3185,6 +3458,8 @@ export function createSupabaseRepository(
         sentCount,
         failedCount,
         canceledCount,
+        skippedCount,
+        retriedCount,
       };
     },
 
@@ -5320,6 +5595,7 @@ export function createSupabaseRepository(
         .from('scheduled_notifications')
         .update({
           status,
+          delivery_status: status === 'sent' ? 'sent' : 'failed',
           error_message: errorMessage,
           ...(status === 'sent' ? { sent_at: nowIso } : {}),
         })
@@ -5424,6 +5700,1275 @@ export function createSupabaseRepository(
         cleanedCount: typeof data === 'number' ? data : 0,
         dbAlive: true,
       };
+    },
+
+    async listWhatsAppThreads(
+      params?: ListWhatsAppThreadsParams,
+    ): Promise<{ threads: WhatsAppThreadSummaryDTO[]; summary: WhatsAppInboxSummaryDTO }> {
+      const supabase = getClient();
+      const nowMs = params?.nowMs ?? clock.nowMs();
+
+      const [
+        threadsRes,
+        messagesRes,
+        clientsRes,
+        bookingsRes,
+        servicesRes,
+        staffRes,
+        notifsRes,
+      ] = await Promise.all([
+        supabase
+          .from('whatsapp_threads')
+          .select('*')
+          .eq('is_archived', false)
+          .order('last_message_at', { ascending: false, nullsFirst: false }),
+        supabase
+          .from('whatsapp_messages')
+          .select('thread_id, delivery_status, sender_kind, created_at')
+          .order('created_at', { ascending: false }),
+        supabase.from('clients').select('*'),
+        supabase.from('bookings').select('*'),
+        supabase.from('services').select('id, name'),
+        supabase.from('staff_members').select('id, name'),
+        supabase
+          .from('scheduled_notifications')
+          .select('id, booking_id, client_id, status')
+          .in('status', ['pending', 'failed']),
+      ]);
+
+      const threads = (threadsRes.data ?? []).map(mapWhatsAppThreadRow);
+      const clients = (clientsRes.data ?? []).map(mapClientRow);
+      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      const serviceNameById = new Map(
+        (servicesRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+      const staffNameById = new Map(
+        (staffRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+
+      const latestMsgByThread = new Map<
+        string,
+        {
+          deliveryStatus: WhatsAppMessage['deliveryStatus'];
+          senderKind: WhatsAppMessage['senderKind'];
+        }
+      >();
+      const failedThreadIds = new Set<string>();
+      for (const m of messagesRes.data ?? []) {
+        if (!latestMsgByThread.has(m.thread_id)) {
+          latestMsgByThread.set(m.thread_id, {
+            deliveryStatus: m.delivery_status,
+            senderKind: m.sender_kind,
+          });
+        }
+        if (m.delivery_status === 'failed') {
+          failedThreadIds.add(m.thread_id);
+        }
+      }
+
+      const role = params?.role;
+      const staffMemberId = params?.staffMemberId ?? null;
+      const isSpecialist = role === 'specialist';
+
+      const findClientForThread = (thread: WhatsAppThread): ClientProfile | null => {
+        if (thread.clientId) {
+          const byId = clients.find((c) => c.id === thread.clientId);
+          if (byId) return byId;
+        }
+        return clients.find((c) => phonesMatchE164(c.phoneE164, thread.phoneE164)) ?? null;
+      };
+
+      const isVisibleThread = (thread: WhatsAppThread, client: ClientProfile | null): boolean => {
+        if (!isSpecialist) return true;
+        if (!staffMemberId) return false;
+        if (thread.assignedStaffId === staffMemberId) return true;
+        if (!client) return false;
+        return bookings.some(
+          (b) => b.clientId === client.id && b.staffId === staffMemberId,
+        );
+      };
+
+      const toContext = (b: Booking): WhatsAppThreadBookingContextDTO => ({
+        bookingId: b.id,
+        bookingCode: b.bookingCode,
+        serviceName: serviceNameById.get(b.serviceId) ?? 'Servicio',
+        staffId: b.staffId,
+        staffName: staffNameById.get(b.staffId) ?? 'Profesional',
+        startAt: b.startAt,
+        endAt: b.endAt,
+        status: b.status,
+        attendanceStatus: b.attendanceStatus ?? 'pending',
+        totalPriceCents: b.totalPriceCents,
+        depositAmountCents: b.depositAmountCents,
+        manageToken: b.manageToken,
+      });
+
+      const allSummaries: WhatsAppThreadSummaryDTO[] = [];
+      for (const thread of threads) {
+        const client = findClientForThread(thread);
+        if (!isVisibleThread(thread, client)) continue;
+        const clientIds = new Set<string>();
+        if (thread.clientId) clientIds.add(thread.clientId);
+        if (client) clientIds.add(client.id);
+        const clientBookings = bookings.filter((b) => clientIds.has(b.clientId));
+        const upcomingActive = clientBookings
+          .filter((b) => isActiveBookingStatus(b.status) && Date.parse(b.endAt) >= nowMs)
+          .toSorted((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+        const otherBookings = clientBookings
+          .filter((b) => !(isActiveBookingStatus(b.status) && Date.parse(b.endAt) >= nowMs))
+          .toSorted((a, b) => Date.parse(b.startAt) - Date.parse(a.startAt));
+        const nextRaw = upcomingActive[0] ?? otherBookings[0] ?? null;
+        const latestMsg = latestMsgByThread.get(thread.id) ?? null;
+
+        allSummaries.push({
+          id: thread.id,
+          phoneE164: thread.phoneE164,
+          clientId: client?.id ?? thread.clientId,
+          contactName: thread.contactName || client?.fullName || thread.phoneE164,
+          clientEmail: client?.email ?? null,
+          clientInstagram: client?.instagramHandle ?? null,
+          lastMessageAt: thread.lastMessageAt,
+          lastMessagePreview: thread.lastMessagePreview,
+          lastMessageDirection: thread.lastMessageDirection,
+          lastInboundAt: thread.lastInboundAt,
+          unreadCount: thread.unreadCount,
+          lastReadAt: thread.lastReadAt,
+          hasFailedMessages: thread.hasFailedMessages || failedThreadIds.has(thread.id),
+          isArchived: thread.isArchived,
+          assignedStaffId: thread.assignedStaffId,
+          serviceWindow: computeWhatsAppServiceWindow(thread.lastInboundAt, nowMs),
+          nextBooking: nextRaw ? toContext(nextRaw) : null,
+          lastDeliveryStatus: latestMsg?.deliveryStatus ?? null,
+          lastSenderKind: latestMsg?.senderKind ?? null,
+        });
+      }
+
+      let unreadCount = 0;
+      let failedCount = 0;
+      let windowOpenCount = 0;
+      for (const item of allSummaries) {
+        unreadCount += item.unreadCount;
+        if (item.hasFailedMessages) failedCount += 1;
+        if (item.serviceWindow.isOpen) windowOpenCount += 1;
+      }
+
+      const bookingById = new Map(bookings.map((b) => [b.id, b]));
+      let failedRemindersCount = 0;
+      let pendingRemindersCount = 0;
+      for (const n of notifsRes.data ?? []) {
+        if (isSpecialist) {
+          if (!staffMemberId) continue;
+          const b = n.booking_id ? bookingById.get(n.booking_id) : undefined;
+          const visible = b
+            ? b.staffId === staffMemberId
+            : Boolean(
+                n.client_id &&
+                  bookings.some(
+                    (bk) => bk.clientId === n.client_id && bk.staffId === staffMemberId,
+                  ),
+              );
+          if (!visible) continue;
+        }
+        if (n.status === 'failed') failedRemindersCount += 1;
+        if (n.status === 'pending') pendingRemindersCount += 1;
+      }
+
+      const summary: WhatsAppInboxSummaryDTO = {
+        unreadCount,
+        failedCount,
+        failedRemindersCount,
+        pendingRemindersCount,
+        windowOpenCount,
+        totalThreads: allSummaries.length,
+      };
+
+      const filter = params?.filter ?? 'all';
+      const query = params?.q?.trim().toLowerCase() ?? '';
+      const phoneFilter = params?.phone?.trim() ?? '';
+      const clientIdFilter = params?.clientId?.trim() ?? '';
+      const limit = Math.max(1, Math.min(200, params?.limit ?? 50));
+
+      const filtered = allSummaries
+        .filter((item) => {
+          if (filter === 'unread' && item.unreadCount <= 0) return false;
+          if (filter === 'window_open' && !item.serviceWindow.isOpen) return false;
+          if (filter === 'failed' && !item.hasFailedMessages) return false;
+          if (phoneFilter && !phonesMatchE164(item.phoneE164, phoneFilter)) {
+            return false;
+          }
+          if (clientIdFilter && item.clientId !== clientIdFilter) return false;
+          if (query) {
+            const haystack = [
+              item.contactName,
+              item.phoneE164,
+              item.lastMessagePreview,
+              item.clientEmail ?? '',
+              item.clientInstagram ?? '',
+              item.nextBooking?.bookingCode ?? '',
+              item.nextBooking?.serviceName ?? '',
+            ]
+              .join(' ')
+              .toLowerCase();
+            if (!haystack.includes(query)) return false;
+          }
+          return true;
+        })
+        .toSorted((a, b) => {
+          const aMs = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
+          const bMs = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
+          return bMs - aMs;
+        })
+        .slice(0, limit);
+
+      return { threads: filtered, summary };
+    },
+
+    async getWhatsAppThreadDetail(
+      params: GetWhatsAppThreadDetailParams,
+    ): Promise<WhatsAppThreadDetailData | null> {
+      const supabase = getClient();
+      const nowMs = params.nowMs ?? clock.nowMs();
+      let threadRow: Tables['whatsapp_threads']['Row'] | null = null;
+
+      if (params.threadId) {
+        const res = await supabase
+          .from('whatsapp_threads')
+          .select('*')
+          .eq('id', params.threadId)
+          .maybeSingle();
+        threadRow = res.data ?? null;
+      } else if (params.phoneE164) {
+        const canonical =
+          canonicalizeWhatsAppPhoneE164(params.phoneE164) ||
+          normalizePhoneE164(params.phoneE164);
+        if (canonical) {
+          const variants = phoneLookupVariants(canonical);
+          const res = await supabase
+            .from('whatsapp_threads')
+            .select('*')
+            .in('phone_e164', variants)
+            .limit(1)
+            .maybeSingle();
+          threadRow = res.data ?? null;
+        }
+      } else if (params.clientId) {
+        const res = await supabase
+          .from('whatsapp_threads')
+          .select('*')
+          .eq('client_id', params.clientId)
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        threadRow = res.data ?? null;
+      }
+
+      if (!threadRow) return null;
+      const thread = mapWhatsAppThreadRow(threadRow);
+      const limit = Math.max(1, Math.min(500, params.limit ?? 200));
+
+      const phoneVariants = phoneLookupVariants(thread.phoneE164);
+      const [messagesRes, clientByIdRes, clientByPhoneRes, servicesRes, staffRes] =
+        await Promise.all([
+          supabase
+            .from('whatsapp_messages')
+            .select('*')
+            .eq('thread_id', thread.id)
+            .order('created_at', { ascending: false })
+            .limit(limit),
+          thread.clientId
+            ? supabase.from('clients').select('*').eq('id', thread.clientId).maybeSingle()
+            : Promise.resolve({ data: null as Tables['clients']['Row'] | null }),
+          supabase
+            .from('clients')
+            .select('*')
+            .in('phone_e164', phoneVariants)
+            .limit(1)
+            .maybeSingle(),
+          supabase.from('services').select('id, name'),
+          supabase.from('staff_members').select('id, name'),
+        ]);
+
+      const clientRow = clientByIdRes.data ?? clientByPhoneRes.data ?? null;
+      const client = clientRow ? mapClientRow(clientRow) : null;
+
+      let bookings: Booking[] = [];
+      if (client) {
+        const bookingsRes = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('client_id', client.id);
+        bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      }
+
+      if (params.role === 'specialist') {
+        const staffId = params.staffMemberId ?? null;
+        if (!staffId) return null;
+        const allowed =
+          thread.assignedStaffId === staffId ||
+          bookings.some((b) => b.staffId === staffId);
+        if (!allowed) return null;
+      }
+
+      const serviceNameById = new Map(
+        (servicesRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+      const staffNameById = new Map(
+        (staffRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+
+      const upcomingActive = bookings
+        .filter((b) => isActiveBookingStatus(b.status) && Date.parse(b.endAt) >= nowMs)
+        .toSorted((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+      const otherBookings = bookings
+        .filter((b) => !(isActiveBookingStatus(b.status) && Date.parse(b.endAt) >= nowMs))
+        .toSorted((a, b) => Date.parse(b.startAt) - Date.parse(a.startAt));
+
+      const bookingContexts: WhatsAppThreadBookingContextDTO[] = [
+        ...upcomingActive,
+        ...otherBookings,
+      ].map((b) => ({
+        bookingId: b.id,
+        bookingCode: b.bookingCode,
+        serviceName: serviceNameById.get(b.serviceId) ?? 'Servicio',
+        staffId: b.staffId,
+        staffName: staffNameById.get(b.staffId) ?? 'Profesional',
+        startAt: b.startAt,
+        endAt: b.endAt,
+        status: b.status,
+        attendanceStatus: b.attendanceStatus ?? 'pending',
+        totalPriceCents: b.totalPriceCents,
+        depositAmountCents: b.depositAmountCents,
+        manageToken: b.manageToken,
+      }));
+
+      const messagesDesc = (messagesRes.data ?? []).map(mapWhatsAppMessageRow);
+      const messagesAsc = messagesDesc.toReversed();
+      const latestMsg = messagesDesc[0] ?? null;
+
+      const summary: WhatsAppThreadSummaryDTO = {
+        id: thread.id,
+        phoneE164: thread.phoneE164,
+        clientId: client?.id ?? thread.clientId,
+        contactName: thread.contactName || client?.fullName || thread.phoneE164,
+        clientEmail: client?.email ?? null,
+        clientInstagram: client?.instagramHandle ?? null,
+        lastMessageAt: thread.lastMessageAt,
+        lastMessagePreview: thread.lastMessagePreview,
+        lastMessageDirection: thread.lastMessageDirection,
+        lastInboundAt: thread.lastInboundAt,
+        unreadCount: thread.unreadCount,
+        lastReadAt: thread.lastReadAt,
+        hasFailedMessages:
+          thread.hasFailedMessages ||
+          messagesAsc.some((m) => m.deliveryStatus === 'failed'),
+        isArchived: thread.isArchived,
+        assignedStaffId: thread.assignedStaffId,
+        serviceWindow: computeWhatsAppServiceWindow(thread.lastInboundAt, nowMs),
+        nextBooking: bookingContexts[0] ?? null,
+        lastDeliveryStatus: latestMsg?.deliveryStatus ?? null,
+        lastSenderKind: latestMsg?.senderKind ?? null,
+      };
+
+      return {
+        thread: summary,
+        messages: messagesAsc,
+        client,
+        bookings: bookingContexts,
+      };
+    },
+
+    async getWhatsAppMessageById(messageId: string): Promise<WhatsAppMessage | null> {
+      const validId = toUuidOrNull(messageId);
+      if (!validId) return null;
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('whatsapp_messages')
+        .select('*')
+        .eq('id', validId)
+        .maybeSingle();
+      return data ? mapWhatsAppMessageRow(data) : null;
+    },
+
+    async recordWhatsAppMessage(
+      input: RecordWhatsAppMessageInput,
+    ): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage }> {
+      const supabase = getClient();
+      const canonicalPhone =
+        canonicalizeWhatsAppPhoneE164(input.phoneE164) ||
+        normalizePhoneE164(input.phoneE164);
+      if (!canonicalPhone) {
+        throw new PolicyError('INVALID_PHONE', 'Número de WhatsApp inválido.');
+      }
+      const nowIso = input.createdAt ?? clock.now().toISOString();
+      const cleanProviderId = input.providerMessageId?.trim() || null;
+      const validInputClientId = toUuidOrNull(input.clientId);
+      const validBookingId = toUuidOrNull(input.bookingId);
+      const validNotificationId = toUuidOrNull(input.notificationId);
+      const validAssignedStaffId = toUuidOrNull(input.assignedStaffId);
+
+      if (cleanProviderId) {
+        const existingMsgRes = await supabase
+          .from('whatsapp_messages')
+          .select('*')
+          .eq('provider_message_id', cleanProviderId)
+          .maybeSingle();
+        if (existingMsgRes.data) {
+          const existingThreadRes = await supabase
+            .from('whatsapp_threads')
+            .select('*')
+            .eq('id', existingMsgRes.data.thread_id)
+            .single();
+          if (existingThreadRes.data) {
+            return {
+              thread: mapWhatsAppThreadRow(existingThreadRes.data),
+              message: mapWhatsAppMessageRow(existingMsgRes.data),
+            };
+          }
+        }
+      }
+
+      const phoneVariants = phoneLookupVariants(canonicalPhone);
+      const [existingThreadRes, matchedClientRes] = await Promise.all([
+        supabase
+          .from('whatsapp_threads')
+          .select('*')
+          .in('phone_e164', phoneVariants)
+          .limit(1)
+          .maybeSingle(),
+        validInputClientId
+          ? supabase.from('clients').select('*').eq('id', validInputClientId).maybeSingle()
+          : supabase
+              .from('clients')
+              .select('*')
+              .in('phone_e164', phoneVariants)
+              .limit(1)
+              .maybeSingle(),
+      ]);
+
+      const matchedClient = matchedClientRes.data
+        ? mapClientRow(matchedClientRes.data)
+        : null;
+      const resolvedClientId = matchedClient?.id ?? validInputClientId;
+      let threadRow = existingThreadRes.data ?? null;
+
+      if (!threadRow) {
+        const insertThreadRes = await supabase
+          .from('whatsapp_threads')
+          .insert({
+            phone_e164: canonicalPhone,
+            client_id: resolvedClientId,
+            contact_name:
+              input.contactName?.trim() || matchedClient?.fullName || canonicalPhone,
+            assigned_staff_id: validAssignedStaffId,
+            created_at: nowIso,
+            updated_at: nowIso,
+          })
+          .select('*')
+          .single();
+
+        if (insertThreadRes.error) {
+          if (insertThreadRes.error.code === '23505') {
+            const retryRes = await supabase
+              .from('whatsapp_threads')
+              .select('*')
+              .eq('phone_e164', canonicalPhone)
+              .single();
+            threadRow = retryRes.data ?? null;
+          }
+          if (!threadRow) {
+            throw new PolicyError(
+              'WHATSAPP_THREAD_CREATE_FAILED',
+              insertThreadRes.error.message || 'No se pudo crear la conversación.',
+            );
+          }
+        } else {
+          threadRow = insertThreadRes.data;
+        }
+      }
+
+      const isSentOrBeyond =
+        input.deliveryStatus === 'sent' ||
+        input.deliveryStatus === 'delivered' ||
+        input.deliveryStatus === 'read';
+      const isDeliveredOrRead =
+        input.deliveryStatus === 'delivered' || input.deliveryStatus === 'read';
+
+      const insertMsgRes = await supabase
+        .from('whatsapp_messages')
+        .insert({
+          thread_id: threadRow.id,
+          phone_e164: canonicalPhone,
+          client_id: threadRow.client_id ?? resolvedClientId,
+          booking_id: validBookingId,
+          notification_id: validNotificationId,
+          direction: input.direction,
+          sender_kind: input.senderKind,
+          sender_name: input.senderName?.trim() || null,
+          message_type: input.messageType ?? 'text',
+          body_text: input.bodyText,
+          template_name: input.templateName ?? null,
+          template_trigger_key: input.templateTriggerKey ?? null,
+          template_params: [...(input.templateParams ?? [])],
+          delivery_status: input.deliveryStatus,
+          delivery_mode: input.deliveryMode,
+          provider_message_id: cleanProviderId,
+          error_code: input.errorCode ?? null,
+          error_message: input.errorMessage ?? null,
+          sent_at: isSentOrBeyond ? nowIso : null,
+          delivered_at: isDeliveredOrRead ? nowIso : null,
+          read_at: input.deliveryStatus === 'read' ? nowIso : null,
+          failed_at: input.deliveryStatus === 'failed' ? nowIso : null,
+          created_at: nowIso,
+        })
+        .select('*')
+        .single();
+
+      if (insertMsgRes.error || !insertMsgRes.data) {
+        if (insertMsgRes.error?.code === '23505' && cleanProviderId) {
+          const dupMsgRes = await supabase
+            .from('whatsapp_messages')
+            .select('*')
+            .eq('provider_message_id', cleanProviderId)
+            .single();
+          if (dupMsgRes.data) {
+            return {
+              thread: mapWhatsAppThreadRow(threadRow),
+              message: mapWhatsAppMessageRow(dupMsgRes.data),
+            };
+          }
+        }
+        throw new PolicyError(
+          'WHATSAPP_MESSAGE_RECORD_FAILED',
+          insertMsgRes.error?.message || 'No se pudo registrar el mensaje de WhatsApp.',
+        );
+      }
+
+      const msgMs = Date.parse(nowIso);
+      const currentLastMs = threadRow.last_message_at
+        ? Date.parse(threadRow.last_message_at)
+        : -Infinity;
+      const threadPatch: Tables['whatsapp_threads']['Update'] = {
+        updated_at: nowIso,
+      };
+      if (threadRow.phone_e164 !== canonicalPhone) {
+        threadPatch.phone_e164 = canonicalPhone;
+      }
+      if (!threadRow.client_id && resolvedClientId) {
+        threadPatch.client_id = resolvedClientId;
+      }
+      if (
+        input.contactName?.trim() &&
+        (!threadRow.contact_name || threadRow.contact_name === threadRow.phone_e164)
+      ) {
+        threadPatch.contact_name = input.contactName.trim();
+      }
+      if (validAssignedStaffId) {
+        threadPatch.assigned_staff_id = validAssignedStaffId;
+      }
+      if (!threadRow.last_message_at || msgMs >= currentLastMs) {
+        threadPatch.last_message_at = nowIso;
+        threadPatch.last_message_preview = input.bodyText.trim().slice(0, 180);
+        threadPatch.last_message_direction = input.direction;
+      }
+      if (input.direction === 'inbound') {
+        const currentInboundMs = threadRow.last_inbound_at
+          ? Date.parse(threadRow.last_inbound_at)
+          : -Infinity;
+        if (!threadRow.last_inbound_at || msgMs >= currentInboundMs) {
+          threadPatch.last_inbound_at = nowIso;
+        }
+        threadPatch.unread_count = threadRow.unread_count + 1;
+        threadPatch.is_archived = false;
+      }
+      if (input.deliveryStatus === 'failed') {
+        threadPatch.has_failed_messages = true;
+      }
+
+      const updatedThreadRes = await supabase
+        .from('whatsapp_threads')
+        .update(threadPatch)
+        .eq('id', threadRow.id)
+        .select('*')
+        .single();
+
+      return {
+        thread: mapWhatsAppThreadRow(updatedThreadRes.data ?? threadRow),
+        message: mapWhatsAppMessageRow(insertMsgRes.data),
+      };
+    },
+
+    async resolveRetriedWhatsAppMessage(
+      input: ResolveRetriedWhatsAppMessageInput,
+    ): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage } | null> {
+      const validId = toUuidOrNull(input.messageId);
+      if (!validId) return null;
+      const supabase = getClient();
+      const atIso = input.atIso ?? clock.now().toISOString();
+      const cleanProviderId = input.providerMessageId?.trim() || null;
+
+      const msgPatch: Tables['whatsapp_messages']['Update'] = {
+        delivery_status: input.deliveryStatus,
+        delivery_mode: input.deliveryMode,
+        sender_kind: 'staff',
+        ...(input.senderName?.trim() ? { sender_name: input.senderName.trim() } : {}),
+        ...(cleanProviderId ? { provider_message_id: cleanProviderId } : {}),
+        ...(input.deliveryStatus === 'sent'
+          ? {
+              sent_at: atIso,
+              error_code: null,
+              error_message: null,
+              failed_at: null,
+            }
+          : {
+              failed_at: atIso,
+              error_code: input.errorCode ?? null,
+              error_message: input.errorMessage ?? null,
+            }),
+      };
+
+      const updatedMsgRes = await supabase
+        .from('whatsapp_messages')
+        .update(msgPatch)
+        .eq('id', validId)
+        .select('*')
+        .maybeSingle();
+
+      if (!updatedMsgRes.data) return null;
+
+      const failedCheckRes = await supabase
+        .from('whatsapp_messages')
+        .select('id')
+        .eq('thread_id', updatedMsgRes.data.thread_id)
+        .eq('delivery_status', 'failed')
+        .limit(1);
+
+      const updatedThreadRes = await supabase
+        .from('whatsapp_threads')
+        .update({
+          has_failed_messages: Boolean(
+            failedCheckRes.data && failedCheckRes.data.length > 0,
+          ),
+          updated_at: atIso,
+        })
+        .eq('id', updatedMsgRes.data.thread_id)
+        .select('*')
+        .single();
+
+      if (!updatedThreadRes.data) return null;
+
+      return {
+        thread: mapWhatsAppThreadRow(updatedThreadRes.data),
+        message: mapWhatsAppMessageRow(updatedMsgRes.data),
+      };
+    },
+
+    async updateWhatsAppMessageStatusByProviderId(
+      params: UpdateWhatsAppMessageStatusInput,
+    ): Promise<{ updated: boolean; message: WhatsAppMessage | null; threadId: string | null }> {
+      const supabase = getClient();
+      const cleanProviderId = params.providerMessageId?.trim() || null;
+      const validMessageId = toUuidOrNull(params.messageId);
+      if (!cleanProviderId && !validMessageId) {
+        return { updated: false, message: null, threadId: null };
+      }
+      const atIso = params.atIso ?? clock.now().toISOString();
+
+      let msgRow: Tables['whatsapp_messages']['Row'] | null = null;
+      if (cleanProviderId) {
+        const res = await supabase
+          .from('whatsapp_messages')
+          .select('*')
+          .eq('provider_message_id', cleanProviderId)
+          .maybeSingle();
+        msgRow = res.data ?? null;
+      }
+      if (!msgRow && validMessageId) {
+        const res = await supabase
+          .from('whatsapp_messages')
+          .select('*')
+          .eq('id', validMessageId)
+          .maybeSingle();
+        msgRow = res.data ?? null;
+      }
+
+      if (!msgRow) {
+        if (!cleanProviderId) {
+          return { updated: false, message: null, threadId: null };
+        }
+        const notifRes = await supabase
+          .from('scheduled_notifications')
+          .select('id, status, delivery_status, sent_at')
+          .eq('provider_message_id', cleanProviderId);
+        let updatedNotif = false;
+        for (const n of notifRes.data ?? []) {
+          const cur =
+            n.delivery_status ??
+            (n.status === 'sent'
+              ? 'sent'
+              : n.status === 'failed'
+                ? 'failed'
+                : 'queued');
+          const nextStatus = resolveNextDeliveryStatus(cur, params.status);
+          if (nextStatus === 'failed') {
+            await supabase
+              .from('scheduled_notifications')
+              .update({
+                status: 'failed',
+                delivery_status: 'failed',
+                error_message: params.errorMessage ?? null,
+              })
+              .eq('id', n.id);
+            updatedNotif = true;
+          } else if (
+            nextStatus === 'sent' ||
+            nextStatus === 'delivered' ||
+            nextStatus === 'read'
+          ) {
+            await supabase
+              .from('scheduled_notifications')
+              .update({
+                status: 'sent',
+                delivery_status: nextStatus,
+                sent_at: n.sent_at ?? atIso,
+                error_message: null,
+                next_retry_at: null,
+              })
+              .eq('id', n.id);
+            updatedNotif = true;
+          }
+        }
+        return { updated: updatedNotif, message: null, threadId: null };
+      }
+
+      const nextStatus = resolveNextDeliveryStatus(
+        msgRow.delivery_status,
+        params.status,
+      );
+      const changed =
+        nextStatus !== msgRow.delivery_status ||
+        (nextStatus === 'failed' &&
+          (Boolean(params.errorCode && params.errorCode !== msgRow.error_code) ||
+            Boolean(params.errorMessage && params.errorMessage !== msgRow.error_message)));
+
+      if (!changed) {
+        return {
+          updated: false,
+          message: mapWhatsAppMessageRow(msgRow),
+          threadId: msgRow.thread_id,
+        };
+      }
+
+      const msgPatch: Tables['whatsapp_messages']['Update'] = {
+        delivery_status: nextStatus,
+      };
+      if (nextStatus === 'sent') {
+        if (!msgRow.sent_at) msgPatch.sent_at = atIso;
+      } else if (nextStatus === 'delivered') {
+        if (!msgRow.sent_at) msgPatch.sent_at = atIso;
+        if (!msgRow.delivered_at) msgPatch.delivered_at = atIso;
+        msgPatch.error_code = null;
+        msgPatch.error_message = null;
+        msgPatch.failed_at = null;
+      } else if (nextStatus === 'read') {
+        if (!msgRow.sent_at) msgPatch.sent_at = atIso;
+        if (!msgRow.delivered_at) msgPatch.delivered_at = atIso;
+        if (!msgRow.read_at) msgPatch.read_at = atIso;
+        msgPatch.error_code = null;
+        msgPatch.error_message = null;
+        msgPatch.failed_at = null;
+      } else if (nextStatus === 'failed') {
+        msgPatch.failed_at = atIso;
+        msgPatch.error_code = params.errorCode ?? msgRow.error_code;
+        msgPatch.error_message = params.errorMessage ?? msgRow.error_message;
+      }
+
+      const updatedMsgRes = await supabase
+        .from('whatsapp_messages')
+        .update(msgPatch)
+        .eq('id', msgRow.id)
+        .select('*')
+        .single();
+
+      const failedCheckRes = await supabase
+        .from('whatsapp_messages')
+        .select('id')
+        .eq('thread_id', msgRow.thread_id)
+        .eq('delivery_status', 'failed')
+        .limit(1);
+
+      await supabase
+        .from('whatsapp_threads')
+        .update({
+          has_failed_messages: Boolean(
+            failedCheckRes.data && failedCheckRes.data.length > 0,
+          ),
+          updated_at: atIso,
+        })
+        .eq('id', msgRow.thread_id);
+
+      const notifPatch: Tables['scheduled_notifications']['Update'] | null =
+        nextStatus === 'failed'
+          ? {
+              status: 'failed',
+              delivery_status: 'failed',
+              error_message: params.errorMessage ?? msgRow.error_message ?? null,
+            }
+          : nextStatus === 'sent' || nextStatus === 'delivered' || nextStatus === 'read'
+            ? {
+                status: 'sent',
+                delivery_status: nextStatus,
+                error_message: null,
+                next_retry_at: null,
+              }
+            : null;
+
+      if (notifPatch) {
+        if (msgRow.notification_id) {
+          await supabase
+            .from('scheduled_notifications')
+            .update(notifPatch)
+            .eq('id', msgRow.notification_id);
+        } else if (msgRow.provider_message_id) {
+          await supabase
+            .from('scheduled_notifications')
+            .update(notifPatch)
+            .eq('provider_message_id', msgRow.provider_message_id);
+        }
+      }
+
+      return {
+        updated: true,
+        message: mapWhatsAppMessageRow(updatedMsgRes.data ?? msgRow),
+        threadId: msgRow.thread_id,
+      };
+    },
+
+    async markWhatsAppThreadRead(
+      threadId: string,
+      atIso?: string,
+    ): Promise<WhatsAppThread | null> {
+      const supabase = getClient();
+      const readAt = atIso ?? clock.now().toISOString();
+      const { data } = await supabase
+        .from('whatsapp_threads')
+        .update({
+          unread_count: 0,
+          last_read_at: readAt,
+          updated_at: readAt,
+        })
+        .eq('id', threadId)
+        .select('*')
+        .maybeSingle();
+      return data ? mapWhatsAppThreadRow(data) : null;
+    },
+
+    async getWhatsAppThreadWindow(
+      lookup: { threadId?: string; phoneE164?: string },
+      nowMs = clock.nowMs(),
+    ): Promise<WhatsAppServiceWindowDTO> {
+      const supabase = getClient();
+      let lastInboundAt: string | null = null;
+      if (lookup.threadId) {
+        const { data } = await supabase
+          .from('whatsapp_threads')
+          .select('last_inbound_at')
+          .eq('id', lookup.threadId)
+          .maybeSingle();
+        lastInboundAt = data?.last_inbound_at ?? null;
+      } else if (lookup.phoneE164) {
+        const canonical =
+          canonicalizeWhatsAppPhoneE164(lookup.phoneE164) ||
+          normalizePhoneE164(lookup.phoneE164);
+        if (canonical) {
+          const { data } = await supabase
+            .from('whatsapp_threads')
+            .select('last_inbound_at')
+            .in('phone_e164', phoneLookupVariants(canonical))
+            .limit(1)
+            .maybeSingle();
+          lastInboundAt = data?.last_inbound_at ?? null;
+        }
+      }
+      return computeWhatsAppServiceWindow(lastInboundAt, nowMs);
+    },
+
+    async getWhatsAppUnreadSummary(params?: {
+      role?: AdminRole;
+      staffMemberId?: string | null;
+      nowMs?: number;
+    }): Promise<WhatsAppInboxSummaryDTO> {
+      const supabase = getClient();
+      const nowMs = params?.nowMs ?? clock.nowMs();
+      const isSpecialist = params?.role === 'specialist';
+      const staffId = params?.staffMemberId ?? null;
+
+      const [threadsRes, notifsRes, clientsRes, bookingsRes] = await Promise.all([
+        supabase
+          .from('whatsapp_threads')
+          .select('id, client_id, phone_e164, unread_count, has_failed_messages, last_inbound_at, assigned_staff_id')
+          .eq('is_archived', false),
+        supabase
+          .from('scheduled_notifications')
+          .select('booking_id, client_id, status')
+          .in('status', ['pending', 'failed']),
+        isSpecialist
+          ? supabase.from('clients').select('id, phone_e164')
+          : Promise.resolve({ data: [] as Array<{ id: string; phone_e164: string }> }),
+        isSpecialist && staffId
+          ? supabase.from('bookings').select('id, client_id, staff_id').eq('staff_id', staffId)
+          : Promise.resolve({
+              data: [] as Array<{ id: string; client_id: string; staff_id: string }>,
+            }),
+      ]);
+
+      const staffBookingIds = new Set((bookingsRes.data ?? []).map((b) => b.id));
+      const staffClientIds = new Set((bookingsRes.data ?? []).map((b) => b.client_id));
+      const staffPhones = (clientsRes.data ?? [])
+        .filter((c) => staffClientIds.has(c.id))
+        .map((c) => c.phone_e164);
+
+      let unreadCount = 0;
+      let failedCount = 0;
+      let windowOpenCount = 0;
+      let totalThreads = 0;
+
+      for (const t of threadsRes.data ?? []) {
+        if (isSpecialist) {
+          if (!staffId) continue;
+          const visible =
+            t.assigned_staff_id === staffId ||
+            (t.client_id !== null && staffClientIds.has(t.client_id)) ||
+            staffPhones.some((p) => phonesMatchE164(p, t.phone_e164));
+          if (!visible) continue;
+        }
+        totalThreads += 1;
+        unreadCount += t.unread_count;
+        if (t.has_failed_messages) failedCount += 1;
+        if (computeWhatsAppServiceWindow(t.last_inbound_at, nowMs).isOpen) {
+          windowOpenCount += 1;
+        }
+      }
+
+      let failedRemindersCount = 0;
+      let pendingRemindersCount = 0;
+      for (const n of notifsRes.data ?? []) {
+        if (isSpecialist) {
+          if (!staffId) continue;
+          const visible =
+            (n.booking_id !== null && staffBookingIds.has(n.booking_id)) ||
+            (n.client_id !== null && staffClientIds.has(n.client_id));
+          if (!visible) continue;
+        }
+        if (n.status === 'failed') failedRemindersCount += 1;
+        if (n.status === 'pending') pendingRemindersCount += 1;
+      }
+
+      return {
+        unreadCount,
+        failedCount,
+        failedRemindersCount,
+        pendingRemindersCount,
+        windowOpenCount,
+        totalThreads,
+      };
+    },
+
+    async listScheduledNotifications(
+      params?: ListScheduledNotificationsParams,
+    ): Promise<WhatsAppReminderItemDTO[]> {
+      const supabase = getClient();
+      const limit = Math.max(1, Math.min(200, params?.limit ?? 100));
+
+      let notifQuery = supabase.from('scheduled_notifications').select('*');
+      if (params?.status) notifQuery = notifQuery.eq('status', params.status);
+      if (params?.channel) notifQuery = notifQuery.eq('channel', params.channel);
+      if (params?.bookingId) notifQuery = notifQuery.eq('booking_id', params.bookingId);
+      notifQuery = notifQuery
+        .order('scheduled_for', { ascending: params?.status === 'pending' })
+        .limit(limit * 2);
+
+      const [notifsRes, workflowsRes, bookingsRes, clientsRes, servicesRes, staffRes] =
+        await Promise.all([
+          notifQuery,
+          supabase.from('notification_workflows').select('*'),
+          supabase.from('bookings').select('*'),
+          supabase.from('clients').select('*'),
+          supabase.from('services').select('id, name'),
+          supabase.from('staff_members').select('id, name'),
+        ]);
+
+      const notifications = (notifsRes.data ?? []).map(mapNotificationRow);
+      const workflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
+      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      const clients = (clientsRes.data ?? []).map(mapClientRow);
+
+      const workflowById = new Map(workflows.map((w) => [w.id, w]));
+      const bookingById = new Map(bookings.map((b) => [b.id, b]));
+      const clientById = new Map(clients.map((c) => [c.id, c]));
+      const serviceNameById = new Map(
+        (servicesRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+      const staffNameById = new Map(
+        (staffRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+
+      const isSpecialist = params?.role === 'specialist';
+      const staffMemberId = params?.staffMemberId ?? null;
+
+      const visible = notifications.filter((item) => {
+        if (!isSpecialist) return true;
+        if (!staffMemberId) return false;
+        if (item.bookingId) {
+          return bookingById.get(item.bookingId)?.staffId === staffMemberId;
+        }
+        if (item.clientId) {
+          return bookings.some(
+            (b) => b.clientId === item.clientId && b.staffId === staffMemberId,
+          );
+        }
+        return false;
+      });
+
+      const sorted =
+        params?.status === 'pending'
+          ? visible.toSorted(
+              (a, b) => Date.parse(a.scheduledFor) - Date.parse(b.scheduledFor),
+            )
+          : visible.toSorted((a, b) => {
+              const aKey = Date.parse(a.sentAt ?? a.scheduledFor ?? a.createdAt);
+              const bKey = Date.parse(b.sentAt ?? b.scheduledFor ?? b.createdAt);
+              return bKey - aKey;
+            });
+
+      return sorted.slice(0, limit).map((item) => {
+        const booking = item.bookingId ? bookingById.get(item.bookingId) : undefined;
+        const client =
+          (booking ? clientById.get(booking.clientId) : undefined) ??
+          (item.clientId ? clientById.get(item.clientId) : undefined) ??
+          clients.find((c) => phonesMatchE164(c.phoneE164, item.recipient));
+        const workflow = item.workflowId ? workflowById.get(item.workflowId) : undefined;
+
+        const deliveryStatus =
+          item.deliveryStatus ??
+          (item.status === 'sent'
+            ? 'sent'
+            : item.status === 'failed'
+              ? 'failed'
+              : item.status === 'pending'
+                ? 'queued'
+                : null);
+
+        return {
+          id: item.id,
+          bookingId: item.bookingId,
+          bookingCode: booking?.bookingCode ?? null,
+          clientId: client?.id ?? item.clientId ?? null,
+          clientName: client?.fullName ?? null,
+          staffName: booking ? (staffNameById.get(booking.staffId) ?? null) : null,
+          serviceName: booking ? (serviceNameById.get(booking.serviceId) ?? null) : null,
+          bookingStartAt: booking?.startAt ?? null,
+          workflowId: item.workflowId,
+          workflowName: workflow?.name ?? null,
+          triggerKey: inferReminderTriggerKey(workflow, item, booking),
+          channel: item.channel,
+          recipient: item.recipient,
+          scheduledFor: item.scheduledFor,
+          status: item.status,
+          deliveryStatus,
+          subject: item.subject,
+          previewText: item.previewText,
+          bodyText: item.bodyText || item.previewText,
+          providerMessageId: item.providerMessageId,
+          errorMessage: item.errorMessage,
+          attempts: item.attempts ?? (item.status === 'pending' ? 0 : 1),
+          maxAttempts: item.maxAttempts ?? 3,
+          nextRetryAt: item.nextRetryAt ?? null,
+          lastAttemptAt: item.lastAttemptAt ?? null,
+          sentAt: item.sentAt,
+          createdAt: item.createdAt,
+        };
+      });
+    },
+
+    async getScheduledNotificationById(
+      id: string,
+    ): Promise<ScheduledNotification | null> {
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('scheduled_notifications')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      return data ? mapNotificationRow(data) : null;
+    },
+
+    async retryScheduledNotification(
+      id: string,
+      atIso?: string,
+    ): Promise<ScheduledNotification> {
+      const supabase = getClient();
+      const existingRes = await supabase
+        .from('scheduled_notifications')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (!existingRes.data) {
+        throw new PolicyError('NOTIFICATION_NOT_FOUND', 'Recordatorio no encontrado.');
+      }
+      const nextMaxAttempts = Math.max(
+        existingRes.data.max_attempts ?? 3,
+        (existingRes.data.attempts ?? 0) + 1,
+      );
+      const scheduledAt = atIso ?? clock.now().toISOString();
+      const { data, error } = await supabase
+        .from('scheduled_notifications')
+        .update({
+          status: 'pending',
+          delivery_status: 'queued',
+          error_message: null,
+          scheduled_for: scheduledAt,
+          next_retry_at: null,
+          max_attempts: nextMaxAttempts,
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError(
+          'NOTIFICATION_RETRY_FAILED',
+          error?.message ?? 'No se pudo reprogramar el recordatorio.',
+        );
+      }
+      return mapNotificationRow(data);
+    },
+
+    async cancelScheduledNotification(
+      id: string,
+      reason?: string,
+    ): Promise<ScheduledNotification> {
+      const supabase = getClient();
+      const patch: Tables['scheduled_notifications']['Update'] = {
+        status: 'canceled',
+        next_retry_at: null,
+      };
+      if (reason?.trim()) {
+        patch.error_message = reason.trim();
+      }
+      const { data, error } = await supabase
+        .from('scheduled_notifications')
+        .update(patch)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError('NOTIFICATION_NOT_FOUND', 'Recordatorio no encontrado.');
+      }
+      return mapNotificationRow(data);
+    },
+
+    async updateScheduledNotificationStatus(
+      id: string,
+      patch: UpdateScheduledNotificationStatusInput,
+    ): Promise<ScheduledNotification | null> {
+      const supabase = getClient();
+      const dbPatch: Tables['scheduled_notifications']['Update'] = {
+        status: patch.status,
+      };
+      if (patch.deliveryStatus !== undefined) {
+        dbPatch.delivery_status = patch.deliveryStatus;
+      }
+      if (patch.providerMessageId !== undefined) {
+        dbPatch.provider_message_id = patch.providerMessageId;
+      }
+      if (patch.errorMessage !== undefined) {
+        dbPatch.error_message = patch.errorMessage;
+      }
+      if (patch.sentAt !== undefined) {
+        dbPatch.sent_at = patch.sentAt;
+      }
+      if (patch.attempts !== undefined) {
+        dbPatch.attempts = patch.attempts;
+      }
+      if (patch.nextRetryAt !== undefined) {
+        dbPatch.next_retry_at = patch.nextRetryAt;
+      }
+      if (patch.lastAttemptAt !== undefined) {
+        dbPatch.last_attempt_at = patch.lastAttemptAt;
+      }
+      const { data } = await supabase
+        .from('scheduled_notifications')
+        .update(dbPatch)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      return data ? mapNotificationRow(data) : null;
+    },
+
+    async updateNotificationWorkflow(
+      id: string,
+      patch: Partial<NotificationWorkflow>,
+    ): Promise<NotificationWorkflow> {
+      const supabase = getClient();
+      const dbPatch: Tables['notification_workflows']['Update'] = {
+        updated_at: clock.now().toISOString(),
+      };
+      if (patch.name !== undefined) dbPatch.name = patch.name;
+      if (patch.triggerEvent !== undefined) dbPatch.trigger_event = patch.triggerEvent;
+      if (patch.offsetMinutes !== undefined) dbPatch.offset_minutes = patch.offsetMinutes;
+      if (patch.channels !== undefined) dbPatch.channels = patch.channels;
+      if (patch.isEnabled !== undefined) dbPatch.is_enabled = patch.isEnabled;
+      if (patch.subjectTemplate !== undefined) {
+        dbPatch.subject_template = patch.subjectTemplate;
+      }
+      if (patch.messageTemplate !== undefined) {
+        dbPatch.message_template = patch.messageTemplate;
+      }
+
+      const { data, error } = await supabase
+        .from('notification_workflows')
+        .update(dbPatch)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError('WORKFLOW_NOT_FOUND', 'Workflow no encontrado.');
+      }
+      return mapWorkflowRow(data);
+    },
+
+    async getOutboxSummary(): Promise<OutboxSummary> {
+      const supabase = getClient();
+      const { data } = await supabase.from('outbox_events').select('status');
+      let pendingCount = 0;
+      let processingCount = 0;
+      let failedCount = 0;
+      let processedCount = 0;
+      for (const row of data ?? []) {
+        if (row.status === 'pending') pendingCount += 1;
+        else if (row.status === 'processing') processingCount += 1;
+        else if (row.status === 'failed') failedCount += 1;
+        else if (row.status === 'processed') processedCount += 1;
+      }
+      return { pendingCount, processingCount, failedCount, processedCount };
+    },
+
+    async drainStaleOutboxEvents(
+      olderThanMs = 5 * 60_000,
+      nowMs = clock.nowMs(),
+    ): Promise<{ drainedCount: number }> {
+      const supabase = getClient();
+      const nowIso = new Date(nowMs).toISOString();
+      const cutoffIso = new Date(nowMs - Math.max(0, olderThanMs)).toISOString();
+      const { data } = await supabase
+        .from('outbox_events')
+        .update({
+          status: 'pending',
+          available_at: nowIso,
+        })
+        .eq('status', 'processing')
+        .lte('available_at', cutoffIso)
+        .select('id');
+      return { drainedCount: data?.length ?? 0 };
     },
   };
 }

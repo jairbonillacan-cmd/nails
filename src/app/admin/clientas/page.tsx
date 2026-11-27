@@ -438,7 +438,6 @@ export default function AdminClientsPage() {
             loyaltyByClientId={loyaltyByClientId}
             tz={tz}
             currency={currency}
-            salonName={data.settings.name}
             canManageClients={canManageClients}
             onSelectClient={setSelected}
             onOpenNewClient={() => setCreateOpen(true)}

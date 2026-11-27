@@ -4,6 +4,7 @@ import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
   prefetchAdminData,
+  prefetchAdminWhatsAppData,
 } from '@/lib/hooks/useAdminCache';
 import type { SidebarSectionId } from '@/lib/hooks/useSidebarSections';
 import type { AdminOverviewPayload } from '../AdminProvider';
@@ -17,6 +18,7 @@ export const ROLE_LABELS = {
 export type NavIconId =
   | 'overview'
   | 'bookings'
+  | 'whatsapp'
   | 'clients'
   | 'cash'
   | 'services'
@@ -71,6 +73,9 @@ export function getBookingCopyUrl(appUrl: string): string {
 
 export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfig[] {
   const role = data.session.user.role;
+  const whatsappBadgeCount =
+    (data.whatsappInboxSummary?.unreadCount ?? 0) +
+    (data.whatsappInboxSummary?.failedCount ?? 0);
   const rawGroups: Array<{
     id: SidebarSectionId;
     title: string;
@@ -97,6 +102,14 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
               ? String(data.kpis.pendingConfirmationsCount)
               : null,
           visible: true,
+        },
+        {
+          id: 'whatsapp',
+          label: 'WhatsApp',
+          href: '/admin/whatsapp',
+          matchPath: '/admin/whatsapp',
+          badge: whatsappBadgeCount > 0 ? String(whatsappBadgeCount) : null,
+          visible: roleCanAccess(role, 'whatsapp'),
         },
         {
           id: 'clients',
@@ -242,6 +255,11 @@ export function prefetchAdminRoute(
     void prefetchAdminData(ADMIN_CACHE_KEYS.overview, (signal) =>
       fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
     );
+    return;
+  }
+
+  if (routeId === 'whatsapp' && roleCanAccess(currentRole, 'whatsapp')) {
+    prefetchAdminWhatsAppData();
     return;
   }
 

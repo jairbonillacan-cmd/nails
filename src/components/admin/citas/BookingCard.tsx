@@ -18,6 +18,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { computeBookingPaymentSummary } from '@/lib/payments/splits';
+import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
   BookingWithRelations,
@@ -32,6 +33,7 @@ import {
   formatTimeInTimezone,
   formatPhoneDisplay,
 } from '@/lib/format';
+import { useAdminData } from '../AdminProvider';
 
 export const BOOKING_STATUS_BADGE: Record<
   BookingStatus,
@@ -109,6 +111,10 @@ export const BookingCard = memo(function BookingCard({
   onOpenCheckout,
   onRequestReschedule,
 }: BookingCardProps) {
+  const { data: adminData } = useAdminData();
+  const canOpenWhatsAppInbox = Boolean(
+    adminData && roleCanAccess(adminData.session.user.role, 'whatsapp'),
+  );
   const isBusy = Boolean(busyStatus);
   const extraServiceNames = (b.extraServiceIds ?? [])
     .map((id) => allServices.find((s) => s.id === id)?.name)
@@ -126,6 +132,7 @@ export const BookingCard = memo(function BookingCard({
     b.status === 'confirmed' ||
     (b.status === 'completed' && paymentSummary.isUncollected);
 
+  const waInboxHref = `/admin/whatsapp?phone=${encodeURIComponent(b.client.phoneE164)}&bookingId=${encodeURIComponent(b.id)}`;
   const waHref = buildWhatsAppLink(
     b.client.phoneE164,
     `Hola ${b.client.fullName}, te escribimos de ${salonName} sobre tu cita (${b.bookingCode}) de ${b.service.name} el ${formatDateShortInTimezone(
@@ -303,15 +310,25 @@ export const BookingCard = memo(function BookingCard({
               onClick={() => onOpenCheckout(b)}
             />
           ) : null}
-          <Button
-            label="WhatsApp"
-            variant="secondary"
-            size="sm"
-            icon={<MessageCircle size={14} />}
-            href={waHref}
-            target="_blank"
-            rel="noopener noreferrer"
-          />
+          {canOpenWhatsAppInbox ? (
+            <Button
+              label="Abrir chat"
+              variant="secondary"
+              size="sm"
+              icon={<MessageCircle size={14} aria-hidden="true" />}
+              href={waInboxHref}
+            />
+          ) : (
+            <Button
+              label="WhatsApp"
+              variant="secondary"
+              size="sm"
+              icon={<MessageCircle size={14} aria-hidden="true" />}
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          )}
           {onSelectBooking ? (
             <Button
               type="button"

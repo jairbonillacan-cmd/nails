@@ -199,7 +199,7 @@ export function ClientRetentionTab({
                       </Text>
                     }
                     actions={
-                      <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
+                      <HStack gap={1.5} align="center" wrap="wrap" className="ad-cl-row-actions">
                         <Button
                           type="button"
                           label="Ver ficha"
@@ -208,6 +208,13 @@ export function ClientRetentionTab({
                           className="ad-cl-touch-btn"
                           icon={<FileText size={14} aria-hidden="true" />}
                           onClick={() => onOpenClientById(item.clientId)}
+                        />
+                        <Button
+                          label="Ver chat"
+                          variant="ghost"
+                          size="sm"
+                          className="ad-cl-touch-btn"
+                          href={`/admin/whatsapp?phone=${encodeURIComponent(item.phoneE164)}`}
                         />
                         <Button
                           type="button"
@@ -364,7 +371,7 @@ export function ClientRetentionTab({
                     ) : undefined
                   }
                   actions={
-                    <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
+                    <HStack gap={1.5} align="center" wrap="wrap" className="ad-cl-row-actions">
                       <Button
                         type="button"
                         label="Ver ficha"
@@ -373,6 +380,13 @@ export function ClientRetentionTab({
                         className="ad-cl-touch-btn"
                         icon={<FileText size={14} aria-hidden="true" />}
                         onClick={() => onOpenClientById(item.clientId)}
+                      />
+                      <Button
+                        label="Ver chat"
+                        variant="ghost"
+                        size="sm"
+                        className="ad-cl-touch-btn"
+                        href={`/admin/whatsapp?phone=${encodeURIComponent(item.phoneE164)}`}
                       />
                       {useCampaignDispatch ? (
                         <Button

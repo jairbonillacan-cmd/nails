@@ -19,7 +19,6 @@ import {
   Star,
 } from 'lucide-react';
 import {
-  buildWhatsAppLink,
   formatBirthdayDisplay,
   formatCurrency,
   formatDateShortInTimezone,
@@ -82,7 +81,6 @@ interface ClientDirectoryTabProps {
   loyaltyByClientId: ReadonlyMap<string, LoyaltySummary>;
   tz: string;
   currency: 'MXN' | 'USD';
-  salonName: string;
   canManageClients: boolean;
   onSelectClient: (client: ClientProfile) => void;
   onOpenNewClient: () => void;
@@ -100,7 +98,6 @@ export function ClientDirectoryTab({
   loyaltyByClientId,
   tz,
   currency,
-  salonName,
   canManageClients,
   onSelectClient,
   onOpenNewClient,
@@ -258,17 +255,12 @@ export function ClientDirectoryTab({
               onClick={() => onSelectClient(c)}
             />
             <Button
-              label="WhatsApp"
+              label="Abrir chat"
               size="sm"
               variant="ghost"
               className="ad-cl-touch-btn"
               icon={<MessageCircle size={14} aria-hidden="true" />}
-              href={buildWhatsAppLink(
-                c.phoneE164,
-                `¡Hola, ${c.fullName.trim().split(/\s+/)[0] ?? c.fullName}! Te escribimos de ${salonName}.`,
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={`/admin/whatsapp?phone=${encodeURIComponent(c.phoneE164)}`}
             />
           </HStack>
         }

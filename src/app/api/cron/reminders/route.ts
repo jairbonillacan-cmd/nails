@@ -9,14 +9,20 @@ import {
 } from '@/lib/integrations/notifications';
 import type { EmailTemplateSituation } from '@/lib/integrations/resend-templates';
 import { logError, logInfo, logWarn } from '@/lib/logger';
+import { inferReminderTriggerKey } from '@/lib/notifications/whatsapp-inbox';
 import {
   cleanupExpiredSlotHolds,
+  drainStaleOutboxEvents,
+  getRepository,
   processDueScheduledNotifications,
   processExpiredWaitlistOffers,
   processProactiveTouchUpInvites,
+  recordWhatsAppMessage,
 } from '@/lib/repositories/db';
+import type { RecordWhatsAppMessageInput } from '@/lib/repositories/port';
 import type {
   BookingWithRelations,
+  NotificationWorkflow,
   SalonSettings,
   ScheduledNotification,
   WhatsAppTemplateTriggerKey,
@@ -24,8 +30,37 @@ import type {
 
 export const dynamic = 'force-dynamic';
 
-function resolveReminderWhatsAppTemplate(
-  situation: EmailTemplateSituation,
+function resolveEmailSituationFromTrigger(
+  triggerKey: WhatsAppTemplateTriggerKey | null,
+  notification: ScheduledNotification,
+  booking: BookingWithRelations,
+): EmailTemplateSituation {
+  if (triggerKey === 'touchup_invite') return 'touchup';
+  if (triggerKey === 'reminder_2h') return 'reminder_2h';
+  if (triggerKey === 'reminder_24h') return 'reminder_24h';
+  if (triggerKey === 'booking_canceled') return 'canceled';
+  if (triggerKey === 'booking_rescheduled') return 'rescheduled';
+  if (triggerKey === 'booking_confirmed') return 'confirmed';
+  if (triggerKey === 'deposit_rejected') return 'pending_spei';
+
+  const scheduledMs = Date.parse(notification.scheduledFor);
+  const startMs = Date.parse(booking.startAt);
+  const endMs = Date.parse(booking.endAt);
+  if (Number.isFinite(scheduledMs) && Number.isFinite(endMs) && scheduledMs > endMs) {
+    return scheduledMs - endMs >= 24 * 60 * 60 * 1000 ? 'touchup' : 'confirmed';
+  }
+  if (
+    Number.isFinite(scheduledMs) &&
+    Number.isFinite(startMs) &&
+    startMs - scheduledMs <= 4 * 60 * 60 * 1000
+  ) {
+    return 'reminder_2h';
+  }
+  return 'reminder_24h';
+}
+
+function buildTemplateMetaForTrigger(
+  triggerKey: WhatsAppTemplateTriggerKey | null,
   booking: BookingWithRelations,
   settings: SalonSettings,
   appUrl: string,
@@ -33,70 +68,16 @@ function resolveReminderWhatsAppTemplate(
   triggerKey?: WhatsAppTemplateTriggerKey;
   templateParameters?: string[];
 } {
-  if (situation === 'reminder_24h') {
-    return {
-      triggerKey: 'reminder_24h',
-      templateParameters: buildBookingTemplateParameters({
-        triggerKey: 'reminder_24h',
-        booking,
-        settings,
-        appUrl,
-      }),
-    };
-  }
-
-  if (situation === 'reminder_2h') {
-    return {
-      triggerKey: 'reminder_2h',
-      templateParameters: buildBookingTemplateParameters({
-        triggerKey: 'reminder_2h',
-        booking,
-        settings,
-        appUrl,
-      }),
-    };
-  }
-
-  if (situation === 'touchup') {
-    return {
-      triggerKey: 'touchup_invite',
-      templateParameters: buildBookingTemplateParameters({
-        triggerKey: 'touchup_invite',
-        booking,
-        settings,
-        appUrl,
-      }),
-    };
-  }
-
-  return {};
-}
-
-function resolveReminderEmailSituation(
-  notification: ScheduledNotification,
-  booking: BookingWithRelations,
-): EmailTemplateSituation {
-  if (
-    notification.workflowId === 'wf-retoque' ||
-    /retoque/i.test(notification.subject)
-  ) {
-    return 'touchup';
-  }
-  const scheduledMs = new Date(notification.scheduledFor).getTime();
-  const startMs = new Date(booking.startAt).getTime();
-  const endMs = new Date(booking.endAt).getTime();
-  if (Number.isFinite(scheduledMs) && Number.isFinite(endMs) && scheduledMs > endMs) {
-    return 'touchup';
-  }
-  if (
-    notification.workflowId === 'wf-2h' ||
-    (Number.isFinite(scheduledMs) &&
-      Number.isFinite(startMs) &&
-      startMs - scheduledMs <= 4 * 60 * 60 * 1000)
-  ) {
-    return 'reminder_2h';
-  }
-  return 'reminder_24h';
+  if (!triggerKey) return {};
+  return {
+    triggerKey,
+    templateParameters: buildBookingTemplateParameters({
+      triggerKey,
+      booking,
+      settings,
+      appUrl,
+    }),
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -124,63 +105,132 @@ export async function POST(request: NextRequest) {
     const nowMs = Date.now();
     const env = getRuntimeIntegrationStatus();
     const holdsCleanup = await cleanupExpiredSlotHolds(nowMs);
+    const [staleOutbox, snapshot] = await Promise.all([
+      drainStaleOutboxEvents(5 * 60_000, nowMs),
+      getRepository().getSnapshot(),
+    ]);
+    const workflowsById = new Map<string, NotificationWorkflow>(
+      snapshot.workflows.map((w) => [w.id, w]),
+    );
+    const pendingWhatsAppRecords: RecordWhatsAppMessageInput[] = [];
+
     const summary = await processDueScheduledNotifications(
       async ({ notification, booking, settings }) => {
-        const emailSituation = resolveReminderEmailSituation(notification, booking);
+        const workflow = notification.workflowId
+          ? workflowsById.get(notification.workflowId) ?? null
+          : null;
+        const triggerKey = inferReminderTriggerKey(workflow, notification, booking);
+        const emailSituation = resolveEmailSituationFromTrigger(
+          triggerKey,
+          notification,
+          booking,
+        );
+        const fullBodyText = notification.bodyText || notification.previewText;
+        const attemptNumber = (notification.attempts ?? 0) + 1;
+
         if (notification.channel === 'email') {
           return dispatchEmailNotification({
             to: notification.recipient,
             subject: notification.subject,
-            bodyText: notification.previewText,
+            bodyText: fullBodyText,
             booking,
             settings,
             appUrl: env.appUrl,
             situation: emailSituation,
-            idempotencyKey: `cron-reminder-${notification.id}-email`,
+            idempotencyKey: `cron-reminder-${notification.id}-a${attemptNumber}-email`,
           });
         }
+
         if (notification.channel === 'whatsapp') {
-          const templateMeta = resolveReminderWhatsAppTemplate(
-            emailSituation,
+          const templateMeta = buildTemplateMetaForTrigger(
+            triggerKey,
             booking,
             settings,
             env.appUrl,
           );
           const interactiveButtons =
-            emailSituation === 'reminder_24h'
+            triggerKey === 'reminder_24h'
               ? [
                   { id: `confirm_booking:${booking.id}`, title: 'Confirmo' },
                   { id: `reschedule_booking:${booking.id}`, title: 'Necesito reagendar' },
                 ]
               : undefined;
-          return dispatchWhatsAppNotification({
+          const serviceWindow = await getRepository().getWhatsAppThreadWindow(
+            { phoneE164: notification.recipient },
+            nowMs,
+          );
+          const workflowIncludesEmail = Boolean(workflow?.channels.includes('email'));
+          const waRes = await dispatchWhatsAppNotification({
             toPhoneE164: notification.recipient,
-            bodyText: notification.previewText,
+            bodyText: fullBodyText,
             triggerKey: templateMeta.triggerKey,
             templateParameters: templateMeta.templateParameters,
             interactiveButtons,
-            withinServiceWindow: false,
+            withinServiceWindow: serviceWindow.isOpen,
             settingsTimezone: settings.timezone,
-            fallbackEmail: booking.client.email
-              ? {
-                  to: booking.client.email,
-                  subject: notification.subject,
-                  booking,
-                  settings,
-                  appUrl: env.appUrl,
-                  situation: emailSituation,
-                  idempotencyKey: `cron-reminder-${notification.id}-wa-fallback`,
-                }
-              : undefined,
+            threadContext: {
+              clientId: booking.clientId,
+              bookingId: booking.id,
+              notificationId: notification.id,
+              contactName: booking.client.fullName,
+              senderKind: 'automation',
+              senderName: workflow?.name ?? 'Recordatorio automático',
+              skipPersist: true,
+            },
+            fallbackEmail:
+              booking.client.email && !workflowIncludesEmail
+                ? {
+                    to: booking.client.email,
+                    subject: notification.subject,
+                    booking,
+                    settings,
+                    appUrl: env.appUrl,
+                    situation: emailSituation,
+                    idempotencyKey: `cron-reminder-${notification.id}-a${attemptNumber}-wa-fallback`,
+                  }
+                : undefined,
           });
+          pendingWhatsAppRecords.push({
+            phoneE164: notification.recipient,
+            contactName: booking.client.fullName,
+            clientId: booking.clientId,
+            bookingId: booking.id,
+            notificationId: notification.id,
+            direction: 'outbound',
+            senderKind: 'automation',
+            senderName: workflow?.name ?? 'Recordatorio automático',
+            messageType: templateMeta.triggerKey ? 'template' : 'text',
+            bodyText: fullBodyText,
+            templateTriggerKey: templateMeta.triggerKey ?? null,
+            templateParams: templateMeta.templateParameters ?? [],
+            deliveryStatus: waRes.status === 'sent' ? 'sent' : 'failed',
+            deliveryMode: env.whatsappCloudConfigured
+              ? waRes.deliveryMode === 'template'
+                ? 'template'
+                : waRes.deliveryMode === 'text'
+                  ? 'text'
+                  : 'fallback_email_wame'
+              : 'demo',
+            providerMessageId: waRes.providerMessageId,
+            errorCode: waRes.errorCode ?? null,
+            errorMessage: waRes.errorMessage,
+          });
+          return waRes;
         }
+
         return dispatchSmsNotification({
           toPhoneE164: notification.recipient,
-          bodyText: notification.previewText,
+          bodyText: fullBodyText,
         });
       },
       nowMs,
     );
+
+    for (const record of pendingWhatsAppRecords) {
+      await recordWhatsAppMessage(record).catch((err) => {
+        logWarn('cron_reminders_thread_record_failed', { error: err });
+      });
+    }
 
     const waitlistRollover = await processExpiredWaitlistOffers(nowMs);
     const touchUps = await processProactiveTouchUpInvites(nowMs);
@@ -189,6 +239,7 @@ export async function POST(request: NextRequest) {
       ...summary,
       cleanedHoldsCount: holdsCleanup.cleanedCount,
       dbKeepAlive: holdsCleanup.dbAlive,
+      drainedOutboxCount: staleOutbox.drainedCount,
       waitlistExpiredCount: waitlistRollover.expiredCount,
       waitlistRolledOverCount: waitlistRollover.rolledOverCount,
       touchUpsEligibleCount: touchUps.eligibleCount,

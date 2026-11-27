@@ -428,18 +428,27 @@ export function ClientProfileDialog({
                       </VStack>
                     </HStack>
 
-                    <Button
-                      label="WhatsApp"
-                      variant="primary"
-                      size="sm"
-                      icon={<MessageCircle size={14} aria-hidden="true" />}
-                      href={buildWhatsAppLink(
-                        client.phoneE164,
-                        `Hola ${client.fullName}, te saludamos de ${salonName}!`,
-                      )}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    />
+                    <HStack gap={1.5} align="center" wrap="wrap">
+                      <Button
+                        label="Abrir chat"
+                        variant="primary"
+                        size="sm"
+                        icon={<MessageCircle size={14} aria-hidden="true" />}
+                        href={`/admin/whatsapp?phone=${encodeURIComponent(client.phoneE164)}`}
+                      />
+                      <Button
+                        label="wa.me"
+                        variant="ghost"
+                        size="sm"
+                        icon={<ExternalLink size={13} aria-hidden="true" />}
+                        href={buildWhatsAppLink(
+                          client.phoneE164,
+                          `Hola ${client.fullName}, te saludamos de ${salonName}!`,
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    </HStack>
                   </HStack>
 
                   {editError ? (

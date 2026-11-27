@@ -16,6 +16,7 @@ import {
 } from '../format';
 import { generateBookingIcs } from '../ics';
 import { logError, logWarn } from '../logger';
+import { inferReminderTriggerKey } from '../notifications/whatsapp-inbox';
 import { escapeHtml } from '../sanitize';
 import type {
   BookingWithRelations,
@@ -23,6 +24,8 @@ import type {
   NotificationWorkflow,
   SalonSettings,
   ScheduledNotification,
+  WhatsAppMessageDeliveryMode,
+  WhatsAppMessageSenderKind,
 } from '../types';
 import {
   buildBookingTemplatePayload,
@@ -48,6 +51,7 @@ export interface NotificationDispatchResult {
   status: 'sent' | 'failed';
   providerMessageId: string | null;
   errorMessage: string | null;
+  errorCode?: string | null;
   deliveryMode?: WhatsAppDeliveryMode;
   fallbackWaMeUrl?: string;
 }
@@ -68,6 +72,17 @@ export interface RetentionWarningAsset {
   sizeBytes: number;
 }
 
+export interface WhatsAppDispatchThreadContext {
+  clientId?: string | null;
+  bookingId?: string | null;
+  notificationId?: string | null;
+  contactName?: string | null;
+  senderKind?: WhatsAppMessageSenderKind;
+  senderName?: string | null;
+  skipPersist?: boolean;
+  enforcePolicyInDemo?: boolean;
+}
+
 export interface WhatsAppDispatchParams {
   toPhoneE164: string;
   bodyText: string;
@@ -77,6 +92,7 @@ export interface WhatsAppDispatchParams {
   interactiveButtons?: ReadonlyArray<{ id: string; title: string }>;
   authOtpCode?: string;
   withinServiceWindow?: boolean;
+  threadContext?: WhatsAppDispatchThreadContext;
   fallbackEmail?: {
     to: string;
     subject: string;
@@ -905,6 +921,56 @@ async function recordWhatsAppMonthlyUsageOnce(
   }
 }
 
+async function persistOutboundWhatsAppMessageIfNeeded(params: {
+  dispatchParams: WhatsAppDispatchParams;
+  result: NotificationDispatchResult;
+  resolvedTemplateName?: string;
+  persistedMode: WhatsAppMessageDeliveryMode;
+}): Promise<void> {
+  const ctx = params.dispatchParams.threadContext;
+  if (!ctx || ctx.skipPersist) return;
+
+  try {
+    const dbRepo = await import('../repositories/db');
+    if (typeof dbRepo.recordWhatsAppMessage !== 'function') return;
+    const isTemplate = Boolean(
+      params.resolvedTemplateName || params.dispatchParams.triggerKey,
+    );
+    await dbRepo.recordWhatsAppMessage({
+      phoneE164: params.dispatchParams.toPhoneE164,
+      contactName: ctx.contactName ?? null,
+      clientId: ctx.clientId ?? null,
+      bookingId: ctx.bookingId ?? null,
+      notificationId: ctx.notificationId ?? null,
+      direction: 'outbound',
+      senderKind: ctx.senderKind ?? 'automation',
+      senderName: ctx.senderName ?? null,
+      messageType: isTemplate
+        ? 'template'
+        : (params.dispatchParams.interactiveButtons?.length ?? 0) > 0
+          ? 'interactive'
+          : 'text',
+      bodyText: params.dispatchParams.bodyText,
+      templateName: isTemplate ? (params.resolvedTemplateName ?? null) : null,
+      templateTriggerKey: isTemplate
+        ? (params.dispatchParams.triggerKey ?? null)
+        : null,
+      templateParams: params.dispatchParams.templateParameters
+        ? [...params.dispatchParams.templateParameters]
+        : [],
+      deliveryStatus: params.result.status === 'sent' ? 'sent' : 'failed',
+      deliveryMode: params.persistedMode,
+      providerMessageId: params.result.providerMessageId,
+      errorCode: params.result.errorCode ?? null,
+      errorMessage: params.result.errorMessage,
+    });
+  } catch (err) {
+    logWarn('notification_whatsapp_thread_persist_failed', {
+      error: err,
+    });
+  }
+}
+
 export async function dispatchWhatsAppNotification(
   params: WhatsAppDispatchParams,
 ): Promise<NotificationDispatchResult> {
@@ -919,6 +985,65 @@ export async function dispatchWhatsAppNotification(
     templateName: params.templateName,
     monthKey,
   });
+
+  if (!env.whatsappCloudConfigured && params.threadContext?.enforcePolicyInDemo) {
+    if (resolved.quotaAlertLevel === 'limit_100') {
+      const blocked: NotificationDispatchResult = {
+        status: 'failed',
+        providerMessageId: null,
+        errorCode: 'QUOTA_EXCEEDED',
+        errorMessage:
+          'Cuota mensual de WhatsApp alcanzada; usa el enlace directo wa.me o correo electrónico.',
+        deliveryMode: 'fallback_email_wame',
+        fallbackWaMeUrl: waMeUrl,
+      };
+      await persistOutboundWhatsAppMessageIfNeeded({
+        dispatchParams: params,
+        result: blocked,
+        resolvedTemplateName: resolved.resolvedTemplateName,
+        persistedMode: 'fallback_email_wame',
+      });
+      return blocked;
+    }
+
+    if (!resolved.hasTemplate && !params.withinServiceWindow) {
+      const blocked: NotificationDispatchResult = {
+        status: 'failed',
+        providerMessageId: null,
+        errorCode: 'WINDOW_CLOSED',
+        errorMessage:
+          'Fuera de la ventana de 24 h se requiere una plantilla oficial aprobada.',
+        deliveryMode: 'fallback_email_wame',
+        fallbackWaMeUrl: waMeUrl,
+      };
+      await persistOutboundWhatsAppMessageIfNeeded({
+        dispatchParams: params,
+        result: blocked,
+        resolvedTemplateName: resolved.resolvedTemplateName,
+        persistedMode: 'fallback_email_wame',
+      });
+      return blocked;
+    }
+
+    const demoId = `demo-wamid-${crypto.randomUUID().slice(0, 12)}`;
+    if (resolved.hasTemplate) {
+      await recordWhatsAppMonthlyUsageOnce(monthKey, demoId);
+    }
+    const demoResult: NotificationDispatchResult = {
+      status: 'sent',
+      providerMessageId: demoId,
+      errorMessage: null,
+      deliveryMode: resolved.hasTemplate ? 'template' : 'text',
+      fallbackWaMeUrl: waMeUrl,
+    };
+    await persistOutboundWhatsAppMessageIfNeeded({
+      dispatchParams: params,
+      result: demoResult,
+      resolvedTemplateName: resolved.resolvedTemplateName,
+      persistedMode: 'demo',
+    });
+    return demoResult;
+  }
 
   const deliveryMode = selectWhatsAppDeliveryMode({
     hasTemplate: resolved.hasTemplate,
@@ -941,19 +1066,33 @@ export async function dispatchWhatsAppNotification(
           template: params.fallbackEmail.template,
           idempotencyKey: params.fallbackEmail.idempotencyKey,
         });
-        return {
+        const out: NotificationDispatchResult = {
           ...emailFallback,
           deliveryMode,
           fallbackWaMeUrl: waMeUrl,
         };
+        await persistOutboundWhatsAppMessageIfNeeded({
+          dispatchParams: params,
+          result: out,
+          resolvedTemplateName: resolved.resolvedTemplateName,
+          persistedMode: 'fallback_email_wame',
+        });
+        return out;
       }
-      return {
+      const demoFallback: NotificationDispatchResult = {
         status: 'sent',
-        providerMessageId: `demo-wamid-${Date.now()}`,
+        providerMessageId: `demo-wamid-${crypto.randomUUID().slice(0, 12)}`,
         errorMessage: null,
         deliveryMode,
         fallbackWaMeUrl: waMeUrl,
       };
+      await persistOutboundWhatsAppMessageIfNeeded({
+        dispatchParams: params,
+        result: demoFallback,
+        resolvedTemplateName: resolved.resolvedTemplateName,
+        persistedMode: 'demo',
+      });
+      return demoFallback;
     }
 
     logWarn('notification_whatsapp_degraded_to_fallback', {
@@ -978,16 +1117,27 @@ export async function dispatchWhatsAppNotification(
         template: params.fallbackEmail.template,
         idempotencyKey: params.fallbackEmail.idempotencyKey,
       });
-      return {
+      const out: NotificationDispatchResult = {
         ...emailFallback,
         deliveryMode,
         fallbackWaMeUrl: waMeUrl,
       };
+      await persistOutboundWhatsAppMessageIfNeeded({
+        dispatchParams: params,
+        result: out,
+        resolvedTemplateName: resolved.resolvedTemplateName,
+        persistedMode: 'fallback_email_wame',
+      });
+      return out;
     }
 
-    return {
+    const degradedFail: NotificationDispatchResult = {
       status: 'failed',
       providerMessageId: null,
+      errorCode:
+        resolved.quotaAlertLevel === 'limit_100'
+          ? 'QUOTA_EXCEEDED'
+          : 'WINDOW_CLOSED',
       errorMessage:
         resolved.quotaAlertLevel === 'limit_100'
           ? 'Cuota mensual de WhatsApp alcanzada; usa el enlace directo wa.me o correo electrónico.'
@@ -995,19 +1145,33 @@ export async function dispatchWhatsAppNotification(
       deliveryMode,
       fallbackWaMeUrl: waMeUrl,
     };
+    await persistOutboundWhatsAppMessageIfNeeded({
+      dispatchParams: params,
+      result: degradedFail,
+      resolvedTemplateName: resolved.resolvedTemplateName,
+      persistedMode: 'fallback_email_wame',
+    });
+    return degradedFail;
   }
 
   try {
     const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
     const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
     if (!phoneId || !token) {
-      return {
+      const missingCredsFallback: NotificationDispatchResult = {
         status: 'sent',
-        providerMessageId: `demo-wamid-${Date.now()}`,
+        providerMessageId: `demo-wamid-${crypto.randomUUID().slice(0, 12)}`,
         errorMessage: null,
         deliveryMode: 'fallback_email_wame',
         fallbackWaMeUrl: waMeUrl,
       };
+      await persistOutboundWhatsAppMessageIfNeeded({
+        dispatchParams: params,
+        result: missingCredsFallback,
+        resolvedTemplateName: resolved.resolvedTemplateName,
+        persistedMode: 'demo',
+      });
+      return missingCredsFallback;
     }
 
     const fetcher = params.fetchImpl ?? globalThis.fetch;
@@ -1070,7 +1234,7 @@ export async function dispatchWhatsAppNotification(
 
     const data = (await res.json().catch(() => ({}))) as {
       messages?: Array<{ id: string }>;
-      error?: { message: string };
+      error?: { message?: string; code?: number };
     };
     if (!res.ok) {
       logError('notification_whatsapp_provider_error', {
@@ -1079,40 +1243,64 @@ export async function dispatchWhatsAppNotification(
         deliveryMode,
         error: data.error?.message,
       });
-      return {
+      const providerErr: NotificationDispatchResult = {
         status: 'failed',
         providerMessageId: null,
+        errorCode: data.error?.code ? String(data.error.code) : String(res.status),
         errorMessage: data.error?.message || `WhatsApp API HTTP ${res.status}`,
         deliveryMode,
         fallbackWaMeUrl: waMeUrl,
       };
+      await persistOutboundWhatsAppMessageIfNeeded({
+        dispatchParams: params,
+        result: providerErr,
+        resolvedTemplateName: resolved.resolvedTemplateName,
+        persistedMode: deliveryMode,
+      });
+      return providerErr;
     }
 
-    const providerMessageId = data.messages?.[0]?.id ?? `wamid-${Date.now()}`;
+    const providerMessageId =
+      data.messages?.[0]?.id ?? `wamid-${crypto.randomUUID().slice(0, 12)}`;
     if (deliveryMode === 'template') {
       await recordWhatsAppMonthlyUsageOnce(monthKey, providerMessageId);
     }
 
-    return {
+    const okResult: NotificationDispatchResult = {
       status: 'sent',
       providerMessageId,
       errorMessage: null,
       deliveryMode,
       fallbackWaMeUrl: waMeUrl,
     };
+    await persistOutboundWhatsAppMessageIfNeeded({
+      dispatchParams: params,
+      result: okResult,
+      resolvedTemplateName: resolved.resolvedTemplateName,
+      persistedMode: deliveryMode,
+    });
+    return okResult;
   } catch (err) {
     logError('notification_whatsapp_dispatch_exception', {
       phone: params.toPhoneE164,
       deliveryMode,
       error: err,
     });
-    return {
+    const excResult: NotificationDispatchResult = {
       status: 'failed',
       providerMessageId: null,
+      errorCode: 'NETWORK_ERROR',
       errorMessage: err instanceof Error ? err.message : 'Error enviando WhatsApp',
       deliveryMode,
       fallbackWaMeUrl: waMeUrl,
     };
+    await persistOutboundWhatsAppMessageIfNeeded({
+      dispatchParams: params,
+      result: excResult,
+      resolvedTemplateName: resolved.resolvedTemplateName,
+      persistedMode: deliveryMode,
+    });
+    return excResult;
   }
 }
 
@@ -1318,6 +1506,8 @@ export async function buildAndSendImmediateNotifications(params: {
         params.booking,
         params.settings,
       );
+      const notificationId = generateId('ntf');
+      const immediateTriggerKey = mapImmediateTriggerToWhatsAppTemplate(params.trigger);
       let res: NotificationDispatchResult;
       if (channel === 'email') {
         res = await dispatchEmailNotification({
@@ -1331,19 +1521,26 @@ export async function buildAndSendImmediateNotifications(params: {
           idempotencyKey: `${params.trigger}-${params.booking.id}-${wf.id}-email`,
         });
       } else if (channel === 'whatsapp') {
-        const triggerKey = mapImmediateTriggerToWhatsAppTemplate(params.trigger);
         res = await dispatchWhatsAppNotification({
           toPhoneE164: recipient,
           bodyText,
-          triggerKey,
+          triggerKey: immediateTriggerKey,
           templateParameters: buildBookingTemplateParameters({
-            triggerKey,
+            triggerKey: immediateTriggerKey,
             booking: params.booking,
             settings: params.settings,
             appUrl: env.appUrl,
           }),
           withinServiceWindow: false,
           settingsTimezone: params.settings.timezone,
+          threadContext: {
+            clientId: params.booking.clientId,
+            bookingId: params.booking.id,
+            notificationId: null,
+            contactName: params.booking.client.fullName,
+            senderKind: 'automation',
+            senderName: wf.name,
+          },
           fallbackEmail: params.booking.client.email
             ? {
                 to: params.booking.client.email,
@@ -1364,17 +1561,25 @@ export async function buildAndSendImmediateNotifications(params: {
       }
 
       created.push({
-        id: generateId('ntf'),
+        id: notificationId,
         bookingId: params.booking.id,
+        clientId: params.booking.clientId,
         workflowId: wf.id,
+        triggerKey: channel === 'whatsapp' ? immediateTriggerKey : null,
         channel,
         recipient,
         scheduledFor: nowIso,
         status: res.status,
+        deliveryStatus: res.status === 'sent' ? 'sent' : 'failed',
         subject,
         previewText: bodyText.slice(0, 160),
+        bodyText,
         providerMessageId: res.providerMessageId,
         errorMessage: res.errorMessage,
+        attempts: 1,
+        maxAttempts: 3,
+        nextRetryAt: null,
+        lastAttemptAt: nowIso,
         sentAt: res.status === 'sent' ? nowIso : null,
         createdAt: nowIso,
       });
@@ -1411,6 +1616,12 @@ export async function buildAndSendImmediateNotifications(params: {
         params.settings,
         env.appUrl,
       );
+      const scheduledIso = new Date(targetMs).toISOString();
+      const inferredTrigger = inferReminderTriggerKey(
+        wf,
+        { triggerKey: null, subject, scheduledFor: scheduledIso },
+        params.booking,
+      );
 
       for (const channel of wf.channels) {
         if (channel === 'sms' && !params.settings.smsRemindersEnabled) continue;
@@ -1419,18 +1630,26 @@ export async function buildAndSendImmediateNotifications(params: {
         created.push({
           id: generateId('ntf'),
           bookingId: params.booking.id,
+          clientId: params.booking.clientId,
           workflowId: wf.id,
+          triggerKey: inferredTrigger,
           channel: channel as NotificationChannel,
           recipient:
             channel === 'email'
               ? params.booking.client.email!
               : params.booking.client.phoneE164,
-          scheduledFor: new Date(targetMs).toISOString(),
+          scheduledFor: scheduledIso,
           status: 'pending',
+          deliveryStatus: 'queued',
           subject,
           previewText: bodyText.slice(0, 160),
+          bodyText,
           providerMessageId: null,
           errorMessage: null,
+          attempts: 0,
+          maxAttempts: 3,
+          nextRetryAt: null,
+          lastAttemptAt: null,
           sentAt: null,
           createdAt: nowIso,
         });
@@ -1467,6 +1686,13 @@ export async function dispatchDepositRejectedNotification(params: {
     }),
     withinServiceWindow: false,
     settingsTimezone: params.settings.timezone,
+    threadContext: {
+      clientId: params.booking.clientId,
+      bookingId: params.booking.id,
+      contactName: params.booking.client.fullName,
+      senderKind: 'automation',
+      senderName: 'Validación de anticipo',
+    },
     fallbackEmail: params.booking.client.email
       ? {
           to: params.booking.client.email,
@@ -1507,6 +1733,13 @@ export async function dispatchTouchUpInviteNotification(params: {
     }),
     withinServiceWindow: false,
     settingsTimezone: params.settings.timezone,
+    threadContext: {
+      clientId: params.booking.clientId,
+      bookingId: params.booking.id,
+      contactName: params.booking.client.fullName,
+      senderKind: 'automation',
+      senderName: 'Invitación de retoque',
+    },
     fallbackEmail: params.booking.client.email
       ? {
           to: params.booking.client.email,

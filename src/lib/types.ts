@@ -38,7 +38,10 @@ export type AuditAction =
   | 'booking_rescheduled'
   | 'loyalty_redeemed'
   | 'media_retention_warned'
-  | 'media_retention_purged';
+  | 'media_retention_purged'
+  | 'whatsapp_message_sent'
+  | 'reminder_retried'
+  | 'workflow_updated';
 
 export interface LandingFaqItem {
   id: string;
@@ -383,18 +386,35 @@ export interface NotificationWorkflow {
   messageTemplate: string;
 }
 
+export type ScheduledNotificationStatus = 'pending' | 'sent' | 'failed' | 'canceled';
+
+export type WhatsAppNotificationDeliveryStatus =
+  | 'queued'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed';
+
 export interface ScheduledNotification {
   id: string;
-  bookingId: string;
+  bookingId: string | null;
+  clientId?: string | null;
   workflowId: string | null;
+  triggerKey?: WhatsAppTemplateTriggerKey | null;
   channel: NotificationChannel;
   recipient: string;
   scheduledFor: string;
-  status: 'pending' | 'sent' | 'failed' | 'canceled';
+  status: ScheduledNotificationStatus;
+  deliveryStatus?: WhatsAppNotificationDeliveryStatus | null;
   subject: string;
   previewText: string;
+  bodyText?: string;
   providerMessageId: string | null;
   errorMessage: string | null;
+  attempts?: number;
+  maxAttempts?: number;
+  nextRetryAt?: string | null;
+  lastAttemptAt?: string | null;
   sentAt: string | null;
   createdAt: string;
 }
@@ -694,6 +714,83 @@ export interface WhatsAppMonthlyUsageSummary {
   warned100At: string | null;
 }
 
+export type WhatsAppMessageDirection = 'inbound' | 'outbound' | 'echo';
+
+export type WhatsAppMessageSenderKind =
+  | 'client'
+  | 'staff'
+  | 'automation'
+  | 'coexistence_phone';
+
+export type WhatsAppMessageType =
+  | 'text'
+  | 'template'
+  | 'interactive'
+  | 'button'
+  | 'media'
+  | 'system';
+
+export type WhatsAppDeliveryStatus =
+  | 'queued'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed'
+  | 'received';
+
+export type WhatsAppMessageDeliveryMode =
+  | 'template'
+  | 'text'
+  | 'fallback_email_wame'
+  | 'demo'
+  | 'coexistence'
+  | 'inbound';
+
+export interface WhatsAppThread {
+  id: string;
+  phoneE164: string;
+  clientId: string | null;
+  contactName: string;
+  lastMessageAt: string | null;
+  lastMessagePreview: string;
+  lastMessageDirection: WhatsAppMessageDirection | null;
+  lastInboundAt: string | null;
+  unreadCount: number;
+  lastReadAt: string | null;
+  hasFailedMessages: boolean;
+  isArchived: boolean;
+  assignedStaffId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WhatsAppMessage {
+  id: string;
+  threadId: string;
+  phoneE164: string;
+  clientId: string | null;
+  bookingId: string | null;
+  notificationId: string | null;
+  direction: WhatsAppMessageDirection;
+  senderKind: WhatsAppMessageSenderKind;
+  senderName: string | null;
+  messageType: WhatsAppMessageType;
+  bodyText: string;
+  templateName: string | null;
+  templateTriggerKey: WhatsAppTemplateTriggerKey | null;
+  templateParams: string[];
+  deliveryStatus: WhatsAppDeliveryStatus;
+  deliveryMode: WhatsAppMessageDeliveryMode;
+  providerMessageId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  sentAt: string | null;
+  deliveredAt: string | null;
+  readAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+}
+
 export interface WebhookEventRecord {
   provider: string;
   eventId: string;
@@ -745,6 +842,8 @@ export interface DemoDatabase {
   mediaAssets?: MediaAssetRecord[];
   whatsappTemplates?: WhatsAppTemplateConfig[];
   whatsappMonthlyUsage?: WhatsAppMonthlyUsage[];
+  whatsappThreads?: WhatsAppThread[];
+  whatsappMessages?: WhatsAppMessage[];
   webhookEvents?: WebhookEventRecord[];
   funnelEvents?: FunnelEventRecord[];
 }

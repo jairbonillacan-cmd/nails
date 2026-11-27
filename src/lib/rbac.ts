@@ -4,6 +4,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
   owner: new Set([
     'overview',
     'bookings',
+    'whatsapp',
     'services',
     'availability',
     'team',
@@ -18,6 +19,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
   admin: new Set([
     'overview',
     'bookings',
+    'whatsapp',
     'services',
     'availability',
     'team',

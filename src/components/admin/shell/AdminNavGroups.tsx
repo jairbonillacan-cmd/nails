@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Clock,
   LayoutGrid,
+  MessageCircle,
   Package,
   Palette,
   Plug,
@@ -40,6 +41,8 @@ function renderNavIcon(iconId: NavIconId): React.ReactNode {
       return <LayoutGrid size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'bookings':
       return <CalendarDays size={16} strokeWidth={1.85} aria-hidden="true" />;
+    case 'whatsapp':
+      return <MessageCircle size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'clients':
       return <Users size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'cash':

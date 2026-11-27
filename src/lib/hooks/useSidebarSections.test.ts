@@ -87,7 +87,11 @@ describe('useSidebarSections helpers', () => {
     const primaryGroups = [
       {
         id: 'operacion' as const,
-        items: [{ matchPath: '/admin' }, { matchPath: '/admin/citas' }],
+        items: [
+          { matchPath: '/admin' },
+          { matchPath: '/admin/citas' },
+          { matchPath: '/admin/whatsapp' },
+        ],
       },
       {
         id: 'salon' as const,
@@ -98,6 +102,9 @@ describe('useSidebarSections helpers', () => {
 
     expect(resolveActiveSidebarSection('/admin', primaryGroups, footerItems)).toBe('operacion');
     expect(resolveActiveSidebarSection('/admin/citas', primaryGroups, footerItems)).toBe(
+      'operacion',
+    );
+    expect(resolveActiveSidebarSection('/admin/whatsapp', primaryGroups, footerItems)).toBe(
       'operacion',
     );
     expect(resolveActiveSidebarSection('/admin/servicios/nuevo', primaryGroups, footerItems)).toBe(

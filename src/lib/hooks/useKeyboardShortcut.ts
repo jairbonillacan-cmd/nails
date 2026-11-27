@@ -57,6 +57,7 @@ interface AdminGlobalShortcutsOptions {
 const G_CHORD_ROUTES: Record<string, string> = {
   r: '/admin',
   a: '/admin/citas',
+  w: '/admin/whatsapp',
   c: '/admin/clientas',
   j: '/admin/caja',
   e: '/admin/reportes',

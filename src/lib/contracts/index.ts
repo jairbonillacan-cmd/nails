@@ -27,10 +27,20 @@ export {
   RatingSchema,
   RecurringFrequencySchema,
   RewardTypeSchema,
+  ScheduledNotificationStatusSchema,
   ServiceModeSchema,
   SlotIntervalMinutesSchema,
   ThemeModePreferenceSchema,
   WaitlistStatusSchema,
+  WhatsAppDeliveryStatusSchema,
+  WhatsAppMessageDeliveryModeSchema,
+  WhatsAppMessageDirectionSchema,
+  WhatsAppMessageSenderKindSchema,
+  WhatsAppMessageTypeSchema,
+  WhatsAppNotificationDeliveryStatusSchema,
+  WhatsAppTemplateCategorySchema,
+  WhatsAppTemplateTriggerKeySchema,
+  WhatsAppThreadFilterSchema,
 } from './enums';
 
 export {
@@ -105,3 +115,27 @@ export {
   DemoLoginSchema,
   SupabaseLoginSchema,
 } from './team';
+
+export {
+  WhatsAppRemindersActionSchema,
+  WhatsAppSendMessageSchema,
+  WhatsAppSettingsActionSchema,
+  WhatsAppSimulateEventSchema,
+  WhatsAppThreadsQuerySchema,
+} from './whatsapp';
+
+export type {
+  WhatsAppInboxSummaryDTO,
+  WhatsAppMessageDTO,
+  WhatsAppReminderItemDTO,
+  WhatsAppRemindersResponseDTO,
+  WhatsAppSendResponseDTO,
+  WhatsAppServiceWindowDTO,
+  WhatsAppSettingsResponseDTO,
+  WhatsAppSimulateResponseDTO,
+  WhatsAppTemplateCatalogItemDTO,
+  WhatsAppThreadBookingContextDTO,
+  WhatsAppThreadDetailResponseDTO,
+  WhatsAppThreadsListResponseDTO,
+  WhatsAppThreadSummaryDTO,
+} from './whatsapp';
