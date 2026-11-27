@@ -31,6 +31,7 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations } from '@/lib/types';
 
 const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
@@ -68,10 +69,20 @@ export default function AdminOverviewPage() {
 
   const firstName = data.session.user.fullName.trim().split(/\s+/)[0] ?? 'Equipo';
   const todayCount = data.kpis.todayBookingsCount;
+  const canSeeWhatsApp = roleCanAccess(data.session.user.role, 'whatsapp');
   const hasWhatsAppQuotaAlert =
-    data.whatsappUsage?.alertLevel === 'warning_80' ||
-    data.whatsappUsage?.alertLevel === 'limit_100';
-  const pendingCount = metrics.totalAttentionCount + (hasWhatsAppQuotaAlert ? 1 : 0);
+    (canSeeWhatsApp || roleCanAccess(data.session.user.role, 'integrations')) &&
+    (data.whatsappUsage?.alertLevel === 'warning_80' ||
+      data.whatsappUsage?.alertLevel === 'limit_100');
+  const hasUnreadWhatsApp =
+    canSeeWhatsApp && (data.whatsappInboxSummary?.unreadCount ?? 0) > 0;
+  const hasFailedReminders =
+    canSeeWhatsApp && (data.whatsappInboxSummary?.failedRemindersCount ?? 0) > 0;
+  const pendingCount =
+    metrics.totalAttentionCount +
+    (hasWhatsAppQuotaAlert ? 1 : 0) +
+    (hasUnreadWhatsApp ? 1 : 0) +
+    (hasFailedReminders ? 1 : 0);
 
   const headline =
     todayCount > 0 && pendingCount > 0

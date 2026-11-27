@@ -169,23 +169,31 @@ export function ClientRetentionTab({
                       </Text>
                     }
                     actions={
-                      <Button
-                        type="button"
-                        label="Felicitar por WhatsApp"
-                        variant="primary"
-                        size="sm"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        isLoading={dispatchingKey === dispatchKey}
-                        onClick={() =>
-                          void onDispatchCampaign({
-                            kind: 'birthday',
-                            clientId: item.clientId,
-                            clientName: item.fullName,
-                            messagePreview: item.whatsappMessage,
-                            fallbackUrl: item.whatsappUrl,
-                          })
-                        }
-                      />
+                      <HStack gap={1.5} align="center" wrap="wrap">
+                        <Button
+                          label="Ver chat"
+                          variant="ghost"
+                          size="sm"
+                          href={`/admin/whatsapp?phone=${encodeURIComponent(item.phoneE164)}`}
+                        />
+                        <Button
+                          type="button"
+                          label="Felicitar por WhatsApp"
+                          variant="primary"
+                          size="sm"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          isLoading={dispatchingKey === dispatchKey}
+                          onClick={() =>
+                            void onDispatchCampaign({
+                              kind: 'birthday',
+                              clientId: item.clientId,
+                              clientName: item.fullName,
+                              messagePreview: item.whatsappMessage,
+                              fallbackUrl: item.whatsappUrl,
+                            })
+                          }
+                        />
+                      </HStack>
                     }
                   />
                 );
@@ -307,35 +315,43 @@ export function ClientRetentionTab({
                     </HStack>
                   }
                   actions={
-                    useCampaignDispatch ? (
+                    <HStack gap={1.5} align="center" wrap="wrap">
                       <Button
-                        type="button"
-                        label="Enviar WhatsApp"
-                        variant="primary"
+                        label="Ver chat"
+                        variant="ghost"
                         size="sm"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        isLoading={dispatchingKey === dispatchKey}
-                        onClick={() =>
-                          void onDispatchCampaign({
-                            kind: 'reactivation',
-                            clientId: item.clientId,
-                            clientName: item.fullName,
-                            messagePreview: comebackMsg,
-                            fallbackUrl,
-                          })
-                        }
+                        href={`/admin/whatsapp?phone=${encodeURIComponent(item.phoneE164)}`}
                       />
-                    ) : (
-                      <Button
-                        label="Enviar WhatsApp"
-                        variant="primary"
-                        size="sm"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        href={fallbackUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    )
+                      {useCampaignDispatch ? (
+                        <Button
+                          type="button"
+                          label="Enviar WhatsApp"
+                          variant="primary"
+                          size="sm"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          isLoading={dispatchingKey === dispatchKey}
+                          onClick={() =>
+                            void onDispatchCampaign({
+                              kind: 'reactivation',
+                              clientId: item.clientId,
+                              clientName: item.fullName,
+                              messagePreview: comebackMsg,
+                              fallbackUrl,
+                            })
+                          }
+                        />
+                      ) : (
+                        <Button
+                          label="Enviar WhatsApp"
+                          variant="primary"
+                          size="sm"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          href={fallbackUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      )}
+                    </HStack>
                   }
                 />
               );

@@ -9,6 +9,7 @@ import { Popover } from '@astryxdesign/core/Popover';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import {
+  AlertTriangle,
   Bell,
   Check,
   Clock,
@@ -53,17 +54,46 @@ export function AdminTopBar({
     ? data.inventory.filter((item) => item.isActive && item.stockQuantity <= item.minStockAlert).length
     : 0;
   const canSeeClients = roleCanAccess(role, 'clients');
+  const canSeeWhatsApp = roleCanAccess(role, 'whatsapp');
   const canSeeIntegrations = roleCanAccess(role, 'integrations');
   const whatsappUsage = data.whatsappUsage;
+  const unreadWhatsAppCount = canSeeWhatsApp
+    ? (data.whatsappInboxSummary?.unreadCount ?? 0)
+    : 0;
+  const failedRemindersCount = canSeeWhatsApp
+    ? (data.whatsappInboxSummary?.failedRemindersCount ?? 0)
+    : 0;
   const hasWhatsAppAlert =
-    canSeeIntegrations &&
+    (canSeeWhatsApp || canSeeIntegrations) &&
     (whatsappUsage?.alertLevel === 'warning_80' ||
       whatsappUsage?.alertLevel === 'limit_100');
 
   const totalAlerts =
-    pendingDepositsCount + uncollectedCount + waitingCount + lowStockCount + (hasWhatsAppAlert ? 1 : 0);
+    pendingDepositsCount +
+    uncollectedCount +
+    waitingCount +
+    lowStockCount +
+    unreadWhatsAppCount +
+    failedRemindersCount +
+    (hasWhatsAppAlert ? 1 : 0);
 
   const alertRows = [
+    unreadWhatsAppCount > 0
+      ? {
+          id: 'whatsapp-unread',
+          label: `${unreadWhatsAppCount} mensaje${unreadWhatsAppCount === 1 ? '' : 's'} sin leer en WhatsApp`,
+          href: '/admin/whatsapp?filter=unread',
+          icon: <MessageCircle size={15} aria-hidden="true" />,
+        }
+      : null,
+    failedRemindersCount > 0
+      ? {
+          id: 'whatsapp-failed-reminders',
+          label: `${failedRemindersCount} recordatorio${failedRemindersCount === 1 ? '' : 's'} fallido${failedRemindersCount === 1 ? '' : 's'}`,
+          href: '/admin/whatsapp?tab=recordatorios&filter=failed',
+          icon: <AlertTriangle size={15} aria-hidden="true" />,
+        }
+      : null,
     pendingDepositsCount > 0
       ? {
           id: 'deposits',
@@ -103,7 +133,7 @@ export function AdminTopBar({
             whatsappUsage.alertLevel === 'limit_100'
               ? `Límite de WhatsApp alcanzado (${whatsappUsage.sentCount}/${whatsappUsage.quotaLimit})`
               : `WhatsApp al ${whatsappUsage.percentUsed}% del límite mensual`,
-          href: '/admin/integraciones',
+          href: '/admin/whatsapp?tab=conexion',
           icon: <MessageCircle size={15} aria-hidden="true" />,
         }
       : null,

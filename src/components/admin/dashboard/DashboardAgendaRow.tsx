@@ -6,14 +6,17 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { MessageCircle } from 'lucide-react';
 import {
   buildWhatsAppLink,
   formatCurrency,
   formatDuration,
   formatTimeInTimezone,
 } from '@/lib/format';
+import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations } from '@/lib/types';
 import { BookingStatusTag, StatusTag } from '@/components/ui';
+import { useAdminData } from '../AdminProvider';
 import type { DashboardMetrics } from './dashboardMetrics';
 
 interface AgendaRowMeta {
@@ -84,10 +87,15 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
   isCandidateNextUp,
   onConfirmDeposit,
 }: DashboardAgendaRowProps) {
+  const { data: adminData } = useAdminData();
+  const canOpenWhatsAppInbox = Boolean(
+    adminData && roleCanAccess(adminData.session.user.role, 'whatsapp'),
+  );
   const meta = getAgendaRowMeta(booking, metrics, currency);
   const colorIdx = metrics.staffColorIndex.get(booking.staffId) ?? 0;
   const startTimeLabel = formatTimeInTimezone(booking.startAt, metrics.tz);
   const durationLabel = formatDuration(booking.totalDurationMinutes);
+  const waInboxHref = `/admin/whatsapp?phone=${encodeURIComponent(booking.client.phoneE164)}&bookingId=${encodeURIComponent(booking.id)}`;
   const waHref = buildWhatsAppLink(
     booking.client.phoneE164,
     `Hola ${booking.client.fullName}, te confirmamos tu cita de ${booking.service.name} en ${salonName} a las ${startTimeLabel} con ${booking.staff.name}.`,
@@ -180,14 +188,24 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
         ) : null}
 
         {meta.actionKind === 'whatsapp' ? (
-          <Button
-            label="WhatsApp"
-            variant="ghost"
-            size="sm"
-            href={waHref}
-            target="_blank"
-            rel="noopener noreferrer"
-          />
+          canOpenWhatsAppInbox ? (
+            <Button
+              label="Abrir chat"
+              variant="ghost"
+              size="sm"
+              icon={<MessageCircle size={14} aria-hidden="true" />}
+              href={waInboxHref}
+            />
+          ) : (
+            <Button
+              label="WhatsApp"
+              variant="ghost"
+              size="sm"
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          )
         ) : null}
       </HStack>
     </article>

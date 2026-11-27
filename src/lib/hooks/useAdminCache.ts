@@ -14,6 +14,18 @@ export const ADMIN_CACHE_KEYS = {
   packages: '/api/admin/packages',
   campaigns: '/api/admin/campaigns?birthdayWindowDays=7&inactiveDays=45',
   reports: (period: string) => `/api/admin/reports?period=${encodeURIComponent(period)}`,
+  whatsappThreadsBase: '/api/admin/whatsapp/threads',
+  whatsappThreads: (filter = 'all', q = '') => {
+    const params = new URLSearchParams();
+    if (filter && filter !== 'all') params.set('filter', filter);
+    if (q.trim()) params.set('q', q.trim());
+    params.set('limit', '100');
+    return `/api/admin/whatsapp/threads?${params.toString()}`;
+  },
+  whatsappThreadDetail: (threadId: string) =>
+    `/api/admin/whatsapp/threads/${encodeURIComponent(threadId)}`,
+  whatsappReminders: '/api/admin/whatsapp/reminders',
+  whatsappSettings: '/api/admin/whatsapp/settings',
 } as const;
 
 export class AdminFetchError extends Error {
@@ -407,6 +419,16 @@ export async function prefetchAdminData<T>(
   } catch {
     return undefined;
   }
+}
+
+export function prefetchAdminWhatsAppData(): void {
+  const threadsKey = ADMIN_CACHE_KEYS.whatsappThreads('all', '');
+  void prefetchAdminData(threadsKey, (signal) =>
+    fetchAdminJson<unknown>(threadsKey, signal),
+  );
+  void prefetchAdminData(ADMIN_CACHE_KEYS.whatsappReminders, (signal) =>
+    fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.whatsappReminders, signal),
+  );
 }
 
 export interface UseAdminCachedQueryOptions<T> {

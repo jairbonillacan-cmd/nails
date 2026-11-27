@@ -118,6 +118,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           (item) =>
             item.href !== pathname &&
             (item.id === 'bookings' ||
+              item.id === 'whatsapp' ||
               item.id === 'cash' ||
               item.id === 'clients' ||
               item.id === 'reports' ||

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui';
 import { BOOKING_TRANSITIONS } from '@/lib/booking/state-machine';
 import { computeBookingPaymentSummary } from '@/lib/payments/splits';
+import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
   BookingWithRelations,
@@ -35,6 +36,7 @@ import {
   formatTimeInTimezone,
 } from '@/lib/format';
 import { buildGoogleReviewWhatsAppLink } from '@/lib/notifications/review-request';
+import { useAdminData } from '../AdminProvider';
 import {
   buildInstagramProfileUrl,
   getProofBadgeMeta,
@@ -93,6 +95,10 @@ export function BookingQuickPopover({
   onSendReminder,
   onRequestReschedule,
 }: BookingQuickPopoverProps) {
+  const { data: adminData } = useAdminData();
+  const canOpenWhatsAppInbox = Boolean(
+    adminData && roleCanAccess(adminData.session.user.role, 'whatsapp'),
+  );
   const [proofZoomOpen, setProofZoomOpen] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<
     'canceled' | 'no_show' | 'reject_deposit' | null
@@ -147,6 +153,9 @@ export function BookingQuickPopover({
     (allowedNext.includes('completed') || paymentSummary.isUncollected);
 
   const isCompleted = booking.status === 'completed';
+  const whatsappChatHref = canOpenWhatsAppInbox
+    ? `/admin/whatsapp?phone=${encodeURIComponent(booking.client.phoneE164)}&bookingId=${encodeURIComponent(booking.id)}`
+    : null;
   const waHref = buildWhatsAppLink(
     booking.client.phoneE164,
     `Hola ${booking.client.fullName}, te escribimos de ${salonName} sobre tu cita (${booking.bookingCode}) de ${booking.service.name} el ${formatDateShortInTimezone(booking.startAt, timezone)} a las ${formatTimeInTimezone(booking.startAt, timezone)}.`,
@@ -430,6 +439,7 @@ export function BookingQuickPopover({
                   isRequestingReschedule={isRequestingReschedule}
                   canViewClients={canViewClients}
                   canManageIntegrations={canManageIntegrations}
+                  whatsappChatHref={whatsappChatHref}
                   waHref={waHref}
                   reviewWaHref={reviewWaHref}
                   reviewSettingsHref="/admin/integraciones?section=resenas#analytics-heading"
