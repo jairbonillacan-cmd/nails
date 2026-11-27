@@ -367,6 +367,17 @@ export interface UpdateWhatsAppMessageStatusInput {
   atIso?: string;
 }
 
+export interface ResolveRetriedWhatsAppMessageInput {
+  messageId: string;
+  deliveryStatus: 'sent' | 'failed';
+  deliveryMode: WhatsAppMessageDeliveryMode;
+  providerMessageId?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  senderName?: string | null;
+  atIso?: string;
+}
+
 export interface ListScheduledNotificationsParams {
   status?: ScheduledNotificationStatus;
   channel?: NotificationChannel;
@@ -542,6 +553,9 @@ export interface SalonRepository {
   recordWhatsAppMessage(
     input: RecordWhatsAppMessageInput,
   ): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage }>;
+  resolveRetriedWhatsAppMessage(
+    input: ResolveRetriedWhatsAppMessageInput,
+  ): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage } | null>;
   updateWhatsAppMessageStatusByProviderId(
     params: UpdateWhatsAppMessageStatusInput,
   ): Promise<{ updated: boolean; message: WhatsAppMessage | null; threadId: string | null }>;

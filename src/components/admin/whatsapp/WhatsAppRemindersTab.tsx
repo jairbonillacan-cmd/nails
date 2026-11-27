@@ -31,6 +31,7 @@ export interface WhatsAppRemindersTabProps {
   isSubmitting: boolean;
   role: AdminRole;
   studioName: string;
+  timezone?: string;
   initialFilter?: WhatsAppReminderFilter;
   onRunAction: (action: WhatsAppRemindersActionInput) => Promise<boolean>;
   onOpenChat: (phoneE164: string) => void;
@@ -43,6 +44,7 @@ export function WhatsAppRemindersTab({
   isSubmitting,
   role,
   studioName,
+  timezone = 'America/Mexico_City',
   initialFilter,
   onRunAction,
   onOpenChat,
@@ -231,6 +233,7 @@ export function WhatsAppRemindersTab({
         history={data.history}
         metrics={metrics}
         role={role}
+        timezone={timezone}
         isSubmitting={isSubmitting}
         activeFilter={activeFilter}
         onFilterChange={setActiveFilter}

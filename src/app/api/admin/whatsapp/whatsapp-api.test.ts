@@ -402,9 +402,10 @@ describe('/api/admin/whatsapp/* endpoints, RBAC, 24h window, quota, webhook & si
     expect(quotaJson.fallbackWaMeUrl).toContain('https://wa.me/522228765112');
   });
 
-  it('retries failed outbound messages while re-validating 24h window & quota', async () => {
+  it('retries failed outbound messages while re-validating 24h window & quota and clears thread failure state', async () => {
     const failedTemplate = await recordWhatsAppMessage({
-      phoneE164: '+522228765112',
+      phoneE164: '+522229991122',
+      contactName: 'Clienta Reintento',
       direction: 'outbound',
       senderKind: 'automation',
       messageType: 'template',
@@ -417,6 +418,7 @@ describe('/api/admin/whatsapp/* endpoints, RBAC, 24h window, quota, webhook & si
       errorCode: '131026',
       errorMessage: 'Undeliverable',
     });
+    expect(failedTemplate.thread.hasFailedMessages).toBe(true);
 
     const retryRes = await postRetryMessage(
       makeAuthedRequest(
@@ -428,7 +430,20 @@ describe('/api/admin/whatsapp/* endpoints, RBAC, 24h window, quota, webhook & si
     expect(retryRes.status).toBe(200);
     const retryJson = (await retryRes.json()) as WhatsAppSendResponseDTO;
     expect(retryJson.ok).toBe(true);
+    expect(retryJson.message.id).toBe(failedTemplate.message.id);
     expect(retryJson.message.deliveryStatus).toBe('sent');
+    expect(retryJson.message.errorCode).toBeNull();
+    expect(retryJson.message.errorMessage).toBeNull();
+    expect(retryJson.thread.hasFailedMessages).toBe(false);
+
+    const failedListRes = await getThreads(
+      makeAuthedRequest('https://laikona.mx/api/admin/whatsapp/threads?filter=failed', {
+        role: 'admin',
+      }),
+    );
+    expect(failedListRes.status).toBe(200);
+    const failedList = (await failedListRes.json()) as WhatsAppThreadsListResponseDTO;
+    expect(failedList.threads.some((t) => t.id === failedTemplate.thread.id)).toBe(false);
 
     const failedFreeTextClosed = await recordWhatsAppMessage({
       phoneE164: '+522228765112',

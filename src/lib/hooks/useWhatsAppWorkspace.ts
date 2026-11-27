@@ -184,7 +184,7 @@ function describeReminderActionSuccess(action: WhatsAppRemindersActionInput): st
     case 'update_workflow':
       return 'Mensaje y programación actualizados.';
     case 'retry_notification':
-      return 'Recordatorio reenviado correctamente.';
+      return 'Recordatorio reprogramado en cola para envío inmediato.';
     case 'cancel_notification':
       return 'Recordatorio cancelado.';
     case 'trigger_now':

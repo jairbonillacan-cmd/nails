@@ -62,71 +62,73 @@ export function WhatsAppChatHeader({
   const clientProfileHref = `/admin/clientas?q=${encodeURIComponent(thread.phoneE164)}`;
 
   return (
-    <VStack as="header" className="ad-wa-chat-head" gap={2}>
-      <HStack justify="between" align="center" gap={2} wrap="wrap">
-        <HStack gap={2} align="center" style={{ minWidth: 0, flex: '1 1 12rem' }}>
-          {showBackButton ? (
+    <VStack as="header" gap={0} style={{ flex: '0 0 auto', minWidth: 0 }}>
+      <VStack className="ad-wa-chat-head" gap={2}>
+        <HStack justify="between" align="center" gap={2} wrap="wrap">
+          <HStack gap={2} align="center" style={{ minWidth: 0, flex: '1 1 12rem' }}>
+            {showBackButton ? (
+              <Button
+                type="button"
+                label="Conversaciones"
+                variant="ghost"
+                size="sm"
+                icon={<ArrowLeft size={15} aria-hidden="true" />}
+                onClick={onBack}
+              />
+            ) : null}
+            <Avatar name={thread.contactName} size={36} tooltip={false} />
+            <VStack gap={0} style={{ minWidth: 0, flex: '1 1 0%' }}>
+              <HStack gap={1.5} align="center" wrap="wrap">
+                <Heading level={3} className="ad-h3">
+                  {thread.contactName}
+                </Heading>
+                {(client?.noShowCount ?? 0) >= 2 ? (
+                  <StatusTag
+                    tone="warning"
+                    label={`${client?.noShowCount ?? 0} inasistencias`}
+                    hasTabularNumbers
+                  />
+                ) : null}
+              </HStack>
+              <HStack gap={1.5} align="center" wrap="wrap">
+                <Text type="supporting" color="secondary" hasTabularNumbers>
+                  {formatPhoneDisplay(thread.phoneE164)}
+                </Text>
+                {instagramHandle ? (
+                  <Text type="supporting" color="secondary">
+                    · {instagramHandle.startsWith('@') ? instagramHandle : `@${instagramHandle}`}
+                  </Text>
+                ) : null}
+              </HStack>
+            </VStack>
+          </HStack>
+
+          <HStack gap={1.5} align="center" wrap="wrap">
+            <StatusTag
+              label={windowMeta.label}
+              tone={windowMeta.tone}
+              showDot
+              hasTabularNumbers
+            />
             <Button
-              type="button"
-              label="Conversaciones"
+              label="Ver ficha"
+              variant="secondary"
+              size="sm"
+              icon={<UserRound size={14} aria-hidden="true" />}
+              href={clientProfileHref}
+            />
+            <Button
+              label="wa.me"
               variant="ghost"
               size="sm"
-              icon={<ArrowLeft size={15} aria-hidden="true" />}
-              onClick={onBack}
+              icon={<ExternalLink size={14} aria-hidden="true" />}
+              href={waMeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
             />
-          ) : null}
-          <Avatar name={thread.contactName} size={36} tooltip={false} />
-          <VStack gap={0} style={{ minWidth: 0, flex: '1 1 0%' }}>
-            <HStack gap={1.5} align="center" wrap="wrap">
-              <Heading level={3} className="ad-h3">
-                {thread.contactName}
-              </Heading>
-              {(client?.noShowCount ?? 0) >= 2 ? (
-                <StatusTag
-                  tone="warning"
-                  label={`${client?.noShowCount ?? 0} inasistencias`}
-                  hasTabularNumbers
-                />
-              ) : null}
-            </HStack>
-            <HStack gap={1.5} align="center" wrap="wrap">
-              <Text type="supporting" color="secondary" hasTabularNumbers>
-                {formatPhoneDisplay(thread.phoneE164)}
-              </Text>
-              {instagramHandle ? (
-                <Text type="supporting" color="secondary">
-                  · {instagramHandle.startsWith('@') ? instagramHandle : `@${instagramHandle}`}
-                </Text>
-              ) : null}
-            </HStack>
-          </VStack>
+          </HStack>
         </HStack>
-
-        <HStack gap={1.5} align="center" wrap="wrap">
-          <StatusTag
-            label={windowMeta.label}
-            tone={windowMeta.tone}
-            showDot
-            hasTabularNumbers
-          />
-          <Button
-            label="Ver ficha"
-            variant="secondary"
-            size="sm"
-            icon={<UserRound size={14} aria-hidden="true" />}
-            href={clientProfileHref}
-          />
-          <Button
-            label="wa.me"
-            variant="ghost"
-            size="sm"
-            icon={<ExternalLink size={14} aria-hidden="true" />}
-            href={waMeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          />
-        </HStack>
-      </HStack>
+      </VStack>
 
       <HStack
         className="ad-wa-context-strip"

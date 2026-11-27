@@ -134,6 +134,7 @@ import {
   type RecordPaymentSplitsInput,
   type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
+  type ResolveRetriedWhatsAppMessageInput,
   type SalonRepository,
   type SlotHoldResult,
   type SubmitReviewInput,
@@ -935,6 +936,13 @@ function mapAuditLogRow(row: Tables['audit_logs']['Row']): AuditLogEntry {
 }
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function toUuidOrNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return UUID_RE.test(trimmed) ? trimmed : null;
+}
 
 const VALID_WHATSAPP_TRIGGERS = new Set<WhatsAppTemplateTriggerKey>([
   'booking_confirmed',
@@ -5659,11 +5667,13 @@ export function createSupabaseRepository(
     },
 
     async getWhatsAppMessageById(messageId: string): Promise<WhatsAppMessage | null> {
+      const validId = toUuidOrNull(messageId);
+      if (!validId) return null;
       const supabase = getClient();
       const { data } = await supabase
         .from('whatsapp_messages')
         .select('*')
-        .eq('id', messageId)
+        .eq('id', validId)
         .maybeSingle();
       return data ? mapWhatsAppMessageRow(data) : null;
     },
@@ -5680,6 +5690,10 @@ export function createSupabaseRepository(
       }
       const nowIso = input.createdAt ?? clock.now().toISOString();
       const cleanProviderId = input.providerMessageId?.trim() || null;
+      const validInputClientId = toUuidOrNull(input.clientId);
+      const validBookingId = toUuidOrNull(input.bookingId);
+      const validNotificationId = toUuidOrNull(input.notificationId);
+      const validAssignedStaffId = toUuidOrNull(input.assignedStaffId);
 
       if (cleanProviderId) {
         const existingMsgRes = await supabase
@@ -5710,8 +5724,8 @@ export function createSupabaseRepository(
           .in('phone_e164', phoneVariants)
           .limit(1)
           .maybeSingle(),
-        input.clientId
-          ? supabase.from('clients').select('*').eq('id', input.clientId).maybeSingle()
+        validInputClientId
+          ? supabase.from('clients').select('*').eq('id', validInputClientId).maybeSingle()
           : supabase
               .from('clients')
               .select('*')
@@ -5723,7 +5737,7 @@ export function createSupabaseRepository(
       const matchedClient = matchedClientRes.data
         ? mapClientRow(matchedClientRes.data)
         : null;
-      const resolvedClientId = matchedClient?.id ?? input.clientId ?? null;
+      const resolvedClientId = matchedClient?.id ?? validInputClientId;
       let threadRow = existingThreadRes.data ?? null;
 
       if (!threadRow) {
@@ -5734,7 +5748,7 @@ export function createSupabaseRepository(
             client_id: resolvedClientId,
             contact_name:
               input.contactName?.trim() || matchedClient?.fullName || canonicalPhone,
-            assigned_staff_id: input.assignedStaffId ?? null,
+            assigned_staff_id: validAssignedStaffId,
             created_at: nowIso,
             updated_at: nowIso,
           })
@@ -5774,8 +5788,8 @@ export function createSupabaseRepository(
           thread_id: threadRow.id,
           phone_e164: canonicalPhone,
           client_id: threadRow.client_id ?? resolvedClientId,
-          booking_id: input.bookingId ?? null,
-          notification_id: input.notificationId ?? null,
+          booking_id: validBookingId,
+          notification_id: validNotificationId,
           direction: input.direction,
           sender_kind: input.senderKind,
           sender_name: input.senderName?.trim() || null,
@@ -5837,8 +5851,8 @@ export function createSupabaseRepository(
       ) {
         threadPatch.contact_name = input.contactName.trim();
       }
-      if (input.assignedStaffId) {
-        threadPatch.assigned_staff_id = input.assignedStaffId;
+      if (validAssignedStaffId) {
+        threadPatch.assigned_staff_id = validAssignedStaffId;
       }
       if (!threadRow.last_message_at || msgMs >= currentLastMs) {
         threadPatch.last_message_at = nowIso;
@@ -5872,13 +5886,78 @@ export function createSupabaseRepository(
       };
     },
 
+    async resolveRetriedWhatsAppMessage(
+      input: ResolveRetriedWhatsAppMessageInput,
+    ): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage } | null> {
+      const validId = toUuidOrNull(input.messageId);
+      if (!validId) return null;
+      const supabase = getClient();
+      const atIso = input.atIso ?? clock.now().toISOString();
+      const cleanProviderId = input.providerMessageId?.trim() || null;
+
+      const msgPatch: Tables['whatsapp_messages']['Update'] = {
+        delivery_status: input.deliveryStatus,
+        delivery_mode: input.deliveryMode,
+        sender_kind: 'staff',
+        ...(input.senderName?.trim() ? { sender_name: input.senderName.trim() } : {}),
+        ...(cleanProviderId ? { provider_message_id: cleanProviderId } : {}),
+        ...(input.deliveryStatus === 'sent'
+          ? {
+              sent_at: atIso,
+              error_code: null,
+              error_message: null,
+              failed_at: null,
+            }
+          : {
+              failed_at: atIso,
+              error_code: input.errorCode ?? null,
+              error_message: input.errorMessage ?? null,
+            }),
+      };
+
+      const updatedMsgRes = await supabase
+        .from('whatsapp_messages')
+        .update(msgPatch)
+        .eq('id', validId)
+        .select('*')
+        .maybeSingle();
+
+      if (!updatedMsgRes.data) return null;
+
+      const failedCheckRes = await supabase
+        .from('whatsapp_messages')
+        .select('id')
+        .eq('thread_id', updatedMsgRes.data.thread_id)
+        .eq('delivery_status', 'failed')
+        .limit(1);
+
+      const updatedThreadRes = await supabase
+        .from('whatsapp_threads')
+        .update({
+          has_failed_messages: Boolean(
+            failedCheckRes.data && failedCheckRes.data.length > 0,
+          ),
+          updated_at: atIso,
+        })
+        .eq('id', updatedMsgRes.data.thread_id)
+        .select('*')
+        .single();
+
+      if (!updatedThreadRes.data) return null;
+
+      return {
+        thread: mapWhatsAppThreadRow(updatedThreadRes.data),
+        message: mapWhatsAppMessageRow(updatedMsgRes.data),
+      };
+    },
+
     async updateWhatsAppMessageStatusByProviderId(
       params: UpdateWhatsAppMessageStatusInput,
     ): Promise<{ updated: boolean; message: WhatsAppMessage | null; threadId: string | null }> {
       const supabase = getClient();
       const cleanProviderId = params.providerMessageId?.trim() || null;
-      const cleanMessageId = params.messageId?.trim() || null;
-      if (!cleanProviderId && !cleanMessageId) {
+      const validMessageId = toUuidOrNull(params.messageId);
+      if (!cleanProviderId && !validMessageId) {
         return { updated: false, message: null, threadId: null };
       }
       const atIso = params.atIso ?? clock.now().toISOString();
@@ -5892,11 +5971,11 @@ export function createSupabaseRepository(
           .maybeSingle();
         msgRow = res.data ?? null;
       }
-      if (!msgRow && cleanMessageId) {
+      if (!msgRow && validMessageId) {
         const res = await supabase
           .from('whatsapp_messages')
           .select('*')
-          .eq('id', cleanMessageId)
+          .eq('id', validMessageId)
           .maybeSingle();
         msgRow = res.data ?? null;
       }

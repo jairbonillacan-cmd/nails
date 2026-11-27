@@ -1536,7 +1536,7 @@ export async function buildAndSendImmediateNotifications(params: {
           threadContext: {
             clientId: params.booking.clientId,
             bookingId: params.booking.id,
-            notificationId,
+            notificationId: null,
             contactName: params.booking.client.fullName,
             senderKind: 'automation',
             senderName: wf.name,

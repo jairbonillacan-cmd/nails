@@ -1,23 +1,27 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
-const NARROW_QUERY = '(max-width: 40rem)';
-
-function subscribe(onChange: () => void): () => void {
-  const media = window.matchMedia(NARROW_QUERY);
-  media.addEventListener('change', onChange);
-  return () => media.removeEventListener('change', onChange);
-}
-
-function getSnapshot(): boolean {
-  return window.matchMedia(NARROW_QUERY).matches;
-}
+const DEFAULT_NARROW_QUERY = '(max-width: 40rem)';
 
 function getServerSnapshot(): boolean {
   return false;
 }
 
-export function useIsNarrowScreen(): boolean {
+export function useIsNarrowScreen(query = DEFAULT_NARROW_QUERY): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const media = window.matchMedia(query);
+      media.addEventListener('change', onChange);
+      return () => media.removeEventListener('change', onChange);
+    },
+    [query],
+  );
+
+  const getSnapshot = useCallback(
+    () => window.matchMedia(query).matches,
+    [query],
+  );
+
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

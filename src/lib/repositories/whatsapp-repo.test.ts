@@ -428,4 +428,45 @@ describe('whatsapp & reminders demo repository', () => {
     const snap = getSnapshot();
     expect(snap.whatsappThreads?.length).toBeGreaterThan(0);
   });
+
+  it('runs processDueScheduledNotifications dispatcher outside withWriteLock without deadlocking on usage/message writes', async () => {
+    const repo = getRepository();
+    const nowMs = Date.now() + 2 * 3600_000;
+    const dispatchedIds: string[] = [];
+
+    const summary = await processDueScheduledNotifications(async ({ notification, booking }) => {
+      dispatchedIds.push(notification.id);
+      const claimed = await repo.claimWebhookEventIdempotent(
+        'whatsapp_usage',
+        `wamid.locktest.${notification.id}`,
+      );
+      if (claimed) {
+        await repo.incrementWhatsAppMonthlyUsage('2026-11', 1);
+      }
+      await recordWhatsAppMessage({
+        phoneE164: booking.client.phoneE164,
+        clientId: booking.clientId,
+        bookingId: booking.id,
+        notificationId: notification.id,
+        direction: 'outbound',
+        senderKind: 'automation',
+        messageType: 'template',
+        bodyText: notification.bodyText || notification.previewText,
+        deliveryStatus: 'sent',
+        deliveryMode: 'template',
+        providerMessageId: `wamid.locktest.${notification.id}`,
+      });
+      return {
+        status: 'sent',
+        providerMessageId: `wamid.locktest.${notification.id}`,
+        errorMessage: null,
+      };
+    }, nowMs);
+
+    expect(summary.sentCount).toBeGreaterThanOrEqual(1);
+    expect(dispatchedIds.length).toBeGreaterThanOrEqual(1);
+    const updated = await getScheduledNotificationById(dispatchedIds[0]!);
+    expect(updated?.status).toBe('sent');
+    expect(updated?.providerMessageId).toBe(`wamid.locktest.${dispatchedIds[0]}`);
+  });
 });

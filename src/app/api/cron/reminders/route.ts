@@ -155,13 +155,18 @@ export async function POST(request: NextRequest) {
                   { id: `reschedule_booking:${booking.id}`, title: 'Necesito reagendar' },
                 ]
               : undefined;
+          const serviceWindow = await getRepository().getWhatsAppThreadWindow(
+            { phoneE164: notification.recipient },
+            nowMs,
+          );
+          const workflowIncludesEmail = Boolean(workflow?.channels.includes('email'));
           const waRes = await dispatchWhatsAppNotification({
             toPhoneE164: notification.recipient,
             bodyText: fullBodyText,
             triggerKey: templateMeta.triggerKey,
             templateParameters: templateMeta.templateParameters,
             interactiveButtons,
-            withinServiceWindow: false,
+            withinServiceWindow: serviceWindow.isOpen,
             settingsTimezone: settings.timezone,
             threadContext: {
               clientId: booking.clientId,
@@ -172,17 +177,18 @@ export async function POST(request: NextRequest) {
               senderName: workflow?.name ?? 'Recordatorio automático',
               skipPersist: true,
             },
-            fallbackEmail: booking.client.email
-              ? {
-                  to: booking.client.email,
-                  subject: notification.subject,
-                  booking,
-                  settings,
-                  appUrl: env.appUrl,
-                  situation: emailSituation,
-                  idempotencyKey: `cron-reminder-${notification.id}-a${attemptNumber}-wa-fallback`,
-                }
-              : undefined,
+            fallbackEmail:
+              booking.client.email && !workflowIncludesEmail
+                ? {
+                    to: booking.client.email,
+                    subject: notification.subject,
+                    booking,
+                    settings,
+                    appUrl: env.appUrl,
+                    situation: emailSituation,
+                    idempotencyKey: `cron-reminder-${notification.id}-a${attemptNumber}-wa-fallback`,
+                  }
+                : undefined,
           });
           pendingWhatsAppRecords.push({
             phoneE164: notification.recipient,
@@ -201,7 +207,9 @@ export async function POST(request: NextRequest) {
             deliveryMode: env.whatsappCloudConfigured
               ? waRes.deliveryMode === 'template'
                 ? 'template'
-                : 'fallback_email_wame'
+                : waRes.deliveryMode === 'text'
+                  ? 'text'
+                  : 'fallback_email_wame'
               : 'demo',
             providerMessageId: waRes.providerMessageId,
             errorCode: waRes.errorCode ?? null,

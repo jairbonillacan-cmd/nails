@@ -246,7 +246,9 @@ export async function POST(request: NextRequest) {
       bodyText: `Hola, esta es una prueba de conexión de WhatsApp Business para ${safeSettings.name} (${safeSettings.address}).`,
       templateTriggerKey: 'reminder_2h',
       deliveryStatus: result.status === 'sent' ? 'sent' : 'failed',
-      deliveryMode: env.whatsappCloudConfigured ? 'template' : 'demo',
+      deliveryMode:
+        result.deliveryMode ??
+        (env.whatsappCloudConfigured ? 'template' : 'demo'),
       providerMessageId: result.providerMessageId,
       errorMessage: result.errorMessage,
     });

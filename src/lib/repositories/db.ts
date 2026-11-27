@@ -160,6 +160,7 @@ import {
   type QueryAvailabilityInput,
   type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
+  type ResolveRetriedWhatsAppMessageInput,
   type SalonRepository,
   type SlotHoldResult,
   type UpdateScheduledNotificationStatusInput,
@@ -5987,14 +5988,20 @@ export async function processDueScheduledNotifications(
       retriedCount: result.retriedCount ?? 0,
     };
   }
-  return withWriteLock(async (db) => {
+  const phase1 = await withWriteLock((db) => {
     const due = db.notifications.filter((n) => isScheduledNotificationDue(n, nowMs));
 
-    let sentCount = 0;
-    let failedCount = 0;
     let canceledCount = 0;
     let skippedCount = 0;
-    let retriedCount = 0;
+    const workItems: Array<{
+      notificationId: string;
+      isRetry: boolean;
+      notification: ScheduledNotification;
+      booking: BookingWithRelations;
+      settings: SalonSettings;
+      isReminder24h: boolean;
+      isTouchUp: boolean;
+    }> = [];
 
     for (const item of due) {
       const isRetry = item.status === 'failed';
@@ -6066,13 +6073,67 @@ export async function processDueScheduledNotifications(
       }
 
       const hydrated = hydrateBooking(db, rawBooking);
-      const res = await dispatcher({
+      workItems.push({
+        notificationId: item.id,
+        isRetry,
         notification: { ...item, bodyText: item.bodyText || item.previewText },
         booking: hydrated,
-        settings: db.settings,
+        settings: { ...db.settings },
+        isReminder24h: Boolean(wf?.triggerEvent === 'before_booking' && wf.offsetMinutes >= 720),
+        isTouchUp: Boolean(isAfterBooking && (wf?.offsetMinutes ?? 0) >= 1440),
       });
+    }
 
-      const attemptIso = new Date(nowMs).toISOString();
+    return {
+      totalDue: due.length,
+      canceledCount,
+      skippedCount,
+      workItems,
+    };
+  });
+
+  if (phase1.workItems.length === 0) {
+    return {
+      processed: phase1.totalDue,
+      sentCount: 0,
+      failedCount: 0,
+      canceledCount: phase1.canceledCount,
+      skippedCount: phase1.skippedCount,
+      retriedCount: 0,
+    };
+  }
+
+  const dispatchResults: Array<{
+    work: (typeof phase1.workItems)[number];
+    res: {
+      status: 'sent' | 'failed';
+      providerMessageId: string | null;
+      errorMessage: string | null;
+    };
+  }> = [];
+
+  for (const work of phase1.workItems) {
+    const res = await dispatcher({
+      notification: work.notification,
+      booking: work.booking,
+      settings: work.settings,
+    });
+    dispatchResults.push({ work, res });
+  }
+
+  return withWriteLock((db) => {
+    let sentCount = 0;
+    let failedCount = 0;
+    let retriedCount = 0;
+    const attemptIso = new Date(nowMs).toISOString();
+
+    for (const { work, res } of dispatchResults) {
+      const item = db.notifications.find((n) => n.id === work.notificationId);
+      if (!item) continue;
+      const rawBooking = item.bookingId
+        ? db.bookings.find((b) => b.id === item.bookingId)
+        : undefined;
+
       const nextAttempt = (item.attempts ?? 0) + 1;
       const maxAttempts = item.maxAttempts ?? 3;
       item.attempts = nextAttempt;
@@ -6081,18 +6142,19 @@ export async function processDueScheduledNotifications(
       item.status = res.status;
       item.providerMessageId = res.providerMessageId;
       item.errorMessage = res.errorMessage;
+
       if (res.status === 'sent') {
         item.deliveryStatus = 'sent';
         item.sentAt = attemptIso;
         item.nextRetryAt = null;
-        if (wf?.triggerEvent === 'before_booking' && wf.offsetMinutes >= 720) {
+        if (rawBooking && work.isReminder24h) {
           rawBooking.reminder24hSentAt = attemptIso;
         }
-        if (isAfterBooking && (wf?.offsetMinutes ?? 0) >= 1440) {
+        if (rawBooking && work.isTouchUp) {
           rawBooking.touchupInvitedAt = attemptIso;
         }
         sentCount += 1;
-        if (isRetry) {
+        if (work.isRetry) {
           retriedCount += 1;
         }
       } else {
@@ -6107,11 +6169,11 @@ export async function processDueScheduledNotifications(
     }
 
     return {
-      processed: due.length,
+      processed: phase1.totalDue,
       sentCount,
       failedCount,
-      canceledCount,
-      skippedCount,
+      canceledCount: phase1.canceledCount,
+      skippedCount: phase1.skippedCount,
       retriedCount,
     };
   });
@@ -7056,6 +7118,55 @@ export async function recordWhatsAppMessage(
   });
 }
 
+async function resolveRetriedWhatsAppMessage(
+  input: ResolveRetriedWhatsAppMessageInput,
+): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage } | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().resolveRetriedWhatsAppMessage(input);
+  }
+  const atIso = input.atIso ?? new Date().toISOString();
+  const cleanProviderId = input.providerMessageId?.trim() || null;
+
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const msg = cols.whatsappMessages.find((m) => m.id === input.messageId);
+    if (!msg) return null;
+    const thread = cols.whatsappThreads.find((t) => t.id === msg.threadId);
+    if (!thread) return null;
+
+    msg.deliveryStatus = input.deliveryStatus;
+    msg.deliveryMode = input.deliveryMode;
+    msg.senderKind = 'staff';
+    if (input.senderName?.trim()) {
+      msg.senderName = input.senderName.trim();
+    }
+    if (cleanProviderId) {
+      msg.providerMessageId = cleanProviderId;
+    }
+
+    if (input.deliveryStatus === 'sent') {
+      msg.sentAt = atIso;
+      msg.errorCode = null;
+      msg.errorMessage = null;
+      msg.failedAt = null;
+    } else {
+      msg.failedAt = atIso;
+      msg.errorCode = input.errorCode ?? null;
+      msg.errorMessage = input.errorMessage ?? null;
+    }
+
+    thread.hasFailedMessages = cols.whatsappMessages.some(
+      (m) => m.threadId === thread.id && m.deliveryStatus === 'failed',
+    );
+    thread.updatedAt = atIso;
+
+    return {
+      thread: { ...thread },
+      message: { ...msg, templateParams: [...msg.templateParams] },
+    };
+  });
+}
+
 export async function updateWhatsAppMessageStatusByProviderId(
   params: UpdateWhatsAppMessageStatusInput,
 ): Promise<{ updated: boolean; message: WhatsAppMessage | null; threadId: string | null }> {
@@ -7669,6 +7780,7 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     getWhatsAppThreadDetail,
     getWhatsAppMessageById,
     recordWhatsAppMessage,
+    resolveRetriedWhatsAppMessage,
     updateWhatsAppMessageStatusByProviderId,
     markWhatsAppThreadRead,
     getWhatsAppThreadWindow,

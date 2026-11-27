@@ -143,31 +143,27 @@ export async function POST(
     },
   });
 
-  const deliveryMode: WhatsAppMessageDeliveryMode = env.whatsappCloudConfigured
-    ? isTemplate
-      ? 'template'
-      : 'text'
-    : 'demo';
+  const deliveryMode: WhatsAppMessageDeliveryMode =
+    dispatchRes.deliveryMode ??
+    (env.whatsappCloudConfigured ? (isTemplate ? 'template' : 'text') : 'demo');
 
-  const recorded = await repo.recordWhatsAppMessage({
-    phoneE164: original.phoneE164,
-    clientId: original.clientId,
-    bookingId: original.bookingId,
-    notificationId: original.notificationId,
-    direction: 'outbound',
-    senderKind: 'staff',
-    senderName: session.user.fullName,
-    messageType: isTemplate ? 'template' : 'text',
-    bodyText: original.bodyText,
-    templateName: isTemplate ? original.templateName : null,
-    templateTriggerKey: isTemplate ? original.templateTriggerKey : null,
-    templateParams: isTemplate ? original.templateParams : [],
+  const resolved = await repo.resolveRetriedWhatsAppMessage({
+    messageId: original.id,
     deliveryStatus: dispatchRes.status === 'sent' ? 'sent' : 'failed',
     deliveryMode,
     providerMessageId: dispatchRes.providerMessageId,
     errorCode: dispatchRes.errorCode ?? null,
     errorMessage: dispatchRes.errorMessage,
+    senderName: session.user.fullName,
+    atIso: now.toISOString(),
   });
+
+  if (!resolved) {
+    return NextResponse.json(
+      { error: 'Mensaje no encontrado.' },
+      { status: 404, headers: PRIVATE_NO_STORE },
+    );
+  }
 
   if (original.notificationId) {
     await repo.updateScheduledNotificationStatus(original.notificationId, {
@@ -187,18 +183,18 @@ export async function POST(
     actorRole: session.user.role,
     action: 'whatsapp_message_sent',
     entityType: 'whatsapp_message',
-    entityId: recorded.message.id,
+    entityId: resolved.message.id,
     metadata: {
       retriedFromMessageId: original.id,
-      deliveryStatus: recorded.message.deliveryStatus,
+      deliveryStatus: resolved.message.deliveryStatus,
       deliveryMode,
-      threadId: recorded.thread.id,
+      threadId: resolved.thread.id,
     },
   });
 
   const [updatedDetail, updatedQuota] = await Promise.all([
     repo.getWhatsAppThreadDetail({
-      threadId: recorded.thread.id,
+      threadId: resolved.thread.id,
       role: session.user.role,
       staffMemberId: session.user.staffMemberId,
       limit: 1,
@@ -208,16 +204,16 @@ export async function POST(
 
   const responseBody: WhatsAppSendResponseDTO = {
     ok: dispatchRes.status === 'sent',
-    message: recorded.message,
+    message: resolved.message,
     thread:
       updatedDetail?.thread ?? {
-        ...recorded.thread,
+        ...resolved.thread,
         clientEmail: null,
         clientInstagram: null,
         serviceWindow,
         nextBooking: null,
-        lastDeliveryStatus: recorded.message.deliveryStatus,
-        lastSenderKind: recorded.message.senderKind,
+        lastDeliveryStatus: resolved.message.deliveryStatus,
+        lastSenderKind: resolved.message.senderKind,
       },
     deliveryMode,
     fallbackWaMeUrl: dispatchRes.fallbackWaMeUrl ?? fallbackWaMeUrl,

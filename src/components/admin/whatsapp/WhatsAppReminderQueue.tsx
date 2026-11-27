@@ -49,6 +49,7 @@ interface WhatsAppReminderQueueProps {
   history: WhatsAppReminderItemDTO[];
   metrics: WhatsAppRemindersResponseDTO['metrics'];
   role: AdminRole;
+  timezone?: string;
   isSubmitting: boolean;
   activeFilter: QueueFilterStatus;
   onFilterChange: (next: QueueFilterStatus) => void;
@@ -87,11 +88,11 @@ function resolveReminderTitle(item: WhatsAppReminderItemDTO): string {
   return item.subject || 'Recordatorio automático';
 }
 
-function formatTimestampLabel(iso: string | null): string {
+function formatTimestampLabel(iso: string | null, timezone: string): string {
   if (!iso) return '—';
   const parsed = Date.parse(iso);
   if (!Number.isFinite(parsed)) return '—';
-  return `${formatDateShortInTimezone(iso, DEFAULT_TIMEZONE)} · ${formatTimeInTimezone(iso, DEFAULT_TIMEZONE)}`;
+  return `${formatDateShortInTimezone(iso, timezone)} · ${formatTimeInTimezone(iso, timezone)}`;
 }
 
 function emptyStateCopy(filter: QueueFilterStatus): { title: string; description: string } {
@@ -124,6 +125,7 @@ export function WhatsAppReminderQueue({
   history,
   metrics,
   role,
+  timezone = DEFAULT_TIMEZONE,
   isSubmitting,
   activeFilter,
   onFilterChange,
@@ -359,11 +361,12 @@ export function WhatsAppReminderQueue({
                           activeFilter === 'pending'
                             ? row.scheduledFor
                             : (row.sentAt ?? row.lastAttemptAt ?? row.scheduledFor),
+                          timezone,
                         )}
                       </Text>
                       {row.status === 'failed' && row.nextRetryAt ? (
                         <Text type="supporting" color="secondary" size="sm" hasTabularNumbers>
-                          Próximo intento: {formatTimestampLabel(row.nextRetryAt)}
+                          Próximo intento: {formatTimestampLabel(row.nextRetryAt, timezone)}
                         </Text>
                       ) : null}
                     </VStack>
@@ -473,7 +476,7 @@ export function WhatsAppReminderQueue({
             }
           }}
           title={`¿Cancelar el recordatorio para ${cancelTarget.clientName || 'esta clienta'}?`}
-          description={`Se cancelará "${resolveReminderTitle(cancelTarget)}" programado para ${formatTimestampLabel(cancelTarget.scheduledFor)}. La cita en la agenda no se modificará.`}
+          description={`Se cancelará "${resolveReminderTitle(cancelTarget)}" programado para ${formatTimestampLabel(cancelTarget.scheduledFor, timezone)}. La cita en la agenda no se modificará.`}
           confirmLabel="Sí, cancelar recordatorio"
           cancelLabel="Volver"
           variant="destructive"

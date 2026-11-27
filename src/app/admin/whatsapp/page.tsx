@@ -381,6 +381,7 @@ export default function AdminWhatsAppPage() {
             isSubmitting={workspace.isSubmittingReminder}
             role={role}
             studioName={settings.name}
+            timezone={timezone}
             initialFilter={workspace.initialReminderFilter}
             onRunAction={workspace.runReminderAction}
             onOpenChat={handleOpenChatFromTab}
@@ -395,6 +396,7 @@ export default function AdminWhatsAppPage() {
             isSimulating={workspace.isSimulating}
             simulationResult={workspace.simulationResult}
             role={role}
+            onRefresh={workspace.refreshSettings}
             onRefreshLive={() => void workspace.refreshLiveMeta()}
             onRunSettingsAction={workspace.runSettingsAction}
             onRunSimulation={workspace.runSimulation}

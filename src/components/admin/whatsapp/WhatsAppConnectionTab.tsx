@@ -53,6 +53,7 @@ export interface WhatsAppConnectionTabProps {
   isSimulating: boolean;
   simulationResult: WhatsAppSimulateResponseDTO | null;
   role: AdminRole;
+  onRefresh: () => void;
   onRefreshLive: () => void;
   onRunSettingsAction: (action: WhatsAppSettingsActionInput) => Promise<boolean>;
   onRunSimulation: (input: WhatsAppSimulateEventInput) => Promise<boolean>;
@@ -83,6 +84,7 @@ export function WhatsAppConnectionTab({
   isSimulating,
   simulationResult,
   role,
+  onRefresh,
   onRefreshLive,
   onRunSettingsAction,
   onRunSimulation,
@@ -120,7 +122,7 @@ export function WhatsAppConnectionTab({
             variant="primary"
             size="sm"
             icon={<RefreshCw size={14} aria-hidden="true" />}
-            onClick={onRefreshLive}
+            onClick={onRefresh}
           />
         }
       />
@@ -510,7 +512,7 @@ export function WhatsAppConnectionTab({
       />
 
       <WhatsAppSimulatorCard
-        simulatorAllowed={data.simulatorAllowed}
+        simulatorAllowed={data.simulatorAllowed && (data.mode !== 'supabase' || isOwner)}
         mode={data.mode}
         isSimulating={isSimulating}
         simulationResult={simulationResult}

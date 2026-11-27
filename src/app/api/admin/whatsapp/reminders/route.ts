@@ -102,13 +102,17 @@ async function dispatchSingleReminder(params: {
             },
           ]
         : undefined;
+    const serviceWindow = await getRepository().getWhatsAppThreadWindow({
+      phoneE164: params.notification.recipient,
+    });
+    const workflowIncludesEmail = Boolean(params.workflow?.channels.includes('email'));
     return dispatchWhatsAppNotification({
       toPhoneE164: params.notification.recipient,
       bodyText: fullBodyText,
       triggerKey: triggerKey ?? undefined,
       templateParameters,
       interactiveButtons,
-      withinServiceWindow: false,
+      withinServiceWindow: serviceWindow.isOpen,
       settingsTimezone: params.settings.timezone,
       threadContext: {
         clientId: params.booking.clientId,
@@ -119,17 +123,18 @@ async function dispatchSingleReminder(params: {
         senderName: params.workflow?.name ?? 'Recordatorio manual',
         skipPersist: Boolean(params.skipThreadPersist),
       },
-      fallbackEmail: params.booking.client.email
-        ? {
-            to: params.booking.client.email,
-            subject: params.notification.subject,
-            booking: params.booking,
-            settings: params.settings,
-            appUrl: params.appUrl,
-            situation: emailSituation,
-            idempotencyKey: `admin-reminder-${params.notification.id}-a${attempt}-wa-fallback`,
-          }
-        : undefined,
+      fallbackEmail:
+        params.booking.client.email && !workflowIncludesEmail
+          ? {
+              to: params.booking.client.email,
+              subject: params.notification.subject,
+              booking: params.booking,
+              settings: params.settings,
+              appUrl: params.appUrl,
+              situation: emailSituation,
+              idempotencyKey: `admin-reminder-${params.notification.id}-a${attempt}-wa-fallback`,
+            }
+          : undefined,
     });
   }
 
@@ -480,6 +485,7 @@ export async function POST(request: NextRequest) {
         senderName: string;
         triggerKey: WhatsAppTemplateTriggerKey | null;
         status: 'sent' | 'failed';
+        deliveryMode: 'template' | 'text' | 'fallback_email_wame' | 'demo';
         providerMessageId: string | null;
         errorMessage: string | null;
       }> = [];
@@ -500,6 +506,7 @@ export async function POST(request: NextRequest) {
               skipThreadPersist: true,
             });
             if (notification.channel === 'whatsapp') {
+              const triggerKey = inferReminderTriggerKey(workflow, notification, booking);
               pendingWhatsAppRecords.push({
                 phoneE164: notification.recipient,
                 contactName: booking.client.fullName,
@@ -508,8 +515,15 @@ export async function POST(request: NextRequest) {
                 notificationId: notification.id,
                 bodyText: notification.bodyText || notification.previewText,
                 senderName: workflow?.name ?? 'Recordatorio automático',
-                triggerKey: inferReminderTriggerKey(workflow, notification, booking),
+                triggerKey,
                 status: res.status,
+                deliveryMode:
+                  res.deliveryMode ??
+                  (env.whatsappCloudConfigured
+                    ? triggerKey
+                      ? 'template'
+                      : 'text'
+                    : 'demo'),
                 providerMessageId: res.providerMessageId,
                 errorMessage: res.errorMessage,
               });
@@ -534,7 +548,7 @@ export async function POST(request: NextRequest) {
           bodyText: item.bodyText,
           templateTriggerKey: item.triggerKey,
           deliveryStatus: item.status === 'sent' ? 'sent' : 'failed',
-          deliveryMode: env.whatsappCloudConfigured ? 'template' : 'demo',
+          deliveryMode: item.deliveryMode,
           providerMessageId: item.providerMessageId,
           errorMessage: item.errorMessage,
         });

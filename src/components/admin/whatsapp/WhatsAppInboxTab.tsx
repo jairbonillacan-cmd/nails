@@ -90,7 +90,7 @@ export function WhatsAppInboxTab({
   onStartNewChat,
   onRefresh,
 }: WhatsAppInboxTabProps) {
-  const isNarrowScreen = useIsNarrowScreen();
+  const isNarrowScreen = useIsNarrowScreen('(max-width: 64rem)');
   const [internalNewChatOpen, setInternalNewChatOpen] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>(() =>
     selectedThreadId ? 'chat' : 'list',
