@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTouchUpBookingUrl,
   computeSuggestedTouchUpDateKey,
+  DEFAULT_TOUCH_UP_DAYS,
   generateRecurrenceDates,
+  MAX_TOUCH_UP_DAYS,
+  MIN_TOUCH_UP_DAYS,
+  normalizeTouchUpDays,
 } from './recurrence';
 import { zonedDateTimeToUtc } from '../availability/engine';
 
@@ -103,5 +107,42 @@ describe('Recurring Booking Series & Touch-Up URLs (U1)', () => {
         serviceSlug: 'retoque',
       }),
     ).toBe('/reservar/retoque');
+  });
+
+  it('normalizes touchUpDays within 7..60 and supports custom touch-up intervals in date and URL helpers', () => {
+    expect(DEFAULT_TOUCH_UP_DAYS).toBe(21);
+    expect(MIN_TOUCH_UP_DAYS).toBe(7);
+    expect(MAX_TOUCH_UP_DAYS).toBe(60);
+    expect(normalizeTouchUpDays(undefined)).toBe(21);
+    expect(normalizeTouchUpDays(null)).toBe(21);
+    expect(normalizeTouchUpDays(2)).toBe(7);
+    expect(normalizeTouchUpDays(90)).toBe(60);
+    expect(normalizeTouchUpDays(28)).toBe(28);
+
+    expect(
+      computeSuggestedTouchUpDateKey({
+        startAt: '2026-11-25T16:00:00.000Z',
+        touchUpDays: 28,
+        timezone: 'America/Mexico_City',
+      }),
+    ).toBe('2026-12-23');
+
+    expect(
+      computeSuggestedTouchUpDateKey({
+        startAt: '2026-11-25T16:00:00.000Z',
+        touchUpDays: 3,
+        timezone: 'America/Mexico_City',
+      }),
+    ).toBe('2026-12-02');
+
+    expect(
+      buildTouchUpBookingUrl({
+        serviceSlug: 'rubber',
+        staffSlug: 'karla',
+        startAt: '2026-11-25T16:00:00.000Z',
+        timezone: 'America/Mexico_City',
+        touchUpDays: 28,
+      }),
+    ).toBe('/reservar/rubber?staff=karla&date=2026-12-23');
   });
 });

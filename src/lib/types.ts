@@ -87,6 +87,8 @@ export interface LandingContent {
   visitTitle?: string;
   visitHoursDays?: string;
   visitHoursText?: string;
+  showBookingQr?: boolean;
+  touchUpDays?: number;
   sections?: LandingSectionToggles;
 }
 

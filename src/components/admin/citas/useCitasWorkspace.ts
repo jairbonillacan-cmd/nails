@@ -128,6 +128,7 @@ export function useCitasWorkspace() {
     if (paramCollect) {
       const target = data.bookings.find((b) => b.id === paramCollect);
       if (target) {
+        setPopoverBookingId(null);
         setCheckoutBookingId(target.id);
         setCheckoutSessionKey((prev) => prev + 1);
         router.replace('/admin/citas', { scroll: false });
@@ -143,22 +144,29 @@ export function useCitasWorkspace() {
       return;
     }
     if (paramQuery) {
+      if (!isSpecialist && !paramStaff) {
+        setSelectedStaffFilter('all');
+      }
       setSearch(paramQuery);
+      setViewMode('list');
       const qLower = paramQuery.toLowerCase();
       const matched = data.bookings.find(
         (b) =>
           b.bookingCode.toLowerCase() === qLower ||
-          b.client.fullName.toLowerCase().includes(qLower),
+          b.id.toLowerCase() === qLower ||
+          b.client.fullName.toLowerCase().includes(qLower) ||
+          b.client.phoneE164.toLowerCase().includes(qLower),
       );
       if (matched) {
         setTab(
-          matched.status === 'completed' || matched.status === 'no_show'
-            ? 'past'
-            : matched.status === 'canceled'
-              ? 'canceled'
-              : 'upcoming',
+          matched.status === 'pending_confirmation' || matched.status === 'pending_payment'
+            ? 'unconfirmed'
+            : matched.status === 'completed' || matched.status === 'no_show'
+              ? 'past'
+              : matched.status === 'canceled'
+                ? 'canceled'
+                : 'upcoming',
         );
-        setViewMode('list');
       }
     }
   });
@@ -176,19 +184,26 @@ export function useCitasWorkspace() {
     return map;
   }, [orderedStaff]);
 
-  const tabFilteredBookings = useMemo(
-    () =>
-      data
-        ? filterBookingsForTab({
-            bookings: data.bookings,
-            serverNowIso: data.serverNowIso,
-            tab,
-            search,
-            selectedStaffFilter,
-          })
-        : [],
-    [data, tab, search, selectedStaffFilter],
-  );
+  const tabFilteredBookings = useMemo(() => {
+    if (!data) return [];
+    const filtered = filterBookingsForTab({
+      bookings: data.bookings,
+      serverNowIso: data.serverNowIso,
+      tab,
+      search,
+      selectedStaffFilter,
+    });
+    if (filtered.length > 0 || !search.trim()) {
+      return filtered;
+    }
+    return filterBookingsForTab({
+      bookings: data.bookings,
+      serverNowIso: data.serverNowIso,
+      tab: 'all',
+      search,
+      selectedStaffFilter,
+    });
+  }, [data, tab, search, selectedStaffFilter]);
 
   const listBookings = useMemo(
     () =>

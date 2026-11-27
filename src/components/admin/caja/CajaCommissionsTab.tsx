@@ -12,28 +12,21 @@ import {
   FilterPillBar,
   StatusTag,
   SurfaceCard,
-  type FilterPillOption,
 } from '@/components/ui';
-import type { CommissionPeriod } from './cajaActions';
+import { CAJA_PERIOD_OPTIONS, type CajaPeriod } from './cajaMetrics';
 import {
   splitMethodTokenColor,
   type CommissionStaffRow,
   type MethodSummaryRow,
 } from './cajaTypes';
 
-const COMMISSION_PERIOD_OPTIONS: FilterPillOption<CommissionPeriod>[] = [
-  { value: 'today', label: 'Hoy' },
-  { value: '7d', label: '7 días' },
-  { value: '30d', label: '30 días' },
-  { value: 'all', label: 'Todo' },
-];
-
 interface CajaCommissionsTabProps {
   commissionsByStaff: readonly CommissionStaffRow[];
   splitSummaryByMethod: readonly MethodSummaryRow[];
   currency: 'MXN' | 'USD';
-  commissionPeriod: CommissionPeriod;
-  onChangeCommissionPeriod: (period: CommissionPeriod) => void;
+  commissionPeriod: CajaPeriod;
+  isSpecialistView?: boolean;
+  onChangeCommissionPeriod: (period: CajaPeriod) => void;
 }
 
 export function CajaCommissionsTab({
@@ -41,21 +34,40 @@ export function CajaCommissionsTab({
   splitSummaryByMethod,
   currency,
   commissionPeriod,
+  isSpecialistView = false,
   onChangeCommissionPeriod,
 }: CajaCommissionsTabProps) {
+  const totalPayoutCents = commissionsByStaff.reduce(
+    (sum, row) => sum + row.totalPayout,
+    0,
+  );
+
   return (
     <VStack gap={4} className="fx-step-in">
       <SurfaceCard
-        title="Comisiones y propinas"
-        subtitle="Lo que le corresponde a cada profesional según sus servicios cobrados y propinas."
+        title={isSpecialistView ? 'Tus comisiones y propinas' : 'Comisiones y propinas'}
+        subtitle={
+          isSpecialistView
+            ? 'Desglose de tus servicios cobrados, comisión estimada y propinas del periodo.'
+            : 'Lo que le corresponde a cada profesional según sus ventas cobradas y propinas.'
+        }
         count={commissionsByStaff.length}
+        badge={
+          commissionsByStaff.length > 0 ? (
+            <StatusTag
+              tone="accent"
+              hasTabularNumbers
+              label={`Total: ${formatCurrency(totalPayoutCents, currency)}`}
+            />
+          ) : undefined
+        }
         actions={
           <FilterPillBar
             ariaLabel="Periodo de comisiones"
             mode="segmented"
             size="sm"
             value={commissionPeriod}
-            options={COMMISSION_PERIOD_OPTIONS}
+            options={CAJA_PERIOD_OPTIONS}
             onChange={onChangeCommissionPeriod}
           />
         }
@@ -87,7 +99,7 @@ export function CajaCommissionsTab({
                 },
                 {
                   key: 'servicesCount',
-                  header: 'Servicios',
+                  header: 'Cobros',
                   renderCell: (row) => <Text hasTabularNumbers>{row.servicesCount}</Text>,
                 },
                 {
@@ -141,7 +153,7 @@ export function CajaCommissionsTab({
       {splitSummaryByMethod.length > 0 ? (
         <SurfaceCard
           title="Propinas y cobros por forma de pago"
-          subtitle="Totales recibidos en cada forma de pago junto con las propinas registradas."
+          subtitle="Totales recibidos en pagos divididos junto con las propinas registradas."
           headingLevel={3}
           padded
         >

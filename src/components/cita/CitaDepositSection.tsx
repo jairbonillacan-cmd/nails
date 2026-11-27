@@ -11,6 +11,7 @@ import { Check, ExternalLink } from 'lucide-react';
 import { CopyableField } from '@/components/ui/CopyableField';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { resolveDepositInstructions } from '@/lib/cita/cita-settings';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { hasConfiguredDeposit } from '../booking/bookingHelpers';
@@ -43,6 +44,8 @@ export function CitaDepositSection({
 
   const safeCheckoutUrl = resolveSafeHttpUrl(booking.checkoutUrl);
   const showSpei = hasConfiguredDeposit(settings, booking.depositAmountCents);
+  const customDepositInstructions = settings.depositInstructions?.trim() || null;
+  const depositInstructionsCopy = resolveDepositInstructions(settings.depositInstructions);
 
   if (!showSpei && !safeCheckoutUrl) {
     return (
@@ -58,7 +61,8 @@ export function CitaDepositSection({
         className="ck-panel rb-deposit fx-fade-up"
       >
         <Text type="supporting" textWrap="pretty">
-          Ya recibimos tu cita en {settings.name}. En breve confirmaremos tu horario y te avisaremos por WhatsApp.
+          {customDepositInstructions ??
+            `Ya recibimos tu cita en ${settings.name}. En breve confirmaremos tu horario y te avisaremos por WhatsApp.`}
         </Text>
       </SurfaceCard>
     );
@@ -105,6 +109,11 @@ export function CitaDepositSection({
           <Text type="supporting" textWrap="pretty">
             Ya recibimos tu comprobante de anticipo de {displayAmount}. El equipo lo valida y te confirmamos por WhatsApp en cuanto quede aprobado.
           </Text>
+          {customDepositInstructions ? (
+            <Text type="supporting" color="secondary" textWrap="pretty">
+              {customDepositInstructions}
+            </Text>
+          ) : null}
           {canPreviewProof && authorizedProofUrl ? (
             <VStack className="fx-upload-thumb" data-size="lg">
               <img
@@ -226,8 +235,7 @@ export function CitaDepositSection({
             />
 
             <Text type="supporting" color="secondary" textWrap="pretty">
-              Cuando hagas la transferencia, sube aquí la captura. El equipo la revisa y te
-              confirma por WhatsApp; no hace falta escribirnos.
+              {depositInstructionsCopy}
             </Text>
 
             <CitaDepositProofUpload
@@ -236,6 +244,10 @@ export function CitaDepositSection({
               onUploadProof={onUploadProof}
             />
           </>
+        ) : customDepositInstructions ? (
+          <Text type="supporting" color="secondary" textWrap="pretty">
+            {customDepositInstructions}
+          </Text>
         ) : null}
       </VStack>
     </SurfaceCard>

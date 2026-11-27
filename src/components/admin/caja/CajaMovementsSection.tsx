@@ -17,6 +17,7 @@ import {
   SurfaceCard,
   type FilterPillOption,
 } from '@/components/ui';
+import type { MovementTypeFilter } from './cajaMetrics';
 import {
   paymentMethodLabel,
   splitMethodLabel,
@@ -24,20 +25,29 @@ import {
   type SplitDetailRow,
 } from './cajaTypes';
 
-type MovementFilter = 'all' | 'income' | 'deposits' | 'expenses';
-
-const MOVEMENT_FILTER_OPTIONS: readonly FilterPillOption<MovementFilter>[] = [
+const MOVEMENT_FILTER_OPTIONS: readonly FilterPillOption<MovementTypeFilter>[] = [
   { value: 'all', label: 'Todos' },
   { value: 'income', label: 'Cobros' },
   { value: 'deposits', label: 'Anticipos' },
   { value: 'expenses', label: 'Gastos' },
 ];
 
+function entryTypeLabel(entryType: CashRegisterEntry['entryType']): string {
+  if (entryType === 'expense') return 'Gasto';
+  if (entryType === 'deposit') return 'Anticipo';
+  if (entryType === 'product_sale') return 'Producto';
+  if (entryType === 'gift_card_sale') return 'Tarjeta de regalo';
+  return 'Servicio';
+}
+
 interface CajaMovementsSectionProps {
   cashEntries: readonly CashRegisterEntry[];
   splitDetails: readonly SplitDetailRow[];
   tz: string;
   currency: 'MXN' | 'USD';
+  periodLabel: string;
+  hasExternalFilters: boolean;
+  onResetExternalFilters: () => void;
 }
 
 export function CajaMovementsSection({
@@ -45,8 +55,11 @@ export function CajaMovementsSection({
   splitDetails,
   tz,
   currency,
+  periodLabel,
+  hasExternalFilters,
+  onResetExternalFilters,
 }: CajaMovementsSectionProps) {
-  const [movementFilter, setMovementFilter] = useState<MovementFilter>('all');
+  const [movementFilter, setMovementFilter] = useState<MovementTypeFilter>('all');
 
   const filteredEntries = useMemo(() => {
     const ordered = cashEntries.toSorted(
@@ -62,14 +75,18 @@ export function CajaMovementsSection({
     return ordered.filter((e) => e.entryType !== 'expense' && e.entryType !== 'deposit');
   }, [cashEntries, movementFilter]);
 
+  const hasAnyFilter = movementFilter !== 'all' || hasExternalFilters;
+
   return (
     <VStack gap={4}>
       <SurfaceCard
         title="Movimientos de caja"
+        subtitle={`Detalle de cobros, anticipos y gastos · ${periodLabel}.`}
+        count={filteredEntries.length}
         headingLevel={3}
         actions={
           <FilterPillBar
-            ariaLabel="Filtrar movimientos"
+            ariaLabel="Filtrar tipo de movimiento"
             mode="pills"
             size="sm"
             value={movementFilter}
@@ -84,15 +101,18 @@ export function CajaMovementsSection({
               framed={false}
               isCompact
               title="Sin movimientos con este filtro"
-              description="Cambia el filtro o registra una venta o un gasto desde el panel derecho."
+              description="Cambia el periodo, método o búsqueda, o registra una venta o un gasto."
               actions={
-                movementFilter !== 'all' ? (
+                hasAnyFilter ? (
                   <Button
                     type="button"
-                    label="Ver todos"
+                    label="Limpiar filtros"
                     variant="secondary"
                     size="sm"
-                    onClick={() => setMovementFilter('all')}
+                    onClick={() => {
+                      setMovementFilter('all');
+                      onResetExternalFilters();
+                    }}
                   />
                 ) : undefined
               }
@@ -118,10 +138,11 @@ export function CajaMovementsSection({
                   key: 'description',
                   header: 'Concepto',
                   renderCell: (entry) => (
-                    <VStack gap={0}>
+                    <VStack gap={0.5}>
                       <Text weight="medium">{entry.description}</Text>
                       <Text type="supporting" color="secondary">
-                        {paymentMethodLabel(entry.paymentMethod)} · {entry.recordedBy}
+                        {entryTypeLabel(entry.entryType)} · {paymentMethodLabel(entry.paymentMethod)} ·{' '}
+                        {entry.recordedBy}
                       </Text>
                     </VStack>
                   ),
@@ -131,7 +152,13 @@ export function CajaMovementsSection({
                   header: 'Monto',
                   align: 'end',
                   renderCell: (entry) => (
-                    <Text weight="semibold" hasTabularNumbers>
+                    <Text
+                      weight="semibold"
+                      className={
+                        entry.entryType === 'expense' ? 'ad-caja-expense-amt' : undefined
+                      }
+                      hasTabularNumbers
+                    >
                       {entry.entryType === 'expense' ? '−' : '+'}
                       {formatCurrency(Math.abs(entry.amountCents), currency)}
                     </Text>
@@ -160,7 +187,7 @@ export function CajaMovementsSection({
           trigger={
             <HStack justify="between" align="center" gap={2} width="100%">
               <Text weight="semibold" size="sm">
-                Pagos hechos con dos formas (ej. efectivo + tarjeta)
+                Pagos combinados (ej. efectivo + tarjeta)
               </Text>
               <StatusTag tone="neutral" hasTabularNumbers label={String(splitDetails.length)} />
             </HStack>

@@ -11,6 +11,8 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
 import { CalendarPlus } from 'lucide-react';
+import { useAdminData } from '@/components/admin/AdminProvider';
+import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import { computeBookingPaymentSummary } from '@/lib/payments/splits';
@@ -53,6 +55,7 @@ interface CheckoutDrawerDialogProps {
   loyaltyProgram: LoyaltyProgram | null;
   loyaltyStamps: LoyaltyStamp[];
   currency: 'MXN' | 'USD';
+  touchUpDays?: number;
   onClose: () => void;
   onCompleted: () => Promise<void>;
   onScheduleRetouch: (booking: BookingWithRelations) => void;
@@ -66,10 +69,15 @@ export function CheckoutDrawerDialog({
   loyaltyProgram,
   loyaltyStamps,
   currency,
+  touchUpDays: touchUpDaysProp,
   onClose,
   onCompleted,
   onScheduleRetouch,
 }: CheckoutDrawerDialogProps) {
+  const { data: adminData } = useAdminData();
+  const touchUpDays = normalizeTouchUpDays(
+    touchUpDaysProp ?? adminData?.settings.landingContent?.touchUpDays,
+  );
   const retailItems = useMemo(
     () => inventory.filter((i) => i.isActive && i.retailPriceCents > 0 && i.stockQuantity > 0),
     [inventory],
@@ -226,7 +234,13 @@ export function CheckoutDrawerDialog({
         return;
       }
       setCompletedState(result.state);
-      await onCompleted();
+      try {
+        await onCompleted();
+      } catch {
+        setErrorText(null);
+      }
+    } catch {
+      setErrorText('No se pudo registrar el cobro. Intenta de nuevo.');
     } finally {
       setSubmitting(false);
     }
@@ -254,6 +268,7 @@ export function CheckoutDrawerDialog({
                 booking={booking}
                 completedState={completedState}
                 currency={currency}
+                touchUpDays={touchUpDays}
                 onScheduleRetouch={onScheduleRetouch}
               />
             ) : (
@@ -339,7 +354,7 @@ export function CheckoutDrawerDialog({
                       size="sm"
                       variant="ghost"
                       icon={<CalendarPlus size={14} aria-hidden="true" />}
-                      label="Agendar retoque en 3 semanas"
+                      label={`Agendar siguiente retoque (+${touchUpDays} días)`}
                       onClick={() => onScheduleRetouch(booking)}
                     />
                   </HStack>

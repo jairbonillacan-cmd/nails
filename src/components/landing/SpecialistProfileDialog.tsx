@@ -199,9 +199,9 @@ export function SpecialistProfileDialog({
                     align="center"
                     gap={3}
                     padding={4}
-                    className="lk-profile-card fx-card-lift"
+                    className="lk-profile-card lk-profile-service-item fx-card-lift"
                   >
-                    <VStack gap={0.5} className="rb-grow">
+                    <VStack gap={0.5} className="lk-profile-service-copy">
                       <Text weight="semibold" textWrap="balance">
                         {service.name}
                       </Text>
@@ -220,7 +220,7 @@ export function SpecialistProfileDialog({
                         label="Reservar"
                         variant="primary"
                         size="md"
-                        className="fx-press"
+                        className="lk-profile-service-cta fx-press"
                         href={`/reservar/${service.slug}?staff=${encodeURIComponent(member.bookingSlug)}`}
                       />
                     ) : null}

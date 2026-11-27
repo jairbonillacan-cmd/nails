@@ -4,6 +4,7 @@ import {
   buildTouchUpBookingUrl,
   computeSuggestedTouchUpDateKey,
 } from '@/lib/booking/recurrence';
+import { resolveTouchUpDays } from '@/lib/cita/cita-settings';
 import type { PublicLoyaltySummaryDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import {
   buildPolicyHelpWhatsAppUrl,
@@ -73,16 +74,17 @@ export function computeManagePoliciesAndUrls(params: {
     minHours: Math.max(settings.minCancelHours, settings.minRescheduleHours),
     fallbackUrl: whatsappUrl,
   });
+  const touchUpDays = resolveTouchUpDays(settings.landingContent);
   const touchUpUrl = buildTouchUpBookingUrl({
     serviceSlug: booking.service.slug,
     staffSlug: booking.staff.bookingSlug,
     suggestedDateKey: computeSuggestedTouchUpDateKey({
       startAt: booking.startAt,
-      daysAhead: 21,
+      touchUpDays,
       timezone: tz,
     }),
   });
-  return { reschedulePolicy, cancelPolicy, policyHelpWhatsappUrl, touchUpUrl };
+  return { reschedulePolicy, cancelPolicy, policyHelpWhatsappUrl, touchUpUrl, touchUpDays };
 }
 
 export async function fetchManageBookingSnapshot(

@@ -9,6 +9,7 @@ import { Token } from '@astryxdesign/core/Token';
 import { Link } from '@astryxdesign/core/Link';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
+import { Banner } from '@astryxdesign/core/Banner';
 import { AtSign, ExternalLink, XCircle } from 'lucide-react';
 import {
   BookingStatusTag,
@@ -96,6 +97,10 @@ export function BookingQuickPopover({
   const [pendingConfirm, setPendingConfirm] = useState<
     'canceled' | 'no_show' | 'reject_deposit' | null
   >(null);
+  const [actionError, setActionError] = useState<{
+    bookingId: string;
+    message: string;
+  } | null>(null);
 
   if (!booking) {
     return (
@@ -105,6 +110,8 @@ export function BookingQuickPopover({
     );
   }
 
+  const visibleActionError =
+    actionError && actionError.bookingId === booking.id ? actionError.message : null;
   const isBusy = Boolean(busyStatus) || isRejectingDeposit;
   const allowedNext: readonly BookingStatus[] = BOOKING_TRANSITIONS[booking.status];
   const extraServiceNames = (booking.extraServiceIds ?? [])
@@ -158,21 +165,59 @@ export function BookingQuickPopover({
   const handleClose = () => {
     setProofZoomOpen(false);
     setPendingConfirm(null);
+    setActionError(null);
     onClose();
   };
 
   const handleStatusAction = async (nextStatus: BookingStatus) => {
     if (isBusy) return;
-    const ok = await onUpdateStatus(booking.id, nextStatus);
-    if (ok) handleClose();
-    else setPendingConfirm(null);
+    setActionError(null);
+    try {
+      const ok = await onUpdateStatus(booking.id, nextStatus);
+      if (ok) {
+        handleClose();
+        return;
+      }
+      setPendingConfirm(null);
+      setProofZoomOpen(false);
+      if (nextStatus !== 'canceled') {
+        setActionError({
+          bookingId: booking.id,
+          message:
+            'No se pudo actualizar el estado de la cita. Intenta de nuevo en unos segundos.',
+        });
+      }
+    } catch {
+      setPendingConfirm(null);
+      setProofZoomOpen(false);
+      setActionError({
+        bookingId: booking.id,
+        message: 'Error de conexión al actualizar la cita. Intenta de nuevo.',
+      });
+    }
   };
 
   const handleRejectDepositAction = async () => {
     if (isBusy || !onRejectDeposit) return;
-    const ok = await onRejectDeposit(booking.id, booking.bookingCode);
-    setPendingConfirm(null);
-    if (ok) handleClose();
+    setActionError(null);
+    try {
+      const ok = await onRejectDeposit(booking.id, booking.bookingCode);
+      setPendingConfirm(null);
+      if (ok) {
+        handleClose();
+        return;
+      }
+      setActionError({
+        bookingId: booking.id,
+        message: 'No se pudo rechazar el comprobante. Intenta de nuevo.',
+      });
+    } catch {
+      setPendingConfirm(null);
+      setActionError({
+        bookingId: booking.id,
+        message: 'Error de conexión al rechazar el comprobante.',
+      });
+    }
   };
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -205,6 +250,15 @@ export function BookingQuickPopover({
                 className={isBusy ? 'fx-busy' : undefined}
                 aria-busy={isBusy || undefined}
               >
+                {visibleActionError ? (
+                  <Banner
+                    status="error"
+                    role="alert"
+                    title={visibleActionError}
+                    isDismissable
+                    onDismiss={() => setActionError(null)}
+                  />
+                ) : null}
                 <HStack gap={2} align="center" wrap="wrap">
                   <BookingStatusTag
                     status={booking.status}

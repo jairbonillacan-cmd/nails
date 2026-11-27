@@ -1,5 +1,6 @@
 import { cache, Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
+import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { defaultThemeSlug } from '@/astryx-themes';
 import { isSiteNoIndexEnabled } from '@/lib/env';
@@ -16,6 +17,22 @@ import { PwaOfflineBootstrap } from '@/components/PwaOfflineBootstrap';
 import { RouteProgressBar } from '@/components/RouteProgressBar';
 
 export const dynamic = 'force-dynamic';
+
+const adminSans = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-admin-sans',
+  display: 'swap',
+  preload: false,
+});
+
+const adminDisplay = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  variable: '--font-admin-display',
+  display: 'swap',
+  preload: false,
+});
 
 const THEME_BOOT_SCRIPT =
   "(function(){try{var d=document.documentElement;var p=new URLSearchParams(location.search).get('paleta');if(p==='laikona'||p==='monochrome'){d.dataset.palette=p;}if(!location.pathname.startsWith('/admin'))return;var m=localStorage.getItem('laikona.themeMode');if(m==='dark'||m==='light'){d.dataset.theme=m;}}catch(e){}})();";
@@ -122,6 +139,7 @@ export default async function RootLayout({
   return (
     <html
       lang="es-MX"
+      className={`${adminSans.variable} ${adminDisplay.variable}`}
       data-astryx-theme={initialThemeName}
       data-theme="light"
       data-palette={publicSettings.publicPalette}

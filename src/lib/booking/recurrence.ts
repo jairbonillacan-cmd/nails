@@ -75,26 +75,38 @@ export function generateRecurrenceDates(params: {
   return occurrences;
 }
 
+export const DEFAULT_TOUCH_UP_DAYS = 21;
+export const MIN_TOUCH_UP_DAYS = 7;
+export const MAX_TOUCH_UP_DAYS = 60;
+
+export function normalizeTouchUpDays(value?: number | null): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_TOUCH_UP_DAYS;
+  }
+  return Math.min(MAX_TOUCH_UP_DAYS, Math.max(MIN_TOUCH_UP_DAYS, Math.round(value)));
+}
+
 export function computeSuggestedTouchUpDateKey(params: {
   startAt: string;
-  daysAhead?: number;
+  touchUpDays?: number | null;
+  daysAhead?: number | null;
   timezone: string;
 }): string {
   const baseDate = new Date(params.startAt);
   const tz = params.timezone.trim() || 'America/Mexico_City';
   const safeBase = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate;
-  const daysAhead =
-    typeof params.daysAhead === 'number' && Number.isFinite(params.daysAhead)
-      ? Math.max(1, Math.round(params.daysAhead))
-      : 21;
+  const effectiveDays = normalizeTouchUpDays(params.touchUpDays ?? params.daysAhead);
   const baseKey = getDateKeyInTimezone(safeBase, tz);
-  return shiftCalendarDateKey(baseKey, daysAhead);
+  return shiftCalendarDateKey(baseKey, effectiveDays);
 }
 
 export function buildTouchUpBookingUrl(params: {
   serviceSlug: string;
   staffSlug?: string | null;
   suggestedDateKey?: string | null;
+  startAt?: string | null;
+  timezone?: string | null;
+  touchUpDays?: number | null;
 }): string {
   const cleanService = params.serviceSlug.trim();
   const basePath = cleanService
@@ -102,7 +114,14 @@ export function buildTouchUpBookingUrl(params: {
     : '/reservar';
   const query = new URLSearchParams();
   const cleanStaff = params.staffSlug?.trim();
-  const cleanDate = params.suggestedDateKey?.trim();
+  let cleanDate = params.suggestedDateKey?.trim() ?? '';
+  if (!cleanDate && params.startAt) {
+    cleanDate = computeSuggestedTouchUpDateKey({
+      startAt: params.startAt,
+      touchUpDays: params.touchUpDays,
+      timezone: params.timezone?.trim() || 'America/Mexico_City',
+    });
+  }
   if (cleanStaff) {
     query.set('staff', cleanStaff);
   }

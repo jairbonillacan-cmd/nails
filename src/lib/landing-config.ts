@@ -1,3 +1,4 @@
+import { normalizeTouchUpDays } from './booking/recurrence';
 import type { PublicSettingsDTO } from './public-dto';
 import type { LandingFaqItem, LandingSectionToggles, SalonSettings } from './types';
 
@@ -40,6 +41,8 @@ export interface ResolvedLandingConfig {
   visitTitle: string;
   visitHoursDays: string;
   visitHoursText: string;
+  showBookingQr: boolean;
+  touchUpDays: number;
   sections: ResolvedLandingSections;
 }
 
@@ -188,6 +191,8 @@ export function resolveLandingContent(
     visitTitle: cleanText(content.visitTitle, 'Visítanos'),
     visitHoursDays: cleanText(content.visitHoursDays, 'Lunes a sábado'),
     visitHoursText: cleanText(content.visitHoursText, 'De 10:00 a.m. a 6:00 p.m. · Solo con cita'),
+    showBookingQr: content.showBookingQr !== false,
+    touchUpDays: normalizeTouchUpDays(content.touchUpDays),
     sections: resolveLandingSections(content.sections),
   };
 }

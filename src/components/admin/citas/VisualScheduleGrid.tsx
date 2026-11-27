@@ -58,6 +58,7 @@ import {
   computeNowIndicator,
   computeElapsedMinutesForDate,
   computeElapsedPercent,
+  formatMinutesHHMM,
   getDayOfWeekFromDateKey,
   getLocalMinutesInTimezone,
   parseTimeMinutes,
@@ -68,6 +69,15 @@ import {
 const EMPTY_PAYMENT_SPLITS: readonly PaymentSplit[] = [];
 const EMPTY_BOOKINGS: readonly BookingWithRelations[] = [];
 const EMPTY_OPEN_SLOTS: readonly CalendarOpenSlot[] = [];
+
+export interface CalendarEmptySlotSelection {
+  readonly dateKey: string;
+  readonly startMinutes: number;
+  readonly startTimeHHMM: string;
+  readonly startAtIso: string;
+  readonly staffId: string;
+  readonly staffName: string | null;
+}
 
 interface VisualScheduleGridProps {
   rangeMode: 'day' | 'week';
@@ -96,6 +106,7 @@ interface VisualScheduleGridProps {
     preferredDateKey?: string,
     preferredStartAt?: string,
   ) => void;
+  onSelectEmptySlot?: (slot: CalendarEmptySlotSelection) => void;
   onSelectBooking: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => void;
   onRescheduleBooking: (params: {
@@ -131,6 +142,7 @@ export function VisualScheduleGrid({
   onChangeDate,
   onJumpToDay,
   onOpenNewForStaff,
+  onSelectEmptySlot,
   onSelectBooking,
   onUpdateStatus,
   onRescheduleBooking,
@@ -517,6 +529,32 @@ export function VisualScheduleGrid({
     );
   };
 
+  const triggerEmptySlot = (params: {
+    dateKey: string;
+    startMinutes: number;
+    startTimeHHMM: string;
+    staffId: string;
+    staffName: string | null;
+  }) => {
+    const startAtIso = buildZonedIsoForDateAndMinutes(
+      params.dateKey,
+      params.startMinutes,
+      timezone,
+    );
+    if (onSelectEmptySlot) {
+      onSelectEmptySlot({
+        dateKey: params.dateKey,
+        startMinutes: params.startMinutes,
+        startTimeHHMM: params.startTimeHHMM,
+        startAtIso,
+        staffId: params.staffId,
+        staffName: params.staffName,
+      });
+      return;
+    }
+    onOpenNewForStaff(params.staffId, params.dateKey, startAtIso);
+  };
+
   const visibleBookingsCount =
     rangeMode === 'week'
       ? weekDays.reduce((sum, day) => sum + day.items.length, 0)
@@ -685,7 +723,8 @@ export function VisualScheduleGrid({
                     gap={0}
                   >
                     {CALENDAR_HOURS.map((hour) => {
-                      const hourLabel = formatTimeHHMM12h(`${String(hour).padStart(2, '0')}:00`);
+                      const hourHHMM = formatMinutesHHMM(hour * 60);
+                      const hourLabel = formatTimeHHMM12h(hourHHMM);
                       return (
                       <button
                         key={hour}
@@ -695,14 +734,18 @@ export function VisualScheduleGrid({
                         aria-label={
                           closedOverride
                             ? `${st.name} sin disponibilidad (${closedOverride.reason || 'Día bloqueado'})`
-                            : `Agendar con ${st.name} a las ${hourLabel}`
+                            : onSelectEmptySlot
+                              ? `Opciones para ${st.name} a las ${hourLabel}`
+                              : `Agendar con ${st.name} a las ${hourLabel}`
                         }
                         onClick={() =>
-                          onOpenNewForStaff(
-                            st.id,
+                          triggerEmptySlot({
                             dateKey,
-                            buildZonedIsoForDateAndMinutes(dateKey, hour * 60, timezone),
-                          )
+                            startMinutes: hour * 60,
+                            startTimeHHMM: hourHHMM,
+                            staffId: st.id,
+                            staffName: st.name,
+                          })
                         }
                       >
                         {!closedOverride ? (
@@ -771,15 +814,13 @@ export function VisualScheduleGrid({
                             height: `${slot.heightPct}%`,
                           }}
                           onClick={() =>
-                            onOpenNewForStaff(
-                              st.id,
+                            triggerEmptySlot({
                               dateKey,
-                              buildZonedIsoForDateAndMinutes(
-                                dateKey,
-                                slot.startMinutes,
-                                timezone,
-                              ),
-                            )
+                              startMinutes: slot.startMinutes,
+                              startTimeHHMM: slot.timeHHMM,
+                              staffId: st.id,
+                              staffName: st.name,
+                            })
                           }
                         >
                           <HStack justify="between" align="center" width="100%" gap={1}>
@@ -884,6 +925,49 @@ export function VisualScheduleGrid({
                 const dayElapsedPct = computeElapsedPercent(
                   computeElapsedMinutesForDate(nowMs, day.dateKey, todayKey, timezone),
                 );
+                const dayDow = getDayOfWeekFromDateKey(day.dateKey);
+                const dayBlocksByStaff = buildActiveBlocksByStaff(
+                  activeStaff,
+                  recurringBlocks,
+                  day.dateKey,
+                  dayDow,
+                );
+                const weekDayBlockMap = new Map<
+                  string,
+                  { startTime: string; endTime: string; reason: string; staffNames: string[] }
+                >();
+                for (const st of activeStaff) {
+                  for (const blk of dayBlocksByStaff.get(st.id) ?? []) {
+                    const key = `${blk.startTime}|${blk.endTime}|${blk.reason}`;
+                    const existing = weekDayBlockMap.get(key);
+                    const firstName = st.name.split(' ')[0] ?? st.name;
+                    if (existing) {
+                      existing.staffNames.push(firstName);
+                    } else {
+                      weekDayBlockMap.set(key, {
+                        startTime: blk.startTime,
+                        endTime: blk.endTime,
+                        reason: blk.reason,
+                        staffNames: [firstName],
+                      });
+                    }
+                  }
+                }
+                const weekDayBlocks = Array.from(weekDayBlockMap.values());
+                const closedStaffOverrides = activeStaff
+                  .map((st) =>
+                    dateOverrides.find(
+                      (ov) =>
+                        ov.overrideDate === day.dateKey &&
+                        ov.isUnavailable &&
+                        (ov.staffId === 'all' || ov.staffId === st.id),
+                    ),
+                  )
+                  .filter((ov): ov is DateOverride => Boolean(ov));
+                const allStaffClosedOverride =
+                  closedStaffOverrides.length === activeStaff.length
+                    ? (closedStaffOverrides[0] ?? null)
+                    : null;
                 const isDropTarget =
                   Boolean(drag.activeDrag?.isDragging) &&
                   drag.activeDrag?.targetDateKey === day.dateKey;
@@ -894,6 +978,7 @@ export function VisualScheduleGrid({
                         drag.activeDrag.targetDurationMinutes,
                       )
                     : null;
+                const singleStaff = activeStaff.length === 1 ? (activeStaff[0] ?? null) : null;
 
                 return (
                   <VStack
@@ -905,19 +990,26 @@ export function VisualScheduleGrid({
                     gap={0}
                   >
                     {CALENDAR_HOURS.map((hour) => {
-                      const hourLabel = formatTimeHHMM12h(`${String(hour).padStart(2, '0')}:00`);
+                      const hourHHMM = formatMinutesHHMM(hour * 60);
+                      const hourLabel = formatTimeHHMM12h(hourHHMM);
                       return (
                       <button
                         key={hour}
                         type="button"
                         className="ad-cal-hour-slot"
-                        aria-label={`Agendar el ${day.dateKey} a las ${hourLabel}`}
+                        aria-label={
+                          onSelectEmptySlot
+                            ? `Opciones el ${day.dateKey} a las ${hourLabel}`
+                            : `Agendar el ${day.dateKey} a las ${hourLabel}`
+                        }
                         onClick={() =>
-                          onOpenNewForStaff(
-                            activeStaff.length === 1 ? (activeStaff[0]?.id ?? 'any') : 'any',
-                            day.dateKey,
-                            buildZonedIsoForDateAndMinutes(day.dateKey, hour * 60, timezone),
-                          )
+                          triggerEmptySlot({
+                            dateKey: day.dateKey,
+                            startMinutes: hour * 60,
+                            startTimeHHMM: hourHHMM,
+                            staffId: singleStaff?.id ?? 'any',
+                            staffName: singleStaff?.name ?? null,
+                          })
                         }
                       >
                         <Text type="supporting" className="ad-cal-slot-hover-hint">
@@ -935,6 +1027,49 @@ export function VisualScheduleGrid({
                         gap={0}
                       />
                     ) : null}
+
+                    {allStaffClosedOverride ? (
+                      <VStack
+                        className="ad-cal-block"
+                        style={{ top: '0%', height: '100%' }}
+                        gap={0.5}
+                      >
+                        <Text type="supporting" weight="semibold" maxLines={2}>
+                          Cerrado · {allStaffClosedOverride.reason || 'Día bloqueado'}
+                        </Text>
+                      </VStack>
+                    ) : null}
+
+                    {!allStaffClosedOverride
+                      ? weekDayBlocks.map((blk) => {
+                          const blkStart = parseTimeMinutes(blk.startTime);
+                          const blkEnd = parseTimeMinutes(blk.endTime);
+                          const geo = computeBlockGeometryPercent(
+                            blkStart,
+                            Math.max(30, blkEnd - blkStart),
+                          );
+                          const prefix =
+                            activeStaff.length > 1 && blk.staffNames.length < activeStaff.length
+                              ? `${blk.staffNames.join(', ')} · `
+                              : '';
+                          return (
+                            <VStack
+                              key={`${day.dateKey}-${blk.startTime}-${blk.endTime}-${blk.reason}`}
+                              className="ad-cal-block"
+                              style={{
+                                top: `${geo.topPct}%`,
+                                height: `${geo.heightPct}%`,
+                              }}
+                              gap={0}
+                            >
+                              <Text type="supporting" weight="semibold" maxLines={1}>
+                                {prefix}
+                                {blk.reason}
+                              </Text>
+                            </VStack>
+                          );
+                        })
+                      : null}
 
                     {dayNow.visible ? (
                       <VStack
@@ -973,7 +1108,7 @@ export function VisualScheduleGrid({
       </VStack>
 
       <Text type="supporting" color="secondary" className="ad-hide-s">
-        Arrastra una cita para moverla, estira su borde inferior para ajustar duración o haz clic en un hueco libre.
+        Arrastra una cita para moverla, estira su borde inferior para ajustar duración o haz clic en un horario libre para agendar o bloquear.
       </Text>
 
       <ConfirmActionDialog

@@ -8,6 +8,7 @@ import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { CalendarPlus, PackageCheck, Sparkles } from 'lucide-react';
 import { StatusTag, SurfaceCard } from '@/components/ui';
+import { DEFAULT_TOUCH_UP_DAYS } from '@/lib/booking/recurrence';
 import type { BookingPaymentSummary } from '@/lib/payments/splits';
 import type { BookingWithRelations, LoyaltyStamp, PaymentSplit } from '@/lib/types';
 import { formatCurrency } from '@/lib/format';
@@ -106,6 +107,7 @@ interface CheckoutReceiptViewProps {
   booking: BookingWithRelations;
   completedState: CompletedCheckoutState;
   currency: 'MXN' | 'USD';
+  touchUpDays?: number;
   onScheduleRetouch: (booking: BookingWithRelations) => void;
 }
 
@@ -113,6 +115,7 @@ export function CheckoutReceiptView({
   booking,
   completedState,
   currency,
+  touchUpDays = DEFAULT_TOUCH_UP_DAYS,
   onScheduleRetouch,
 }: CheckoutReceiptViewProps) {
   return (
@@ -169,12 +172,12 @@ export function CheckoutReceiptView({
             ¿Agendamos su próximo retoque?
           </Text>
           <Text type="supporting" color="secondary">
-            Deja lista la cita de {booking.client.fullName} con {booking.staff.name} en 3 semanas
-            sin volver a escribir sus datos.
+            Deja lista la cita de {booking.client.fullName} con {booking.staff.name} en{' '}
+            {touchUpDays} días sin volver a escribir sus datos.
           </Text>
           <Button
             type="button"
-            label="Agendar su retoque en 3 semanas"
+            label={`Agendar siguiente retoque (+${touchUpDays} días)`}
             variant="primary"
             size="md"
             width="100%"

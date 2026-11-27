@@ -39,10 +39,18 @@ export function BookingProofModal({
   onConfirm,
   onReject,
 }: BookingProofModalProps) {
+  const handleOpenChange = (open: boolean) => {
+    if (!open && !isBusy && !isRejecting) {
+      onOpenChange(false);
+    } else if (open) {
+      onOpenChange(true);
+    }
+  };
+
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={onOpenChange}
+      onOpenChange={handleOpenChange}
       purpose="info"
       width={560}
       maxHeight="min(90dvh, calc(100dvh - 2rem))"
@@ -54,12 +62,17 @@ export function BookingProofModal({
             title={`Comprobante · ${clientName}`}
             subtitle={`${bookingCode} · Anticipo ${formatCurrency(depositAmountCents, currency)}`}
             hasDivider
-            onOpenChange={onOpenChange}
+            onOpenChange={handleOpenChange}
           />
         }
         content={
           <LayoutContent>
-            <VStack gap={3} align="center">
+            <VStack
+              gap={3}
+              align="center"
+              className={isBusy || isRejecting ? 'fx-busy' : undefined}
+              aria-busy={isBusy || isRejecting || undefined}
+            >
               <img
                 src={paymentProofUrl}
                 alt={`Comprobante ampliado de ${clientName}`}

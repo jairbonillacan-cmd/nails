@@ -89,6 +89,7 @@ export function DepositSettingsSection({
             />
             <TextArea
               label="Indicaciones para enviar el comprobante"
+              description="Se muestra directamente en la sección de anticipo de la página de cita de tu clienta (/cita)."
               value={draft.depositInstructions}
               onChange={(v) => onUpdateDraft({ depositInstructions: v })}
               rows={2}

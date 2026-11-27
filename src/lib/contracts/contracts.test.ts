@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AdminOperationsDeleteQuerySchema } from './operations';
 import {
   AdminCreateBookingSchema,
   AdminOperationsPostSchema,
@@ -340,8 +341,80 @@ describe('Pure-domain shared Zod contracts', () => {
       BrandPatchSchema.safeParse({
         name: 'LAIKONA NAILS',
         currency: 'MXN',
+        landingContent: {
+          showBookingQr: false,
+          touchUpDays: 28,
+        },
       }).success,
     ).toBe(true);
+
+    expect(
+      BrandPatchSchema.safeParse({
+        landingContent: { touchUpDays: 7 },
+      }).success,
+    ).toBe(true);
+    expect(
+      BrandPatchSchema.safeParse({
+        landingContent: { touchUpDays: 60 },
+      }).success,
+    ).toBe(true);
+    expect(
+      BrandPatchSchema.safeParse({
+        landingContent: { touchUpDays: 6 },
+      }).success,
+    ).toBe(false);
+    expect(
+      BrandPatchSchema.safeParse({
+        landingContent: { touchUpDays: 61 },
+      }).success,
+    ).toBe(false);
+    expect(
+      BrandPatchSchema.safeParse({
+        landingContent: { touchUpDays: 21.5 },
+      }).success,
+    ).toBe(false);
+    expect(
+      BrandPatchSchema.safeParse({
+        landingContent: { showBookingQr: 'yes' },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      AdminOperationsPostSchema.safeParse({
+        kind: 'coupon_delete',
+        id: 'cp-123',
+      }).success,
+    ).toBe(true);
+    expect(
+      AdminOperationsPostSchema.safeParse({
+        kind: 'coupon_delete',
+        id: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      AdminOperationsPostSchema.safeParse({
+        kind: 'inventory',
+        data: {
+          itemId: 'inv-1',
+          delta: -1,
+          reason: 'retail_sale',
+          paymentMethod: 'card',
+          notes: 'Venta mostrador',
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      AdminOperationsDeleteQuerySchema.safeParse({
+        kind: 'coupon',
+        id: 'cp-123',
+      }).success,
+    ).toBe(true);
+    expect(
+      AdminOperationsDeleteQuerySchema.safeParse({
+        kind: 'cash',
+        id: 'cash-1',
+      }).success,
+    ).toBe(false);
 
     expect(ReportPeriodSchema.safeParse('30d').success).toBe(true);
     expect(ReportPeriodSchema.safeParse('365d').success).toBe(false);

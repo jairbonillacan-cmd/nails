@@ -14,8 +14,16 @@ import {
   buildCommissionsByStaff,
   buildSplitDetails,
   buildSplitSummaryByMethod,
-  type CommissionPeriod,
 } from './cajaActions';
+import {
+  cajaPeriodLabel,
+  computeCajaPeriodSummary,
+  filterCashEntries,
+  filterSplitDetails,
+  type CajaBookingSearchMeta,
+  type CajaMethodFilter,
+  type CajaPeriod,
+} from './cajaMetrics';
 import {
   resolveInitialCajaRoute,
   type CajaTab,
@@ -35,7 +43,9 @@ export function useCajaData(
     initialRoute.highlightUncollected,
   );
   const [promosView, setPromosView] = useState<PromosSubTab>(initialRoute.promosView);
-  const [commissionPeriod, setCommissionPeriod] = useState<CommissionPeriod>('all');
+  const [cajaPeriod, setCajaPeriod] = useState<CajaPeriod>('all');
+  const [methodFilter, setMethodFilter] = useState<CajaMethodFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [packagesSeq, setPackagesSeq] = useState(0);
   const lastTabParamRef = useRef<string | null>(tabParam);
 
@@ -85,6 +95,9 @@ export function useCajaData(
   const packagesCatalog = packagesQuery.data?.servicePackages ?? [];
   const packagesLoading = packagesQuery.isLoading;
 
+  const tz = data?.settings.timezone || 'America/Mexico_City';
+  const todayKey = data?.serverTodayKey ?? '';
+
   const pendingDeposits = useMemo<PendingDepositRow[]>(
     () => (data ? data.pendingDeposits : []),
     [data],
@@ -93,18 +106,108 @@ export function useCajaData(
     () => (data ? data.uncollectedBookings : []),
     [data],
   );
+
+  const bookingLookup = useMemo(() => {
+    const map = new Map<string, CajaBookingSearchMeta>();
+    if (!data) return map;
+    for (const bk of data.bookings) {
+      map.set(bk.id, {
+        bookingCode: bk.bookingCode,
+        clientName: bk.client.fullName,
+        staffName: bk.staff.name,
+      });
+    }
+    return map;
+  }, [data]);
+
   const splitSummaryByMethod = useMemo(
-    () => buildSplitSummaryByMethod(data, commissionPeriod),
-    [data, commissionPeriod],
+    () => buildSplitSummaryByMethod(data, cajaPeriod),
+    [data, cajaPeriod],
   );
   const splitDetails = useMemo(() => buildSplitDetails(data), [data]);
   const commissionsByStaff = useMemo(
-    () => buildCommissionsByStaff(data, commissionPeriod),
-    [data, commissionPeriod],
+    () => buildCommissionsByStaff(data, cajaPeriod),
+    [data, cajaPeriod],
+  );
+
+  const periodCashEntries = useMemo(
+    () =>
+      data
+        ? filterCashEntries(data.cashEntries, {
+            period: cajaPeriod,
+            method: 'all',
+            query: searchQuery,
+            todayKey,
+            tz,
+            bookingLookup,
+          })
+        : [],
+    [data, cajaPeriod, searchQuery, todayKey, tz, bookingLookup],
+  );
+
+  const filteredCashEntries = useMemo(
+    () =>
+      data
+        ? filterCashEntries(data.cashEntries, {
+            period: cajaPeriod,
+            method: methodFilter,
+            query: searchQuery,
+            todayKey,
+            tz,
+            bookingLookup,
+          })
+        : [],
+    [data, cajaPeriod, methodFilter, searchQuery, todayKey, tz, bookingLookup],
+  );
+
+  const filteredSplitDetails = useMemo(
+    () =>
+      data
+        ? filterSplitDetails(splitDetails, {
+            period: cajaPeriod,
+            method: methodFilter,
+            query: searchQuery,
+            todayKey,
+            tz,
+          })
+        : [],
+    [data, splitDetails, cajaPeriod, methodFilter, searchQuery, todayKey, tz],
+  );
+
+  const periodSummary = useMemo(
+    () => computeCajaPeriodSummary(periodCashEntries),
+    [periodCashEntries],
+  );
+
+  const filteredSummary = useMemo(
+    () => computeCajaPeriodSummary(filteredCashEntries),
+    [filteredCashEntries],
+  );
+
+  const todaySummary = useMemo(
+    () =>
+      data
+        ? computeCajaPeriodSummary(
+            filterCashEntries(data.cashEntries, {
+              period: 'today',
+              method: 'all',
+              query: '',
+              todayKey,
+              tz,
+            }),
+          )
+        : computeCajaPeriodSummary([]),
+    [data, todayKey, tz],
   );
 
   const reloadPackages = useCallback(() => {
     setPackagesSeq((prev) => prev + 1);
+  }, []);
+
+  const resetSalesFilters = useCallback(() => {
+    setCajaPeriod('all');
+    setMethodFilter('all');
+    setSearchQuery('');
   }, []);
 
   const pendingDepositsTotalCents = pendingDeposits.reduce(
@@ -115,13 +218,21 @@ export function useCajaData(
     (sum, item) => sum + item.remainingCents,
     0,
   );
+
+  const activePeriodText = cajaPeriodLabel(cajaPeriod);
+  const isFilteredByMethodOrSearch = methodFilter !== 'all' || searchQuery.trim().length > 0;
+  const activeSummary = isFilteredByMethodOrSearch ? filteredSummary : periodSummary;
+
   const kpiItems: MetricTileItem[] = data
     ? [
         {
           id: 'collected',
-          label: 'Cobrado',
-          value: formatCurrency(data.kpis.totalRevenueCents, data.settings.currency),
-          sub: `Te queda ${formatCurrency(data.kpis.netCashCents, data.settings.currency)} · Gastos ${formatCurrency(data.kpis.totalExpensesCents, data.settings.currency)}`,
+          label: `Cobrado · ${activePeriodText}`,
+          value: formatCurrency(activeSummary.collectedCents, data.settings.currency),
+          sub:
+            activeSummary.ticketCount > 0
+              ? `Neto ${formatCurrency(activeSummary.netCents, data.settings.currency)} · Ticket prom. ${formatCurrency(activeSummary.averageTicketCents, data.settings.currency)}`
+              : `Neto ${formatCurrency(activeSummary.netCents, data.settings.currency)} · Gastos ${formatCurrency(activeSummary.expensesCents, data.settings.currency)}`,
         },
         {
           id: 'pending',
@@ -136,9 +247,12 @@ export function useCajaData(
         },
         {
           id: 'tips',
-          label: 'Propinas',
-          value: formatCurrency(data.kpis.totalTipsCents, data.settings.currency),
-          sub: 'Para tus profesionales',
+          label: `Propinas · ${activePeriodText}`,
+          value: formatCurrency(activeSummary.tipsCents, data.settings.currency),
+          sub:
+            activeSummary.expensesCents > 0
+              ? `Para profesionales · Gastos ${formatCurrency(activeSummary.expensesCents, data.settings.currency)}`
+              : 'Para tus profesionales',
         },
       ]
     : [];
@@ -151,8 +265,13 @@ export function useCajaData(
     setHighlightUncollected,
     promosView,
     setPromosView,
-    commissionPeriod,
-    setCommissionPeriod,
+    cajaPeriod,
+    setCajaPeriod,
+    methodFilter,
+    setMethodFilter,
+    searchQuery,
+    setSearchQuery,
+    resetSalesFilters,
     packagesCatalog,
     packagesLoading,
     reloadPackages,
@@ -161,8 +280,11 @@ export function useCajaData(
     pendingDepositsTotalCents,
     uncollectedTotalCents,
     kpiItems,
+    periodSummary,
+    todaySummary,
+    filteredCashEntries,
+    filteredSplitDetails,
     splitSummaryByMethod,
-    splitDetails,
     commissionsByStaff,
   };
 }

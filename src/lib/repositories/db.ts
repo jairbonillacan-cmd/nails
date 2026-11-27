@@ -115,8 +115,21 @@ import { parseDemoDatabase } from './schema';
 import { createSupabaseAdminClient, isSupabaseEnabled } from './supabase-client';
 import {
   createSupabaseRepository,
+  fetchSupabaseActiveInventoryItemById,
+  fetchSupabaseActiveLoyaltyProgram,
+  fetchSupabaseAddonsByIds,
+  fetchSupabaseBookingById,
+  fetchSupabaseBookingPaymentSplits,
+  fetchSupabaseBookingStaffId,
+  fetchSupabaseClientLoyaltyStamps,
   fetchSupabaseClientLoyaltySummary,
+  fetchSupabaseDateOverrideStaffId,
+  fetchSupabaseHasOverlappingBooking,
+  fetchSupabaseRecurringBlockStaffId,
   fetchSupabaseServicesByIds,
+  fetchSupabaseStaffCalendarConnection,
+  fetchSupabaseStaffMemberById,
+  runPostCommitSideEffects,
 } from './supabase-repo';
 import {
   PolicyError,
@@ -2137,22 +2150,7 @@ export async function updateBookingStatus(params: {
   actor?: AuditActor;
 }): Promise<BookingWithRelations> {
   if (isSupabaseEnabled()) {
-    const repo = createSupabaseRepository();
-    if (params.actor) {
-      const snapshot = await repo.getSnapshot();
-      const target = snapshot.bookings.find((b) => b.id === params.bookingId);
-      if (target) {
-        const isPast = new Date(target.endAt).getTime() < Date.now();
-        const pastLockActive = snapshot.settings.lockPastBookings !== false;
-        if (pastLockActive && isPast && params.actor.role !== 'owner') {
-          throw new PolicyError(
-            'PAST_BOOKING_LOCKED',
-            'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
-          );
-        }
-      }
-    }
-    return repo.updateBookingStatus(params);
+    return createSupabaseRepository().updateBookingStatus(params);
   }
   const committed = await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
@@ -2561,8 +2559,18 @@ export async function recordBookingCheckoutAtomic(params: {
   if (isSupabaseEnabled()) {
     const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
-    const snapshot = await repo.getSnapshot();
-    const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
+    const [hydratedBeforeCash, settings, extraInventoryItem, activeProgram] =
+      await Promise.all([
+        fetchSupabaseBookingById(params.bookingId),
+        repo.getSalonSettings(),
+        params.extraItem
+          ? fetchSupabaseActiveInventoryItemById(params.extraItem.inventoryItemId)
+          : Promise.resolve(null),
+        params.redeemLoyaltyReward || params.markCompleted !== false
+          ? fetchSupabaseActiveLoyaltyProgram()
+          : Promise.resolve(null),
+      ]);
+    const booking = hydratedBeforeCash;
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
     if (booking.status === 'canceled' || booking.status === 'no_show') {
       throw new PolicyError(
@@ -2572,7 +2580,7 @@ export async function recordBookingCheckoutAtomic(params: {
     }
 
     const isPast = new Date(booking.endAt).getTime() < Date.now();
-    const pastLockActive = snapshot.settings.lockPastBookings !== false;
+    const pastLockActive = settings.lockPastBookings !== false;
     if (pastLockActive && isPast && params.actor.role !== 'owner') {
       throw new PolicyError(
         'PAST_BOOKING_LOCKED',
@@ -2580,18 +2588,13 @@ export async function recordBookingCheckoutAtomic(params: {
       );
     }
 
-    let extraInventoryItem: InventoryItem | null = null;
     let extraRetailTotalCents = 0;
     if (params.extraItem) {
-      const found = snapshot.inventory.find(
-        (i) => i.id === params.extraItem?.inventoryItemId && i.isActive,
-      );
-      if (!found) {
+      if (!extraInventoryItem) {
         throw new PolicyError('ITEM_NOT_FOUND', 'Producto de reventa no encontrado.');
       }
-      extraInventoryItem = found;
       extraRetailTotalCents = Math.round(
-        found.retailPriceCents * params.extraItem.quantity,
+        extraInventoryItem.retailPriceCents * params.extraItem.quantity,
       );
     }
 
@@ -2602,20 +2605,25 @@ export async function recordBookingCheckoutAtomic(params: {
     }
 
     let loyaltyProgramForRedemption: LoyaltyProgram | null = null;
+    let clientLoyaltyStamps: LoyaltyStamp[] = [];
     if (params.redeemLoyaltyReward) {
-      const activeProgram = (snapshot.loyaltyPrograms ?? []).find((p) => p.isActive);
       if (!activeProgram) {
         throw new PolicyError(
           'LOYALTY_NOT_READY',
           'No hay un programa de lealtad activo.',
         );
       }
-      const rewardServiceName = activeProgram.rewardServiceId
-        ? snapshot.services.find((s) => s.id === activeProgram.rewardServiceId)?.name ?? null
-        : null;
+      const [stamps, rewardServices] = await Promise.all([
+        fetchSupabaseClientLoyaltyStamps(booking.clientId, activeProgram.id),
+        activeProgram.rewardServiceId
+          ? fetchSupabaseServicesByIds([activeProgram.rewardServiceId])
+          : Promise.resolve([]),
+      ]);
+      clientLoyaltyStamps = stamps;
+      const rewardServiceName = rewardServices[0]?.name ?? null;
       const clientLoyalty = computeClientLoyaltySummary(
         activeProgram,
-        snapshot.loyaltyStamps ?? [],
+        stamps,
         booking.clientId,
         rewardServiceName,
       );
@@ -2678,14 +2686,12 @@ export async function recordBookingCheckoutAtomic(params: {
       })),
     });
 
-    const hydratedBeforeCash = hydrateBooking(snapshot, booking);
     const extraSuffix =
       extraInventoryItem && params.extraItem
         ? ` + ${extraInventoryItem.name} (x${params.extraItem.quantity})`
         : '';
-    const serviceStaffMember = snapshot.staff.find((st) => st.id === booking.staffId);
     const commissionPct =
-      serviceStaffMember?.commissionPercent ?? snapshot.settings.defaultCommissionPercent;
+      booking.staff.commissionPercent ?? settings.defaultCommissionPercent;
 
     for (const splitRecord of createdSplits) {
       if (splitRecord.amountCents === 0 && splitRecord.tipCents === 0) continue;
@@ -2699,7 +2705,7 @@ export async function recordBookingCheckoutAtomic(params: {
         bookingId: booking.id,
         staffId: booking.staffId,
         entryType: 'service_income',
-        description: `${hydratedBeforeCash.service.name}${extraSuffix} — ${hydratedBeforeCash.client.fullName}`,
+        description: `${booking.service.name}${extraSuffix} — ${booking.client.fullName}`,
         amountCents: splitRecord.amountCents,
         tipCents: isCrossStaffTip ? 0 : splitRecord.tipCents,
         commissionCents,
@@ -2712,7 +2718,7 @@ export async function recordBookingCheckoutAtomic(params: {
           bookingId: booking.id,
           staffId: splitRecord.tipStaffId,
           entryType: 'service_income',
-          description: `Propina (${hydratedBeforeCash.service.name} — ${hydratedBeforeCash.client.fullName})`,
+          description: `Propina (${booking.service.name} — ${booking.client.fullName})`,
           amountCents: 0,
           tipCents: splitRecord.tipCents,
           commissionCents: 0,
@@ -2727,16 +2733,10 @@ export async function recordBookingCheckoutAtomic(params: {
         1,
         Math.floor(loyaltyProgramForRedemption.stampsRequired),
       );
-      const eligibleStamps = (snapshot.loyaltyStamps ?? [])
-        .filter(
-          (s) =>
-            s.clientId === booking.clientId &&
-            s.programId === loyaltyProgramForRedemption?.id,
-        )
-        .toSorted((a, b) => {
-          const dateCmp = a.stampedDate.localeCompare(b.stampedDate);
-          return dateCmp !== 0 ? dateCmp : a.createdAt.localeCompare(b.createdAt);
-        });
+      const eligibleStamps = clientLoyaltyStamps.toSorted((a, b) => {
+        const dateCmp = a.stampedDate.localeCompare(b.stampedDate);
+        return dateCmp !== 0 ? dateCmp : a.createdAt.localeCompare(b.createdAt);
+      });
       const consumedIds = eligibleStamps.slice(0, requiredCount).map((s) => s.id);
       if (consumedIds.length > 0) {
         await supabase.from('loyalty_stamps').delete().in('id', consumedIds);
@@ -2764,34 +2764,33 @@ export async function recordBookingCheckoutAtomic(params: {
           bookingId: booking.id,
           status: 'completed',
           recordedBy,
+          skipLoyaltyStamp: true,
         })
-      : (await repo.getBookingByToken(booking.manageToken)) ?? hydratedBeforeCash;
+      : {
+          ...booking,
+          subtotalCents: booking.subtotalCents + extraRetailTotalCents,
+          totalPriceCents: effectiveTotalCents,
+        };
 
     let stampAwarded: LoyaltyStamp | null = null;
-    if (hydratedFinal.status === 'completed') {
-      const activeProgram = (snapshot.loyaltyPrograms ?? []).find((p) => p.isActive);
-      if (activeProgram) {
-        const stampedDate = getDateKeyInTimezone(
-          new Date(hydratedFinal.startAt),
-          snapshot.settings.timezone || 'America/Mexico_City',
-        );
-        try {
-          stampAwarded = await repo.awardLoyaltyStamp({
-            clientId: hydratedFinal.clientId,
-            bookingId: hydratedFinal.id,
-            programId: activeProgram.id,
-            stampedDate,
-          });
-        } catch {
-          stampAwarded = null;
-        }
+    if (hydratedFinal.status === 'completed' && activeProgram) {
+      const stampedDate = getDateKeyInTimezone(
+        new Date(hydratedFinal.startAt),
+        settings.timezone || 'America/Mexico_City',
+      );
+      try {
+        stampAwarded = await repo.awardLoyaltyStamp({
+          clientId: hydratedFinal.clientId,
+          bookingId: hydratedFinal.id,
+          programId: activeProgram.id,
+          stampedDate,
+        });
+      } catch {
+        stampAwarded = null;
       }
     }
 
-    const refreshedSnapshot = await repo.getSnapshot();
-    const allBookingSplits = (refreshedSnapshot.paymentSplits ?? []).filter(
-      (s) => s.bookingId === booking.id,
-    );
+    const allBookingSplits = await fetchSupabaseBookingPaymentSplits(booking.id);
     const summary = computeBookingPaymentSummary(
       hydratedFinal.totalPriceCents,
       allBookingSplits,
@@ -3405,8 +3404,10 @@ export async function rescheduleBookingAdmin(params: {
   if (isSupabaseEnabled()) {
     const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
-    const snapshot = await repo.getSnapshot();
-    const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
+    const [booking, settings] = await Promise.all([
+      fetchSupabaseBookingById(params.bookingId),
+      repo.getSalonSettings(),
+    ]);
     if (!booking) {
       throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
     }
@@ -3415,7 +3416,7 @@ export async function rescheduleBookingAdmin(params: {
     }
 
     const isPast = new Date(booking.endAt).getTime() < Date.now();
-    const pastLockActive = snapshot.settings.lockPastBookings !== false;
+    const pastLockActive = settings.lockPastBookings !== false;
     if (pastLockActive && isPast && params.actor.role !== 'owner') {
       throw new PolicyError(
         'PAST_BOOKING_LOCKED',
@@ -3424,28 +3425,34 @@ export async function rescheduleBookingAdmin(params: {
     }
 
     const targetStaffId = params.staffId?.trim() || booking.staffId;
-    const targetStaff = snapshot.staff.find((s) => s.id === targetStaffId && s.isActive);
-    if (!targetStaff) {
+    const targetStaff =
+      targetStaffId === booking.staffId
+        ? booking.staff.isActive
+          ? booking.staff
+          : null
+        : await fetchSupabaseStaffMemberById(targetStaffId);
+    if (!targetStaff || !targetStaff.isActive) {
       throw new PolicyError('STAFF_NOT_FOUND', 'La profesional seleccionada no está activa.');
     }
 
-    const service = snapshot.services.find((s) => s.id === booking.serviceId);
-    const bufferBefore = service?.bufferBeforeMinutes ?? 0;
-    const bufferAfter = service?.bufferAfterMinutes ?? 0;
+    const bufferBefore = booking.service.bufferBeforeMinutes ?? 0;
+    const bufferAfter = booking.service.bufferAfterMinutes ?? 0;
     const nextDurationMinutes = params.durationMinutes ?? booking.totalDurationMinutes;
     const newEndMs = newStartMs + nextDurationMinutes * 60_000;
     const newOccStartMs = newStartMs - bufferBefore * 60_000;
     const newOccEndMs = newEndMs + bufferAfter * 60_000;
+    const startIso = new Date(newStartMs).toISOString();
+    const endIso = new Date(newEndMs).toISOString();
+    const occStartIso = new Date(newOccStartMs).toISOString();
+    const occEndIso = new Date(newOccEndMs).toISOString();
 
-    const overlapping = snapshot.bookings.find(
-      (other) =>
-        other.id !== booking.id &&
-        other.staffId === targetStaff.id &&
-        isActiveBookingStatus(other.status) &&
-        new Date(other.occupiedStartAt).getTime() < newOccEndMs &&
-        new Date(other.occupiedEndAt).getTime() > newOccStartMs,
-    );
-    if (overlapping) {
+    const hasOverlap = await fetchSupabaseHasOverlappingBooking({
+      staffId: targetStaff.id,
+      excludeBookingId: booking.id,
+      occStartIso,
+      occEndIso,
+    });
+    if (hasOverlap) {
       throw new SlotConflictError(
         `Ese horario se empalma con otra cita de ${targetStaff.name}. Elige otro espacio libre.`,
         [],
@@ -3453,11 +3460,6 @@ export async function rescheduleBookingAdmin(params: {
     }
 
     const nowIso = new Date().toISOString();
-    const startIso = new Date(newStartMs).toISOString();
-    const endIso = new Date(newEndMs).toISOString();
-    const occStartIso = new Date(newOccStartMs).toISOString();
-    const occEndIso = new Date(newOccEndMs).toISOString();
-
     const { error } = await supabase
       .from('bookings')
       .update({
@@ -3476,6 +3478,12 @@ export async function rescheduleBookingAdmin(params: {
       .eq('id', booking.id);
 
     if (error) {
+      if (error.code === '23P01') {
+        throw new SlotConflictError(
+          `Ese horario se empalma con otra cita de ${targetStaff.name}. Elige otro espacio libre.`,
+          [],
+        );
+      }
       throw new PolicyError('RESCHEDULE_FAILED', error.message);
     }
 
@@ -3503,29 +3511,47 @@ export async function rescheduleBookingAdmin(params: {
       });
     }
 
-    const updatedSnapshot = await repo.getSnapshot();
-    const updatedRaw = updatedSnapshot.bookings.find((b) => b.id === booking.id);
-    if (!updatedRaw) {
-      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada tras actualizar.');
-    }
-    const hydrated = hydrateBooking(updatedSnapshot, updatedRaw);
-    const conn = updatedSnapshot.calendarConnections.find(
-      (c) => c.staffId === hydrated.staffId && c.isConnected,
-    );
-    await dispatchPostCommitOutbox([
-      {
+    const hydrated: BookingWithRelations = {
+      ...booking,
+      staffId: targetStaff.id,
+      staff: targetStaff,
+      startAt: startIso,
+      endAt: endIso,
+      occupiedStartAt: occStartIso,
+      occupiedEndAt: occEndIso,
+      totalDurationMinutes: nextDurationMinutes,
+      ...(params.durationMinutes !== undefined
+        ? { customDurationMinutes: nextDurationMinutes }
+        : {}),
+      updatedAt: nowIso,
+    };
+
+    await dispatchOutboxEvent({
+      type: 'Realtime',
+      eventType: 'slot_changed',
+      payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
+    });
+
+    const postCommitTask = (async () => {
+      const conn = await fetchSupabaseStaffCalendarConnection(hydrated.staffId);
+      await dispatchOutboxEvent({
         type: 'SyncCalendar',
         booking: hydrated,
         connection: conn ? { ...conn } : undefined,
-        settings: updatedSnapshot.settings,
+        settings,
         action: hydrated.googleEventId ? 'update' : 'create',
-      },
-      {
-        type: 'Realtime',
-        eventType: 'slot_changed',
-        payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
-      },
-    ]);
+        onSynced: async (googleEventId) => {
+          if (!googleEventId) return;
+          hydrated.googleEventId = googleEventId;
+          await supabase
+            .from('bookings')
+            .update({ google_event_id: googleEventId })
+            .eq('id', hydrated.id);
+        },
+      });
+    })();
+    await runPostCommitSideEffects(postCommitTask);
+
     return hydrated;
   }
 
@@ -3672,28 +3698,56 @@ export async function sendManualBookingReminder(params: {
   messagePreview: string;
   logs: ScheduledNotification[];
 }> {
-  const db = await getRepository().getSnapshot();
-  const booking = db.bookings.find((b) => b.id === params.bookingId);
-  if (!booking) {
-    throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
-  }
-  if (isTerminalBookingStatus(booking.status)) {
-    throw new PolicyError(
-      'INVALID_STATE',
-      'Solo puedes enviar recordatorios para citas activas.',
-    );
+  let hydrated: BookingWithRelations;
+  let settings: SalonSettings;
+  let extraNames: string[] = [];
+
+  if (isSupabaseEnabled()) {
+    const [found, fetchedSettings] = await Promise.all([
+      fetchSupabaseBookingById(params.bookingId),
+      createSupabaseRepository().getSalonSettings(),
+    ]);
+    if (!found) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (isTerminalBookingStatus(found.status)) {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'Solo puedes enviar recordatorios para citas activas.',
+      );
+    }
+    hydrated = found;
+    settings = { ...fetchedSettings };
+    if ((hydrated.extraServiceIds ?? []).length > 0) {
+      const extras = await fetchSupabaseServicesByIds(hydrated.extraServiceIds ?? []);
+      extraNames = (hydrated.extraServiceIds ?? [])
+        .map((id) => extras.find((s) => s.id === id)?.name)
+        .filter((name): name is string => Boolean(name));
+    }
+  } else {
+    const db = await getRepository().getSnapshot();
+    const booking = db.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (isTerminalBookingStatus(booking.status)) {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'Solo puedes enviar recordatorios para citas activas.',
+      );
+    }
+    hydrated = hydrateBooking(db, booking);
+    settings = { ...db.settings };
+    extraNames = (hydrated.extraServiceIds ?? [])
+      .map((id) => db.services.find((s) => s.id === id)?.name)
+      .filter((name): name is string => Boolean(name));
   }
 
-  const hydrated = hydrateBooking(db, booking);
-  const settings = { ...db.settings };
   const channel = params.channel ?? 'whatsapp';
   const env = getRuntimeIntegrationStatus();
   const tz = settings.timezone || 'America/Mexico_City';
   const dateLabel = formatDateLongInTimezone(hydrated.startAt, tz);
   const timeLabel = formatTimeInTimezone(hydrated.startAt, tz, false);
-  const extraNames = (hydrated.extraServiceIds ?? [])
-    .map((id) => db.services.find((s) => s.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
   const serviceSummary = [hydrated.service.name, ...extraNames].join(' + ');
   const manageUrl = `${env.appUrl}/cita/${hydrated.manageToken}`;
   const messagePreview = `Hola ${hydrated.client.fullName}, te recordamos tu cita en ${settings.name} (${hydrated.bookingCode}) de ${serviceSummary} con ${hydrated.staff.name} el ${dateLabel} a las ${timeLabel}. Gestiona tu cita aquí: ${manageUrl}`;
@@ -3831,27 +3885,43 @@ export async function requestBookingReschedule(params: {
   waMeUrl: string;
   messagePreview: string;
 }> {
-  const db = await getRepository().getSnapshot();
-  const booking = db.bookings.find((b) => b.id === params.bookingId);
-  if (!booking) {
-    throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+  let hydrated: BookingWithRelations;
+  let settings: SalonSettings;
+
+  if (isSupabaseEnabled()) {
+    const [found, fetchedSettings] = await Promise.all([
+      fetchSupabaseBookingById(params.bookingId),
+      createSupabaseRepository().getSalonSettings(),
+    ]);
+    if (!found) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    hydrated = found;
+    settings = { ...fetchedSettings };
+  } else {
+    const db = await getRepository().getSnapshot();
+    const booking = db.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    hydrated = hydrateBooking(db, booking);
+    settings = { ...db.settings };
   }
-  const isPast = new Date(booking.endAt).getTime() < Date.now();
-  if (db.settings.lockPastBookings !== false && isPast && params.actor.role !== 'owner') {
+
+  const isPast = new Date(hydrated.endAt).getTime() < Date.now();
+  if (settings.lockPastBookings !== false && isPast && params.actor.role !== 'owner') {
     throw new PolicyError(
       'PAST_BOOKING_LOCKED',
       'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
     );
   }
-  if (isTerminalBookingStatus(booking.status)) {
+  if (isTerminalBookingStatus(hydrated.status)) {
     throw new PolicyError(
       'INVALID_STATE',
       'Solo puedes solicitar reprogramación en citas activas.',
     );
   }
 
-  const hydrated = hydrateBooking(db, booking);
-  const settings = { ...db.settings };
   const env = getRuntimeIntegrationStatus();
   const tz = settings.timezone || 'America/Mexico_City';
   const dateLabel = formatDateLongInTimezone(hydrated.startAt, tz);
@@ -3996,9 +4066,9 @@ export async function verifyStoredOwnerPinAsync(pin: string | null | undefined):
   if (!isSupabaseEnabled()) {
     return verifyStoredOwnerPin(pin);
   }
-  const db = await createSupabaseRepository().getSnapshot();
-  const storedHash = db.settings.ownerPinHash ?? null;
-  const required = Boolean(db.settings.ownerPinEnabled && storedHash);
+  const settings = await createSupabaseRepository().getSalonSettings();
+  const storedHash = settings.ownerPinHash ?? null;
+  const required = Boolean(settings.ownerPinEnabled && storedHash);
   if (!required) {
     return { required: false, valid: true };
   }
@@ -4039,8 +4109,8 @@ export async function createRecurringBookingSeries(
     code: string;
   }>;
 }> {
-  const db = await getRepository().getSnapshot();
-  const tz = db.settings.timezone || 'America/Mexico_City';
+  const settings = await getRepository().getSalonSettings();
+  const tz = settings.timezone || 'America/Mexico_City';
   let occurrences: ReturnType<typeof generateRecurrenceDates>;
   try {
     occurrences = generateRecurrenceDates({
@@ -5601,12 +5671,39 @@ export async function upsertCoupon(
   });
 }
 
+export async function deleteCoupon(id: string): Promise<Coupon> {
+  const cleanId = id.trim();
+  if (!cleanId) {
+    throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+  }
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().deleteCoupon(cleanId);
+  }
+  return withWriteLock((db) => {
+    const idx = db.coupons.findIndex((c) => c.id === cleanId);
+    if (idx === -1) {
+      throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+    }
+    const [removed] = db.coupons.splice(idx, 1);
+    if (!removed) {
+      throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+    }
+    if (db.couponRedemptions) {
+      db.couponRedemptions = db.couponRedemptions.filter((r) => r.couponId !== cleanId);
+    }
+    publishRealtimeEvent('settings_updated');
+    return { ...removed };
+  });
+}
+
 export async function adjustInventoryItem(params: {
   itemId?: string;
   newItem?: Omit<InventoryItem, 'id' | 'updatedAt'>;
   delta?: number;
   reason?: 'restock' | 'service_usage' | 'retail_sale' | 'adjustment';
   notes?: string;
+  paymentMethod?: PaymentMethod;
+  staffId?: string | null;
   createdBy?: string;
 }): Promise<InventoryItem> {
   if (isSupabaseEnabled()) {
@@ -5646,13 +5743,13 @@ export async function adjustInventoryItem(params: {
       db.cashEntries.unshift({
         id: `cash-${crypto.randomUUID().slice(0, 8)}`,
         bookingId: null,
-        staffId: null,
+        staffId: params.staffId ?? null,
         entryType: 'product_sale',
         description: `Venta producto: ${item.name} (x${qty})`,
         amountCents: Math.round(item.retailPriceCents * qty),
         tipCents: 0,
         commissionCents: Math.round(item.retailPriceCents * qty * 0.1),
-        paymentMethod: 'cash',
+        paymentMethod: params.paymentMethod ?? 'cash',
         occurredAt: nowIso,
         recordedBy: params.createdBy ?? 'Admin',
       });
@@ -6484,6 +6581,7 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     updateWaitlistStatus,
     submitBookingReview,
     upsertCoupon,
+    deleteCoupon,
     adjustInventoryItem,
     addCashEntry,
     updateWorkflow,
@@ -6691,8 +6789,10 @@ export async function rejectBookingDeposit(params: {
   if (isSupabaseEnabled()) {
     const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
-    const snapshot = await repo.getSnapshot();
-    const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
+    const [booking, settings] = await Promise.all([
+      fetchSupabaseBookingById(params.bookingId),
+      repo.getSalonSettings(),
+    ]);
     if (!booking) {
       throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
     }
@@ -6730,25 +6830,27 @@ export async function rejectBookingDeposit(params: {
         reason: cleanReason,
       },
     });
-    const updatedSnapshot = await repo.getSnapshot();
-    const updatedRaw = updatedSnapshot.bookings.find((b) => b.id === booking.id);
-    if (!updatedRaw) {
-      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada tras actualizar.');
-    }
-    const hydrated = hydrateBooking(updatedSnapshot, updatedRaw);
-    await dispatchDepositRejectedNotification({
-      booking: hydrated,
-      settings: updatedSnapshot.settings,
-      appUrl: env.appUrl,
-      reason: cleanReason,
-    });
+    const hydrated: BookingWithRelations = {
+      ...booking,
+      paymentProofUrl: null,
+      proofDeliveryMethod: 'none',
+      proofRejectedAt: nowIso,
+      proofRejectionReason: cleanReason,
+      updatedAt: nowIso,
+    };
     publishRealtimeEvent('booking_updated', {
       staffId: hydrated.staffId,
-      date: getDateKeyInTimezone(
-        new Date(hydrated.startAt),
-        updatedSnapshot.settings.timezone,
-      ),
+      date: getDateKeyInTimezone(new Date(hydrated.startAt), settings.timezone),
     });
+    const postCommitTask = (async () => {
+      await dispatchDepositRejectedNotification({
+        booking: hydrated,
+        settings,
+        appUrl: env.appUrl,
+        reason: cleanReason,
+      });
+    })();
+    await runPostCommitSideEffects(postCommitTask);
     return hydrated;
   }
 
@@ -7180,6 +7282,149 @@ export async function recordFunnelEvent(params: {
     }
     return record;
   });
+}
+
+export async function getBookingPaymentSummaryAsync(
+  bookingId: string,
+  totalPriceCents: number,
+): Promise<BookingPaymentSummary> {
+  const cleanId = bookingId.trim();
+  if (!cleanId) {
+    return computeBookingPaymentSummary(totalPriceCents, []);
+  }
+  if (isSupabaseEnabled()) {
+    const splits = await fetchSupabaseBookingPaymentSplits(cleanId);
+    return computeBookingPaymentSummary(totalPriceCents, splits);
+  }
+  const db = getSnapshot();
+  const splits = (db.paymentSplits ?? []).filter((s) => s.bookingId === cleanId);
+  return computeBookingPaymentSummary(totalPriceCents, splits);
+}
+
+export async function getBookingStaffOwnerAsync(bookingId: string): Promise<string | null> {
+  const cleanId = bookingId.trim();
+  if (!cleanId) return null;
+  if (isSupabaseEnabled()) {
+    return fetchSupabaseBookingStaffId(cleanId);
+  }
+  const db = getSnapshot();
+  return db.bookings.find((b) => b.id === cleanId)?.staffId ?? null;
+}
+
+export async function getAddonsByIdsAsync(
+  addonIds: readonly string[],
+): Promise<ServiceAddon[]> {
+  const uniqueIds = Array.from(
+    new Set(addonIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+  );
+  if (uniqueIds.length === 0) return [];
+  if (isSupabaseEnabled()) {
+    return fetchSupabaseAddonsByIds(uniqueIds);
+  }
+  const db = getSnapshot();
+  return db.addons.filter((a) => uniqueIds.includes(a.id) && a.isActive);
+}
+
+export async function getRecurringBlockStaffOwnerAsync(
+  blockId: string,
+): Promise<string | null> {
+  const cleanId = blockId.trim();
+  if (!cleanId) return null;
+  if (isSupabaseEnabled()) {
+    return fetchSupabaseRecurringBlockStaffId(cleanId);
+  }
+  const db = getSnapshot();
+  return (db.recurringBlocks ?? []).find((b) => b.id === cleanId)?.staffId ?? null;
+}
+
+export async function getDateOverrideStaffOwnerAsync(
+  overrideId: string,
+): Promise<string | null> {
+  const cleanId = overrideId.trim();
+  if (!cleanId) return null;
+  if (isSupabaseEnabled()) {
+    return fetchSupabaseDateOverrideStaffId(cleanId);
+  }
+  const db = getSnapshot();
+  return db.dateOverrides.find((o) => o.id === cleanId)?.staffId ?? null;
+}
+
+export async function checkInBookingAdmin(params: {
+  bookingId: string;
+  actor: AuditActor;
+}): Promise<BookingWithRelations> {
+  const nowIso = new Date().toISOString();
+
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseAdminClient();
+    const booking = await fetchSupabaseBookingById(params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (booking.status === 'canceled' || booking.status === 'no_show') {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'No se puede registrar llegada en una cita cancelada o no-show.',
+      );
+    }
+    if (booking.attendanceStatus === 'confirmed' && booking.attendanceConfirmedAt) {
+      return booking;
+    }
+    const nextConfirmedVia = booking.confirmedVia ?? 'manual';
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        attendance_status: 'confirmed',
+        attendance_confirmed_at: nowIso,
+        confirmed_via: nextConfirmedVia,
+        updated_at: nowIso,
+      })
+      .eq('id', booking.id);
+    if (error) {
+      throw new PolicyError('CHECK_IN_FAILED', error.message);
+    }
+    const hydrated: BookingWithRelations = {
+      ...booking,
+      attendanceStatus: 'confirmed',
+      attendanceConfirmedAt: nowIso,
+      confirmedVia: nextConfirmedVia,
+      updatedAt: nowIso,
+    };
+    await dispatchOutboxEvent({
+      type: 'Realtime',
+      eventType: 'booking_updated',
+      payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
+    });
+    return hydrated;
+  }
+
+  const hydrated = await withWriteLock((db) => {
+    const booking = db.bookings.find((b) => b.id === params.bookingId);
+    if (!booking) {
+      throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    }
+    if (booking.status === 'canceled' || booking.status === 'no_show') {
+      throw new PolicyError(
+        'INVALID_STATE',
+        'No se puede registrar llegada en una cita cancelada o no-show.',
+      );
+    }
+    if (booking.attendanceStatus === 'confirmed' && booking.attendanceConfirmedAt) {
+      return hydrateBooking(db, booking);
+    }
+    booking.attendanceStatus = 'confirmed';
+    booking.attendanceConfirmedAt = nowIso;
+    booking.confirmedVia = booking.confirmedVia ?? 'manual';
+    booking.updatedAt = nowIso;
+    return hydrateBooking(db, booking);
+  });
+
+  await dispatchOutboxEvent({
+    type: 'Realtime',
+    eventType: 'booking_updated',
+    payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
+  });
+  return hydrated;
 }
 
 export function getRepository(clock: Clock = systemClock): SalonRepository {

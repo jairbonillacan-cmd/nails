@@ -232,7 +232,13 @@ export function NewBookingDialog({
       setAdvanced(createInitialAdvancedState());
       setPinDialogOpen(false);
       onOpenChange(false);
-      await onCreated(result.message, result.description);
+      try {
+        await onCreated(result.message, result.description);
+      } catch {
+        setFormError(null);
+      }
+    } catch {
+      setFormError('No se pudo guardar la cita. Intenta de nuevo.');
     } finally {
       setSaving(false);
     }

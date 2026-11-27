@@ -49,7 +49,7 @@ export function CitaQrCard({ bookingCode, salonName, manageUrl }: CitaQrCardProp
       id="ck-qr-title"
       headingLevel={3}
       title="Código QR de tu cita"
-      subtitle={`Guarda este pase para abrir tu cita rápido o muéstralo al llegar al estudio (${bookingCode}).`}
+      subtitle={`Guarda este pase para abrir tu cita al instante y muéstralo en recepción al llegar para check-in rápido (${bookingCode}).`}
       icon={<QrCode size={16} aria-hidden="true" className="lk-cereza-text" />}
       padded
       className="ck-panel fx-fade-up"

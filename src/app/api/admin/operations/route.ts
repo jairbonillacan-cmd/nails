@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
 import { AdminOperationsPostSchema } from '@/lib/contracts';
+import { AdminOperationsDeleteQuerySchema } from '@/lib/contracts/operations';
 import { toAdminCalendarConnectionDTO } from '@/lib/public-dto';
 import {
   addCashEntry,
   adjustInventoryItem,
+  deleteCoupon,
   getRepository,
   PolicyError,
   recordAuditEvent,
@@ -189,6 +191,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ coupon });
     }
 
+    if (parsed.kind === 'coupon_delete') {
+      const deleted = await deleteCoupon(parsed.id);
+      return NextResponse.json({
+        ok: true,
+        deletedId: deleted.id,
+        code: deleted.code,
+      });
+    }
+
     if (parsed.kind === 'waitlist') {
       const entry = await updateWaitlistStatus(parsed.id, parsed.status);
       return NextResponse.json({ entry });
@@ -206,6 +217,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof PolicyError) {
       const status =
         err.code === 'ITEM_NOT_FOUND' ||
+        err.code === 'COUPON_NOT_FOUND' ||
         err.code === 'WAITLIST_NOT_FOUND' ||
         err.code === 'WORKFLOW_NOT_FOUND'
           ? 404
@@ -219,5 +231,42 @@ export async function POST(request: NextRequest) {
       );
     }
     return NextResponse.json({ error: 'Error procesando operación.' }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const session = await requireAdmin(['owner', 'admin'], request);
+  if (!session) {
+    const authenticated = await getAdminSession(request);
+    return NextResponse.json(
+      { error: authenticated ? 'Permisos insuficientes' : 'No autorizado' },
+      { status: authenticated ? 403 : 401 },
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const parsed = AdminOperationsDeleteQuerySchema.parse({
+      kind: searchParams.get('kind') ?? undefined,
+      id: searchParams.get('id') ?? undefined,
+    });
+    const deleted = await deleteCoupon(parsed.id);
+    return NextResponse.json({
+      ok: true,
+      deletedId: deleted.id,
+      code: deleted.code,
+    });
+  } catch (err) {
+    if (err instanceof PolicyError) {
+      const status = err.code === 'COUPON_NOT_FOUND' ? 404 : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
+    }
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: err.issues[0]?.message || 'Parámetros de eliminación inválidos.' },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json({ error: 'No se pudo eliminar el registro.' }, { status: 400 });
   }
 }

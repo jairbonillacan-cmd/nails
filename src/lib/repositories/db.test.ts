@@ -16,6 +16,7 @@ import {
   createClientProfile,
   createOrRefreshSlotHold,
   createRecurringBookingSeries,
+  deleteCoupon,
   deleteRecurringBlock,
   getBookingByToken,
   getClientArcoExport,
@@ -55,6 +56,7 @@ import {
   updateBookingStatus,
   updateClientNotes,
   updateSalonSettings,
+  upsertCoupon,
   upsertLoyaltyProgram,
   upsertRecurringBlock,
   upsertService,
@@ -76,7 +78,11 @@ import {
   POST as postAdminBookings,
 } from '@/app/api/admin/bookings/route';
 import { POST as postAdminServices } from '@/app/api/admin/services/route';
-import { GET as getAdminOperations } from '@/app/api/admin/operations/route';
+import {
+  DELETE as deleteAdminOperations,
+  GET as getAdminOperations,
+  POST as postAdminOperations,
+} from '@/app/api/admin/operations/route';
 import {
   GET as getAdminPackages,
   PATCH as patchAdminPackages,
@@ -2158,5 +2164,199 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const finalCategories = getSnapshot().categories;
     expect(finalCategories.find((c) => c.id === apiCreated.id)?.name).toBe('Manicure & Spa');
     expect(finalCategories.filter((c) => c.id === apiCreated.id)).toHaveLength(1);
+  });
+
+  it('Wave 3: deletes coupons safely across repo & /api/admin/operations RBAC, supports retail_sale paymentMethod, and persists showBookingQr & touchUpDays via /api/admin/brand', async () => {
+    const db = getSnapshot();
+    const owner = db.adminUsers.find((u) => u.role === 'owner' && u.isActive);
+    const admin = db.adminUsers.find((u) => u.role === 'admin' && u.isActive);
+    const specialist = db.adminUsers.find((u) => u.role === 'specialist' && u.isActive);
+    if (!owner || !admin || !specialist) {
+      throw new Error('Expected owner, admin, and specialist seed users');
+    }
+    const ownerCookie = `${ADMIN_SESSION_COOKIE}=${createAdminSessionToken(owner)}`;
+    const adminCookie = `${ADMIN_SESSION_COOKIE}=${createAdminSessionToken(admin)}`;
+    const specialistCookie = `${ADMIN_SESSION_COOKIE}=${createAdminSessionToken(specialist)}`;
+
+    const createdCoupon = await upsertCoupon({
+      code: 'WAVE3DEL',
+      kind: 'coupon',
+      discountType: 'percent',
+      discountValue: 15,
+      remainingBalanceCents: null,
+      maxUses: 10,
+      minSubtotalCents: 0,
+      expiresAt: null,
+      recipientName: null,
+      isActive: true,
+    });
+
+    const tz = db.settings.timezone;
+    const farDate = getDateKeyInTimezone(new Date(Date.now() + 20 * 86_400_000), tz);
+    const avail = queryAvailability({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: 'staff-karla',
+      startDate: farDate,
+      days: 10,
+    });
+    const slot = avail.days.flatMap((d) => d.slots)[0];
+    if (!slot) throw new Error('Expected available slot');
+
+    const bookingWithCoupon = await createBookingAtomic({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slot.staffId,
+      startAt: slot.startAt,
+      clientName: 'Clienta Historial Cupon',
+      clientPhone: '+522229010099',
+      couponCode: 'WAVE3DEL',
+      privacyConsentAccepted: true,
+    });
+    expect(bookingWithCoupon.couponCode).toBe('WAVE3DEL');
+    expect(bookingWithCoupon.discountCents).toBeGreaterThan(0);
+
+    const unauthDel = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=coupon&id=${createdCoupon.id}`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(unauthDel.status).toBe(401);
+
+    const specDel = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=coupon&id=${createdCoupon.id}`,
+        { method: 'DELETE', headers: { cookie: specialistCookie } },
+      ),
+    );
+    expect(specDel.status).toBe(403);
+
+    const badKindDel = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=cash&id=${createdCoupon.id}`,
+        { method: 'DELETE', headers: { cookie: ownerCookie } },
+      ),
+    );
+    expect(badKindDel.status).toBe(400);
+
+    const ownerDel = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=coupon&id=${createdCoupon.id}`,
+        { method: 'DELETE', headers: { cookie: ownerCookie } },
+      ),
+    );
+    expect(ownerDel.status).toBe(200);
+    expect(await ownerDel.json()).toEqual({
+      ok: true,
+      deletedId: createdCoupon.id,
+      code: 'WAVE3DEL',
+    });
+
+    const missingDel = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=coupon&id=${createdCoupon.id}`,
+        { method: 'DELETE', headers: { cookie: ownerCookie } },
+      ),
+    );
+    expect(missingDel.status).toBe(404);
+
+    const afterDeleteDb = getSnapshot();
+    expect(afterDeleteDb.coupons.some((c) => c.id === createdCoupon.id)).toBe(false);
+    expect(
+      (afterDeleteDb.couponRedemptions ?? []).some((r) => r.couponId === createdCoupon.id),
+    ).toBe(false);
+    const preservedBooking = afterDeleteDb.bookings.find(
+      (b) => b.id === bookingWithCoupon.id,
+    );
+    expect(preservedBooking?.couponCode).toBe('WAVE3DEL');
+    expect(preservedBooking?.discountCents).toBe(bookingWithCoupon.discountCents);
+
+    const couponViaPost = await upsertCoupon({
+      code: 'WAVE3POST',
+      kind: 'gift_card',
+      discountType: 'fixed_cents',
+      discountValue: 30000,
+      remainingBalanceCents: 30000,
+      maxUses: 1,
+      minSubtotalCents: 0,
+      expiresAt: null,
+      recipientName: 'Ana',
+      isActive: true,
+    });
+    const adminPostDel = await postAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ kind: 'coupon_delete', id: couponViaPost.id }),
+      }),
+    );
+    expect(adminPostDel.status).toBe(200);
+    expect(getSnapshot().coupons.some((c) => c.id === couponViaPost.id)).toBe(false);
+    await expect(deleteCoupon(couponViaPost.id)).rejects.toMatchObject({
+      code: 'COUPON_NOT_FOUND',
+    });
+
+    const retailItem = getSnapshot().inventory.find(
+      (item) => item.isActive && item.retailPriceCents > 0 && item.stockQuantity >= 2,
+    );
+    if (retailItem) {
+      const cashCountBefore = getSnapshot().cashEntries.length;
+      const saleRes = await postAdminOperations(
+        new NextRequest('http://localhost:3000/api/admin/operations', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: ownerCookie },
+          body: JSON.stringify({
+            kind: 'inventory',
+            data: {
+              itemId: retailItem.id,
+              delta: -1,
+              reason: 'retail_sale',
+              paymentMethod: 'card',
+              notes: 'Venta directa en caja',
+            },
+          }),
+        }),
+      );
+      expect(saleRes.status).toBe(200);
+      const afterSale = getSnapshot();
+      expect(afterSale.cashEntries.length).toBe(cashCountBefore + 1);
+      expect(afterSale.cashEntries[0]?.paymentMethod).toBe('card');
+      expect(afterSale.cashEntries[0]?.entryType).toBe('product_sale');
+    }
+
+    const originalHeroTitle = getSnapshot().settings.landingContent.heroTitle;
+    const brandPatchRes = await patchAdminBrand(
+      new NextRequest('http://localhost:3000/api/admin/brand', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          landingContent: {
+            showBookingQr: false,
+            touchUpDays: 28,
+          },
+        }),
+      }),
+    );
+    expect(brandPatchRes.status).toBe(200);
+    const brandPatchJson = (await brandPatchRes.json()) as {
+      settings: {
+        landingContent: { heroTitle: string; showBookingQr?: boolean; touchUpDays?: number };
+      };
+    };
+    expect(brandPatchJson.settings.landingContent.showBookingQr).toBe(false);
+    expect(brandPatchJson.settings.landingContent.touchUpDays).toBe(28);
+    expect(brandPatchJson.settings.landingContent.heroTitle).toBe(originalHeroTitle);
+
+    const invalidTouchUpRes = await patchAdminBrand(
+      new NextRequest('http://localhost:3000/api/admin/brand', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          landingContent: { touchUpDays: 61 },
+        }),
+      }),
+    );
+    expect(invalidTouchUpRes.status).toBe(400);
   });
 });

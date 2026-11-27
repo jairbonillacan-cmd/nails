@@ -176,6 +176,13 @@ export interface UpdateBookingStatusInput {
   paymentMethod?: PaymentMethod;
   tipCents?: number;
   recordedBy?: string;
+  actor?: {
+    id: string;
+    email: string;
+    role: AdminRole;
+    fullName?: string;
+  };
+  skipLoyaltyStamp?: boolean;
 }
 
 export interface ManageClientBookingInput {
@@ -261,6 +268,8 @@ export interface AdjustInventoryInput {
   delta?: number;
   reason?: 'restock' | 'service_usage' | 'retail_sale' | 'adjustment';
   notes?: string;
+  paymentMethod?: PaymentMethod;
+  staffId?: string | null;
   createdBy?: string;
 }
 
@@ -365,6 +374,7 @@ export interface SalonRepository {
   upsertCoupon(
     input: Omit<Coupon, 'id' | 'usedCount' | 'createdAt'> & { id?: string },
   ): Promise<Coupon>;
+  deleteCoupon(id: string): Promise<Coupon>;
   adjustInventoryItem(params: AdjustInventoryInput): Promise<InventoryItem>;
   addCashEntry(input: Omit<CashRegisterEntry, 'id' | 'occurredAt'>): Promise<CashRegisterEntry>;
   updateWorkflow(

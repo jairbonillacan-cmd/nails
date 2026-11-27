@@ -26,6 +26,7 @@ import {
   StatusTag,
 } from '@/components/ui';
 import { BrandIdentitySection } from '@/components/admin/marca/BrandIdentitySection';
+import { BookingPageSettingsSection } from '@/components/admin/marca/BookingPageSettingsSection';
 import { DepositSettingsSection } from '@/components/admin/marca/DepositSettingsSection';
 import { LoyaltySettingsSection } from '@/components/admin/marca/LoyaltySettingsSection';
 import { BrandGallerySection } from '@/components/admin/marca/BrandGallerySection';
@@ -321,6 +322,10 @@ export default function AdminBrandPage() {
                     isDepositEnabled={isDepositEnabled}
                     depositAmountCents={depositAmountCents}
                     depositBeneficiary={depositBeneficiary}
+                    onUpdateDraft={updateDraft}
+                  />
+                  <BookingPageSettingsSection
+                    draft={draft}
                     onUpdateDraft={updateDraft}
                   />
                   <LoyaltySettingsSection

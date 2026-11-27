@@ -14,6 +14,7 @@ import {
   resolveSafeHttpUrl,
   type PublicManageBooking,
 } from './types';
+import { resolveBookingInstructionsText } from '@/lib/cita/cita-settings';
 import { formatPhoneDisplay } from '@/lib/format';
 
 interface CitaLocationCardProps {
@@ -30,6 +31,7 @@ export function CitaLocationCard({
   const mapsUrl = resolveSafeHttpUrl(settings.mapsUrl);
   const showInspo = isDisplayableMediaUrl(booking.inspoPhotoUrl);
   const hasPaymentProof = Boolean(booking.paymentProofUrl?.trim());
+  const arrivalInstructions = resolveBookingInstructionsText(settings.bookingInstructionsText);
   const locationSubtitle =
     booking.status === 'canceled'
       ? 'Resumen de la cita cancelada y datos de contacto del estudio.'
@@ -62,9 +64,9 @@ export function CitaLocationCard({
             <Text weight="semibold" textWrap="pretty">
               {settings.address}
             </Text>
-            {settings.bookingInstructionsText ? (
+            {arrivalInstructions ? (
               <Text type="supporting" color="secondary" textWrap="pretty">
-                {settings.bookingInstructionsText}
+                {arrivalInstructions}
               </Text>
             ) : null}
           </VStack>

@@ -8,6 +8,9 @@ import type { Database } from './database.types';
 import { PolicyError, SlotConflictError } from './port';
 import {
   createSupabaseRepository,
+  fetchSupabaseBookingById,
+  fetchSupabaseBookingPaymentSplits,
+  fetchSupabaseBookingStaffId,
   fetchSupabaseClientLoyaltySummary,
   fetchSupabaseServicesByIds,
 } from './supabase-repo';
@@ -62,6 +65,7 @@ function buildMockSupabase(options: {
   recurringBlocksRows?: Array<Database['public']['Tables']['recurring_blocks']['Row']>;
   loyaltyProgramsRows?: Array<Database['public']['Tables']['loyalty_programs']['Row']>;
   loyaltyStampsRows?: Array<Database['public']['Tables']['loyalty_stamps']['Row']>;
+  couponsRows?: Array<Database['public']['Tables']['coupons']['Row']>;
   couponRedemptionsRows?: Array<Database['public']['Tables']['coupon_redemptions']['Row']>;
   consentsRows?: Array<Database['public']['Tables']['consents']['Row']>;
   auditLogsRows?: Array<Database['public']['Tables']['audit_logs']['Row']>;
@@ -84,7 +88,8 @@ function buildMockSupabase(options: {
   const recurringBlocksRows = options.recurringBlocksRows ?? [];
   const loyaltyProgramsRows = options.loyaltyProgramsRows ?? [];
   const loyaltyStampsRows = options.loyaltyStampsRows ?? [];
-  const couponRedemptionsRows = options.couponRedemptionsRows ?? [];
+  const couponsRows = [...(options.couponsRows ?? [])];
+  const couponRedemptionsRows = [...(options.couponRedemptionsRows ?? [])];
   const consentsRows = options.consentsRows ?? [];
   const auditLogsRows = options.auditLogsRows ?? [];
   const dateOverridesRows = options.dateOverridesRows ?? [];
@@ -559,7 +564,29 @@ function buildMockSupabase(options: {
       }
       return jsonResponse(loyaltyStampsRows);
     }
+    if (table === 'coupons') {
+      const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+      if (method === 'DELETE') {
+        const remaining = couponsRows.filter((c) => c.id !== idFilter);
+        couponsRows.length = 0;
+        couponsRows.push(...remaining);
+        return jsonResponse([]);
+      }
+      const filtered = idFilter
+        ? couponsRows.filter((c) => c.id === idFilter)
+        : couponsRows;
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
     if (table === 'coupon_redemptions') {
+      if (method === 'DELETE') {
+        const couponIdFilter = url.searchParams.get('coupon_id')?.replace(/^eq\./, '');
+        const remaining = couponIdFilter
+          ? couponRedemptionsRows.filter((r) => r.coupon_id !== couponIdFilter)
+          : [];
+        couponRedemptionsRows.length = 0;
+        couponRedemptionsRows.push(...remaining);
+        return jsonResponse([]);
+      }
       return jsonResponse(couponRedemptionsRows);
     }
     if (table === 'consents') {
@@ -2252,5 +2279,239 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     expect(fetchedServices.map((s) => s.id)).toEqual([SERVICE_ID]);
     expect(loyalty?.currentStamps).toBe(1);
     expect(helperRequests.length).toBeLessThanOrEqual(4);
+  });
+
+  it('keeps updateBookingStatus, manageClientBookingAction, and targeted payment/staff helpers under Cloudflare subrequest limits without snapshot scans', async () => {
+    const futureStartAt = zonedDateTimeToUtc('2026-12-03', '11:00', TZ).toISOString();
+    const futureEndAt = zonedDateTimeToUtc('2026-12-03', '12:00', TZ).toISOString();
+    const futureOccEndAt = zonedDateTimeToUtc('2026-12-03', '12:15', TZ).toISOString();
+
+    const pendingBookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-CONF01',
+      manage_token: 'tok-conf-123',
+      idempotency_key: 'idem-conf-1',
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: futureStartAt,
+      end_at: futureEndAt,
+      occupied_start_at: futureStartAt,
+      occupied_end_at: futureOccEndAt,
+      occupied_range: `[${futureStartAt},${futureOccEndAt})`,
+      total_duration_minutes: 60,
+      subtotal_cents: 50000,
+      discount_cents: 0,
+      total_price_cents: 50000,
+      deposit_amount_cents: 20000,
+      coupon_code: null,
+      status: 'pending_confirmation',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: '/api/media/proofs/comprobante.png',
+      proof_delivery_method: 'web_upload',
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+
+    const { client, requests } = buildMockSupabase({
+      bookingsRows: [pendingBookingRow],
+      paymentSplitsRows: [],
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'confirm-budget');
+    const repo = createSupabaseRepository(clock, client);
+
+    const confirmed = await repo.updateBookingStatus({
+      bookingId: BOOKING_ID,
+      status: 'confirmed',
+      recordedBy: 'Dueña',
+      actor: {
+        id: 'adm-owner',
+        email: 'duena@nails.studio',
+        role: 'owner',
+        fullName: 'Dueña',
+      },
+    });
+
+    expect(confirmed.status).toBe('confirmed');
+    expect(confirmed.confirmedVia).toBe('manual');
+    expect(requests.length).toBeLessThanOrEqual(16);
+
+    const scannedPaths = new Set(requests.map((r) => r.path));
+    expect(scannedPaths.has('/rest/v1/funnel_events')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/inventory_items')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/gallery_items')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/waitlist_entries')).toBe(false);
+    expect(scannedPaths.has('/rest/v1/consents')).toBe(false);
+
+    const bookingPatch = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/bookings',
+    );
+    expect(bookingPatch?.body).toMatchObject({
+      status: 'confirmed',
+      confirmed_via: 'manual',
+    });
+
+    const splitPost = requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/payment_splits',
+    );
+    expect(splitPost?.body).toEqual([
+      expect.objectContaining({
+        booking_id: BOOKING_ID,
+        method: 'transfer',
+        amount_cents: 20000,
+        reference: 'Anticipo SPEI aprobado',
+      }),
+    ]);
+
+    const auditPost = requests.find(
+      (r) => r.method === 'POST' && r.path === '/rest/v1/audit_logs',
+    );
+    expect(auditPost?.body).toEqual([
+      expect.objectContaining({
+        action: 'deposit_approved',
+        entity_id: BOOKING_ID,
+      }),
+    ]);
+
+    const pastBookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      ...pendingBookingRow,
+      start_at: '2026-11-20T16:00:00.000Z',
+      end_at: '2026-11-20T17:00:00.000Z',
+      occupied_start_at: '2026-11-20T16:00:00.000Z',
+      occupied_end_at: '2026-11-20T17:15:00.000Z',
+      occupied_range: '[2026-11-20T16:00:00.000Z,2026-11-20T17:15:00.000Z)',
+    };
+    const pastMock = buildMockSupabase({ bookingsRows: [pastBookingRow] });
+    const pastRepo = createSupabaseRepository(clock, pastMock.client);
+
+    await expect(
+      pastRepo.updateBookingStatus({
+        bookingId: BOOKING_ID,
+        status: 'confirmed',
+        actor: {
+          id: 'adm-spec',
+          email: 'spec@nails.studio',
+          role: 'specialist',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'PAST_BOOKING_LOCKED' });
+    expect(pastMock.requests.length).toBeLessThanOrEqual(10);
+
+    const beforeAttendanceIdx = requests.length;
+    const attended = await repo.manageClientBookingAction({
+      token: 'tok-conf-123',
+      action: 'confirm_attendance',
+      confirmedVia: 'whatsapp',
+    });
+    const attendanceRequests = requests.slice(beforeAttendanceIdx);
+    expect(attended.attendanceStatus).toBe('confirmed');
+    expect(attended.confirmedVia).toBe('whatsapp');
+    expect(attendanceRequests.length).toBeLessThanOrEqual(10);
+    expect(attendanceRequests.some((r) => r.path === '/rest/v1/gallery_items')).toBe(false);
+
+    const splitsMock = buildMockSupabase({
+      bookingsRows: [pendingBookingRow],
+      paymentSplitsRows: [
+        {
+          id: SPLIT_ID,
+          booking_id: BOOKING_ID,
+          method: 'transfer',
+          amount_cents: 20000,
+          tip_cents: 0,
+          tip_staff_id: null,
+          reference: 'Anticipo SPEI aprobado',
+          created_at: '2026-12-01T13:00:00.000Z',
+        },
+      ],
+    });
+    const splits = await fetchSupabaseBookingPaymentSplits(BOOKING_ID, splitsMock.client);
+    expect(splits).toHaveLength(1);
+    expect(splits[0]?.amountCents).toBe(20000);
+    expect(splitsMock.requests).toHaveLength(1);
+
+    const staffOwner = await fetchSupabaseBookingStaffId(BOOKING_ID, splitsMock.client);
+    expect(staffOwner).toBe(STAFF_ID);
+    expect(splitsMock.requests).toHaveLength(2);
+
+    const fetchedBooking = await fetchSupabaseBookingById(BOOKING_ID, splitsMock.client);
+    expect(fetchedBooking?.id).toBe(BOOKING_ID);
+    expect(splitsMock.requests.length).toBeLessThanOrEqual(10);
+  });
+
+  it('deleteCoupon removes coupon_redemptions before deleting coupon with targeted queries and updateSalonSettings persists showBookingQr and touchUpDays', async () => {
+    const couponRow: Database['public']['Tables']['coupons']['Row'] = {
+      id: COUPON_ID,
+      code: 'PROMO25',
+      kind: 'coupon',
+      discount_type: 'percent',
+      discount_value: 25,
+      remaining_balance_cents: null,
+      max_uses: 10,
+      used_count: 1,
+      min_subtotal_cents: 0,
+      expires_at: null,
+      recipient_name: null,
+      is_active: true,
+      created_at: '2026-12-01T10:00:00.000Z',
+    };
+    const redemptionRow: Database['public']['Tables']['coupon_redemptions']['Row'] = {
+      id: REDEMPTION_ID,
+      coupon_id: COUPON_ID,
+      booking_id: BOOKING_ID,
+      client_id: CLIENT_ID,
+      amount_cents: 5000,
+      status: 'active',
+      created_at: '2026-12-01T11:00:00.000Z',
+      released_at: null,
+    };
+
+    const { client, requests } = buildMockSupabase({
+      couponsRows: [couponRow],
+      couponRedemptionsRows: [redemptionRow],
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'wave3-supabase');
+    const repo = createSupabaseRepository(clock, client);
+
+    const deleted = await repo.deleteCoupon(COUPON_ID);
+    expect(deleted.id).toBe(COUPON_ID);
+    expect(deleted.code).toBe('PROMO25');
+    expect(requests).toHaveLength(3);
+    expect(requests[0]?.method).toBe('GET');
+    expect(requests[0]?.path).toBe('/rest/v1/coupons');
+    expect(requests[1]?.method).toBe('DELETE');
+    expect(requests[1]?.path).toBe('/rest/v1/coupon_redemptions');
+    expect(requests[2]?.method).toBe('DELETE');
+    expect(requests[2]?.path).toBe('/rest/v1/coupons');
+
+    await expect(repo.deleteCoupon(COUPON_ID)).rejects.toMatchObject({
+      code: 'COUPON_NOT_FOUND',
+    });
+
+    const beforeSettingsIdx = requests.length;
+    const updatedSettings = await repo.updateSalonSettings({
+      landingContent: {
+        showBookingQr: false,
+        touchUpDays: 28,
+      },
+    });
+    expect(updatedSettings.landingContent.showBookingQr).toBe(false);
+    expect(updatedSettings.landingContent.touchUpDays).toBe(28);
+    expect(updatedSettings.landingContent.heroTitle).toBe('Title');
+    const settingsPatch = requests
+      .slice(beforeSettingsIdx)
+      .find((r) => r.method === 'PATCH' && r.path === '/rest/v1/salon_settings');
+    expect(settingsPatch?.body).toMatchObject({
+      landing_content: expect.objectContaining({
+        heroTitle: 'Title',
+        showBookingQr: false,
+        touchUpDays: 28,
+      }),
+    });
   });
 });

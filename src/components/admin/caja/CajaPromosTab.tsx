@@ -17,7 +17,10 @@ interface CajaPromosTabProps {
   packagesLoading: boolean;
   services: readonly Service[];
   currency: 'MXN' | 'USD';
+  tz: string;
+  nowMs: number;
   canManagePackages: boolean;
+  deletingCouponId: string | null;
   togglingPkgId: string | null;
   onCreateCoupon: (input: {
     code: string;
@@ -26,6 +29,7 @@ interface CajaPromosTabProps {
     value: number;
     recipient: string;
   }) => Promise<FormSubmitResult>;
+  onRequestDeleteCoupon: (coupon: Coupon) => void;
   onCreatePackage: (input: {
     name: string;
     description: string;
@@ -45,9 +49,13 @@ export function CajaPromosTab({
   packagesLoading,
   services,
   currency,
+  tz,
+  nowMs,
   canManagePackages,
+  deletingCouponId,
   togglingPkgId,
   onCreateCoupon,
+  onRequestDeleteCoupon,
   onCreatePackage,
   onTogglePackage,
 }: CajaPromosTabProps) {
@@ -72,8 +80,12 @@ export function CajaPromosTab({
         <CouponsSubSection
           coupons={coupons}
           currency={currency}
+          tz={tz}
+          nowMs={nowMs}
           canManageCoupons={canManagePackages}
+          deletingCouponId={deletingCouponId}
           onCreateCoupon={onCreateCoupon}
+          onRequestDeleteCoupon={onRequestDeleteCoupon}
         />
       ) : (
         <PackagesSubSection

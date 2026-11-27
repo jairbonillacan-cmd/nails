@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
+import { useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -17,6 +19,7 @@ import {
 } from '@/lib/format';
 import { useManageBookingActions } from '@/lib/hooks/useManageBookingActions';
 import { useServiceWorker } from '@/lib/hooks/useServiceWorker';
+import type { StudioBarContext } from '@/lib/cita/studio-bar';
 import type { PublicLoyaltySummaryDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import { BookingHeader } from './booking/BookingChrome';
 import { hasConfiguredDeposit } from './booking/bookingHelpers';
@@ -26,6 +29,7 @@ import { CitaActionsPanel } from './cita/CitaActionsPanel';
 import { CitaDepositSection } from './cita/CitaDepositSection';
 import { CitaHero } from './cita/CitaHero';
 import { CitaReviewCard } from './cita/CitaReviewCard';
+import type { StudioBookingUpdate } from './cita/CitaStudioBar';
 import {
   appendManageTokenToMediaUrl,
   type CalendarAddLinks,
@@ -37,6 +41,10 @@ const CitaDialogs = dynamic(
   { ssr: false },
 );
 
+const CitaStudioBar = dynamic(
+  () => import('./cita/CitaStudioBar').then((mod) => mod.CitaStudioBar),
+);
+
 interface ManageBookingViewProps {
   initialBooking: PublicManageBooking;
   settings: PublicSettingsDTO;
@@ -46,6 +54,7 @@ interface ManageBookingViewProps {
   initialLoyaltySummary?: PublicLoyaltySummaryDTO | null;
   initialAction?: 'reschedule' | 'cancel' | 'confirm';
   renderedAtIso?: string;
+  studioContext?: StudioBarContext | null;
 }
 
 export function ManageBookingView({
@@ -57,7 +66,10 @@ export function ManageBookingView({
   initialLoyaltySummary = null,
   initialAction,
   renderedAtIso,
+  studioContext = null,
 }: ManageBookingViewProps) {
+  const router = useRouter();
+  const [studioPatch, setStudioPatch] = useState<StudioBookingUpdate | null>(null);
   const { isOffline } = useServiceWorker({ register: false });
   const manage = useManageBookingActions({
     initialBooking,
@@ -70,7 +82,20 @@ export function ManageBookingView({
     renderedAtIso,
   });
 
-  const { booking, tz } = manage;
+  const { tz } = manage;
+  const booking: PublicManageBooking =
+    studioPatch &&
+    studioPatch.bookingId === manage.booking.id &&
+    studioPatch.updatedAt >= manage.booking.updatedAt
+      ? {
+          ...manage.booking,
+          ...(studioPatch.status ? { status: studioPatch.status } : {}),
+          ...(studioPatch.attendanceStatus
+            ? { attendanceStatus: studioPatch.attendanceStatus }
+            : {}),
+          updatedAt: studioPatch.updatedAt,
+        }
+      : manage.booking;
   const extraServices = booking.extraServices ?? [];
   const serviceNames = [booking.service.name, ...extraServices.map((srv) => srv.name)].join(' + ');
   const addonsSummary = booking.addons.map((a) => a.name).join(' · ') || 'Sin extras';
@@ -148,6 +173,19 @@ export function ManageBookingView({
       />
 
       <VStack as="main" gap={4} className="rb-wrap rb-main ck-wrap">
+        {studioContext ? (
+          <CitaStudioBar
+            context={studioContext}
+            booking={displayBooking}
+            currency={settings.currency}
+            timezone={tz}
+            onBookingUpdated={(patch) => {
+              setStudioPatch(patch);
+              router.refresh();
+            }}
+          />
+        ) : null}
+
         {isOffline ? (
           <HStack role="status" aria-live="polite" align="center" gap={2} className="pt-offline-pill" data-inline="true">
             <WifiOff size={15} aria-hidden="true" />

@@ -14,10 +14,12 @@ import {
   approveCajaDeposit,
   createCajaCoupon,
   createCajaPackage,
+  deleteCajaCoupon,
   exportCajaCsv,
   recordCajaCashEntry,
   rejectCajaDeposit,
   toggleCajaPackage,
+  type RecordCajaEntryInput,
 } from '@/components/admin/caja/cajaActions';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
 import type { CajaTab, ServicePackageCatalogRow } from '@/components/admin/caja/cajaTypes';
@@ -29,7 +31,7 @@ import {
   SkeletonBlock,
 } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
-import type { PaymentMethod } from '@/lib/types';
+import type { Coupon } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 function CajaTabFallback() {
@@ -77,8 +79,13 @@ export default function AdminCashPage() {
     setHighlightUncollected,
     promosView,
     setPromosView,
-    commissionPeriod,
-    setCommissionPeriod,
+    cajaPeriod,
+    setCajaPeriod,
+    methodFilter,
+    setMethodFilter,
+    searchQuery,
+    setSearchQuery,
+    resetSalesFilters,
     packagesCatalog,
     packagesLoading,
     reloadPackages,
@@ -87,8 +94,11 @@ export default function AdminCashPage() {
     pendingDepositsTotalCents,
     uncollectedTotalCents,
     kpiItems,
+    periodSummary,
+    todaySummary,
+    filteredCashEntries,
+    filteredSplitDetails,
     splitSummaryByMethod,
-    splitDetails,
     commissionsByStaff,
   } = useCajaData(providerData, searchParams.get('tab'));
 
@@ -101,6 +111,8 @@ export default function AdminCashPage() {
     bookingCode: string;
   } | null>(null);
   const rejectResolveRef = useRef<((ok: boolean) => void) | null>(null);
+  const [deleteCouponTarget, setDeleteCouponTarget] = useState<Coupon | null>(null);
+  const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
   const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
@@ -112,10 +124,12 @@ export default function AdminCashPage() {
 
   const tz = data.settings.timezone || 'America/Mexico_City';
   const currency = data.settings.currency;
+  const nowMs = Date.parse(data.serverNowIso) || 0;
   const defaultDepositLabel = formatCurrency(
     data.settings.depositAmountCents ?? 20000,
     currency,
   );
+  const isSpecialistView = data.session.user.role === 'specialist';
   const canManagePackages =
     data.session.user.role === 'owner' || data.session.user.role === 'admin';
   const effectiveActiveTab: CajaTab =
@@ -185,12 +199,9 @@ export default function AdminCashPage() {
     }
   };
 
-  const handleRecordCashEntry = async (input: {
-    entryType: 'expense' | 'product_sale' | 'service_income';
-    description: string;
-    amountMxn: number;
-    method: PaymentMethod;
-  }): Promise<FormSubmitResult> => {
+  const handleRecordCashEntry = async (
+    input: RecordCajaEntryInput,
+  ): Promise<FormSubmitResult> => {
     setMsg(null);
     const result = await recordCajaCashEntry(input);
     if (!result.ok) {
@@ -218,6 +229,27 @@ export default function AdminCashPage() {
     setMsg(result.message ?? null);
     await refresh();
     return FORM_SUBMIT_OK;
+  };
+
+  const handleConfirmDeleteCoupon = async () => {
+    if (!deleteCouponTarget) return;
+    const target = deleteCouponTarget;
+    setDeletingCouponId(target.id);
+    setErrorMsg(null);
+    setMsg(null);
+    try {
+      const result = await deleteCajaCoupon(target.id, target.code);
+      if (!result.ok) {
+        setErrorMsg(result.error ?? 'No se pudo eliminar el código.');
+        setDeleteCouponTarget(null);
+        return;
+      }
+      setDeleteCouponTarget(null);
+      setMsg(result.message ?? null);
+      await refresh();
+    } finally {
+      setDeletingCouponId(null);
+    }
   };
 
   const handleCreatePackage = async (input: {
@@ -290,7 +322,7 @@ export default function AdminCashPage() {
     <VStack gap={5} className="ad-page fx-fade-up">
       <PageHeader
         title="Caja"
-        subtitle="Lo que ya cobraste y lo que falta por cobrar."
+        subtitle="Ventas, arqueo diario, comisiones y promociones en un solo lugar."
         actions={
           <>
             <Button
@@ -350,8 +382,8 @@ export default function AdminCashPage() {
           value="summary"
           label={
             uncollectedBookings.length > 0
-              ? `Resumen de hoy (${uncollectedBookings.length})`
-              : 'Resumen de hoy'
+              ? `Resumen (${uncollectedBookings.length})`
+              : 'Resumen'
           }
         />
         <Tab
@@ -368,18 +400,34 @@ export default function AdminCashPage() {
 
       {effectiveActiveTab === 'summary' ? (
         <CajaSummaryTab
-          cashEntries={data.cashEntries}
+          salonName={data.settings.name}
+          allCashEntries={data.cashEntries}
+          filteredCashEntries={filteredCashEntries}
+          periodSummary={periodSummary}
+          todaySummary={todaySummary}
+          commissionsByStaff={commissionsByStaff}
+          inventory={data.inventory}
+          staff={data.staff}
           uncollectedBookings={uncollectedBookings}
           uncollectedTotalCents={uncollectedTotalCents}
           pendingDepositsCount={pendingDeposits.length}
           pendingDepositsTotalCents={pendingDepositsTotalCents}
-          splitDetails={splitDetails}
+          splitDetails={filteredSplitDetails}
+          cajaPeriod={cajaPeriod}
+          methodFilter={methodFilter}
+          searchQuery={searchQuery}
           todayKey={data.serverTodayKey}
           tz={tz}
           currency={currency}
           canRecordCash={canManagePackages}
+          isSpecialistView={isSpecialistView}
           highlightUncollected={highlightUncollected}
+          onChangePeriod={setCajaPeriod}
+          onChangeMethodFilter={setMethodFilter}
+          onChangeSearchQuery={setSearchQuery}
+          onResetFilters={resetSalesFilters}
           onOpenDeposits={() => setActiveTab('deposits')}
+          onOpenCommissions={() => setActiveTab('commissions')}
           onRecordCashEntry={handleRecordCashEntry}
         />
       ) : effectiveActiveTab === 'deposits' ? (
@@ -398,8 +446,9 @@ export default function AdminCashPage() {
           commissionsByStaff={commissionsByStaff}
           splitSummaryByMethod={splitSummaryByMethod}
           currency={currency}
-          commissionPeriod={commissionPeriod}
-          onChangeCommissionPeriod={setCommissionPeriod}
+          commissionPeriod={cajaPeriod}
+          isSpecialistView={isSpecialistView}
+          onChangeCommissionPeriod={setCajaPeriod}
         />
       ) : (
         <CajaPromosTab
@@ -410,9 +459,13 @@ export default function AdminCashPage() {
           packagesLoading={packagesLoading}
           services={data.services}
           currency={currency}
+          tz={tz}
+          nowMs={nowMs}
           canManagePackages={canManagePackages}
+          deletingCouponId={deletingCouponId}
           togglingPkgId={togglingPkgId}
           onCreateCoupon={handleCreateCoupon}
+          onRequestDeleteCoupon={setDeleteCouponTarget}
           onCreatePackage={handleCreatePackage}
           onTogglePackage={handleTogglePackage}
         />
@@ -434,6 +487,28 @@ export default function AdminCashPage() {
           variant="destructive"
           isLoading={rejectingId === rejectConfirmTarget.bookingId}
           onConfirm={() => void handleConfirmRejectDeposit()}
+        />
+      ) : null}
+
+      {deleteCouponTarget ? (
+        <ConfirmActionDialog
+          isOpen={Boolean(deleteCouponTarget)}
+          onOpenChange={(open) => {
+            if (!open && !deletingCouponId) {
+              setDeleteCouponTarget(null);
+            }
+          }}
+          title={
+            deleteCouponTarget.kind === 'gift_card'
+              ? '¿Eliminar esta tarjeta de regalo?'
+              : '¿Eliminar este cupón?'
+          }
+          description={`El código ${deleteCouponTarget.code} dejará de aceptarse en nuevas reservas. Las citas pasadas que ya lo aplicaron conservarán su historial y descuento registrado.`}
+          confirmLabel="Sí, eliminar"
+          cancelLabel="Cancelar"
+          variant="destructive"
+          isLoading={deletingCouponId === deleteCouponTarget.id}
+          onConfirm={() => void handleConfirmDeleteCoupon()}
         />
       ) : null}
 

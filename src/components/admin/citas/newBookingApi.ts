@@ -99,6 +99,7 @@ export async function submitAdminBookingRequest(params: {
     res = await fetch('/api/admin/bookings', {
       method: 'POST',
       headers,
+      signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
         serviceId: params.serviceId,
         extraServiceIds: params.extraServiceIds,
@@ -125,11 +126,15 @@ export async function submitAdminBookingRequest(params: {
         forceConfirmed: true,
       }),
     });
-  } catch {
+  } catch (err) {
+    const isTimeout =
+      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     return {
       ok: false,
       pinRequired: false,
-      error: 'Sin conexión. No se pudo guardar la cita.',
+      error: isTimeout
+        ? 'El registro de la cita tardó demasiado. Intenta de nuevo en unos segundos.'
+        : 'Sin conexión. No se pudo guardar la cita.',
     };
   }
 

@@ -123,6 +123,11 @@ const serviceWorkerHeaders = [
   { key: 'Service-Worker-Allowed', value: '/' },
 ];
 
+const privateManageHeaders = [
+  { key: 'Referrer-Policy', value: 'no-referrer' },
+  { key: 'Cache-Control', value: 'private, no-store' },
+];
+
 const distDir = process.env.NEXT_DIST_DIR?.trim() || '.next';
 
 const extraDevOrigins = (process.env.DEV_ALLOWED_ORIGINS ?? '')
@@ -173,6 +178,10 @@ const nextConfig: NextConfig = {
         source: '/reservar/:path*',
         has: [{ type: 'query', key: 'embed', value: '1' }],
         headers: embedFrameHeaders,
+      },
+      {
+        source: '/cita/:path*',
+        headers: privateManageHeaders,
       },
       {
         source: '/landing/:path*',

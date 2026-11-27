@@ -40,6 +40,7 @@ export {
 } from './primitives';
 
 export {
+  AdminCheckInBookingSchema,
   AdminCreateBookingSchema,
   AdminPatchBookingStatusSchema,
   AdminRejectDepositSchema,

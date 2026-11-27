@@ -16,6 +16,8 @@ import {
   addDateOverrideRange,
   deleteDateOverride,
   deleteRecurringBlock,
+  getDateOverrideStaffOwnerAsync,
+  getRecurringBlockStaffOwnerAsync,
   getRepository,
   PolicyError,
   preloadMexicoHolidays,
@@ -188,11 +190,8 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
         }
         if (parsed.id) {
-          const snapshot = await getRepository().getSnapshot();
-          const existing = (snapshot.recurringBlocks ?? []).find(
-            (b) => b.id === parsed.id,
-          );
-          if (!existing || existing.staffId !== session.user.staffMemberId) {
+          const ownerStaffId = await getRecurringBlockStaffOwnerAsync(parsed.id);
+          if (!ownerStaffId || ownerStaffId !== session.user.staffMemberId) {
             return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
           }
         }
@@ -215,12 +214,11 @@ export async function POST(request: NextRequest) {
     if (rawKind === 'recurring_block_toggle') {
       const parsed = ToggleRecurringBlockSchema.parse(raw);
       if (session.user.role === 'specialist') {
-        const snapshot = await getRepository().getSnapshot();
-        const target = (snapshot.recurringBlocks ?? []).find((b) => b.id === parsed.id);
+        const ownerStaffId = await getRecurringBlockStaffOwnerAsync(parsed.id);
         if (
           !session.user.staffMemberId ||
-          !target ||
-          target.staffId !== session.user.staffMemberId
+          !ownerStaffId ||
+          ownerStaffId !== session.user.staffMemberId
         ) {
           return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
         }
@@ -312,12 +310,11 @@ export async function DELETE(request: NextRequest) {
   const blockId = searchParams.get('blockId')?.trim();
   if (blockId) {
     if (session.user.role === 'specialist') {
-      const snapshot = await getRepository().getSnapshot();
-      const target = (snapshot.recurringBlocks ?? []).find((b) => b.id === blockId);
+      const ownerStaffId = await getRecurringBlockStaffOwnerAsync(blockId);
       if (
         !session.user.staffMemberId ||
-        !target ||
-        target.staffId !== session.user.staffMemberId
+        !ownerStaffId ||
+        ownerStaffId !== session.user.staffMemberId
       ) {
         return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
       }
@@ -329,12 +326,11 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get('id');
   if (id) {
     if (session.user.role === 'specialist') {
-      const snapshot = await getRepository().getSnapshot();
-      const target = snapshot.dateOverrides.find((o) => o.id === id);
+      const ownerStaffId = await getDateOverrideStaffOwnerAsync(id);
       if (
         !session.user.staffMemberId ||
-        !target ||
-        target.staffId !== session.user.staffMemberId
+        !ownerStaffId ||
+        ownerStaffId !== session.user.staffMemberId
       ) {
         return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
       }

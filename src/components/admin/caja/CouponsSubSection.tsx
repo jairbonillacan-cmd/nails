@@ -6,17 +6,20 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { IconButton } from '@astryxdesign/core/IconButton';
 import { Table } from '@astryxdesign/core/Table';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
-import { Gift } from 'lucide-react';
-import { formatCurrency } from '@/lib/format';
+import { Check, Copy, Gift, Trash2 } from 'lucide-react';
+import { formatCurrency, formatDateShortInTimezone } from '@/lib/format';
+import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import type { Coupon } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import type { FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
+import { classifyCouponStatus } from './cajaMetrics';
 
 type CouponKind = 'coupon' | 'gift_card';
 type CouponDiscountType = 'percent' | 'fixed_cents';
@@ -32,8 +35,12 @@ type CreateCouponHandler = (input: {
 interface CouponsSubSectionProps {
   coupons: readonly Coupon[];
   currency: 'MXN' | 'USD';
+  tz: string;
+  nowMs: number;
   canManageCoupons?: boolean;
+  deletingCouponId: string | null;
   onCreateCoupon: CreateCouponHandler;
+  onRequestDeleteCoupon: (coupon: Coupon) => void;
 }
 
 const COUPON_KIND_OPTIONS: Array<{ value: CouponKind; label: string }> = [
@@ -152,15 +159,40 @@ function CouponFormBody({
 export function CouponsSubSection({
   coupons,
   currency,
+  tz,
+  nowMs,
   canManageCoupons = true,
+  deletingCouponId,
   onCreateCoupon,
+  onRequestDeleteCoupon,
 }: CouponsSubSectionProps) {
+  const clipboard = useCopyToClipboard(2000);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyCode = async (coupon: Coupon) => {
+    setCopiedId(coupon.id);
+    await clipboard.copy(coupon.code, `Código ${coupon.code} copiado.`);
+  };
+
+  const activeCount = coupons.filter(
+    (coupon) => classifyCouponStatus(coupon, nowMs).status === 'active',
+  ).length;
+
   return (
     <VStack gap={0}>
       <SurfaceCard
         title="Cupones y tarjetas de regalo"
         subtitle="Códigos de descuento y tarjetas con saldo que tus clientas pueden usar al agendar."
         count={coupons.length}
+        badge={
+          coupons.length > 0 ? (
+            <StatusTag
+              tone="success"
+              hasTabularNumbers
+              label={`${activeCount} ${activeCount === 1 ? 'activo' : 'activos'}`}
+            />
+          ) : undefined
+        }
         actions={
           canManageCoupons ? (
             <FormDialogLauncher
@@ -200,14 +232,44 @@ export function CouponsSubSection({
                 {
                   key: 'code',
                   header: 'Código',
-                  renderCell: (c) => (
-                    <HStack gap={1.5} align="center">
-                      <Gift size={14} aria-hidden="true" />
-                      <Text type="code" weight="semibold">
-                        {c.code}
-                      </Text>
-                    </HStack>
-                  ),
+                  renderCell: (c) => {
+                    const isCopied = clipboard.copied && copiedId === c.id;
+                    const metaParts: string[] = [];
+                    if (c.recipientName) metaParts.push(`Para ${c.recipientName}`);
+                    if (c.expiresAt) {
+                      metaParts.push(`Vence ${formatDateShortInTimezone(c.expiresAt, tz)}`);
+                    }
+                    return (
+                      <VStack gap={0.5} className="ad-coupon-code-cell">
+                        <HStack gap={1.5} align="center">
+                          <Gift size={14} aria-hidden="true" className="ad-coupon-icon" />
+                          <Text type="code" weight="semibold">
+                            {c.code}
+                          </Text>
+                          <IconButton
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            label={isCopied ? 'Código copiado' : `Copiar código ${c.code}`}
+                            tooltip={isCopied ? 'Copiado' : 'Copiar código'}
+                            icon={
+                              isCopied ? (
+                                <Check size={13} aria-hidden="true" />
+                              ) : (
+                                <Copy size={13} aria-hidden="true" />
+                              )
+                            }
+                            onClick={() => void handleCopyCode(c)}
+                          />
+                        </HStack>
+                        {metaParts.length > 0 ? (
+                          <Text type="supporting" color="secondary">
+                            {metaParts.join(' · ')}
+                          </Text>
+                        ) : null}
+                      </VStack>
+                    );
+                  },
                 },
                 {
                   key: 'kind',
@@ -220,34 +282,117 @@ export function CouponsSubSection({
                   ),
                 },
                 {
+                  key: 'isActive',
+                  header: 'Estado',
+                  renderCell: (c) => {
+                    const meta = classifyCouponStatus(c, nowMs);
+                    return <StatusTag tone={meta.tone} showDot label={meta.label} />;
+                  },
+                },
+                {
                   key: 'discountValue',
                   header: 'Beneficio / Saldo',
-                  renderCell: (c) => (
-                    <Text hasTabularNumbers>
-                      {c.kind === 'gift_card'
-                        ? `Saldo: ${formatCurrency(c.remainingBalanceCents ?? 0, currency)}`
-                        : c.discountType === 'percent'
-                          ? `${c.discountValue}%`
-                          : formatCurrency(c.discountValue, currency)}
-                    </Text>
-                  ),
+                  renderCell: (c) => {
+                    if (c.kind === 'gift_card') {
+                      const remaining = c.remainingBalanceCents ?? 0;
+                      const initial = Math.max(c.discountValue, remaining, 1);
+                      const pct = Math.max(0, Math.min(100, Math.round((remaining / initial) * 100)));
+                      return (
+                        <VStack gap={1} className="ad-coupon-progress-cell">
+                          <HStack justify="between" align="center" gap={2}>
+                            <Text weight="semibold" hasTabularNumbers>
+                              {formatCurrency(remaining, currency)}
+                            </Text>
+                            <Text type="supporting" color="secondary" hasTabularNumbers>
+                              de {formatCurrency(c.discountValue, currency)}
+                            </Text>
+                          </HStack>
+                          <VStack className="ad-thin-track" gap={0} aria-hidden="true">
+                            <VStack
+                              className="ad-thin-fill"
+                              data-accent={remaining > 0 ? 'true' : undefined}
+                              gap={0}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </VStack>
+                        </VStack>
+                      );
+                    }
+                    return (
+                      <VStack gap={0}>
+                        <Text weight="semibold" hasTabularNumbers>
+                          {c.discountType === 'percent'
+                            ? `${c.discountValue}% de descuento`
+                            : formatCurrency(c.discountValue, currency)}
+                        </Text>
+                        {c.minSubtotalCents > 0 ? (
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            Mínimo {formatCurrency(c.minSubtotalCents, currency)}
+                          </Text>
+                        ) : null}
+                      </VStack>
+                    );
+                  },
                 },
                 {
                   key: 'usedCount',
-                  header: 'Usos',
-                  renderCell: (c) => (
-                    <Text hasTabularNumbers>
-                      {c.usedCount}
-                      {c.maxUses ? ` / ${c.maxUses}` : ''}
-                    </Text>
-                  ),
+                  header: 'Uso',
+                  renderCell: (c) => {
+                    if (!c.maxUses) {
+                      return (
+                        <Text hasTabularNumbers>
+                          {c.usedCount} {c.usedCount === 1 ? 'uso' : 'usos'}
+                        </Text>
+                      );
+                    }
+                    const pct = Math.max(
+                      0,
+                      Math.min(100, Math.round((c.usedCount / c.maxUses) * 100)),
+                    );
+                    return (
+                      <VStack gap={1} className="ad-coupon-usage-cell">
+                        <Text type="supporting" weight="medium" hasTabularNumbers>
+                          {c.usedCount} / {c.maxUses}
+                        </Text>
+                        <VStack className="ad-thin-track" gap={0} aria-hidden="true">
+                          <VStack
+                            className="ad-thin-fill"
+                            data-accent={pct >= 80 ? 'true' : undefined}
+                            gap={0}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </VStack>
+                      </VStack>
+                    );
+                  },
                 },
+                ...(canManageCoupons
+                  ? [
+                      {
+                        key: 'id' as const,
+                        header: 'Acciones',
+                        align: 'end' as const,
+                        renderCell: (c: Coupon) => (
+                          <Button
+                            type="button"
+                            label="Eliminar"
+                            variant="ghost"
+                            size="sm"
+                            className="ad-caja-delete-btn"
+                            icon={<Trash2 size={14} aria-hidden="true" />}
+                            isLoading={deletingCouponId === c.id}
+                            isDisabled={Boolean(deletingCouponId)}
+                            onClick={() => onRequestDeleteCoupon(c)}
+                          />
+                        ),
+                      },
+                    ]
+                  : []),
               ]}
             />
           </VStack>
         )}
       </SurfaceCard>
-
     </VStack>
   );
 }

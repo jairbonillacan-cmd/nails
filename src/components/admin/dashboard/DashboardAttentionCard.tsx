@@ -352,8 +352,34 @@ export function DashboardAttentionCard({
           confirmingBookingId={confirmingBookingId}
           rejectingBookingId={rejectingBookingId}
           onClose={() => setPreviewDeposit(null)}
-          onConfirmDeposit={onConfirmDeposit}
-          onRejectDeposit={onRejectDeposit}
+          onConfirmDeposit={async (bookingId, clientName) => {
+            try {
+              const ok = await onConfirmDeposit(bookingId, clientName);
+              if (!ok) {
+                setPreviewDeposit(null);
+              }
+              return ok;
+            } catch {
+              setPreviewDeposit(null);
+              return false;
+            }
+          }}
+          onRejectDeposit={
+            onRejectDeposit
+              ? async (bookingId, clientName) => {
+                  try {
+                    const ok = await onRejectDeposit(bookingId, clientName);
+                    if (!ok) {
+                      setPreviewDeposit(null);
+                    }
+                    return ok;
+                  } catch {
+                    setPreviewDeposit(null);
+                    return false;
+                  }
+                }
+              : undefined
+          }
         />
       ) : null}
     </>

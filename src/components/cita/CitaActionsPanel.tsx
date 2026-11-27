@@ -10,6 +10,12 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { CalendarPlus, CalendarX2, Download } from 'lucide-react';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import {
+  formatTouchUpActionLabel,
+  formatTouchUpSubtitle,
+  resolveShowBookingQr,
+  resolveTouchUpDays,
+} from '@/lib/cita/cita-settings';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { CitaLocationCard } from './CitaLocationCard';
@@ -55,13 +61,16 @@ export function CitaActionsPanel({
   const isNoShow = booking.status === 'no_show';
   const isActive = !isCanceled && !isCompleted && !isNoShow;
   const sameServiceBookingUrl = `/reservar/${encodeURIComponent(booking.service.slug)}?staff=${encodeURIComponent(booking.staff.bookingSlug)}`;
+  const showBookingQr = resolveShowBookingQr(settings.landingContent);
+  const touchUpDays = resolveTouchUpDays(settings.landingContent);
+  const touchUpLabel = formatTouchUpActionLabel(touchUpDays);
 
   const locationCard = (
     <CitaLocationCard booking={booking} settings={settings} whatsappUrl={whatsappUrl} />
   );
-  const qrCard = (
+  const qrCard = showBookingQr ? (
     <CitaQrCard bookingCode={booking.bookingCode} salonName={settings.name} manageUrl={manageUrl} />
-  );
+  ) : null;
 
   if (isCanceled) {
     return (
@@ -190,14 +199,14 @@ export function CitaActionsPanel({
           id="ck-rebook-title"
           headingLevel={2}
           title="¿Lista para tu próximo retoque?"
-          subtitle={`Dejamos prellenado ${booking.service.name} con ${booking.staff.name} en 21 días para que apartes en un toque.`}
+          subtitle={formatTouchUpSubtitle(booking.service.name, booking.staff.name, touchUpDays)}
           badge={<BookingStatusTag status={booking.status} size="sm" />}
           padded
           className="ck-panel fx-fade-up"
         >
           <HStack gap={2} wrap="wrap">
             <Button
-              label="Agendar siguiente retoque (+21 días)"
+              label={touchUpLabel}
               variant="primary"
               size="lg"
               className="fx-press"
@@ -293,6 +302,7 @@ export function CitaActionsPanel({
           cancelWindowAllowed={cancelWindowAllowed}
           policyHelpWhatsappUrl={policyHelpWhatsappUrl}
           touchUpUrl={touchUpUrl}
+          touchUpDays={touchUpDays}
           onOpenReschedule={onOpenReschedule}
           onOpenCancel={onOpenCancel}
         />

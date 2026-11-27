@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import {
+  AdminCheckInBookingSchema,
   AdminCreateBookingSchema,
   AdminPatchBookingStatusSchema,
   AdminRejectDepositSchema,
@@ -11,9 +12,13 @@ import {
   SendReminderSchema,
 } from '@/lib/contracts';
 import {
+  checkInBookingAdmin,
   createBookingAtomic,
   createRecurringBookingSeries,
+  getAddonsByIdsAsync,
+  getBookingStaffOwnerAsync,
   getRepository,
+  getServicesByIdsAsync,
   PolicyError,
   recordBookingCheckoutAtomic,
   rejectBookingDeposit,
@@ -44,10 +49,10 @@ async function checkOwnerPinGate(
   actorId: string,
   bodyPin?: string,
 ): Promise<NextResponse | null> {
-  const db = await getRepository().getSnapshot();
+  const settings = await getRepository().getSalonSettings();
   const providedPin = bodyPin ?? request.headers.get('x-owner-pin') ?? undefined;
   const gateActive = Boolean(
-    (db.settings.ownerPinEnabled && db.settings.ownerPinHash) || providedPin?.trim(),
+    (settings.ownerPinEnabled && settings.ownerPinHash) || providedPin?.trim(),
   );
   if (gateActive) {
     const pinRate = checkRateLimit({
@@ -88,6 +93,22 @@ async function checkOwnerPinGate(
   );
 }
 
+async function assertSpecialistOwnsBooking(
+  session: NonNullable<Awaited<ReturnType<typeof requireAdmin>>>,
+  bookingId: string,
+  forbiddenMessage: string,
+): Promise<NextResponse | null> {
+  if (session.user.role !== 'specialist') return null;
+  if (!session.user.staffMemberId) {
+    return NextResponse.json({ error: forbiddenMessage }, { status: 403 });
+  }
+  const ownerStaffId = await getBookingStaffOwnerAsync(bookingId);
+  if (!ownerStaffId || ownerStaffId !== session.user.staffMemberId) {
+    return NextResponse.json({ error: forbiddenMessage }, { status: 403 });
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin', 'specialist'], request);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -113,11 +134,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (typeof parsed.customPriceCents === 'number') {
-      const db = await getRepository().getSnapshot();
-      const baseService = db.services.find((s) => s.id === parsed.serviceId);
-      const extras = db.services.filter((s) => parsed.extraServiceIds.includes(s.id));
-      const addons = db.addons.filter(
-        (a) => parsed.addonIds.includes(a.id) && a.isActive,
+      const serviceIds = [parsed.serviceId, ...parsed.extraServiceIds];
+      const [services, addons] = await Promise.all([
+        getServicesByIdsAsync(serviceIds),
+        getAddonsByIdsAsync(parsed.addonIds),
+      ]);
+      const baseService = services.find((s) => s.id === parsed.serviceId);
+      const extras = services.filter(
+        (s) => parsed.extraServiceIds.includes(s.id) && s.id !== parsed.serviceId,
       );
       const catalogSubtotal = baseService
         ? baseService.priceCents +
@@ -214,23 +238,30 @@ export async function PATCH(request: NextRequest) {
         ? (raw as { action?: unknown }).action
         : undefined;
 
+    if (rawAction === 'check_in') {
+      const checkInReq = AdminCheckInBookingSchema.parse(raw);
+      const denied = await assertSpecialistOwnsBooking(
+        session,
+        checkInReq.bookingId,
+        'No tienes permiso para registrar la llegada de citas de otra profesional.',
+      );
+      if (denied) return denied;
+
+      const booking = await checkInBookingAdmin({
+        bookingId: checkInReq.bookingId,
+        actor,
+      });
+      return NextResponse.json({ booking });
+    }
+
     if (rawAction === 'send_reminder') {
       const reminderReq = SendReminderSchema.parse(raw);
-
-      if (session.user.role === 'specialist') {
-        const db = await getRepository().getSnapshot();
-        const target = db.bookings.find((b) => b.id === reminderReq.bookingId);
-        if (
-          !session.user.staffMemberId ||
-          !target ||
-          target.staffId !== session.user.staffMemberId
-        ) {
-          return NextResponse.json(
-            { error: 'No tienes permiso para enviar recordatorios de otra profesional.' },
-            { status: 403 },
-          );
-        }
-      }
+      const denied = await assertSpecialistOwnsBooking(
+        session,
+        reminderReq.bookingId,
+        'No tienes permiso para enviar recordatorios de otra profesional.',
+      );
+      if (denied) return denied;
 
       const reminder = await sendManualBookingReminder({
         bookingId: reminderReq.bookingId,
@@ -247,24 +278,12 @@ export async function PATCH(request: NextRequest) {
 
     if (rawAction === 'request_reschedule') {
       const rescheduleReq = RequestRescheduleSchema.parse(raw);
-
-      if (session.user.role === 'specialist') {
-        const db = await getRepository().getSnapshot();
-        const target = db.bookings.find((b) => b.id === rescheduleReq.bookingId);
-        if (
-          !session.user.staffMemberId ||
-          !target ||
-          target.staffId !== session.user.staffMemberId
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                'No tienes permiso para solicitar reprogramación en citas de otra profesional.',
-            },
-            { status: 403 },
-          );
-        }
-      }
+      const denied = await assertSpecialistOwnsBooking(
+        session,
+        rescheduleReq.bookingId,
+        'No tienes permiso para solicitar reprogramación en citas de otra profesional.',
+      );
+      if (denied) return denied;
 
       const result = await requestBookingReschedule({
         bookingId: rescheduleReq.bookingId,
@@ -276,21 +295,21 @@ export async function PATCH(request: NextRequest) {
 
     if (rawAction === 'reschedule_admin') {
       const rescheduleReq = AdminRescheduleBookingSchema.parse(raw);
-
-      if (session.user.role === 'specialist') {
-        const db = await getRepository().getSnapshot();
-        const target = db.bookings.find((b) => b.id === rescheduleReq.bookingId);
-        if (
-          !session.user.staffMemberId ||
-          !target ||
-          target.staffId !== session.user.staffMemberId ||
-          (rescheduleReq.staffId && rescheduleReq.staffId !== session.user.staffMemberId)
-        ) {
-          return NextResponse.json(
-            { error: 'No tienes permiso para mover citas de otra profesional.' },
-            { status: 403 },
-          );
-        }
+      const denied = await assertSpecialistOwnsBooking(
+        session,
+        rescheduleReq.bookingId,
+        'No tienes permiso para mover citas de otra profesional.',
+      );
+      if (denied) return denied;
+      if (
+        session.user.role === 'specialist' &&
+        rescheduleReq.staffId &&
+        rescheduleReq.staffId !== session.user.staffMemberId
+      ) {
+        return NextResponse.json(
+          { error: 'No tienes permiso para mover citas de otra profesional.' },
+          { status: 403 },
+        );
       }
 
       const booking = await rescheduleBookingAdmin({
@@ -306,21 +325,12 @@ export async function PATCH(request: NextRequest) {
 
     if (rawAction === 'reject_deposit') {
       const rejectReq = AdminRejectDepositSchema.parse(raw);
-
-      if (session.user.role === 'specialist') {
-        const db = await getRepository().getSnapshot();
-        const target = db.bookings.find((b) => b.id === rejectReq.bookingId);
-        if (
-          !session.user.staffMemberId ||
-          !target ||
-          target.staffId !== session.user.staffMemberId
-        ) {
-          return NextResponse.json(
-            { error: 'No tienes permiso para rechazar comprobantes de otra profesional.' },
-            { status: 403 },
-          );
-        }
-      }
+      const denied = await assertSpecialistOwnsBooking(
+        session,
+        rejectReq.bookingId,
+        'No tienes permiso para rechazar comprobantes de otra profesional.',
+      );
+      if (denied) return denied;
 
       const booking = await rejectBookingDeposit({
         bookingId: rejectReq.bookingId,
@@ -332,21 +342,12 @@ export async function PATCH(request: NextRequest) {
 
     if (rawAction === 'checkout_split') {
       const checkoutReq = CheckoutSplitSchema.parse(raw);
-
-      if (session.user.role === 'specialist') {
-        const db = await getRepository().getSnapshot();
-        const target = db.bookings.find((b) => b.id === checkoutReq.bookingId);
-        if (
-          !session.user.staffMemberId ||
-          !target ||
-          target.staffId !== session.user.staffMemberId
-        ) {
-          return NextResponse.json(
-            { error: 'No tienes permiso para cobrar citas de otra profesional.' },
-            { status: 403 },
-          );
-        }
-      }
+      const denied = await assertSpecialistOwnsBooking(
+        session,
+        checkoutReq.bookingId,
+        'No tienes permiso para cobrar citas de otra profesional.',
+      );
+      if (denied) return denied;
 
       const result = await recordBookingCheckoutAtomic({
         bookingId: checkoutReq.bookingId,
@@ -361,21 +362,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = AdminPatchBookingStatusSchema.parse(raw);
-
-    if (session.user.role === 'specialist') {
-      const db = await getRepository().getSnapshot();
-      const target = db.bookings.find((b) => b.id === body.bookingId);
-      if (
-        !session.user.staffMemberId ||
-        !target ||
-        target.staffId !== session.user.staffMemberId
-      ) {
-        return NextResponse.json(
-          { error: 'No tienes permiso para modificar citas de otra profesional.' },
-          { status: 403 },
-        );
-      }
-    }
+    const denied = await assertSpecialistOwnsBooking(
+      session,
+      body.bookingId,
+      'No tienes permiso para modificar citas de otra profesional.',
+    );
+    if (denied) return denied;
 
     if (body.status === 'canceled') {
       const pinDenied = await checkOwnerPinGate(request, session.user.id, body.ownerPin);

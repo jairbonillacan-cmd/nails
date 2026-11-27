@@ -6,13 +6,20 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
+import { TextInput } from '@astryxdesign/core/TextInput';
+import { Table } from '@astryxdesign/core/Table';
 import { Link } from '@astryxdesign/core/Link';
 import {
   AlertTriangle,
   ArrowLeftRight,
   Banknote,
+  Check,
   CheckCircle2,
+  ClipboardCheck,
   CreditCard,
+  RotateCcw,
+  Search,
+  Users,
   Wallet,
 } from 'lucide-react';
 import {
@@ -20,124 +27,129 @@ import {
   formatDateShortInTimezone,
   formatPhoneDisplay,
   formatTimeInTimezone,
-  getDateKeyInTimezone,
 } from '@/lib/format';
-import type { CashRegisterEntry, PaymentMethod } from '@/lib/types';
+import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
+import type { CashRegisterEntry, InventoryItem, StaffMember } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
-import { ActionRow, StatusTag, SurfaceCard } from '@/components/ui';
+import { ActionRow, FilterPillBar, StatusTag, SurfaceCard } from '@/components/ui';
+import type { RecordCajaEntryInput } from './cajaActions';
+import {
+  CAJA_METHOD_FILTER_OPTIONS,
+  CAJA_PERIOD_OPTIONS,
+  cajaPeriodLabel,
+  computeCashReconciliation,
+  computeTodayExpectedCashCents,
+  formatCashCloseWhatsAppSummary,
+  type CajaMethodFilter,
+  type CajaPeriod,
+  type CajaPeriodSummary,
+} from './cajaMetrics';
 import {
   formatInstagramDisplay,
   formatInstagramUrl,
+  type CommissionStaffRow,
   type SplitDetailRow,
   type UncollectedBookingRow,
 } from './cajaTypes';
-import { CashMovementForm, type QuickEntryType } from './CashMovementForm';
+import { CashMovementForm } from './CashMovementForm';
 import { CajaMovementsSection } from './CajaMovementsSection';
 
 interface CajaSummaryTabProps {
-  cashEntries: readonly CashRegisterEntry[];
+  salonName: string;
+  allCashEntries: readonly CashRegisterEntry[];
+  filteredCashEntries: readonly CashRegisterEntry[];
+  periodSummary: CajaPeriodSummary;
+  todaySummary: CajaPeriodSummary;
+  commissionsByStaff: readonly CommissionStaffRow[];
+  inventory: readonly InventoryItem[];
+  staff: readonly StaffMember[];
   uncollectedBookings: readonly UncollectedBookingRow[];
   uncollectedTotalCents: number;
   pendingDepositsCount: number;
   pendingDepositsTotalCents: number;
   splitDetails: readonly SplitDetailRow[];
+  cajaPeriod: CajaPeriod;
+  methodFilter: CajaMethodFilter;
+  searchQuery: string;
   todayKey: string;
   tz: string;
   currency: 'MXN' | 'USD';
   canRecordCash: boolean;
+  isSpecialistView: boolean;
   highlightUncollected: boolean;
+  onChangePeriod: (next: CajaPeriod) => void;
+  onChangeMethodFilter: (next: CajaMethodFilter) => void;
+  onChangeSearchQuery: (next: string) => void;
+  onResetFilters: () => void;
   onOpenDeposits: () => void;
-  onRecordCashEntry: (input: {
-    entryType: QuickEntryType;
-    description: string;
-    amountMxn: number;
-    method: PaymentMethod;
-  }) => Promise<FormSubmitResult>;
+  onOpenCommissions: () => void;
+  onRecordCashEntry: (input: RecordCajaEntryInput) => Promise<FormSubmitResult>;
 }
 
 export function CajaSummaryTab({
-  cashEntries,
+  salonName,
+  allCashEntries,
+  filteredCashEntries,
+  periodSummary,
+  todaySummary,
+  commissionsByStaff,
+  inventory,
+  staff,
   uncollectedBookings,
   uncollectedTotalCents,
   pendingDepositsCount,
   pendingDepositsTotalCents,
   splitDetails,
+  cajaPeriod,
+  methodFilter,
+  searchQuery,
   todayKey,
   tz,
   currency,
   canRecordCash,
+  isSpecialistView,
   highlightUncollected,
+  onChangePeriod,
+  onChangeMethodFilter,
+  onChangeSearchQuery,
+  onResetFilters,
   onOpenDeposits,
+  onOpenCommissions,
   onRecordCashEntry,
 }: CajaSummaryTabProps) {
   const [countedCashMxn, setCountedCashMxn] = useState<number>(0);
-
-  const todayEntries = useMemo(
-    () =>
-      cashEntries.filter(
-        (entry) => getDateKeyInTimezone(new Date(entry.occurredAt), tz) === todayKey,
-      ),
-    [cashEntries, todayKey, tz],
-  );
-
-  const todaySummary = useMemo(() => {
-    const hasToday = todayEntries.length > 0;
-    const source = hasToday ? todayEntries : cashEntries;
-
-    let cashCents = 0;
-    let cashCount = 0;
-    let cardCents = 0;
-    let cardCount = 0;
-    let transferCents = 0;
-    let transferCount = 0;
-    let expensesCents = 0;
-
-    for (const entry of source) {
-      if (entry.entryType === 'expense') {
-        expensesCents += Math.abs(entry.amountCents);
-      } else if (entry.paymentMethod === 'cash') {
-        cashCents += entry.amountCents;
-        cashCount += 1;
-      } else if (entry.paymentMethod === 'card') {
-        cardCents += entry.amountCents;
-        cardCount += 1;
-      } else {
-        transferCents += entry.amountCents;
-        transferCount += 1;
-      }
-    }
-
-    const totalCollectedCents = cashCents + cardCents + transferCents;
-
-    return {
-      hasToday,
-      cashCents,
-      cashCount,
-      cardCents,
-      cardCount,
-      transferCents,
-      transferCount,
-      totalCollectedCents,
-      expensesCents,
-    };
-  }, [cashEntries, todayEntries]);
+  const closeClipboard = useCopyToClipboard(2600);
 
   const cashOnlyExpectedCents = useMemo(
-    () =>
-      todayEntries
-        .filter((e) => e.paymentMethod === 'cash')
-        .reduce(
-          (sum, e) =>
-            sum +
-            (e.entryType === 'expense'
-              ? -Math.abs(e.amountCents)
-              : e.amountCents + e.tipCents),
-          0,
-        ),
-    [todayEntries],
+    () => computeTodayExpectedCashCents(allCashEntries, todayKey, tz),
+    [allCashEntries, todayKey, tz],
   );
 
-  const cashDiffCents = Math.round(countedCashMxn * 100) - cashOnlyExpectedCents;
+  const reconciliation = useMemo(
+    () => computeCashReconciliation(cashOnlyExpectedCents, countedCashMxn),
+    [cashOnlyExpectedCents, countedCashMxn],
+  );
+
+  const periodLabel = cajaPeriodLabel(cajaPeriod);
+  const hasActiveFilters =
+    cajaPeriod !== 'all' || methodFilter !== 'all' || searchQuery.trim().length > 0;
+  const hasSecondaryFilters = methodFilter !== 'all' || searchQuery.trim().length > 0;
+
+  const handleCopyCloseSummary = () => {
+    const summaryText = formatCashCloseWhatsAppSummary({
+      salonName,
+      todayKey,
+      currency,
+      todaySummary,
+      expectedCashCents: cashOnlyExpectedCents,
+      countedMxn: countedCashMxn,
+      uncollectedCount: uncollectedBookings.length,
+      uncollectedTotalCents,
+      pendingDepositsCount,
+      pendingDepositsTotalCents,
+    });
+    void closeClipboard.copy(summaryText, 'Resumen del corte copiado para WhatsApp.');
+  };
 
   return (
     <VStack gap={4} className="fx-step-in">
@@ -273,54 +285,124 @@ export function CajaSummaryTab({
         </SurfaceCard>
       ) : null}
 
+      <SurfaceCard tone="subtle" padded className="ad-card ad-caja-filter-card">
+        <VStack gap={3}>
+          <HStack justify="between" align="center" wrap="wrap" gap={3}>
+            <FilterPillBar
+              ariaLabel="Periodo de ventas"
+              mode="segmented"
+              size="sm"
+              value={cajaPeriod}
+              options={CAJA_PERIOD_OPTIONS}
+              onChange={onChangePeriod}
+            />
+            <TextInput
+              type="search"
+              size="sm"
+              label="Buscar en caja"
+              isLabelHidden
+              placeholder="Buscar concepto, clienta o folio..."
+              value={searchQuery}
+              onChange={onChangeSearchQuery}
+              startIcon={<Search size={14} aria-hidden="true" />}
+              hasClear
+              containerClassName="ad-caja-search"
+            />
+          </HStack>
+
+          <HStack justify="between" align="center" wrap="wrap" gap={2}>
+            <FilterPillBar
+              ariaLabel="Filtrar por forma de pago"
+              mode="pills"
+              size="sm"
+              value={methodFilter}
+              options={CAJA_METHOD_FILTER_OPTIONS}
+              onChange={onChangeMethodFilter}
+            />
+            <HStack gap={2} align="center" wrap="wrap">
+              <Text type="supporting" color="secondary" hasTabularNumbers>
+                {filteredCashEntries.length}{' '}
+                {filteredCashEntries.length === 1 ? 'movimiento' : 'movimientos'}
+              </Text>
+              {hasActiveFilters ? (
+                <Button
+                  type="button"
+                  label="Restablecer"
+                  variant="ghost"
+                  size="sm"
+                  icon={<RotateCcw size={13} aria-hidden="true" />}
+                  onClick={onResetFilters}
+                />
+              ) : null}
+            </HStack>
+          </HStack>
+        </VStack>
+      </SurfaceCard>
+
       <SurfaceCard
-        title={todaySummary.hasToday ? 'Cobrado hoy por forma de pago' : 'Cobrado por forma de pago'}
+        title={`Cobrado por forma de pago · ${periodLabel}`}
         subtitle={
-          todaySummary.totalCollectedCents > 0
-            ? `Total registrado: ${formatCurrency(todaySummary.totalCollectedCents, currency)}`
-            : 'Distribución de ingresos por método de cobro.'
+          periodSummary.collectedCents > 0
+            ? `Total registrado: ${formatCurrency(periodSummary.collectedCents, currency)} (${periodSummary.ticketCount} ${periodSummary.ticketCount === 1 ? 'cobro' : 'cobros'})`
+            : 'Distribución de ingresos por método de cobro en el periodo.'
         }
         headingLevel={3}
         padded
         className="ad-card"
         actions={
-          <StatusTag
-            tone={todaySummary.expensesCents > 0 ? 'warning' : 'neutral'}
-            hasTabularNumbers
-            label={`Gastos: ${formatCurrency(todaySummary.expensesCents, currency)}`}
-          />
+          <HStack gap={2} align="center" wrap="wrap">
+            {periodSummary.giftCardCents > 0 ? (
+              <StatusTag
+                tone="accent"
+                hasTabularNumbers
+                label={`Tarjeta de regalo: ${formatCurrency(periodSummary.giftCardCents, currency)}`}
+              />
+            ) : null}
+            <StatusTag
+              tone={periodSummary.expensesCents > 0 ? 'warning' : 'neutral'}
+              hasTabularNumbers
+              label={`Gastos: ${formatCurrency(periodSummary.expensesCents, currency)}`}
+            />
+          </HStack>
         }
       >
         <VStack className="ad-caja-methods" gap={0}>
           {[
             {
-              id: 'cash',
+              id: 'cash' as const,
               label: 'Efectivo',
-              cents: todaySummary.cashCents,
-              count: todaySummary.cashCount,
+              cents: periodSummary.cashCents,
+              count: periodSummary.cashCount,
               icon: <Banknote size={15} aria-hidden="true" />,
             },
             {
-              id: 'card',
+              id: 'card' as const,
               label: 'Tarjeta',
-              cents: todaySummary.cardCents,
-              count: todaySummary.cardCount,
+              cents: periodSummary.cardCents,
+              count: periodSummary.cardCount,
               icon: <CreditCard size={15} aria-hidden="true" />,
             },
             {
-              id: 'transfer',
+              id: 'transfer' as const,
               label: 'Transferencia',
-              cents: todaySummary.transferCents,
-              count: todaySummary.transferCount,
+              cents: periodSummary.transferCents,
+              count: periodSummary.transferCount,
               icon: <ArrowLeftRight size={15} aria-hidden="true" />,
             },
           ].map((method) => {
             const sharePct =
-              todaySummary.totalCollectedCents > 0
-                ? Math.round((method.cents / todaySummary.totalCollectedCents) * 100)
+              periodSummary.collectedCents > 0
+                ? Math.round((method.cents / periodSummary.collectedCents) * 100)
                 : 0;
+            const isSelected = methodFilter === method.id;
             return (
-              <VStack key={method.id} className="ad-caja-method-tile" gap={2} justify="between">
+              <VStack
+                key={method.id}
+                className="ad-caja-method-tile"
+                data-active={isSelected ? 'true' : undefined}
+                gap={2}
+                justify="between"
+              >
                 <HStack justify="between" align="center" gap={2}>
                   <HStack gap={1.5} align="center" className="ad-caja-method-label">
                     {method.icon}
@@ -328,7 +410,7 @@ export function CajaSummaryTab({
                       {method.label}
                     </Text>
                   </HStack>
-                  {todaySummary.totalCollectedCents > 0 ? (
+                  {periodSummary.collectedCents > 0 ? (
                     <Text type="supporting" color="secondary" hasTabularNumbers>
                       {sharePct}%
                     </Text>
@@ -349,69 +431,217 @@ export function CajaSummaryTab({
       </SurfaceCard>
 
       <VStack className="ad-split ad-split-table" gap={0}>
-        <CajaMovementsSection
-          cashEntries={cashEntries}
-          splitDetails={splitDetails}
-          tz={tz}
-          currency={currency}
-        />
+        <VStack gap={4} className="ad-card-grow">
+          <CajaMovementsSection
+            cashEntries={filteredCashEntries}
+            splitDetails={splitDetails}
+            tz={tz}
+            currency={currency}
+            periodLabel={periodLabel}
+            hasExternalFilters={hasSecondaryFilters || cajaPeriod !== 'all'}
+            onResetExternalFilters={onResetFilters}
+          />
+
+          {commissionsByStaff.length > 0 ? (
+            <SurfaceCard
+              title={
+                isSpecialistView
+                  ? `Tus comisiones y propinas · ${periodLabel}`
+                  : `Comisiones y propinas por profesional · ${periodLabel}`
+              }
+              subtitle={
+                isSpecialistView
+                  ? 'Resumen de tus cobros, comisión estimada y propinas en el periodo.'
+                  : 'Cálculo en vivo de ventas, comisión estimada y propinas por especialista.'
+              }
+              icon={<Users size={16} aria-hidden="true" />}
+              headingLevel={3}
+              actions={
+                <Button
+                  type="button"
+                  label="Ver detalle"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onOpenCommissions}
+                />
+              }
+            >
+              <VStack className="ad-table-scroll" gap={0}>
+                <Table
+                  idKey="id"
+                  hasHover
+                  data={[...commissionsByStaff]}
+                  columns={[
+                    {
+                      key: 'name',
+                      header: 'Profesional',
+                      renderCell: (row) => (
+                        <VStack gap={0}>
+                          <Text weight="medium">{row.name}</Text>
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            {row.servicesCount}{' '}
+                            {row.servicesCount === 1 ? 'cobro' : 'cobros'} · {row.percent}%
+                          </Text>
+                        </VStack>
+                      ),
+                    },
+                    {
+                      key: 'sales',
+                      header: 'Ventas',
+                      align: 'end',
+                      renderCell: (row) => (
+                        <Text hasTabularNumbers>{formatCurrency(row.sales, currency)}</Text>
+                      ),
+                    },
+                    {
+                      key: 'commission',
+                      header: 'Comisión',
+                      align: 'end',
+                      renderCell: (row) => (
+                        <Text hasTabularNumbers>
+                          {formatCurrency(row.commission, currency)}
+                        </Text>
+                      ),
+                    },
+                    {
+                      key: 'tips',
+                      header: 'Propinas',
+                      align: 'end',
+                      renderCell: (row) => (
+                        <Text hasTabularNumbers>{formatCurrency(row.tips, currency)}</Text>
+                      ),
+                    },
+                    {
+                      key: 'totalPayout',
+                      header: 'Total',
+                      align: 'end',
+                      renderCell: (row) => (
+                        <Text weight="bold" hasTabularNumbers>
+                          {formatCurrency(row.totalPayout, currency)}
+                        </Text>
+                      ),
+                    },
+                  ]}
+                />
+              </VStack>
+            </SurfaceCard>
+          ) : null}
+        </VStack>
 
         {canRecordCash ? (
           <VStack className="ad-caja-tools" gap={4}>
             <SurfaceCard
               title="Movimiento rápido"
-              subtitle="Registra gastos, ventas de producto u otros ingresos fuera de una cita."
+              subtitle="Vende productos del inventario o registra gastos e ingresos fuera de cita."
               headingLevel={3}
               padded
               className="ad-card ad-caja-tool-card"
             >
               <VStack gap={3} justify="between" className="ad-card-grow">
                 <Text type="supporting" color="secondary">
-                  Queda registrado al instante en el corte y en el historial de caja.
+                  Si eliges un producto del inventario, el stock se descuenta y el ingreso se
+                  anota en el corte al instante.
                 </Text>
-                <CashMovementForm onRecordCashEntry={onRecordCashEntry} />
+                <CashMovementForm
+                  inventory={inventory}
+                  staff={staff}
+                  currency={currency}
+                  onRecordCashEntry={onRecordCashEntry}
+                />
               </VStack>
             </SurfaceCard>
 
             <SurfaceCard
               title="Corte de caja de hoy"
-              subtitle="Cuenta tu efectivo en caja y compáralo con lo registrado hoy."
+              subtitle="Cuadra el efectivo físico del cajón contra los cobros y gastos en efectivo de hoy."
               headingLevel={3}
               padded
               className="ad-card ad-caja-tool-card"
             >
               <VStack gap={3} className="ad-card-grow">
-                <HStack justify="between" align="center" className="ad-subpanel">
-                  <Text type="supporting" color="secondary">
-                    Efectivo esperado hoy
-                  </Text>
-                  <Text weight="bold" hasTabularNumbers>
-                    {formatCurrency(cashOnlyExpectedCents, currency)}
-                  </Text>
-                </HStack>
-                <NumberInput
-                  label={`Efectivo que contaste (${currency})`}
-                  value={countedCashMxn}
-                  min={0}
-                  onChange={setCountedCashMxn}
-                />
-                <HStack justify="between" align="center" wrap="wrap" gap={2}>
-                  <Text type="supporting" color="secondary">
-                    Estado del corte
-                  </Text>
-                  <StatusTag
-                    tone={cashDiffCents === 0 ? 'success' : 'warning'}
-                    hasTabularNumbers
-                    showDot
-                    label={
-                      cashDiffCents === 0
-                        ? 'Caja cuadrada'
-                        : cashDiffCents > 0
-                          ? `Sobran ${formatCurrency(cashDiffCents, currency)}`
-                          : `Faltan ${formatCurrency(Math.abs(cashDiffCents), currency)}`
-                    }
+                <VStack className="ad-subpanel ad-caja-reconcile" gap={0}>
+                  <HStack justify="between" align="center" className="ad-kv-row">
+                    <Text type="supporting" color="secondary">
+                      Efectivo esperado
+                    </Text>
+                    <Text weight="bold" hasTabularNumbers>
+                      {formatCurrency(reconciliation.expectedCents, currency)}
+                    </Text>
+                  </HStack>
+                  <HStack justify="between" align="center" className="ad-kv-row">
+                    <Text type="supporting" color="secondary">
+                      Efectivo contado
+                    </Text>
+                    <Text weight="semibold" hasTabularNumbers>
+                      {formatCurrency(reconciliation.countedCents, currency)}
+                    </Text>
+                  </HStack>
+                  <HStack justify="between" align="center" wrap="wrap" gap={2} className="ad-kv-row">
+                    <Text type="supporting" color="secondary">
+                      Diferencia
+                    </Text>
+                    <StatusTag
+                      tone={reconciliation.tone}
+                      hasTabularNumbers
+                      showDot
+                      label={
+                        reconciliation.status === 'balanced'
+                          ? `Cuadra (${formatCurrency(0, currency)})`
+                          : reconciliation.status === 'over'
+                            ? `Sobrante +${formatCurrency(reconciliation.diffCents, currency)}`
+                            : `Faltante −${formatCurrency(Math.abs(reconciliation.diffCents), currency)}`
+                      }
+                    />
+                  </HStack>
+                </VStack>
+
+                <VStack gap={1.5}>
+                  <NumberInput
+                    label={`Efectivo que contaste (${currency})`}
+                    value={countedCashMxn}
+                    min={0}
+                    onChange={setCountedCashMxn}
                   />
-                </HStack>
+                  {reconciliation.expectedCents > 0 && reconciliation.diffCents !== 0 ? (
+                    <HStack justify="end">
+                      <Button
+                        type="button"
+                        label="Igualar al esperado"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setCountedCashMxn(Number((reconciliation.expectedCents / 100).toFixed(2)))
+                        }
+                      />
+                    </HStack>
+                  ) : null}
+                </VStack>
+
+                <VStack gap={1}>
+                  <Button
+                    type="button"
+                    label={
+                      closeClipboard.copied
+                        ? 'Resumen copiado'
+                        : 'Copiar resumen del corte'
+                    }
+                    variant="secondary"
+                    size="sm"
+                    width="100%"
+                    icon={
+                      closeClipboard.copied ? (
+                        <Check size={14} aria-hidden="true" />
+                      ) : (
+                        <ClipboardCheck size={14} aria-hidden="true" />
+                      )
+                    }
+                    onClick={handleCopyCloseSummary}
+                  />
+                  <Text type="supporting" color="secondary">
+                    {closeClipboard.feedback ??
+                      'Formato listo para pegar y enviar el cierre por WhatsApp.'}
+                  </Text>
+                </VStack>
               </VStack>
             </SurfaceCard>
           </VStack>

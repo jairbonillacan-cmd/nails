@@ -26,6 +26,8 @@ describe('landing-config customization and media path allowlist', () => {
     expect(resolved.sections.showFaq).toBe(true);
     expect(resolved.sections.showMapEmbed).toBe(true);
     expect(resolved.visitHoursDays).toBe('Lunes a sábado');
+    expect(resolved.showBookingQr).toBe(true);
+    expect(resolved.touchUpDays).toBe(21);
   });
 
   it('applies custom hero media, section toggles, hours, marquee, and custom FAQs', () => {
@@ -45,6 +47,8 @@ describe('landing-config customization and media path allowlist', () => {
         galleryMode: 'custom_only' as const,
         visitHoursDays: 'Martes a domingo',
         visitHoursText: '11:00 a 19:00 · Con cita previa',
+        showBookingQr: false,
+        touchUpDays: 28,
         customFaqs: [
           {
             id: 'faq-custom-1',
@@ -72,6 +76,8 @@ describe('landing-config customization and media path allowlist', () => {
     expect(resolved.galleryMode).toBe('custom_only');
     expect(resolved.visitHoursDays).toBe('Martes a domingo');
     expect(resolved.visitHoursText).toBe('11:00 a 19:00 · Con cita previa');
+    expect(resolved.showBookingQr).toBe(false);
+    expect(resolved.touchUpDays).toBe(28);
     expect(resolved.sections.showConnect).toBe(false);
     expect(resolved.sections.showMapEmbed).toBe(false);
     expect(resolved.sections.showMenu).toBe(true);

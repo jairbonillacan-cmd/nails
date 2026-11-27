@@ -61,6 +61,8 @@ const InventoryActionDataSchema = z.union([
       delta: z.number().min(-100_000).max(100_000),
       reason: InventoryMovementReasonSchema.default('adjustment'),
       notes: z.string().max(400).default(''),
+      paymentMethod: PaymentMethodSchema.optional(),
+      staffId: NonEmptyIdSchema.nullable().optional(),
     })
     .strict(),
 ]);
@@ -112,6 +114,10 @@ export const AdminOperationsPostSchema = z.discriminatedUnion('kind', [
     data: CouponInputSchema,
   }),
   z.object({
+    kind: z.literal('coupon_delete'),
+    id: NonEmptyIdSchema,
+  }),
+  z.object({
     kind: z.literal('waitlist'),
     id: NonEmptyIdSchema,
     status: WaitlistStatusSchema,
@@ -122,6 +128,11 @@ export const AdminOperationsPostSchema = z.discriminatedUnion('kind', [
     patch: WorkflowPatchSchema,
   }),
 ]);
+
+export const AdminOperationsDeleteQuerySchema = z.object({
+  kind: z.literal('coupon'),
+  id: NonEmptyIdSchema,
+});
 
 const WhatsAppTemplateTriggerKeySchema = z.enum([
   'booking_confirmed',

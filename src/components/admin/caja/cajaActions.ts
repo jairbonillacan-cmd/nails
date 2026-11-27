@@ -1,6 +1,4 @@
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
-import { shiftDateKey } from '@/components/admin/citas/scheduleGridGeometry';
-import { getDateKeyInTimezone } from '@/lib/format';
 import {
   ADMIN_CACHE_KEYS,
   applyOptimisticBookingStatus,
@@ -15,6 +13,11 @@ import type {
   PaymentSplitMethod,
 } from '@/lib/types';
 import {
+  computeCommissionsByStaff,
+  isIsoInCajaPeriod,
+  type CajaPeriod,
+} from './cajaMetrics';
+import {
   SPLIT_METHOD_ORDER,
   splitMethodLabel,
   type CommissionStaffRow,
@@ -23,34 +26,18 @@ import {
   type SplitDetailRow,
 } from './cajaTypes';
 
-export type CommissionPeriod = 'today' | '7d' | '30d' | 'all';
-
-function getCommissionCutoffKey(
-  todayKey: string,
-  period: CommissionPeriod,
-): string | null {
-  if (period === 'today') return todayKey;
-  if (period === '7d') return shiftDateKey(todayKey, -6);
-  if (period === '30d') return shiftDateKey(todayKey, -29);
-  return null;
-}
-
 export function buildSplitSummaryByMethod(
   data: AdminOverviewPayload | null,
-  period: CommissionPeriod = 'all',
+  period: CajaPeriod = 'all',
 ): MethodSummaryRow[] {
   if (!data) return [];
   const tz = data.settings.timezone || 'America/Mexico_City';
-  const cutoffKey = getCommissionCutoffKey(data.serverTodayKey, period);
   const grouped = new Map<
     PaymentSplitMethod,
     { count: number; amountCents: number; tipCents: number }
   >();
   for (const split of data.paymentSplits) {
-    if (
-      cutoffKey &&
-      getDateKeyInTimezone(new Date(split.createdAt), tz) < cutoffKey
-    ) {
+    if (!isIsoInCajaPeriod(split.createdAt, data.serverTodayKey, tz, period)) {
       continue;
     }
     const current = grouped.get(split.method) ?? {
@@ -104,43 +91,25 @@ export function buildSplitDetails(data: AdminOverviewPayload | null): SplitDetai
 
 export function buildCommissionsByStaff(
   data: AdminOverviewPayload | null,
-  period: CommissionPeriod = 'all',
+  period: CajaPeriod = 'all',
 ): CommissionStaffRow[] {
   if (!data) return [];
-  const tz = data.settings.timezone || 'America/Mexico_City';
-  const cutoffKey = getCommissionCutoffKey(data.serverTodayKey, period);
-  const scopedCashEntries = cutoffKey
-    ? data.cashEntries.filter(
-        (e) => getDateKeyInTimezone(new Date(e.occurredAt), tz) >= cutoffKey,
-      )
-    : data.cashEntries;
-  const scopedSplits = cutoffKey
-    ? data.paymentSplits.filter(
-        (split) => getDateKeyInTimezone(new Date(split.createdAt), tz) >= cutoffKey,
-      )
-    : data.paymentSplits;
-  return data.staff.map((st) => {
-    const entries = scopedCashEntries.filter((e) => e.staffId === st.id);
-    const sales = entries.reduce((s, e) => s + e.amountCents, 0);
-    const commission = entries.reduce((s, e) => s + e.commissionCents, 0);
-    const tips = entries.reduce((s, e) => s + e.tipCents, 0);
-    const splitTipsEntries = scopedSplits.filter(
-      (split) => split.tipStaffId === st.id && split.tipCents > 0,
-    );
-    const splitTipsCents = splitTipsEntries.reduce((s, item) => s + item.tipCents, 0);
-    return {
-      id: st.id,
-      name: st.name,
-      percent: st.commissionPercent,
-      servicesCount: entries.filter((e) => e.amountCents > 0).length,
-      sales,
-      commission,
-      tips,
-      splitTipsCents,
-      splitTipsCount: splitTipsEntries.length,
-      totalPayout: commission + tips,
-    };
+  return computeCommissionsByStaff({
+    staff: data.staff,
+    cashEntries: data.cashEntries,
+    paymentSplits: data.paymentSplits,
+    todayKey: data.serverTodayKey,
+    tz: data.settings.timezone || 'America/Mexico_City',
+    period,
+    viewerRole: data.session.user.role,
+    viewerStaffId: data.session.user.staffMemberId,
   });
+}
+
+const CAJA_MUTATION_TIMEOUT_MS = 20_000;
+
+function isCajaTimeoutError(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
 }
 
 export async function approveCajaDeposit(
@@ -154,48 +123,41 @@ export async function approveCajaDeposit(
     ADMIN_CACHE_KEYS.bookings,
   );
 
-  mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
-    applyOptimisticBookingStatus(current ?? prevOverview, bookingId, 'confirmed'),
-  );
-  if (prevBookings) {
-    mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-      ADMIN_CACHE_KEYS.bookings,
-      (current) =>
-        current
-          ? applyOptimisticBookingStatusToList(current, bookingId, 'confirmed')
-          : current,
-    );
-  }
-
-  const rollback = () => {
-    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
-    if (prevBookings) {
-      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-        ADMIN_CACHE_KEYS.bookings,
-        prevBookings,
-      );
-    }
-  };
-
   try {
     const res = await fetch('/api/admin/bookings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({ bookingId, status: 'confirmed' }),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
-      rollback();
       return { ok: false, error: json?.error || 'No se pudo confirmar el anticipo.' };
+    }
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      applyOptimisticBookingStatus(current ?? prevOverview, bookingId, 'confirmed'),
+    );
+    if (prevBookings) {
+      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+        (current) =>
+          current
+            ? applyOptimisticBookingStatusToList(current, bookingId, 'confirmed')
+            : current,
+      );
     }
     invalidateAdminCache('/api/admin/reports');
     return {
       ok: true,
       message: `Anticipo confirmado y cita ${bookingCode} lista en agenda.`,
     };
-  } catch {
-    rollback();
-    return { ok: false, error: 'No se pudo conectar para confirmar el anticipo.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'La confirmación tardó demasiado. Intenta de nuevo en unos segundos.'
+        : 'No se pudo conectar para confirmar el anticipo.',
+    };
   }
 }
 
@@ -261,88 +223,114 @@ export async function rejectCajaDeposit(
   );
   const rejectedAtIso = new Date().toISOString();
 
-  mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
-    applyOptimisticDepositRejection(current ?? prevOverview, bookingId, rejectedAtIso),
-  );
-  if (prevBookings) {
-    mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-      ADMIN_CACHE_KEYS.bookings,
-      (current) =>
-        current
-          ? applyOptimisticDepositRejectionToList(current, bookingId, rejectedAtIso)
-          : current,
-    );
-  }
-
-  const rollback = () => {
-    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
-    if (prevBookings) {
-      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-        ADMIN_CACHE_KEYS.bookings,
-        prevBookings,
-      );
-    }
-  };
-
   try {
     const res = await fetch('/api/admin/bookings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({ action: 'reject_deposit', bookingId }),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
-      rollback();
       return { ok: false, error: json?.error || 'No se pudo rechazar el comprobante.' };
+    }
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      applyOptimisticDepositRejection(current ?? prevOverview, bookingId, rejectedAtIso),
+    );
+    if (prevBookings) {
+      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+        ADMIN_CACHE_KEYS.bookings,
+        (current) =>
+          current
+            ? applyOptimisticDepositRejectionToList(current, bookingId, rejectedAtIso)
+            : current,
+      );
     }
     invalidateAdminCache('/api/admin/reports');
     return {
       ok: true,
       message: `Comprobante de ${bookingCode} rechazado. Ya avisamos a la clienta para que suba uno nuevo.`,
     };
-  } catch {
-    rollback();
-    return { ok: false, error: 'No se pudo conectar para rechazar el comprobante.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'El rechazo del comprobante tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para rechazar el comprobante.',
+    };
   }
 }
 
-export async function recordCajaCashEntry(input: {
+export interface RecordCajaEntryInput {
   entryType: 'expense' | 'product_sale' | 'service_income';
   description: string;
   amountMxn: number;
   method: PaymentMethod;
-}): Promise<{ ok: boolean; message?: string; error?: string }> {
+  staffId?: string | null;
+  inventoryItemId?: string | null;
+  inventoryQuantity?: number;
+  productName?: string;
+}
+
+export async function recordCajaCashEntry(
+  input: RecordCajaEntryInput,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
   try {
+    const isInventorySale =
+      input.entryType === 'product_sale' && Boolean(input.inventoryItemId);
+
+    const payload = isInventorySale
+      ? {
+          kind: 'inventory' as const,
+          data: {
+            itemId: input.inventoryItemId ?? '',
+            delta: -Math.max(1, Math.round(input.inventoryQuantity ?? 1)),
+            reason: 'retail_sale' as const,
+            paymentMethod: input.method,
+            staffId: input.staffId ?? null,
+            notes: input.description,
+          },
+        }
+      : {
+          kind: 'cash' as const,
+          data: {
+            bookingId: null,
+            staffId: input.staffId ?? null,
+            entryType: input.entryType,
+            description: input.description,
+            amountCents: Math.round(input.amountMxn * 100),
+            tipCents: 0,
+            commissionCents: 0,
+            paymentMethod: input.method,
+          },
+        };
+
     const res = await fetch('/api/admin/operations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'cash',
-        data: {
-          bookingId: null,
-          staffId: null,
-          entryType: input.entryType,
-          description: input.description,
-          amountCents: Math.round(input.amountMxn * 100),
-          tipCents: 0,
-          commissionCents: 0,
-          paymentMethod: input.method,
-        },
-      }),
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       return { ok: false, error: json?.error || 'No se pudo guardar el movimiento.' };
     }
-    const message =
-      input.entryType === 'expense'
+    invalidateAdminCache('/api/admin/reports');
+    const message = isInventorySale
+      ? `Venta de ${input.productName ?? 'producto'} registrada y stock actualizado.`
+      : input.entryType === 'expense'
         ? 'Gasto registrado en caja.'
         : input.entryType === 'product_sale'
           ? 'Venta registrada en caja.'
           : 'Ingreso registrado en caja.';
     return { ok: true, message };
-  } catch {
-    return { ok: false, error: 'No se pudo conectar para guardar el movimiento.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'El registro tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para guardar el movimiento.',
+    };
   }
 }
 
@@ -358,6 +346,7 @@ export async function createCajaCoupon(input: {
     const res = await fetch('/api/admin/operations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({
         kind: 'coupon',
         data: {
@@ -386,8 +375,63 @@ export async function createCajaCoupon(input: {
           ? 'Tarjeta de regalo activada para tus clientas.'
           : 'Cupón activado en tu página de citas.',
     };
-  } catch {
-    return { ok: false, error: 'No se pudo conectar para crear el código.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'La creación del código tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para crear el código.',
+    };
+  }
+}
+
+export async function deleteCajaCoupon(
+  couponId: string,
+  code: string,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(
+      `/api/admin/operations?kind=coupon&id=${encodeURIComponent(couponId)}`,
+      {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
+      },
+    );
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      code?: string;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error:
+          json?.error ||
+          (res.status === 404
+            ? 'Este código ya no existe o fue eliminado anteriormente.'
+            : 'No se pudo eliminar el código.'),
+      };
+    }
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      current
+        ? {
+            ...current,
+            coupons: current.coupons.filter((item) => item.id !== couponId),
+          }
+        : current,
+    );
+    invalidateAdminCache('/api/admin/reports');
+    return {
+      ok: true,
+      message: `Código ${json?.code || code} eliminado.`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'La eliminación del código tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para eliminar el código.',
+    };
   }
 }
 
@@ -403,6 +447,7 @@ export async function createCajaPackage(input: {
     const res = await fetch('/api/admin/packages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({
         kind: 'catalog',
         name: input.name,
@@ -422,8 +467,13 @@ export async function createCajaPackage(input: {
       return { ok: false, error: json?.error || 'No se pudo crear el paquete de sesiones.' };
     }
     return { ok: true, message: 'Paquete de sesiones guardado.' };
-  } catch {
-    return { ok: false, error: 'No se pudo conectar para guardar el paquete.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'Guardar el paquete tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para guardar el paquete.',
+    };
   }
 }
 
@@ -435,6 +485,7 @@ export async function toggleCajaPackage(
     const res = await fetch('/api/admin/packages', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({
         action: 'toggle_catalog',
         packageId: pkg.id,
@@ -451,8 +502,13 @@ export async function toggleCajaPackage(
         ? `Paquete "${pkg.name}" activado.`
         : `Paquete "${pkg.name}" pausado.`,
     };
-  } catch {
-    return { ok: false, error: 'No se pudo conectar para actualizar el paquete.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'Actualizar el paquete tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para actualizar el paquete.',
+    };
   }
 }
 

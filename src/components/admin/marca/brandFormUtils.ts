@@ -1,3 +1,4 @@
+import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { resolveLandingContent } from '@/lib/landing-config';
 import type { LandingContent, LoyaltyProgram, SalonSettings, Service } from '@/lib/types';
 
@@ -46,6 +47,8 @@ function serializeLandingContent(content: LandingContent): string {
     visitTitle: content.visitTitle ?? '',
     visitHoursDays: content.visitHoursDays ?? '',
     visitHoursText: content.visitHoursText ?? '',
+    showBookingQr: content.showBookingQr ?? true,
+    touchUpDays: normalizeTouchUpDays(content.touchUpDays),
     sections: {
       showMarquee: content.sections?.showMarquee ?? true,
       showHeroRating: content.sections?.showHeroRating ?? true,
@@ -86,6 +89,7 @@ export function areSettingsEqual(a: SalonSettings, b: SalonSettings): boolean {
     a.minBookingNoticeMinutes === b.minBookingNoticeMinutes &&
     a.minCancelHours === b.minCancelHours &&
     a.cancellationPolicyText === b.cancellationPolicyText &&
+    a.bookingInstructionsText === b.bookingInstructionsText &&
     a.paymentMode === b.paymentMode &&
     a.depositBankName === b.depositBankName &&
     (a.depositBeneficiary ?? a.depositAccountHolder) ===
@@ -158,6 +162,11 @@ export function buildBrandPatchPayload(params: {
     privacyPolicyVersion: (draft.privacyPolicyVersion ?? '2026-11').trim() || '2026-11',
     noShowDepositThreshold: Math.max(1, Math.min(5, Math.round(noShowDepositThreshold))),
     ownerPinEnabled: hasOwnerPin ? Boolean(draft.ownerPinEnabled) : false,
+    landingContent: {
+      ...draft.landingContent,
+      showBookingQr: draft.landingContent.showBookingQr ?? true,
+      touchUpDays: normalizeTouchUpDays(draft.landingContent.touchUpDays),
+    },
     loyaltyProgram: {
       id: loyaltyDraft.id,
       isActive: loyaltyDraft.isActive,

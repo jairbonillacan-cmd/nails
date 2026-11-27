@@ -149,6 +149,18 @@ describe('Public DTO schemas and mappers (S3)', () => {
     expect('onboardingCompleted' in parsed).toBe(false);
     expect('soundAlertsEnabled' in parsed).toBe(false);
     expect('internalOnlyFlag' in parsed).toBe(false);
+
+    const customCitaDto = toPublicSettingsDTO({
+      ...db.settings,
+      landingContent: {
+        ...db.settings.landingContent,
+        showBookingQr: false,
+        touchUpDays: 28,
+      },
+    });
+    expect(customCitaDto.landingContent.showBookingQr).toBe(false);
+    expect(customCitaDto.landingContent.touchUpDays).toBe(28);
+    expect('ownerPinHash' in customCitaDto).toBe(false);
   });
 
   it('Property (S3): toPublicStaffDTO never leaks commissionPercent for any staff input', () => {

@@ -10,6 +10,7 @@ import { Token } from '@astryxdesign/core/Token';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { AspectRatio } from '@astryxdesign/core/AspectRatio';
+import { Banner } from '@astryxdesign/core/Banner';
 import { Check, ExternalLink, ImageIcon, Wallet } from 'lucide-react';
 import {
   formatCurrency,
@@ -49,6 +50,14 @@ export function CajaDepositsTab({
   onRejectDeposit,
 }: CajaDepositsTabProps) {
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositRow | null>(null);
+  const [previewError, setPreviewError] = useState<{
+    bookingId: string;
+    message: string;
+  } | null>(null);
+  const visiblePreviewError =
+    previewDeposit && previewError && previewError.bookingId === previewDeposit.bookingId
+      ? previewError.message
+      : null;
 
   return (
     <VStack gap={4} className="fx-step-in">
@@ -211,7 +220,10 @@ export function CajaDepositsTab({
       <Dialog
         isOpen={Boolean(previewDeposit)}
         onOpenChange={(open) => {
-          if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
+          if (!open && !approvingId && !rejectingId) {
+            setPreviewError(null);
+            setPreviewDeposit(null);
+          }
         }}
         width={520}
         maxHeight="min(90dvh, calc(100dvh - 2rem))"
@@ -225,13 +237,38 @@ export function CajaDepositsTab({
                 subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
                 hasDivider
                 onOpenChange={(open) => {
-                  if (!open && !approvingId && !rejectingId) setPreviewDeposit(null);
+                  if (!open && !approvingId && !rejectingId) {
+                    setPreviewError(null);
+                    setPreviewDeposit(null);
+                  }
                 }}
               />
             }
             content={
               <LayoutContent>
-                <VStack gap={4}>
+                <VStack
+                  gap={4}
+                  className={
+                    approvingId === previewDeposit.bookingId ||
+                    rejectingId === previewDeposit.bookingId
+                      ? 'fx-busy'
+                      : undefined
+                  }
+                  aria-busy={
+                    approvingId === previewDeposit.bookingId ||
+                    rejectingId === previewDeposit.bookingId ||
+                    undefined
+                  }
+                >
+                  {visiblePreviewError ? (
+                    <Banner
+                      status="error"
+                      role="alert"
+                      title={visiblePreviewError}
+                      isDismissable
+                      onDismiss={() => setPreviewError(null)}
+                    />
+                  ) : null}
                   <VStack gap={2} className="ad-proof-meta">
                     <HStack justify="between" align="center" gap={2} wrap="wrap">
                       <Text type="supporting" color="secondary">
@@ -339,12 +376,25 @@ export function CajaDepositsTab({
                         rejectingId === previewDeposit.bookingId
                       }
                       onClick={async () => {
-                        const ok = await onRejectDeposit(
-                          previewDeposit.bookingId,
-                          previewDeposit.bookingCode,
-                        );
-                        if (ok) {
-                          setPreviewDeposit(null);
+                        setPreviewError(null);
+                        try {
+                          const ok = await onRejectDeposit(
+                            previewDeposit.bookingId,
+                            previewDeposit.bookingCode,
+                          );
+                          if (ok) {
+                            setPreviewDeposit(null);
+                            return;
+                          }
+                          setPreviewError({
+                            bookingId: previewDeposit.bookingId,
+                            message: 'No se pudo rechazar el comprobante. Intenta de nuevo.',
+                          });
+                        } catch {
+                          setPreviewError({
+                            bookingId: previewDeposit.bookingId,
+                            message: 'Error de conexión al rechazar el comprobante.',
+                          });
                         }
                       }}
                     />
@@ -358,7 +408,10 @@ export function CajaDepositsTab({
                       approvingId === previewDeposit.bookingId ||
                       rejectingId === previewDeposit.bookingId
                     }
-                    onClick={() => setPreviewDeposit(null)}
+                    onClick={() => {
+                      setPreviewError(null);
+                      setPreviewDeposit(null);
+                    }}
                   />
                   <Button
                     type="button"
@@ -372,12 +425,25 @@ export function CajaDepositsTab({
                       rejectingId === previewDeposit.bookingId
                     }
                     onClick={async () => {
-                      const ok = await onApproveDeposit(
-                        previewDeposit.bookingId,
-                        previewDeposit.bookingCode,
-                      );
-                      if (ok) {
-                        setPreviewDeposit(null);
+                      setPreviewError(null);
+                      try {
+                        const ok = await onApproveDeposit(
+                          previewDeposit.bookingId,
+                          previewDeposit.bookingCode,
+                        );
+                        if (ok) {
+                          setPreviewDeposit(null);
+                          return;
+                        }
+                        setPreviewError({
+                          bookingId: previewDeposit.bookingId,
+                          message: 'No se pudo confirmar el anticipo. Intenta de nuevo.',
+                        });
+                      } catch {
+                        setPreviewError({
+                          bookingId: previewDeposit.bookingId,
+                          message: 'Error de conexión al confirmar el anticipo.',
+                        });
                       }
                     }}
                   />

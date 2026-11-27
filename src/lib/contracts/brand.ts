@@ -64,6 +64,8 @@ export const LandingContentSchema = z.object({
   visitTitle: z.string().max(120).optional(),
   visitHoursDays: z.string().max(120).optional(),
   visitHoursText: z.string().max(180).optional(),
+  showBookingQr: z.boolean().optional(),
+  touchUpDays: z.number().int().min(7).max(60).optional(),
   sections: LandingSectionsSchema.optional(),
 });
 
@@ -96,6 +98,8 @@ const LandingContentPatchSchema = z
     visitTitle: z.string().max(120),
     visitHoursDays: z.string().max(120),
     visitHoursText: z.string().max(180),
+    showBookingQr: z.boolean(),
+    touchUpDays: z.number().int().min(7).max(60),
     sections: LandingSectionsSchema,
   })
   .partial();

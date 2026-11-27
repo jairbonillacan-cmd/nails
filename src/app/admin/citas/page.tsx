@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -10,6 +11,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Ban, Check, Copy, MessageCircle, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PageSkeleton, SkeletonBlock } from '@/components/ui/SkeletonBlock';
+import type { BlockTimePrefill } from '@/components/admin/citas/BlockTimeDialog';
 import {
   AgendaRangeControls,
   AgendaStaffControls,
@@ -17,10 +19,32 @@ import {
 } from '@/components/admin/citas/BookingsFiltersBar';
 import { BookingsListView } from '@/components/admin/citas/BookingsListView';
 import { CitasDialogsHost } from '@/components/admin/citas/CitasDialogsHost';
+import { formatMinutesHHMM } from '@/components/admin/citas/scheduleGridGeometry';
 import { useCitasBookingActions } from '@/components/admin/citas/useCitasBookingActions';
 import { useCitasWorkspace } from '@/components/admin/citas/useCitasWorkspace';
+import type { CalendarEmptySlotSelection } from '@/components/admin/citas/VisualScheduleGrid';
 import { WaitlistPanel } from '@/components/admin/citas/WaitlistPanel';
+import {
+  computeSuggestedTouchUpDateKey,
+  normalizeTouchUpDays,
+} from '@/lib/booking/recurrence';
 import { roleCanAccess } from '@/lib/rbac';
+
+const CalendarSlotActionDialog = dynamic(
+  () =>
+    import('@/components/admin/citas/CalendarSlotActionDialog').then(
+      (mod) => mod.CalendarSlotActionDialog,
+    ),
+  { ssr: false },
+);
+
+const BlockTimeDialog = dynamic(
+  () =>
+    import('@/components/admin/citas/BlockTimeDialog').then(
+      (mod) => mod.BlockTimeDialog,
+    ),
+  { ssr: false },
+);
 
 function ScheduleGridFallback() {
   return (
@@ -41,6 +65,9 @@ const VisualScheduleGrid = dynamic(
 
 export default function AdminBookingsPage() {
   const ws = useCitasWorkspace();
+  const [slotChoice, setSlotChoice] = useState<CalendarEmptySlotSelection | null>(null);
+  const [blockTimePrefill, setBlockTimePrefill] = useState<BlockTimePrefill | null>(null);
+  const [blockTimeSessionKey, setBlockTimeSessionKey] = useState(0);
   const hasActiveOwnerPin = Boolean(
     ws.data?.settings.ownerPinEnabled && ws.data?.settings.hasOwnerPin,
   );
@@ -345,6 +372,7 @@ export default function AdminBookingsPage() {
                 : null,
             )
           }
+          onSelectEmptySlot={(slot) => setSlotChoice(slot)}
           onSelectBooking={(b) => ws.setPopoverBookingId(b.id)}
           onUpdateStatus={(id, status) => void actions.updateStatus(id, status)}
           onRescheduleBooking={actions.rescheduleAdmin}
@@ -413,7 +441,25 @@ export default function AdminBookingsPage() {
         }}
         onOpenManualModal={ws.openManualModal}
         onOpenCheckout={ws.openCheckoutDrawer}
-        onScheduleRetouch={ws.handleScheduleRetouch}
+        onScheduleRetouch={(booking) => {
+          const touchUpDays = normalizeTouchUpDays(data.settings.landingContent?.touchUpDays);
+          const retouchDateKey = computeSuggestedTouchUpDateKey({
+            startAt: booking.startAt,
+            touchUpDays,
+            timezone: ws.tz,
+          });
+          ws.setCheckoutBookingId(null);
+          ws.openManualModal(booking.staffId, {
+            serviceId: booking.serviceId,
+            extraServiceIds: booking.extraServiceIds ?? [],
+            staffId: booking.staffId,
+            startDate: retouchDateKey,
+            clientName: booking.client.fullName,
+            clientPhone: booking.client.phoneE164,
+            clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? '',
+            internalNotes: `Retoque (+${touchUpDays} días · ${booking.bookingCode})`,
+          });
+        }}
         onUpdateStatus={actions.updateStatus}
         onRejectDeposit={actions.rejectDeposit}
         onSendReminder={(id) => void actions.sendReminder(id)}
@@ -422,6 +468,58 @@ export default function AdminBookingsPage() {
         onShowNotice={actions.inlineNotice.show}
         onSetFeedback={actions.setFeedback}
       />
+
+      {slotChoice ? (
+        <CalendarSlotActionDialog
+          slot={slotChoice}
+          timezone={ws.tz}
+          onClose={() => setSlotChoice(null)}
+          onChooseManualBooking={(slot) => {
+            setSlotChoice(null);
+            ws.openManualModal(slot.staffId, {
+              startDate: slot.dateKey,
+              preferredStartAt: slot.startAtIso,
+            });
+          }}
+          onChooseBlockTime={(slot) => {
+            setSlotChoice(null);
+            const clampedStartMin = Math.max(8 * 60, Math.min(21 * 60, slot.startMinutes));
+            const suggestedEndMin = Math.min(22 * 60, clampedStartMin + 60);
+            const targetStaffId =
+              ws.lockedStaffId ??
+              (slot.staffId !== 'any'
+                ? slot.staffId
+                : ws.selectedStaffFilter !== 'all'
+                  ? ws.selectedStaffFilter
+                  : (visibleStaff[0]?.id ?? ''));
+            setBlockTimePrefill({
+              dateKey: slot.dateKey,
+              startTimeHHMM: formatMinutesHHMM(clampedStartMin),
+              endTimeHHMM: formatMinutesHHMM(suggestedEndMin),
+              staffId: targetStaffId,
+            });
+            setBlockTimeSessionKey((prev) => prev + 1);
+          }}
+        />
+      ) : null}
+
+      {blockTimePrefill ? (
+        <BlockTimeDialog
+          key={`block-time-${blockTimeSessionKey}`}
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setBlockTimePrefill(null);
+          }}
+          prefill={blockTimePrefill}
+          visibleStaff={visibleStaff}
+          lockedStaffId={ws.lockedStaffId}
+          todayKey={ws.todayKey}
+          onSaved={async (notice) => {
+            await ws.refresh();
+            actions.inlineNotice.show(notice);
+          }}
+        />
+      ) : null}
     </VStack>
   );
 }

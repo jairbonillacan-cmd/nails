@@ -1457,22 +1457,31 @@ dialog.astryx-dialog:has(.lk-profile-dialog) {
 dialog.astryx-dialog:has(.lk-profile-dialog) > * {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
   max-height: inherit;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   overflow: hidden;
 }
 
 .lk-profile-dialog {
   flex: 1 1 auto;
+  width: 100%;
   height: 100%;
   max-height: inherit;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
 }
 
 .lk-profile-head {
   flex: none;
+  width: 100%;
+  min-width: 0;
   padding: 1.25rem 1.25rem 0.75rem;
+  box-sizing: border-box;
 }
 
 .lk-profile-avatar {
@@ -1496,15 +1505,22 @@ dialog.astryx-dialog:has(.lk-profile-dialog) > * {
 
 .lk-profile-body {
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   background: var(--lk-rosa);
   padding: 1.25rem;
+  box-sizing: border-box;
 }
 
 .lk-profile-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--color-background-surface);
   border: 1px solid var(--lk-linea);
   border-radius: 1.25rem;
@@ -1514,9 +1530,30 @@ dialog.astryx-dialog:has(.lk-profile-dialog) > * {
 }
 
 .lk-profile-services {
+  width: 100%;
+  min-width: 0;
   list-style: none;
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+.lk-profile-service-item {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.lk-profile-service-copy {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.lk-profile-service-cta {
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .lk-profile-portfolio-tile {
@@ -1548,9 +1585,41 @@ a.lk-profile-portfolio-tile:focus-visible {
 
 .lk-profile-foot {
   flex: none;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 1rem 1.25rem max(1rem, calc(0.875rem + env(safe-area-inset-bottom)));
   border-top: 1px solid var(--lk-linea);
   background: var(--color-background-surface);
+}
+
+@media (max-width: 36rem) {
+  .lk-profile-head {
+    padding: 1rem 1rem 0.625rem;
+  }
+
+  .lk-profile-body {
+    padding: 1rem;
+  }
+
+  .lk-profile-foot {
+    padding: 0.875rem 1rem max(0.875rem, calc(0.75rem + env(safe-area-inset-bottom)));
+  }
+
+  .lk-profile-service-item {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.75rem !important;
+  }
+
+  .lk-profile-service-copy {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .lk-profile-service-cta {
+    width: 100% !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

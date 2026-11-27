@@ -132,6 +132,7 @@ export async function submitCheckoutSplitRequest(params: {
     res = await fetch('/api/admin/bookings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
         action: 'checkout_split',
         bookingId: params.bookingId,
@@ -142,10 +143,14 @@ export async function submitCheckoutSplitRequest(params: {
         ...(params.selectedPackage ? { redeemClientPackageId: params.selectedPackage.id } : {}),
       }),
     });
-  } catch {
+  } catch (err) {
+    const isTimeout =
+      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     return {
       ok: false,
-      error: 'Sin conexión. No se pudo registrar el cobro.',
+      error: isTimeout
+        ? 'El registro del cobro tardó demasiado. Intenta de nuevo en unos segundos.'
+        : 'Sin conexión. No se pudo registrar el cobro.',
     };
   }
 

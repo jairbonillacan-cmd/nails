@@ -7,6 +7,10 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { RefreshCw, XCircle } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import {
+  DEFAULT_TOUCH_UP_DAYS,
+  formatTouchUpActionLabel,
+} from '@/lib/cita/cita-settings';
 
 interface CitaModifyCardProps {
   bookingCode: string;
@@ -17,6 +21,7 @@ interface CitaModifyCardProps {
   cancelWindowAllowed: boolean;
   policyHelpWhatsappUrl: string;
   touchUpUrl: string;
+  touchUpDays?: number;
   onOpenReschedule: () => void;
   onOpenCancel: () => void;
 }
@@ -30,6 +35,7 @@ export function CitaModifyCard({
   cancelWindowAllowed,
   policyHelpWhatsappUrl,
   touchUpUrl,
+  touchUpDays = DEFAULT_TOUCH_UP_DAYS,
   onOpenReschedule,
   onOpenCancel,
 }: CitaModifyCardProps) {
@@ -89,7 +95,7 @@ export function CitaModifyCard({
             />
           ) : null}
           <Button
-            label="Agendar siguiente retoque (+21 días)"
+            label={formatTouchUpActionLabel(touchUpDays)}
             variant="secondary"
             size="md"
             className="fx-press"

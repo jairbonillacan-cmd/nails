@@ -105,6 +105,11 @@ export const AdminRejectDepositSchema = z.object({
   reason: z.string().trim().max(300).optional(),
 });
 
+export const AdminCheckInBookingSchema = z.object({
+  action: z.literal('check_in'),
+  bookingId: NonEmptyIdSchema,
+});
+
 export const CheckoutSplitSchema = z.object({
   action: z.literal('checkout_split'),
   bookingId: NonEmptyIdSchema,

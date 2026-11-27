@@ -1056,7 +1056,7 @@ function tryRegisterWorkerWaitUntil(promise: Promise<unknown>): boolean {
   }
 }
 
-async function runPostCommitSideEffects(
+export async function runPostCommitSideEffects(
   task: Promise<void>,
   maxWaitMs = POST_COMMIT_SIDE_EFFECT_MAX_WAIT_MS,
 ): Promise<void> {
@@ -1079,6 +1079,41 @@ async function runPostCommitSideEffects(
       clearTimeout(timerId);
     }
   }
+}
+
+async function hydrateBookingRowWithClient(
+  supabase: SupabaseClient<Database>,
+  bookingRow: Tables['bookings']['Row'],
+): Promise<BookingWithRelations> {
+  const [
+    bookingAddonsRes,
+    serviceRes,
+    staffRes,
+    staffServicesRes,
+    clientRes,
+    reviewRes,
+  ] = await Promise.all([
+    supabase.from('booking_addons').select('*').eq('booking_id', bookingRow.id),
+    supabase.from('services').select('*').eq('id', bookingRow.service_id).maybeSingle(),
+    supabase.from('staff_members').select('*').eq('id', bookingRow.staff_id).maybeSingle(),
+    supabase.from('staff_services').select('*').eq('staff_id', bookingRow.staff_id),
+    supabase.from('clients').select('*').eq('id', bookingRow.client_id).maybeSingle(),
+    supabase.from('booking_reviews').select('*').eq('booking_id', bookingRow.id).maybeSingle(),
+  ]);
+
+  const booking = mapBookingRow(bookingRow, bookingAddonsRes.data ?? []);
+  const service = serviceRes.data
+    ? mapServiceRow(serviceRes.data)
+    : buildFallbackServiceForBooking(booking);
+  const staff = staffRes.data
+    ? mapStaffRow(staffRes.data, staffServicesRes.data ?? [])
+    : buildFallbackStaffForBooking(booking);
+  const client = clientRes.data
+    ? mapClientRow(clientRes.data)
+    : buildFallbackClientForBooking(booking);
+  const review = reviewRes.data ? mapReviewRow(reviewRes.data) : null;
+
+  return { ...booking, service, staff, client, review };
 }
 
 function buildFallbackServiceForBooking(booking: Booking): Service {
@@ -1825,36 +1860,7 @@ export function createSupabaseRepository(
   async function hydrateBookingRowTargeted(
     bookingRow: Tables['bookings']['Row'],
   ): Promise<BookingWithRelations> {
-    const supabase = getClient();
-    const [
-      bookingAddonsRes,
-      serviceRes,
-      staffRes,
-      staffServicesRes,
-      clientRes,
-      reviewRes,
-    ] = await Promise.all([
-      supabase.from('booking_addons').select('*').eq('booking_id', bookingRow.id),
-      supabase.from('services').select('*').eq('id', bookingRow.service_id).maybeSingle(),
-      supabase.from('staff_members').select('*').eq('id', bookingRow.staff_id).maybeSingle(),
-      supabase.from('staff_services').select('*').eq('staff_id', bookingRow.staff_id),
-      supabase.from('clients').select('*').eq('id', bookingRow.client_id).maybeSingle(),
-      supabase.from('booking_reviews').select('*').eq('booking_id', bookingRow.id).maybeSingle(),
-    ]);
-
-    const booking = mapBookingRow(bookingRow, bookingAddonsRes.data ?? []);
-    const service = serviceRes.data
-      ? mapServiceRow(serviceRes.data)
-      : buildFallbackServiceForBooking(booking);
-    const staff = staffRes.data
-      ? mapStaffRow(staffRes.data, staffServicesRes.data ?? [])
-      : buildFallbackStaffForBooking(booking);
-    const client = clientRes.data
-      ? mapClientRow(clientRes.data)
-      : buildFallbackClientForBooking(booking);
-    const review = reviewRes.data ? mapReviewRow(reviewRes.data) : null;
-
-    return { ...booking, service, staff, client, review };
+    return hydrateBookingRowWithClient(getClient(), bookingRow);
   }
 
   async function getBookingByIdHydrated(bookingId: string): Promise<BookingWithRelations> {
@@ -2514,18 +2520,38 @@ export function createSupabaseRepository(
       params: UpdateBookingStatusInput,
     ): Promise<BookingWithRelations> {
       const supabase = getClient();
-      const snapshot = await getSnapshot();
-      const booking = snapshot.bookings.find((b) => b.id === params.bookingId);
-      if (!booking) {
+      const [bookingRes, settings] = await Promise.all([
+        supabase.from('bookings').select('*').eq('id', params.bookingId).maybeSingle(),
+        getSalonSettings(),
+      ]);
+      if (!bookingRes.data) {
         throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
       }
 
-      const transition = transitionBookingStatus(booking, params.status);
+      const hydratedBefore = await hydrateBookingRowTargeted(bookingRes.data);
+      const isPast = new Date(hydratedBefore.endAt).getTime() < clock.nowMs();
+      const pastLockActive = settings.lockPastBookings !== false;
+      if (pastLockActive && isPast && params.actor && params.actor.role !== 'owner') {
+        throw new PolicyError(
+          'PAST_BOOKING_LOCKED',
+          'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.',
+        );
+      }
+
+      const prevStatus = hydratedBefore.status;
+      const transition = transitionBookingStatus(hydratedBefore, params.status);
       if (!transition.ok) {
         throw new PolicyError(transition.code, transition.message);
       }
 
       const nowIso = clock.now().toISOString();
+      const isApprovingDeposit =
+        (prevStatus === 'pending_confirmation' || prevStatus === 'pending_payment') &&
+        transition.nextStatus === 'confirmed';
+      const nextConfirmedVia = isApprovingDeposit
+        ? (hydratedBefore.confirmedVia ?? 'manual')
+        : hydratedBefore.confirmedVia;
+
       const updatePatch: Tables['bookings']['Update'] = {
         status: transition.nextStatus,
         updated_at: nowIso,
@@ -2536,73 +2562,154 @@ export function createSupabaseRepository(
       if (params.internalNotes !== undefined) {
         updatePatch.internal_notes = params.internalNotes;
       }
+      if (isApprovingDeposit) {
+        updatePatch.confirmed_via = nextConfirmedVia ?? 'manual';
+      }
 
       const { error: updateError } = await supabase
         .from('bookings')
         .update(updatePatch)
-        .eq('id', booking.id);
+        .eq('id', hydratedBefore.id);
       if (updateError) {
         throw new PolicyError('UPDATE_FAILED', updateError.message);
       }
 
-      const updatedBooking: Booking = {
-        ...booking,
+      const hydrated: BookingWithRelations = {
+        ...hydratedBefore,
         status: transition.nextStatus,
         cancellationReason:
           params.cancellationReason !== undefined
             ? params.cancellationReason
-            : booking.cancellationReason,
+            : hydratedBefore.cancellationReason,
         internalNotes:
           params.internalNotes !== undefined
             ? params.internalNotes
-            : booking.internalNotes,
+            : hydratedBefore.internalNotes,
+        ...(isApprovingDeposit ? { confirmedVia: nextConfirmedVia ?? 'manual' } : {}),
         updatedAt: nowIso,
       };
-      const hydrated = hydrateBookingFromSnapshot(snapshot, updatedBooking);
-      const connection = snapshot.calendarConnections.find(
-        (c) => c.staffId === booking.staffId,
-      );
+
+      const auditRows: Array<Tables['audit_logs']['Insert']> = [];
+      if (pastLockActive && isPast && params.actor && params.actor.role === 'owner') {
+        auditRows.push({
+          actor_id: params.actor.id,
+          actor_email: params.actor.email,
+          actor_role: params.actor.role,
+          action: 'past_booking_override',
+          entity_type: 'booking',
+          entity_id: hydrated.id,
+          metadata: {
+            bookingCode: hydrated.bookingCode,
+            fromStatus: prevStatus,
+            toStatus: transition.nextStatus,
+          },
+        });
+      }
+
+      if (isApprovingDeposit) {
+        if (hydrated.depositAmountCents > 0) {
+          const existingSplitRes = await supabase
+            .from('payment_splits')
+            .select('id')
+            .eq('booking_id', hydrated.id)
+            .limit(1);
+          if ((existingSplitRes.data ?? []).length === 0) {
+            await supabase.from('payment_splits').insert([
+              {
+                booking_id: hydrated.id,
+                method: 'transfer',
+                amount_cents: hydrated.depositAmountCents,
+                tip_cents: 0,
+                tip_staff_id: null,
+                reference: 'Anticipo SPEI aprobado',
+              },
+            ]);
+          }
+        }
+        if (params.actor) {
+          auditRows.push({
+            actor_id: params.actor.id,
+            actor_email: params.actor.email,
+            actor_role: params.actor.role,
+            action: 'deposit_approved',
+            entity_type: 'booking',
+            entity_id: hydrated.id,
+            metadata: {
+              bookingCode: hydrated.bookingCode,
+              depositAmountCents: hydrated.depositAmountCents,
+            },
+          });
+        }
+      }
+
+      if (transition.nextStatus === 'canceled' && params.actor) {
+        auditRows.push({
+          actor_id: params.actor.id,
+          actor_email: params.actor.email,
+          actor_role: params.actor.role,
+          action: 'booking_canceled',
+          entity_type: 'booking',
+          entity_id: hydrated.id,
+          metadata: {
+            bookingCode: hydrated.bookingCode,
+            reason: hydrated.cancellationReason,
+          },
+        });
+      }
+
+      if (auditRows.length > 0) {
+        await supabase.from('audit_logs').insert(auditRows);
+      }
+
+      if (transition.nextStatus === 'completed' && !params.skipLoyaltyStamp) {
+        const activeProgramRes = await supabase
+          .from('loyalty_programs')
+          .select('id')
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+        if (activeProgramRes.data?.id) {
+          const stampedDate = getDateKeyInTimezone(
+            new Date(hydrated.startAt),
+            settings.timezone || 'America/Mexico_City',
+          );
+          await supabase.from('loyalty_stamps').insert({
+            client_id: hydrated.clientId,
+            booking_id: hydrated.id,
+            program_id: activeProgramRes.data.id,
+            stamped_date: stampedDate,
+          });
+        }
+      }
+
+      const calendarEffects: Array<
+        Extract<(typeof transition.effects)[number], { type: 'SyncCalendar' }>
+      > = [];
+      const notifyEffects: Array<
+        Extract<(typeof transition.effects)[number], { type: 'Notify' }>
+      > = [];
 
       for (const effect of transition.effects) {
         if (effect.type === 'SyncCalendar') {
-          await dispatchOutboxEvent({
-            type: 'SyncCalendar',
-            booking: hydrated,
-            connection,
-            settings: snapshot.settings,
-            action: effect.action,
-            onSynced: async (googleEventId) => {
-              hydrated.googleEventId = googleEventId;
-              await supabase
-                .from('bookings')
-                .update({ google_event_id: googleEventId })
-                .eq('id', booking.id);
-            },
-          });
+          calendarEffects.push(effect);
         } else if (effect.type === 'Notify') {
           if (effect.cancelPending) {
             await supabase
               .from('scheduled_notifications')
               .update({ status: 'canceled' })
-              .eq('booking_id', booking.id)
+              .eq('booking_id', hydrated.id)
               .eq('status', 'pending');
           }
-          await dispatchOutboxEvent({
-            type: 'Notify',
-            booking: hydrated,
-            workflows: snapshot.workflows,
-            settings: snapshot.settings,
-            trigger: effect.trigger,
-            onLogs: persistScheduledNotifications,
-          });
+          notifyEffects.push(effect);
         } else if (effect.type === 'RecordCash') {
-          const existingCash = snapshot.cashEntries.some(
-            (e) => e.bookingId === effect.bookingId,
-          );
-          if (!existingCash) {
-            const staff = snapshot.staff.find((s) => s.id === effect.staffId);
+          const existingCashRes = await supabase
+            .from('cash_register_entries')
+            .select('id')
+            .eq('booking_id', effect.bookingId)
+            .limit(1);
+          if ((existingCashRes.data ?? []).length === 0) {
             const pct =
-              staff?.commissionPercent ?? snapshot.settings.defaultCommissionPercent;
+              hydrated.staff.commissionPercent ?? settings.defaultCommissionPercent;
             const commissionCents = Math.round((effect.amountCents * pct) / 100);
             await supabase.from('cash_register_entries').insert({
               booking_id: effect.bookingId,
@@ -2618,14 +2725,17 @@ export function createSupabaseRepository(
             });
           }
         } else if (effect.type === 'ReleaseCoupon') {
-          const coupon = snapshot.coupons.find(
-            (c) => c.code.toUpperCase() === effect.couponCode.toUpperCase(),
-          );
-          if (coupon) {
+          const couponRes = await supabase
+            .from('coupons')
+            .select('*')
+            .eq('code', effect.couponCode.toUpperCase())
+            .maybeSingle();
+          if (couponRes.data) {
+            const coupon = mapCouponRow(couponRes.data);
             await supabase
               .from('coupon_redemptions')
               .update({ status: 'released', released_at: nowIso })
-              .eq('booking_id', booking.id)
+              .eq('booking_id', hydrated.id)
               .eq('coupon_id', coupon.id);
             await supabase
               .from('coupons')
@@ -2642,16 +2752,19 @@ export function createSupabaseRepository(
               .eq('id', coupon.id);
           }
         } else if (effect.type === 'IncrementNoShow') {
-          const client = snapshot.clients.find((c) => c.id === effect.clientId);
-          if (client) {
-            await supabase
-              .from('clients')
-              .update({
-                no_show_count: client.noShowCount + 1,
-                updated_at: nowIso,
-              })
-              .eq('id', client.id);
-          }
+          const nextNoShowCount = hydrated.client.noShowCount + 1;
+          hydrated.client = {
+            ...hydrated.client,
+            noShowCount: nextNoShowCount,
+            updatedAt: nowIso,
+          };
+          await supabase
+            .from('clients')
+            .update({
+              no_show_count: nextNoShowCount,
+              updated_at: nowIso,
+            })
+            .eq('id', effect.clientId);
         }
       }
 
@@ -2661,6 +2774,61 @@ export function createSupabaseRepository(
         payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
       });
 
+      if (calendarEffects.length > 0 || notifyEffects.length > 0) {
+        const postCommitTask = (async () => {
+          const [calRes, workflowsRes] = await Promise.all([
+            calendarEffects.length > 0
+              ? supabase
+                  .from('calendar_connections')
+                  .select('*')
+                  .eq('staff_id', hydrated.staffId)
+                  .eq('is_connected', true)
+                  .limit(1)
+                  .maybeSingle()
+              : Promise.resolve({ data: null as Tables['calendar_connections']['Row'] | null }),
+            notifyEffects.length > 0
+              ? supabase
+                  .from('notification_workflows')
+                  .select('*')
+                  .eq('is_enabled', true)
+              : Promise.resolve({ data: [] as Tables['notification_workflows']['Row'][] }),
+          ]);
+
+          const connection = calRes.data ? mapCalendarConnectionRow(calRes.data) : undefined;
+          const enabledWorkflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
+
+          for (const effect of calendarEffects) {
+            await dispatchOutboxEvent({
+              type: 'SyncCalendar',
+              booking: hydrated,
+              connection,
+              settings,
+              action: effect.action,
+              onSynced: async (googleEventId) => {
+                hydrated.googleEventId = googleEventId;
+                await supabase
+                  .from('bookings')
+                  .update({ google_event_id: googleEventId })
+                  .eq('id', hydrated.id);
+              },
+            });
+          }
+
+          for (const effect of notifyEffects) {
+            await dispatchOutboxEvent({
+              type: 'Notify',
+              booking: hydrated,
+              workflows: enabledWorkflows,
+              settings,
+              trigger: effect.trigger,
+              onLogs: persistScheduledNotifications,
+            });
+          }
+        })();
+
+        await runPostCommitSideEffects(postCommitTask);
+      }
+
       return hydrated;
     },
 
@@ -2668,12 +2836,16 @@ export function createSupabaseRepository(
       params: ManageClientBookingInput,
     ): Promise<BookingWithRelations> {
       const supabase = getClient();
-      const snapshot = await getSnapshot();
-      const booking = snapshot.bookings.find((b) => b.manageToken === params.token);
-      if (!booking) {
+      const bookingRes = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('manage_token', params.token)
+        .maybeSingle();
+      if (!bookingRes.data) {
         throw new PolicyError('BOOKING_NOT_FOUND', 'No encontramos esta cita.');
       }
-      if (!isActiveBookingStatus(booking.status)) {
+      const hydratedBefore = await hydrateBookingRowTargeted(bookingRes.data);
+      if (!isActiveBookingStatus(hydratedBefore.status)) {
         throw new PolicyError(
           'INVALID_TRANSITION',
           'Esta cita ya no puede modificarse.',
@@ -2682,7 +2854,7 @@ export function createSupabaseRepository(
 
       if (params.action === 'confirm_attendance') {
         const nowIso = clock.now().toISOString();
-        const confirmedVia = params.confirmedVia ?? booking.confirmedVia ?? 'email';
+        const confirmedVia = params.confirmedVia ?? hydratedBefore.confirmedVia ?? 'email';
         const { error: confirmError } = await supabase
           .from('bookings')
           .update({
@@ -2691,11 +2863,17 @@ export function createSupabaseRepository(
             confirmed_via: confirmedVia,
             updated_at: nowIso,
           })
-          .eq('id', booking.id);
+          .eq('id', hydratedBefore.id);
         if (confirmError) {
           throw new Error(`No se pudo confirmar la asistencia: ${confirmError.message}`);
         }
-        const hydrated = await getBookingByIdHydrated(booking.id);
+        const hydrated: BookingWithRelations = {
+          ...hydratedBefore,
+          attendanceStatus: 'confirmed',
+          attendanceConfirmedAt: nowIso,
+          confirmedVia,
+          updatedAt: nowIso,
+        };
         await dispatchOutboxEvent({
           type: 'Realtime',
           eventType: 'booking_updated',
@@ -2757,7 +2935,7 @@ export function createSupabaseRepository(
             proof_rejection_reason: null,
             updated_at: nowIso,
           })
-          .eq('id', booking.id);
+          .eq('id', hydratedBefore.id);
         if (proofError) {
           throw new Error(`No se pudo guardar el comprobante: ${proofError.message}`);
         }
@@ -2772,15 +2950,22 @@ export function createSupabaseRepository(
             await registerMediaAssetInternal({
               storagePath,
               folder: 'proofs',
-              bookingId: booking.id,
-              clientId: booking.clientId,
+              bookingId: hydratedBefore.id,
+              clientId: hydratedBefore.clientId,
               contentType:
                 uploadedProofMeta?.contentType ?? inferContentTypeFromPath(storagePath),
               sizeBytes: uploadedProofMeta?.sizeBytes ?? 0,
             });
           }
         }
-        const hydrated = await getBookingByIdHydrated(booking.id);
+        const hydrated: BookingWithRelations = {
+          ...hydratedBefore,
+          paymentProofUrl: persistedProofUrl,
+          proofDeliveryMethod,
+          proofRejectedAt: null,
+          proofRejectionReason: null,
+          updatedAt: nowIso,
+        };
         await dispatchOutboxEvent({
           type: 'Realtime',
           eventType: 'booking_updated',
@@ -2789,13 +2974,14 @@ export function createSupabaseRepository(
         return hydrated;
       }
 
+      const settings = await getSalonSettings();
       const manageAction = params.action;
       const minHours =
         manageAction === 'cancel'
-          ? snapshot.settings.minCancelHours
-          : snapshot.settings.minRescheduleHours;
+          ? settings.minCancelHours
+          : settings.minRescheduleHours;
       const policyCheck = checkManagePolicyWindow({
-        startAtIso: booking.startAt,
+        startAtIso: hydratedBefore.startAt,
         nowMs: clock.nowMs(),
         minHours,
         action: manageAction,
@@ -2806,7 +2992,7 @@ export function createSupabaseRepository(
 
       if (params.action === 'cancel') {
         return this.updateBookingStatus({
-          bookingId: booking.id,
+          bookingId: hydratedBefore.id,
           status: 'canceled',
           cancellationReason:
             params.reason || 'Cancelada por la clienta desde link personal',
@@ -2819,16 +3005,16 @@ export function createSupabaseRepository(
       }
 
       const { ctx } = await loadPublicAvailabilityContext({
-        serviceId: booking.serviceId,
-        extraServiceIds: booking.extraServiceIds,
-        addonIds: booking.addons.map((a) => a.addonId),
-        ignoreBookingId: booking.id,
+        serviceId: hydratedBefore.serviceId,
+        extraServiceIds: hydratedBefore.extraServiceIds,
+        addonIds: hydratedBefore.addons.map((a) => a.addonId),
+        ignoreBookingId: hydratedBefore.id,
       });
       const slot = resolveBookableSlotOrThrow({
         ctx,
         startAt: params.newStartAt,
-        staffId: params.newStaffId || booking.staffId,
-        ignoreBookingId: booking.id,
+        staffId: params.newStaffId || hydratedBefore.staffId,
+        ignoreBookingId: hydratedBefore.id,
         conflictMessage:
           'Ese nuevo horario ya fue ocupado. Prueba con uno de los horarios cercanos.',
       });
@@ -2847,7 +3033,7 @@ export function createSupabaseRepository(
           attendance_confirmed_at: null,
           updated_at: nowIso,
         })
-        .eq('id', booking.id);
+        .eq('id', hydratedBefore.id);
 
       if (rescheduleError) {
         if (isSlotConflictPgError(rescheduleError)) {
@@ -2863,43 +3049,69 @@ export function createSupabaseRepository(
       await supabase
         .from('scheduled_notifications')
         .update({ status: 'canceled' })
-        .eq('booking_id', booking.id)
+        .eq('booking_id', hydratedBefore.id)
         .eq('status', 'pending');
 
-      const hydrated = await getBookingByIdHydrated(booking.id);
-      const connection = snapshot.calendarConnections.find(
-        (c) => c.staffId === hydrated.staffId,
+      const nextStaff =
+        slot.staffId === hydratedBefore.staffId
+          ? hydratedBefore.staff
+          : (ctx.staffMembers.find((member) => member.id === slot.staffId) ??
+            hydratedBefore.staff);
+      const hydrated: BookingWithRelations = {
+        ...hydratedBefore,
+        staffId: slot.staffId,
+        staff: nextStaff,
+        startAt: slot.startAt,
+        endAt: slot.endAt,
+        occupiedStartAt: slot.occupiedStartAt,
+        occupiedEndAt: slot.occupiedEndAt,
+        attendanceStatus: 'rescheduled',
+        attendanceConfirmedAt: null,
+        updatedAt: nowIso,
+      };
+      const connection = ctx.calendarConnections.find(
+        (c) => c.staffId === hydrated.staffId && c.isConnected,
       );
-
-      await dispatchOutboxEvent({
-        type: 'SyncCalendar',
-        booking: hydrated,
-        connection,
-        settings: snapshot.settings,
-        action: hydrated.googleEventId ? 'update' : 'create',
-        onSynced: async (googleEventId) => {
-          hydrated.googleEventId = googleEventId;
-          await supabase
-            .from('bookings')
-            .update({ google_event_id: googleEventId })
-            .eq('id', hydrated.id);
-        },
-      });
-
-      await dispatchOutboxEvent({
-        type: 'Notify',
-        booking: hydrated,
-        workflows: snapshot.workflows,
-        settings: snapshot.settings,
-        trigger: 'booking_rescheduled',
-        onLogs: persistScheduledNotifications,
-      });
 
       await dispatchOutboxEvent({
         type: 'Realtime',
         eventType: 'slot_changed',
         payload: { staffId: hydrated.staffId, startAt: hydrated.startAt },
       });
+
+      const postCommitTask = (async () => {
+        const workflowsRes = await supabase
+          .from('notification_workflows')
+          .select('*')
+          .eq('is_enabled', true);
+        const enabledWorkflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
+
+        await dispatchOutboxEvent({
+          type: 'SyncCalendar',
+          booking: hydrated,
+          connection,
+          settings,
+          action: hydrated.googleEventId ? 'update' : 'create',
+          onSynced: async (googleEventId) => {
+            hydrated.googleEventId = googleEventId;
+            await supabase
+              .from('bookings')
+              .update({ google_event_id: googleEventId })
+              .eq('id', hydrated.id);
+          },
+        });
+
+        await dispatchOutboxEvent({
+          type: 'Notify',
+          booking: hydrated,
+          workflows: enabledWorkflows,
+          settings,
+          trigger: 'booking_rescheduled',
+          onLogs: persistScheduledNotifications,
+        });
+      })();
+
+      await runPostCommitSideEffects(postCommitTask);
 
       return hydrated;
     },
@@ -3268,6 +3480,12 @@ export function createSupabaseRepository(
         }
         if (mergedContent.visitHoursText !== undefined) {
           serializedLanding.visitHoursText = mergedContent.visitHoursText;
+        }
+        if (mergedContent.showBookingQr !== undefined) {
+          serializedLanding.showBookingQr = mergedContent.showBookingQr;
+        }
+        if (mergedContent.touchUpDays !== undefined) {
+          serializedLanding.touchUpDays = mergedContent.touchUpDays;
         }
         if (mergedContent.sections !== undefined) {
           serializedLanding.sections = { ...mergedContent.sections };
@@ -3841,6 +4059,43 @@ export function createSupabaseRepository(
       return mapCouponRow(data);
     },
 
+    async deleteCoupon(id: string): Promise<Coupon> {
+      const cleanId = id.trim();
+      if (!cleanId) {
+        throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+      }
+      const supabase = getClient();
+      const existingRes = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (!existingRes.data) {
+        throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+      }
+      const { error: redemptionsError } = await supabase
+        .from('coupon_redemptions')
+        .delete()
+        .eq('coupon_id', cleanId);
+      if (redemptionsError) {
+        throw new PolicyError(
+          'COUPON_DELETE_FAILED',
+          redemptionsError.message || 'No se pudieron limpiar los canjes del cupón.',
+        );
+      }
+      const { error: deleteError } = await supabase
+        .from('coupons')
+        .delete()
+        .eq('id', cleanId);
+      if (deleteError) {
+        throw new PolicyError(
+          'COUPON_DELETE_FAILED',
+          deleteError.message || 'No se pudo eliminar el cupón.',
+        );
+      }
+      return mapCouponRow(existingRes.data);
+    },
+
     async adjustInventoryItem(
       params: AdjustInventoryInput,
     ): Promise<InventoryItem> {
@@ -3920,13 +4175,13 @@ export function createSupabaseRepository(
         const qty = Math.abs(delta);
         await supabase.from('cash_register_entries').insert({
           booking_id: null,
-          staff_id: null,
+          staff_id: params.staffId ?? null,
           entry_type: 'product_sale',
           description: `Venta producto: ${existingRes.data.name} (x${qty})`,
           amount_cents: Math.round(existingRes.data.retail_price_cents * qty),
           tip_cents: 0,
           commission_cents: Math.round(existingRes.data.retail_price_cents * qty * 0.1),
-          payment_method: 'cash',
+          payment_method: params.paymentMethod ?? 'cash',
           occurred_at: nowIso,
           recorded_by: params.createdBy ?? 'Admin',
         });
@@ -4773,6 +5028,195 @@ export async function fetchSupabaseServicesByIds(
   const supabase = clientOverride ?? createSupabaseAdminClient();
   const { data } = await supabase.from('services').select('*').in('id', uniqueIds);
   return (data ?? []).map(mapServiceRow);
+}
+
+export async function fetchSupabaseAddonsByIds(
+  addonIds: readonly string[],
+  clientOverride?: SupabaseClient<Database>,
+): Promise<ServiceAddon[]> {
+  const uniqueIds = Array.from(
+    new Set(addonIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+  );
+  if (uniqueIds.length === 0) return [];
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const { data } = await supabase
+    .from('service_addons')
+    .select('*')
+    .in('id', uniqueIds)
+    .eq('is_active', true);
+  return (data ?? []).map(mapAddonRow);
+}
+
+export async function fetchSupabaseBookingById(
+  bookingId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<BookingWithRelations | null> {
+  const cleanId = bookingId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const bookingRes = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', cleanId)
+    .maybeSingle();
+  if (!bookingRes.data) return null;
+  return hydrateBookingRowWithClient(supabase, bookingRes.data);
+}
+
+export async function fetchSupabaseBookingStaffId(
+  bookingId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<string | null> {
+  const cleanId = bookingId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const res = await supabase
+    .from('bookings')
+    .select('staff_id')
+    .eq('id', cleanId)
+    .maybeSingle();
+  return res.data?.staff_id ?? null;
+}
+
+export async function fetchSupabaseBookingPaymentSplits(
+  bookingId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<PaymentSplit[]> {
+  const cleanId = bookingId.trim();
+  if (!cleanId) return [];
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const { data } = await supabase
+    .from('payment_splits')
+    .select('*')
+    .eq('booking_id', cleanId);
+  return (data ?? []).map(mapPaymentSplitRow);
+}
+
+export async function fetchSupabaseRecurringBlockStaffId(
+  blockId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<string | null> {
+  const cleanId = blockId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const res = await supabase
+    .from('recurring_blocks')
+    .select('staff_id')
+    .eq('id', cleanId)
+    .maybeSingle();
+  return res.data?.staff_id ?? null;
+}
+
+export async function fetchSupabaseDateOverrideStaffId(
+  overrideId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<string | null> {
+  const cleanId = overrideId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const res = await supabase
+    .from('date_overrides')
+    .select('staff_id')
+    .eq('id', cleanId)
+    .maybeSingle();
+  return res.data?.staff_id ?? null;
+}
+
+export async function fetchSupabaseActiveInventoryItemById(
+  itemId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<InventoryItem | null> {
+  const cleanId = itemId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const res = await supabase
+    .from('inventory_items')
+    .select('*')
+    .eq('id', cleanId)
+    .eq('is_active', true)
+    .maybeSingle();
+  return res.data ? mapInventoryItemRow(res.data) : null;
+}
+
+export async function fetchSupabaseStaffMemberById(
+  staffId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<StaffMember | null> {
+  const cleanId = staffId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const [staffRes, linksRes] = await Promise.all([
+    supabase.from('staff_members').select('*').eq('id', cleanId).maybeSingle(),
+    supabase.from('staff_services').select('*').eq('staff_id', cleanId),
+  ]);
+  if (!staffRes.data) return null;
+  return mapStaffRow(staffRes.data, linksRes.data ?? []);
+}
+
+export async function fetchSupabaseStaffCalendarConnection(
+  staffId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<CalendarConnection | null> {
+  const cleanId = staffId.trim();
+  if (!cleanId) return null;
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const res = await supabase
+    .from('calendar_connections')
+    .select('*')
+    .eq('staff_id', cleanId)
+    .eq('is_connected', true)
+    .limit(1)
+    .maybeSingle();
+  return res.data ? mapCalendarConnectionRow(res.data) : null;
+}
+
+export async function fetchSupabaseActiveLoyaltyProgram(
+  clientOverride?: SupabaseClient<Database>,
+): Promise<LoyaltyProgram | null> {
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const res = await supabase
+    .from('loyalty_programs')
+    .select('*')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+  return res.data ? mapLoyaltyProgramRow(res.data) : null;
+}
+
+export async function fetchSupabaseClientLoyaltyStamps(
+  clientId: string,
+  programId: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<LoyaltyStamp[]> {
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const { data } = await supabase
+    .from('loyalty_stamps')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('program_id', programId);
+  return (data ?? []).map(mapLoyaltyStampRow);
+}
+
+export async function fetchSupabaseHasOverlappingBooking(
+  params: {
+    staffId: string;
+    excludeBookingId: string;
+    occStartIso: string;
+    occEndIso: string;
+  },
+  clientOverride?: SupabaseClient<Database>,
+): Promise<boolean> {
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const { data } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('staff_id', params.staffId)
+    .neq('id', params.excludeBookingId)
+    .in('status', ['pending_payment', 'pending_confirmation', 'confirmed'])
+    .lt('occupied_start_at', params.occEndIso)
+    .gt('occupied_end_at', params.occStartIso)
+    .limit(1);
+  return (data ?? []).length > 0;
 }
 
 export async function fetchSupabaseClientLoyaltySummary(

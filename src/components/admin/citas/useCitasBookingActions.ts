@@ -17,6 +17,12 @@ import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type { BookingStatus, BookingWithRelations } from '@/lib/types';
 import { BOOKING_STATUS_BADGE } from './BookingCard';
 
+const ADMIN_MUTATION_TIMEOUT_MS = 20_000;
+
+function isTimeoutOrAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+}
+
 export interface CitasFeedbackState {
   status: 'success' | 'error';
   title: string;
@@ -69,15 +75,6 @@ export function useCitasBookingActions({
         ADMIN_CACHE_KEYS.bookings,
       ) ?? { bookings: data.bookings };
 
-    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
-      applyOptimisticBookingStatus(current ?? prevOverview, bookingId, status),
-    );
-    mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-      ADMIN_CACHE_KEYS.bookings,
-      (current) =>
-        applyOptimisticBookingStatusToList(current ?? prevBookings, bookingId, status),
-    );
-
     setBusyAction({ bookingId, status });
     setFeedback(null);
     if (ownerPin) {
@@ -85,20 +82,13 @@ export function useCitasBookingActions({
       setPinError(null);
     }
 
-    const rollbackOptimistic = () => {
-      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
-      mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-        ADMIN_CACHE_KEYS.bookings,
-        prevBookings,
-      );
-    };
-
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (ownerPin) headers['x-owner-pin'] = ownerPin;
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers,
+        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
         body: JSON.stringify({
           bookingId,
           status,
@@ -106,6 +96,14 @@ export function useCitasBookingActions({
         }),
       });
       if (res.ok) {
+        mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+          applyOptimisticBookingStatus(current ?? prevOverview, bookingId, status),
+        );
+        mutateAdminCache<{ bookings: BookingWithRelations[] }>(
+          ADMIN_CACHE_KEYS.bookings,
+          (current) =>
+            applyOptimisticBookingStatusToList(current ?? prevBookings, bookingId, status),
+        );
         setPendingCancelBookingId(null);
         setPinError(null);
         invalidateAdminCache('/api/admin/reports');
@@ -114,7 +112,6 @@ export function useCitasBookingActions({
         return true;
       }
 
-      rollbackOptimistic();
       const json = (await res.json().catch(() => null)) as {
         error?: string;
         code?: string;
@@ -140,11 +137,12 @@ export function useCitasBookingActions({
             : json?.error || 'No se pudo actualizar el estado de la cita.',
       });
       return false;
-    } catch {
-      rollbackOptimistic();
+    } catch (err) {
       setFeedback({
         status: 'error',
-        title: 'Error de conexión al actualizar la cita.',
+        title: isTimeoutOrAbortError(err)
+          ? 'La actualización tardó demasiado. Intenta de nuevo en unos segundos.'
+          : 'Error de conexión al actualizar la cita.',
       });
       return false;
     } finally {
@@ -161,6 +159,7 @@ export function useCitasBookingActions({
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
         body: JSON.stringify({
           action: 'send_reminder',
           bookingId,
@@ -179,17 +178,19 @@ export function useCitasBookingActions({
           description: json?.messagePreview,
           waMeUrl: json?.waMeUrl,
         });
-        await refresh();
+        void refresh();
       } else {
         setFeedback({
           status: 'error',
           title: json?.error || 'No se pudo enviar el recordatorio.',
         });
       }
-    } catch {
+    } catch (err) {
       setFeedback({
         status: 'error',
-        title: 'Error de conexión al enviar el recordatorio.',
+        title: isTimeoutOrAbortError(err)
+          ? 'El recordatorio tardó demasiado. Intenta de nuevo.'
+          : 'Error de conexión al enviar el recordatorio.',
       });
     } finally {
       setRemindingId(null);
@@ -204,6 +205,7 @@ export function useCitasBookingActions({
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
         body: JSON.stringify({
           action: 'request_reschedule',
           bookingId,
@@ -224,7 +226,7 @@ export function useCitasBookingActions({
           waMeUrl: json?.waMeUrl,
           rescheduleUrl: json?.rescheduleUrl,
         });
-        await refresh();
+        void refresh();
       } else {
         setFeedback({
           status: 'error',
@@ -235,10 +237,12 @@ export function useCitasBookingActions({
               : json?.error || 'No se pudo generar el enlace para reagendar.',
         });
       }
-    } catch {
+    } catch (err) {
       setFeedback({
         status: 'error',
-        title: 'Error de conexión al generar el enlace para reagendar.',
+        title: isTimeoutOrAbortError(err)
+          ? 'La solicitud tardó demasiado. Intenta de nuevo.'
+          : 'Error de conexión al generar el enlace para reagendar.',
       });
     } finally {
       setRequestingRescheduleId(null);
@@ -256,6 +260,7 @@ export function useCitasBookingActions({
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
         body: JSON.stringify({ action: 'reject_deposit', bookingId }),
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -270,10 +275,12 @@ export function useCitasBookingActions({
       inlineNotice.show(`Comprobante ${bookingCode} rechazado`);
       void refresh();
       return true;
-    } catch {
+    } catch (err) {
       setFeedback({
         status: 'error',
-        title: 'Sin conexión. No se pudo rechazar el comprobante.',
+        title: isTimeoutOrAbortError(err)
+          ? 'El rechazo del comprobante tardó demasiado. Intenta de nuevo.'
+          : 'Sin conexión. No se pudo rechazar el comprobante.',
       });
       return false;
     } finally {
@@ -339,6 +346,7 @@ export function useCitasBookingActions({
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
         body: JSON.stringify({
           action: 'reschedule_admin',
           bookingId: params.bookingId,
@@ -363,11 +371,13 @@ export function useCitasBookingActions({
         title: json?.error || 'No se pudo mover o ajustar la cita.',
       });
       return false;
-    } catch {
+    } catch (err) {
       rollback();
       setFeedback({
         status: 'error',
-        title: 'Error de conexión al mover la cita.',
+        title: isTimeoutOrAbortError(err)
+          ? 'El cambio de horario tardó demasiado. Intenta de nuevo.'
+          : 'Error de conexión al mover la cita.',
       });
       return false;
     } finally {
