@@ -13,6 +13,7 @@ import {
   getRepository,
   getWhatsAppMonthlyUsage,
   getWhatsAppTemplates,
+  getWhatsAppUnreadSummary,
   hydrateBookingsWithRelationsFromDb,
 } from '@/lib/repositories/db';
 import type { BookingWithRelations, ClientProfile, PaymentSplit } from '@/lib/types';
@@ -335,9 +336,16 @@ export async function buildAdminOverviewPayload(
     session.user.role === 'owner' ? (db.auditLogs ?? []).slice(0, 40) : [];
 
   const whatsappMonthKey = getWhatsAppMonthKey(now, tz);
-  const [whatsappUsage, whatsappTemplates] = await Promise.all([
+  const [whatsappUsage, whatsappTemplates, whatsappInboxSummary] = await Promise.all([
     getWhatsAppMonthlyUsage(whatsappMonthKey),
     isSpecialist ? Promise.resolve([]) : getWhatsAppTemplates(),
+    isSpecialist
+      ? Promise.resolve(undefined)
+      : getWhatsAppUnreadSummary({
+          role: session.user.role,
+          staffMemberId: session.user.staffMemberId,
+          nowMs,
+        }),
   ]);
 
   const baseSettings = toAdminSettingsDTO(db.settings);
@@ -401,5 +409,6 @@ export async function buildAdminOverviewPayload(
     cashEntries,
     whatsappUsage,
     whatsappTemplates,
+    ...(whatsappInboxSummary ? { whatsappInboxSummary } : {}),
   };
 }
