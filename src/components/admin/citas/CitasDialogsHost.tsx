@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import { ADMIN_CACHE_KEYS, invalidateAdminCache } from '@/lib/hooks/useAdminCache';
+import { roleCanAccess } from '@/lib/rbac';
 import type { BookingStatus, BookingWithRelations, StaffMember } from '@/lib/types';
 import type { NewBookingPrefill } from './NewBookingDialog';
 import type { CitasFeedbackState } from './useCitasBookingActions';
@@ -154,9 +155,11 @@ export function CitasDialogsHost({
           allServices={data.services}
           paymentSplits={data.paymentSplits}
           salonName={data.settings.name}
+          googleReviewUrl={data.settings.googleReviewUrl ?? null}
           currency={data.settings.currency}
           timezone={tz}
           canViewClients={canViewClients}
+          canManageIntegrations={roleCanAccess(data.session.user.role, 'integrations')}
           busyStatus={
             busyAction?.bookingId === popoverBooking.id ? busyAction.status : null
           }

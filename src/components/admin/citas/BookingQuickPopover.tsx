@@ -32,6 +32,7 @@ import {
   formatDuration,
   formatTimeInTimezone,
 } from '@/lib/format';
+import { buildGoogleReviewWhatsAppLink } from '@/lib/notifications/review-request';
 import {
   buildInstagramProfileUrl,
   getProofBadgeMeta,
@@ -45,9 +46,11 @@ interface BookingQuickPopoverProps {
   allServices: Service[];
   paymentSplits: PaymentSplit[];
   salonName: string;
+  googleReviewUrl?: string | null;
   currency: 'MXN' | 'USD';
   timezone: string;
   canViewClients?: boolean;
+  canManageIntegrations?: boolean;
   busyStatus?: BookingStatus | null;
   isRejectingDeposit?: boolean;
   isReminding: boolean;
@@ -72,9 +75,11 @@ export function BookingQuickPopover({
   allServices,
   paymentSplits,
   salonName,
+  googleReviewUrl = null,
   currency,
   timezone,
   canViewClients = true,
+  canManageIntegrations = false,
   busyStatus = null,
   isRejectingDeposit = false,
   isReminding,
@@ -133,10 +138,19 @@ export function BookingQuickPopover({
     booking.status !== 'no_show' &&
     (allowedNext.includes('completed') || paymentSummary.isUncollected);
 
+  const isCompleted = booking.status === 'completed';
   const waHref = buildWhatsAppLink(
     booking.client.phoneE164,
     `Hola ${booking.client.fullName}, te escribimos de ${salonName} sobre tu cita (${booking.bookingCode}) de ${booking.service.name} el ${formatDateShortInTimezone(booking.startAt, timezone)} a las ${formatTimeInTimezone(booking.startAt, timezone)}.`,
   );
+  const reviewWaHref = isCompleted
+    ? buildGoogleReviewWhatsAppLink({
+        phoneE164: booking.client.phoneE164,
+        clientFullName: booking.client.fullName,
+        salonName,
+        googleReviewUrl,
+      })
+    : null;
   const clientProfileHref = `/admin/clientas?q=${encodeURIComponent(booking.client.phoneE164)}`;
   const headerSubtitle = `${formatDateShortInTimezone(booking.startAt, timezone)} · ${formatTimeInTimezone(booking.startAt, timezone)} – ${formatTimeInTimezone(booking.endAt, timezone)} (${formatDuration(booking.totalDurationMinutes)})`;
 
@@ -346,6 +360,7 @@ export function BookingQuickPopover({
           <BookingPopoverActions
             allowedNext={allowedNext}
             isPending={isPending}
+            isCompleted={isCompleted}
             canCollect={canCollect}
             canRemind={canRemind}
             isFullyPaid={paymentSummary.isFullyPaid}
@@ -354,7 +369,10 @@ export function BookingQuickPopover({
             isReminding={isReminding}
             isRequestingReschedule={isRequestingReschedule}
             canViewClients={canViewClients}
+            canManageIntegrations={canManageIntegrations}
             waHref={waHref}
+            reviewWaHref={reviewWaHref}
+            reviewSettingsHref="/admin/integraciones?section=resenas#analytics-heading"
             clientProfileHref={clientProfileHref}
             onConfirm={() => void handleStatusAction('confirmed')}
             onComplete={() => void handleStatusAction('completed')}

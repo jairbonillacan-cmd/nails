@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -64,6 +65,8 @@ function extractOptimisticSettingsPatch(
 }
 
 export default function AdminIntegrationsPage() {
+  const searchParams = useSearchParams();
+  const initialOpenMore = searchParams.get('section') === 'resenas';
   const { data, loading, refresh } = useAdminData();
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -470,6 +473,7 @@ export default function AdminIntegrationsPage() {
         settings={settings}
         depositLabel={depositLabel}
         isDemoMode={integration.mode === 'demo'}
+        initialOpenMore={initialOpenMore}
         mercadoPagoConfigured={integration.mercadoPagoConfigured}
         twilioSmsConfigured={integration.twilioSmsConfigured}
         timezone={timezone}

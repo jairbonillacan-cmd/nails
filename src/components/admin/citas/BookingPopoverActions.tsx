@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   DollarSign,
   MessageCircle,
+  Star,
   UserRound,
   UserX,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ import type { BookingStatus } from '@/lib/types';
 interface BookingPopoverActionsProps {
   allowedNext: readonly BookingStatus[];
   isPending: boolean;
+  isCompleted: boolean;
   canCollect: boolean;
   canRemind: boolean;
   isFullyPaid: boolean;
@@ -29,7 +31,10 @@ interface BookingPopoverActionsProps {
   isReminding: boolean;
   isRequestingReschedule: boolean;
   canViewClients?: boolean;
+  canManageIntegrations?: boolean;
   waHref: string;
+  reviewWaHref: string | null;
+  reviewSettingsHref: string;
   clientProfileHref: string;
   onConfirm: () => void;
   onComplete: () => void;
@@ -43,6 +48,7 @@ interface BookingPopoverActionsProps {
 export function BookingPopoverActions({
   allowedNext,
   isPending,
+  isCompleted,
   canCollect,
   canRemind,
   isFullyPaid,
@@ -51,7 +57,10 @@ export function BookingPopoverActions({
   isReminding,
   isRequestingReschedule,
   canViewClients = true,
+  canManageIntegrations = false,
   waHref,
+  reviewWaHref,
+  reviewSettingsHref,
   clientProfileHref,
   onConfirm,
   onComplete,
@@ -61,54 +70,85 @@ export function BookingPopoverActions({
   onRequestNoShow,
   onRequestCancel,
 }: BookingPopoverActionsProps) {
+  const showReviewLink = isCompleted && Boolean(reviewWaHref);
+  const showReviewSetupLink = isCompleted && !reviewWaHref && canManageIntegrations;
+
   return (
     <VStack gap={3}>
-      <HStack gap={2} wrap="wrap" paddingBlockStart={1}>
-        {isPending ? (
+      <VStack gap={1.5} paddingBlockStart={1}>
+        <HStack gap={2} wrap="wrap">
+          {isPending ? (
+            <Button
+              type="button"
+              label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
+              variant="primary"
+              size="md"
+              icon={<Check size={15} aria-hidden="true" />}
+              isLoading={busyStatus === 'confirmed'}
+              isDisabled={isBusy}
+              onClick={onConfirm}
+            />
+          ) : null}
+          {canCollect ? (
+            <Button
+              type="button"
+              label="Cobrar"
+              variant={isPending ? 'secondary' : 'primary'}
+              size="md"
+              icon={<DollarSign size={15} aria-hidden="true" />}
+              isDisabled={isBusy}
+              onClick={onCheckout}
+            />
+          ) : null}
+          {!isPending && allowedNext.includes('completed') && isFullyPaid ? (
+            <Button
+              type="button"
+              label={busyStatus === 'completed' ? 'Completando…' : 'Completar'}
+              variant="secondary"
+              size="md"
+              icon={<CheckCircle2 size={15} aria-hidden="true" />}
+              isLoading={busyStatus === 'completed'}
+              isDisabled={isBusy}
+              onClick={onComplete}
+            />
+          ) : null}
+          {showReviewLink && reviewWaHref ? (
+            <Button
+              label="Pedir reseña"
+              variant={!isPending && !canCollect ? 'primary' : 'secondary'}
+              size="md"
+              icon={<Star size={15} aria-hidden="true" />}
+              href={reviewWaHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          ) : showReviewSetupLink ? (
+            <Button
+              label="Pedir reseña"
+              variant="secondary"
+              size="md"
+              icon={<Star size={15} aria-hidden="true" />}
+              href={reviewSettingsHref}
+            />
+          ) : null}
           <Button
-            type="button"
-            label={busyStatus === 'confirmed' ? 'Confirmando…' : 'Confirmar'}
-            variant="primary"
+            label="WhatsApp"
+            variant={!isPending && !canCollect && !showReviewLink ? 'primary' : 'secondary'}
             size="md"
-            icon={<Check size={15} aria-hidden="true" />}
-            isLoading={busyStatus === 'confirmed'}
-            isDisabled={isBusy}
-            onClick={onConfirm}
+            icon={<MessageCircle size={15} aria-hidden="true" />}
+            href={waHref}
+            target="_blank"
+            rel="noopener noreferrer"
           />
+        </HStack>
+        {isCompleted && !reviewWaHref ? (
+          <Text type="supporting" color="secondary">
+            {canManageIntegrations
+              ? 'Agrega tu enlace para reseñas en Google en Conexiones para enviar la invitación por WhatsApp desde aquí.'
+              : 'Pide a la dueña agregar el enlace para reseñas en Google en Conexiones para enviarlo por WhatsApp desde aquí.'}
+          </Text>
         ) : null}
-        {canCollect ? (
-          <Button
-            type="button"
-            label="Cobrar"
-            variant={isPending ? 'secondary' : 'primary'}
-            size="md"
-            icon={<DollarSign size={15} aria-hidden="true" />}
-            isDisabled={isBusy}
-            onClick={onCheckout}
-          />
-        ) : null}
-        {!isPending && allowedNext.includes('completed') && isFullyPaid ? (
-          <Button
-            type="button"
-            label={busyStatus === 'completed' ? 'Completando…' : 'Completar'}
-            variant="secondary"
-            size="md"
-            icon={<CheckCircle2 size={15} aria-hidden="true" />}
-            isLoading={busyStatus === 'completed'}
-            isDisabled={isBusy}
-            onClick={onComplete}
-          />
-        ) : null}
-        <Button
-          label="WhatsApp"
-          variant={!isPending && !canCollect ? 'primary' : 'secondary'}
-          size="md"
-          icon={<MessageCircle size={15} aria-hidden="true" />}
-          href={waHref}
-          target="_blank"
-          rel="noopener noreferrer"
-        />
-      </HStack>
+      </VStack>
 
       <Divider />
 

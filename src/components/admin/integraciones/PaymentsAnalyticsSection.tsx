@@ -40,6 +40,7 @@ interface PaymentsAnalyticsSectionProps {
   settings: SalonSettings;
   depositLabel: string;
   isDemoMode: boolean;
+  initialOpenMore?: boolean;
   mercadoPagoConfigured: boolean;
   twilioSmsConfigured: boolean;
   timezone: string;
@@ -74,6 +75,7 @@ export function PaymentsAnalyticsSection({
   settings,
   depositLabel,
   isDemoMode,
+  initialOpenMore = false,
   mercadoPagoConfigured,
   twilioSmsConfigured,
   timezone,
@@ -89,8 +91,8 @@ export function PaymentsAnalyticsSection({
   onRefresh,
   onBanner,
 }: PaymentsAnalyticsSectionProps) {
-  const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const [hasOpenedMore, setHasOpenedMore] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(initialOpenMore);
+  const [hasOpenedMore, setHasOpenedMore] = useState(initialOpenMore);
   const payBadge = paymentModeChip(settings.paymentMode);
   const paymentOptions: Array<{ value: PaymentMode; label: string }> = [
     {
