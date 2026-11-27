@@ -95,7 +95,7 @@ export function PaymentsAnalyticsSection({
   const paymentOptions: Array<{ value: PaymentMode; label: string }> = [
     {
       value: 'manual_transfer',
-      label: 'Transferencia SPEI: te mandan su comprobante (sin comisión)',
+      label: 'Transferencia: te mandan su comprobante (sin comisión)',
     },
     ...(mercadoPagoConfigured || settings.paymentMode === 'mercadopago'
       ? [
@@ -158,7 +158,7 @@ export function PaymentsAnalyticsSection({
               status="warning"
               role="status"
               title="Mercado Pago aún no tiene credenciales configuradas"
-              description="Mientras se agregan los accesos de Mercado Pago, te recomendamos usar Transferencia SPEI para que tus clientas reciban tu CLABE y suban su comprobante."
+              description="Mientras se agregan los accesos de Mercado Pago, te recomendamos usar Transferencia para que tus clientas reciban tu CLABE y suban su comprobante."
             />
           ) : null}
 
@@ -167,7 +167,7 @@ export function PaymentsAnalyticsSection({
               status="warning"
               role="status"
               title="El cobro con Stripe aún no está activado"
-              description="Cambia a Transferencia SPEI o Mercado Pago para cobrar anticipos sin interrupciones."
+              description="Cambia a Transferencia o Mercado Pago para cobrar anticipos sin interrupciones."
             />
           ) : null}
 
@@ -175,7 +175,7 @@ export function PaymentsAnalyticsSection({
             <VStack className="ad-subpanel" gap={2}>
               <HStack justify="between" align="center" wrap="wrap" gap={2}>
                 <Text weight="semibold" size="sm">
-                  Transferencia SPEI
+                  Transferencia
                 </Text>
                 <StatusTag tone="success" label="$0 comisión" />
               </HStack>

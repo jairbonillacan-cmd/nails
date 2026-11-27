@@ -132,12 +132,12 @@ export function WhatsAppBusinessStatusPanel({
           <ShieldCheck size={16} aria-hidden="true" />
           <VStack gap={0}>
             <Text weight="semibold" size="sm">
-              Estado de WhatsApp Business y Coexistence
+              Estado de tu conexión de WhatsApp Business
             </Text>
             <Text type="supporting" color="secondary">
               {integration.whatsappCloudConfigured
                 ? 'Tu número oficial está listo para enviar recordatorios automáticos.'
-                : 'Mientras conectas Meta, tus avisos salen por correo y enlace directo de WhatsApp.'}
+                : 'Mientras conectas tu cuenta oficial, tus avisos salen por correo y enlace directo de WhatsApp.'}
             </Text>
           </VStack>
         </HStack>
@@ -168,7 +168,7 @@ export function WhatsAppBusinessStatusPanel({
       <Grid columns={{ minWidth: 165, max: 4 }} gap={2}>
         <VStack gap={1}>
           <Text type="supporting" color="secondary">
-            WhatsApp Cloud API
+            Envío automático por WhatsApp
           </Text>
           <HStack justify="start">
             <StatusTag
@@ -180,7 +180,7 @@ export function WhatsAppBusinessStatusPanel({
         </VStack>
         <VStack gap={1}>
           <Text type="supporting" color="secondary">
-            Coexistence (mismo celular)
+            Uso en tu mismo celular
           </Text>
           <HStack justify="start">
             <StatusTag
@@ -192,7 +192,7 @@ export function WhatsAppBusinessStatusPanel({
         </VStack>
         <VStack gap={1}>
           <Text type="supporting" color="secondary">
-            Webhook de Meta
+            Recepción de confirmaciones
           </Text>
           <HStack justify="start">
             <StatusTag
@@ -246,8 +246,8 @@ export function WhatsAppBusinessStatusPanel({
           <HStack justify="between" align="center" gap={2} width="100%" wrap="wrap">
             <Text weight="semibold" size="sm">
               {integration.whatsappCloudConfigured
-                ? 'Probar envío y enlace de webhook'
-                : 'Cómo conectar WhatsApp Business (Coexistence)'}
+                ? 'Probar envío y enlace de conexión'
+                : 'Cómo conectar tu número de WhatsApp Business'}
             </Text>
             <Text type="supporting" color="secondary">
               {integration.whatsappCloudConfigured
@@ -260,9 +260,9 @@ export function WhatsAppBusinessStatusPanel({
         <VStack gap={3} paddingBlockStart={3}>
           {!integration.whatsappCloudConfigured ? (
             <Text type="supporting" color="secondary">
-              Conecta tu número actual de WhatsApp Business mediante Embedded Signup de Meta
-              (Coexistence) para seguir respondiendo desde tu celular mientras la agenda manda
-              confirmaciones y recordatorios automáticos. Suscribe el webhook a los campos{' '}
+              Vincula tu número actual de WhatsApp Business con Meta para seguir respondiendo desde
+              tu celular mientras la agenda envía confirmaciones y recordatorios automáticos. Para
+              quien configure tu cuenta, activa los eventos{' '}
               <Text as="span" type="code">
                 messages
               </Text>
@@ -279,11 +279,11 @@ export function WhatsAppBusinessStatusPanel({
           ) : null}
 
           <CopyableField
-            label="URL de webhook para Meta"
+            label="Enlace de conexión para Meta"
             value={webhookUrl}
-            copyLabel="Copiar URL"
-            copiedLabel="URL copiada"
-            feedbackMessage="URL del webhook de WhatsApp copiada."
+            copyLabel="Copiar enlace"
+            copiedLabel="Enlace copiado"
+            feedbackMessage="Enlace de conexión de WhatsApp copiado."
             monospace
           />
 

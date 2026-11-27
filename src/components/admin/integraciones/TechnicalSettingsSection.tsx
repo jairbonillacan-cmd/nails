@@ -226,7 +226,7 @@ export function TechnicalSettingsSection({
         subtitle={
           twilioSmsConfigured
             ? 'Opcional si también quieres enviar mensajes de texto tradicionales.'
-            : 'Requiere activar Twilio SMS en el entorno para enviar mensajes de texto reales.'
+            : 'Requiere activar el servicio de mensajes de texto en tu cuenta para enviar avisos reales.'
         }
         badge={
           <StatusTag
@@ -309,7 +309,7 @@ export function TechnicalSettingsSection({
         >
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
             <CopyableField
-              label="Webhook de WhatsApp Business (Meta)"
+              label="Enlace de conexión para WhatsApp Business"
               value={whatsappWebhookUrl}
               feedbackMessage="Enlace de WhatsApp copiado."
               monospace

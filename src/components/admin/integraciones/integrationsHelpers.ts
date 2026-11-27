@@ -26,7 +26,7 @@ export function buildWhatsAppCopyTemplates(
       id: 'confirm-deposit',
       title: `Confirmar cita con anticipo (${depositLabel})`,
       tag: 'Anticipo',
-      body: `¡Hola [nombre]! Recibimos tu solicitud en ${s.name} para [servicio] el [fecha] a las [hora]. Para apartar tu lugar envía tu anticipo de ${depositLabel} por transferencia SPEI a ${bank} · Titular: ${holder} · CLABE: ${clabe}. Mándanos tu comprobante por aquí o por mensaje en Instagram a ${ig} para confirmar tu cita.`,
+      body: `¡Hola [nombre]! Recibimos tu solicitud en ${s.name} para [servicio] el [fecha] a las [hora]. Para apartar tu lugar envía tu anticipo de ${depositLabel} por transferencia a ${bank} · Titular: ${holder} · CLABE: ${clabe}. Mándanos tu comprobante por aquí o por mensaje en Instagram a ${ig} para confirmar tu cita.`,
     },
     {
       id: 'reminder-24h',

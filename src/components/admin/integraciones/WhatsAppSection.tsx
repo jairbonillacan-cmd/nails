@@ -145,7 +145,7 @@ const FRIENDLY_WHATSAPP_TEMPLATE_LABELS: Record<
   },
   deposit_rejected: {
     title: 'Comprobante de anticipo por corregir',
-    subtitle: 'Avisa si el recibo SPEI no se pudo validar para que suba otro.',
+    subtitle: 'Avisa si el comprobante de transferencia no se pudo validar para que suba otro.',
     categoryLabel: 'Utilidad',
     variablesHint: 'Clienta, código, servicio y enlace',
   },
