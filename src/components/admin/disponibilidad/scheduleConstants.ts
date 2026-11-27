@@ -39,6 +39,22 @@ export const FIXED_TIME_OPTIONS = Array.from({ length: 57 }, (_, i) => {
 
 const DEFAULT_FIXED_BLOCKS = ['10:00', '13:30', '16:30'];
 
+export function formatDayScheduleSummary(
+  dayRules: readonly AvailabilityRule[],
+): string {
+  if (dayRules.length === 0) return 'Descanso';
+  const fixedTimes = Array.from(
+    new Set(dayRules.flatMap((r) => r.fixedStartTimes ?? [])),
+  ).toSorted();
+  if (fixedTimes.length > 0) {
+    return fixedTimes.join(', ');
+  }
+  return dayRules
+    .toSorted((a, b) => a.startTime.localeCompare(b.startTime))
+    .map((r) => `${r.startTime} – ${r.endTime}`)
+    .join(', ');
+}
+
 export function formatRecurringSummary(block: RecurringBlock): string {
   const freqLabel =
     block.frequency === 'weekly'

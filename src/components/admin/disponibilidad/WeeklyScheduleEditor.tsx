@@ -50,6 +50,7 @@ export function WeeklyScheduleEditor({
 }: WeeklyScheduleEditorProps) {
   const [rulesDraft, setRulesDraft] = useState<AvailabilityRule[] | null>(null);
   const [newFixedByRule, setNewFixedByRule] = useState<Record<string, string>>({});
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [savingWeekly, setSavingWeekly] = useState(false);
   const [savingOptimize, setSavingOptimize] = useState(false);
   const [optimisticOptimize, setOptimisticOptimize] = useState<boolean | null>(null);
@@ -137,7 +138,7 @@ export function WeeklyScheduleEditor({
       <SurfaceCard
         id="weekly-schedule-heading"
         title={`Turnos de ${staffName}`}
-        subtitle="Activa los días que trabaja y agrega o quita las horas exactas de sus turnos."
+        subtitle="Toca Editar en cualquier día para ajustar sus turnos o marcarlo como descanso."
         actions={
           <HStack gap={2} align="center" wrap="wrap">
             {savingWeekly ? (
@@ -182,39 +183,48 @@ export function WeeklyScheduleEditor({
           aria-busy={savingWeekly || undefined}
           gap={0}
         >
-          {DAYS.map(({ dow, label }) => (
-            <WeeklyDayRow
-              key={dow}
-              dow={dow}
-              label={label}
-              dayRules={rules.filter((r) => r.dayOfWeek === dow)}
-              newFixedByRule={newFixedByRule}
-              onSelectPendingFixed={(ruleId, val) =>
-                setNewFixedByRule((prev) => ({ ...prev, [ruleId]: val }))
-              }
-              onToggleDay={(d, checked) => updateRules((prev) => toggleDayRule(prev, d, checked))}
-              onChangeMode={(d, mode) => updateRules((prev) => switchDayRuleMode(prev, d, mode))}
-              onCopyToWeekdays={handleCopyDayToWeekdays}
-              onAddFixedTime={(ruleId, time) =>
-                updateRules((prev) => addRuleFixedTime(prev, ruleId, time))
-              }
-              onRemoveFixedTime={(ruleId, time) =>
-                updateRules((prev) => removeRuleFixedTime(prev, ruleId, time))
-              }
-              onUpdateBoundary={(ruleId, field, val) =>
-                updateRules((prev) => updateRuleTimeBoundary(prev, ruleId, field, val))
-              }
-              onRemoveRule={(ruleId) =>
-                updateRules((prev) => prev.filter((r) => r.id !== ruleId))
-              }
-              onAddSplitShift={(d) =>
-                updateRules((prev) => [
-                  ...prev,
-                  { id: `r-${d}-${Date.now()}`, dayOfWeek: d, startTime: '15:00', endTime: '19:30' },
-                ])
-              }
-            />
-          ))}
+          {DAYS.map(({ dow, label, short }) => {
+            const rowKey = `${staffId}:${dow}`;
+            const isExpanded = expandedKey === rowKey;
+            return (
+              <WeeklyDayRow
+                key={dow}
+                dow={dow}
+                label={label}
+                short={short}
+                isExpanded={isExpanded}
+                onToggleExpand={() =>
+                  setExpandedKey((prev) => (prev === rowKey ? null : rowKey))
+                }
+                dayRules={rules.filter((r) => r.dayOfWeek === dow)}
+                newFixedByRule={newFixedByRule}
+                onSelectPendingFixed={(ruleId, val) =>
+                  setNewFixedByRule((prev) => ({ ...prev, [ruleId]: val }))
+                }
+                onToggleDay={(d, checked) => updateRules((prev) => toggleDayRule(prev, d, checked))}
+                onChangeMode={(d, mode) => updateRules((prev) => switchDayRuleMode(prev, d, mode))}
+                onCopyToWeekdays={handleCopyDayToWeekdays}
+                onAddFixedTime={(ruleId, time) =>
+                  updateRules((prev) => addRuleFixedTime(prev, ruleId, time))
+                }
+                onRemoveFixedTime={(ruleId, time) =>
+                  updateRules((prev) => removeRuleFixedTime(prev, ruleId, time))
+                }
+                onUpdateBoundary={(ruleId, field, val) =>
+                  updateRules((prev) => updateRuleTimeBoundary(prev, ruleId, field, val))
+                }
+                onRemoveRule={(ruleId) =>
+                  updateRules((prev) => prev.filter((r) => r.id !== ruleId))
+                }
+                onAddSplitShift={(d) =>
+                  updateRules((prev) => [
+                    ...prev,
+                    { id: `r-${d}-${Date.now()}`, dayOfWeek: d, startTime: '15:00', endTime: '19:30' },
+                  ])
+                }
+              />
+            );
+          })}
         </VStack>
       </SurfaceCard>
 
