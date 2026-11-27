@@ -200,17 +200,17 @@ export function getStaffScheduleLabel(
   if (key === 'karla' || staff.id === 'staff-karla') {
     return timeFormat === '24h'
       ? 'Lun–Sáb · 10:00 · 13:30 · 16:30'
-      : 'Lun–Sáb · 10:00 AM · 1:30 PM · 4:30 PM';
+      : 'Lun–Sáb · 10:00 a.m. · 1:30 p.m. · 4:30 p.m.';
   }
   if (key === 'paty' || staff.id === 'staff-paty') {
     return timeFormat === '24h'
       ? 'Lun–Sáb · 10:00 · 13:30 · 16:30'
-      : 'Lun–Sáb · 10:00 AM · 1:30 PM · 4:30 PM';
+      : 'Lun–Sáb · 10:00 a.m. · 1:30 p.m. · 4:30 p.m.';
   }
   if (key === 'tere' || staff.id === 'staff-tere') {
     return timeFormat === '24h'
       ? 'Lun–Sáb · 14:00 · 16:00 · 18:00'
-      : 'Lun–Sáb · 2:00 PM · 4:00 PM · 6:00 PM';
+      : 'Lun–Sáb · 2:00 p.m. · 4:00 p.m. · 6:00 p.m.';
   }
   return null;
 }

@@ -187,7 +187,7 @@ export function resolveLandingContent(
     customFaqs,
     visitTitle: cleanText(content.visitTitle, 'Visítanos'),
     visitHoursDays: cleanText(content.visitHoursDays, 'Lunes a sábado'),
-    visitHoursText: cleanText(content.visitHoursText, 'De 10:00 AM a 6:00 PM · Solo con cita'),
+    visitHoursText: cleanText(content.visitHoursText, 'De 10:00 a.m. a 6:00 p.m. · Solo con cita'),
     sections: resolveLandingSections(content.sections),
   };
 }

@@ -22,7 +22,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
     <SurfaceCard
       id="reports-heatmap-heading"
       title="Días y horas con más citas"
-      subtitle="Cuántas citas se agendan cada día entre las 9:00 AM y las 8:00 PM."
+      subtitle="Cuántas citas se agendan cada día entre las 9:00 a.m. y las 8:00 p.m.."
     >
       {heatmap.totalBookings === 0 ? (
         <VStack className="ad-empty" gap={2}>

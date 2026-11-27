@@ -32,7 +32,7 @@ export function LandingFooter({
   salonName,
   customLogoUrl = null,
   hoursDays = 'Lunes a sábado',
-  hoursText = '10:00 AM a 6:00 PM · Solo con cita',
+  hoursText = '10:00 a.m. a 6:00 p.m. · Solo con cita',
   sections,
   address,
   mapsUrl,

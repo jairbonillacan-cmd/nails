@@ -17,7 +17,7 @@ describe('formatDayScheduleSummary', () => {
           fixedStartTimes: ['16:30', '10:00', '13:30', '10:00'],
         },
       ]),
-    ).toBe('10:00 AM, 1:30 PM, 4:30 PM');
+    ).toBe('10:00 a.m., 1:30 p.m., 4:30 p.m.');
   });
 
   it('formats continuous single and split shifts ordered by startTime in AM/PM', () => {
@@ -26,6 +26,6 @@ describe('formatDayScheduleSummary', () => {
         { id: 'r-2', dayOfWeek: 2, startTime: '15:00', endTime: '19:00' },
         { id: 'r-1', dayOfWeek: 2, startTime: '10:00', endTime: '13:30' },
       ]),
-    ).toBe('10:00 AM – 1:30 PM, 3:00 PM – 7:00 PM');
+    ).toBe('10:00 a.m. – 1:30 p.m., 3:00 p.m. – 7:00 p.m.');
   });
 });

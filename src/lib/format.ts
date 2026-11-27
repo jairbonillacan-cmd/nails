@@ -112,7 +112,7 @@ export function collapseDoublePeriods(text: string): string {
 
 export function formatHour12h(hour: number): string {
   const normalized = ((Math.trunc(hour) % 24) + 24) % 24;
-  const period = normalized >= 12 ? 'PM' : 'AM';
+  const period = normalized >= 12 ? 'p.m.' : 'a.m.';
   const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
   return `${hour12} ${period}`;
 }
@@ -123,7 +123,7 @@ export function formatTimeHHMM12h(hhmm: string): string {
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return hhmm;
-  const period = hour >= 12 ? 'PM' : 'AM';
+  const period = hour >= 12 ? 'p.m.' : 'a.m.';
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
 }

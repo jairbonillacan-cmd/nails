@@ -50,19 +50,19 @@ describe('display formatters', () => {
   });
 
   it('formats HH:MM, minutes, and hours with AM and PM', () => {
-    expect(formatTimeHHMM12h('00:00')).toBe('12:00 AM');
-    expect(formatTimeHHMM12h('09:30')).toBe('9:30 AM');
-    expect(formatTimeHHMM12h('10:00')).toBe('10:00 AM');
-    expect(formatTimeHHMM12h('12:00')).toBe('12:00 PM');
-    expect(formatTimeHHMM12h('13:30')).toBe('1:30 PM');
-    expect(formatTimeHHMM12h('18:00')).toBe('6:00 PM');
+    expect(formatTimeHHMM12h('00:00')).toBe('12:00 a.m.');
+    expect(formatTimeHHMM12h('09:30')).toBe('9:30 a.m.');
+    expect(formatTimeHHMM12h('10:00')).toBe('10:00 a.m.');
+    expect(formatTimeHHMM12h('12:00')).toBe('12:00 p.m.');
+    expect(formatTimeHHMM12h('13:30')).toBe('1:30 p.m.');
+    expect(formatTimeHHMM12h('18:00')).toBe('6:00 p.m.');
     expect(formatTimeHHMM12h('invalid')).toBe('invalid');
-    expect(formatMinutes12h(10 * 60)).toBe('10:00 AM');
-    expect(formatMinutes12h(16 * 60 + 30)).toBe('4:30 PM');
-    expect(formatHour12h(0)).toBe('12 AM');
-    expect(formatHour12h(9)).toBe('9 AM');
-    expect(formatHour12h(12)).toBe('12 PM');
-    expect(formatHour12h(18)).toBe('6 PM');
+    expect(formatMinutes12h(10 * 60)).toBe('10:00 a.m.');
+    expect(formatMinutes12h(16 * 60 + 30)).toBe('4:30 p.m.');
+    expect(formatHour12h(0)).toBe('12 a.m.');
+    expect(formatHour12h(9)).toBe('9 a.m.');
+    expect(formatHour12h(12)).toBe('12 p.m.');
+    expect(formatHour12h(18)).toBe('6 p.m.');
   });
 
   it('matches Mexican mobile numbers with or without the WhatsApp 521 prefix', () => {

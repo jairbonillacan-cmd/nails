@@ -241,7 +241,7 @@ export function WhatsAppBusinessStatusPanel({
 
       <Collapsible
         className="ad-disclosure"
-        defaultIsOpen={!integration.whatsappCloudConfigured}
+        defaultIsOpen={false}
         trigger={
           <HStack justify="between" align="center" gap={2} width="100%" wrap="wrap">
             <Text weight="semibold" size="sm">
@@ -260,26 +260,15 @@ export function WhatsAppBusinessStatusPanel({
         <VStack gap={3} paddingBlockStart={3}>
           {!integration.whatsappCloudConfigured ? (
             <Text type="supporting" color="secondary">
-              Vincula tu número actual de WhatsApp Business con Meta para seguir respondiendo desde
-              tu celular mientras la agenda envía confirmaciones y recordatorios automáticos. Para
-              quien configure tu cuenta, activa los eventos{' '}
-              <Text as="span" type="code">
-                messages
-              </Text>
-              ,{' '}
-              <Text as="span" type="code">
-                statuses
-              </Text>{' '}
-              y{' '}
-              <Text as="span" type="code">
-                smb_message_echoes
-              </Text>
-              .
+              Conecta tu número de WhatsApp Business para que los recordatorios salgan solos. Sigues
+              usando la app en tu celular como siempre. Pásale el enlace de abajo a la persona que
+              configure tu cuenta de Meta; ella sabrá qué activar (messages, statuses y
+              smb_message_echoes).
             </Text>
           ) : null}
 
           <CopyableField
-            label="Enlace de conexión para Meta"
+            label="Enlace para quien configure Meta"
             value={webhookUrl}
             copyLabel="Copiar enlace"
             copiedLabel="Enlace copiado"
