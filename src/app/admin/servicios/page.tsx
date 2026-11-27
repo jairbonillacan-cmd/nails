@@ -167,6 +167,7 @@ export default function AdminServicesPage() {
       bufferBeforeMinutes: hasCleanupTime ? (activeDraft.bufferBeforeMinutes ?? 0) : 0,
       bufferAfterMinutes: hasCleanupTime ? (activeDraft.bufferAfterMinutes ?? 0) : 0,
       isPrivate: Boolean(activeDraft.isPrivate),
+      ...(activeDraft.id ? {} : { displayOrder: orderedServices.length }),
     };
     try {
       const res = await fetch('/api/admin/services', {

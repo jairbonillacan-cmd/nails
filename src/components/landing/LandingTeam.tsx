@@ -29,13 +29,6 @@ interface LandingTeamProps {
   currency: PublicSettingsDTO['currency'];
 }
 
-function isKarlaStaff(member: PublicStaffDTO): boolean {
-  return (
-    member.bookingSlug.trim().toLowerCase() === 'karla' ||
-    member.name.trim().toLowerCase() === 'karla'
-  );
-}
-
 export function LandingTeam({
   title = 'Elige a tu profesional',
   subtitle = 'Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio.',
@@ -50,16 +43,8 @@ export function LandingTeam({
     ? services.filter((service) => member.serviceIds.includes(service.id))
     : [];
 
-  const indexedStaff = staff.map((person, originalIndex) => ({ person, originalIndex }));
-  const karlaEntryIndex = indexedStaff.findIndex((entry) => isKarlaStaff(entry.person));
-  const orderedStaff =
-    karlaEntryIndex > 0
-      ? [
-          indexedStaff[karlaEntryIndex],
-          ...indexedStaff.filter((_, idx) => idx !== karlaEntryIndex),
-        ].filter((entry): entry is (typeof indexedStaff)[number] => Boolean(entry))
-      : indexedStaff;
-  const hasCenteredKarla = karlaEntryIndex >= 0 && orderedStaff.length >= 3;
+  const orderedStaff = staff.map((person, originalIndex) => ({ person, originalIndex }));
+  const hasCenteredLead = orderedStaff.length >= 3;
   const desktopMiddleIndex = Math.floor(orderedStaff.length / 2);
 
   return (
@@ -103,7 +88,7 @@ export function LandingTeam({
             const personSchedule = getStaffScheduleLabel(person);
             const avatarSrc = staffAvatar(person.avatarUrl, originalIndex);
             const roleLabel = person.roleTitle.trim() || 'Nail Artist';
-            const desktopSlot = !hasCenteredKarla
+            const desktopSlot = !hasCenteredLead
               ? undefined
               : mobileIndex === 0
                 ? 'center'

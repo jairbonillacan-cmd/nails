@@ -64,10 +64,12 @@ export function StaffEditorSection({
   const [sServiceIds, setSServiceIds] = useState<string[] | null>(null);
   const [sAvatarUrl, setSAvatarUrl] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [sPosition, setSPosition] = useState<number | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const clipboard = useCopyToClipboard(2400);
 
   const allServiceIds = services.map((s) => s.id);
+  const orderedStaff = staff.toSorted((a, b) => a.displayOrder - b.displayOrder);
   const effectiveServiceIds = sServiceIds ?? allServiceIds;
   const baseOrigin = (
     appUrl.trim() ||
@@ -87,6 +89,7 @@ export function StaffEditorSection({
     setSServiceIds(st.serviceIds.length > 0 ? [...st.serviceIds] : [...allServiceIds]);
     setSAvatarUrl(st.avatarUrl);
     setAvatarError(null);
+    setSPosition(orderedStaff.findIndex((item) => item.id === st.id) + 1);
   };
 
   const resetStaffForm = () => {
@@ -99,6 +102,24 @@ export function StaffEditorSection({
     setSServiceIds(null);
     setSAvatarUrl(null);
     setAvatarError(null);
+    setSPosition(null);
+  };
+
+  const applyStaffOrder = async (savedId: string, position: number): Promise<boolean> => {
+    const saved = orderedStaff.find((item) => item.id === savedId);
+    if (!saved) return false;
+    const rest = orderedStaff.filter((item) => item.id !== savedId);
+    const next = [...rest.slice(0, position - 1), saved, ...rest.slice(position - 1)];
+    for (const [index, item] of next.entries()) {
+      if (item.displayOrder === index) continue;
+      const res = await fetch('/api/admin/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'staff', data: { id: item.id, name: item.name, displayOrder: index } }),
+      });
+      if (!res.ok) return false;
+    }
+    return true;
   };
 
   const handleAvatarFile = async (file: File | null) => {
@@ -135,7 +156,9 @@ export function StaffEditorSection({
         body: JSON.stringify({
           kind: 'staff',
           data: {
-            ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
+            ...(existing
+              ? { id: existing.id, isActive: existing.isActive }
+              : { displayOrder: orderedStaff.length }),
             name: sName.trim(),
             roleTitle: sRoleTitle.trim() || 'Nail Artist',
             bio: sBio.trim(),
@@ -146,6 +169,16 @@ export function StaffEditorSection({
         }),
       });
       if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar a la profesional.');
+      const currentPosition = existing
+        ? orderedStaff.findIndex((item) => item.id === existing.id) + 1
+        : null;
+      if (existing && sPosition !== null && sPosition !== currentPosition) {
+        const reordered = await applyStaffOrder(existing.id, sPosition);
+        if (!reordered) {
+          await onRefresh();
+          return formSubmitError('Se guardaron los cambios, pero no se pudo cambiar su lugar en tu página.');
+        }
+      }
       await onRefresh();
       onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
       return FORM_SUBMIT_OK;
@@ -201,7 +234,7 @@ export function StaffEditorSection({
           </VStack>
         ) : (
           <VStack as="ul" className="ad-row-list" gap={0}>
-            {staff.map((st, idx) => {
+            {orderedStaff.map((st, idx) => {
               const isEditingThis = editingStaffId === st.id;
               const isCopied = copiedSlug === st.bookingSlug && clipboard.copied;
               const isRowBusy = busyId === st.id;
@@ -292,6 +325,17 @@ export function StaffEditorSection({
                 onChange={setSCommission}
               />
             </Grid>
+            {sPosition !== null && orderedStaff.length > 1 ? (
+              <NumberInput
+                label="Lugar en tu página"
+                description="1 es la profesional destacada: sale primero en celular y al centro en computadora."
+                value={sPosition}
+                min={1}
+                max={orderedStaff.length}
+                isIntegerOnly
+                onChange={(v) => setSPosition(Math.min(orderedStaff.length, Math.max(1, Math.round(v))))}
+              />
+            ) : null}
             <TextInput
               label="Presentación"
               description="Se ve en tu página de citas."
