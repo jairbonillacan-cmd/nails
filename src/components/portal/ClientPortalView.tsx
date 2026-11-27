@@ -10,7 +10,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
-import { LogOut, RefreshCw, WifiOff } from 'lucide-react';
+import { LogOut, WifiOff } from 'lucide-react';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui/FilterPillBar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -50,7 +50,6 @@ export function ClientPortalView({
   const [snapshot, setSnapshot] = useState<ClientPortalSnapshotDTO | null>(initialSnapshot);
   const [activeTab, setActiveTab] = useState<PortalTab>('upcoming');
   const [busy, setBusy] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
@@ -104,20 +103,6 @@ export function ClientPortalView({
     return true;
   };
 
-  const handleRefresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    setErrorMessage(null);
-    try {
-      const ok = await fetchBookingsSnapshot();
-      if (!ok) setSnapshot(null);
-    } catch {
-      setErrorMessage('Sin conexión para actualizar en este momento.');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   const handleLogout = async () => {
     setBusy(true);
     try {
@@ -157,7 +142,7 @@ export function ClientPortalView({
             />
           </VStack>
           <Text color="inherit" className="ck-hero-sub" textWrap="pretty">
-            Consulta tus próximas visitas, historial, tarjeta de sellos y paquetes de sesiones en {settings.name}.
+            Tus citas, sellos y paquetes de {settings.name} en un solo lugar.
           </Text>
         </VStack>
         <svg className="rb-hero-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true">
@@ -188,7 +173,7 @@ export function ClientPortalView({
             <SurfaceCard padded className="pt-card fx-fade-up">
               <VStack gap={3}>
                 <PageHeader
-                  eyebrow={`Portal de clienta · ${formatPhoneDisplay(snapshot.phoneE164)}`}
+                  eyebrow={formatPhoneDisplay(snapshot.phoneE164)}
                   title={`Hola, ${snapshot.clientName || 'bienvenida'}`}
                   actions={
                     <>
@@ -199,16 +184,6 @@ export function ClientPortalView({
                         className="fx-press"
                         icon={<BrandIcon name="calendario" size={1.25} />}
                         href="/reservar"
-                      />
-                      <Button
-                        type="button"
-                        label="Actualizar"
-                        variant="secondary"
-                        size="md"
-                        className="fx-press"
-                        isLoading={refreshing}
-                        icon={<RefreshCw size={15} aria-hidden="true" />}
-                        onClick={() => void handleRefresh()}
                       />
                       <Button
                         type="button"

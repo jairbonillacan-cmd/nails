@@ -124,7 +124,7 @@ export function ManageBookingView({
   ];
 
   const loyaltyCardElement = manage.loyaltySummary ? (
-    <LoyaltyStampCard loyaltySummary={manage.loyaltySummary} studioName={settings.name} />
+    <LoyaltyStampCard loyaltySummary={manage.loyaltySummary} />
   ) : null;
 
   const displayBooking: PublicManageBooking = {

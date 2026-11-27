@@ -28,7 +28,7 @@ export function PortalRewardsTab({
   return (
     <VStack role="tabpanel" gap={4} aria-label="Sellos y paquetes">
       {loyaltySummary ? (
-        <LoyaltyStampCard loyaltySummary={loyaltySummary} studioName={studioName} />
+        <LoyaltyStampCard loyaltySummary={loyaltySummary} />
       ) : (
         <SurfaceCard
           headingLevel={3}
@@ -59,7 +59,7 @@ export function PortalRewardsTab({
         {packages.length === 0 ? (
           <EmptyStateCard
             title="Sin paquetes activos"
-            description="No tienes paquetes de sesiones activos en este momento. Pregunta en estudio por nuestros paquetes de retoque."
+            description={`Pregunta en ${studioName} por los paquetes de retoque: pagas varias sesiones y ahorras.`}
             framed={false}
             isCompact
           />
