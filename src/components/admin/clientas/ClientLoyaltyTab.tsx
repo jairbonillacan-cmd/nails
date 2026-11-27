@@ -121,7 +121,7 @@ export function ClientLoyaltyTab({
               );
               const nudgeMsg = entry.summary.isRewardReady
                 ? `Hola ${entry.fullName}! Ya juntaste ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Tienes listo tu premio (${entry.summary.rewardLabel}) para tu próxima cita!`
-                : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Te faltan solo ${entry.summary.remainingForReward} visita(s) para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
+                : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Te ${entry.summary.remainingForReward === 1 ? 'falta solo 1 visita' : `faltan solo ${entry.summary.remainingForReward} visitas`} para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
 
               return (
                 <ActionRow

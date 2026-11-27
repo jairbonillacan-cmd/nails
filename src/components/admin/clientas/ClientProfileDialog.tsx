@@ -161,7 +161,7 @@ export function ClientProfileDialog({
                     <StatusTag
                       tone={noShowStats.noShowCount >= noShowThreshold ? 'warning' : 'neutral'}
                       hasTabularNumbers
-                      label={`Falta ${noShowStats.ratePercent}% de las veces`}
+                      label={`Faltó ${noShowStats.noShowCount} ${noShowStats.noShowCount === 1 ? 'vez' : 'veces'}`}
                     />
                   ) : null}
                 </HStack>
@@ -223,7 +223,7 @@ export function ClientProfileDialog({
                 <Text type="supporting" color="secondary">
                   {loyalty.isRewardReady
                     ? `¡Premio listo para canjear! (${loyalty.rewardLabel})`
-                    : `Faltan ${loyalty.remainingForReward} visita(s) para: ${loyalty.rewardLabel}`}
+                    : `Le ${loyalty.remainingForReward === 1 ? 'falta 1 visita' : `faltan ${loyalty.remainingForReward} visitas`} para: ${loyalty.rewardLabel}`}
                 </Text>
               </VStack>
             </SurfaceCard>

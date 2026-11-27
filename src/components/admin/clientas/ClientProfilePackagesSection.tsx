@@ -114,7 +114,7 @@ export function ClientProfilePackagesSection({
                 onChange={(v) => v && setFichaPackageId(v)}
                 options={activeCatalogPackages.map((p) => ({
                   value: p.id,
-                  label: `${p.name} (${p.totalSessions} ses.)`,
+                  label: `${p.name} (${p.totalSessions} sesiones)`,
                 }))}
               />
             </VStack>
