@@ -1003,10 +1003,38 @@ a.lk-card:focus-visible,
   flex: 0 0 auto;
 }
 
+.lk-team-list {
+  flex-wrap: wrap;
+}
+
 .lk-artist-item {
   flex: 0 1 19rem;
   width: min(19rem, 100%);
   max-width: 100%;
+}
+
+@media (min-width: 47.5625rem) {
+  .lk-team-list[data-count='3'] {
+    flex-wrap: nowrap;
+  }
+
+  .lk-team-list[data-count='3'] .lk-artist-item {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 19rem;
+  }
+
+  .lk-artist-item[data-desktop-slot='start'] {
+    order: 1;
+  }
+
+  .lk-artist-item[data-desktop-slot='center'] {
+    order: 2;
+  }
+
+  .lk-artist-item[data-desktop-slot='end'] {
+    order: 3;
+  }
 }
 
 .lk-artist {
@@ -1035,7 +1063,7 @@ a.lk-card:focus-visible,
 }
 
 .lk-artist-photo {
-  width: min(13.75rem, 60vw);
+  width: min(13.75rem, 60vw, 100%);
   height: auto;
   aspect-ratio: 1;
   border-radius: var(--radius-full);
@@ -1469,6 +1497,8 @@ a.lk-card:focus-visible,
   .lk-ig-main { grid-column: 1 / -1; order: -1; min-height: 26rem; }
   .lk-ig-col-offset { padding-top: 0; }
   .lk-banner { border-radius: 1.5rem; }
+  .lk-team-list { flex-direction: column !important; align-items: center !important; }
+  .lk-team-list .lk-artist-item { flex: 0 0 auto; }
   .lk-map { min-height: 18.75rem; }
   .sk-admin-grid[data-cols='2-equal'] { grid-template-columns: minmax(0, 1fr); }
 }

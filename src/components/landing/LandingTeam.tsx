@@ -29,6 +29,13 @@ interface LandingTeamProps {
   currency: PublicSettingsDTO['currency'];
 }
 
+function isKarlaStaff(member: PublicStaffDTO): boolean {
+  return (
+    member.bookingSlug.trim().toLowerCase() === 'karla' ||
+    member.name.trim().toLowerCase() === 'karla'
+  );
+}
+
 export function LandingTeam({
   title = 'Elige a tu profesional',
   subtitle = 'Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio.',
@@ -42,6 +49,18 @@ export function LandingTeam({
   const memberServices = member
     ? services.filter((service) => member.serviceIds.includes(service.id))
     : [];
+
+  const indexedStaff = staff.map((person, originalIndex) => ({ person, originalIndex }));
+  const karlaEntryIndex = indexedStaff.findIndex((entry) => isKarlaStaff(entry.person));
+  const orderedStaff =
+    karlaEntryIndex > 0
+      ? [
+          indexedStaff[karlaEntryIndex],
+          ...indexedStaff.filter((_, idx) => idx !== karlaEntryIndex),
+        ].filter((entry): entry is (typeof indexedStaff)[number] => Boolean(entry))
+      : indexedStaff;
+  const hasCenteredKarla = karlaEntryIndex >= 0 && orderedStaff.length >= 3;
+  const desktopMiddleIndex = Math.floor(orderedStaff.length / 2);
 
   return (
     <VStack as="section" id="equipo" aria-labelledby="equipo-t" className="lk-cereza">
@@ -71,13 +90,33 @@ export function LandingTeam({
           subtitle={subtitle}
           tone="light"
         />
-        <HStack role="list" wrap="wrap" justify="center" align="start" gap={8} width="100%">
-          {staff.map((person, index) => {
+        <HStack
+          role="list"
+          justify="center"
+          align="start"
+          gap={8}
+          width="100%"
+          className="lk-team-list"
+          data-count={String(orderedStaff.length)}
+        >
+          {orderedStaff.map(({ person, originalIndex }, mobileIndex) => {
             const personSchedule = getStaffScheduleLabel(person);
-            const avatarSrc = staffAvatar(person.avatarUrl, index);
+            const avatarSrc = staffAvatar(person.avatarUrl, originalIndex);
             const roleLabel = person.roleTitle.trim() || 'Nail Artist';
+            const desktopSlot = !hasCenteredKarla
+              ? undefined
+              : mobileIndex === 0
+                ? 'center'
+                : mobileIndex <= desktopMiddleIndex
+                  ? 'start'
+                  : 'end';
             return (
-              <VStack role="listitem" key={person.id} className="lk-pop lk-artist-item">
+              <VStack
+                role="listitem"
+                key={person.id}
+                className="lk-pop lk-artist-item"
+                data-desktop-slot={desktopSlot}
+              >
                 <button
                   type="button"
                   className="lk-artist fx-press"
