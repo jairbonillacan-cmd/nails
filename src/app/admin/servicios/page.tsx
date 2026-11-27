@@ -72,6 +72,7 @@ export default function AdminServicesPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
   const [pendingPauseService, setPendingPauseService] = useState<Service | null>(null);
+  const [menuPosition, setMenuPosition] = useState<number | null>(null);
   const saveNotice = useEphemeralMessage(3200);
   const [savedMsg, setSavedMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(
     null,
@@ -89,7 +90,7 @@ export default function AdminServicesPage() {
   const displayServices = useMemo(
     () =>
       data
-        ? data.services.map((srv) => {
+        ? data.services.toSorted((a, b) => a.displayOrder - b.displayOrder).map((srv) => {
             const override = optimisticActiveById[srv.id];
             return override !== undefined ? { ...srv, isActive: override } : srv;
           })
@@ -114,23 +115,47 @@ export default function AdminServicesPage() {
       ? cleanupEnabledOverride
       : (activeDraft.bufferBeforeMinutes ?? 0) > 0 ||
         (activeDraft.bufferAfterMinutes ?? 0) > 0;
-  const isServiceDirty = isServiceDraftDirty(activeDraft, originalService);
+  const orderedServices = data.services.toSorted((a, b) => a.displayOrder - b.displayOrder);
+  const originalPosition = originalService
+    ? orderedServices.findIndex((s) => s.id === originalService.id) + 1
+    : null;
+  const positionChanged =
+    menuPosition !== null && originalPosition !== null && menuPosition !== originalPosition;
+  const isServiceDirty = isServiceDraftDirty(activeDraft, originalService) || positionChanged;
 
   const startEditingService = (srv: Service) => {
     setSection('services');
     setEditing({ ...srv });
     setCleanupEnabledOverride(srv.bufferBeforeMinutes > 0 || srv.bufferAfterMinutes > 0);
+    setMenuPosition(orderedServices.findIndex((s) => s.id === srv.id) + 1);
   };
 
   const startNewService = () => {
     setSection('services');
     setEditing(buildNewServiceDraft(defaultDepositCents, data.categories[0]?.id ?? null));
     setCleanupEnabledOverride(false);
+    setMenuPosition(null);
   };
 
   const closeEditor = () => {
     setEditing(null);
     setCleanupEnabledOverride(null);
+    setMenuPosition(null);
+  };
+
+  const applyMenuOrder = async (saved: Service, position: number): Promise<boolean> => {
+    const rest = orderedServices.filter((s) => s.id !== saved.id);
+    const next = [...rest.slice(0, position - 1), saved, ...rest.slice(position - 1)];
+    for (const [index, srv] of next.entries()) {
+      if (srv.displayOrder === index) continue;
+      const res = await fetch('/api/admin/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'service', data: { ...srv, displayOrder: index } }),
+      });
+      if (!res.ok) return false;
+    }
+    return true;
   };
 
   const saveService = async (): Promise<FormSubmitResult> => {
@@ -150,6 +175,14 @@ export default function AdminServicesPage() {
         body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
       });
       if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el servicio.');
+      if (positionChanged && menuPosition !== null) {
+        const json = (await res.json()) as { service: Service };
+        const reordered = await applyMenuOrder(json.service, menuPosition);
+        if (!reordered) {
+          await refresh();
+          return formSubmitError('Se guardó el servicio, pero no se pudo cambiar su lugar en el menú.');
+        }
+      }
       await refresh();
       saveNotice.show(
         wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
@@ -306,6 +339,9 @@ export default function AdminServicesPage() {
               hasCustomAdvancedValues={hasCustomAdvancedValues}
               isDirty={isServiceDirty}
               saving={controls.isSubmitting}
+              menuPosition={menuPosition}
+              menuPositionCount={orderedServices.length}
+              onChangeMenuPosition={setMenuPosition}
               onChangeDraft={setEditing}
               onToggleCleanupTime={(checked) => {
                 setCleanupEnabledOverride(checked);

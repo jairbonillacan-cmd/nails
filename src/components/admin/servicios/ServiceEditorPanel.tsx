@@ -35,6 +35,9 @@ interface ServiceEditorPanelProps {
   hasCustomAdvancedValues: boolean;
   isDirty: boolean;
   saving: boolean;
+  menuPosition: number | null;
+  menuPositionCount: number;
+  onChangeMenuPosition: (position: number) => void;
   onChangeDraft: (next: Partial<Service>) => void;
   onToggleCleanupTime: (checked: boolean) => void;
   onCancel: () => void;
@@ -50,6 +53,9 @@ export function ServiceEditorPanel({
   hasCustomAdvancedValues,
   isDirty,
   saving,
+  menuPosition,
+  menuPositionCount,
+  onChangeMenuPosition,
   onChangeDraft,
   onToggleCleanupTime,
   onCancel,
@@ -122,6 +128,20 @@ export function ServiceEditorPanel({
             onChange={(v) => onChangeDraft({ ...draft, categoryId: v || null })}
             options={[...categoryOptions]}
           />
+
+          {menuPosition !== null && menuPositionCount > 1 ? (
+            <NumberInput
+              label="Lugar en el menú"
+              description={`1 es el primero que ven tus clientas. Tienes ${menuPositionCount} servicios.`}
+              value={menuPosition}
+              min={1}
+              max={menuPositionCount}
+              isIntegerOnly
+              onChange={(v) =>
+                onChangeMenuPosition(Math.min(menuPositionCount, Math.max(1, Math.round(v))))
+              }
+            />
+          ) : null}
 
           <UploadDropzone
             label="Foto del servicio"
