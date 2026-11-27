@@ -3187,15 +3187,20 @@ export function createSupabaseRepository(
         }
         return mapCategoryRow(data);
       }
-      const { count } = await supabase
-        .from('service_categories')
-        .select('id', { count: 'exact', head: true });
+      let displayOrder = input.displayOrder;
+      if (displayOrder === undefined) {
+        const { count } = await supabase
+          .from('service_categories')
+          .select('id', { count: 'exact', head: true });
+        displayOrder = count ?? 0;
+      }
+      const baseSlug = slugify(name) || 'categoria';
       const { data, error } = await supabase
         .from('service_categories')
         .insert({
           name,
-          slug: `${slugify(name)}-${clock.randomCode(4).toLowerCase()}`,
-          display_order: input.displayOrder ?? count ?? 0,
+          slug: `${baseSlug}-${clock.randomCode(4).toLowerCase()}`,
+          display_order: displayOrder,
         })
         .select('*')
         .single();

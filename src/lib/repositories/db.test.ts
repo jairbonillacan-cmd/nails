@@ -58,6 +58,7 @@ import {
   upsertLoyaltyProgram,
   upsertRecurringBlock,
   upsertService,
+  upsertServiceCategory,
   upsertServicePackage,
   validateCouponCode,
   verifyStoredOwnerPin,
@@ -74,6 +75,7 @@ import {
   PATCH as patchAdminBookings,
   POST as postAdminBookings,
 } from '@/app/api/admin/bookings/route';
+import { POST as postAdminServices } from '@/app/api/admin/services/route';
 import { GET as getAdminOperations } from '@/app/api/admin/operations/route';
 import {
   GET as getAdminPackages,
@@ -2033,5 +2035,128 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     const cleanup = await cleanupExpiredSlotHolds(futureMs);
     expect(cleanup).toEqual({ cleanedCount: 1, dbAlive: true });
     expect(getSnapshot().slotHolds.some((h) => h.id === hold.id)).toBe(false);
+  });
+
+  it('creates and renames service menu categories via repository and admin services API with RBAC and validation', async () => {
+    const initialCategories = getSnapshot().categories;
+    expect(initialCategories).toHaveLength(3);
+
+    const createdDirect = await upsertServiceCategory({ name: '  Pestañas  ' });
+    expect(createdDirect.name).toBe('Pestañas');
+    expect(createdDirect.displayOrder).toBe(3);
+    expect(createdDirect.slug).toMatch(/^pestanas-[a-z0-9]+$/);
+
+    const renamedDirect = await upsertServiceCategory({
+      id: createdDirect.id,
+      name: '  Pestañas y Cejas  ',
+    });
+    expect(renamedDirect.id).toBe(createdDirect.id);
+    expect(renamedDirect.name).toBe('Pestañas y Cejas');
+    expect(renamedDirect.slug).toBe(createdDirect.slug);
+    expect(renamedDirect.displayOrder).toBe(3);
+
+    const symbolCategory = await upsertServiceCategory({ name: '💅✨' });
+    expect(symbolCategory.slug).toMatch(/^categoria-[a-z0-9]+$/);
+
+    await expect(
+      upsertServiceCategory({ id: 'cat-does-not-exist', name: 'Inexistente' }),
+    ).rejects.toMatchObject({ code: 'CATEGORY_UPDATE_FAILED' });
+
+    const ownerUser = getSnapshot().adminUsers.find((u) => u.role === 'owner');
+    const specialistUser = getSnapshot().adminUsers.find((u) => u.role === 'specialist');
+    if (!ownerUser || !specialistUser) throw new Error('Expected seeded admin users');
+    const ownerToken = createAdminSessionToken(ownerUser);
+    const specialistToken = createAdminSessionToken(specialistUser);
+    if (!ownerToken || !specialistToken) throw new Error('Expected session tokens');
+    const ownerCookie = `${ADMIN_SESSION_COOKIE}=${ownerToken}`;
+    const specialistCookie = `${ADMIN_SESSION_COOKIE}=${specialistToken}`;
+
+    const unauthRes = await postAdminServices(
+      new NextRequest('http://localhost:3000/api/admin/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'category', data: { name: 'Spa de Manos' } }),
+      }),
+    );
+    expect(unauthRes.status).toBe(401);
+
+    const specialistRes = await postAdminServices(
+      new NextRequest('http://localhost:3000/api/admin/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: specialistCookie },
+        body: JSON.stringify({ kind: 'category', data: { name: 'Spa de Manos' } }),
+      }),
+    );
+    expect(specialistRes.status).toBe(403);
+
+    const shortRes = await postAdminServices(
+      new NextRequest('http://localhost:3000/api/admin/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({ kind: 'category', data: { name: 'A' } }),
+      }),
+    );
+    expect(shortRes.status).toBe(400);
+    expect(((await shortRes.json()) as { error: string }).error).toBe(
+      'Escribe el nombre de la categoría',
+    );
+
+    const apiCreateRes = await postAdminServices(
+      new NextRequest('http://localhost:3000/api/admin/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'category',
+          data: { name: 'Spa de Manos', displayOrder: 5 },
+        }),
+      }),
+    );
+    expect(apiCreateRes.status).toBe(200);
+    const apiCreated = (
+      (await apiCreateRes.json()) as {
+        category: { id: string; name: string; slug: string; displayOrder: number };
+      }
+    ).category;
+    expect(apiCreated.name).toBe('Spa de Manos');
+    expect(apiCreated.displayOrder).toBe(5);
+
+    const apiRenameRes = await postAdminServices(
+      new NextRequest('http://localhost:3000/api/admin/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'category',
+          data: { id: apiCreated.id, name: 'Manicure & Spa' },
+        }),
+      }),
+    );
+    expect(apiRenameRes.status).toBe(200);
+    const apiRenamed = (
+      (await apiRenameRes.json()) as {
+        category: { id: string; name: string; displayOrder: number };
+      }
+    ).category;
+    expect(apiRenamed.id).toBe(apiCreated.id);
+    expect(apiRenamed.name).toBe('Manicure & Spa');
+    expect(apiRenamed.displayOrder).toBe(5);
+
+    const missingRenameRes = await postAdminServices(
+      new NextRequest('http://localhost:3000/api/admin/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'category',
+          data: { id: 'cat-missing-999', name: 'No Existe' },
+        }),
+      }),
+    );
+    expect(missingRenameRes.status).toBe(400);
+    expect(((await missingRenameRes.json()) as { code: string }).code).toBe(
+      'CATEGORY_UPDATE_FAILED',
+    );
+
+    const finalCategories = getSnapshot().categories;
+    expect(finalCategories.find((c) => c.id === apiCreated.id)?.name).toBe('Manicure & Spa');
+    expect(finalCategories.filter((c) => c.id === apiCreated.id)).toHaveLength(1);
   });
 });

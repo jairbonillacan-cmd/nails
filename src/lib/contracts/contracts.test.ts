@@ -282,6 +282,38 @@ describe('Pure-domain shared Zod contracts', () => {
       }).success,
     ).toBe(true);
 
+    const parsedCategory = CatalogMutationSchema.parse({
+      kind: 'category',
+      data: { name: '  Pestañas  ', displayOrder: 3 },
+    });
+    expect(parsedCategory).toEqual({
+      kind: 'category',
+      data: { name: 'Pestañas', displayOrder: 3 },
+    });
+
+    expect(
+      CatalogMutationSchema.safeParse({
+        kind: 'category',
+        data: { id: 'cat-esculturales', name: 'Uñas & Acrílico' },
+      }).success,
+    ).toBe(true);
+
+    const shortCategory = CatalogMutationSchema.safeParse({
+      kind: 'category',
+      data: { name: '  A  ' },
+    });
+    expect(shortCategory.success).toBe(false);
+    if (!shortCategory.success) {
+      expect(shortCategory.error.issues[0]?.message).toBe('Escribe el nombre de la categoría');
+    }
+
+    expect(
+      CatalogMutationSchema.safeParse({
+        kind: 'category',
+        data: { name: 'Pestañas', displayOrder: -1 },
+      }).success,
+    ).toBe(false);
+
     expect(
       CreateClientSchema.safeParse({
         fullName: 'Ana Torres',

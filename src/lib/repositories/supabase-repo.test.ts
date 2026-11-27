@@ -47,6 +47,7 @@ function buildMockSupabase(options: {
   slotHoldInsertResult?: { status?: number; data: unknown };
   loyaltyStampInsertResult?: { status?: number; data: unknown };
   settingsOverrides?: Partial<Database['public']['Tables']['salon_settings']['Row']>;
+  serviceCategoriesRows?: Array<Database['public']['Tables']['service_categories']['Row']>;
   serviceOverrides?: Partial<Database['public']['Tables']['services']['Row']>;
   extraServicesRows?: Array<Database['public']['Tables']['services']['Row']>;
   clientOverrides?: Partial<Database['public']['Tables']['clients']['Row']>;
@@ -71,6 +72,7 @@ function buildMockSupabase(options: {
   webhookInsertStatus?: number;
 } = {}) {
   const requests: RecordedRequest[] = [];
+  const serviceCategoriesRows = [...(options.serviceCategoriesRows ?? [])];
   const bookingsRows = options.bookingsRows ?? [];
   const outboxRows = options.outboxRows ?? [];
   const extraServicesRows = options.extraServicesRows ?? [];
@@ -303,6 +305,41 @@ function buildMockSupabase(options: {
         return jsonResponse(wantsSingleObject ? merged : [merged]);
       }
       return jsonResponse(wantsSingleObject ? settingsRow : [settingsRow]);
+    }
+    if (table === 'service_categories') {
+      if (method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: { 'Content-Range': `*/${serviceCategoriesRows.length}` },
+        });
+      }
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const body = rawBody as Record<string, unknown>;
+        const created: Database['public']['Tables']['service_categories']['Row'] = {
+          id: `cat-sb-${serviceCategoriesRows.length + 1}`,
+          name: String(body.name ?? ''),
+          slug: String(body.slug ?? 'categoria'),
+          display_order: Number(body.display_order ?? 0),
+        };
+        serviceCategoriesRows.push(created);
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+        const target = serviceCategoriesRows.find((c) => c.id === idFilter);
+        if (!target) {
+          return jsonResponse(
+            { code: 'PGRST116', message: 'The result contains 0 rows' },
+            406,
+          );
+        }
+        const merged = { ...target, ...(rawBody as Record<string, unknown>) };
+        Object.assign(target, merged);
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      return jsonResponse(
+        wantsSingleObject ? serviceCategoriesRows[0] ?? null : serviceCategoriesRows,
+      );
     }
     if (table === 'services') {
       if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
@@ -2034,5 +2071,63 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
       cleanedCount: 0,
       dbAlive: false,
     });
+  });
+
+  it('creates and renames service menu categories via service_categories table', async () => {
+    const existingCategoryId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    const { client, requests } = buildMockSupabase({
+      serviceCategoriesRows: [
+        {
+          id: existingCategoryId,
+          name: 'Uñas & Esculturales',
+          slug: 'unas-esculturales',
+          display_order: 0,
+        },
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+          name: 'Gel & Retiro',
+          slug: 'gel-retiro',
+          display_order: 1,
+        },
+      ],
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'categories-test');
+    const repo = createSupabaseRepository(clock, client);
+
+    const createdAutoOrder = await repo.upsertServiceCategory({ name: '  Pestañas  ' });
+    expect(createdAutoOrder.name).toBe('Pestañas');
+    expect(createdAutoOrder.displayOrder).toBe(2);
+    expect(createdAutoOrder.slug).toMatch(/^pestanas-[a-z0-9]{4}$/);
+
+    const createdExplicitOrder = await repo.upsertServiceCategory({
+      name: '💅✨',
+      displayOrder: 4,
+    });
+    expect(createdExplicitOrder.name).toBe('💅✨');
+    expect(createdExplicitOrder.displayOrder).toBe(4);
+    expect(createdExplicitOrder.slug).toMatch(/^categoria-[a-z0-9]{4}$/);
+
+    const renamed = await repo.upsertServiceCategory({
+      id: existingCategoryId,
+      name: '  Uñas Acrílicas  ',
+    });
+    expect(renamed).toEqual({
+      id: existingCategoryId,
+      name: 'Uñas Acrílicas',
+      slug: 'unas-esculturales',
+      displayOrder: 0,
+    });
+
+    const patchReq = requests.find(
+      (r) => r.method === 'PATCH' && r.path === '/rest/v1/service_categories',
+    );
+    expect(patchReq?.body).toEqual({ name: 'Uñas Acrílicas' });
+
+    await expect(
+      repo.upsertServiceCategory({
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa999',
+        name: 'No Existe',
+      }),
+    ).rejects.toMatchObject({ code: 'CATEGORY_UPDATE_FAILED' });
   });
 });

@@ -4597,10 +4597,14 @@ export async function upsertServiceCategory(input: {
       publishRealtimeEvent('availability_updated');
       return existing;
     }
+    if (input.id) {
+      throw new PolicyError('CATEGORY_UPDATE_FAILED', 'No se encontró la categoría.');
+    }
+    const baseSlug = slugify(name) || 'categoria';
     const created: ServiceCategory = {
       id: generateId('cat'),
       name,
-      slug: `${slugify(name)}-${generateId().slice(0, 6)}`,
+      slug: `${baseSlug}-${generateId().slice(0, 6)}`,
       displayOrder: input.displayOrder ?? db.categories.length,
     };
     db.categories.push(created);
