@@ -4,9 +4,11 @@ import { z } from 'zod';
 import { normalizePhoneE164 } from '../format';
 
 export const CLIENT_PORTAL_COOKIE = 'nails_client_portal';
+export const CLIENT_PORTAL_OTP_CHALLENGE_COOKIE = 'nails_client_otp_challenge';
 
 const CLIENT_PORTAL_TTL_SECONDS = 60 * 60 * 24 * 7;
-const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_TTL_SECONDS = 5 * 60;
+const OTP_TTL_MS = OTP_TTL_SECONDS * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_MAX_ACTIVE_CHALLENGES = 1000;
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
@@ -29,6 +31,14 @@ const portalSessionPayloadSchema = z.object({
   v: z.literal(1),
   phoneE164: z.string().min(8).max(20),
   exp: z.number().int().positive(),
+});
+
+const otpChallengePayloadSchema = z.object({
+  v: z.literal(1),
+  phoneE164: z.string().min(8).max(20),
+  salt: z.string().regex(/^[0-9a-f]{32}$/),
+  digestHex: z.string().regex(/^[0-9a-f]{64}$/),
+  expMs: z.number().int().positive(),
 });
 
 interface ClientPortalSession {
@@ -100,6 +110,77 @@ function derivePortalKey(secret: string): Buffer {
     .digest();
 }
 
+function deriveOtpChallengeKey(secret: string): Buffer {
+  return crypto
+    .createHmac('sha256', secret)
+    .update('client-portal-otp-challenge:v1', 'utf8')
+    .digest();
+}
+
+function signOtpChallengeToken(entry: StoredOtpChallenge): string | null {
+  const secret = getClientPortalSigningSecret();
+  if (!secret) return null;
+  const payload = {
+    v: 1 as const,
+    phoneE164: entry.phoneE164,
+    salt: entry.salt,
+    digestHex: entry.digestHex,
+    expMs: entry.expiresAtMs,
+  };
+  const payloadB64Url = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const sigB64Url = crypto
+    .createHmac('sha256', deriveOtpChallengeKey(secret))
+    .update(payloadB64Url, 'utf8')
+    .digest('base64url');
+  return `${payloadB64Url}.${sigB64Url}`;
+}
+
+function verifyOtpChallengeToken(token: string): StoredOtpChallenge | null {
+  const secret = getClientPortalSigningSecret();
+  if (!secret) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const payloadB64Url = parts[0];
+  const sigB64Url = parts[1];
+  if (
+    !payloadB64Url ||
+    !sigB64Url ||
+    !BASE64URL_RE.test(payloadB64Url) ||
+    !BASE64URL_RE.test(sigB64Url)
+  ) {
+    return null;
+  }
+  const expectedSig = crypto
+    .createHmac('sha256', deriveOtpChallengeKey(secret))
+    .update(payloadB64Url, 'utf8')
+    .digest();
+  const providedSig = Buffer.from(sigB64Url, 'base64url');
+  if (
+    providedSig.length !== expectedSig.length ||
+    providedSig.toString('base64url') !== sigB64Url ||
+    !crypto.timingSafeEqual(providedSig, expectedSig)
+  ) {
+    return null;
+  }
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(payloadB64Url, 'base64url').toString('utf8'),
+    ) as unknown;
+    const parsed = otpChallengePayloadSchema.safeParse(decoded);
+    if (!parsed.success) return null;
+    if (!isValidPortalPhoneE164(parsed.data.phoneE164)) return null;
+    return {
+      phoneE164: parsed.data.phoneE164,
+      salt: parsed.data.salt,
+      digestHex: parsed.data.digestHex,
+      expiresAtMs: parsed.data.expMs,
+      failedAttempts: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function isValidPortalPhoneE164(phoneE164: string): boolean {
   const digits = phoneE164.replace(/\D/g, '');
   return phoneE164.startsWith('+') && digits.length >= 10 && digits.length <= 15;
@@ -108,7 +189,7 @@ function isValidPortalPhoneE164(phoneE164: string): boolean {
 export function createClientPortalOtpChallenge(
   rawPhone: string,
   options?: { nowMs?: number; ttlMs?: number },
-): { phoneE164: string; code: string; expiresAtMs: number } | null {
+): { phoneE164: string; code: string; expiresAtMs: number; challengeToken: string | null } | null {
   const phoneE164 = normalizePhoneE164(rawPhone);
   if (!isValidPortalPhoneE164(phoneE164)) {
     return null;
@@ -122,15 +203,21 @@ export function createClientPortalOtpChallenge(
   const digestHex = hashOtpCode(phoneE164, code, salt);
   const expiresAtMs = nowMs + ttlMs;
 
-  getOtpStore().set(phoneE164, {
+  const entry: StoredOtpChallenge = {
     phoneE164,
     salt,
     digestHex,
     expiresAtMs,
     failedAttempts: 0,
-  });
+  };
+  getOtpStore().set(phoneE164, entry);
 
-  return { phoneE164, code, expiresAtMs };
+  return {
+    phoneE164,
+    code,
+    expiresAtMs,
+    challengeToken: signOtpChallengeToken(entry),
+  };
 }
 
 export function createClientPortalSessionToken(
@@ -214,7 +301,7 @@ export function verifyClientPortalSessionToken(
 export function verifyClientPortalOtp(
   rawPhone: string,
   rawCode: string,
-  options?: { nowMs?: number },
+  options?: { nowMs?: number; challengeToken?: string | null },
 ): VerifyClientPortalOtpResult {
   const phoneE164 = normalizePhoneE164(rawPhone);
   if (!isValidPortalPhoneE164(phoneE164)) {
@@ -224,7 +311,14 @@ export function verifyClientPortalOtp(
   const code = rawCode.trim();
   const nowMs = options?.nowMs ?? Date.now();
   const store = getOtpStore();
-  const entry = store.get(phoneE164);
+  let entry = store.get(phoneE164);
+
+  if (!entry && options?.challengeToken) {
+    const recovered = verifyOtpChallengeToken(options.challengeToken);
+    if (recovered && recovered.phoneE164 === phoneE164) {
+      entry = recovered;
+    }
+  }
 
   if (!entry) {
     return { ok: false, reason: 'not_found', attemptsRemaining: 0 };
@@ -326,6 +420,16 @@ export function getClientPortalCookieOptions() {
     secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: CLIENT_PORTAL_TTL_SECONDS,
+  };
+}
+
+export function getClientPortalOtpChallengeCookieOptions(maxAge = OTP_TTL_SECONDS) {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production',
+    path: '/api/client-portal/otp',
+    maxAge,
   };
 }
 

@@ -9,6 +9,7 @@ import {
   formatPhoneDisplay,
   formatTimeHHMM12h,
   formatUnitCount,
+  phonesMatchE164,
 } from './format';
 
 describe('display formatters', () => {
@@ -62,5 +63,12 @@ describe('display formatters', () => {
     expect(formatHour12h(9)).toBe('9 AM');
     expect(formatHour12h(12)).toBe('12 PM');
     expect(formatHour12h(18)).toBe('6 PM');
+  });
+
+  it('matches Mexican mobile numbers with or without the WhatsApp 521 prefix', () => {
+    expect(phonesMatchE164('+522223890122', '+5212223890122')).toBe(true);
+    expect(phonesMatchE164('+522223890122', '2223890122')).toBe(true);
+    expect(phonesMatchE164('+522223890122', '+522229998877')).toBe(false);
+    expect(phonesMatchE164('', '+522223890122')).toBe(false);
   });
 });

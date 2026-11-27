@@ -176,7 +176,7 @@ export async function buildWhatsAppFlowJsonSchema() {
         title: `Reservar en ${db.settings.name}`,
         data: {
           services: db.services
-            .filter((s) => s.isActive)
+            .filter((s) => s.isActive && !s.isPrivate)
             .map((s) => ({
               id: s.id,
               title: `${s.name} (${s.durationMinutes} min · $${(s.priceCents / 100).toFixed(0)})`,

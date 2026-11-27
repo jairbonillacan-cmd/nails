@@ -42,11 +42,14 @@ export async function GET(request: NextRequest) {
     ? (await getRepository().getSnapshot()).adminUsers.filter((u) => u.isActive)
     : [];
 
-  return NextResponse.json({
-    session,
-    availableDemoUsers,
-    authMode,
-  });
+  return NextResponse.json(
+    {
+      session,
+      availableDemoUsers,
+      authMode,
+    },
+    { headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie' } },
+  );
 }
 
 export async function POST(request: NextRequest) {

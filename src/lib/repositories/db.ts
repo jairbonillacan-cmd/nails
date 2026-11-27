@@ -73,6 +73,7 @@ import {
 import {
   buildWhatsAppLink,
   formatDateLongInTimezone,
+  phonesMatchE164,
   formatTimeInTimezone,
   getDateKeyInTimezone,
   normalizePhoneE164,
@@ -6535,16 +6536,23 @@ export async function confirmBookingAttendanceFromWebhook(params: {
     const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
     const snapshot = await repo.getSnapshot();
+    const matchesSender = (clientId: string) => {
+      if (!normalizedPhone) return false;
+      const client = snapshot.clients.find((c) => c.id === clientId);
+      return Boolean(client && phonesMatchE164(client.phoneE164, normalizedPhone));
+    };
     const target = params.bookingId
       ? snapshot.bookings.find(
-          (b) => b.id === params.bookingId && isActiveBookingStatus(b.status),
+          (b) =>
+            b.id === params.bookingId &&
+            isActiveBookingStatus(b.status) &&
+            (normalizedPhone ? matchesSender(b.clientId) : true),
         )
       : snapshot.bookings
           .filter((b) => {
             if (!isActiveBookingStatus(b.status)) return false;
             if (new Date(b.endAt).getTime() < nowMs) return false;
-            const client = snapshot.clients.find((c) => c.id === b.clientId);
-            return Boolean(client && client.phoneE164 === normalizedPhone);
+            return matchesSender(b.clientId);
           })
           .toSorted(
             (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
@@ -6574,16 +6582,23 @@ export async function confirmBookingAttendanceFromWebhook(params: {
   }
 
   const result = await withWriteLock((db) => {
+    const matchesSender = (clientId: string) => {
+      if (!normalizedPhone) return false;
+      const client = db.clients.find((c) => c.id === clientId);
+      return Boolean(client && phonesMatchE164(client.phoneE164, normalizedPhone));
+    };
     const target = params.bookingId
       ? db.bookings.find(
-          (b) => b.id === params.bookingId && isActiveBookingStatus(b.status),
+          (b) =>
+            b.id === params.bookingId &&
+            isActiveBookingStatus(b.status) &&
+            (normalizedPhone ? matchesSender(b.clientId) : true),
         )
       : db.bookings
           .filter((b) => {
             if (!isActiveBookingStatus(b.status)) return false;
             if (new Date(b.endAt).getTime() < nowMs) return false;
-            const client = db.clients.find((c) => c.id === b.clientId);
-            return Boolean(client && client.phoneE164 === normalizedPhone);
+            return matchesSender(b.clientId);
           })
           .toSorted(
             (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),

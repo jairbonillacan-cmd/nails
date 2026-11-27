@@ -70,7 +70,12 @@ export async function GET(
       manageUrl,
       loyaltySummary,
     },
-    { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    {
+      headers: {
+        'Cache-Control': 'private, no-store',
+        'X-RateLimit-Remaining': String(rate.remaining),
+      },
+    },
   );
 }
 
@@ -102,7 +107,12 @@ export async function PATCH(
         whatsappUrl: buildBookingWhatsAppFallbackUrl(booking, db.settings, env.appUrl),
         manageUrl,
       },
-      { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'X-RateLimit-Remaining': String(rate.remaining),
+        },
+      },
     );
   } catch (err) {
     if (err instanceof SlotConflictError) {

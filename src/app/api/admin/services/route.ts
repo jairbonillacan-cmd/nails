@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { CatalogMutationSchema } from '@/lib/contracts';
-import { upsertAddon, upsertService } from '@/lib/repositories/db';
+import { PolicyError, upsertAddon, upsertService } from '@/lib/repositories/db';
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
@@ -28,15 +28,15 @@ export async function POST(request: NextRequest) {
     const service = await upsertService(parsed.data);
     return NextResponse.json({ service });
   } catch (err) {
+    if (err instanceof PolicyError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+    }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos del catálogo' },
         { status: 400 },
       );
     }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Error guardando catálogo' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'Error guardando catálogo' }, { status: 400 });
   }
 }

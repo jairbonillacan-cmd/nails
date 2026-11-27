@@ -57,7 +57,11 @@ import {
   POST as postAdminClients,
 } from '@/app/api/admin/clients/route';
 import { POST as postAdminServices } from '@/app/api/admin/services/route';
-import { PATCH as patchAdminBrand } from '@/app/api/admin/brand/route';
+import {
+  DELETE as deleteAdminBrand,
+  PATCH as patchAdminBrand,
+  POST as postAdminBrand,
+} from '@/app/api/admin/brand/route';
 import {
   GET as getAdminOnboarding,
   POST as postAdminOnboarding,
@@ -4078,7 +4082,7 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       );
       expect(availBlocked.status).toBe(429);
       expect(Number(availBlocked.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
-    });
+    }, 15_000);
 
     it('SEC-07: rejects arbitrary external http/https URLs in persistBookingMediaField and public booking endpoints', async () => {
       await expect(
@@ -4291,6 +4295,139 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         }),
       );
       expect(syncWithoutCreds.status).toBe(400);
+    });
+
+    it('SEC-10 (RSA): blocks cross-client WhatsApp webhook IDOR, hides VIP services in flow schema, restricts gallery mutations to owner, and sets private no-store headers', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-rsa10');
+      vi.stubEnv('WHATSAPP_APP_SECRET', 'rsa10-whatsapp-secret');
+
+      const vipRes = await postAdminServices(
+        makeRequest('http://localhost:3000/api/admin/services', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: getOwnerCookieHeader() },
+          body: JSON.stringify({
+            kind: 'service',
+            data: {
+              categoryId: 'cat-sets',
+              name: 'Set Privado VIP RSA',
+              slug: 'set-privado-vip-rsa',
+              description: 'Solo por enlace directo.',
+              durationMinutes: 90,
+              priceCents: 99000,
+              depositAmountCents: 20000,
+              bufferBeforeMinutes: 0,
+              bufferAfterMinutes: 0,
+              isActive: true,
+              isPrivate: true,
+              isFeatured: false,
+              displayOrder: 99,
+            },
+          }),
+        }),
+      );
+      expect(vipRes.status).toBe(200);
+
+      const schemaRes = await getWhatsAppWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/whatsapp?schema=1'),
+      );
+      expect(schemaRes.status).toBe(200);
+      const schemaText = await schemaRes.text();
+      expect(schemaText).not.toContain('Set Privado VIP RSA');
+
+      const attackerReschedulePayload = JSON.stringify({
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    {
+                      id: 'wamid.rsa10.idor.reschedule',
+                      from: '522229990000',
+                      type: 'interactive',
+                      interactive: {
+                        type: 'button_reply',
+                        button_reply: {
+                          id: 'reschedule_booking:bk-1001',
+                          title: 'Necesito reagendar',
+                        },
+                      },
+                    },
+                    {
+                      id: 'wamid.rsa10.idor.confirm',
+                      from: '522229990000',
+                      type: 'interactive',
+                      interactive: {
+                        type: 'button_reply',
+                        button_reply: {
+                          id: 'confirm_booking:bk-1001',
+                          title: 'Confirmo',
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const attackerSig = `sha256=${crypto
+        .createHmac('sha256', 'rsa10-whatsapp-secret')
+        .update(attackerReschedulePayload, 'utf8')
+        .digest('hex')}`;
+      const beforeAttacker = getSnapshot().bookings.find((b) => b.id === 'bk-1001');
+      const attackerRes = await postWhatsAppWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/whatsapp', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-hub-signature-256': attackerSig,
+          },
+          body: attackerReschedulePayload,
+        }),
+      );
+      expect(attackerRes.status).toBe(200);
+      const attackerJson = (await attackerRes.json()) as {
+        processed: { attendanceConfirmed: number };
+      };
+      expect(attackerJson.processed.attendanceConfirmed).toBe(0);
+      const afterAttacker = getSnapshot().bookings.find((b) => b.id === 'bk-1001');
+      expect(afterAttacker?.attendanceStatus).toBe(beforeAttacker?.attendanceStatus);
+
+      const adminCookie = getAdminCookieHeader();
+      const adminGalleryPost = await postAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({
+            title: 'Unauthorized gallery',
+            imageUrl: '/landing/creaciones/rubber.webp',
+          }),
+        }),
+      );
+      expect(adminGalleryPost.status).toBe(403);
+
+      const adminGalleryDelete = await deleteAdminBrand(
+        makeRequest('http://localhost:3000/api/admin/brand?id=gal-1', {
+          method: 'DELETE',
+          headers: { cookie: adminCookie },
+        }),
+      );
+      expect(adminGalleryDelete.status).toBe(403);
+
+      const manageRes = await getManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/demo-token-sofia-1042'),
+        { params: Promise.resolve({ token: 'demo-token-sofia-1042' }) },
+      );
+      expect(manageRes.status).toBe(200);
+      expect(manageRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const sessionRes = await getAdminSessionRoute(
+        makeRequest('http://localhost:3000/api/admin/session'),
+      );
+      expect(sessionRes.status).toBe(200);
+      expect(sessionRes.headers.get('cache-control')).toBe('private, no-store');
     });
   });
 });

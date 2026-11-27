@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearClientPortalOtpStoreForTests,
   CLIENT_PORTAL_COOKIE,
+  CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
   createClientPortalOtpChallenge,
   createClientPortalSessionToken,
   readClientPortalSession,
@@ -295,5 +296,65 @@ describe('client-portal-otp auth', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('verifies OTP across Cloudflare Worker isolates via signed httpOnly challenge cookie and rejects tampered or cross-phone cookies', async () => {
+    vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-portal-cross-isolate-secret');
+
+    const reqRes = await postPortalOtp(
+      new NextRequest('http://localhost:3000/api/client-portal/otp', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': '203.0.113.88',
+        },
+        body: JSON.stringify({
+          action: 'request',
+          phone: '+522224123987',
+        }),
+      }),
+    );
+    expect(reqRes.status).toBe(200);
+    const reqJson = (await reqRes.json()) as { demoCode?: string };
+    const challengeCookie = reqRes.cookies.get(CLIENT_PORTAL_OTP_CHALLENGE_COOKIE)?.value;
+    expect(reqJson.demoCode).toMatch(/^\d{6}$/);
+    expect(challengeCookie).toBeTruthy();
+
+    clearClientPortalOtpStoreForTests();
+
+    const wrongPhoneRes = await postPortalOtp(
+      new NextRequest('http://localhost:3000/api/client-portal/otp', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': '203.0.113.88',
+          cookie: `${CLIENT_PORTAL_OTP_CHALLENGE_COOKIE}=${challengeCookie ?? ''}`,
+        },
+        body: JSON.stringify({
+          action: 'verify',
+          phone: '+522229999999',
+          code: reqJson.demoCode,
+        }),
+      }),
+    );
+    expect(wrongPhoneRes.status).toBe(401);
+
+    const crossIsolateRes = await postPortalOtp(
+      new NextRequest('http://localhost:3000/api/client-portal/otp', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': '203.0.113.88',
+          cookie: `${CLIENT_PORTAL_OTP_CHALLENGE_COOKIE}=${challengeCookie ?? ''}`,
+        },
+        body: JSON.stringify({
+          action: 'verify',
+          phone: '+522224123987',
+          code: reqJson.demoCode,
+        }),
+      }),
+    );
+    expect(crossIsolateRes.status).toBe(200);
+    expect(crossIsolateRes.cookies.get(CLIENT_PORTAL_COOKIE)?.value).toBeTruthy();
   });
 });

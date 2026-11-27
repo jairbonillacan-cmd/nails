@@ -219,7 +219,7 @@ export const OFFICIAL_WHATSAPP_TEMPLATES: readonly OfficialWhatsAppTemplateSpec[
     category: 'UTILITY',
     languageCode: 'es_MX',
     friendlyTitle: 'Comprobante de anticipo por corregir',
-    description: 'Avisa a la clienta si el comprobante SPEI no pudo validarse para que suba otro.',
+    description: 'Avisa a la clienta si el comprobante de transferencia no pudo validarse para que suba otro.',
     bodyText:
       'Hola {{1}}, no pudimos validar el comprobante de anticipo de tu cita {{2}} ({{3}}) en LAIKONA NAILS. Tu horario sigue apartado mientras subes uno nuevo aquí: {{4}}',
     parameterLabels: ['Clienta', 'Código', 'Servicio', 'Enlace'],

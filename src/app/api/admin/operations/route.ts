@@ -127,6 +127,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(csv, {
       status: 200,
       headers: {
+        'Cache-Control': 'private, no-store',
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': 'attachment; filename="nails-reporte-caja.csv"',
       },

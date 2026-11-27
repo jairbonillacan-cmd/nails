@@ -122,8 +122,11 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
-  if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+  if (session.user.role !== 'owner') {
+    return NextResponse.json(
+      { error: 'Solo la Dueña (Owner) puede modificar la galería de marca.' },
+      { status: 403 },
+    );
   }
 
   try {
@@ -159,8 +162,11 @@ export async function DELETE(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
-  if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+  if (session.user.role !== 'owner') {
+    return NextResponse.json(
+      { error: 'Solo la Dueña (Owner) puede modificar la galería de marca.' },
+      { status: 403 },
+    );
   }
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');

@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(JSON.stringify(exported, null, 2), {
       status: 200,
       headers: {
+        'Cache-Control': 'private, no-store',
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Disposition': `attachment; filename="arco-${safeFileId}.json"`,
       },

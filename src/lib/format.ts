@@ -77,6 +77,23 @@ export function normalizePhoneE164(raw: string, defaultCountryCode = '+52'): str
   return `+${cleaned}`;
 }
 
+function canonicalizeMxPhoneDigits(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('521') && digits.length === 13) {
+    return `52${digits.slice(3)}`;
+  }
+  if (digits.length === 10) {
+    return `52${digits}`;
+  }
+  return digits;
+}
+
+export function phonesMatchE164(a: string, b: string): boolean {
+  const left = canonicalizeMxPhoneDigits(a);
+  const right = canonicalizeMxPhoneDigits(b);
+  return left.length >= 10 && left === right;
+}
+
 export function formatDateKeyDisplay(dateKey: string, style: 'long' | 'short' = 'long'): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey.trim());
   if (!match) return dateKey;

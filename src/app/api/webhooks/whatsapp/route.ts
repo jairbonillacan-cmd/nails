@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { constantTimeEqual } from '@/lib/auth/admin-session';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { phonesMatchE164 } from '@/lib/format';
 import { dispatchWhatsAppNotification } from '@/lib/integrations/notifications';
 import {
   buildWhatsAppFlowJsonSchema,
@@ -378,18 +379,23 @@ export async function POST(request: NextRequest) {
             const explicitBookingId = buttonId.startsWith('reschedule_booking:')
               ? buttonId.slice('reschedule_booking:'.length).trim()
               : null;
+            const isOwnedActiveBooking = (b: (typeof snapshot.bookings)[number]) => {
+              if (
+                b.status === 'canceled' ||
+                b.status === 'completed' ||
+                b.status === 'no_show'
+              ) {
+                return false;
+              }
+              const matchedClient = snapshot.clients.find((cl) => cl.id === b.clientId);
+              return Boolean(matchedClient && phonesMatchE164(matchedClient.phoneE164, phoneE164));
+            };
             const targetBooking = explicitBookingId
-              ? snapshot.bookings.find((b) => b.id === explicitBookingId)
+              ? snapshot.bookings.find(
+                  (b) => b.id === explicitBookingId && isOwnedActiveBooking(b),
+                )
               : snapshot.bookings
-                  .filter((b) => {
-                    const c = snapshot.clients.find((cl) => cl.id === b.clientId);
-                    return (
-                      c?.phoneE164 === phoneE164 &&
-                      b.status !== 'canceled' &&
-                      b.status !== 'completed' &&
-                      b.status !== 'no_show'
-                    );
-                  })
+                  .filter(isOwnedActiveBooking)
                   .toSorted(
                     (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
                   )[0];
@@ -429,7 +435,9 @@ export async function POST(request: NextRequest) {
                 const matchedClient = (snapshot.clients ?? []).find(
                   (cl) => cl.id === b.clientId,
                 );
-                return matchedClient?.phoneE164 === phoneE164;
+                return Boolean(
+                  matchedClient && phonesMatchE164(matchedClient.phoneE164, phoneE164),
+                );
               })
               .toSorted(
                 (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
@@ -478,9 +486,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const sanitizedFlowResult = flowResult
+    ? flowResult.ok
+      ? {
+          ok: true as const,
+          bookingCode: flowResult.booking.bookingCode,
+          replyText: flowResult.replyText,
+        }
+      : {
+          ok: false as const,
+          replyText: flowResult.replyText,
+          ...('conflict' in flowResult && flowResult.conflict ? { conflict: true } : {}),
+        }
+    : null;
+
   return NextResponse.json({
     received: true,
-    ...(flowResult ? { result: flowResult } : {}),
+    ...(sanitizedFlowResult ? { result: sanitizedFlowResult } : {}),
     processed: {
       messages: messagesProcessed,
       statuses: statusesProcessed,

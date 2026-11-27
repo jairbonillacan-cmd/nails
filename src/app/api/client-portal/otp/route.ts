@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   CLIENT_PORTAL_COOKIE,
+  CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
   createClientPortalOtpChallenge,
   createClientPortalSessionToken,
   getClientPortalCookieOptions,
+  getClientPortalOtpChallengeCookieOptions,
   verifyClientPortalOtp,
 } from '@/lib/auth/client-portal-otp';
 import { ClientPortalOtpActionSchema } from '@/lib/contracts';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
+import { normalizePhoneE164 } from '@/lib/format';
 import {
   dispatchSmsNotification,
   dispatchWhatsAppNotification,
@@ -159,7 +162,7 @@ export async function POST(request: NextRequest) {
         channel,
       });
 
-      return NextResponse.json(
+      const response = NextResponse.json(
         {
           ok: true,
           phoneE164: challenge.phoneE164,
@@ -170,11 +173,19 @@ export async function POST(request: NextRequest) {
         {
           status: 200,
           headers: {
-            'Cache-Control': 'no-store',
+            'Cache-Control': 'private, no-store',
             'X-RateLimit-Remaining': String(rate.remaining),
           },
         },
       );
+      if (challenge.challengeToken) {
+        response.cookies.set(
+          CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
+          challenge.challengeToken,
+          getClientPortalOtpChallengeCookieOptions(),
+        );
+      }
+      return response;
     }
 
     const verifyRate = checkRateLimit({
@@ -188,7 +199,26 @@ export async function POST(request: NextRequest) {
       return rateLimitedResponse(verifyRate.retryAfterSeconds);
     }
 
-    const verified = verifyClientPortalOtp(parsed.phone, parsed.code);
+    const normalizedVerifyPhone = normalizePhoneE164(parsed.phone);
+    if (normalizedVerifyPhone) {
+      const phoneVerifyRate = checkRateLimit({
+        bucket: 'client-portal-otp-verify-phone',
+        key: normalizedVerifyPhone,
+        limit: 10,
+        windowMs: OTP_RATE_WINDOW_MS,
+      });
+      if (!phoneVerifyRate.allowed) {
+        logWarn('client_portal.otp_verify_phone_rate_limited', {
+          phone: normalizedVerifyPhone,
+        });
+        return rateLimitedResponse(phoneVerifyRate.retryAfterSeconds);
+      }
+    }
+
+    const challengeCookie = request.cookies.get(CLIENT_PORTAL_OTP_CHALLENGE_COOKIE)?.value;
+    const verified = verifyClientPortalOtp(parsed.phone, parsed.code, {
+      challengeToken: challengeCookie,
+    });
     if (!verified.ok) {
       if (verified.reason === 'unconfigured') {
         return NextResponse.json(
@@ -200,22 +230,34 @@ export async function POST(request: NextRequest) {
         );
       }
       if (verified.reason === 'max_attempts') {
-        return NextResponse.json(
+        const res = NextResponse.json(
           {
             code: 'OTP_MAX_ATTEMPTS',
             error: 'Excediste el límite de intentos. Solicita un nuevo código.',
           },
           { status: 429 },
         );
+        res.cookies.set(
+          CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
+          '',
+          getClientPortalOtpChallengeCookieOptions(0),
+        );
+        return res;
       }
       if (verified.reason === 'expired') {
-        return NextResponse.json(
+        const res = NextResponse.json(
           {
             code: 'OTP_EXPIRED',
             error: 'Tu código venció. Solicita uno nuevo para continuar.',
           },
           { status: 400 },
         );
+        res.cookies.set(
+          CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
+          '',
+          getClientPortalOtpChallengeCookieOptions(0),
+        );
+        return res;
       }
       if (verified.reason === 'invalid_phone') {
         return NextResponse.json(
@@ -243,7 +285,7 @@ export async function POST(request: NextRequest) {
       {
         status: 200,
         headers: {
-          'Cache-Control': 'no-store',
+          'Cache-Control': 'private, no-store',
         },
       },
     );
@@ -251,6 +293,11 @@ export async function POST(request: NextRequest) {
       CLIENT_PORTAL_COOKIE,
       verified.sessionToken,
       getClientPortalCookieOptions(),
+    );
+    response.cookies.set(
+      CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
+      '',
+      getClientPortalOtpChallengeCookieOptions(0),
     );
     return response;
   } catch (err) {
