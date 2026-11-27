@@ -86,7 +86,7 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
 }: DashboardAgendaRowProps) {
   const meta = getAgendaRowMeta(booking, metrics, currency);
   const colorIdx = metrics.staffColorIndex.get(booking.staffId) ?? 0;
-  const startTimeLabel = formatTimeInTimezone(booking.startAt, metrics.tz, true);
+  const startTimeLabel = formatTimeInTimezone(booking.startAt, metrics.tz);
   const durationLabel = formatDuration(booking.totalDurationMinutes);
   const waHref = buildWhatsAppLink(
     booking.client.phoneE164,

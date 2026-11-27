@@ -23,6 +23,9 @@ import { isActiveBookingStatus } from '@/lib/booking/state-machine';
 import {
   formatDateShortInTimezone,
   formatDuration,
+  formatHour12h,
+  formatMinutes12h,
+  formatTimeHHMM12h,
   formatTimeInTimezone,
   getDateKeyInTimezone,
 } from '@/lib/format';
@@ -55,7 +58,6 @@ import {
   computeNowIndicator,
   computeElapsedMinutesForDate,
   computeElapsedPercent,
-  formatMinutesHHMM,
   getDayOfWeekFromDateKey,
   getLocalMinutesInTimezone,
   parseTimeMinutes,
@@ -287,7 +289,7 @@ export function VisualScheduleGrid({
     const targetStaffName =
       activeStaff.find((st) => st.id === pendingProposal.targetStaffId)?.name ??
       pendingProposal.booking.staff.name;
-    const nextTime = formatMinutesHHMM(pendingProposal.targetStartMinutes);
+    const nextTime = formatMinutes12h(pendingProposal.targetStartMinutes);
     const summaryLabel =
       pendingProposal.mode === 'resize'
         ? `Duración ajustada a ${formatDuration(pendingProposal.targetDurationMinutes)}`
@@ -318,8 +320,8 @@ export function VisualScheduleGrid({
 
   const proposalCopy = pendingProposal
     ? (() => {
-        const origTime = formatMinutesHHMM(pendingProposal.originalStartMinutes);
-        const nextTime = formatMinutesHHMM(pendingProposal.targetStartMinutes);
+        const origTime = formatMinutes12h(pendingProposal.originalStartMinutes);
+        const nextTime = formatMinutes12h(pendingProposal.targetStartMinutes);
         const origStaff =
           activeStaff.find((st) => st.id === pendingProposal.originalStaffId)?.name ??
           pendingProposal.booking.staff.name;
@@ -332,7 +334,7 @@ export function VisualScheduleGrid({
         if (pendingProposal.mode === 'resize') {
           return {
             title: `¿Ajustar duración de ${pendingProposal.booking.client.fullName}?`,
-            description: `${pendingProposal.booking.service.name} cambiará de ${formatDuration(pendingProposal.originalDurationMinutes)} a ${formatDuration(pendingProposal.targetDurationMinutes)} (${origTime} – ${formatMinutesHHMM(pendingProposal.targetStartMinutes + pendingProposal.targetDurationMinutes)}).`,
+            description: `${pendingProposal.booking.service.name} cambiará de ${formatDuration(pendingProposal.originalDurationMinutes)} a ${formatDuration(pendingProposal.targetDurationMinutes)} (${origTime} – ${formatMinutes12h(pendingProposal.targetStartMinutes + pendingProposal.targetDurationMinutes)}).`,
             confirmLabel: 'Guardar duración',
           };
         }
@@ -422,8 +424,8 @@ export function VisualScheduleGrid({
             <HStack justify="between" align="center" gap={1} width="100%">
               <Text size="sm" weight="semibold" hasTabularNumbers className="ad-cal-event-time">
                 {isThisDragging
-                  ? `${formatMinutesHHMM(effectiveStart)} – ${formatMinutesHHMM(effectiveStart + effectiveDuration)}`
-                  : `${formatTimeInTimezone(booking.startAt, timezone, true)} – ${formatTimeInTimezone(booking.endAt, timezone, true)}`}
+                  ? `${formatMinutes12h(effectiveStart)} – ${formatMinutes12h(effectiveStart + effectiveDuration)}`
+                  : `${formatTimeInTimezone(booking.startAt, timezone)} – ${formatTimeInTimezone(booking.endAt, timezone)}`}
               </Text>
               {!compact ? (
                 <HStack gap={1} align="center" wrap="wrap">
@@ -619,7 +621,7 @@ export function VisualScheduleGrid({
                         {closedOverride
                           ? `Cerrado · ${closedOverride.reason || 'Día bloqueado'}`
                           : fixedTimes.length > 0
-                            ? fixedTimes.join(' · ')
+                            ? fixedTimes.map(formatTimeHHMM12h).join(' · ')
                             : st.roleTitle.trim() || 'Nail Artist'}
                       </Text>
                     </VStack>
@@ -642,7 +644,7 @@ export function VisualScheduleGrid({
                 {CALENDAR_HOURS.map((hour) => (
                   <VStack key={hour} className="ad-cal-gutter-hour" justify="start">
                     <Text type="supporting" color="secondary" hasTabularNumbers className="ad-cal-hour-label">
-                      {`${String(hour).padStart(2, '0')}:00`}
+                      {formatHour12h(hour)}
                     </Text>
                   </VStack>
                 ))}
@@ -652,7 +654,7 @@ export function VisualScheduleGrid({
                     hasTabularNumbers
                     style={{ top: `${nowIndicator.topPct}%` }}
                   >
-                    {nowIndicator.label}
+                    {formatTimeHHMM12h(nowIndicator.label)}
                   </Text>
                 ) : null}
               </VStack>
@@ -682,7 +684,9 @@ export function VisualScheduleGrid({
                     data-drop-active={isDropTarget ? 'true' : 'false'}
                     gap={0}
                   >
-                    {CALENDAR_HOURS.map((hour) => (
+                    {CALENDAR_HOURS.map((hour) => {
+                      const hourLabel = formatTimeHHMM12h(`${String(hour).padStart(2, '0')}:00`);
+                      return (
                       <button
                         key={hour}
                         type="button"
@@ -691,7 +695,7 @@ export function VisualScheduleGrid({
                         aria-label={
                           closedOverride
                             ? `${st.name} sin disponibilidad (${closedOverride.reason || 'Día bloqueado'})`
-                            : `Agendar con ${st.name} a las ${String(hour).padStart(2, '0')}:00`
+                            : `Agendar con ${st.name} a las ${hourLabel}`
                         }
                         onClick={() =>
                           onOpenNewForStaff(
@@ -703,11 +707,12 @@ export function VisualScheduleGrid({
                       >
                         {!closedOverride ? (
                           <Text type="supporting" className="ad-cal-slot-hover-hint">
-                            + {`${String(hour).padStart(2, '0')}:00`}
+                            + {hourLabel}
                           </Text>
                         ) : null}
                       </button>
-                    ))}
+                      );
+                    })}
 
                     {elapsedPct > 0 ? (
                       <VStack
@@ -748,7 +753,7 @@ export function VisualScheduleGrid({
                           gap={0}
                         >
                           <Text type="supporting" weight="semibold" maxLines={1}>
-                            {blk.startTime}–{blk.endTime} · {blk.reason}
+                            {formatTimeHHMM12h(blk.startTime)}–{formatTimeHHMM12h(blk.endTime)} · {blk.reason}
                           </Text>
                         </VStack>
                       );
@@ -779,7 +784,7 @@ export function VisualScheduleGrid({
                         >
                           <HStack justify="between" align="center" width="100%" gap={1}>
                             <Text size="sm" weight="medium" hasTabularNumbers>
-                              {slot.timeHHMM} · Libre
+                              {formatTimeHHMM12h(slot.timeHHMM)} · Libre
                             </Text>
                             <Plus size={13} aria-hidden="true" />
                           </HStack>
@@ -806,8 +811,8 @@ export function VisualScheduleGrid({
                         gap={0}
                       >
                         <Text size="sm" weight="semibold" hasTabularNumbers>
-                          {formatMinutesHHMM(drag.activeDrag.targetStartMinutes)} –{' '}
-                          {formatMinutesHHMM(
+                          {formatMinutes12h(drag.activeDrag.targetStartMinutes)} –{' '}
+                          {formatMinutes12h(
                             drag.activeDrag.targetStartMinutes +
                               drag.activeDrag.targetDurationMinutes,
                           )}
@@ -868,7 +873,7 @@ export function VisualScheduleGrid({
                 {CALENDAR_HOURS.map((hour) => (
                   <VStack key={hour} className="ad-cal-gutter-hour" justify="start">
                     <Text type="supporting" color="secondary" hasTabularNumbers className="ad-cal-hour-label">
-                      {`${String(hour).padStart(2, '0')}:00`}
+                      {formatHour12h(hour)}
                     </Text>
                   </VStack>
                 ))}
@@ -899,12 +904,14 @@ export function VisualScheduleGrid({
                     data-drop-active={isDropTarget ? 'true' : 'false'}
                     gap={0}
                   >
-                    {CALENDAR_HOURS.map((hour) => (
+                    {CALENDAR_HOURS.map((hour) => {
+                      const hourLabel = formatTimeHHMM12h(`${String(hour).padStart(2, '0')}:00`);
+                      return (
                       <button
                         key={hour}
                         type="button"
                         className="ad-cal-hour-slot"
-                        aria-label={`Agendar el ${day.dateKey} a las ${String(hour).padStart(2, '0')}:00`}
+                        aria-label={`Agendar el ${day.dateKey} a las ${hourLabel}`}
                         onClick={() =>
                           onOpenNewForStaff(
                             activeStaff.length === 1 ? (activeStaff[0]?.id ?? 'any') : 'any',
@@ -914,10 +921,11 @@ export function VisualScheduleGrid({
                         }
                       >
                         <Text type="supporting" className="ad-cal-slot-hover-hint">
-                          + {`${String(hour).padStart(2, '0')}:00`}
+                          + {hourLabel}
                         </Text>
                       </button>
-                    ))}
+                      );
+                    })}
 
                     {dayElapsedPct > 0 ? (
                       <VStack
@@ -948,7 +956,7 @@ export function VisualScheduleGrid({
                         gap={0}
                       >
                         <Text size="sm" weight="semibold" hasTabularNumbers>
-                          {formatMinutesHHMM(drag.activeDrag.targetStartMinutes)}
+                          {formatMinutes12h(drag.activeDrag.targetStartMinutes)}
                         </Text>
                       </VStack>
                     ) : null}

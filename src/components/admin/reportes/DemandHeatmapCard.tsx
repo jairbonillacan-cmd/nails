@@ -9,6 +9,7 @@ import { Tooltip } from '@astryxdesign/core/Tooltip';
 import { Flame, Sparkles } from 'lucide-react';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import type { DemandHeatmap } from '@/lib/analytics/reports';
+import { formatHour12h, formatTimeHHMM12h } from '@/lib/format';
 
 interface DemandHeatmapCardProps {
   heatmap: DemandHeatmap;
@@ -21,7 +22,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
     <SurfaceCard
       id="reports-heatmap-heading"
       title="Días y horas con más citas"
-      subtitle="Cuántas citas se agendan cada día entre las 9:00 y las 20:00."
+      subtitle="Cuántas citas se agendan cada día entre las 9:00 AM y las 8:00 PM."
     >
       {heatmap.totalBookings === 0 ? (
         <VStack className="ad-empty" gap={2}>
@@ -42,7 +43,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                   tone="accent"
                   icon={<Flame size={12} aria-hidden="true" />}
                   hasTabularNumbers
-                  label={`Más lleno: ${heatmap.peakSlot.dayShort} ${heatmap.peakSlot.hourLabel}`}
+                  label={`Más lleno: ${heatmap.peakSlot.dayShort} ${formatTimeHHMM12h(heatmap.peakSlot.hourLabel)}`}
                 />
               ) : null}
               {heatmap.quietSlot ? (
@@ -50,7 +51,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                   tone="neutral"
                   icon={<Sparkles size={12} aria-hidden="true" />}
                   hasTabularNumbers
-                  label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${heatmap.quietSlot.hourLabel}`}
+                  label={`Más tranquilo: ${heatmap.quietSlot.dayShort} ${formatTimeHHMM12h(heatmap.quietSlot.hourLabel)}`}
                 />
               ) : null}
             </HStack>
@@ -79,7 +80,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                   display="block"
                   hasTabularNumbers
                 >
-                  {`${String(hour).padStart(2, '0')}h`}
+                  {formatHour12h(hour)}
                 </Text>
               ))}
 
@@ -102,7 +103,7 @@ export function DemandHeatmapCard({ heatmap }: DemandHeatmapCardProps) {
                     );
                     const countLabel =
                       cell.count === 1 ? '1 cita' : `${cell.count} citas`;
-                    const ariaLabel = `${cell.dayLabel} ${cell.hourLabel}: ${countLabel}${isPeak ? ' · Horario con más citas' : ''}`;
+                    const ariaLabel = `${cell.dayLabel} ${formatTimeHHMM12h(cell.hourLabel)}: ${countLabel}${isPeak ? ' · Horario con más citas' : ''}`;
 
                     return (
                       <Tooltip

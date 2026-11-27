@@ -6,7 +6,7 @@ describe('formatDayScheduleSummary', () => {
     expect(formatDayScheduleSummary([])).toBe('Descanso');
   });
 
-  it('lists fixed start times in ascending order without duplicates', () => {
+  it('lists fixed start times in ascending AM/PM order without duplicates', () => {
     expect(
       formatDayScheduleSummary([
         {
@@ -17,15 +17,15 @@ describe('formatDayScheduleSummary', () => {
           fixedStartTimes: ['16:30', '10:00', '13:30', '10:00'],
         },
       ]),
-    ).toBe('10:00, 13:30, 16:30');
+    ).toBe('10:00 AM, 1:30 PM, 4:30 PM');
   });
 
-  it('formats continuous single and split shifts ordered by startTime', () => {
+  it('formats continuous single and split shifts ordered by startTime in AM/PM', () => {
     expect(
       formatDayScheduleSummary([
         { id: 'r-2', dayOfWeek: 2, startTime: '15:00', endTime: '19:00' },
         { id: 'r-1', dayOfWeek: 2, startTime: '10:00', endTime: '13:30' },
       ]),
-    ).toBe('10:00 – 13:30, 15:00 – 19:00');
+    ).toBe('10:00 AM – 1:30 PM, 3:00 PM – 7:00 PM');
   });
 });

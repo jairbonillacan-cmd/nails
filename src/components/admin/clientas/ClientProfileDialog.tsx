@@ -271,7 +271,7 @@ export function ClientProfileDialog({
                   <ActionRow
                     key={visit.id}
                     title={visit.service.name}
-                    subtitle={`${formatDateShortInTimezone(visit.startAt, tz)} · ${formatTimeInTimezone(visit.startAt, tz, true)} con ${visit.staff.name}`}
+                    subtitle={`${formatDateShortInTimezone(visit.startAt, tz)} · ${formatTimeInTimezone(visit.startAt, tz)} con ${visit.staff.name}`}
                     status={
                       <BookingStatusTag
                         status={visit.status}

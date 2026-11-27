@@ -182,8 +182,8 @@ export function NewBookingAdvancedSection({
               </Grid>
               {selectedSlot && computedEndIso ? (
                 <Text type="supporting" color="secondary" hasTabularNumbers>
-                  Horario final: {formatTimeInTimezone(selectedSlot.startAt, timezone, true)} –{' '}
-                  {formatTimeInTimezone(computedEndIso, timezone, true)} (
+                  Horario final: {formatTimeInTimezone(selectedSlot.startAt, timezone)} –{' '}
+                  {formatTimeInTimezone(computedEndIso, timezone)} (
                   {formatDuration(activeDurationMinutes)})
                 </Text>
               ) : null}

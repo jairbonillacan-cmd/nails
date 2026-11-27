@@ -93,6 +93,33 @@ export function collapseDoublePeriods(text: string): string {
   return text.replace(/([ap]\.\s?m\.)\./g, '$1');
 }
 
+export function formatHour12h(hour: number): string {
+  const normalized = ((Math.trunc(hour) % 24) + 24) % 24;
+  const period = normalized >= 12 ? 'PM' : 'AM';
+  const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
+  return `${hour12} ${period}`;
+}
+
+export function formatTimeHHMM12h(hhmm: string): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!match) return hhmm;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return hhmm;
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
+}
+
+export function formatMinutes12h(totalMinutes: number): string {
+  const normalized = ((Math.trunc(totalMinutes) % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+  return formatTimeHHMM12h(
+    `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+  );
+}
+
 export function formatTimeInTimezone(
   iso: string,
   timeZone: string,

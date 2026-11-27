@@ -1,4 +1,5 @@
 import type { SlotDiagnosis } from '@/lib/availability/engine';
+import { formatTimeHHMM12h } from '@/lib/format';
 import type { AvailabilityRule, RecurringBlock } from '@/lib/types';
 
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -27,14 +28,16 @@ export const TIME_OPTIONS = Array.from({ length: 29 }, (_, i) => {
   const totalMin = 8 * 60 + i * 30;
   const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
   const mm = String(totalMin % 60).padStart(2, '0');
-  return { value: `${hh}:${mm}`, label: `${hh}:${mm}` };
+  const value = `${hh}:${mm}`;
+  return { value, label: formatTimeHHMM12h(value) };
 });
 
 export const FIXED_TIME_OPTIONS = Array.from({ length: 57 }, (_, i) => {
   const totalMin = 8 * 60 + i * 15;
   const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
   const mm = String(totalMin % 60).padStart(2, '0');
-  return { value: `${hh}:${mm}`, label: `${hh}:${mm}` };
+  const value = `${hh}:${mm}`;
+  return { value, label: formatTimeHHMM12h(value) };
 });
 
 const DEFAULT_FIXED_BLOCKS = ['10:00', '13:30', '16:30'];
@@ -47,11 +50,11 @@ export function formatDayScheduleSummary(
     new Set(dayRules.flatMap((r) => r.fixedStartTimes ?? [])),
   ).toSorted();
   if (fixedTimes.length > 0) {
-    return fixedTimes.join(', ');
+    return fixedTimes.map(formatTimeHHMM12h).join(', ');
   }
   return dayRules
     .toSorted((a, b) => a.startTime.localeCompare(b.startTime))
-    .map((r) => `${r.startTime} – ${r.endTime}`)
+    .map((r) => `${formatTimeHHMM12h(r.startTime)} – ${formatTimeHHMM12h(r.endTime)}`)
     .join(', ');
 }
 
@@ -61,7 +64,7 @@ export function formatRecurringSummary(block: RecurringBlock): string {
       ? `Cada semana (${block.weekdays.map((d) => WEEKDAY_SHORT_BY_DOW[d] ?? String(d)).join(', ')})`
       : `Cada mes (día ${block.dayOfMonth ?? 1})`;
   const untilSuffix = block.untilDate ? ` · Hasta ${block.untilDate}` : '';
-  return `${freqLabel} · ${block.startTime} – ${block.endTime}${untilSuffix}`;
+  return `${freqLabel} · ${formatTimeHHMM12h(block.startTime)} – ${formatTimeHHMM12h(block.endTime)}${untilSuffix}`;
 }
 
 export function serializeRulesCanonical(rulesList: readonly AvailabilityRule[]): string {

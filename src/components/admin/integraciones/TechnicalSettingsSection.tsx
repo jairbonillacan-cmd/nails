@@ -286,7 +286,7 @@ export function TechnicalSettingsSection({
                 const recipientLabel =
                   n.channel === 'email' ? n.recipient : formatPhoneDisplay(n.recipient);
                 const ts = n.sentAt ?? n.scheduledFor ?? n.createdAt;
-                const timeLabel = `${formatDateShortInTimezone(ts, timezone)} · ${formatTimeInTimezone(ts, timezone, true)}`;
+                const timeLabel = `${formatDateShortInTimezone(ts, timezone)} · ${formatTimeInTimezone(ts, timezone)}`;
                 return (
                   <li key={n.id}>
                     <ActionRow

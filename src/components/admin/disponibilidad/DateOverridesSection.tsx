@@ -14,6 +14,7 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import { formatTimeHHMM12h } from '@/lib/format';
 import type { DateOverride, StaffMember } from '@/lib/types';
 import { DateOverrideFormCard } from './DateOverrideFormCard';
 
@@ -145,7 +146,11 @@ export function DateOverridesSection({
             </Text>
             <StatusTag
               tone={o.isUnavailable ? 'warning' : 'accent'}
-              label={o.isUnavailable ? 'Cerrado' : `${o.startTime} – ${o.endTime}`}
+              label={
+                o.isUnavailable
+                  ? 'Cerrado'
+                  : `${formatTimeHHMM12h(o.startTime ?? '')} – ${formatTimeHHMM12h(o.endTime ?? '')}`
+              }
               hasTabularNumbers
             />
           </HStack>

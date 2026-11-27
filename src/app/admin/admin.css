@@ -1370,7 +1370,7 @@ section:first-child > .ad-letter-divider {
 
 .ad-row {
   display: grid;
-  grid-template-columns: 4rem 0.1875rem minmax(0, 1fr) auto;
+  grid-template-columns: 5.5rem 0.1875rem minmax(0, 1fr) auto;
   gap: 0.875rem;
   align-items: center;
   padding: 0.8125rem 1.25rem;
@@ -1654,7 +1654,7 @@ section:first-child > .ad-letter-divider {
 }
 
 .ad-cal-grid {
-  --ad-cal-gutter: 3.75rem;
+  --ad-cal-gutter: 4.5rem;
   --ad-cal-hour-h: 4.25rem;
   width: 100%;
   min-width: 100%;
@@ -3444,7 +3444,7 @@ input.ad-pin-input,
   }
 
   .ad-row {
-    grid-template-columns: 3.5rem 0.1875rem minmax(0, 1fr);
+    grid-template-columns: 5rem 0.1875rem minmax(0, 1fr);
     padding: 0.8125rem 1rem;
   }
 

@@ -128,7 +128,7 @@ export function CajaDepositsTab({
                       <Token size="sm" color={meta.color} label={meta.label} />
                     </HStack>
                   }
-                  subtitle={`${dep.serviceName} (${dep.bookingCode}) · ${formatDateShortInTimezone(dep.startAt, tz)} ${formatTimeInTimezone(dep.startAt, tz, true)} con ${dep.staffName}`}
+                  subtitle={`${dep.serviceName} (${dep.bookingCode}) · ${formatDateShortInTimezone(dep.startAt, tz)} ${formatTimeInTimezone(dep.startAt, tz)} con ${dep.staffName}`}
                   meta={
                     <HStack gap={2} wrap="wrap" align="center">
                       <Text type="supporting" color="secondary" hasTabularNumbers>
@@ -240,7 +240,7 @@ export function CajaDepositsTab({
                 </Text>
                 <Text weight="semibold" size="sm" hasTabularNumbers>
                   {formatDateShortInTimezone(previewDeposit.startAt, tz)} ·{' '}
-                  {formatTimeInTimezone(previewDeposit.startAt, tz, true)}
+                  {formatTimeInTimezone(previewDeposit.startAt, tz)}
                 </Text>
               </HStack>
               <HStack justify="between" align="center" gap={2} wrap="wrap">

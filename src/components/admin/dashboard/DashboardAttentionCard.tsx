@@ -99,7 +99,7 @@ export function DashboardAttentionCard({
   for (const dep of data.pendingDeposits) {
     const amountCents = dep.depositAmountCents || depositFallbackCents;
     const dateLabel = formatDateShortInTimezone(dep.startAt, tz);
-    const timeLabel = formatTimeInTimezone(dep.startAt, tz, true);
+    const timeLabel = formatTimeInTimezone(dep.startAt, tz);
     const isExternalLink =
       dep.proofDeliveryMethod === 'web_link' ||
       Boolean(dep.paymentProofUrl?.startsWith('https://'));
@@ -147,7 +147,7 @@ export function DashboardAttentionCard({
 
   for (const item of data.uncollectedBookings) {
     const dateLabel = formatDateShortInTimezone(item.startAt, tz);
-    const endTime = formatTimeInTimezone(item.endAt, tz, true);
+    const endTime = formatTimeInTimezone(item.endAt, tz);
     allTasks.push({
       id: `pay-${item.bookingId}`,
       tone: 'accent',

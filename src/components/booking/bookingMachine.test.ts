@@ -380,16 +380,16 @@ describe('bookingHelpers', () => {
 
     expect(
       getStaffScheduleLabel({ id: 'staff-karla', bookingSlug: 'karla', name: 'Karla' }),
-    ).toBe('Lun–Sáb · 10:00 · 1:30 · 4:30');
+    ).toBe('Lun–Sáb · 10:00 AM · 1:30 PM · 4:30 PM');
     expect(
       getStaffScheduleLabel({ id: 'staff-karla', bookingSlug: 'karla', name: 'Karla' }, '24h'),
     ).toBe('Lun–Sáb · 10:00 · 13:30 · 16:30');
     expect(
       getStaffScheduleLabel({ id: 'staff-paty', bookingSlug: 'paty', name: 'Paty' }),
-    ).toBe('Lun–Sáb · 10:00 · 1:30 · 4:30');
+    ).toBe('Lun–Sáb · 10:00 AM · 1:30 PM · 4:30 PM');
     expect(
       getStaffScheduleLabel({ id: 'staff-tere', bookingSlug: 'tere', name: 'Tere' }),
-    ).toBe('Lun–Sáb · 2:00 · 4:00 · 6:00');
+    ).toBe('Lun–Sáb · 2:00 PM · 4:00 PM · 6:00 PM');
     expect(
       getStaffScheduleLabel({ id: 'staff-tere', bookingSlug: 'tere', name: 'Tere' }, '24h'),
     ).toBe('Lun–Sáb · 14:00 · 16:00 · 18:00');

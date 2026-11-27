@@ -10,6 +10,7 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Token } from '@astryxdesign/core/Token';
 import { Check, Clock, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
 import { FilterPillBar, StatusTag } from '@/components/ui';
+import { formatTimeHHMM12h } from '@/lib/format';
 import type { AvailabilityRule } from '@/lib/types';
 import {
   FIXED_TIME_OPTIONS,
@@ -171,7 +172,7 @@ export function WeeklyDayRow({
                                 key={time}
                                 size="sm"
                                 icon={<Clock size={11} aria-hidden="true" />}
-                                label={time}
+                                label={formatTimeHHMM12h(time)}
                                 onRemove={() => onRemoveFixedTime(rule.id, time)}
                               />
                             ))}

@@ -22,6 +22,7 @@ import {
 } from '@/components/ui';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import type { SlotDiagnosis } from '@/lib/availability/engine';
+import { formatTimeHHMM12h } from '@/lib/format';
 import type { Service, StaffMember } from '@/lib/types';
 import {
   addDaysToYmd,
@@ -198,7 +199,7 @@ export function VisualTroubleshooter({
                       label={inspectedSlot.isAvailable ? 'Disponible' : 'No disponible'}
                     />
                     <Text weight="bold" className="fx-tabular" hasTabularNumbers>
-                      {inspectedSlot.time24} hrs
+                      {formatTimeHHMM12h(inspectedSlot.time24)}
                     </Text>
                     <Token size="sm" label={inspectedSlot.staffName} />
                   </HStack>
@@ -262,7 +263,7 @@ export function VisualTroubleshooter({
                       return (
                         <ClickableCard
                           key={slot.time24}
-                          label={`${slot.time24} hrs — ${explainSlotInPlainSpanish(slot)}`}
+                          label={`${formatTimeHHMM12h(slot.time24)} — ${explainSlotInPlainSpanish(slot)}`}
                           padding={2}
                           variant={isInspected ? 'muted' : 'default'}
                           elevation={isInspected ? 'low' : 'none'}
@@ -275,7 +276,7 @@ export function VisualTroubleshooter({
                                 label={slot.isAvailable ? 'Libre' : 'No disponible'}
                               />
                               <Text weight="semibold" className="fx-tabular" hasTabularNumbers>
-                                {slot.time24}
+                                {formatTimeHHMM12h(slot.time24)}
                               </Text>
                             </HStack>
                             {isInspected ? <StatusTag label="Viendo" tone="accent" /> : null}

@@ -104,7 +104,7 @@ export function DepositProofPreviewDialog({
               </Text>
               <Text weight="semibold" size="sm" hasTabularNumbers>
                 {formatDateShortInTimezone(deposit.startAt, timezone)} ·{' '}
-                {formatTimeInTimezone(deposit.startAt, timezone, true)}
+                {formatTimeInTimezone(deposit.startAt, timezone)}
               </Text>
             </HStack>
             <HStack justify="between" align="center" gap={2} wrap="wrap">

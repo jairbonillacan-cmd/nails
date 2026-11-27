@@ -213,8 +213,8 @@ export const BookingCard = memo(function BookingCard({
 
           <Text type="supporting" color="secondary" hasTabularNumbers>
             {formatDateShortInTimezone(b.startAt, timezone)} ·{' '}
-            {formatTimeInTimezone(b.startAt, timezone, true)} –{' '}
-            {formatTimeInTimezone(b.endAt, timezone, true)} (
+            {formatTimeInTimezone(b.startAt, timezone)} –{' '}
+            {formatTimeInTimezone(b.endAt, timezone)} (
             {formatDuration(b.totalDurationMinutes)}) · Profesional: {b.staff.name}
           </Text>
 

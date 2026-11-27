@@ -153,7 +153,7 @@ export function CajaSummaryTab({
                     />
                   </HStack>
                 }
-                subtitle={`${row.serviceName} · ${formatDateShortInTimezone(row.startAt, tz)} ${formatTimeInTimezone(row.startAt, tz, true)} con ${row.staffName}`}
+                subtitle={`${row.serviceName} · ${formatDateShortInTimezone(row.startAt, tz)} ${formatTimeInTimezone(row.startAt, tz)} con ${row.staffName}`}
                 meta={
                   <HStack gap={2} wrap="wrap" align="center">
                     <Text type="supporting" color="secondary" hasTabularNumbers>

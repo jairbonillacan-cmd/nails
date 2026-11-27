@@ -254,7 +254,7 @@ export function AdminQuickSearchDialog({
                         description={
                           <Text type="supporting" color="secondary" hasTabularNumbers>
                             {b.bookingCode} · {formatDateShortInTimezone(b.startAt, tz)} ·{' '}
-                            {formatTimeInTimezone(b.startAt, tz, true)} · {b.staff.name}
+                            {formatTimeInTimezone(b.startAt, tz)} · {b.staff.name}
                           </Text>
                         }
                         endContent={

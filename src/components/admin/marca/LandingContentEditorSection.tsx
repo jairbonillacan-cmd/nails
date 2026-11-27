@@ -526,7 +526,7 @@ export function LandingContentEditorSection({
             />
             <TextInput
               label="Horario y nota"
-              placeholder="De 10:00 a 18:00 · Solo con cita"
+              placeholder="De 10:00 AM a 6:00 PM · Solo con cita"
               value={draft.landingContent.visitHoursText ?? ''}
               onChange={(v) => patchLanding({ visitHoursText: v })}
               isOptional
