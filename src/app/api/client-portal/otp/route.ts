@@ -23,6 +23,7 @@ import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 const OTP_REQUEST_LIMIT = 15;
+const OTP_REQUEST_PER_PHONE_LIMIT = 4;
 const OTP_VERIFY_LIMIT = 25;
 const OTP_RATE_WINDOW_MS = 10 * 60 * 1000;
 
@@ -58,6 +59,20 @@ export async function POST(request: NextRequest) {
       if (!rate.allowed) {
         logWarn('client_portal.otp_request_rate_limited', { ip });
         return rateLimitedResponse(rate.retryAfterSeconds);
+      }
+
+      const requestedPhone = normalizePhoneE164(parsed.phone);
+      if (requestedPhone) {
+        const phoneRate = checkRateLimit({
+          bucket: 'client-portal-otp-request-phone',
+          key: requestedPhone,
+          limit: OTP_REQUEST_PER_PHONE_LIMIT,
+          windowMs: OTP_RATE_WINDOW_MS,
+        });
+        if (!phoneRate.allowed) {
+          logWarn('client_portal.otp_request_phone_rate_limited', { phone: requestedPhone });
+          return rateLimitedResponse(phoneRate.retryAfterSeconds);
+        }
       }
 
       const challenge = createClientPortalOtpChallenge(parsed.phone);

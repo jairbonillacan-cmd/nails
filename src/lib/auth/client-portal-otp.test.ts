@@ -64,6 +64,26 @@ describe('client-portal-otp auth', () => {
     expect(afterLockout.ok).toBe(false);
   });
 
+  it('limits code requests per phone even when the IP changes', async () => {
+    vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-portal-secret-phone-limit');
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const res = await postPortalOtp(
+        new NextRequest('http://localhost:3000/api/client-portal/otp', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': `203.0.113.${20 + i}`,
+          },
+          body: JSON.stringify({ action: 'request', phone: '+522224123987' }),
+        }),
+      );
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(0, 4)).toEqual([200, 200, 200, 200]);
+    expect(statuses[4]).toBe(429);
+  });
+
   it('generates a 6-digit OTP, verifies once, and invalidates replay', () => {
     vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-portal-secret-123');
     const nowMs = 1_760_000_000_000;
