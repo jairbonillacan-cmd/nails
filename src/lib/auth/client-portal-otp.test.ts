@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -22,6 +23,45 @@ describe('client-portal-otp auth', () => {
     clearClientPortalOtpStoreForTests();
     resetRateLimiterForTests();
     vi.unstubAllEnvs();
+  });
+
+  it('keeps the challenge cookie useless for offline guessing without the server secret', () => {
+    vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-portal-secret-offline');
+    const challenge = createClientPortalOtpChallenge('222 123 4567');
+    expect(challenge?.challengeToken).toBeTruthy();
+    if (!challenge?.challengeToken) return;
+    const payload = JSON.parse(
+      Buffer.from(challenge.challengeToken.split('.')[0] ?? '', 'base64url').toString('utf8'),
+    ) as { salt: string; digestHex: string; phoneE164: string };
+    const saltOnlyDigest = crypto
+      .createHmac('sha256', payload.salt)
+      .update(`${payload.phoneE164}:${challenge.code}`, 'utf8')
+      .digest('hex');
+    expect(saltOnlyDigest).not.toBe(payload.digestHex);
+  });
+
+  it('does not grant fresh attempts by replaying the challenge cookie after lockout', () => {
+    vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-portal-secret-lockout');
+    const nowMs = 1_760_000_000_000;
+    const challenge = createClientPortalOtpChallenge('222 123 4567', { nowMs });
+    if (!challenge?.challengeToken) throw new Error('missing challenge');
+    const wrong = challenge.code === '000000' ? '111111' : '000000';
+    let last = verifyClientPortalOtp('+522221234567', wrong, {
+      nowMs,
+      challengeToken: challenge.challengeToken,
+    });
+    for (let i = 0; i < 6; i += 1) {
+      last = verifyClientPortalOtp('+522221234567', wrong, {
+        nowMs,
+        challengeToken: challenge.challengeToken,
+      });
+    }
+    expect(last.ok).toBe(false);
+    const afterLockout = verifyClientPortalOtp('+522221234567', challenge.code, {
+      nowMs,
+      challengeToken: challenge.challengeToken,
+    });
+    expect(afterLockout.ok).toBe(false);
   });
 
   it('generates a 6-digit OTP, verifies once, and invalidates replay', () => {

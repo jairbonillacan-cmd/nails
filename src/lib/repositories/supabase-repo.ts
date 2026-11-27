@@ -2778,6 +2778,16 @@ export function createSupabaseRepository(
           continue;
         }
 
+        const { error: claimError } = await supabase
+          .from('webhook_events')
+          .insert({ provider: 'scheduled_notification', event_id: item.id });
+        if (claimError) {
+          if (claimError.code !== '23505') {
+            failedCount += 1;
+          }
+          continue;
+        }
+
         const hydrated = hydrateBookingFromSnapshot(snapshot, rawBooking);
         const res = await dispatcher({
           notification: { ...item },

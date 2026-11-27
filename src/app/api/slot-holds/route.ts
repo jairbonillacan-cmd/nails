@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
     bucket: 'public:slot-holds',
     key: getRequestIp(request),
-    limit: 60,
+    limit: 20,
     windowMs: 60_000,
   });
   if (!rate.allowed) {
@@ -98,9 +98,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const cookieToken = await readClientSessionToken(request);
-  const sessionToken = cookieToken ?? searchParams.get('sessionToken');
+  const sessionToken = await readClientSessionToken(request);
   if (sessionToken) {
     await getRepository().releaseSlotHold(sessionToken);
   }

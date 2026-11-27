@@ -25,6 +25,7 @@ interface StoredOtpChallenge {
 declare global {
   var nailsEphemeralClientPortalSecret: string | undefined;
   var nailsClientPortalOtpChallenges: Map<string, StoredOtpChallenge> | undefined;
+  var nailsBurnedOtpChallengeSalts: Map<string, number> | undefined;
 }
 
 const portalSessionPayloadSchema = z.object({
@@ -34,7 +35,7 @@ const portalSessionPayloadSchema = z.object({
 });
 
 const otpChallengePayloadSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(2),
   phoneE164: z.string().min(8).max(20),
   salt: z.string().regex(/^[0-9a-f]{32}$/),
   digestHex: z.string().regex(/^[0-9a-f]{64}$/),
@@ -61,7 +62,23 @@ function getOtpStore(): Map<string, StoredOtpChallenge> {
   return globalThis.nailsClientPortalOtpChallenges;
 }
 
+function getBurnedSalts(): Map<string, number> {
+  if (!globalThis.nailsBurnedOtpChallengeSalts) {
+    globalThis.nailsBurnedOtpChallengeSalts = new Map<string, number>();
+  }
+  return globalThis.nailsBurnedOtpChallengeSalts;
+}
+
+function burnChallenge(entry: StoredOtpChallenge): void {
+  getOtpStore().delete(entry.phoneE164);
+  getBurnedSalts().set(entry.salt, entry.expiresAtMs);
+}
+
 function pruneExpiredOtpChallenges(nowMs: number): void {
+  const burned = getBurnedSalts();
+  for (const [salt, expMs] of burned.entries()) {
+    if (expMs <= nowMs) burned.delete(salt);
+  }
   const store = getOtpStore();
   for (const [key, entry] of store.entries()) {
     if (entry.expiresAtMs <= nowMs) {
@@ -80,9 +97,13 @@ function pruneExpiredOtpChallenges(nowMs: number): void {
 }
 
 function hashOtpCode(phoneE164: string, code: string, salt: string): string {
+  const key = crypto
+    .createHmac('sha256', getClientPortalSigningSecret() ?? '')
+    .update('client-portal-otp-digest:v2', 'utf8')
+    .digest();
   return crypto
-    .createHmac('sha256', salt)
-    .update(`${phoneE164}:${code}`, 'utf8')
+    .createHmac('sha256', key)
+    .update(`${salt}:${phoneE164}:${code}`, 'utf8')
     .digest('hex');
 }
 
@@ -121,7 +142,7 @@ function signOtpChallengeToken(entry: StoredOtpChallenge): string | null {
   const secret = getClientPortalSigningSecret();
   if (!secret) return null;
   const payload = {
-    v: 1 as const,
+    v: 2 as const,
     phoneE164: entry.phoneE164,
     salt: entry.salt,
     digestHex: entry.digestHex,
@@ -315,8 +336,13 @@ export function verifyClientPortalOtp(
 
   if (!entry && options?.challengeToken) {
     const recovered = verifyOtpChallengeToken(options.challengeToken);
-    if (recovered && recovered.phoneE164 === phoneE164) {
+    if (
+      recovered &&
+      recovered.phoneE164 === phoneE164 &&
+      !getBurnedSalts().has(recovered.salt)
+    ) {
       entry = recovered;
+      store.set(phoneE164, recovered);
     }
   }
 
@@ -324,18 +350,18 @@ export function verifyClientPortalOtp(
     return { ok: false, reason: 'not_found', attemptsRemaining: 0 };
   }
   if (entry.expiresAtMs <= nowMs) {
-    store.delete(phoneE164);
+    burnChallenge(entry);
     return { ok: false, reason: 'expired', attemptsRemaining: 0 };
   }
   if (entry.failedAttempts >= OTP_MAX_ATTEMPTS) {
-    store.delete(phoneE164);
+    burnChallenge(entry);
     return { ok: false, reason: 'max_attempts', attemptsRemaining: 0 };
   }
 
   if (!OTP_CODE_RE.test(code)) {
     const nextFailed = entry.failedAttempts + 1;
     if (nextFailed >= OTP_MAX_ATTEMPTS) {
-      store.delete(phoneE164);
+      burnChallenge(entry);
       return { ok: false, reason: 'max_attempts', attemptsRemaining: 0 };
     }
     store.set(phoneE164, { ...entry, failedAttempts: nextFailed });
@@ -358,7 +384,7 @@ export function verifyClientPortalOtp(
   if (!matches) {
     const nextFailed = entry.failedAttempts + 1;
     if (nextFailed >= OTP_MAX_ATTEMPTS) {
-      store.delete(phoneE164);
+      burnChallenge(entry);
       return { ok: false, reason: 'max_attempts', attemptsRemaining: 0 };
     }
     store.set(phoneE164, { ...entry, failedAttempts: nextFailed });
@@ -374,7 +400,7 @@ export function verifyClientPortalOtp(
     return { ok: false, reason: 'unconfigured', attemptsRemaining: 0 };
   }
 
-  store.delete(phoneE164);
+  burnChallenge(entry);
   return { ok: true, phoneE164, sessionToken };
 }
 
@@ -435,4 +461,5 @@ export function getClientPortalOtpChallengeCookieOptions(maxAge = OTP_TTL_SECOND
 
 export function clearClientPortalOtpStoreForTests(): void {
   globalThis.nailsClientPortalOtpChallenges?.clear();
+  globalThis.nailsBurnedOtpChallengeSalts?.clear();
 }
