@@ -4,10 +4,11 @@ import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
-import { MessageCircle, UserPlus } from 'lucide-react';
+import { Gift, MessageCircle, UserPlus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import { ClientDirectoryTab } from '@/components/admin/clientas/ClientDirectoryTab';
@@ -40,9 +41,10 @@ import {
   SkeletonBlock,
   type MetricTileItem,
 } from '@/components/ui';
-import { parseClientasParams } from '@/lib/admin-links';
+import { fidelizacionHref, parseClientasParams } from '@/lib/admin-links';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { invalidateAdminCache } from '@/lib/hooks/useAdminCache';
+import { roleCanAccess } from '@/lib/rbac';
 import type { ClientProfile } from '@/lib/types';
 
 function ClientsTabFallback() {
@@ -366,15 +368,35 @@ export default function AdminClientsPage() {
           title="Clientas"
           subtitle="Historial, ficha técnica de uñas, seguimiento y retención en un solo lugar."
           actions={
-            canManageClients ? (
-              <Button
-                type="button"
-                label="Nueva clienta"
-                variant="primary"
-                size="sm"
-                icon={<UserPlus size={15} aria-hidden="true" />}
-                onClick={() => setCreateOpen(true)}
-              />
+            canManageClients || roleCanAccess(data.session.user.role, 'loyalty') ? (
+              <HStack gap={2} wrap="wrap">
+                {roleCanAccess(data.session.user.role, 'loyalty') ? (
+                  <Button
+                    label="Fidelización"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Gift size={15} aria-hidden="true" />}
+                    href={fidelizacionHref({
+                      tab:
+                        activeTab === 'retention'
+                          ? 'campanas'
+                          : activeTab === 'loyalty'
+                            ? 'paquetes'
+                            : 'sellos',
+                    })}
+                  />
+                ) : null}
+                {canManageClients ? (
+                  <Button
+                    type="button"
+                    label="Nueva clienta"
+                    variant="primary"
+                    size="sm"
+                    icon={<UserPlus size={15} aria-hidden="true" />}
+                    onClick={() => setCreateOpen(true)}
+                  />
+                ) : null}
+              </HStack>
             ) : undefined
           }
         />

@@ -157,6 +157,20 @@ export interface ResumenLinkParams {
   period?: MetricPeriod;
 }
 
+export type FidelizacionTabParam = 'sellos' | 'paquetes' | 'cupones' | 'campanas';
+
+export interface FidelizacionLinkParams {
+  tab?: FidelizacionTabParam;
+  q?: string;
+}
+
+export type AjustesTabParam = 'cobro' | 'politicas' | 'seguridad';
+
+export interface AjustesLinkParams {
+  tab?: AjustesTabParam;
+  focus?: string;
+}
+
 function hasGetMethod(value: unknown): value is AdminSearchParamsLike {
   return (
     typeof value === 'object' &&
@@ -702,6 +716,117 @@ export function parseResumenParams(input: AdminSearchParamsInput): ResumenLinkPa
   const out: ResumenLinkParams = {};
   const period = cleanString(reader.get('period'));
   if (isMetricPeriod(period)) out.period = period;
+  return out;
+}
+
+function normalizeFidelizacionTab(
+  raw: string | null | undefined,
+): FidelizacionTabParam | undefined {
+  const cleaned = cleanString(raw)?.toLowerCase();
+  if (!cleaned) return undefined;
+  if (
+    cleaned === 'sellos' ||
+    cleaned === 'stamps' ||
+    cleaned === 'lealtad' ||
+    cleaned === 'loyalty'
+  ) {
+    return 'sellos';
+  }
+  if (cleaned === 'paquetes' || cleaned === 'packages') return 'paquetes';
+  if (
+    cleaned === 'cupones' ||
+    cleaned === 'coupons' ||
+    cleaned === 'tarjetas' ||
+    cleaned === 'promos'
+  ) {
+    return 'cupones';
+  }
+  if (
+    cleaned === 'campanas' ||
+    cleaned === 'campañas' ||
+    cleaned === 'campaigns' ||
+    cleaned === 'retencion' ||
+    cleaned === 'retention'
+  ) {
+    return 'campanas';
+  }
+  return undefined;
+}
+
+export function fidelizacionHref(params?: FidelizacionLinkParams): string {
+  const qs = new URLSearchParams();
+  if (params) {
+    if (params.tab) qs.set('tab', params.tab);
+    const q = cleanString(params.q);
+    if (q) qs.set('q', q);
+  }
+  return buildHref('/admin/fidelizacion', qs);
+}
+
+export function parseFidelizacionParams(
+  input: AdminSearchParamsInput,
+): FidelizacionLinkParams {
+  const reader = toParamReader(input);
+  const out: FidelizacionLinkParams = {};
+  const tab = normalizeFidelizacionTab(reader.get('tab'));
+  if (tab) out.tab = tab;
+  const q = cleanString(reader.get('q'));
+  if (q) out.q = q;
+  return out;
+}
+
+function normalizeAjustesTab(
+  raw: string | null | undefined,
+): AjustesTabParam | undefined {
+  const cleaned = cleanString(raw)?.toLowerCase();
+  if (!cleaned) return undefined;
+  if (
+    cleaned === 'cobro' ||
+    cleaned === 'anticipo' ||
+    cleaned === 'pagos' ||
+    cleaned === 'payments' ||
+    cleaned === 'clabe'
+  ) {
+    return 'cobro';
+  }
+  if (
+    cleaned === 'politicas' ||
+    cleaned === 'políticas' ||
+    cleaned === 'policies' ||
+    cleaned === 'reservas' ||
+    cleaned === 'datos'
+  ) {
+    return 'politicas';
+  }
+  if (
+    cleaned === 'seguridad' ||
+    cleaned === 'security' ||
+    cleaned === 'pin' ||
+    cleaned === 'auditoria' ||
+    cleaned === 'audit'
+  ) {
+    return 'seguridad';
+  }
+  return undefined;
+}
+
+export function ajustesHref(params?: AjustesLinkParams): string {
+  const qs = new URLSearchParams();
+  if (params) {
+    if (params.tab) qs.set('tab', params.tab);
+    const focus = cleanString(params.focus);
+    if (focus) qs.set('focus', focus);
+  }
+  return buildHref('/admin/ajustes', qs);
+}
+
+export function parseAjustesParams(input: AdminSearchParamsInput): AjustesLinkParams {
+  const reader = toParamReader(input);
+  const out: AjustesLinkParams = {};
+  const tab = normalizeAjustesTab(reader.get('tab'));
+  if (tab) out.tab = tab;
+  const focus = cleanString(reader.get('focus'));
+  if (focus) out.focus = focus;
   return out;
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -13,7 +14,7 @@ import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Divider } from '@astryxdesign/core/Divider';
-import { CalendarDays, Check, Clock, Copy, Percent, Save, UserPlus, Users } from 'lucide-react';
+import { CalendarDays, Check, Clock, Copy, Pencil, Percent, Save, UserPlus, Users } from 'lucide-react';
 import {
   ActionRow,
   CopyableField,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui';
 import { FormDialog } from '@/components/ui/FormDialog';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
+import { updateCajaStaffCommission } from '@/components/admin/caja/cajaActions';
 import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
 import { staffAvatar } from '@/components/landing/landingContent';
 import { agendaHref, cajaHref, horariosHref } from '@/lib/admin-links';
@@ -36,11 +38,22 @@ import {
 } from '@/lib/forms/form-submit';
 import type { Service, StaffMember } from '@/lib/types';
 
+const CommissionRateDialog = dynamic(
+  () =>
+    import('@/components/admin/caja/CommissionRateDialog').then(
+      (mod) => mod.CommissionRateDialog,
+    ),
+  { ssr: false },
+);
+
 interface StaffEditorSectionProps {
   staff: StaffMember[];
   services: Service[];
   appUrl: string;
+  currency?: 'MXN' | 'USD';
   defaultCommissionPercent: number;
+  retailCommissionPercent?: number;
+  canManageCommissions?: boolean;
   busyId: string | null;
   focusStaffId?: string | null;
   onClearFocusStaffId?: () => void;
@@ -53,7 +66,10 @@ export function StaffEditorSection({
   staff,
   services,
   appUrl,
+  currency = 'MXN',
   defaultCommissionPercent,
+  retailCommissionPercent = 10,
+  canManageCommissions = true,
   busyId,
   focusStaffId = null,
   onClearFocusStaffId,
@@ -62,6 +78,7 @@ export function StaffEditorSection({
   onNotice,
 }: StaffEditorSectionProps) {
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [commissionStaffId, setCommissionStaffId] = useState<string | null>(null);
   const [highlightedStaffId, setHighlightedStaffId] = useState<string | null>(focusStaffId);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [sName, setSName] = useState('');
@@ -86,6 +103,24 @@ export function StaffEditorSection({
   const editingStaff = editingStaffId
     ? (staff.find((item) => item.id === editingStaffId) ?? null)
     : null;
+  const editingCommissionStaff = commissionStaffId
+    ? (staff.find((item) => item.id === commissionStaffId) ?? null)
+    : null;
+
+  const handleSaveCommissionRate = async (
+    staffMember: StaffMember,
+    nextPercent: number,
+  ): Promise<FormSubmitResult> => {
+    const result = await updateCajaStaffCommission(staffMember, nextPercent);
+    if (!result.ok) {
+      return formSubmitError(result.error ?? 'No se pudo actualizar la comisión.');
+    }
+    await onRefresh();
+    onNotice(
+      result.message ?? `Comisión de ${staffMember.name} actualizada a ${nextPercent}%`,
+    );
+    return FORM_SUBMIT_OK;
+  };
 
   const focusSyncKey =
     focusStaffId && orderedStaff.length > 0
@@ -311,6 +346,16 @@ export function StaffEditorSection({
                           icon={<Percent size={13} aria-hidden="true" />}
                           href={cajaHref({ tab: 'comisiones', staff: st.id })}
                         />
+                        {canManageCommissions ? (
+                          <Button
+                            type="button"
+                            label="Editar %"
+                            variant="ghost"
+                            size="sm"
+                            icon={<Pencil size={13} aria-hidden="true" />}
+                            onClick={() => setCommissionStaffId(st.id)}
+                          />
+                        ) : null}
                         <Button
                           type="button"
                           label={isCopied ? 'Link copiado' : 'Copiar link'}
@@ -546,6 +591,21 @@ export function StaffEditorSection({
           </form>
         )}
       </FormDialog>
+
+      {editingCommissionStaff ? (
+        <CommissionRateDialog
+          key={`${editingCommissionStaff.id}-${editingCommissionStaff.commissionPercent}`}
+          staffMember={editingCommissionStaff}
+          staffRow={null}
+          retailCommissionPercent={retailCommissionPercent}
+          periodLabel="Perfil de equipo"
+          currency={currency}
+          onOpenChange={(open) => {
+            if (!open) setCommissionStaffId(null);
+          }}
+          onSaveCommission={handleSaveCommissionRate}
+        />
+      ) : null}
     </VStack>
   );
 }

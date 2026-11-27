@@ -2,6 +2,9 @@
 
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Button } from '@astryxdesign/core/Button';
+import { Gift } from 'lucide-react';
+import { fidelizacionHref } from '@/lib/admin-links';
 import type { Coupon, Service } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui';
@@ -68,6 +71,15 @@ export function CajaPromosTab({
           value={subTab}
           options={subTabOptions}
           onChange={onSubTabChange}
+        />
+        <Button
+          label="Abrir en Fidelización"
+          variant="ghost"
+          size="sm"
+          icon={<Gift size={14} aria-hidden="true" />}
+          href={fidelizacionHref({
+            tab: subTab === 'packages' ? 'paquetes' : 'cupones',
+          })}
         />
       </HStack>
 

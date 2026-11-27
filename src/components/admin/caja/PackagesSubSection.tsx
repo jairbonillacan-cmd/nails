@@ -13,7 +13,7 @@ import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Check, Package, Pencil, Plus, UserPlus } from 'lucide-react';
-import { clientasHref } from '@/lib/admin-links';
+import { fidelizacionHref } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
@@ -37,6 +37,7 @@ interface PackagesSubSectionProps {
   services: readonly Service[];
   currency: 'MXN' | 'USD';
   canManagePackages: boolean;
+  hideAssignLink?: boolean;
   togglingPkgId: string | null;
   onSavePackage: (input: SaveCajaPackageInput) => Promise<FormSubmitResult>;
   onTogglePackage: (pkg: ServicePackageCatalogRow, nextActive: boolean) => Promise<void>;
@@ -187,6 +188,7 @@ export function PackagesSubSection({
   services,
   currency,
   canManagePackages,
+  hideAssignLink = false,
   togglingPkgId,
   onSavePackage,
   onTogglePackage,
@@ -317,14 +319,14 @@ export function PackagesSubSection({
                               isDisabled={togglingPkgId === pkg.id}
                               onClick={() => handleOpenEdit(pkg)}
                             />
-                            {pkg.isActive ? (
+                            {!hideAssignLink && pkg.isActive ? (
                               <Button
                                 label="Asignar"
                                 variant="ghost"
                                 size="sm"
                                 className="ad-caja-touch-btn"
                                 icon={<UserPlus size={13} aria-hidden="true" />}
-                                href={clientasHref({ tab: 'paquetes' })}
+                                href={fidelizacionHref({ tab: 'paquetes' })}
                               />
                             ) : null}
                             <Switch

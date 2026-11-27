@@ -10,7 +10,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Wallet } from 'lucide-react';
-import { marcaHref } from '@/lib/admin-links';
+import { ajustesHref } from '@/lib/admin-links';
 
 interface OnboardingStepDepositProps {
   depositEnabled: boolean;
@@ -48,7 +48,7 @@ export function OnboardingStepDeposit({
           <Heading level={2} className="lk-serif ad-h2">
             2. Configura tu anticipo
           </Heading>
-          <NextLink href={marcaHref({ tab: 'cobros' })} className="ad-inline-link">
+          <NextLink href={ajustesHref({ tab: 'cobro', focus: 'clabe' })} className="ad-inline-link">
             Ajustes de cobro →
           </NextLink>
         </HStack>
@@ -112,7 +112,7 @@ export function OnboardingStepDeposit({
             </Text>
           </HStack>
           <Text type="supporting" color="secondary">
-            Puedes activarlo después cuando quieras desde Mi página.
+            Puedes activarlo después cuando quieras desde Ajustes del salón.
           </Text>
         </VStack>
       )}

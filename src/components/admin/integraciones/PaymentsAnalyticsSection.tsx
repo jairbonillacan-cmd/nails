@@ -5,10 +5,10 @@ import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Selector } from '@astryxdesign/core/Selector';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { CreditCard, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, CreditCard, SlidersHorizontal } from 'lucide-react';
 import {
   CopyableField,
   SkeletonBlock,
@@ -16,13 +16,13 @@ import {
   SurfaceCard,
   type StatusTagTone,
 } from '@/components/ui';
+import { ajustesHref } from '@/lib/admin-links';
 import type {
   NotificationChannel,
   NotificationWorkflow,
   PaymentMode,
   SalonSettings,
   ScheduledNotification,
-  Service,
 } from '@/lib/types';
 
 const TechnicalSettingsSection = dynamic(
@@ -39,15 +39,13 @@ const TechnicalSettingsSection = dynamic(
 interface PaymentsAnalyticsSectionProps {
   settings: SalonSettings;
   depositLabel: string;
-  isDemoMode: boolean;
+  canAccessSettings: boolean;
   initialOpenMore?: boolean;
   mercadoPagoConfigured: boolean;
   twilioSmsConfigured: boolean;
   timezone: string;
-  whatsappWebhookUrl: string;
   googleCalendarTechUrl: string;
   mercadoPagoTechUrl: string;
-  services: Service[];
   workflows: NotificationWorkflow[];
   notifications: ScheduledNotification[];
   savingSettings: boolean;
@@ -57,8 +55,6 @@ interface PaymentsAnalyticsSectionProps {
     currentChannels: NotificationChannel[],
     enabled: boolean,
   ) => void;
-  onRefresh: () => Promise<void>;
-  onBanner: (msg: { status: 'success' | 'error'; text: string }) => void;
 }
 
 function paymentModeChip(mode: PaymentMode): {
@@ -74,54 +70,22 @@ function paymentModeChip(mode: PaymentMode): {
 export function PaymentsAnalyticsSection({
   settings,
   depositLabel,
-  isDemoMode,
+  canAccessSettings,
   initialOpenMore = false,
   mercadoPagoConfigured,
   twilioSmsConfigured,
   timezone,
-  whatsappWebhookUrl,
   googleCalendarTechUrl,
   mercadoPagoTechUrl,
-  services,
   workflows,
   notifications,
   savingSettings,
   onSaveSettingsPatch,
   onToggleSmsChannel,
-  onRefresh,
-  onBanner,
 }: PaymentsAnalyticsSectionProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(initialOpenMore);
   const [hasOpenedMore, setHasOpenedMore] = useState(initialOpenMore);
   const payBadge = paymentModeChip(settings.paymentMode);
-  const paymentOptions: Array<{ value: PaymentMode; label: string }> = [
-    {
-      value: 'manual_transfer',
-      label: 'Transferencia: te mandan su comprobante (sin comisión)',
-    },
-    ...(mercadoPagoConfigured || settings.paymentMode === 'mercadopago'
-      ? [
-          {
-            value: 'mercadopago' as const,
-            label: mercadoPagoConfigured
-              ? 'Mercado Pago: tarjeta, transferencia u OXXO con confirmación automática'
-              : 'Mercado Pago (faltan credenciales en producción)',
-          },
-        ]
-      : []),
-    ...(settings.paymentMode === 'stripe'
-      ? [
-          {
-            value: 'stripe' as const,
-            label: 'Stripe (no disponible aún — cambia a Transferencia o Mercado Pago)',
-          },
-        ]
-      : []),
-    {
-      value: 'none',
-      label: 'Sin anticipo: apartan sin pagar',
-    },
-  ];
 
   return (
     <VStack gap={5}>
@@ -129,38 +93,27 @@ export function PaymentsAnalyticsSection({
         id="payments-heading"
         icon={<CreditCard size={18} aria-hidden="true" />}
         title="Cobro en línea"
-        subtitle={`Cómo te pagan el anticipo de ${depositLabel}.`}
+        subtitle={`Estado actual del anticipo de ${depositLabel}. El método y los datos bancarios se configuran en Ajustes del salón.`}
         badge={<StatusTag tone={payBadge.tone} label={payBadge.label} showDot />}
+        actions={
+          canAccessSettings ? (
+            <Button
+              label="Configurar en Ajustes"
+              variant="secondary"
+              size="sm"
+              icon={<ArrowRight size={14} aria-hidden="true" />}
+              href={ajustesHref({ tab: 'cobro' })}
+            />
+          ) : undefined
+        }
       >
-        <VStack
-          gap={4}
-          className={savingSettings ? 'ad-card-body fx-busy' : 'ad-card-body'}
-          aria-busy={savingSettings || undefined}
-          paddingBlockStart={4}
-        >
-          <Selector
-            label="Cómo apartan sus citas tus clientas"
-            value={settings.paymentMode}
-            isDisabled={savingSettings}
-            onChange={(v) => {
-              if (
-                v === 'manual_transfer' ||
-                v === 'mercadopago' ||
-                v === 'stripe' ||
-                v === 'none'
-              ) {
-                onSaveSettingsPatch({ paymentMode: v });
-              }
-            }}
-            options={paymentOptions}
-          />
-
+        <VStack gap={4} className="ad-card-body" paddingBlockStart={4}>
           {settings.paymentMode === 'mercadopago' && !mercadoPagoConfigured ? (
             <Banner
               status="warning"
               role="status"
               title="Mercado Pago aún no tiene credenciales configuradas"
-              description="Mientras se agregan los accesos de Mercado Pago, te recomendamos usar Transferencia para que tus clientas reciban tu CLABE y suban su comprobante."
+              description="Mientras se agregan los accesos de Mercado Pago, cambia a Transferencia en Ajustes del salón para que tus clientas reciban tu CLABE y suban su comprobante."
             />
           ) : null}
 
@@ -169,7 +122,7 @@ export function PaymentsAnalyticsSection({
               status="warning"
               role="status"
               title="El cobro con Stripe aún no está activado"
-              description="Cambia a Transferencia o Mercado Pago para cobrar anticipos sin interrupciones."
+              description="Cambia a Transferencia o Mercado Pago desde Ajustes del salón para cobrar anticipos sin interrupciones."
             />
           ) : null}
 
@@ -228,7 +181,7 @@ export function PaymentsAnalyticsSection({
                   Más herramientas
                 </Text>
                 <Text type="supporting" color="secondary">
-                  Anuncios, visitas de Google, reseñas, mensajes SMS, envíos recientes y enlaces de soporte.
+                  Anuncios, visitas de Google, reseñas, mensajes SMS, envíos por correo/SMS y enlaces de soporte.
                 </Text>
               </VStack>
             </HStack>
@@ -239,20 +192,15 @@ export function PaymentsAnalyticsSection({
         {hasOpenedMore ? (
           <TechnicalSettingsSection
             settings={settings}
-            isDemoMode={isDemoMode}
             twilioSmsConfigured={twilioSmsConfigured}
             timezone={timezone}
-            whatsappWebhookUrl={whatsappWebhookUrl}
             googleCalendarTechUrl={googleCalendarTechUrl}
             mercadoPagoTechUrl={mercadoPagoTechUrl}
-            services={services}
             workflows={workflows}
             notifications={notifications}
             savingSettings={savingSettings}
             onSaveSettingsPatch={onSaveSettingsPatch}
             onToggleSmsChannel={onToggleSmsChannel}
-            onRefresh={onRefresh}
-            onBanner={onBanner}
           />
         ) : null}
       </Collapsible>

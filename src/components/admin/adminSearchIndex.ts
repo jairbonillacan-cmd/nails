@@ -262,10 +262,17 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
       visible: roleCanAccess(role, 'team'),
     },
     {
+      label: 'Fidelización',
+      description: 'Tarjeta de sellos, paquetes de sesiones, cupones y campañas',
+      href: '/admin/fidelizacion',
+      keywords: 'fidelizacion sellos paquetes cupones tarjetas regalo campanas cumpleanos retencion',
+      visible: roleCanAccess(role, 'loyalty'),
+    },
+    {
       label: 'Mi página',
-      description: 'Logo, colores, código QR y tarjeta de sellos',
+      description: 'Portada, galería, colores, código QR y botón para otra web',
       href: '/admin/marca',
-      keywords: 'mi pagina marca colores qr logo tarjeta sellos reglas',
+      keywords: 'mi pagina marca colores qr logo galeria portada embed',
       visible: roleCanAccess(role, 'brand'),
     },
     {
@@ -284,10 +291,17 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
     },
     {
       label: 'Conexiones',
-      description: 'Google Calendar, cobros en línea y enlaces técnicos',
+      description: 'Google Calendar, resumen de WhatsApp y enlaces técnicos',
       href: '/admin/integraciones',
-      keywords: 'conexiones google calendar mercado pago spei sms reseñas',
+      keywords: 'conexiones google calendar mercado pago sms resenas pixel ga4',
       visible: roleCanAccess(role, 'integrations'),
+    },
+    {
+      label: 'Ajustes del salón',
+      description: 'Cobro y anticipo, CLABE, políticas de reserva, PIN de dueña y auditoría',
+      href: '/admin/ajustes',
+      keywords: 'ajustes configuracion cobro anticipo clabe politicas cancelacion noshow pin duena seguridad auditoria',
+      visible: roleCanAccess(role, 'settings'),
     },
     {
       label: 'Guía inicial',

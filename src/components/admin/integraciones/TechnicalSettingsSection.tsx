@@ -3,14 +3,12 @@
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Grid } from '@astryxdesign/core/Grid';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
-import { Selector } from '@astryxdesign/core/Selector';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { BarChart3, Bell, Save, Send } from 'lucide-react';
+import { ArrowRight, BarChart3, Bell, Save } from 'lucide-react';
 import {
   ActionRow,
   CopyableField,
@@ -19,12 +17,12 @@ import {
   SurfaceCard,
   type StatusTagTone,
 } from '@/components/ui';
+import { whatsappHref } from '@/lib/admin-links';
 import type {
   NotificationChannel,
   NotificationWorkflow,
   SalonSettings,
   ScheduledNotification,
-  Service,
 } from '@/lib/types';
 import {
   formatDateShortInTimezone,
@@ -35,13 +33,10 @@ import { describeWorkflowMoment } from '@/lib/notifications/template-preview';
 
 interface TechnicalSettingsSectionProps {
   settings: SalonSettings;
-  isDemoMode: boolean;
   twilioSmsConfigured: boolean;
   timezone: string;
-  whatsappWebhookUrl: string;
   googleCalendarTechUrl: string;
   mercadoPagoTechUrl: string;
-  services: Service[];
   workflows: NotificationWorkflow[];
   notifications: ScheduledNotification[];
   savingSettings: boolean;
@@ -51,12 +46,9 @@ interface TechnicalSettingsSectionProps {
     currentChannels: NotificationChannel[],
     enabled: boolean,
   ) => void;
-  onRefresh: () => Promise<void>;
-  onBanner: (msg: { status: 'success' | 'error'; text: string }) => void;
 }
 
 function friendlyChannelName(channel: NotificationChannel): string {
-  if (channel === 'whatsapp') return 'WhatsApp';
   if (channel === 'sms') return 'Mensaje SMS';
   return 'Correo';
 }
@@ -73,28 +65,19 @@ function friendlyNotificationStatus(status: ScheduledNotification['status']): {
 
 export function TechnicalSettingsSection({
   settings,
-  isDemoMode,
   twilioSmsConfigured,
   timezone,
-  whatsappWebhookUrl,
   googleCalendarTechUrl,
   mercadoPagoTechUrl,
-  services,
   workflows,
   notifications,
   savingSettings,
   onSaveSettingsPatch,
   onToggleSmsChannel,
-  onRefresh,
-  onBanner,
 }: TechnicalSettingsSectionProps) {
   const [metaPixel, setMetaPixel] = useState<string | null>(null);
   const [ga4Id, setGa4Id] = useState<string | null>(null);
   const [googleReviewUrl, setGoogleReviewUrl] = useState<string | null>(null);
-  const [simName, setSimName] = useState('Daniela (Prueba)');
-  const [simPhone, setSimPhone] = useState('+522229112233');
-  const [simServiceId, setSimServiceId] = useState('');
-  const [simLoading, setSimLoading] = useState(false);
 
   const activeMetaPixel = metaPixel ?? settings.metaPixelId ?? '';
   const activeGa4 = ga4Id ?? settings.ga4MeasurementId ?? '';
@@ -104,120 +87,56 @@ export function TechnicalSettingsSection({
     activeGa4.trim() !== (settings.ga4MeasurementId ?? '').trim() ||
     activeReviewUrl.trim() !== (settings.googleReviewUrl ?? '').trim();
 
-  const simulateWhatsAppBooking = async () => {
-    setSimLoading(true);
-    try {
-      const res = await fetch('/api/admin/integrations/whatsapp-simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientName: simName,
-          phone: simPhone,
-          serviceId: simServiceId || services[0]?.id,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        booking?: { bookingCode: string };
-        replyText?: string;
-        error?: string;
-      } | null;
-      onBanner({
-        status: res.ok && json?.ok ? 'success' : 'error',
-        text:
-          res.ok && json?.ok && json.booking
-            ? `Cita de prueba creada (${json.booking.bookingCode}). Ya aparece en tu agenda.`
-            : json?.replyText || json?.error || 'No hubo horarios libres para esta prueba.',
-      });
-      await onRefresh();
-    } catch {
-      onBanner({ status: 'error', text: 'Error de conexión al probar WhatsApp.' });
-    } finally {
-      setSimLoading(false);
-    }
-  };
+  const nonWhatsAppNotifications = notifications.filter((item) => item.channel !== 'whatsapp');
 
   return (
     <VStack gap={4} paddingBlockStart={4}>
-      <VStack className={isDemoMode ? 'ad-config-grid-equal' : undefined} gap={4}>
-        <SurfaceCard
-          id="analytics-heading"
-          icon={<BarChart3 size={16} aria-hidden="true" />}
-          title="Anuncios y reseñas de Google"
-          subtitle="Si no sabes qué es alguno de estos datos, déjalo vacío: todo funciona igual."
-        >
-          <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-            <TextInput
-              label="Anuncios de Instagram y Facebook"
-              placeholder="Ejemplo: 123456789012345"
-              value={activeMetaPixel}
-              onChange={setMetaPixel}
-              isOptional
-            />
-            <TextInput
-              label="Estadísticas de visitas (Google)"
-              placeholder="Ejemplo: G-XXXXXXXXXX"
-              value={activeGa4}
-              onChange={setGa4Id}
-              isOptional
-            />
-            <TextInput
-              label="Enlace para reseñas en Google"
-              placeholder="https://g.page/r/tu-salon/review"
-              value={activeReviewUrl}
-              onChange={setGoogleReviewUrl}
-              isOptional
-            />
-            <Button
-              type="button"
-              label="Guardar ajustes"
-              variant="primary"
-              icon={<Save size={15} aria-hidden="true" />}
-              width="100%"
-              isLoading={savingSettings}
-              isDisabled={!isAnalyticsDirty || savingSettings}
-              onClick={() =>
-                onSaveSettingsPatch({
-                  metaPixelId: activeMetaPixel.trim() || null,
-                  ga4MeasurementId: activeGa4.trim() || null,
-                  googleReviewUrl: activeReviewUrl.trim() || null,
-                })
-              }
-            />
-          </VStack>
-        </SurfaceCard>
-
-        {isDemoMode ? (
-          <SurfaceCard
-            id="whatsapp-test-heading"
-            icon={<Send size={16} aria-hidden="true" />}
-            title="Simulador de prueba de WhatsApp"
-            subtitle="Solo en modo prueba: crea una cita simulada para ver cómo llega a tu agenda."
-          >
-            <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-              <TextInput label="Nombre de prueba" value={simName} onChange={setSimName} />
-              <Grid columns={{ minWidth: 150, max: 2 }} gap={2}>
-                <TextInput label="WhatsApp" value={simPhone} onChange={setSimPhone} />
-                <Selector
-                  label="Servicio"
-                  value={simServiceId || services[0]?.id || ''}
-                  onChange={(v) => v && setSimServiceId(v)}
-                  options={services.map((s) => ({ value: s.id, label: s.name }))}
-                />
-              </Grid>
-              <Button
-                type="button"
-                label="Probar cita de WhatsApp"
-                variant="primary"
-                size="sm"
-                icon={<Send size={14} aria-hidden="true" />}
-                isLoading={simLoading}
-                onClick={() => void simulateWhatsAppBooking()}
-              />
-            </VStack>
-          </SurfaceCard>
-        ) : null}
-      </VStack>
+      <SurfaceCard
+        id="analytics-heading"
+        icon={<BarChart3 size={16} aria-hidden="true" />}
+        title="Anuncios y reseñas de Google"
+        subtitle="Si no sabes qué es alguno de estos datos, déjalo vacío: todo funciona igual."
+      >
+        <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
+          <TextInput
+            label="Anuncios de Instagram y Facebook"
+            placeholder="Ejemplo: 123456789012345"
+            value={activeMetaPixel}
+            onChange={setMetaPixel}
+            isOptional
+          />
+          <TextInput
+            label="Estadísticas de visitas (Google)"
+            placeholder="Ejemplo: G-XXXXXXXXXX"
+            value={activeGa4}
+            onChange={setGa4Id}
+            isOptional
+          />
+          <TextInput
+            label="Enlace para reseñas en Google"
+            placeholder="https://g.page/r/tu-salon/review"
+            value={activeReviewUrl}
+            onChange={setGoogleReviewUrl}
+            isOptional
+          />
+          <Button
+            type="button"
+            label="Guardar ajustes"
+            variant="primary"
+            icon={<Save size={15} aria-hidden="true" />}
+            width="100%"
+            isLoading={savingSettings}
+            isDisabled={!isAnalyticsDirty || savingSettings}
+            onClick={() =>
+              onSaveSettingsPatch({
+                metaPixelId: activeMetaPixel.trim() || null,
+                ga4MeasurementId: activeGa4.trim() || null,
+                googleReviewUrl: activeReviewUrl.trim() || null,
+              })
+            }
+          />
+        </VStack>
+      </SurfaceCard>
 
       <SurfaceCard
         id="sms-twilio-heading"
@@ -266,22 +185,31 @@ export function TechnicalSettingsSection({
         <SurfaceCard
           id="recent-messages-heading"
           icon={<Bell size={16} aria-hidden="true" />}
-          title="Últimos avisos enviados"
-          count={notifications.length}
+          title="Últimos avisos por correo y SMS"
+          count={nonWhatsAppNotifications.length}
+          actions={
+            <Button
+              label="Ver avisos de WhatsApp"
+              variant="ghost"
+              size="sm"
+              icon={<ArrowRight size={14} aria-hidden="true" />}
+              href={whatsappHref({ tab: 'recordatorios' })}
+            />
+          }
         >
-          {notifications.length === 0 ? (
+          {nonWhatsAppNotifications.length === 0 ? (
             <VStack className="ad-empty" gap={2}>
               <EmptyStateCard
                 framed={false}
                 isCompact
                 icon={<Bell size={20} aria-hidden="true" />}
-                title="Sin envíos todavía"
-                description="Aquí verás las confirmaciones y recordatorios que se envíen a tus clientas."
+                title="Sin envíos por correo o SMS todavía"
+                description="Los avisos de WhatsApp se consultan directamente en el panel de WhatsApp."
               />
             </VStack>
           ) : (
             <VStack as="ul" className="ad-row-list" gap={0}>
-              {notifications.slice(0, 6).map((n) => {
+              {nonWhatsAppNotifications.slice(0, 6).map((n) => {
                 const statusMeta = friendlyNotificationStatus(n.status);
                 const recipientLabel =
                   n.channel === 'email' ? n.recipient : formatPhoneDisplay(n.recipient);
@@ -305,15 +233,18 @@ export function TechnicalSettingsSection({
         <SurfaceCard
           id="technical-links-heading"
           title="Enlaces para soporte"
-          subtitle="Solo compártelos si alguien te ayuda a conectar WhatsApp, Google Calendar o Mercado Pago."
+          subtitle="Webhooks para Google Calendar y Mercado Pago. El webhook y simulador de WhatsApp viven en WhatsApp."
+          actions={
+            <Button
+              label="Conexión de WhatsApp"
+              variant="ghost"
+              size="sm"
+              icon={<ArrowRight size={14} aria-hidden="true" />}
+              href={whatsappHref({ tab: 'conexion' })}
+            />
+          }
         >
           <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-            <CopyableField
-              label="Enlace de conexión para WhatsApp Business"
-              value={whatsappWebhookUrl}
-              feedbackMessage="Enlace de WhatsApp copiado."
-              monospace
-            />
             <CopyableField
               label="Enlace de conexión para Google Calendar"
               value={googleCalendarTechUrl}

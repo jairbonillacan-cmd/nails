@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -9,12 +10,13 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import {
   Check,
+  Gift,
   Images,
   LayoutTemplate,
   Palette,
   RotateCcw,
   Save,
-  Store,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
@@ -24,24 +26,29 @@ import {
   PageSkeleton,
   SkeletonBlock,
   StatusTag,
+  SurfaceCard,
 } from '@/components/ui';
 import { BrandIdentitySection } from '@/components/admin/marca/BrandIdentitySection';
-import { BookingPageSettingsSection } from '@/components/admin/marca/BookingPageSettingsSection';
-import { DepositSettingsSection } from '@/components/admin/marca/DepositSettingsSection';
-import { LoyaltySettingsSection } from '@/components/admin/marca/LoyaltySettingsSection';
 import { BrandGallerySection } from '@/components/admin/marca/BrandGallerySection';
 import { LandingContentEditorSection } from '@/components/admin/marca/LandingContentEditorSection';
 import {
-  areLoyaltyProgramsEqual,
   areSettingsEqual,
   buildBrandPatchPayload,
   DEFAULT_LOYALTY_PROGRAM,
 } from '@/components/admin/marca/brandFormUtils';
 import { LANDING_ASSETS } from '@/components/landing/landingContent';
 import { useSalonAppearance } from '@/components/SalonThemeProvider';
-import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import {
+  ajustesHref,
+  fidelizacionHref,
+  parseMarcaParams,
+  type MarcaLinkParams,
+} from '@/lib/admin-links';
 import { checkThemeAccentContrast } from '@/lib/contrast';
-import type { LoyaltyProgram, SalonSettings } from '@/lib/types';
+import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { roleCanAccess } from '@/lib/rbac';
+import type { SalonSettings } from '@/lib/types';
 
 const LandingGalleryFaqSection = dynamic(
   () =>
@@ -65,14 +72,14 @@ const BookingAppearanceSection = dynamic(
   },
 );
 
-const AdvancedPoliciesSection = dynamic(
+const EmbedGeneratorCard = dynamic(
   () =>
-    import('@/components/admin/marca/AdvancedPoliciesSection').then(
-      (mod) => mod.AdvancedPoliciesSection,
+    import('@/components/admin/config/EmbedGeneratorCard').then(
+      (mod) => mod.EmbedGeneratorCard,
     ),
   {
     ssr: false,
-    loading: () => <SkeletonBlock width="100%" height="5rem" radius={3} />,
+    loading: () => <SkeletonBlock width="100%" height="12rem" radius={3} />,
   },
 );
 
@@ -85,24 +92,99 @@ const QrShareCard = dynamic(
 );
 
 type ActiveServiceMode = NonNullable<SalonSettings['serviceMode']>;
-type BrandEditorTab = 'portada' | 'galeria' | 'estilo' | 'negocio';
+type BrandEditorTab = 'portada' | 'galeria' | 'estilo';
+
+function resolveLegacyMarcaRedirect(params: MarcaLinkParams): string | null {
+  const tab = params.tab?.toLowerCase();
+  const focus = params.focus?.toLowerCase();
+  if (
+    tab === 'cobro' ||
+    tab === 'cobros' ||
+    tab === 'clabe' ||
+    tab === 'pagos' ||
+    tab === 'anticipo' ||
+    focus === 'clabe' ||
+    focus === 'cobro'
+  ) {
+    return ajustesHref({ tab: 'cobro', focus: params.focus });
+  }
+  if (
+    tab === 'politicas' ||
+    tab === 'políticas' ||
+    tab === 'datos' ||
+    tab === 'reservas' ||
+    tab === 'negocio' ||
+    focus === 'noshow' ||
+    focus === 'politicas'
+  ) {
+    return ajustesHref({ tab: 'politicas', focus: params.focus });
+  }
+  if (
+    tab === 'seguridad' ||
+    tab === 'pin' ||
+    tab === 'auditoria' ||
+    focus === 'pin'
+  ) {
+    return ajustesHref({ tab: 'seguridad', focus: params.focus });
+  }
+  if (
+    tab === 'sellos' ||
+    tab === 'fidelizacion' ||
+    tab === 'lealtad' ||
+    focus === 'sellos'
+  ) {
+    return fidelizacionHref({ tab: 'sellos' });
+  }
+  return null;
+}
+
+function resolvePublicBrandTab(tab: string | undefined): BrandEditorTab {
+  const cleaned = tab?.toLowerCase();
+  if (cleaned === 'galeria') return 'galeria';
+  if (cleaned === 'estilo') return 'estilo';
+  return 'portada';
+}
 
 export default function AdminBrandPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const parsedParams = parseMarcaParams(searchParams);
+  const legacyRedirectHref = resolveLegacyMarcaRedirect(parsedParams);
   const { data, loading, refresh } = useAdminData();
   const { mode, setSettingsOverride } = useSalonAppearance();
-  const [activeTab, setActiveTab] = useState<BrandEditorTab>('portada');
+
+  const urlTab = parsedParams.tab ?? '';
+  const [prevUrlTab, setPrevUrlTab] = useState(urlTab);
+  const [activeTab, setActiveTab] = useState<BrandEditorTab>(() =>
+    resolvePublicBrandTab(parsedParams.tab),
+  );
+  if (prevUrlTab !== urlTab) {
+    setPrevUrlTab(urlTab);
+    if (!legacyRedirectHref && parsedParams.tab) {
+      setActiveTab(resolvePublicBrandTab(parsedParams.tab));
+    }
+  }
+
+  useExternalSync(`marca-redirect|${legacyRedirectHref ?? ''}`, async (signal) => {
+    if (signal.aborted || !legacyRedirectHref) return;
+    router.replace(legacyRedirectHref);
+  });
+
   const [draftOverride, setDraftOverride] = useState<SalonSettings | null>(null);
-  const [loyaltyOverride, setLoyaltyOverride] = useState<LoyaltyProgram | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const saveNotice = useEphemeralMessage(3500);
 
-  if (loading || !data) {
+  if (legacyRedirectHref || loading || !data) {
     return (
       <PageSkeleton
         kpiCount={0}
         withSplit
-        ariaLabel="Cargando configuración de página y marca"
+        ariaLabel={
+          legacyRedirectHref
+            ? 'Abriendo la sección correspondiente'
+            : 'Cargando configuración de página y marca'
+        }
       />
     );
   }
@@ -110,21 +192,15 @@ export default function AdminBrandPage() {
   const baseSettings = data.settings;
   const baseLoyalty = data.loyaltyProgram ?? DEFAULT_LOYALTY_PROGRAM;
   const draft = draftOverride ?? baseSettings;
-  const loyaltyDraft = loyaltyOverride ?? baseLoyalty;
-  const tz = draft.timezone || 'America/Mexico_City';
-
   const depositAmountCents = draft.depositAmountCents ?? 20000;
   const depositBeneficiary = draft.depositBeneficiary ?? draft.depositAccountHolder;
   const activeServiceMode: ActiveServiceMode = draft.serviceMode ?? 'studio';
   const soundAlertsEnabled = draft.soundAlertsEnabled ?? true;
-  const noShowDepositThreshold = draft.noShowDepositThreshold ?? 2;
   const hasOwnerPin = Boolean(baseSettings.hasOwnerPin);
-  const flaggedNoShowClientsCount = data.clients.filter(
-    (c) => c.noShowCount >= noShowDepositThreshold,
-  ).length;
   const activeServices = data.services.filter((s) => s.isActive);
   const isDepositEnabled = draft.paymentMode !== 'none';
-  const isOwner = data.session.user.role === 'owner';
+  const canAccessSettings = roleCanAccess(data.session.user.role, 'settings');
+  const canAccessLoyalty = roleCanAccess(data.session.user.role, 'loyalty');
   const brandLogo = mode === 'dark' ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
 
   const colorReadability = checkThemeAccentContrast({
@@ -132,9 +208,7 @@ export default function AdminBrandPage() {
     accentDark: draft.brandAccentDark,
   });
 
-  const isBrandDirty =
-    !areSettingsEqual(draft, baseSettings) ||
-    !areLoyaltyProgramsEqual(loyaltyDraft, baseLoyalty);
+  const isBrandDirty = !areSettingsEqual(draft, baseSettings);
 
   const updateDraft = (patch: Partial<SalonSettings>) => {
     const next = { ...draft, ...patch };
@@ -142,13 +216,8 @@ export default function AdminBrandPage() {
     setSettingsOverride(next);
   };
 
-  const updateLoyaltyDraft = (patch: Partial<LoyaltyProgram>) => {
-    setLoyaltyOverride({ ...loyaltyDraft, ...patch });
-  };
-
   const discardChanges = () => {
     setDraftOverride(null);
-    setLoyaltyOverride(null);
     setSettingsOverride(baseSettings);
     setErrorMsg(null);
   };
@@ -161,8 +230,14 @@ export default function AdminBrandPage() {
       const res = await fetch('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(
-          buildBrandPatchPayload({ draft, loyaltyDraft, activeServices, hasOwnerPin }),
+          buildBrandPatchPayload({
+            draft,
+            loyaltyDraft: baseLoyalty,
+            activeServices,
+            hasOwnerPin,
+          }),
         ),
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -172,7 +247,6 @@ export default function AdminBrandPage() {
       }
       await refresh();
       setDraftOverride(null);
-      setLoyaltyOverride(null);
       saveNotice.show('Cambios guardados');
     } catch {
       setErrorMsg('Error de conexión al guardar tus cambios.');
@@ -183,26 +257,211 @@ export default function AdminBrandPage() {
 
   return (
     <AdminAccessGuard role={data.session.user.role} section="brand" sectionLabel="Mi página">
-    <VStack className="ad-page">
-      <PageHeader
-        title="Mi página"
-        subtitle="Lo que ven tus clientas al entrar a tu página."
-        meta={
-          saving ? (
-            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando…
-            </Text>
-          ) : saveNotice.message ? (
-            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-              <Check size={12} aria-hidden="true" />
-              {saveNotice.message}
-            </Text>
-          ) : undefined
-        }
-        actions={
-          isBrandDirty ? (
+      <VStack className="ad-page">
+        <PageHeader
+          title="Mi página"
+          subtitle="Tu escaparate público: portada, identidad, galería, colores y QR."
+          meta={
+            saving ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Guardando…
+              </Text>
+            ) : saveNotice.message ? (
+              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                <Check size={12} aria-hidden="true" />
+                {saveNotice.message}
+              </Text>
+            ) : undefined
+          }
+          actions={
+            isBrandDirty ? (
+              <HStack gap={2} align="center" wrap="wrap">
+                <StatusTag label="Cambios sin guardar" tone="warning" className="fx-pop" />
+                <Button
+                  type="button"
+                  label="Descartar"
+                  variant="ghost"
+                  size="sm"
+                  icon={<RotateCcw size={14} aria-hidden="true" />}
+                  isDisabled={saving}
+                  onClick={discardChanges}
+                />
+                <Button
+                  type="button"
+                  label={saving ? 'Guardando…' : 'Guardar cambios'}
+                  variant="primary"
+                  icon={<Save size={15} aria-hidden="true" />}
+                  isLoading={saving}
+                  isDisabled={saving}
+                  onClick={() => void submitSave()}
+                />
+              </HStack>
+            ) : (
+              <StatusTag label="Todo guardado" tone="success" />
+            )
+          }
+        />
+
+        <FilterPillBar<BrandEditorTab>
+          ariaLabel="Secciones del editor de Mi página"
+          className="ad-scroll-row"
+          value={activeTab}
+          onChange={setActiveTab}
+          options={[
+            {
+              value: 'portada',
+              label: 'Portada e identidad',
+              icon: <LayoutTemplate size={14} aria-hidden="true" />,
+            },
+            {
+              value: 'galeria',
+              label: 'Galería y preguntas',
+              count: data.gallery.length,
+              icon: <Images size={14} aria-hidden="true" />,
+            },
+            {
+              value: 'estilo',
+              label: 'Colores, estilo y web',
+              icon: <Palette size={14} aria-hidden="true" />,
+            },
+          ]}
+        />
+
+        {errorMsg ? (
+          <Banner
+            status="error"
+            role="alert"
+            title={errorMsg}
+            isDismissable
+            onDismiss={() => setErrorMsg(null)}
+          />
+        ) : null}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitSave();
+          }}
+        >
+          <VStack
+            gap={5}
+            className={saving ? 'fx-busy' : undefined}
+            aria-busy={saving || undefined}
+          >
+            <VStack className="ad-config-grid" gap={5}>
+              <VStack gap={4}>
+                {activeTab === 'portada' ? (
+                  <>
+                    <LandingContentEditorSection
+                      draft={draft}
+                      defaultLogo={brandLogo}
+                      onUpdateDraft={updateDraft}
+                    />
+                    <BrandIdentitySection
+                      draft={draft}
+                      brandLogo={draft.logoUrl || brandLogo}
+                      activeServiceMode={activeServiceMode}
+                      onUpdateDraft={updateDraft}
+                    />
+                  </>
+                ) : null}
+
+                {activeTab === 'galeria' ? (
+                  <LandingGalleryFaqSection
+                    draft={draft}
+                    gallery={data.gallery}
+                    activeServices={activeServices}
+                    onUpdateDraft={updateDraft}
+                    onRefresh={refresh}
+                    onNotify={saveNotice.show}
+                  />
+                ) : null}
+
+                {activeTab === 'estilo' ? (
+                  <>
+                    <BookingAppearanceSection
+                      draft={draft}
+                      soundAlertsEnabled={soundAlertsEnabled}
+                      colorReadability={colorReadability}
+                      onUpdateDraft={updateDraft}
+                    />
+                    <EmbedGeneratorCard
+                      appUrl={data.integration.appUrl}
+                      salonName={draft.name}
+                      accentColor={draft.brandAccentLight}
+                      services={data.services}
+                      staff={data.staff}
+                    />
+                  </>
+                ) : null}
+
+                {canAccessSettings || canAccessLoyalty ? (
+                  <SurfaceCard padded>
+                    <HStack justify="between" align="center" wrap="wrap" gap={3}>
+                      <VStack gap={0.5} className="rb-grow">
+                        <Text weight="semibold" size="sm">
+                          ¿Buscas cobros, políticas o tarjeta de sellos?
+                        </Text>
+                        <Text type="supporting" color="secondary">
+                          Ahora tienen su propio espacio para mantener tu página pública más ordenada.
+                        </Text>
+                      </VStack>
+                      <HStack gap={2} wrap="wrap">
+                        {canAccessSettings ? (
+                          <Button
+                            label="Ajustes del salón"
+                            variant="secondary"
+                            size="sm"
+                            icon={<SlidersHorizontal size={14} aria-hidden="true" />}
+                            href={ajustesHref()}
+                          />
+                        ) : null}
+                        {canAccessLoyalty ? (
+                          <Button
+                            label="Fidelización"
+                            variant="ghost"
+                            size="sm"
+                            icon={<Gift size={14} aria-hidden="true" />}
+                            href={fidelizacionHref({ tab: 'sellos' })}
+                          />
+                        ) : null}
+                      </HStack>
+                    </HStack>
+                  </SurfaceCard>
+                ) : null}
+              </VStack>
+
+              <VStack gap={4} className="ad-live-sticky">
+                <BrandGallerySection
+                  draft={draft}
+                  activeServiceMode={activeServiceMode}
+                  isDepositEnabled={isDepositEnabled}
+                  depositAmountCents={depositAmountCents}
+                  depositBeneficiary={depositBeneficiary}
+                />
+                <QrShareCard appUrl={data.integration.appUrl} salonName={draft.name} />
+              </VStack>
+            </VStack>
+          </VStack>
+        </form>
+
+        {isBrandDirty ? (
+          <HStack
+            className="ad-sticky-bar fx-sheet-in"
+            justify="between"
+            align="center"
+            gap={3}
+            wrap="wrap"
+            role="region"
+            aria-label="Cambios sin guardar"
+          >
             <HStack gap={2} align="center" wrap="wrap">
-              <StatusTag label="Cambios sin guardar" tone="warning" className="fx-pop" />
+              <StatusTag label="Sin guardar" tone="warning" />
+              <Text size="sm" weight="medium">
+                Tienes cambios pendientes en Mi página.
+              </Text>
+            </HStack>
+            <HStack gap={2} align="center" wrap="wrap">
               <Button
                 type="button"
                 label="Descartar"
@@ -216,197 +475,16 @@ export default function AdminBrandPage() {
                 type="button"
                 label={saving ? 'Guardando…' : 'Guardar cambios'}
                 variant="primary"
-                icon={<Save size={15} aria-hidden="true" />}
+                size="sm"
+                icon={<Save size={14} aria-hidden="true" />}
                 isLoading={saving}
                 isDisabled={saving}
                 onClick={() => void submitSave()}
               />
             </HStack>
-          ) : (
-            <StatusTag label="Todo guardado" tone="success" />
-          )
-        }
-      />
-
-      <FilterPillBar<BrandEditorTab>
-        ariaLabel="Secciones del editor de Mi página"
-        className="ad-scroll-row"
-        value={activeTab}
-        onChange={setActiveTab}
-        options={[
-          {
-            value: 'portada',
-            label: 'Portada y secciones',
-            icon: <LayoutTemplate size={14} aria-hidden="true" />,
-          },
-          {
-            value: 'galeria',
-            label: 'Galería y preguntas',
-            count: data.gallery.length,
-            icon: <Images size={14} aria-hidden="true" />,
-          },
-          {
-            value: 'estilo',
-            label: 'Colores y estilo',
-            icon: <Palette size={14} aria-hidden="true" />,
-          },
-          {
-            value: 'negocio',
-            label: 'Datos, cobro y sellos',
-            icon: <Store size={14} aria-hidden="true" />,
-          },
-        ]}
-      />
-
-      {errorMsg ? (
-        <Banner
-          status="error"
-          role="alert"
-          title={errorMsg}
-          isDismissable
-          onDismiss={() => setErrorMsg(null)}
-        />
-      ) : null}
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submitSave();
-        }}
-      >
-        <VStack
-          gap={5}
-          className={saving ? 'fx-busy' : undefined}
-          aria-busy={saving || undefined}
-        >
-          <VStack className="ad-config-grid" gap={5}>
-            <VStack gap={4}>
-              {activeTab === 'portada' ? (
-                <LandingContentEditorSection
-                  draft={draft}
-                  defaultLogo={brandLogo}
-                  onUpdateDraft={updateDraft}
-                />
-              ) : null}
-
-              {activeTab === 'galeria' ? (
-                <LandingGalleryFaqSection
-                  draft={draft}
-                  gallery={data.gallery}
-                  activeServices={activeServices}
-                  onUpdateDraft={updateDraft}
-                  onRefresh={refresh}
-                  onNotify={saveNotice.show}
-                />
-              ) : null}
-
-              {activeTab === 'estilo' ? (
-                <BookingAppearanceSection
-                  draft={draft}
-                  soundAlertsEnabled={soundAlertsEnabled}
-                  colorReadability={colorReadability}
-                  onUpdateDraft={updateDraft}
-                />
-              ) : null}
-
-              {activeTab === 'negocio' ? (
-                <>
-                  <BrandIdentitySection
-                    draft={draft}
-                    brandLogo={draft.logoUrl || brandLogo}
-                    activeServiceMode={activeServiceMode}
-                    onUpdateDraft={updateDraft}
-                  />
-                  <DepositSettingsSection
-                    draft={draft}
-                    isDepositEnabled={isDepositEnabled}
-                    depositAmountCents={depositAmountCents}
-                    depositBeneficiary={depositBeneficiary}
-                    onUpdateDraft={updateDraft}
-                  />
-                  <BookingPageSettingsSection
-                    draft={draft}
-                    onUpdateDraft={updateDraft}
-                  />
-                  <LoyaltySettingsSection
-                    loyaltyDraft={loyaltyDraft}
-                    activeServices={activeServices}
-                    currency={draft.currency}
-                    onUpdateLoyaltyDraft={updateLoyaltyDraft}
-                  />
-                  <AdvancedPoliciesSection
-                    draft={draft}
-                    isOwner={isOwner}
-                    timezone={tz}
-                    appUrl={data.integration.appUrl}
-                    services={data.services}
-                    staff={data.staff}
-                    recentAuditLogs={data.recentAuditLogs}
-                    flaggedNoShowClientsCount={flaggedNoShowClientsCount}
-                    hasOwnerPin={hasOwnerPin}
-                    onUpdateDraft={updateDraft}
-                    onSyncOwnerPinEnabled={(enabled) => updateDraft({ ownerPinEnabled: enabled })}
-                    onRefresh={refresh}
-                    onNotify={saveNotice.show}
-                  />
-                </>
-              ) : null}
-            </VStack>
-
-            <VStack gap={4} className="ad-live-sticky">
-              <BrandGallerySection
-                draft={draft}
-                activeServiceMode={activeServiceMode}
-                isDepositEnabled={isDepositEnabled}
-                depositAmountCents={depositAmountCents}
-                depositBeneficiary={depositBeneficiary}
-              />
-              <QrShareCard appUrl={data.integration.appUrl} salonName={draft.name} />
-            </VStack>
-          </VStack>
-        </VStack>
-      </form>
-
-      {isBrandDirty ? (
-        <HStack
-          className="ad-sticky-bar fx-sheet-in"
-          justify="between"
-          align="center"
-          gap={3}
-          wrap="wrap"
-          role="region"
-          aria-label="Cambios sin guardar"
-        >
-          <HStack gap={2} align="center" wrap="wrap">
-            <StatusTag label="Sin guardar" tone="warning" />
-            <Text size="sm" weight="medium">
-              Tienes cambios pendientes en Mi página.
-            </Text>
           </HStack>
-          <HStack gap={2} align="center" wrap="wrap">
-            <Button
-              type="button"
-              label="Descartar"
-              variant="ghost"
-              size="sm"
-              icon={<RotateCcw size={14} aria-hidden="true" />}
-              isDisabled={saving}
-              onClick={discardChanges}
-            />
-            <Button
-              type="button"
-              label={saving ? 'Guardando…' : 'Guardar cambios'}
-              variant="primary"
-              size="sm"
-              icon={<Save size={14} aria-hidden="true" />}
-              isLoading={saving}
-              isDisabled={saving}
-              onClick={() => void submitSave()}
-            />
-          </HStack>
-        </HStack>
-      ) : null}
-    </VStack>
+        ) : null}
+      </VStack>
     </AdminAccessGuard>
   );
 }

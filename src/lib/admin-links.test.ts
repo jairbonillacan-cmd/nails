@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   agendaHref,
+  ajustesHref,
   cajaHref,
   clientasHref,
   equipoHref,
+  fidelizacionHref,
   horariosHref,
   integracionesHref,
   inventarioHref,
   marcaHref,
   onboardingHref,
   parseAgendaParams,
+  parseAjustesParams,
   parseCajaParams,
   parseClientasParams,
   parseEquipoParams,
+  parseFidelizacionParams,
   parseHorariosParams,
   parseIntegracionesParams,
   parseInventarioParams,
@@ -28,9 +32,11 @@ import {
   whatsappHref,
   withAdminBaseUrl,
   type AgendaLinkParams,
+  type AjustesLinkParams,
   type CajaLinkParams,
   type ClientasLinkParams,
   type EquipoLinkParams,
+  type FidelizacionLinkParams,
   type HorariosLinkParams,
   type IntegracionesLinkParams,
   type InventarioLinkParams,
@@ -190,6 +196,37 @@ describe('Typed Admin Deep Links (src/lib/admin-links.ts)', () => {
 
     const resumenInput: ResumenLinkParams = { period: '7d' };
     expect(parseResumenParams(resumenHref(resumenInput))).toEqual(resumenInput);
+
+    const fidelizacionInput: FidelizacionLinkParams = {
+      tab: 'campanas',
+      q: 'Sofía',
+    };
+    expect(parseFidelizacionParams(fidelizacionHref(fidelizacionInput))).toEqual(
+      fidelizacionInput,
+    );
+    expect(fidelizacionHref()).toBe('/admin/fidelizacion');
+    expect(parseFidelizacionParams('/admin/fidelizacion?tab=stamps')).toEqual({
+      tab: 'sellos',
+    });
+    expect(parseFidelizacionParams('/admin/fidelizacion?tab=packages')).toEqual({
+      tab: 'paquetes',
+    });
+    expect(parseFidelizacionParams('/admin/fidelizacion?tab=promos')).toEqual({
+      tab: 'cupones',
+    });
+    expect(parseFidelizacionParams('/admin/fidelizacion?tab=retencion')).toEqual({
+      tab: 'campanas',
+    });
+
+    const ajustesInput: AjustesLinkParams = {
+      tab: 'politicas',
+      focus: 'noshow',
+    };
+    expect(parseAjustesParams(ajustesHref(ajustesInput))).toEqual(ajustesInput);
+    expect(ajustesHref()).toBe('/admin/ajustes');
+    expect(parseAjustesParams('/admin/ajustes?tab=clabe')).toEqual({ tab: 'cobro' });
+    expect(parseAjustesParams('/admin/ajustes?tab=datos')).toEqual({ tab: 'politicas' });
+    expect(parseAjustesParams('/admin/ajustes?tab=pin')).toEqual({ tab: 'seguridad' });
   });
 
   it('drops invalid enum/date values safely and composes absolute base URLs cleanly', () => {
@@ -198,6 +235,8 @@ describe('Typed Admin Deep Links (src/lib/admin-links.ts)', () => {
     ).toEqual({});
     expect(parseCajaParams('/admin/caja?tab=unknown&period=365d&method=crypto')).toEqual({});
     expect(parseReportesParams('/admin/reportes?period=365d')).toEqual({});
+    expect(parseFidelizacionParams('/admin/fidelizacion?tab=unknown')).toEqual({});
+    expect(parseAjustesParams('/admin/ajustes?tab=unknown')).toEqual({});
     expect(withAdminBaseUrl('https://laikona.mx/', cajaHref({ tab: 'anticipos' }))).toBe(
       'https://laikona.mx/admin/caja?tab=anticipos',
     );

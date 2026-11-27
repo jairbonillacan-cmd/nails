@@ -15,22 +15,13 @@ import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/Payme
 import { parseIntegracionesParams } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { roleCanAccess } from '@/lib/rbac';
 import type {
   CalendarConnection,
   NotificationChannel,
   NotificationWorkflow,
-  PaymentMode,
   SalonSettings,
 } from '@/lib/types';
-
-function isPaymentMode(value: unknown): value is PaymentMode {
-  return (
-    value === 'manual_transfer' ||
-    value === 'mercadopago' ||
-    value === 'stripe' ||
-    value === 'none'
-  );
-}
 
 function extractOptimisticSettingsPatch(
   patch: Record<string, unknown>,
@@ -41,9 +32,6 @@ function extractOptimisticSettingsPatch(
   }
   if (typeof patch.smsRemindersEnabled === 'boolean') {
     next.smsRemindersEnabled = patch.smsRemindersEnabled;
-  }
-  if (isPaymentMode(patch.paymentMode)) {
-    next.paymentMode = patch.paymentMode;
   }
   if (typeof patch.metaPixelId === 'string' || patch.metaPixelId === null) {
     next.metaPixelId = patch.metaPixelId;
@@ -114,10 +102,10 @@ export default function AdminIntegrationsPage() {
   const depositLabel = formatCurrency(settings.depositAmountCents ?? 20000, settings.currency);
   const timezone = settings.timezone || 'America/Mexico_City';
   const normalizedAppUrl = integration.appUrl.replace(/\/+$/, '');
-  const whatsappWebhookUrl = `${normalizedAppUrl}/api/webhooks/whatsapp`;
   const mercadoPagoTechUrl = `${normalizedAppUrl}/api/webhooks/mercadopago`;
   const googleCalendarTechUrl = `${normalizedAppUrl}/api/webhooks/google-calendar`;
   const activeRemindersCount = displayWorkflows.filter((w) => w.isEnabled).length;
+  const canAccessSettings = roleCanAccess(data.session.user.role, 'settings');
   const whatsappUsage = data.whatsappUsage ?? {
     monthKey: data.serverTodayKey.slice(0, 7),
     sentCount: 0,
@@ -151,6 +139,7 @@ export default function AdminIntegrationsPage() {
       const res = await fetch('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ kind: 'workflow', id: workflowId, patch: { channels: next } }),
       });
       if (res.ok) {
@@ -183,6 +172,7 @@ export default function AdminIntegrationsPage() {
       const res = await fetch('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(patch),
       });
       if (res.ok) {
@@ -219,6 +209,7 @@ export default function AdminIntegrationsPage() {
       const res = await fetch('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ kind: 'calendar', staffId, patch }),
       });
       if (res.ok) {
@@ -246,7 +237,10 @@ export default function AdminIntegrationsPage() {
     setBusyCalendarStaffId(staffId);
     setMsg(null);
     try {
-      const res = await fetch(`/api/integrations/google?staffId=${encodeURIComponent(staffId)}`);
+      const res = await fetch(
+        `/api/integrations/google?staffId=${encodeURIComponent(staffId)}`,
+        { signal: AbortSignal.timeout(15_000) },
+      );
       if (!res.ok) {
         const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
@@ -277,7 +271,7 @@ export default function AdminIntegrationsPage() {
       <VStack className="ad-page">
         <PageHeader
           title="Conexiones"
-          subtitle="Calendario, resumen de WhatsApp y cobro de anticipos."
+          subtitle="Calendario, resumen de WhatsApp y estado de integraciones."
           meta={
             isAnyMutationBusy ? (
               <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
@@ -331,15 +325,13 @@ export default function AdminIntegrationsPage() {
         <PaymentsAnalyticsSection
           settings={settings}
           depositLabel={depositLabel}
-          isDemoMode={integration.mode === 'demo'}
+          canAccessSettings={canAccessSettings}
           initialOpenMore={initialOpenMore}
           mercadoPagoConfigured={integration.mercadoPagoConfigured}
           twilioSmsConfigured={integration.twilioSmsConfigured}
           timezone={timezone}
-          whatsappWebhookUrl={whatsappWebhookUrl}
           googleCalendarTechUrl={googleCalendarTechUrl}
           mercadoPagoTechUrl={mercadoPagoTechUrl}
-          services={data.services}
           workflows={displayWorkflows}
           notifications={data.notifications}
           savingSettings={savingSettings || Boolean(busyWorkflowId)}
@@ -347,8 +339,6 @@ export default function AdminIntegrationsPage() {
           onToggleSmsChannel={(id, channels, enabled) =>
             void toggleReminderChannel(id, channels, 'sms', enabled)
           }
-          onRefresh={refresh}
-          onBanner={setMsg}
         />
       </VStack>
     </AdminAccessGuard>

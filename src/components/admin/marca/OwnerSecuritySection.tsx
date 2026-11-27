@@ -63,27 +63,82 @@ function friendlyEntityLabel(entityType: string): string {
   return 'Registro';
 }
 
-interface OwnerPinAndNoShowCardsProps {
+interface NoShowPolicyCardProps {
   noShowDepositThreshold: number;
   flaggedNoShowClientsCount: number;
+  highlighted?: boolean;
+  onChangeNoShowThreshold: (value: number) => void;
+}
+
+export function NoShowPolicyCard({
+  noShowDepositThreshold,
+  flaggedNoShowClientsCount,
+  highlighted = false,
+  onChangeNoShowThreshold,
+}: NoShowPolicyCardProps) {
+  return (
+    <SurfaceCard
+      id="brand-noshow-policy-heading"
+      className={highlighted ? 'ad-row-highlight' : undefined}
+      icon={<AlertTriangle size={16} aria-hidden="true" />}
+      title="Política si no llegan"
+      subtitle="Pide anticipo obligatorio en automático a clientas que han faltado sin avisar."
+      badge={
+        <StatusTag
+          tone={flaggedNoShowClientsCount > 0 ? 'warning' : 'success'}
+          label={
+            flaggedNoShowClientsCount > 0
+              ? `${flaggedNoShowClientsCount} clienta${flaggedNoShowClientsCount === 1 ? '' : 's'} con aviso`
+              : 'Sin clientas marcadas'
+          }
+          hasTabularNumbers
+        />
+      }
+    >
+      <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
+        <NumberInput
+          label="¿Después de cuántas faltas pedir anticipo obligatorio? (1 a 5)"
+          description="Cuando una clienta llega a este número de inasistencias, el sistema siempre le pedirá anticipo."
+          value={noShowDepositThreshold}
+          min={1}
+          max={5}
+          isIntegerOnly
+          onChange={(v) =>
+            onChangeNoShowThreshold(Math.max(1, Math.min(5, Math.round(v || 2))))
+          }
+        />
+        <HStack className="ad-subpanel" justify="between" align="center" wrap="wrap" gap={2}>
+          <Text type="supporting" color="secondary" hasTabularNumbers>
+            Con {noShowDepositThreshold} o más faltas → se pide anticipo obligatorio.
+          </Text>
+          <StatusTag
+            tone="accent"
+            label={`Límite: ${noShowDepositThreshold} falta${noShowDepositThreshold === 1 ? '' : 's'}`}
+            hasTabularNumbers
+          />
+        </HStack>
+      </VStack>
+    </SurfaceCard>
+  );
+}
+
+interface OwnerPinCardProps {
   hasOwnerPin: boolean;
   ownerPinEnabled: boolean;
-  onChangeNoShowThreshold: (value: number) => void;
+  highlighted?: boolean;
   onSyncOwnerPinEnabled: (enabled: boolean) => void;
   onRefresh: () => Promise<void>;
   onNotify: (message: string) => void;
 }
 
-export function OwnerPinAndNoShowCards({
-  noShowDepositThreshold,
-  flaggedNoShowClientsCount,
+export function OwnerPinCard({
   hasOwnerPin,
   ownerPinEnabled,
-  onChangeNoShowThreshold,
+  highlighted = false,
   onSyncOwnerPinEnabled,
   onRefresh,
   onNotify,
-}: OwnerPinAndNoShowCardsProps) {
+}: OwnerPinCardProps) {
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinSaving, setPinSaving] = useState(false);
@@ -118,6 +173,7 @@ export function OwnerPinAndNoShowCards({
       const res = await fetch('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ ownerPin: newPin, ownerPinEnabled: true }),
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -149,6 +205,7 @@ export function OwnerPinAndNoShowCards({
       const res = await fetch('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ clearOwnerPin: true, ownerPinEnabled: false }),
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -170,51 +227,10 @@ export function OwnerPinAndNoShowCards({
   };
 
   return (
-    <VStack gap={4}>
-      <SurfaceCard
-        id="brand-noshow-policy-heading"
-        icon={<AlertTriangle size={16} aria-hidden="true" />}
-        title="Política si no llegan"
-        subtitle="Pide anticipo obligatorio en automático a clientas que han faltado sin avisar."
-        badge={
-          <StatusTag
-            tone={flaggedNoShowClientsCount > 0 ? 'warning' : 'success'}
-            label={
-              flaggedNoShowClientsCount > 0
-                ? `${flaggedNoShowClientsCount} clienta${flaggedNoShowClientsCount === 1 ? '' : 's'} con aviso`
-                : 'Sin clientas marcadas'
-            }
-            hasTabularNumbers
-          />
-        }
-      >
-        <VStack gap={3} className="ad-card-body" paddingBlockStart={4}>
-          <NumberInput
-            label="¿Después de cuántas faltas pedir anticipo obligatorio? (1 a 5)"
-            description="Cuando una clienta llega a este número de inasistencias, el sistema siempre le pedirá anticipo."
-            value={noShowDepositThreshold}
-            min={1}
-            max={5}
-            isIntegerOnly
-            onChange={(v) =>
-              onChangeNoShowThreshold(Math.max(1, Math.min(5, Math.round(v || 2))))
-            }
-          />
-          <HStack className="ad-subpanel" justify="between" align="center" wrap="wrap" gap={2}>
-            <Text type="supporting" color="secondary" hasTabularNumbers>
-              Con {noShowDepositThreshold} o más faltas → se pide anticipo obligatorio.
-            </Text>
-            <StatusTag
-              tone="accent"
-              label={`Límite: ${noShowDepositThreshold} falta${noShowDepositThreshold === 1 ? '' : 's'}`}
-              hasTabularNumbers
-            />
-          </HStack>
-        </VStack>
-      </SurfaceCard>
-
+    <>
       <SurfaceCard
         id="brand-owner-pin-heading"
+        className={highlighted ? 'ad-row-highlight' : undefined}
         icon={<KeyRound size={16} aria-hidden="true" />}
         title="PIN de dueña"
         subtitle="Protege cancelaciones, cambios manuales de precio y descargas de reportes."
@@ -341,7 +357,7 @@ export function OwnerPinAndNoShowCards({
           setConfirmClearOpen(false);
         }}
       />
-    </VStack>
+    </>
   );
 }
 

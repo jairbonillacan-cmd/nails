@@ -10,7 +10,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { MessageCircle, Package, PackageCheck, Search, X } from 'lucide-react';
-import { cajaHref } from '@/lib/admin-links';
+import { fidelizacionHref } from '@/lib/admin-links';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
   buildWhatsAppLink,
@@ -51,6 +51,8 @@ interface ClientLoyaltyTabProps {
   activeCatalogPackages: readonly ServicePackage[];
   packagesLoading: boolean;
   canManageClients: boolean;
+  hideNearRewards?: boolean;
+  showCatalogLink?: boolean;
   salonName: string;
   tz: string;
   currency: 'MXN' | 'USD';
@@ -76,6 +78,8 @@ export function ClientLoyaltyTab({
   activeCatalogPackages,
   packagesLoading,
   canManageClients,
+  hideNearRewards = false,
+  showCatalogLink = true,
   salonName,
   tz,
   currency,
@@ -112,134 +116,136 @@ export function ClientLoyaltyTab({
 
   return (
     <VStack gap={5}>
-      <SurfaceCard
-        title="Cerca de su premio"
-        subtitle={
-          loyaltyProgram
-            ? `${loyaltyProgram.name} (${loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a canjear o completar su tarjeta.`
-            : 'Activa tu tarjeta de sellos en Mi página para premiar a tus clientas frecuentes.'
-        }
-        count={nearRewardClients.length}
-      >
-        {nearRewardClients.length === 0 ? (
-          <VStack padding={4}>
-            <EmptyStateCard
-              framed={false}
-              isCompact
-              title="Aún no hay clientas cerca de su premio"
-              description="Cuando una clienta esté a 2 visitas o menos de llenar su tarjeta aparecerá aquí."
-              actions={
-                !loyaltyProgram || !loyaltyProgram.isActive ? (
-                  <Button
-                    label="Configurar en Mi página"
-                    variant="secondary"
-                    size="sm"
-                    href="/admin/marca"
-                  />
-                ) : undefined
-              }
-            />
-          </VStack>
-        ) : (
-          <VStack className="ad-row-list" gap={0}>
-            {nearRewardClients.map((entry) => {
-              const required = Math.max(1, entry.summary.stampsRequired);
-              const totalSlots = Math.min(12, required);
-              const filledSlots = Math.min(
-                totalSlots,
-                Math.round((entry.summary.currentStamps / required) * totalSlots),
-              );
-              const nudgeMsg = entry.summary.isRewardReady
-                ? `Hola ${entry.fullName}! Ya juntaste ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Tienes listo tu premio (${entry.summary.rewardLabel}) para tu próxima cita!`
-                : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Te ${entry.summary.remainingForReward === 1 ? 'falta solo 1 visita' : `faltan solo ${entry.summary.remainingForReward} visitas`} para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
-
-              return (
-                <ActionRow
-                  key={entry.clientId}
-                  leading={<Avatar name={entry.fullName} size="sm" />}
-                  title={
-                    <HStack gap={2} align="center" wrap="wrap">
-                      <Text weight="semibold">{entry.fullName}</Text>
-                      <StatusTag
-                        tone={entry.summary.isRewardReady ? 'success' : 'accent'}
-                        hasTabularNumbers
-                        label={`${entry.summary.currentStamps}/${entry.summary.stampsRequired} sellos`}
-                      />
-                    </HStack>
-                  }
-                  subtitle={
-                    <HStack gap={2} wrap="wrap" align="center">
-                      <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {formatPhoneDisplay(entry.phoneE164)}
-                      </Text>
-                      {entry.instagramHandle ? (
-                        <Link
-                          href={formatInstagramUrl(entry.instagramHandle)}
-                          isExternalLink
-                          type="supporting"
-                        >
-                          {formatInstagramDisplay(entry.instagramHandle)}
-                        </Link>
-                      ) : null}
-                      <Text type="supporting" color="secondary">
-                        Premio: {entry.summary.rewardLabel}
-                      </Text>
-                    </HStack>
-                  }
-                  meta={
-                    <ul className="ad-stamps" aria-hidden="true">
-                      {Array.from({ length: totalSlots }, (_, idx) => (
-                        <li
-                          key={idx}
-                          className="ad-stamp"
-                          data-on={idx < filledSlots ? 'true' : 'false'}
-                        />
-                      ))}
-                    </ul>
-                  }
-                  status={
-                    <StatusTag
-                      tone={entry.summary.isRewardReady ? 'success' : 'neutral'}
-                      hasTabularNumbers
-                      label={
-                        entry.summary.isRewardReady
-                          ? '¡Premio listo!'
-                          : `Faltan ${entry.summary.remainingForReward}`
-                      }
+      {!hideNearRewards ? (
+        <SurfaceCard
+          title="Cerca de su premio"
+          subtitle={
+            loyaltyProgram
+              ? `${loyaltyProgram.name} (${loyaltyProgram.stampsRequired} sellos). Invita a tus clientas más fieles a canjear o completar su tarjeta.`
+              : 'Activa tu tarjeta de sellos en Fidelización para premiar a tus clientas frecuentes.'
+          }
+          count={nearRewardClients.length}
+        >
+          {nearRewardClients.length === 0 ? (
+            <VStack padding={4}>
+              <EmptyStateCard
+                framed={false}
+                isCompact
+                title="Aún no hay clientas cerca de su premio"
+                description="Cuando una clienta esté a 2 visitas o menos de llenar su tarjeta aparecerá aquí."
+                actions={
+                  !loyaltyProgram || !loyaltyProgram.isActive ? (
+                    <Button
+                      label="Configurar sellos"
+                      variant="secondary"
+                      size="sm"
+                      href={fidelizacionHref({ tab: 'sellos' })}
                     />
-                  }
-                  actions={
-                    <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
-                      <Button
-                        type="button"
-                        label="Ver ficha"
-                        size="sm"
-                        variant="secondary"
-                        className="ad-cl-touch-btn"
-                        onClick={() => onOpenClientById(entry.clientId)}
+                  ) : undefined
+                }
+              />
+            </VStack>
+          ) : (
+            <VStack className="ad-row-list" gap={0}>
+              {nearRewardClients.map((entry) => {
+                const required = Math.max(1, entry.summary.stampsRequired);
+                const totalSlots = Math.min(12, required);
+                const filledSlots = Math.min(
+                  totalSlots,
+                  Math.round((entry.summary.currentStamps / required) * totalSlots),
+                );
+                const nudgeMsg = entry.summary.isRewardReady
+                  ? `Hola ${entry.fullName}! Ya juntaste ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Tienes listo tu premio (${entry.summary.rewardLabel}) para tu próxima cita!`
+                  : `Hola ${entry.fullName}! Llevas ${entry.summary.currentStamps} de ${entry.summary.stampsRequired} sellos en ${entry.summary.programName} de ${salonName}. Te ${entry.summary.remainingForReward === 1 ? 'falta solo 1 visita' : `faltan solo ${entry.summary.remainingForReward} visitas`} para ganar ${entry.summary.rewardLabel}. ¿Agendamos tu siguiente cita?`;
+
+                return (
+                  <ActionRow
+                    key={entry.clientId}
+                    leading={<Avatar name={entry.fullName} size="sm" />}
+                    title={
+                      <HStack gap={2} align="center" wrap="wrap">
+                        <Text weight="semibold">{entry.fullName}</Text>
+                        <StatusTag
+                          tone={entry.summary.isRewardReady ? 'success' : 'accent'}
+                          hasTabularNumbers
+                          label={`${entry.summary.currentStamps}/${entry.summary.stampsRequired} sellos`}
+                        />
+                      </HStack>
+                    }
+                    subtitle={
+                      <HStack gap={2} wrap="wrap" align="center">
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {formatPhoneDisplay(entry.phoneE164)}
+                        </Text>
+                        {entry.instagramHandle ? (
+                          <Link
+                            href={formatInstagramUrl(entry.instagramHandle)}
+                            isExternalLink
+                            type="supporting"
+                          >
+                            {formatInstagramDisplay(entry.instagramHandle)}
+                          </Link>
+                        ) : null}
+                        <Text type="supporting" color="secondary">
+                          Premio: {entry.summary.rewardLabel}
+                        </Text>
+                      </HStack>
+                    }
+                    meta={
+                      <ul className="ad-stamps" aria-hidden="true">
+                        {Array.from({ length: totalSlots }, (_, idx) => (
+                          <li
+                            key={idx}
+                            className="ad-stamp"
+                            data-on={idx < filledSlots ? 'true' : 'false'}
+                          />
+                        ))}
+                      </ul>
+                    }
+                    status={
+                      <StatusTag
+                        tone={entry.summary.isRewardReady ? 'success' : 'neutral'}
+                        hasTabularNumbers
+                        label={
+                          entry.summary.isRewardReady
+                            ? '¡Premio listo!'
+                            : `Faltan ${entry.summary.remainingForReward}`
+                        }
                       />
-                      <Button
-                        label="WhatsApp"
-                        size="sm"
-                        variant="primary"
-                        className="ad-cl-touch-btn"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    </HStack>
-                  }
-                />
-              );
-            })}
-          </VStack>
-        )}
-      </SurfaceCard>
+                    }
+                    actions={
+                      <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
+                        <Button
+                          type="button"
+                          label="Ver ficha"
+                          size="sm"
+                          variant="secondary"
+                          className="ad-cl-touch-btn"
+                          onClick={() => onOpenClientById(entry.clientId)}
+                        />
+                        <Button
+                          label="WhatsApp"
+                          size="sm"
+                          variant="primary"
+                          className="ad-cl-touch-btn"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      </HStack>
+                    }
+                  />
+                );
+              })}
+            </VStack>
+          )}
+        </SurfaceCard>
+      ) : null}
 
       <VStack className="ad-split" gap={0}>
         <SurfaceCard
-          title="Paquetes de sesiones"
+          title="Paquetes asignados a clientas"
           subtitle="Sesiones usadas y disponibles de cada clienta."
           count={activeClientPackagesCount}
         >
@@ -256,16 +262,18 @@ export function ClientLoyaltyTab({
                 title="Sin paquetes asignados todavía"
                 description={
                   activeCatalogPackages.length === 0
-                    ? 'Primero crea un paquete en Caja → Promos y paquetes para poder asignarlo aquí.'
+                    ? showCatalogLink
+                      ? 'Primero crea un paquete en Fidelización → Paquetes para poder asignarlo aquí.'
+                      : 'Primero crea un paquete en el catálogo de arriba para poder asignarlo aquí.'
                     : 'Asigna un paquete prepagado a una clienta desde el panel derecho.'
                 }
                 actions={
-                  activeCatalogPackages.length === 0 ? (
+                  activeCatalogPackages.length === 0 && showCatalogLink ? (
                     <Button
-                      label="Crear paquetes en Caja"
+                      label="Crear paquetes en Fidelización"
                       variant="secondary"
                       size="sm"
-                      href={cajaHref({ tab: 'promos', sub: 'packages' })}
+                      href={fidelizacionHref({ tab: 'paquetes' })}
                     />
                   ) : undefined
                 }

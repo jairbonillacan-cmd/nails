@@ -26,6 +26,7 @@ import {
 } from '@/components/ui';
 import {
   agendaHref,
+  ajustesHref,
   equipoHref,
   horariosHref,
   marcaHref,
@@ -138,7 +139,7 @@ export function OnboardingStepAlerts({
                       label="Editar cobros"
                       variant="ghost"
                       size="sm"
-                      href={marcaHref({ tab: 'cobros' })}
+                      href={ajustesHref({ tab: 'cobro', focus: 'clabe' })}
                     />
                   }
                 />

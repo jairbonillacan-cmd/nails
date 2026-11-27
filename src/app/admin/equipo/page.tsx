@@ -66,6 +66,10 @@ export default function AdminTeamPage() {
   }
 
   const isOwner = data.session.user.role === 'owner';
+  const canManageCommissions =
+    data.session.user.role === 'owner' || data.session.user.role === 'admin';
+  const retailCommissionPercent =
+    data.settings.landingContent?.cajaConfig?.retailCommissionPercent ?? 10;
 
   const applyToggleStaffActive = async (st: StaffMember, checked: boolean) => {
     if (busyId) return;
@@ -182,7 +186,10 @@ export default function AdminTeamPage() {
           staff={displayStaff}
           services={data.services}
           appUrl={data.integration.appUrl}
+          currency={data.settings.currency}
           defaultCommissionPercent={data.settings.defaultCommissionPercent || 35}
+          retailCommissionPercent={retailCommissionPercent}
+          canManageCommissions={canManageCommissions}
           busyId={busyId}
           focusStaffId={parsedParams.staffId ?? null}
           onClearFocusStaffId={() => {

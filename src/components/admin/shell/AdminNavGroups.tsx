@@ -13,12 +13,14 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  Gift,
   LayoutGrid,
   MessageCircle,
   Package,
   Palette,
   Plug,
   Scissors,
+  SlidersHorizontal,
   UserCheck,
   Users,
   Wallet,
@@ -55,6 +57,8 @@ function renderNavIcon(iconId: NavIconId): React.ReactNode {
       return <Clock size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'team':
       return <UserCheck size={16} strokeWidth={1.85} aria-hidden="true" />;
+    case 'loyalty':
+      return <Gift size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'brand':
       return <Palette size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'reports':
@@ -63,6 +67,8 @@ function renderNavIcon(iconId: NavIconId): React.ReactNode {
       return <Package size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'integrations':
       return <Plug size={16} strokeWidth={1.85} aria-hidden="true" />;
+    case 'settings':
+      return <SlidersHorizontal size={16} strokeWidth={1.85} aria-hidden="true" />;
     case 'onboarding':
       return <CheckCircle2 size={16} strokeWidth={1.85} aria-hidden="true" />;
   }

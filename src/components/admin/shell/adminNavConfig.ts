@@ -25,7 +25,9 @@ export type NavIconId =
   | 'services'
   | 'availability'
   | 'team'
+  | 'loyalty'
   | 'brand'
+  | 'settings'
   | 'reports'
   | 'inventory'
   | 'integrations'
@@ -168,6 +170,13 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
           badge: data.kpis.lowStockCount > 0 ? String(data.kpis.lowStockCount) : null,
           visible: roleCanAccess(role, 'inventory'),
         },
+        {
+          id: 'loyalty',
+          label: 'Fidelización',
+          href: '/admin/fidelizacion',
+          matchPath: '/admin/fidelizacion',
+          visible: roleCanAccess(role, 'loyalty'),
+        },
       ],
     },
   ];
@@ -192,6 +201,13 @@ export function buildFooterNavItems(data: AdminOverviewPayload): NavItemConfig[]
       href: '/admin/marca',
       matchPath: '/admin/marca',
       visible: roleCanAccess(role, 'brand'),
+    },
+    {
+      id: 'settings',
+      label: 'Ajustes',
+      href: '/admin/ajustes',
+      matchPath: '/admin/ajustes',
+      visible: roleCanAccess(role, 'settings'),
     },
     {
       id: 'integrations',
@@ -290,6 +306,26 @@ export function prefetchAdminRoute(
   if (routeId === 'reports' && roleCanAccess(currentRole, 'reports')) {
     void prefetchAdminData(ADMIN_CACHE_KEYS.reports('month'), (signal) =>
       fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.reports('month'), signal),
+    );
+    return;
+  }
+
+  if (routeId === 'loyalty' && roleCanAccess(currentRole, 'loyalty')) {
+    void prefetchAdminData(ADMIN_CACHE_KEYS.overview, (signal) =>
+      fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
+    );
+    void prefetchAdminData(ADMIN_CACHE_KEYS.packages, (signal) =>
+      fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.packages, signal),
+    );
+    void prefetchAdminData(ADMIN_CACHE_KEYS.campaigns, (signal) =>
+      fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.campaigns, signal),
+    );
+    return;
+  }
+
+  if (routeId === 'settings' && roleCanAccess(currentRole, 'settings')) {
+    void prefetchAdminData(ADMIN_CACHE_KEYS.overview, (signal) =>
+      fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
     );
   }
 }

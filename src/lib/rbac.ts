@@ -13,6 +13,8 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
     'reports',
     'inventory',
     'coupons',
+    'loyalty',
+    'settings',
     'brand',
     'integrations',
   ]),
@@ -28,6 +30,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
     'reports',
     'inventory',
     'coupons',
+    'loyalty',
   ]),
   specialist: new Set(['overview', 'bookings', 'availability', 'cash', 'reports']),
 };
