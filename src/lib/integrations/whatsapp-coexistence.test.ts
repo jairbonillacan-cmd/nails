@@ -37,6 +37,56 @@ const mockUpdateNotificationDeliveryByProviderId = vi.fn(
 const mockConfirmBookingAttendanceFromWebhook = vi.fn(
   async (..._args: unknown[]) => null,
 );
+const mockRecordWhatsAppMessage = vi.fn(async (input: { phoneE164: string; direction: string; bodyText: string }) => ({
+  thread: {
+    id: 'wth-mock-1',
+    phoneE164: input.phoneE164,
+    clientId: null,
+    contactName: 'Mock',
+    lastMessageAt: new Date().toISOString(),
+    lastMessagePreview: input.bodyText,
+    lastMessageDirection: input.direction,
+    lastInboundAt: input.direction === 'inbound' ? new Date().toISOString() : null,
+    unreadCount: input.direction === 'inbound' ? 1 : 0,
+    lastReadAt: null,
+    hasFailedMessages: false,
+    isArchived: false,
+    assignedStaffId: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  message: {
+    id: 'wmsg-mock-1',
+    threadId: 'wth-mock-1',
+    phoneE164: input.phoneE164,
+    clientId: null,
+    bookingId: null,
+    notificationId: null,
+    direction: input.direction,
+    senderKind: input.direction === 'echo' ? 'coexistence_phone' : 'client',
+    senderName: null,
+    messageType: 'text',
+    bodyText: input.bodyText,
+    templateName: null,
+    templateTriggerKey: null,
+    templateParams: [],
+    deliveryStatus: input.direction === 'inbound' ? 'received' : 'sent',
+    deliveryMode: input.direction === 'echo' ? 'coexistence' : 'inbound',
+    providerMessageId: null,
+    errorCode: null,
+    errorMessage: null,
+    sentAt: null,
+    deliveredAt: null,
+    readAt: null,
+    failedAt: null,
+    createdAt: new Date().toISOString(),
+  },
+}));
+const mockUpdateWhatsAppMessageStatusByProviderId = vi.fn(async () => ({
+  updated: true,
+  message: null,
+  threadId: 'wth-mock-1',
+}));
 
 vi.mock('../repositories/db', () => ({
   claimWebhookEventIdempotent: (provider: string, eventId: string) =>
@@ -45,6 +95,10 @@ vi.mock('../repositories/db', () => ({
     mockIncrementWhatsAppMonthlyUsage(monthKey, count),
   updateNotificationDeliveryByProviderId: (...args: unknown[]) =>
     mockUpdateNotificationDeliveryByProviderId(...args),
+  recordWhatsAppMessage: (input: { phoneE164: string; direction: string; bodyText: string }) =>
+    mockRecordWhatsAppMessage(input),
+  updateWhatsAppMessageStatusByProviderId: () =>
+    mockUpdateWhatsAppMessageStatusByProviderId(),
   confirmBookingAttendanceFromWebhook: (...args: unknown[]) =>
     mockConfirmBookingAttendanceFromWebhook(...args),
   createBookingAtomic: (...args: unknown[]) => mockCreateBookingAtomic(...args),
@@ -57,6 +111,7 @@ vi.mock('../repositories/db', () => ({
       settings: {
         name: 'Laikona Nails by Karla',
         timezone: 'America/Mexico_City',
+        minCancelHours: 12,
       },
       services: [],
       bookings: [],
@@ -68,6 +123,7 @@ vi.mock('../repositories/db', () => ({
     settings: {
       name: 'Laikona Nails by Karla',
       timezone: 'America/Mexico_City',
+      minCancelHours: 12,
     },
     services: [],
     bookings: [],
@@ -242,6 +298,13 @@ describe('WhatsApp Coexistence Webhook & Web Crypto HMAC Verification', () => {
     expect(firstJson.processed.usageIncremented).toBe(0);
     expect(mockCreateBookingAtomic).not.toHaveBeenCalled();
     expect(mockIncrementWhatsAppMonthlyUsage).not.toHaveBeenCalled();
+    expect(mockRecordWhatsAppMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        direction: 'echo',
+        senderKind: 'coexistence_phone',
+        phoneE164: '+522229998877',
+      }),
+    );
 
     const dupRes = await postWhatsAppWebhook(makeSignedRequest(payload, secret));
     const dupJson = (await dupRes.json()) as {
