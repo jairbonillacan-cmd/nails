@@ -14,3 +14,7 @@ export { ActionRow } from './ActionRow';
 export { ConfirmActionDialog } from './ConfirmActionDialog';
 export { FilterPillBar, type FilterPillOption } from './FilterPillBar';
 export { SkeletonBlock, PageSkeleton } from './SkeletonBlock';
+export {
+  DepositProofReviewDialog,
+  type DepositProofReviewItem,
+} from './DepositProofReviewDialog';

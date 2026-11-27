@@ -14,6 +14,7 @@ import {
   ExternalLink,
   UserRound,
 } from 'lucide-react';
+import { agendaHref, clientasHref } from '@/lib/admin-links';
 import type {
   WhatsAppThreadBookingContextDTO,
   WhatsAppThreadDetailResponseDTO,
@@ -59,7 +60,7 @@ export function WhatsAppChatHeader({
   const attendanceBadge = nextBooking
     ? getWhatsAppAttendanceBadge(nextBooking.attendanceStatus)
     : null;
-  const clientProfileHref = `/admin/clientas?q=${encodeURIComponent(thread.phoneE164)}`;
+  const clientProfileHref = clientasHref({ q: thread.phoneE164 });
 
   return (
     <VStack as="header" gap={0} style={{ flex: '0 0 auto', minWidth: 0 }}>
@@ -161,7 +162,7 @@ export function WhatsAppChatHeader({
               label="Ver cita"
               variant="secondary"
               size="sm"
-              href={`/admin/citas?q=${encodeURIComponent(nextBooking.bookingCode)}`}
+              href={agendaHref({ q: nextBooking.bookingCode })}
             />
           </>
         ) : (
@@ -174,7 +175,7 @@ export function WhatsAppChatHeader({
               variant="ghost"
               size="sm"
               icon={<CalendarPlus size={14} aria-hidden="true" />}
-              href="/admin/citas?new=1"
+              href={agendaHref({ new: true })}
             />
           </>
         )}

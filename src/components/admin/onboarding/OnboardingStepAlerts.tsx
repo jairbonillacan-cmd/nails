@@ -24,6 +24,7 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import { agendaHref } from '@/lib/admin-links';
 import { formatCurrency, formatDuration } from '@/lib/format';
 
 interface OnboardingStepAlertsProps {
@@ -201,7 +202,7 @@ export function OnboardingStepAlerts({
               <Button
                 label="Agendar primera cita"
                 variant="primary"
-                href="/admin/citas?new=1"
+                href={agendaHref({ new: true })}
                 icon={<CalendarPlus size={16} aria-hidden="true" />}
               />
             </HStack>

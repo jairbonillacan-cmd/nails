@@ -8,8 +8,10 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import type { CajaLinkParams } from '@/lib/admin-links';
 import { resolveCajaConfig } from '@/lib/caja/caja-config';
 import { formatCurrency } from '@/lib/format';
+import { selectReceivablesSummary } from '@/lib/metrics';
 import type { MetricTileItem } from '@/components/ui';
 import {
   buildCommissionsByStaff,
@@ -27,8 +29,6 @@ import {
   type CajaPeriod,
 } from './cajaMetrics';
 import {
-  formatCajaDepositsBreakdown,
-  hasCajaDepositProof,
   resolveInitialCajaRoute,
   type CajaTab,
   type PendingDepositRow,
@@ -41,30 +41,51 @@ const EMPTY_CUSTOM_RANGE: CajaCustomRange = { fromKey: '', toKey: '' };
 
 export function useCajaData(
   providerData: AdminOverviewPayload | null,
-  tabParam: string | null,
-  subParam?: string | null,
+  urlParams: CajaLinkParams,
 ) {
-  const initialRoute = resolveInitialCajaRoute(tabParam, subParam);
+  const initialRoute = resolveInitialCajaRoute(urlParams.tab ?? null, urlParams.sub ?? null);
   const [activeTab, setActiveTab] = useState<CajaTab>(initialRoute.tab);
   const [highlightUncollected, setHighlightUncollected] = useState<boolean>(
     initialRoute.highlightUncollected,
   );
   const [promosView, setPromosView] = useState<PromosSubTab>(initialRoute.promosView);
-  const [periodChoice, setPeriodChoice] = useState<CajaPeriod | null>(null);
-  const [customRange, setCustomRange] = useState<CajaCustomRange>(EMPTY_CUSTOM_RANGE);
-  const [methodFilter, setMethodFilter] = useState<CajaMethodFilter>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [periodChoice, setPeriodChoice] = useState<CajaPeriod | null>(
+    () => urlParams.period ?? null,
+  );
+  const [customRange, setCustomRange] = useState<CajaCustomRange>(() =>
+    urlParams.from || urlParams.to
+      ? { fromKey: urlParams.from ?? '', toKey: urlParams.to ?? '' }
+      : EMPTY_CUSTOM_RANGE,
+  );
+  const [methodFilter, setMethodFilter] = useState<CajaMethodFilter>(
+    () => urlParams.method ?? 'all',
+  );
+  const [searchQuery, setSearchQuery] = useState(() => urlParams.q ?? '');
   const [packagesSeq, setPackagesSeq] = useState(0);
-  const routeKey = `${tabParam ?? ''}|${subParam ?? ''}`;
+  const routeKey = [
+    urlParams.tab ?? '',
+    urlParams.sub ?? '',
+    urlParams.period ?? '',
+    urlParams.from ?? '',
+    urlParams.to ?? '',
+    urlParams.method ?? '',
+    urlParams.q ?? '',
+  ].join('|');
   const lastRouteKeyRef = useRef<string>(routeKey);
 
   useExternalSync(`caja-tab|${routeKey}`, async (signal) => {
     if (signal.aborted || lastRouteKeyRef.current === routeKey) return;
     lastRouteKeyRef.current = routeKey;
-    const next = resolveInitialCajaRoute(tabParam, subParam);
+    const next = resolveInitialCajaRoute(urlParams.tab ?? null, urlParams.sub ?? null);
     setActiveTab(next.tab);
     setHighlightUncollected(next.highlightUncollected);
     setPromosView(next.promosView);
+    if (urlParams.period) setPeriodChoice(urlParams.period);
+    if (urlParams.from || urlParams.to) {
+      setCustomRange({ fromKey: urlParams.from ?? '', toKey: urlParams.to ?? '' });
+    }
+    if (urlParams.method) setMethodFilter(urlParams.method);
+    if (urlParams.q !== undefined) setSearchQuery(urlParams.q);
   });
 
   const fetchOverview = useCallback(
@@ -240,23 +261,18 @@ export function useCajaData(
     setSearchQuery('');
   }, []);
 
-  const pendingDepositsTotalCents = pendingDeposits.reduce(
-    (sum, item) => sum + Math.max(0, item.depositAmountCents),
-    0,
+  const receivables = useMemo(
+    () =>
+      selectReceivablesSummary({
+        uncollectedBookings,
+        pendingDeposits,
+      }),
+    [uncollectedBookings, pendingDeposits],
   );
-  let depositsAwaitingReviewCount = 0;
-  let depositsMissingProofCount = 0;
-  for (const item of pendingDeposits) {
-    if (hasCajaDepositProof(item)) {
-      depositsAwaitingReviewCount += 1;
-    } else {
-      depositsMissingProofCount += 1;
-    }
-  }
-  const uncollectedTotalCents = uncollectedBookings.reduce(
-    (sum, item) => sum + item.remainingCents,
-    0,
-  );
+  const pendingDepositsTotalCents = receivables.pendingDepositsTotalCents;
+  const depositsAwaitingReviewCount = receivables.awaitingReviewCount;
+  const depositsMissingProofCount = receivables.missingProofCount;
+  const uncollectedTotalCents = receivables.uncollectedTotalCents;
 
   const activePeriodText = cajaPeriodLabel(cajaPeriod, activeCustom, todayKey);
   const isFilteredByMethodOrSearch = methodFilter !== 'all' || searchQuery.trim().length > 0;
@@ -288,10 +304,7 @@ export function useCajaData(
           id: 'deposits',
           label: 'Anticipos pendientes',
           value: formatCurrency(pendingDepositsTotalCents, currency),
-          sub: formatCajaDepositsBreakdown(
-            depositsAwaitingReviewCount,
-            depositsMissingProofCount,
-          ),
+          sub: receivables.depositsBreakdownLabel,
           tone: pendingDeposits.length > 0 ? 'warning' : 'success',
         },
         {

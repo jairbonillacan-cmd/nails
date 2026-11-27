@@ -31,6 +31,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
+import { agendaHref, whatsappHref } from '@/lib/admin-links';
 import {
   buildWhatsAppLink,
   formatCurrency,
@@ -434,7 +435,7 @@ export function ClientProfileDialog({
                         variant="primary"
                         size="sm"
                         icon={<MessageCircle size={14} aria-hidden="true" />}
-                        href={`/admin/whatsapp?phone=${encodeURIComponent(client.phoneE164)}`}
+                        href={whatsappHref({ phone: client.phoneE164 })}
                       />
                       <Button
                         label="wa.me"
@@ -646,7 +647,7 @@ export function ClientProfileDialog({
                                   variant="ghost"
                                   size="sm"
                                   icon={<ExternalLink size={13} aria-hidden="true" />}
-                                  href={`/admin/citas?q=${encodeURIComponent(visit.bookingCode)}`}
+                                  href={agendaHref({ q: visit.bookingCode })}
                                 />
                               }
                             />

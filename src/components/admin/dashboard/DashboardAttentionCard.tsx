@@ -24,19 +24,26 @@ import {
   formatTimeInTimezone,
   formatUnitCount,
 } from '@/lib/format';
-import { ActionRow, EmptyStateCard, SurfaceCard } from '@/components/ui';
+import {
+  ActionRow,
+  EmptyStateCard,
+  SurfaceCard,
+  type DepositProofReviewItem,
+} from '@/components/ui';
+import { agendaHref, cajaHref, whatsappHref } from '@/lib/admin-links';
+import { hasBookingProofSubmitted } from '@/lib/booking/balance';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import {
-  hasPendingDepositProof,
   isDisplayableProofUrl,
   type DashboardMetrics,
 } from './dashboardMetrics';
-import type { PendingDepositItem } from './DepositProofPreviewDialog';
 
-const DepositProofPreviewDialog = dynamic(
+const DepositProofReviewDialog = dynamic(
   () =>
-    import('./DepositProofPreviewDialog').then((mod) => mod.DepositProofPreviewDialog),
+    import('@/components/ui/DepositProofReviewDialog').then(
+      (mod) => mod.DepositProofReviewDialog,
+    ),
   { ssr: false },
 );
 
@@ -46,7 +53,7 @@ interface DashboardAttentionCardProps {
   confirmingBookingId: string | null;
   rejectingBookingId?: string | null;
   onConfirmDeposit: (bookingId: string, clientName: string) => Promise<boolean>;
-  onRejectDeposit?: (bookingId: string, clientName: string) => Promise<boolean>;
+  onRejectDeposit?: (bookingId: string, clientName: string, reason?: string) => Promise<boolean>;
   maxVisible?: number;
 }
 
@@ -93,7 +100,7 @@ export function DashboardAttentionCard({
   onRejectDeposit,
   maxVisible = 4,
 }: DashboardAttentionCardProps) {
-  const [previewDeposit, setPreviewDeposit] = useState<PendingDepositItem | null>(null);
+  const [previewDeposit, setPreviewDeposit] = useState<DepositProofReviewItem | null>(null);
   const currency = data.settings.currency;
   const role = data.session.user.role;
   const tz = metrics.tz;
@@ -102,7 +109,7 @@ export function DashboardAttentionCard({
   const allTasks: AttentionTask[] = [];
 
   const sortedPendingDeposits = data.pendingDeposits.toSorted(
-    (a, b) => Number(hasPendingDepositProof(b)) - Number(hasPendingDepositProof(a)),
+    (a, b) => Number(hasBookingProofSubmitted(b)) - Number(hasBookingProofSubmitted(a)),
   );
 
   for (const dep of sortedPendingDeposits) {
@@ -116,7 +123,7 @@ export function DashboardAttentionCard({
       !isExternalLink && isDisplayableProofUrl(dep.paymentProofUrl)
         ? dep.paymentProofUrl
         : null;
-    const isUploaded = hasPendingDepositProof(dep);
+    const isUploaded = hasBookingProofSubmitted(dep);
     const isLoading = confirmingBookingId === dep.bookingId;
     const isRejecting = rejectingBookingId === dep.bookingId;
 
@@ -144,7 +151,7 @@ export function DashboardAttentionCard({
           }
         : {
             label: 'Ver en Caja',
-            href: '/admin/caja?tab=anticipos',
+            href: cajaHref({ tab: 'anticipos' }),
           },
       primary: {
         label: isLoading ? 'Confirmando…' : 'Confirmar cita',
@@ -165,11 +172,11 @@ export function DashboardAttentionCard({
       subtitle: `${item.clientName} · ${item.serviceName} con ${item.staffName} · ${dateLabel} ${endTime}`,
       secondary: {
         label: 'Ver en Caja',
-        href: '/admin/caja?tab=sin-cobrar',
+        href: cajaHref({ tab: 'sin-cobrar' }),
       },
       primary: {
         label: `Cobrar ${formatCurrency(item.remainingCents, currency)}`,
-        href: `/admin/citas?collect=${item.bookingId}`,
+        href: agendaHref({ collect: item.bookingId }),
       },
     });
   }
@@ -190,7 +197,7 @@ export function DashboardAttentionCard({
       subtitle: `${serviceLabel} · ${formatDateKeyDisplay(entry.desiredDate, 'short')} (${windowLabel})`,
       secondary: {
         label: 'Ver lista de espera',
-        href: '/admin/citas?tab=waitlist',
+        href: agendaHref({ tab: 'waitlist' }),
       },
       primary: {
         label: 'Avisar por WhatsApp',
@@ -233,7 +240,7 @@ export function DashboardAttentionCard({
       subtitle: 'Tienes conversaciones de clientas esperando respuesta en tu bandeja.',
       primary: {
         label: 'Abrir mensajes',
-        href: '/admin/whatsapp?filter=unread',
+        href: whatsappHref({ filter: 'unread' }),
       },
     });
   }
@@ -247,7 +254,7 @@ export function DashboardAttentionCard({
       subtitle: 'Revisa los envíos fallidos y reinténtalos en un clic.',
       primary: {
         label: 'Revisar envíos',
-        href: '/admin/whatsapp?tab=recordatorios&filter=failed',
+        href: whatsappHref({ tab: 'recordatorios', filter: 'failed' }),
       },
     });
   }
@@ -272,7 +279,7 @@ export function DashboardAttentionCard({
         : `${whatsappUsage.sentCount} de ${whatsappUsage.quotaLimit} mensajes usados · Te quedan ${remaining} avisos automáticos este mes.`,
       primary: {
         label: 'Revisar en WhatsApp',
-        href: '/admin/whatsapp?tab=conexion',
+        href: whatsappHref({ tab: 'conexion' }),
       },
     });
   }
@@ -389,40 +396,24 @@ export function DashboardAttentionCard({
       </SurfaceCard>
 
       {previewDeposit ? (
-        <DepositProofPreviewDialog
-          deposit={previewDeposit}
+        <DepositProofReviewDialog
+          deposit={{
+            ...previewDeposit,
+            depositAmountCents: previewDeposit.depositAmountCents || depositFallbackCents,
+          }}
           currency={currency}
           timezone={tz}
-          depositFallbackCents={depositFallbackCents}
-          confirmingBookingId={confirmingBookingId}
-          rejectingBookingId={rejectingBookingId}
-          onClose={() => setPreviewDeposit(null)}
-          onConfirmDeposit={async (bookingId, clientName) => {
-            try {
-              const ok = await onConfirmDeposit(bookingId, clientName);
-              if (!ok) {
-                setPreviewDeposit(null);
-              }
-              return ok;
-            } catch {
-              setPreviewDeposit(null);
-              return false;
-            }
+          isApproving={confirmingBookingId === previewDeposit.bookingId}
+          isRejecting={rejectingBookingId === previewDeposit.bookingId}
+          secondaryLink={{
+            label: 'Ir a Anticipos en Caja',
+            href: cajaHref({ tab: 'anticipos' }),
           }}
-          onRejectDeposit={
+          onClose={() => setPreviewDeposit(null)}
+          onApprove={(dep) => onConfirmDeposit(dep.bookingId, dep.clientName)}
+          onReject={
             onRejectDeposit
-              ? async (bookingId, clientName) => {
-                  try {
-                    const ok = await onRejectDeposit(bookingId, clientName);
-                    if (!ok) {
-                      setPreviewDeposit(null);
-                    }
-                    return ok;
-                  } catch {
-                    setPreviewDeposit(null);
-                    return false;
-                  }
-                }
+              ? (dep, reason) => onRejectDeposit(dep.bookingId, dep.clientName, reason)
               : undefined
           }
         />

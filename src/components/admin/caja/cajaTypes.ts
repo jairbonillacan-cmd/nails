@@ -1,5 +1,7 @@
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
+import { parseCajaParams } from '@/lib/admin-links';
 import { hasBookingProofSubmitted } from '@/lib/booking/balance';
+import { formatPendingDepositsBreakdown, type StaffCommissionRow } from '@/lib/metrics';
 import type { PaymentMethod, PaymentSplitMethod } from '@/lib/types';
 
 export type CajaTab = 'summary' | 'deposits' | 'commissions' | 'promos';
@@ -39,24 +41,7 @@ export type SplitDetailRow = {
   reference: string | null;
 };
 
-export type CommissionStaffRow = {
-  id: string;
-  name: string;
-  percent: number;
-  retailPercent: number;
-  servicesCount: number;
-  sales: number;
-  serviceSales: number;
-  serviceCommission: number;
-  retailSales: number;
-  retailCommission: number;
-  otherCommission: number;
-  commission: number;
-  tips: number;
-  splitTipsCents: number;
-  splitTipsCount: number;
-  totalPayout: number;
-};
+export type CommissionStaffRow = StaffCommissionRow;
 
 export const SPLIT_METHOD_ORDER: readonly PaymentSplitMethod[] = [
   'cash',
@@ -125,27 +110,8 @@ export function isSafeProofHref(url: string | null): url is string {
   return url.startsWith('/api/media/') || url.startsWith('https://');
 }
 
-export function hasCajaDepositProof(
-  deposit: Pick<PendingDepositRow, 'proofDeliveryMethod' | 'paymentProofUrl'>,
-): boolean {
-  return hasBookingProofSubmitted(deposit);
-}
-
-export function formatCajaDepositsBreakdown(
-  awaitingReviewCount: number,
-  missingProofCount: number,
-): string {
-  if (awaitingReviewCount > 0 && missingProofCount > 0) {
-    return `${awaitingReviewCount} por revisar · ${missingProofCount} sin comprobante`;
-  }
-  if (awaitingReviewCount > 0) {
-    return `${awaitingReviewCount} ${awaitingReviewCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`;
-  }
-  if (missingProofCount > 0) {
-    return `${missingProofCount} sin comprobante`;
-  }
-  return 'Todo revisado';
-}
+export const hasCajaDepositProof = hasBookingProofSubmitted;
+export const formatCajaDepositsBreakdown = formatPendingDepositsBreakdown;
 
 export function resolveInitialCajaRoute(
   param: string | null,
@@ -155,24 +121,27 @@ export function resolveInitialCajaRoute(
   highlightUncollected: boolean;
   promosView: PromosSubTab;
 } {
-  if (param === 'comisiones' || param === 'commissions') {
+  const parsed = parseCajaParams({ tab: param, sub: subParam });
+  if (parsed.tab === 'comisiones') {
     return { tab: 'commissions', highlightUncollected: false, promosView: 'coupons' };
   }
-  if (param === 'promos') {
-    const promosView: PromosSubTab =
-      subParam === 'packages' || subParam === 'paquetes' ? 'packages' : 'coupons';
-    return { tab: 'promos', highlightUncollected: false, promosView };
+  if (parsed.tab === 'promos') {
+    return {
+      tab: 'promos',
+      highlightUncollected: false,
+      promosView: parsed.sub === 'packages' ? 'packages' : 'coupons',
+    };
   }
-  if (param === 'cupones' || param === 'coupons') {
+  if (parsed.tab === 'cupones') {
     return { tab: 'promos', highlightUncollected: false, promosView: 'coupons' };
   }
-  if (param === 'paquetes' || param === 'packages') {
+  if (parsed.tab === 'paquetes') {
     return { tab: 'promos', highlightUncollected: false, promosView: 'packages' };
   }
-  if (param === 'anticipos' || param === 'receivable' || param === 'deposits') {
+  if (parsed.tab === 'anticipos') {
     return { tab: 'deposits', highlightUncollected: false, promosView: 'coupons' };
   }
-  if (param === 'sin-cobrar' || param === 'uncollected') {
+  if (parsed.tab === 'sin-cobrar') {
     return { tab: 'summary', highlightUncollected: true, promosView: 'coupons' };
   }
   return { tab: 'summary', highlightUncollected: false, promosView: 'coupons' };

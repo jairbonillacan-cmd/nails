@@ -325,7 +325,7 @@ describe('clientasMetrics', () => {
       instagramHandle: '@sofi.nails',
     });
     expect(url).toBe(
-      '/admin/citas?new=1&clientName=Sof%C3%ADa+Ram%C3%ADrez&clientPhone=%2B522221234567&staffId=stf-1&clientInstagram=%40sofi.nails',
+      '/admin/citas?new=1&clientName=Sof%C3%ADa+Ram%C3%ADrez&clientPhone=%2B522221234567&clientInstagram=%40sofi.nails&staffId=stf-1',
     );
   });
 });

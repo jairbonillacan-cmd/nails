@@ -10,6 +10,7 @@ import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { MessageCircle, Package, PackageCheck, Search, X } from 'lucide-react';
+import { cajaHref } from '@/lib/admin-links';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
   buildWhatsAppLink,
@@ -264,7 +265,7 @@ export function ClientLoyaltyTab({
                       label="Crear paquetes en Caja"
                       variant="secondary"
                       size="sm"
-                      href="/admin/caja?tab=promos&sub=packages"
+                      href={cajaHref({ tab: 'promos', sub: 'packages' })}
                     />
                   ) : undefined
                 }

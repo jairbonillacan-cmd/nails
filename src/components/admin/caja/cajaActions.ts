@@ -117,7 +117,7 @@ export function buildCommissionsByStaff(
   });
 }
 
-const CAJA_MUTATION_TIMEOUT_MS = 20_000;
+const CAJA_MUTATION_TIMEOUT_MS = 15_000;
 
 function isCajaTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
@@ -226,6 +226,7 @@ export async function rejectCajaDeposit(
   data: AdminOverviewPayload,
   bookingId: string,
   bookingCode: string,
+  reason?: string,
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
   const prevOverview =
     getAdminCacheSnapshot<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview) ?? data;
@@ -239,7 +240,11 @@ export async function rejectCajaDeposit(
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
-      body: JSON.stringify({ action: 'reject_deposit', bookingId }),
+      body: JSON.stringify({
+        action: 'reject_deposit',
+        bookingId,
+        ...(reason ? { reason } : {}),
+      }),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {

@@ -13,6 +13,7 @@ import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Check, Package, Pencil, Plus, UserPlus } from 'lucide-react';
+import { clientasHref } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
@@ -323,7 +324,7 @@ export function PackagesSubSection({
                                 size="sm"
                                 className="ad-caja-touch-btn"
                                 icon={<UserPlus size={13} aria-hidden="true" />}
-                                href="/admin/clientas?tab=paquetes"
+                                href={clientasHref({ tab: 'paquetes' })}
                               />
                             ) : null}
                             <Switch

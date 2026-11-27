@@ -11,7 +11,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Ban, Check, Copy, MessageCircle, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PageSkeleton, SkeletonBlock } from '@/components/ui/SkeletonBlock';
-import type { BlockTimePrefill } from '@/components/admin/citas/BlockTimeDialog';
+import type { BlockTimePrefill } from '@/components/admin/disponibilidad/BlockTimeForm';
 import {
   AgendaRangeControls,
   AgendaStaffControls,
@@ -24,6 +24,7 @@ import { useCitasBookingActions } from '@/components/admin/citas/useCitasBooking
 import { useCitasWorkspace } from '@/components/admin/citas/useCitasWorkspace';
 import type { CalendarEmptySlotSelection } from '@/components/admin/citas/VisualScheduleGrid';
 import { WaitlistPanel } from '@/components/admin/citas/WaitlistPanel';
+import { cajaHref } from '@/lib/admin-links';
 import { buildRetouchPrefill } from '@/lib/booking/recurrence';
 import { formatCurrency } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
@@ -36,10 +37,10 @@ const CalendarSlotActionDialog = dynamic(
   { ssr: false },
 );
 
-const BlockTimeDialog = dynamic(
+const BlockTimeForm = dynamic(
   () =>
-    import('@/components/admin/citas/BlockTimeDialog').then(
-      (mod) => mod.BlockTimeDialog,
+    import('@/components/admin/disponibilidad/BlockTimeForm').then(
+      (mod) => mod.BlockTimeForm,
     ),
   { ssr: false },
 );
@@ -194,7 +195,7 @@ export default function AdminBookingsPage() {
           </button>
           <Text color="secondary" aria-hidden="true">·</Text>
           <NextLink
-            href="/admin/caja?tab=sin-cobrar"
+            href={cajaHref({ tab: 'sin-cobrar' })}
             className="ad-cal-strip-btn"
             style={{ textDecoration: 'none' }}
           >
@@ -499,6 +500,7 @@ export default function AdminBookingsPage() {
               staffId: targetStaffId,
             });
             setBlockTimePrefill({
+              mode: 'partial',
               dateKey: slot.dateKey,
               startTimeHHMM: suggestedWindow.startTimeHHMM,
               endTimeHHMM: suggestedWindow.endTimeHHMM,
@@ -510,7 +512,7 @@ export default function AdminBookingsPage() {
       ) : null}
 
       {blockTimePrefill ? (
-        <BlockTimeDialog
+        <BlockTimeForm
           key={`block-time-${blockTimeSessionKey}`}
           isOpen
           onOpenChange={(open) => {
@@ -518,6 +520,7 @@ export default function AdminBookingsPage() {
           }}
           prefill={blockTimePrefill}
           visibleStaff={visibleStaff}
+          allStaff={data.staff}
           lockedStaffId={ws.lockedStaffId}
           todayKey={ws.todayKey}
           onSaved={async (notice) => {

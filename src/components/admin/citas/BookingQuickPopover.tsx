@@ -15,10 +15,13 @@ import {
   BookingStatusTag,
   ConfirmActionDialog,
   CopyableField,
+  DepositProofReviewDialog,
   StatusTag,
   SurfaceCard,
+  type DepositProofReviewItem,
   type StatusTagTone,
 } from '@/components/ui';
+import { clientasHref, integracionesHref, whatsappHref } from '@/lib/admin-links';
 import { computeBookingBalance } from '@/lib/booking/balance';
 import { BOOKING_TRANSITIONS } from '@/lib/booking/state-machine';
 import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
@@ -45,7 +48,6 @@ import {
   isDisplayableProofImage,
 } from './BookingCard';
 import { BookingPopoverActions } from './BookingPopoverActions';
-import { BookingProofModal } from './BookingProofModal';
 
 interface BookingQuickPopoverProps {
   booking: BookingWithRelations | null;
@@ -65,7 +67,7 @@ interface BookingQuickPopoverProps {
   isRequestingReschedule: boolean;
   onClose: () => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus) => Promise<boolean>;
-  onRejectDeposit?: (bookingId: string, bookingCode: string) => Promise<boolean>;
+  onRejectDeposit?: (bookingId: string, bookingCode: string, reason?: string) => Promise<boolean>;
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
@@ -159,7 +161,10 @@ export function BookingQuickPopover({
 
   const isCompleted = booking.status === 'completed';
   const whatsappChatHref = canOpenWhatsAppInbox
-    ? `/admin/whatsapp?phone=${encodeURIComponent(booking.client.phoneE164)}&bookingId=${encodeURIComponent(booking.id)}`
+    ? whatsappHref({
+        phone: booking.client.phoneE164,
+        bookingId: booking.id,
+      })
     : null;
   const waHref = buildWhatsAppLink(
     booking.client.phoneE164,
@@ -173,7 +178,7 @@ export function BookingQuickPopover({
         googleReviewUrl,
       })
     : null;
-  const clientProfileHref = `/admin/clientas?q=${encodeURIComponent(booking.client.phoneE164)}`;
+  const clientProfileHref = clientasHref({ q: booking.client.phoneE164 });
   const headerSubtitle = `${formatDateShortInTimezone(booking.startAt, timezone)} · ${formatTimeInTimezone(booking.startAt, timezone)} – ${formatTimeInTimezone(booking.endAt, timezone)} (${formatDuration(booking.totalDurationMinutes)})`;
 
   const handleClose = () => {
@@ -183,14 +188,14 @@ export function BookingQuickPopover({
     onClose();
   };
 
-  const handleStatusAction = async (nextStatus: BookingStatus) => {
-    if (isBusy) return;
+  const handleStatusAction = async (nextStatus: BookingStatus): Promise<boolean> => {
+    if (isBusy) return false;
     setActionError(null);
     try {
       const ok = await onUpdateStatus(booking.id, nextStatus);
       if (ok) {
         handleClose();
-        return;
+        return true;
       }
       setPendingConfirm(null);
       setProofZoomOpen(false);
@@ -201,6 +206,7 @@ export function BookingQuickPopover({
             'No se pudo actualizar el estado de la cita. Intenta de nuevo en unos segundos.',
         });
       }
+      return false;
     } catch {
       setPendingConfirm(null);
       setProofZoomOpen(false);
@@ -208,31 +214,50 @@ export function BookingQuickPopover({
         bookingId: booking.id,
         message: 'Error de conexión al actualizar la cita. Intenta de nuevo.',
       });
+      return false;
     }
   };
 
-  const handleRejectDepositAction = async () => {
-    if (isBusy || !onRejectDeposit) return;
+  const handleRejectDepositAction = async (reason?: string): Promise<boolean> => {
+    if (isBusy || !onRejectDeposit) return false;
     setActionError(null);
     try {
-      const ok = await onRejectDeposit(booking.id, booking.bookingCode);
+      const ok = await onRejectDeposit(booking.id, booking.bookingCode, reason);
       setPendingConfirm(null);
       if (ok) {
         handleClose();
-        return;
+        return true;
       }
       setActionError({
         bookingId: booking.id,
         message: 'No se pudo rechazar el comprobante. Intenta de nuevo.',
       });
+      return false;
     } catch {
       setPendingConfirm(null);
       setActionError({
         bookingId: booking.id,
         message: 'Error de conexión al rechazar el comprobante.',
       });
+      return false;
     }
   };
+
+  const proofReviewItem: DepositProofReviewItem | null = proofZoomOpen
+    ? {
+        bookingId: booking.id,
+        bookingCode: booking.bookingCode,
+        clientName: booking.client.fullName,
+        clientPhone: booking.client.phoneE164,
+        clientInstagram: igHandle,
+        serviceName: booking.service.name,
+        staffName: booking.staff.name,
+        startAt: booking.startAt,
+        depositAmountCents: booking.depositAmountCents,
+        proofDeliveryMethod: booking.proofDeliveryMethod,
+        paymentProofUrl: booking.paymentProofUrl,
+      }
+    : null;
 
   const handleDialogOpenChange = (open: boolean) => {
     if (!open && !isBusy) handleClose();
@@ -363,13 +388,12 @@ export function BookingQuickPopover({
                     ) : hasExternalProofLink && booking.paymentProofUrl ? (
                       <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
                         <Button
-                          label="Ver enlace del comprobante"
+                          type="button"
+                          label="Revisar comprobante"
                           variant="secondary"
                           size="sm"
                           icon={<ExternalLink size={14} aria-hidden="true" />}
-                          href={booking.paymentProofUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={() => setProofZoomOpen(true)}
                         />
                         {canRejectProof ? (
                           <Button
@@ -383,17 +407,26 @@ export function BookingQuickPopover({
                           />
                         ) : null}
                       </HStack>
-                    ) : canRejectProof ? (
+                    ) : isPending && booking.depositAmountCents > 0 ? (
                       <HStack gap={2} align="center" wrap="wrap" paddingBlockStart={1}>
                         <Button
                           type="button"
-                          label="Rechazar comprobante"
-                          variant="ghost"
+                          label="Revisar anticipo"
+                          variant="secondary"
                           size="sm"
-                          icon={<XCircle size={14} aria-hidden="true" />}
-                          isDisabled={isBusy}
-                          onClick={() => setPendingConfirm('reject_deposit')}
+                          onClick={() => setProofZoomOpen(true)}
                         />
+                        {canRejectProof ? (
+                          <Button
+                            type="button"
+                            label="Rechazar comprobante"
+                            variant="ghost"
+                            size="sm"
+                            icon={<XCircle size={14} aria-hidden="true" />}
+                            isDisabled={isBusy}
+                            onClick={() => setPendingConfirm('reject_deposit')}
+                          />
+                        ) : null}
                       </HStack>
                     ) : null}
                   </VStack>
@@ -456,7 +489,10 @@ export function BookingQuickPopover({
                   whatsappChatHref={whatsappChatHref}
                   waHref={waHref}
                   reviewWaHref={reviewWaHref}
-                  reviewSettingsHref="/admin/integraciones?section=resenas#analytics-heading"
+                  reviewSettingsHref={integracionesHref({
+                    section: 'resenas',
+                    hash: 'analytics-heading',
+                  })}
                   clientProfileHref={clientProfileHref}
                   onConfirm={() => void handleStatusAction('confirmed')}
                   onComplete={() => void handleStatusAction('completed')}
@@ -479,30 +515,19 @@ export function BookingQuickPopover({
         />
       </Dialog>
 
-      {hasDisplayableProof && booking.paymentProofUrl ? (
-        <BookingProofModal
-          isOpen={proofZoomOpen}
-          onOpenChange={setProofZoomOpen}
-          clientName={booking.client.fullName}
-          bookingCode={booking.bookingCode}
-          depositAmountCents={booking.depositAmountCents}
-          currency={currency}
-          paymentProofUrl={booking.paymentProofUrl}
-          canConfirm={isPending}
-          isConfirming={busyStatus === 'confirmed'}
-          isRejecting={isRejectingDeposit}
-          isBusy={isBusy}
-          onConfirm={() => void handleStatusAction('confirmed')}
-          onReject={
-            canRejectProof
-              ? () => {
-                  setProofZoomOpen(false);
-                  setPendingConfirm('reject_deposit');
-                }
-              : undefined
-          }
-        />
-      ) : null}
+      <DepositProofReviewDialog
+        deposit={proofReviewItem}
+        onClose={() => setProofZoomOpen(false)}
+        currency={currency}
+        timezone={timezone}
+        canApprove={isPending}
+        isApproving={busyStatus === 'confirmed'}
+        isRejecting={isRejectingDeposit}
+        onApprove={isPending ? () => handleStatusAction('confirmed') : undefined}
+        onReject={
+          canRejectProof ? (_item, reason) => handleRejectDepositAction(reason) : undefined
+        }
+      />
 
       <ConfirmActionDialog
         isOpen={pendingConfirm !== null}

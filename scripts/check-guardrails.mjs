@@ -27,6 +27,7 @@ const PURE_DOMAIN_FILES = new Set([
   'src/lib/clock.ts',
   'src/lib/qr.ts',
   'src/lib/contrast.ts',
+  'src/lib/admin-links.ts',
 ]);
 
 const PUBLIC_UI_DTO_BOUNDARY_FILES = new Set([
@@ -170,6 +171,8 @@ const PX_UNIT_RE = /\b\d+(?:\.\d+)?px\b/i;
 const DEMO_BYPASS_HEADER_RE = /^x-[a-z0-9-]*demo[a-z0-9-]*$/i;
 const SECRET_ENV_NAME_RE = /(SECRET|TOKEN|KEY|PASSWORD)/i;
 const LOCALHOST_URL_RE = /https?:\/\/localhost(?::\d+)?(?=$|\/|[?#\s'"`])|https?:\/\/localhost:$/i;
+const RAW_ADMIN_LINK_RE =
+  /(?:^|[^a-zA-Z0-9_/-])(?:https?:\/\/[^/\s'"`]+)?\/admin(?:\/[a-z0-9-]+)*\?/i;
 
 const SEO_NO_LOCALHOST_FILES = new Set([
   'src/app/robots.ts',
@@ -251,7 +254,9 @@ function isPureDomainFile(rel) {
     rel.startsWith('src/lib/booking/') ||
     rel.startsWith('src/lib/loyalty/') ||
     rel.startsWith('src/lib/payments/') ||
-    rel.startsWith('src/lib/notifications/')
+    rel.startsWith('src/lib/notifications/') ||
+    rel.startsWith('src/lib/metrics/') ||
+    rel.startsWith('src/lib/analytics/')
   );
 }
 
@@ -1757,6 +1762,26 @@ export function checkSourceText(rawRel, text) {
           );
         }
       }
+    }
+
+    if (
+      !testFile &&
+      rel !== 'src/lib/admin-links.ts' &&
+      (ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node)) &&
+      RAW_ADMIN_LINK_RE.test(node.text)
+    ) {
+      const { line, col } = getLineCol(sf, node.getStart(sf));
+      addViolation(
+        rel,
+        line,
+        col,
+        'no-raw-admin-links',
+        `Enlace admin con query params hardcodeado ("${node.text.trim().slice(0, 80)}"). Usa los builders tipados de @/lib/admin-links (agendaHref, cajaHref, clientasHref, whatsappHref, horariosHref, etc.).`,
+      );
     }
 
     if (

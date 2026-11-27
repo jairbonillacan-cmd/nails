@@ -23,6 +23,7 @@ import {
   VolumeX,
   Wallet,
 } from 'lucide-react';
+import { agendaHref, cajaHref, whatsappHref } from '@/lib/admin-links';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
@@ -82,7 +83,7 @@ export function AdminTopBar({
       ? {
           id: 'whatsapp-unread',
           label: `${unreadWhatsAppCount} mensaje${unreadWhatsAppCount === 1 ? '' : 's'} sin leer en WhatsApp`,
-          href: '/admin/whatsapp?filter=unread',
+          href: whatsappHref({ filter: 'unread' }),
           icon: <MessageCircle size={15} aria-hidden="true" />,
         }
       : null,
@@ -90,7 +91,7 @@ export function AdminTopBar({
       ? {
           id: 'whatsapp-failed-reminders',
           label: `${failedRemindersCount} recordatorio${failedRemindersCount === 1 ? '' : 's'} fallido${failedRemindersCount === 1 ? '' : 's'}`,
-          href: '/admin/whatsapp?tab=recordatorios&filter=failed',
+          href: whatsappHref({ tab: 'recordatorios', filter: 'failed' }),
           icon: <AlertTriangle size={15} aria-hidden="true" />,
         }
       : null,
@@ -98,7 +99,7 @@ export function AdminTopBar({
       ? {
           id: 'deposits',
           label: `${pendingDepositsCount} anticipo${pendingDepositsCount === 1 ? '' : 's'} por confirmar`,
-          href: '/admin/caja?tab=anticipos',
+          href: cajaHref({ tab: 'anticipos' }),
           icon: <Wallet size={15} aria-hidden="true" />,
         }
       : null,
@@ -106,7 +107,7 @@ export function AdminTopBar({
       ? {
           id: 'uncollected',
           label: `${uncollectedCount} cita${uncollectedCount === 1 ? '' : 's'} sin cobrar`,
-          href: '/admin/caja?tab=sin-cobrar',
+          href: cajaHref({ tab: 'sin-cobrar' }),
           icon: <ReceiptText size={15} aria-hidden="true" />,
         }
       : null,
@@ -114,7 +115,7 @@ export function AdminTopBar({
       ? {
           id: 'waitlist',
           label: `${waitingCount} en lista de espera`,
-          href: '/admin/citas?tab=waitlist',
+          href: agendaHref({ tab: 'waitlist' }),
           icon: <Clock size={15} aria-hidden="true" />,
         }
       : null,
@@ -133,7 +134,7 @@ export function AdminTopBar({
             whatsappUsage.alertLevel === 'limit_100'
               ? `Límite de WhatsApp alcanzado (${whatsappUsage.sentCount}/${whatsappUsage.quotaLimit})`
               : `WhatsApp al ${whatsappUsage.percentUsed}% del límite mensual`,
-          href: '/admin/whatsapp?tab=conexion',
+          href: whatsappHref({ tab: 'conexion' }),
           icon: <MessageCircle size={15} aria-hidden="true" />,
         }
       : null,
@@ -281,7 +282,7 @@ export function AdminTopBar({
           size="md"
           className="ad-topbar-cta fx-press"
           icon={<Plus size={15} aria-hidden="true" />}
-          href="/admin/citas?new=1"
+          href={agendaHref({ new: true })}
         />
       </HStack>
     </HStack>

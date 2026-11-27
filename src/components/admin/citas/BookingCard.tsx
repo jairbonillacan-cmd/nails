@@ -19,6 +19,7 @@ import {
   UserRound,
   UserX,
 } from 'lucide-react';
+import { clientasHref, whatsappHref } from '@/lib/admin-links';
 import {
   computeBookingBalance,
   isPendingDepositStatus,
@@ -145,7 +146,10 @@ export const BookingCard = memo(function BookingCard({
   const canMarkCompleted = canTransitionBookingStatus(b.status, 'completed');
   const canMarkNoShow = canTransitionBookingStatus(b.status, 'no_show');
 
-  const waInboxHref = `/admin/whatsapp?phone=${encodeURIComponent(b.client.phoneE164)}&bookingId=${encodeURIComponent(b.id)}`;
+  const waInboxHref = whatsappHref({
+    phone: b.client.phoneE164,
+    bookingId: b.id,
+  });
   const waHref = buildWhatsAppLink(
     b.client.phoneE164,
     `Hola ${b.client.fullName}, te escribimos de ${salonName} sobre tu cita (${b.bookingCode}) de ${b.service.name} el ${formatDateShortInTimezone(
@@ -437,7 +441,7 @@ export const BookingCard = memo(function BookingCard({
               variant="ghost"
               size="sm"
               icon={<UserRound size={14} />}
-              href={`/admin/clientas?q=${encodeURIComponent(b.client.phoneE164)}`}
+              href={clientasHref({ q: b.client.phoneE164 })}
             />
           ) : null}
         </HStack>

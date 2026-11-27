@@ -242,4 +242,13 @@ export const OnboardingPostSchema = z.object({
   starterService: StarterServiceSchema.optional(),
 });
 
-export const ReportPeriodSchema = z.enum(['7d', '30d', '90d', 'all']);
+export const ReportPeriodSchema = z.enum([
+  'today',
+  '7d',
+  '30d',
+  '90d',
+  'month',
+  'last_month',
+  'custom',
+  'all',
+]);

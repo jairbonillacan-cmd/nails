@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { integracionesHref, withAdminBaseUrl } from '@/lib/admin-links';
 import {
   constantTimeEqual,
   consumeGoogleOAuthNonce,
@@ -169,7 +170,9 @@ export async function GET(request: NextRequest) {
       }
 
       return clearOAuthCookie(
-        NextResponse.redirect(`${env.appUrl}/admin/integraciones?google=connected`),
+        NextResponse.redirect(
+          withAdminBaseUrl(env.appUrl, integracionesHref({ google: 'connected' })),
+        ),
       );
     } catch {
       if (process.env.NODE_ENV === 'production') {
@@ -186,6 +189,8 @@ export async function GET(request: NextRequest) {
   await updateCalendarConnection(statePayload.staffId, basePatch);
 
   return clearOAuthCookie(
-    NextResponse.redirect(`${env.appUrl}/admin/integraciones?google=connected`),
+    NextResponse.redirect(
+      withAdminBaseUrl(env.appUrl, integracionesHref({ google: 'connected' })),
+    ),
   );
 }

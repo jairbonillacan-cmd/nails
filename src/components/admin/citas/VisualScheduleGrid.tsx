@@ -21,6 +21,7 @@ import {
 import { ConfirmActionDialog } from '@/components/ui/ConfirmActionDialog';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { BookingStatusTag, StatusTag } from '@/components/ui/StatusTag';
+import { equipoHref } from '@/lib/admin-links';
 import {
   computeBookingBalance,
   isPendingDepositStatus,
@@ -351,7 +352,7 @@ export function VisualScheduleGrid({
         title="Sin profesionales activas en la agenda"
         description="Activa al menos una profesional en Equipo para ver el calendario del salón."
         icon={<CalendarDays size={22} aria-hidden="true" />}
-        actions={<Button label="Ir a Equipo" variant="secondary" size="sm" href="/admin/equipo" />}
+        actions={<Button label="Ir a Equipo" variant="secondary" size="sm" href={equipoHref()} />}
       />
     );
   }

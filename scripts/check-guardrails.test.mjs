@@ -197,6 +197,9 @@ test('dependency-graph: enforces pure domain boundaries for booking/, public-dto
     'src/lib/notifications/cascade.ts',
     'src/lib/qr.ts',
     'src/lib/contrast.ts',
+    'src/lib/admin-links.ts',
+    'src/lib/metrics/periods.ts',
+    'src/lib/analytics/reports.ts',
   ];
 
   const badImports = [
@@ -1040,4 +1043,52 @@ test('admin-form-dialog: raw <Dialog purpose="form"> in admin must go through Fo
   assert.deepEqual(rulesOf('src/components/admin/equipo/EditThing.tsx', info), []);
   assert.deepEqual(rulesOf('src/components/booking/EditThing.tsx', raw), []);
   assert.deepEqual(rulesOf('src/components/admin/config/OwnerPinDialog.tsx', raw), []);
+});
+
+test('no-raw-admin-links: blocks hardcoded /admin/<mod>?... query strings outside src/lib/admin-links.ts and tests, allows /api/admin/? and queryless /admin paths', () => {
+  const badLinks = [
+    'export function build(id: string, base: string, qs: string) {',
+    '  const a = "/admin/citas?new=1";',
+    '  const b = `/admin/citas?collect=${id}`;',
+    '  const c = `${base}/admin/caja?tab=anticipos`;',
+    '  const d = `/admin/whatsapp?${qs}`;',
+    '  const e = "https://laikona.mx/admin/integraciones?google=connected";',
+    '  const f = "/admin?period=7d";',
+    '  return [a, b, c, d, e, f];',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/components/admin/Sample.tsx', badLinks), [
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+  ]);
+  assert.deepEqual(rulesOf('src/lib/cita/studio-bar.ts', badLinks), [
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+    'no-raw-admin-links',
+  ]);
+  assert.deepEqual(rulesOf('src/lib/admin-links.ts', badLinks), []);
+  assert.deepEqual(rulesOf('src/lib/admin-links.test.ts', badLinks), []);
+
+  const cleanLinks = [
+    'import { agendaHref, cajaHref } from "@/lib/admin-links";',
+    'export function build(id: string) {',
+    '  const a = "/admin/citas";',
+    '  const b = "/api/admin/clients?inactiveDays=30";',
+    '  const c = `/api/admin/bookings?from=${id}`;',
+    '  const d = agendaHref({ collect: id });',
+    '  const e = cajaHref({ tab: "anticipos" });',
+    '  return [a, b, c, d, e];',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/components/admin/Sample.tsx', cleanLinks), []);
+  assert.deepEqual(rulesOf('src/lib/hooks/useAdminCache.ts', cleanLinks), []);
 });

@@ -1,3 +1,4 @@
+import { cajaHref, withAdminBaseUrl } from '../admin-links';
 import {
   formatCurrency,
   formatDateLongInTimezone,
@@ -410,7 +411,7 @@ export function buildRetentionWarningTemplatePayload(params: {
         previewLines.join('\n'),
         'Consulta el detalle completo en Caja.',
       ),
-      CAJA_URL: `${baseUrl}/admin/caja?tab=anticipos`,
+      CAJA_URL: withAdminBaseUrl(baseUrl, cajaHref({ tab: 'anticipos' })),
       ...buildFooterVars(params.settings, baseUrl),
     },
   };

@@ -1,10 +1,25 @@
-import { hasBookingProofSubmitted } from '@/lib/booking/balance';
 import { getDateKeyInTimezone } from '@/lib/format';
+import {
+  computeCashPeriodSummary,
+  computePercentDelta,
+  formatMetricCompareLabel,
+  formatMetricPeriodLabel,
+  formatPendingDepositsBreakdown,
+  isIsoInMetricRange,
+  resolveMetricPeriodRange,
+  resolvePreviousMetricPeriodRange,
+  selectReceivablesSummary,
+  selectTodayAgenda,
+  shiftMetricDateKey,
+  type MetricPeriod,
+} from '@/lib/metrics';
 import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations, InventoryItem, StaffMember, WaitlistEntry } from '@/lib/types';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
-export type DashboardPeriod = 'today' | '7d' | '30d';
+export type DashboardPeriod = MetricPeriod;
+
+export { computePercentDelta, formatPendingDepositsBreakdown };
 
 type UncollectedBookingItem = AdminOverviewPayload['uncollectedBookings'][number];
 
@@ -108,25 +123,12 @@ function resolveGreeting(iso: string, timeZone: string): string {
   return 'Buenas noches';
 }
 
-function shiftDateKey(dateKey: string, deltaDays: number): string {
-  const parts = dateKey.split('-').map((chunk) => Number.parseInt(chunk, 10));
-  const dt = new Date(
-    Date.UTC(parts[0] || 2026, (parts[1] || 1) - 1, (parts[2] || 1) + deltaDays, 12, 0, 0),
-  );
-  return dt.toISOString().slice(0, 10);
-}
-
 function shortWeekdayLabel(dateKey: string): string {
   const formatted = new Intl.DateTimeFormat('es-MX', {
     timeZone: 'UTC',
     weekday: 'short',
   }).format(new Date(`${dateKey}T12:00:00Z`));
   return capitalizeFirst(formatted.replace(/\./g, '').slice(0, 3));
-}
-
-export function computePercentDelta(current: number, previous: number): number | null {
-  if (previous <= 0) return current > 0 ? 100 : null;
-  return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
 export function getDisplayBookingUrl(appUrl: string): string {
@@ -140,29 +142,6 @@ export function getDisplayBookingUrl(appUrl: string): string {
 export function isDisplayableProofUrl(url: string | null): url is string {
   if (!url) return false;
   return url.startsWith('/api/media/') || url.startsWith('https://');
-}
-
-export function hasPendingDepositProof(deposit: {
-  proofDeliveryMethod: 'web_upload' | 'web_link' | 'instagram_dm' | 'none';
-  paymentProofUrl: string | null;
-}): boolean {
-  return hasBookingProofSubmitted(deposit);
-}
-
-export function formatPendingDepositsBreakdown(
-  awaitingReviewCount: number,
-  missingProofCount: number,
-): string {
-  if (awaitingReviewCount > 0 && missingProofCount > 0) {
-    return `${awaitingReviewCount} por revisar · ${missingProofCount} sin comprobante`;
-  }
-  if (awaitingReviewCount > 0) {
-    return `${awaitingReviewCount} ${awaitingReviewCount === 1 ? 'comprobante' : 'comprobantes'} por revisar`;
-  }
-  if (missingProofCount > 0) {
-    return `${missingProofCount} sin comprobante`;
-  }
-  return 'Todo revisado';
 }
 
 export function buildDashboardMetrics(
@@ -185,28 +164,14 @@ export function buildDashboardMetrics(
   });
 
   const uncollectedByBookingId = new Map<string, UncollectedBookingItem>();
-  let uncollectedTotalCents = 0;
   for (const item of data.uncollectedBookings) {
     uncollectedByBookingId.set(item.bookingId, item);
-    uncollectedTotalCents += item.remainingCents;
   }
 
-  let pendingDepositsTotalCents = 0;
-  let depositsAwaitingReviewCount = 0;
-  let depositsMissingProofCount = 0;
-  let depositsAwaitingReviewCents = 0;
-  let depositsMissingProofCents = 0;
-  for (const item of data.pendingDeposits) {
-    const amountCents = Math.max(0, item.depositAmountCents);
-    pendingDepositsTotalCents += amountCents;
-    if (hasPendingDepositProof(item)) {
-      depositsAwaitingReviewCount += 1;
-      depositsAwaitingReviewCents += amountCents;
-    } else {
-      depositsMissingProofCount += 1;
-      depositsMissingProofCents += amountCents;
-    }
-  }
+  const receivables = selectReceivablesSummary({
+    uncollectedBookings: data.uncollectedBookings,
+    pendingDeposits: data.pendingDeposits,
+  });
 
   const waitingList = data.waitlist.filter((entry) => entry.status === 'waiting');
   const lowStock = roleCanAccess(role, 'inventory')
@@ -217,97 +182,59 @@ export function buildDashboardMetrics(
     .filter((booking) => booking.status !== 'canceled')
     .toSorted((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 
+  const agenda = selectTodayAgenda({
+    bookings: nonCanceledBookings,
+    todayKey,
+    tomorrowKey,
+    timezone: tz,
+    nowMs: serverNowMs,
+  });
+
   const bookingDateKey = (booking: BookingWithRelations) =>
     getDateKeyInTimezone(new Date(booking.startAt), tz);
   const entryDateKey = (occurredAt: string) =>
     getDateKeyInTimezone(new Date(occurredAt), tz);
 
-  const todayBookings = nonCanceledBookings.filter((booking) => bookingDateKey(booking) === todayKey);
-  const tomorrowBookings = nonCanceledBookings.filter(
-    (booking) => bookingDateKey(booking) === tomorrowKey,
+  const currentRange = resolveMetricPeriodRange(todayKey, period);
+  const previousRange = resolvePreviousMetricPeriodRange(todayKey, period);
+  const todayRange = resolveMetricPeriodRange(todayKey, 'today');
+
+  const todayCashEntries = data.cashEntries.filter((entry) =>
+    isIsoInMetricRange(entry.occurredAt, todayRange, tz),
   );
+  const periodCashEntries = data.cashEntries.filter((entry) =>
+    isIsoInMetricRange(entry.occurredAt, currentRange, tz),
+  );
+  const prevCashEntries = previousRange
+    ? data.cashEntries.filter((entry) => isIsoInMetricRange(entry.occurredAt, previousRange, tz))
+    : [];
 
-  const upcomingTodayCount = todayBookings.filter(
-    (booking) =>
-      booking.status !== 'completed' &&
-      booking.status !== 'no_show' &&
-      new Date(booking.endAt).getTime() >= serverNowMs,
-  ).length;
+  const todayCashSummary = computeCashPeriodSummary(todayCashEntries);
+  const periodCashSummary = computeCashPeriodSummary(periodCashEntries);
+  const prevCashSummary = computeCashPeriodSummary(prevCashEntries);
 
-  const windowDays = period === 'today' ? 1 : period === '7d' ? 7 : 30;
-  const currentStartKey = shiftDateKey(todayKey, -(windowDays - 1));
-  const prevEndKey = shiftDateKey(currentStartKey, -1);
-  const prevStartKey = shiftDateKey(prevEndKey, -(windowDays - 1));
-
-  const todayCashEntries = data.cashEntries.filter((entry) => entryDateKey(entry.occurredAt) === todayKey);
-  const periodCashEntries = data.cashEntries.filter((entry) => {
-    const key = entryDateKey(entry.occurredAt);
-    return key >= currentStartKey && key <= todayKey;
-  });
-  const hasTodayEntries = todayCashEntries.length > 0;
-  const hasPeriodEntries = periodCashEntries.length > 0;
-
-  let cashIncomeCents = 0;
-  let digitalIncomeCents = 0;
-  let periodExpensesCents = 0;
-  let commissionsCents = 0;
-  let tipsCents = 0;
-
-  for (const entry of periodCashEntries) {
-    if (entry.entryType === 'expense') {
-      periodExpensesCents += Math.abs(entry.amountCents);
-    } else if (entry.paymentMethod === 'cash') {
-      cashIncomeCents += entry.amountCents;
-    } else {
-      digitalIncomeCents += entry.amountCents;
-    }
-    commissionsCents += entry.commissionCents;
-    tipsCents += entry.tipCents;
-  }
-
-  const todayRevenueCents = todayCashEntries
-    .filter((entry) => entry.entryType !== 'expense')
-    .reduce((sum, entry) => sum + entry.amountCents, 0);
-  const todayExpensesCents = todayCashEntries
-    .filter((entry) => entry.entryType === 'expense')
-    .reduce((sum, entry) => sum + Math.abs(entry.amountCents), 0);
-  const todayTipsCents = todayCashEntries.reduce((sum, entry) => sum + entry.tipCents, 0);
-
-  const sumCashRange = (startKey: string, endKey: string) =>
-    data.cashEntries.reduce((sum, entry) => {
-      if (entry.entryType === 'expense') return sum;
-      const key = entryDateKey(entry.occurredAt);
-      return key >= startKey && key <= endKey ? sum + entry.amountCents : sum;
-    }, 0);
-
-  const currentBookings = nonCanceledBookings.filter((booking) => {
-    const key = bookingDateKey(booking);
-    return key >= currentStartKey && key <= todayKey;
-  });
-  const prevBookingsCount = nonCanceledBookings.filter((booking) => {
-    const key = bookingDateKey(booking);
-    return key >= prevStartKey && key <= prevEndKey;
-  }).length;
-
-  const periodRevenueCents = sumCashRange(currentStartKey, todayKey);
-  const prevRevenueCents = sumCashRange(prevStartKey, prevEndKey);
+  const currentBookings = nonCanceledBookings.filter((booking) =>
+    isIsoInMetricRange(booking.startAt, currentRange, tz),
+  );
+  const prevBookingsCount = previousRange
+    ? nonCanceledBookings.filter((booking) =>
+        isIsoInMetricRange(booking.startAt, previousRange, tz),
+      ).length
+    : 0;
   const periodConfirmedCount = currentBookings.filter(
     (booking) => booking.status === 'confirmed' || booking.status === 'completed',
   ).length;
 
-  const periodLabel =
-    period === 'today' ? 'Hoy' : period === '7d' ? 'Últimos 7 días' : 'Últimos 30 días';
-  const compareLabel =
-    period === 'today' ? 'vs ayer' : period === '7d' ? 'vs 7 días previos' : 'vs 30 días previos';
-
   const dailySeries: DailySeriesPoint[] = [];
   for (let offset = -6; offset <= 0; offset += 1) {
-    const key = shiftDateKey(todayKey, offset);
+    const key = shiftMetricDateKey(todayKey, offset);
     const revenueCents = data.cashEntries.reduce((sum, entry) => {
       if (entry.entryType === 'expense') return sum;
       return entryDateKey(entry.occurredAt) === key ? sum + entry.amountCents : sum;
     }, 0);
-    const bookingsCount = nonCanceledBookings.filter((booking) => bookingDateKey(booking) === key).length;
+    const bookingsCount = nonCanceledBookings.filter(
+      (booking) => bookingDateKey(booking) === key,
+    ).length;
     dailySeries.push({
       dateKey: key,
       shortLabel: shortWeekdayLabel(key),
@@ -317,9 +244,9 @@ export function buildDashboardMetrics(
     });
   }
 
-  const totalTodayBookings = todayBookings.length;
+  const totalTodayBookings = agenda.todayBookings.length;
   const staffTodayLoad: StaffTodayLoad[] = activeStaff.map((member) => {
-    const todayCount = todayBookings.filter((booking) => booking.staffId === member.id).length;
+    const todayCount = agenda.todayBookings.filter((booking) => booking.staffId === member.id).length;
     const sharePercent =
       totalTodayBookings > 0 ? Math.round((todayCount / totalTodayBookings) * 100) : 0;
     return {
@@ -348,41 +275,45 @@ export function buildDashboardMetrics(
     activeStaff,
     staffColorIndex,
     uncollectedByBookingId,
-    uncollectedTotalCents,
-    pendingDepositsTotalCents,
-    depositsAwaitingReviewCount,
-    depositsMissingProofCount,
-    depositsAwaitingReviewCents,
-    depositsMissingProofCents,
+    uncollectedTotalCents: receivables.uncollectedTotalCents,
+    pendingDepositsTotalCents: receivables.pendingDepositsTotalCents,
+    depositsAwaitingReviewCount: receivables.awaitingReviewCount,
+    depositsMissingProofCount: receivables.missingProofCount,
+    depositsAwaitingReviewCents: receivables.awaitingReviewCents,
+    depositsMissingProofCents: receivables.missingProofCents,
     waitingList,
     lowStock,
-    todayBookings,
-    tomorrowBookings,
-    upcomingTodayCount,
+    todayBookings: agenda.todayBookings,
+    tomorrowBookings: agenda.tomorrowBookings,
+    upcomingTodayCount: agenda.upcomingTodayCount,
     totalAttentionCount,
     cash: {
-      hasTodayEntries,
-      hasPeriodEntries,
-      cashIncomeCents,
-      digitalIncomeCents,
-      expensesCents: periodExpensesCents,
-      commissionsCents,
-      tipsCents,
-      periodNetCashCents: cashIncomeCents + digitalIncomeCents - periodExpensesCents,
-      todayNetCashCents: todayRevenueCents - todayExpensesCents,
-      todayTipsCents,
+      hasTodayEntries: todayCashSummary.hasEntries,
+      hasPeriodEntries: periodCashSummary.hasEntries,
+      cashIncomeCents: periodCashSummary.cashCents,
+      digitalIncomeCents: periodCashSummary.digitalCents,
+      expensesCents: periodCashSummary.expensesCents,
+      commissionsCents: periodCashSummary.commissionsCents,
+      tipsCents: periodCashSummary.tipsCents,
+      periodNetCashCents: periodCashSummary.netCents,
+      todayNetCashCents: todayCashSummary.netCents,
+      todayTipsCents: todayCashSummary.tipsCents,
     },
     periodMetrics: {
       period,
-      periodLabel,
-      compareLabel,
-      revenueCents: periodRevenueCents,
-      prevRevenueCents,
-      revenueDeltaPercent: computePercentDelta(periodRevenueCents, prevRevenueCents),
+      periodLabel: formatMetricPeriodLabel(period, null, todayKey),
+      compareLabel: formatMetricCompareLabel(period),
+      revenueCents: periodCashSummary.collectedCents,
+      prevRevenueCents: prevCashSummary.collectedCents,
+      revenueDeltaPercent: previousRange
+        ? computePercentDelta(periodCashSummary.collectedCents, prevCashSummary.collectedCents)
+        : null,
       bookingsCount: currentBookings.length,
       confirmedCount: periodConfirmedCount,
       prevBookingsCount,
-      bookingsDeltaPercent: computePercentDelta(currentBookings.length, prevBookingsCount),
+      bookingsDeltaPercent: previousRange
+        ? computePercentDelta(currentBookings.length, prevBookingsCount)
+        : null,
     },
     dailySeries,
     staffTodayLoad,

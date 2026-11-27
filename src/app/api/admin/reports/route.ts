@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildExecutiveReport, type ReportPeriod } from '@/lib/analytics/reports';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { ReportPeriodSchema } from '@/lib/contracts';
+import { isMetricDateKey } from '@/lib/metrics';
 import { roleCanAccess } from '@/lib/rbac';
 import { getRepository } from '@/lib/repositories/db';
 
@@ -17,16 +18,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
   }
 
-  const rawPeriod = new URL(request.url).searchParams.get('period')?.trim() || '30d';
+  const url = new URL(request.url);
+  const rawPeriod = url.searchParams.get('period')?.trim() || '30d';
   const parsedPeriod = ReportPeriodSchema.safeParse(rawPeriod);
   if (!parsedPeriod.success) {
     return NextResponse.json(
-      { error: 'Período inválido. Usa 7d, 30d, 90d o all.' },
+      {
+        error:
+          'Período inválido. Usa today, 7d, 30d, 90d, month, last_month, custom o all.',
+      },
       { status: 400 },
     );
   }
 
   const period: ReportPeriod = parsedPeriod.data;
+  const fromParam = url.searchParams.get('from')?.trim() || '';
+  const toParam = url.searchParams.get('to')?.trim() || '';
+  const customRange =
+    period === 'custom'
+      ? {
+          fromKey: isMetricDateKey(fromParam) ? fromParam : '',
+          toKey: isMetricDateKey(toParam) ? toParam : '',
+        }
+      : null;
+
   const db = await getRepository().getSnapshot();
   const now = new Date();
   const tz = db.settings.timezone || 'America/Mexico_City';
@@ -42,7 +57,9 @@ export async function GET(request: NextRequest) {
       clients: [],
       reviews: [],
       paymentSplits: [],
+      cashEntries: [],
       period,
+      customRange,
       nowMs: now.getTime(),
       timezone: tz,
       scopeStaffId: '__unassigned__',
@@ -91,6 +108,14 @@ export async function GET(request: NextRequest) {
   const scopedPaymentSplits = isSpecialist
     ? allPaymentSplits.filter((ps) => scopedBookingIds.has(ps.bookingId))
     : allPaymentSplits;
+  const allCashEntries = db.cashEntries ?? [];
+  const scopedCashEntries = isSpecialist
+    ? allCashEntries.filter(
+        (entry) =>
+          entry.staffId === scopeStaffId ||
+          (entry.bookingId !== null && scopedBookingIds.has(entry.bookingId)),
+      )
+    : allCashEntries;
 
   const report = buildExecutiveReport({
     bookings: scopedBookings,
@@ -100,8 +125,10 @@ export async function GET(request: NextRequest) {
     clients: scopedClients,
     reviews: scopedReviews,
     paymentSplits: scopedPaymentSplits,
+    cashEntries: scopedCashEntries,
     funnelEvents: isSpecialist ? [] : (db.funnelEvents ?? []),
     period,
+    customRange,
     nowMs: now.getTime(),
     timezone: tz,
     scopeStaffId: isSpecialist ? scopeStaffId : null,

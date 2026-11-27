@@ -3,6 +3,7 @@ import type {
   AvailabilitySchedule,
   Booking,
   BookingReview,
+  CashRegisterEntry,
   ClientProfile,
   FunnelEventRecord,
   PaymentSplit,
@@ -659,5 +660,88 @@ describe('buildExecutiveReport', () => {
     const summaryAll = buildFunnelSummary(events, 'all', NOW_MS, TZ);
     expect(summaryAll.totalSessions).toBe(3);
     expect(summaryAll.overallConversionPercent).toBe(33);
+  });
+
+  it('supports unified periods (today, month, last_month, custom) and reconciles cashEntries via computeBookingBalance + computeCashPeriodSummary', () => {
+    const base = makeBaseInput();
+    const depositOnlyBooking = makeBooking({
+      id: 'bk-today-deposit',
+      serviceId: 'srv-rubber',
+      staffId: 'staff-karla',
+      clientId: 'cli-sofia',
+      startAt: '2026-05-15T17:00:00.000Z',
+      endAt: '2026-05-15T19:00:00.000Z',
+      totalDurationMinutes: 120,
+      totalPriceCents: 35000,
+      depositAmountCents: 20000,
+      status: 'confirmed',
+    });
+    const cashEntries: CashRegisterEntry[] = [
+      {
+        id: 'ce-deposit-today',
+        bookingId: 'bk-today-deposit',
+        staffId: 'staff-karla',
+        entryType: 'deposit',
+        description: 'Anticipo SPEI',
+        amountCents: 20000,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'transfer',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-15T15:00:00.000Z',
+      },
+      {
+        id: 'ce-expense-today',
+        bookingId: null,
+        staffId: null,
+        entryType: 'expense',
+        description: 'Insumos',
+        amountCents: 5000,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'cash',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-15T16:00:00.000Z',
+      },
+    ];
+
+    const todayReport = buildExecutiveReport({
+      ...base,
+      bookings: [...base.bookings, depositOnlyBooking],
+      cashEntries,
+      period: 'today',
+    });
+    expect(todayReport.periodLabel).toBe('Hoy');
+    expect(todayReport.rangeStartDate).toBe('2026-05-15');
+    expect(todayReport.rangeEndDate).toBe('2026-05-15');
+    expect(todayReport.summary.totalBookings).toBe(1);
+    expect(todayReport.summary.totalRevenueCollectedCents).toBe(20000);
+    expect(todayReport.cashSummary.collectedCents).toBe(20000);
+    expect(todayReport.cashSummary.expensesCents).toBe(5000);
+    expect(todayReport.cashSummary.netCents).toBe(15000);
+
+    const monthReport = buildExecutiveReport({ ...base, period: 'month' });
+    expect(monthReport.periodLabel).toBe('Este mes');
+    expect(monthReport.rangeStartDate).toBe('2026-05-01');
+    expect(monthReport.rangeEndDate).toBe('2026-05-15');
+    expect(monthReport.summary.totalBookings).toBe(4);
+    expect(monthReport.summary.totalRevenueCollectedCents).toBe(89000);
+
+    const lastMonthReport = buildExecutiveReport({ ...base, period: 'last_month' });
+    expect(lastMonthReport.periodLabel).toBe('Mes pasado');
+    expect(lastMonthReport.rangeStartDate).toBe('2026-04-01');
+    expect(lastMonthReport.rangeEndDate).toBe('2026-04-30');
+    expect(lastMonthReport.summary.totalBookings).toBe(2);
+    expect(lastMonthReport.summary.totalRevenueCollectedCents).toBe(54000);
+
+    const customReport = buildExecutiveReport({
+      ...base,
+      period: 'custom',
+      customRange: { fromKey: '2026-04-20', toKey: '2026-04-30' },
+    });
+    expect(customReport.rangeStartDate).toBe('2026-04-20');
+    expect(customReport.rangeEndDate).toBe('2026-04-30');
+    expect(customReport.summary.totalBookings).toBe(1);
+    expect(customReport.summary.totalRevenueCollectedCents).toBe(36000);
   });
 });

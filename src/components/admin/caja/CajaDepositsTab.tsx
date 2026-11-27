@@ -7,12 +7,9 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Link } from '@astryxdesign/core/Link';
 import { Token } from '@astryxdesign/core/Token';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
-import { Banner } from '@astryxdesign/core/Banner';
-import { Check, ExternalLink, ImageIcon, MessageCircle, Phone, Wallet } from 'lucide-react';
+import { Check, ExternalLink, ImageIcon, Wallet } from 'lucide-react';
+import { agendaHref } from '@/lib/admin-links';
 import {
-  buildWhatsAppLink,
   formatCurrency,
   formatDateShortInTimezone,
   formatPhoneDisplay,
@@ -20,9 +17,9 @@ import {
 } from '@/lib/format';
 import {
   ActionRow,
+  DepositProofReviewDialog,
   EmptyStateCard,
   FilterPillBar,
-  StatusTag,
   SurfaceCard,
   type FilterPillOption,
 } from '@/components/ui';
@@ -48,6 +45,11 @@ interface CajaDepositsTabProps {
   rejectingId?: string | null;
   onApproveDeposit: (bookingId: string, bookingCode: string) => Promise<boolean>;
   onRejectDeposit?: (bookingId: string, bookingCode: string) => Promise<boolean>;
+  onRejectDepositDirect?: (
+    bookingId: string,
+    bookingCode: string,
+    reason?: string,
+  ) => Promise<boolean>;
 }
 
 export function CajaDepositsTab({
@@ -59,17 +61,10 @@ export function CajaDepositsTab({
   rejectingId = null,
   onApproveDeposit,
   onRejectDeposit,
+  onRejectDepositDirect,
 }: CajaDepositsTabProps) {
   const [proofFilter, setProofFilter] = useState<DepositProofFilter>('all');
   const [previewDeposit, setPreviewDeposit] = useState<PendingDepositRow | null>(null);
-  const [previewError, setPreviewError] = useState<{
-    bookingId: string;
-    message: string;
-  } | null>(null);
-  const visiblePreviewError =
-    previewDeposit && previewError && previewError.bookingId === previewDeposit.bookingId
-      ? previewError.message
-      : null;
 
   const sortedDeposits = pendingDeposits.toSorted(
     (a, b) => Number(hasCajaDepositProof(b)) - Number(hasCajaDepositProof(a)),
@@ -93,6 +88,8 @@ export function CajaDepositsTab({
     { value: 'review', label: 'Por revisar', count: awaitingReviewCount },
     { value: 'missing', label: 'Sin comprobante', count: missingProofCount },
   ];
+
+  const modalRejectHandler = onRejectDepositDirect ?? onRejectDeposit;
 
   return (
     <VStack gap={4}>
@@ -141,405 +138,163 @@ export function CajaDepositsTab({
               </HStack>
             ) : null}
             <VStack className="ad-row-list" gap={0}>
-            {filteredDeposits.map((dep) => {
-              const meta = proofMethodMeta(dep.proofDeliveryMethod);
-              const proofUrl = isSafeProofHref(dep.paymentProofUrl)
-                ? dep.paymentProofUrl
-                : null;
-              const hasImageProof = isImageProofHref(
-                dep.paymentProofUrl,
-                dep.proofDeliveryMethod,
-              );
-              const isUploaded = hasCajaDepositProof(dep);
-              const isApproving = approvingId === dep.bookingId;
-              const isRejecting = rejectingId === dep.bookingId;
-              const isRowBusy = isApproving || isRejecting;
+              {filteredDeposits.map((dep) => {
+                const meta = proofMethodMeta(dep.proofDeliveryMethod);
+                const proofUrl = isSafeProofHref(dep.paymentProofUrl)
+                  ? dep.paymentProofUrl
+                  : null;
+                const hasImageProof = isImageProofHref(
+                  dep.paymentProofUrl,
+                  dep.proofDeliveryMethod,
+                );
+                const isUploaded = hasCajaDepositProof(dep);
+                const isApproving = approvingId === dep.bookingId;
+                const isRejecting = rejectingId === dep.bookingId;
+                const isRowBusy = isApproving || isRejecting;
 
-              return (
-                <ActionRow
-                  key={dep.bookingId}
-                  leading={
-                    hasImageProof && proofUrl ? (
-                      <button
-                        type="button"
-                        className="ad-proof-thumb"
-                        aria-label={`Ver foto del comprobante de ${dep.clientName}`}
-                        onClick={() => setPreviewDeposit(dep)}
-                      >
-                        <img
-                          src={proofUrl}
-                          alt={`Comprobante de anticipo de ${dep.clientName}`}
-                        />
-                      </button>
-                    ) : (
-                      <VStack
-                        className="ad-task-icon"
-                        data-tone="warning"
-                        align="center"
-                        justify="center"
-                        aria-hidden="true"
-                      >
-                        <Wallet size={17} />
-                      </VStack>
-                    )
-                  }
-                  title={
-                    <HStack gap={2} align="center" wrap="wrap">
-                      <Text weight="semibold">{dep.clientName}</Text>
-                      <Token size="sm" color={meta.color} label={meta.label} />
-                    </HStack>
-                  }
-                  subtitle={`${dep.serviceName} (${dep.bookingCode}) · ${formatDateShortInTimezone(dep.startAt, tz)} ${formatTimeInTimezone(dep.startAt, tz)} con ${dep.staffName}`}
-                  meta={
-                    <HStack gap={2} wrap="wrap" align="center">
-                      <Text type="supporting" color="secondary" hasTabularNumbers>
-                        {formatPhoneDisplay(dep.clientPhone)}
-                      </Text>
-                      {dep.clientInstagram ? (
-                        <Link
-                          href={formatInstagramUrl(dep.clientInstagram)}
-                          isExternalLink
-                          type="supporting"
+                return (
+                  <ActionRow
+                    key={dep.bookingId}
+                    leading={
+                      hasImageProof && proofUrl ? (
+                        <button
+                          type="button"
+                          className="ad-proof-thumb"
+                          aria-label={`Ver foto del comprobante de ${dep.clientName}`}
+                          onClick={() => setPreviewDeposit(dep)}
                         >
-                          {formatInstagramDisplay(dep.clientInstagram)}
-                        </Link>
-                      ) : null}
-                    </HStack>
-                  }
-                  actions={
-                    <HStack gap={2} align="center" wrap="wrap">
-                      <VStack gap={0} align="end">
-                        <Text weight="bold" hasTabularNumbers>
-                          {formatCurrency(dep.depositAmountCents, currency)}
-                        </Text>
+                          <img
+                            src={proofUrl}
+                            alt={`Comprobante de anticipo de ${dep.clientName}`}
+                          />
+                        </button>
+                      ) : (
+                        <VStack
+                          className="ad-task-icon"
+                          data-tone="warning"
+                          align="center"
+                          justify="center"
+                          aria-hidden="true"
+                        >
+                          <Wallet size={17} />
+                        </VStack>
+                      )
+                    }
+                    title={
+                      <HStack gap={2} align="center" wrap="wrap">
+                        <Text weight="semibold">{dep.clientName}</Text>
+                        <Token size="sm" color={meta.color} label={meta.label} />
+                      </HStack>
+                    }
+                    subtitle={`${dep.serviceName} (${dep.bookingCode}) · ${formatDateShortInTimezone(dep.startAt, tz)} ${formatTimeInTimezone(dep.startAt, tz)} con ${dep.staffName}`}
+                    meta={
+                      <HStack gap={2} wrap="wrap" align="center">
                         <Text type="supporting" color="secondary" hasTabularNumbers>
-                          Total {formatCurrency(dep.totalPriceCents, currency)}
+                          {formatPhoneDisplay(dep.clientPhone)}
                         </Text>
-                      </VStack>
-                      {proofUrl ? (
+                        {dep.clientInstagram ? (
+                          <Link
+                            href={formatInstagramUrl(dep.clientInstagram)}
+                            isExternalLink
+                            type="supporting"
+                          >
+                            {formatInstagramDisplay(dep.clientInstagram)}
+                          </Link>
+                        ) : null}
+                      </HStack>
+                    }
+                    actions={
+                      <HStack gap={2} align="center" wrap="wrap">
+                        <VStack gap={0} align="end">
+                          <Text weight="bold" hasTabularNumbers>
+                            {formatCurrency(dep.depositAmountCents, currency)}
+                          </Text>
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            Total {formatCurrency(dep.totalPriceCents, currency)}
+                          </Text>
+                        </VStack>
                         <Button
                           type="button"
-                          label={hasImageProof ? 'Ver foto' : 'Ver enlace'}
+                          label={
+                            hasImageProof && proofUrl
+                              ? 'Ver foto'
+                              : proofUrl
+                                ? 'Ver enlace'
+                                : 'Revisar anticipo'
+                          }
                           variant="secondary"
                           size="sm"
                           className="ad-caja-touch-btn"
                           icon={
-                            hasImageProof ? (
+                            hasImageProof && proofUrl ? (
                               <ImageIcon size={14} aria-hidden="true" />
-                            ) : (
+                            ) : proofUrl ? (
                               <ExternalLink size={14} aria-hidden="true" />
+                            ) : (
+                              <Wallet size={14} aria-hidden="true" />
                             )
                           }
                           onClick={() => setPreviewDeposit(dep)}
                         />
-                      ) : null}
-                      {isUploaded && onRejectDeposit ? (
+                        {isUploaded && onRejectDeposit ? (
+                          <Button
+                            type="button"
+                            label={isRejecting ? 'Rechazando…' : 'Rechazar'}
+                            variant="ghost"
+                            size="sm"
+                            className="ad-caja-touch-btn"
+                            isLoading={isRejecting}
+                            isDisabled={isRowBusy}
+                            onClick={() => void onRejectDeposit(dep.bookingId, dep.bookingCode)}
+                          />
+                        ) : null}
                         <Button
                           type="button"
-                          label={isRejecting ? 'Rechazando…' : 'Rechazar'}
+                          label="Confirmar anticipo"
+                          variant="primary"
+                          size="sm"
+                          className="ad-caja-touch-btn"
+                          icon={<Check size={14} aria-hidden="true" />}
+                          isLoading={isApproving}
+                          isDisabled={isRowBusy}
+                          onClick={() => void onApproveDeposit(dep.bookingId, dep.bookingCode)}
+                        />
+                        <Button
+                          label="Ver cita"
                           variant="ghost"
                           size="sm"
                           className="ad-caja-touch-btn"
-                          isLoading={isRejecting}
-                          isDisabled={isRowBusy}
-                          onClick={() => void onRejectDeposit(dep.bookingId, dep.bookingCode)}
+                          href={agendaHref({ q: dep.bookingCode })}
                         />
-                      ) : null}
-                      <Button
-                        type="button"
-                        label="Confirmar anticipo"
-                        variant="primary"
-                        size="sm"
-                        className="ad-caja-touch-btn"
-                        icon={<Check size={14} aria-hidden="true" />}
-                        isLoading={isApproving}
-                        isDisabled={isRowBusy}
-                        onClick={() => void onApproveDeposit(dep.bookingId, dep.bookingCode)}
-                      />
-                      <Button
-                        label="Ver cita"
-                        variant="ghost"
-                        size="sm"
-                        className="ad-caja-touch-btn"
-                        href={`/admin/citas?q=${encodeURIComponent(dep.bookingCode)}`}
-                      />
-                    </HStack>
-                  }
-                />
-              );
-            })}
-          </VStack>
+                      </HStack>
+                    }
+                  />
+                );
+              })}
+            </VStack>
           </>
         )}
       </SurfaceCard>
 
-      <Dialog
-        isOpen={Boolean(previewDeposit)}
-        onOpenChange={(open) => {
-          if (!open && !approvingId && !rejectingId) {
-            setPreviewError(null);
-            setPreviewDeposit(null);
-          }
-        }}
-        width={520}
-        maxHeight="min(90dvh, calc(100dvh - 2rem))"
-        padding={5}
-      >
-        {previewDeposit ? (
-          <Layout
-            header={
-              <DialogHeader
-                title="Comprobante de anticipo"
-                subtitle={`${previewDeposit.clientName} · ${previewDeposit.bookingCode}`}
-                hasDivider
-                onOpenChange={(open) => {
-                  if (!open && !approvingId && !rejectingId) {
-                    setPreviewError(null);
-                    setPreviewDeposit(null);
-                  }
-                }}
-              />
-            }
-            content={
-              <LayoutContent>
-                <VStack
-                  gap={4}
-                  className={
-                    approvingId === previewDeposit.bookingId ||
-                    rejectingId === previewDeposit.bookingId
-                      ? 'fx-busy'
-                      : undefined
-                  }
-                  aria-busy={
-                    approvingId === previewDeposit.bookingId ||
-                    rejectingId === previewDeposit.bookingId ||
-                    undefined
-                  }
-                >
-                  {visiblePreviewError ? (
-                    <Banner
-                      status="error"
-                      role="alert"
-                      title={visiblePreviewError}
-                      isDismissable
-                      onDismiss={() => setPreviewError(null)}
-                    />
-                  ) : null}
-                  <VStack gap={2} className="ad-proof-meta">
-                    <HStack justify="between" align="center" gap={2} wrap="wrap">
-                      <Text type="supporting" color="secondary">
-                        Servicio y profesional
-                      </Text>
-                      <Text weight="semibold" size="sm">
-                        {previewDeposit.serviceName} · {previewDeposit.staffName}
-                      </Text>
-                    </HStack>
-                    <HStack justify="between" align="center" gap={2} wrap="wrap">
-                      <Text type="supporting" color="secondary">
-                        Fecha y hora
-                      </Text>
-                      <Text weight="semibold" size="sm" hasTabularNumbers>
-                        {formatDateShortInTimezone(previewDeposit.startAt, tz)} ·{' '}
-                        {formatTimeInTimezone(previewDeposit.startAt, tz)}
-                      </Text>
-                    </HStack>
-                    <HStack justify="between" align="center" gap={2} wrap="wrap">
-                      <Text type="supporting" color="secondary">
-                        Anticipo esperado
-                      </Text>
-                      <StatusTag
-                        tone="info"
-                        hasTabularNumbers
-                        label={formatCurrency(previewDeposit.depositAmountCents, currency)}
-                      />
-                    </HStack>
-                    {previewDeposit.clientPhone ? (
-                      <HStack justify="between" align="center" gap={2} wrap="wrap">
-                        <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {formatPhoneDisplay(previewDeposit.clientPhone)}
-                        </Text>
-                        <HStack gap={1.5} wrap="wrap">
-                          <Button
-                            label="WhatsApp"
-                            variant="secondary"
-                            size="sm"
-                            className="ad-caja-touch-btn"
-                            icon={<MessageCircle size={14} aria-hidden="true" />}
-                            href={buildWhatsAppLink(
-                              previewDeposit.clientPhone,
-                              `Hola ${previewDeposit.clientName}, revisamos el comprobante de tu anticipo para la cita ${previewDeposit.bookingCode}. ¿Nos compartes una foto completa donde se vea el monto y el folio? Gracias.`,
-                            )}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          />
-                          <Button
-                            label="Llamar"
-                            variant="ghost"
-                            size="sm"
-                            className="ad-caja-touch-btn"
-                            icon={<Phone size={14} aria-hidden="true" />}
-                            href={`tel:${previewDeposit.clientPhone.replace(/[^\d+]/g, '')}`}
-                          />
-                        </HStack>
-                      </HStack>
-                    ) : null}
-                  </VStack>
-
-                  {isImageProofHref(
-                    previewDeposit.paymentProofUrl,
-                    previewDeposit.proofDeliveryMethod,
-                  ) && previewDeposit.paymentProofUrl ? (
-                    <VStack gap={2}>
-                      <a
-                        href={previewDeposit.paymentProofUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ad-proof-viewer"
-                        aria-label="Abrir el comprobante completo en otra pestaña"
-                      >
-                        <img
-                          src={previewDeposit.paymentProofUrl}
-                          alt={`Comprobante de anticipo de ${previewDeposit.clientName}`}
-                          className="ad-proof-img ad-proof-img-full"
-                        />
-                      </a>
-                      <Text type="supporting" color="secondary">
-                        Desliza para ver todo el recibo. Tócalo para abrirlo completo y hacer zoom
-                        al monto o folio.
-                      </Text>
-                    </VStack>
-                  ) : isSafeProofHref(previewDeposit.paymentProofUrl) ? (
-                    <VStack gap={2} className="ad-proof-note">
-                      <Text weight="semibold" size="sm">
-                        Enlace de comprobante externo
-                      </Text>
-                      <Text type="supporting" color="secondary">
-                        Abre el recibo para verificar el depósito antes de confirmar.
-                      </Text>
-                      <Button
-                        label="Abrir enlace del recibo"
-                        variant="secondary"
-                        size="sm"
-                        icon={<ExternalLink size={14} aria-hidden="true" />}
-                        href={previewDeposit.paymentProofUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    </VStack>
-                  ) : (
-                    <VStack gap={1.5} className="ad-proof-note">
-                      <Text weight="semibold" size="sm">
-                        {previewDeposit.proofDeliveryMethod === 'instagram_dm'
-                          ? 'Enviado por mensaje de Instagram'
-                          : 'Comprobante aún pendiente'}
-                      </Text>
-                      <Text type="supporting" color="secondary">
-                        Revisa los mensajes de {previewDeposit.clientInstagram || previewDeposit.clientName}{' '}
-                        para confirmar la transferencia.
-                      </Text>
-                    </VStack>
-                  )}
-                </VStack>
-              </LayoutContent>
-            }
-            footer={
-              <LayoutFooter hasDivider>
-                <HStack justify="end" gap={2} wrap="wrap">
-                  {onRejectDeposit &&
-                  (previewDeposit.proofDeliveryMethod !== 'none' ||
-                    Boolean(previewDeposit.paymentProofUrl)) ? (
-                    <Button
-                      type="button"
-                      label={
-                        rejectingId === previewDeposit.bookingId
-                          ? 'Rechazando…'
-                          : 'Rechazar comprobante'
-                      }
-                      variant="ghost"
-                      size="sm"
-                      isLoading={rejectingId === previewDeposit.bookingId}
-                      isDisabled={
-                        approvingId === previewDeposit.bookingId ||
-                        rejectingId === previewDeposit.bookingId
-                      }
-                      onClick={async () => {
-                        setPreviewError(null);
-                        try {
-                          const ok = await onRejectDeposit(
-                            previewDeposit.bookingId,
-                            previewDeposit.bookingCode,
-                          );
-                          if (ok) {
-                            setPreviewDeposit(null);
-                            return;
-                          }
-                          setPreviewError({
-                            bookingId: previewDeposit.bookingId,
-                            message: 'No se pudo rechazar el comprobante. Intenta de nuevo.',
-                          });
-                        } catch {
-                          setPreviewError({
-                            bookingId: previewDeposit.bookingId,
-                            message: 'Error de conexión al rechazar el comprobante.',
-                          });
-                        }
-                      }}
-                    />
-                  ) : null}
-                  <Button
-                    type="button"
-                    label="Cerrar"
-                    variant="secondary"
-                    size="sm"
-                    isDisabled={
-                      approvingId === previewDeposit.bookingId ||
-                      rejectingId === previewDeposit.bookingId
-                    }
-                    onClick={() => {
-                      setPreviewError(null);
-                      setPreviewDeposit(null);
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    label="Confirmar anticipo"
-                    variant="primary"
-                    size="sm"
-                    icon={<Check size={14} aria-hidden="true" />}
-                    isLoading={approvingId === previewDeposit.bookingId}
-                    isDisabled={
-                      approvingId === previewDeposit.bookingId ||
-                      rejectingId === previewDeposit.bookingId
-                    }
-                    onClick={async () => {
-                      setPreviewError(null);
-                      try {
-                        const ok = await onApproveDeposit(
-                          previewDeposit.bookingId,
-                          previewDeposit.bookingCode,
-                        );
-                        if (ok) {
-                          setPreviewDeposit(null);
-                          return;
-                        }
-                        setPreviewError({
-                          bookingId: previewDeposit.bookingId,
-                          message: 'No se pudo confirmar el anticipo. Intenta de nuevo.',
-                        });
-                      } catch {
-                        setPreviewError({
-                          bookingId: previewDeposit.bookingId,
-                          message: 'Error de conexión al confirmar el anticipo.',
-                        });
-                      }
-                    }}
-                  />
-                </HStack>
-              </LayoutFooter>
-            }
-          />
-        ) : null}
-      </Dialog>
+      <DepositProofReviewDialog
+        deposit={previewDeposit}
+        currency={currency}
+        timezone={tz}
+        isApproving={Boolean(previewDeposit && approvingId === previewDeposit.bookingId)}
+        isRejecting={Boolean(previewDeposit && rejectingId === previewDeposit.bookingId)}
+        secondaryLink={
+          previewDeposit
+            ? { label: 'Ver cita', href: agendaHref({ q: previewDeposit.bookingCode }) }
+            : undefined
+        }
+        onClose={() => setPreviewDeposit(null)}
+        onApprove={(dep) => onApproveDeposit(dep.bookingId, dep.bookingCode)}
+        onReject={
+          modalRejectHandler
+            ? (dep, reason) => modalRejectHandler(dep.bookingId, dep.bookingCode, reason)
+            : undefined
+        }
+      />
     </VStack>
   );
 }

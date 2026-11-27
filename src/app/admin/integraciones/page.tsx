@@ -12,6 +12,7 @@ import { PageHeader, PageSkeleton } from '@/components/ui';
 import { GoogleCalendarSection } from '@/components/admin/integraciones/GoogleCalendarSection';
 import { WhatsAppSection } from '@/components/admin/integraciones/WhatsAppSection';
 import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/PaymentsAnalyticsSection';
+import { parseIntegracionesParams } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type {
@@ -58,7 +59,7 @@ function extractOptimisticSettingsPatch(
 
 export default function AdminIntegrationsPage() {
   const searchParams = useSearchParams();
-  const initialOpenMore = searchParams.get('section') === 'resenas';
+  const initialOpenMore = parseIntegracionesParams(searchParams).section === 'resenas';
   const { data, loading, refresh } = useAdminData();
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);

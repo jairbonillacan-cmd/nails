@@ -285,14 +285,17 @@ describe('cajaMetrics period filtering & summaries', () => {
     ]);
 
     expect(summary).toEqual({
+      hasEntries: true,
       collectedCents: 150000,
       expensesCents: 15000,
       netCents: 135000,
       tipsCents: 12000,
+      commissionsCents: 90000,
       ticketCount: 4,
       averageTicketCents: 37500,
       cashCents: 50000,
       cashCount: 1,
+      digitalCents: 100000,
       cardCents: 70000,
       cardCount: 1,
       transferCents: 20000,

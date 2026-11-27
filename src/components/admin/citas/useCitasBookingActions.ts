@@ -252,16 +252,25 @@ export function useCitasBookingActions({
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
   const [rejectingDepositId, setRejectingDepositId] = useState<string | null>(null);
 
-  const rejectDeposit = async (bookingId: string, bookingCode: string): Promise<boolean> => {
+  const rejectDeposit = async (
+    bookingId: string,
+    bookingCode: string,
+    reason?: string,
+  ): Promise<boolean> => {
     if (!data || rejectingDepositId === bookingId) return false;
     setRejectingDepositId(bookingId);
     setFeedback(null);
     try {
+      const cleanReason = reason?.trim();
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
-        body: JSON.stringify({ action: 'reject_deposit', bookingId }),
+        body: JSON.stringify({
+          action: 'reject_deposit',
+          bookingId,
+          ...(cleanReason ? { reason: cleanReason } : {}),
+        }),
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) {

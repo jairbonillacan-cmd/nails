@@ -92,7 +92,7 @@ function buildFixturePayload(): AdminOverviewPayload {
 describe('buildDashboardMetrics', () => {
   it('always produces a 7-day series ending on today with non-negative values and bounded staff shares', () => {
     const payload = buildFixturePayload();
-    for (const period of ['today', '7d', '30d'] as const) {
+    for (const period of ['today', '7d', 'month', 'last_month'] as const) {
       const metrics = buildDashboardMetrics(payload, period);
       expect(metrics.dailySeries).toHaveLength(7);
       expect(metrics.dailySeries[6]?.dateKey).toBe('2026-11-26');

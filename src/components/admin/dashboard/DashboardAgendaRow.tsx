@@ -7,6 +7,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { MessageCircle } from 'lucide-react';
+import { agendaHref, whatsappHref } from '@/lib/admin-links';
 import { isPastUnclosedBooking } from '@/lib/booking/balance';
 import {
   buildWhatsAppLink,
@@ -99,7 +100,10 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
   const colorIdx = metrics.staffColorIndex.get(booking.staffId) ?? 0;
   const startTimeLabel = formatTimeInTimezone(booking.startAt, metrics.tz);
   const durationLabel = formatDuration(booking.totalDurationMinutes);
-  const waInboxHref = `/admin/whatsapp?phone=${encodeURIComponent(booking.client.phoneE164)}&bookingId=${encodeURIComponent(booking.id)}`;
+  const waInboxHref = whatsappHref({
+    phone: booking.client.phoneE164,
+    bookingId: booking.id,
+  });
   const waHref = buildWhatsAppLink(
     booking.client.phoneE164,
     `Hola ${booking.client.fullName}, te confirmamos tu cita de ${booking.service.name} en ${salonName} a las ${startTimeLabel} con ${booking.staff.name}.`,
@@ -175,7 +179,7 @@ export const DashboardAgendaRow = memo(function DashboardAgendaRow({
             label="Cobrar"
             variant="secondary"
             size="sm"
-            href={`/admin/citas?collect=${booking.id}`}
+            href={agendaHref({ collect: booking.id })}
           />
         ) : null}
 

@@ -4,7 +4,6 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { ClickableCard } from '@astryxdesign/core/ClickableCard';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { Ban, CalendarPlus, ChevronRight, Clock } from 'lucide-react';
@@ -73,9 +72,18 @@ export function CalendarSlotActionDialog({
                   ) : null}
                 </HStack>
 
-                <ClickableCard
-                  label="Reserva manual — Agendar una cita en este horario"
-                  padding={4}
+                <button
+                  type="button"
+                  className="ad-surface fx-press"
+                  data-padded="true"
+                  aria-label="Reserva manual — Agendar una cita en este horario"
+                  style={{
+                    width: '100%',
+                    textAlign: 'start',
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    font: 'inherit',
+                  }}
                   onClick={() => onChooseManualBooking(slot)}
                 >
                   <HStack justify="between" align="center" gap={3}>
@@ -98,11 +106,20 @@ export function CalendarSlotActionDialog({
                     </HStack>
                     <ChevronRight size={16} aria-hidden="true" />
                   </HStack>
-                </ClickableCard>
+                </button>
 
-                <ClickableCard
-                  label="Bloquear horario — Cerrar horas, días o programar un bloqueo repetitivo"
-                  padding={4}
+                <button
+                  type="button"
+                  className="ad-surface fx-press"
+                  data-padded="true"
+                  aria-label="Bloquear horario — Cerrar horas, días o programar un bloqueo repetitivo"
+                  style={{
+                    width: '100%',
+                    textAlign: 'start',
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    font: 'inherit',
+                  }}
                   onClick={() => onChooseBlockTime(slot)}
                 >
                   <HStack justify="between" align="center" gap={3}>
@@ -125,7 +142,7 @@ export function CalendarSlotActionDialog({
                     </HStack>
                     <ChevronRight size={16} aria-hidden="true" />
                   </HStack>
-                </ClickableCard>
+                </button>
               </VStack>
             ) : null}
           </LayoutContent>

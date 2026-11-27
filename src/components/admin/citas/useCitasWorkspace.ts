@@ -6,6 +6,7 @@ import {
   useAdminData,
   type AdminOverviewPayload,
 } from '@/components/admin/AdminProvider';
+import { agendaHref } from '@/lib/admin-links';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
@@ -111,7 +112,7 @@ export function useCitasWorkspace() {
       setTab('waitlist');
       return;
     }
-    if (paramTab === 'unconfirmed') {
+    if (paramTab === 'unconfirmed' || paramTab === 'pending') {
       setTab('unconfirmed');
       setViewMode('list');
       return;
@@ -135,7 +136,7 @@ export function useCitasWorkspace() {
         setPopoverBookingId(null);
         setCheckoutBookingId(target.id);
         setCheckoutSessionKey((prev) => prev + 1);
-        router.replace('/admin/citas', { scroll: false });
+        router.replace(agendaHref(), { scroll: false });
         return;
       }
     }
@@ -178,7 +179,7 @@ export function useCitasWorkspace() {
       setManualPrefill(nextPrefill);
       setManualSessionKey((prev) => prev + 1);
       setManualOpen(true);
-      router.replace('/admin/citas', { scroll: false });
+      router.replace(agendaHref(), { scroll: false });
       return;
     }
     if (paramQuery) {

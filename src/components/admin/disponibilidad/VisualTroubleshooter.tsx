@@ -36,6 +36,8 @@ interface VisualTroubleshooterProps {
   services: Service[];
   isSpecialistOnly: boolean;
   todayKey: string;
+  initialDate?: string | null;
+  initialServiceId?: string | null;
   timezone: string;
   onSelectStaff: (nextStaffId: string) => void;
 }
@@ -48,10 +50,12 @@ export function VisualTroubleshooter({
   services,
   isSpecialistOnly,
   todayKey,
+  initialDate,
+  initialServiceId,
   onSelectStaff,
 }: VisualTroubleshooterProps) {
-  const [selectedDate, setSelectedDate] = useState<string>(todayKey);
-  const [serviceIdInput, setServiceIdInput] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate || todayKey);
+  const [serviceIdInput, setServiceIdInput] = useState<string | null>(initialServiceId ?? null);
   const [filterMode, setFilterMode] = useState<AvailabilityFilter>('all');
   const [inspectedTime, setInspectedTime] = useState<string | null>(null);
   const [slotChecks, setSlotChecks] = useState<SlotDiagnosis[]>([]);

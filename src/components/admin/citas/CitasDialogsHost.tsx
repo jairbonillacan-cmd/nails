@@ -8,8 +8,11 @@ import type { BookingStatus, BookingWithRelations, StaffMember } from '@/lib/typ
 import type { NewBookingPrefill } from './NewBookingDialog';
 import type { CitasFeedbackState } from './useCitasBookingActions';
 
-const BlockDayDialog = dynamic(
-  () => import('./BlockDayDialog').then((mod) => mod.BlockDayDialog),
+const BlockTimeForm = dynamic(
+  () =>
+    import('@/components/admin/disponibilidad/BlockTimeForm').then(
+      (mod) => mod.BlockTimeForm,
+    ),
   { ssr: false },
 );
 
@@ -74,7 +77,7 @@ interface CitasDialogsHostProps {
   onOpenCheckout: (booking: BookingWithRelations) => void;
   onScheduleRetouch: (booking: BookingWithRelations) => void;
   onUpdateStatus: (bookingId: string, status: BookingStatus, pin?: string) => Promise<boolean>;
-  onRejectDeposit: (bookingId: string, bookingCode: string) => Promise<boolean>;
+  onRejectDeposit: (bookingId: string, bookingCode: string, reason?: string) => Promise<boolean>;
   onSendReminder: (bookingId: string) => void;
   onRequestReschedule: (bookingId: string) => void;
   onRefresh: () => Promise<void>;
@@ -227,17 +230,22 @@ export function CitasDialogsHost({
       ) : null}
 
       {blockOpen ? (
-        <BlockDayDialog
+        <BlockTimeForm
           key={`block-${blockSessionKey}`}
           isOpen={blockOpen}
           onOpenChange={onBlockOpenChange}
           visibleStaff={visibleStaff}
+          allStaff={data.staff}
           lockedStaffId={lockedStaffId}
-          initialStaffId={lockedStaffId ?? visibleStaff[0]?.id ?? ''}
-          initialDate={activeVisualDate || todayKey}
-          onBlocked={async (dateKey) => {
+          todayKey={todayKey}
+          prefill={{
+            mode: 'closed',
+            staffId: lockedStaffId ?? visibleStaff[0]?.id ?? '',
+            dateKey: activeVisualDate || todayKey,
+          }}
+          onSaved={async (notice) => {
             await onRefresh();
-            onShowNotice(`Día ${dateKey} bloqueado`);
+            onShowNotice(notice);
           }}
         />
       ) : null}

@@ -8,6 +8,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { ArrowRight, MessageCircle } from 'lucide-react';
 import { StatusTag, SurfaceCard } from '@/components/ui';
+import { whatsappHref } from '@/lib/admin-links';
 import type { WhatsAppInboxSummaryDTO } from '@/lib/contracts';
 import type { RuntimeIntegrationStatus } from '@/lib/env';
 import type { WhatsAppMonthlyUsageSummary } from '@/lib/types';
@@ -61,7 +62,7 @@ export function WhatsAppSection({
             variant="secondary"
             size="sm"
             icon={<ArrowRight size={14} aria-hidden="true" />}
-            href="/admin/whatsapp?tab=conexion"
+            href={whatsappHref({ tab: 'conexion' })}
           />
           <Button
             label="Abrir panel de WhatsApp"

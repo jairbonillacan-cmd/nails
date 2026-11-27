@@ -18,6 +18,7 @@ import {
   Search,
   Star,
 } from 'lucide-react';
+import { whatsappHref } from '@/lib/admin-links';
 import {
   formatBirthdayDisplay,
   formatCurrency,
@@ -260,7 +261,7 @@ export function ClientDirectoryTab({
               variant="ghost"
               className="ad-cl-touch-btn"
               icon={<MessageCircle size={14} aria-hidden="true" />}
-              href={`/admin/whatsapp?phone=${encodeURIComponent(c.phoneE164)}`}
+              href={whatsappHref({ phone: c.phoneE164 })}
             />
           </HStack>
         }

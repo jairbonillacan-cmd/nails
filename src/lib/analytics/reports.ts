@@ -1,7 +1,20 @@
+import { computeBookingBalance } from '../booking/balance';
+import {
+  computeCashPeriodSummary,
+  diffMetricCalendarDaysInclusive,
+  formatMetricPeriodLabel,
+  isIsoInMetricRange,
+  resolveMetricPeriodRange,
+  shiftMetricDateKey,
+  type CashPeriodSummary,
+  type MetricCustomRange,
+  type MetricReportPeriod,
+} from '../metrics';
 import type {
   AvailabilitySchedule,
   Booking,
   BookingReview,
+  CashRegisterEntry,
   ClientProfile,
   FunnelEventRecord,
   FunnelEventType,
@@ -10,7 +23,7 @@ import type {
   StaffMember,
 } from '../types';
 
-export type ReportPeriod = '7d' | '30d' | '90d' | 'all';
+export type ReportPeriod = MetricReportPeriod;
 
 export interface ExecutiveReportInput {
   bookings: readonly Booking[];
@@ -20,8 +33,10 @@ export interface ExecutiveReportInput {
   clients: readonly ClientProfile[];
   reviews: readonly BookingReview[];
   paymentSplits: readonly PaymentSplit[];
+  cashEntries?: readonly CashRegisterEntry[];
   funnelEvents?: readonly FunnelEventRecord[];
   period: ReportPeriod;
+  customRange?: MetricCustomRange | null;
   nowMs: number;
   timezone: string;
   scopeStaffId?: string | null;
@@ -115,9 +130,11 @@ export interface BookingFunnelSummary {
 
 export interface ExecutiveReport {
   period: ReportPeriod;
+  periodLabel: string;
   rangeStartDate: string;
   rangeEndDate: string;
   summary: ExecutiveSummaryKpis;
+  cashSummary: CashPeriodSummary;
   specialistOccupancy: SpecialistOccupancyRow[];
   heatmap: DemandHeatmap;
   serviceProfitability: ServiceProfitabilityRow[];
@@ -139,11 +156,12 @@ export function buildFunnelSummary(
   period: ReportPeriod,
   nowMs: number,
   timezone: string,
+  customRange?: MetricCustomRange | null,
 ): BookingFunnelSummary {
   const tz = resolveTimezone(timezone);
   const safeNowMs = Number.isFinite(nowMs) ? nowMs : 0;
   const todayKey = getZonedDateAndHour(safeNowMs, tz).dateKey;
-  const minMs = period === 'all' ? -Infinity : safeNowMs - PERIOD_DAYS[period] * DAY_MS;
+  const range = resolveMetricPeriodRange(todayKey, period, customRange);
 
   const sessionsByStage = new Map<FunnelEventType, Set<string>>();
   for (const def of FUNNEL_STAGE_DEFS) {
@@ -152,12 +170,7 @@ export function buildFunnelSummary(
   const allSessions = new Set<string>();
 
   for (const event of events) {
-    const createdMs = Date.parse(event.createdAt);
-    if (!Number.isFinite(createdMs)) continue;
-    if (period !== 'all') {
-      const eventDateKey = getZonedDateAndHour(createdMs, tz).dateKey;
-      if (createdMs < minMs || eventDateKey > todayKey) continue;
-    }
+    if (!isIsoInMetricRange(event.createdAt, range, tz)) continue;
     const sid = event.sessionId.trim();
     if (!sid) continue;
     allSessions.add(sid);
@@ -207,7 +220,6 @@ export function buildFunnelSummary(
   };
 }
 
-const DAY_MS = 86_400_000;
 const HEATMAP_HOURS: readonly number[] = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const DEFAULT_TIMEZONE = 'America/Mexico_City';
 
@@ -224,12 +236,6 @@ const WEEKDAYS_MON_FIRST: ReadonlyArray<{
   { dayOfWeek: 6, dayShort: 'Sáb', dayLabel: 'Sábado' },
   { dayOfWeek: 0, dayShort: 'Dom', dayLabel: 'Domingo' },
 ];
-
-const PERIOD_DAYS: Record<Exclude<ReportPeriod, 'all'>, number> = {
-  '7d': 7,
-  '30d': 30,
-  '90d': 90,
-};
 
 function resolveTimezone(timezone: string): string {
   const trimmed = timezone.trim();
@@ -286,12 +292,6 @@ function parseYmd(dateKey: string): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
-function addDaysToDateKey(dateKey: string, deltaDays: number): string {
-  const { y, m, d } = parseYmd(dateKey);
-  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays, 12, 0, 0));
-  return dt.toISOString().slice(0, 10);
-}
-
 function getDayOfWeekForDateKey(dateKey: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
   const { y, m, d } = parseYmd(dateKey);
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay() as
@@ -302,15 +302,6 @@ function getDayOfWeekForDateKey(dateKey: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
     | 4
     | 5
     | 6;
-}
-
-function diffCalendarDaysInclusive(startKey: string, endKey: string): number {
-  const start = parseYmd(startKey);
-  const end = parseYmd(endKey);
-  const startUtc = Date.UTC(start.y, start.m - 1, start.d, 12, 0, 0);
-  const endUtc = Date.UTC(end.y, end.m - 1, end.d, 12, 0, 0);
-  const diff = Math.round((endUtc - startUtc) / DAY_MS);
-  return Math.max(1, diff + 1);
 }
 
 function parseTimeToMinutes(timeStr: string): number {
@@ -441,56 +432,61 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     });
   }
 
+  const resolvedRange = resolveMetricPeriodRange(todayKey, input.period, input.customRange);
   let rangeStartDate = todayKey;
   let rangeEndDate = todayKey;
-  let periodBookings: Booking[] = [];
 
-  if (input.period === 'all') {
-    periodBookings = scopedBookingsAll.filter((b) => bookingMetaById.has(b.id));
-    if (periodBookings.length > 0) {
-      let minKey = todayKey;
-      let maxKey = todayKey;
-      for (const b of periodBookings) {
-        const meta = bookingMetaById.get(b.id);
-        if (!meta) continue;
-        if (meta.dateKey < minKey) minKey = meta.dateKey;
-        if (meta.dateKey > maxKey) maxKey = meta.dateKey;
-      }
-      rangeStartDate = minKey;
-      rangeEndDate = maxKey;
-    } else {
-      rangeStartDate = addDaysToDateKey(todayKey, -29);
-      rangeEndDate = todayKey;
-    }
-  } else {
-    const days = PERIOD_DAYS[input.period];
-    const minMs = nowMs - days * DAY_MS;
-    rangeStartDate = addDaysToDateKey(todayKey, -(days - 1));
-    rangeEndDate = todayKey;
-    periodBookings = scopedBookingsAll.filter((b) => {
+  const periodBookings = scopedBookingsAll.filter((b) => {
+    const meta = bookingMetaById.get(b.id);
+    if (!meta) return false;
+    if (resolvedRange.startKey && meta.dateKey < resolvedRange.startKey) return false;
+    if (resolvedRange.endKey && meta.dateKey > resolvedRange.endKey) return false;
+    return true;
+  });
+
+  if (resolvedRange.startKey && resolvedRange.endKey) {
+    rangeStartDate = resolvedRange.startKey;
+    rangeEndDate = resolvedRange.endKey;
+  } else if (periodBookings.length > 0) {
+    let minKey = todayKey;
+    let maxKey = todayKey;
+    for (const b of periodBookings) {
       const meta = bookingMetaById.get(b.id);
-      if (!meta) return false;
-      return meta.startMs >= minMs && meta.dateKey <= todayKey;
-    });
+      if (!meta) continue;
+      if (meta.dateKey < minKey) minKey = meta.dateKey;
+      if (meta.dateKey > maxKey) maxKey = meta.dateKey;
+    }
+    rangeStartDate = resolvedRange.startKey ?? minKey;
+    rangeEndDate = resolvedRange.endKey ?? maxKey;
+  } else {
+    rangeStartDate = resolvedRange.startKey ?? shiftMetricDateKey(todayKey, -29);
+    rangeEndDate = resolvedRange.endKey ?? todayKey;
   }
 
   const periodBookingIds = new Set(periodBookings.map((b) => b.id));
-  const rangeDayCount = diffCalendarDaysInclusive(rangeStartDate, rangeEndDate);
+  const rangeDayCount = diffMetricCalendarDaysInclusive(rangeStartDate, rangeEndDate);
 
-  const paidByBookingId = new Map<string, number>();
-  let totalRevenueCollectedCents = 0;
+  const scopedCashEntriesAll = scopeId
+    ? (input.cashEntries ?? []).filter(
+        (entry) =>
+          entry.staffId === scopeId ||
+          (entry.bookingId !== null && scopedBookingIdSetAll.has(entry.bookingId)),
+      )
+    : (input.cashEntries ?? []);
+  const periodCashEntries = scopedCashEntriesAll.filter((entry) =>
+    isIsoInMetricRange(entry.occurredAt, resolvedRange, tz),
+  );
+  const cashSummary = computeCashPeriodSummary(periodCashEntries);
+
+  const splitsByBookingId = new Map<string, PaymentSplit[]>();
+  const cashByBookingId = new Map<string, CashRegisterEntry[]>();
   let totalTipsCents = 0;
 
   for (const split of input.paymentSplits) {
     if (!periodBookingIds.has(split.bookingId)) continue;
-    if (Number.isFinite(split.amountCents) && split.amountCents > 0) {
-      const amt = Math.round(split.amountCents);
-      paidByBookingId.set(
-        split.bookingId,
-        (paidByBookingId.get(split.bookingId) ?? 0) + amt,
-      );
-      totalRevenueCollectedCents += amt;
-    }
+    const list = splitsByBookingId.get(split.bookingId) ?? [];
+    list.push(split);
+    splitsByBookingId.set(split.bookingId, list);
     if (Number.isFinite(split.tipCents) && split.tipCents > 0) {
       const tipAppliesToScope =
         !scopeId || split.tipStaffId === null || split.tipStaffId === scopeId;
@@ -500,6 +496,15 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     }
   }
 
+  for (const entry of scopedCashEntriesAll) {
+    if (!entry.bookingId || !periodBookingIds.has(entry.bookingId)) continue;
+    const list = cashByBookingId.get(entry.bookingId) ?? [];
+    list.push(entry);
+    cashByBookingId.set(entry.bookingId, list);
+  }
+
+  const paidByBookingId = new Map<string, number>();
+  let totalRevenueCollectedCents = 0;
   let completedCount = 0;
   let noShowCount = 0;
   let canceledCount = 0;
@@ -510,7 +515,15 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     else if (booking.status === 'no_show') noShowCount += 1;
     else if (booking.status === 'canceled') canceledCount += 1;
 
-    if ((paidByBookingId.get(booking.id) ?? 0) > 0) {
+    const balance = computeBookingBalance(
+      booking,
+      splitsByBookingId.get(booking.id) ?? [],
+      cashByBookingId.get(booking.id) ?? [],
+      nowMs,
+    );
+    if (balance.paidCents > 0) {
+      paidByBookingId.set(booking.id, balance.paidCents);
+      totalRevenueCollectedCents += balance.paidCents;
       paidBookingsCount += 1;
     }
   }
@@ -530,12 +543,7 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
   const periodReviews = scopedReviewsAll.filter((r) => {
     if (input.period === 'all') return true;
     if (periodBookingIds.has(r.bookingId)) return true;
-    const createdMs = Date.parse(r.createdAt);
-    if (!Number.isFinite(createdMs)) return false;
-    const days = PERIOD_DAYS[input.period];
-    const minMs = nowMs - days * DAY_MS;
-    const createdZoned = getZonedDateAndHour(createdMs, tz);
-    return createdMs >= minMs && createdZoned.dateKey <= todayKey;
+    return isIsoInMetricRange(r.createdAt, resolvedRange, tz);
   });
 
   const reviewsCount = periodReviews.length;
@@ -809,13 +817,16 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     input.period,
     nowMs,
     tz,
+    input.customRange,
   );
 
   return {
     period: input.period,
+    periodLabel: formatMetricPeriodLabel(input.period, input.customRange, todayKey),
     rangeStartDate,
     rangeEndDate,
     summary,
+    cashSummary,
     specialistOccupancy,
     heatmap,
     serviceProfitability,

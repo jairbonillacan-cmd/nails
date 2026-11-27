@@ -1,3 +1,4 @@
+import { agendaHref } from '@/lib/admin-links';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { BookingWithRelations, ClientProfile } from '@/lib/types';
 import type { ClientNoShowStats } from './clientasActions';
@@ -391,13 +392,11 @@ export function buildClientNewBookingUrl(params: {
   usualStaffId?: string | null;
   instagramHandle?: string | null;
 }): string {
-  const search = new URLSearchParams();
-  search.set('new', '1');
-  if (params.fullName.trim()) search.set('clientName', params.fullName.trim());
-  if (params.phoneE164.trim()) search.set('clientPhone', params.phoneE164.trim());
-  if (params.usualStaffId) search.set('staffId', params.usualStaffId);
-  if (params.instagramHandle?.trim()) {
-    search.set('clientInstagram', params.instagramHandle.trim());
-  }
-  return `/admin/citas?${search.toString()}`;
+  return agendaHref({
+    new: true,
+    clientName: params.fullName.trim() || undefined,
+    clientPhone: params.phoneE164.trim() || undefined,
+    staffId: params.usualStaffId || undefined,
+    clientInstagram: params.instagramHandle?.trim() || undefined,
+  });
 }

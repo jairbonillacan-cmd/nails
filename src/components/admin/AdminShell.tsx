@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
+import { agendaHref } from '@/lib/admin-links';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
@@ -161,7 +162,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   const handleOpenQuickSearch = useCallback(() => setQuickSearchOpen(true), []);
   const handleOpenMobileMenu = useCallback(() => setMobileMenuOpen(true), []);
-  const handleNewBooking = useCallback(() => router.push('/admin/citas?new=1'), [router]);
+  const handleNewBooking = useCallback(() => router.push(agendaHref({ new: true })), [router]);
   const handleNavigate = useCallback((href: string) => router.push(href), [router]);
 
   useAdminGlobalShortcuts({

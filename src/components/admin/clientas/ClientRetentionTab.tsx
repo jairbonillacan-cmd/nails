@@ -9,6 +9,7 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { Cake, FileText, MessageCircle, Scissors, Sparkles } from 'lucide-react';
+import { whatsappHref } from '@/lib/admin-links';
 import {
   buildWhatsAppLink,
   formatBirthdayDisplay,
@@ -214,7 +215,7 @@ export function ClientRetentionTab({
                           variant="ghost"
                           size="sm"
                           className="ad-cl-touch-btn"
-                          href={`/admin/whatsapp?phone=${encodeURIComponent(item.phoneE164)}`}
+                          href={whatsappHref({ phone: item.phoneE164 })}
                         />
                         <Button
                           type="button"
@@ -386,7 +387,7 @@ export function ClientRetentionTab({
                         variant="ghost"
                         size="sm"
                         className="ad-cl-touch-btn"
-                        href={`/admin/whatsapp?phone=${encodeURIComponent(item.phoneE164)}`}
+                        href={whatsappHref({ phone: item.phoneE164 })}
                       />
                       {useCampaignDispatch ? (
                         <Button

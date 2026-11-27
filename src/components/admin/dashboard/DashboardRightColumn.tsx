@@ -4,6 +4,7 @@ import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { clientasHref } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import { SurfaceCard } from '@/components/ui';
@@ -219,7 +220,7 @@ export function DashboardRightColumn({ data, metrics }: DashboardRightColumnProp
                 return (
                   <NextLink
                     key={client.clientId}
-                    href={`/admin/clientas?q=${encodeURIComponent(client.phoneE164)}`}
+                    href={clientasHref({ q: client.phoneE164 })}
                     className="ad-loyalty-link"
                   >
                     {content}

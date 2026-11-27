@@ -16,7 +16,7 @@ import {
 } from '@/components/ui';
 import { formatTimeHHMM12h } from '@/lib/format';
 import type { DateOverride, StaffMember } from '@/lib/types';
-import { DateOverrideFormCard } from './DateOverrideFormCard';
+import { BlockTimeForm } from './BlockTimeForm';
 
 const overrideDateFormatter = new Intl.DateTimeFormat('es-MX', {
   weekday: 'short',
@@ -59,6 +59,8 @@ export function DateOverridesSection({
   const [preloadingHolidays, setPreloadingHolidays] = useState(false);
   const [busyOverrideId, setBusyOverrideId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<DateOverride | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addDialogKey, setAddDialogKey] = useState(0);
 
   const handleConfirmDeleteOverride = async () => {
     if (!pendingDelete || busyOverrideId) return;
@@ -68,6 +70,7 @@ export function DateOverridesSection({
     try {
       const res = await fetch(`/api/admin/availability?id=${encodeURIComponent(target.id)}`, {
         method: 'DELETE',
+        signal: AbortSignal.timeout(15_000),
       });
       if (res.ok) {
         await onRefresh();
@@ -92,6 +95,7 @@ export function DateOverridesSection({
       const res = await fetch('/api/admin/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           kind: 'preload_mx_holidays',
           year: Number(holidayYear) || 2026,
@@ -229,12 +233,16 @@ export function DateOverridesSection({
             subtitle={`Fechas especiales o vacaciones de ${staffName}.`}
             count={activeOverrides.length}
             actions={
-              <DateOverrideFormCard
-                staffId={staffId}
-                allStaff={allStaff}
-                serverTodayKey={serverTodayKey}
-                onRefresh={onRefresh}
-                onSavedNotice={onSavedNotice}
+              <Button
+                type="button"
+                label="Agregar fecha"
+                variant="secondary"
+                size="sm"
+                icon={<CalendarPlus size={14} aria-hidden="true" />}
+                onClick={() => {
+                  setAddDialogKey((prev) => prev + 1);
+                  setAddDialogOpen(true);
+                }}
               />
             }
           >
@@ -279,6 +287,27 @@ export function DateOverridesSection({
         </VStack>
 
       </VStack>
+
+      <BlockTimeForm
+        key={`override-add-${staffId}-${addDialogKey}`}
+        isOpen={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        visibleStaff={allStaff}
+        allStaff={allStaff}
+        lockedStaffId={staffId}
+        todayKey={serverTodayKey}
+        allowedModes={['closed', 'special_hours']}
+        showStaffSelector={false}
+        prefill={{
+          mode: 'closed',
+          staffId,
+          dateKey: serverTodayKey,
+        }}
+        onSaved={async (notice) => {
+          await onRefresh();
+          onSavedNotice(notice);
+        }}
+      />
 
       <ConfirmActionDialog
         isOpen={pendingDelete !== null}

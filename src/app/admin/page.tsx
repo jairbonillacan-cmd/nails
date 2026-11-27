@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -20,6 +21,11 @@ import { DashboardAttentionCard } from '@/components/admin/dashboard/DashboardAt
 import { DashboardKpiRow } from '@/components/admin/dashboard/DashboardKpiRow';
 import { DashboardAgendaCard } from '@/components/admin/dashboard/DashboardAgendaCard';
 import { DashboardRightColumn } from '@/components/admin/dashboard/DashboardRightColumn';
+import { parseResumenParams } from '@/lib/admin-links';
+import {
+  DASHBOARD_PERIOD_OPTIONS,
+  isMetricPeriod,
+} from '@/lib/metrics';
 import {
   ADMIN_CACHE_KEYS,
   applyOptimisticBookingStatus,
@@ -34,15 +40,11 @@ import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations } from '@/lib/types';
 
-const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
-  { value: 'today', label: 'Hoy' },
-  { value: '7d', label: 'Últimos 7 días' },
-  { value: '30d', label: 'Últimos 30 días' },
-];
-
 export default function AdminOverviewPage() {
   const { data: providerData, refresh } = useAdminData();
-  const [period, setPeriod] = useState<DashboardPeriod>('7d');
+  const searchParams = useSearchParams();
+  const initialPeriod = parseResumenParams(searchParams).period ?? '7d';
+  const [period, setPeriod] = useState<DashboardPeriod>(initialPeriod);
   const [confirmingBookingId, setConfirmingBookingId] = useState<string | null>(null);
   const [rejectingBookingId, setRejectingBookingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -121,6 +123,7 @@ export default function AdminOverviewPage() {
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ bookingId, status: 'confirmed' }),
       });
       if (!res.ok) {
@@ -162,7 +165,11 @@ export default function AdminOverviewPage() {
     }
   };
 
-  const handleRejectDeposit = async (bookingId: string, clientName: string): Promise<boolean> => {
+  const handleRejectDeposit = async (
+    bookingId: string,
+    clientName: string,
+    reason?: string,
+  ): Promise<boolean> => {
     if (rejectingBookingId === bookingId) return false;
     setRejectingBookingId(bookingId);
     setErrorMessage(null);
@@ -171,7 +178,12 @@ export default function AdminOverviewPage() {
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reject_deposit', bookingId }),
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({
+          action: 'reject_deposit',
+          bookingId,
+          ...(reason ? { reason } : {}),
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -240,9 +252,9 @@ export default function AdminOverviewPage() {
             size="sm"
             variant="secondary"
             value={period}
-            options={PERIOD_OPTIONS}
+            options={[...DASHBOARD_PERIOD_OPTIONS]}
             onChange={(next) => {
-              if (next === 'today' || next === '7d' || next === '30d') {
+              if (isMetricPeriod(next)) {
                 setPeriod(next);
               }
             }}

@@ -13,6 +13,7 @@ import {
   SurfaceCard,
   type FilterPillOption,
 } from '@/components/ui';
+import { agendaHref } from '@/lib/admin-links';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import type { DashboardMetrics } from './dashboardMetrics';
 import { DashboardAgendaRow } from './DashboardAgendaRow';
@@ -233,7 +234,7 @@ export function DashboardAgendaCard({
                     variant="primary"
                     size="sm"
                     icon={<Plus size={14} aria-hidden="true" />}
-                    href="/admin/citas?new=1"
+                    href={agendaHref({ new: true })}
                   />
                 </HStack>
               }

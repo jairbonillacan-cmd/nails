@@ -1,21 +1,31 @@
 import type { ISODateString } from '@astryxdesign/core/Calendar';
-import { DEFAULT_RETAIL_COMMISSION_PERCENT } from '@/lib/caja/caja-config';
-import { shiftDateKey } from '@/components/admin/citas/scheduleGridGeometry';
 import type { FilterPillOption } from '@/components/ui/FilterPillBar';
 import type { StatusTagTone } from '@/components/ui/StatusTag';
+import { formatCurrency, formatDateKeyDisplay } from '@/lib/format';
 import {
-  formatCurrency,
-  formatDateKeyDisplay,
-  getDateKeyInTimezone,
-} from '@/lib/format';
+  UNIFIED_PERIOD_OPTIONS,
+  computeCashDrawer,
+  computeCashPeriodSummary,
+  computeCashReconciliation,
+  computeCommissionsByStaff,
+  computeEntryCommissionCents,
+  computeTodayExpectedCashCents,
+  formatMetricPeriodLabel,
+  isIsoInMetricPeriod,
+  isIsoInMetricRange,
+  previewStaffCommission,
+  resolveMetricPeriodRange,
+  type CashDrawerBreakdown,
+  type CashPeriodSummary,
+  type CashReconciliation,
+  type MetricCustomRange,
+  type MetricPeriod,
+} from '@/lib/metrics';
 import type {
-  AdminRole,
   CajaCloseSummaryPrefs,
   CashRegisterEntry,
   Coupon,
   PaymentMethod,
-  PaymentSplit,
-  StaffMember,
 } from '@/lib/types';
 import {
   paymentMethodLabel,
@@ -23,35 +33,28 @@ import {
   type SplitDetailRow,
 } from './cajaTypes';
 
-export type CajaPeriod = 'today' | '7d' | 'month' | 'last_month' | 'custom' | 'all';
+export type CajaPeriod = MetricPeriod;
 export type CajaMethodFilter = 'all' | 'cash' | 'card' | 'transfer';
 export type MovementTypeFilter = 'all' | 'income' | 'deposits' | 'expenses';
+export type CajaCustomRange = MetricCustomRange;
+export type CajaPeriodSummary = CashPeriodSummary;
 
-export interface CajaCustomRange {
-  fromKey: string;
-  toKey: string;
-}
+export {
+  computeCashDrawer,
+  computeCashPeriodSummary as computeCajaPeriodSummary,
+  computeCashReconciliation,
+  computeCommissionsByStaff,
+  computeEntryCommissionCents,
+  computeTodayExpectedCashCents,
+  formatMetricPeriodLabel as cajaPeriodLabel,
+  isIsoInMetricPeriod as isIsoInCajaPeriod,
+  previewStaffCommission,
+  resolveMetricPeriodRange as getCajaPeriodRange,
+};
 
-export interface CajaDateRange {
-  startKey: string | null;
-  endKey: string | null;
-}
-
-export const CAJA_PERIOD_OPTIONS: readonly FilterPillOption<CajaPeriod>[] = [
-  { value: 'today', label: 'Hoy' },
-  { value: '7d', label: '7 días' },
-  { value: 'month', label: 'Este mes' },
-  { value: 'last_month', label: 'Mes pasado' },
-  { value: 'custom', label: 'Fechas' },
-  { value: 'all', label: 'Todo' },
-];
-
+export const CAJA_PERIOD_OPTIONS: readonly FilterPillOption<CajaPeriod>[] = UNIFIED_PERIOD_OPTIONS;
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function isDateKey(value: string | null | undefined): value is string {
-  return typeof value === 'string' && DATE_KEY_RE.test(value.trim());
-}
 
 function isIsoDateString(value: string): value is ISODateString {
   return DATE_KEY_RE.test(value);
@@ -62,89 +65,18 @@ export function toIsoDateValue(value: string | null | undefined): ISODateString 
   return isIsoDateString(clean) ? clean : undefined;
 }
 
-function monthStartKey(dateKey: string): string {
-  return `${dateKey.slice(0, 7)}-01`;
-}
-
-export function getCajaPeriodRange(
-  todayKey: string,
-  period: CajaPeriod,
-  custom?: CajaCustomRange | null,
-): CajaDateRange {
-  if (period === 'all') return { startKey: null, endKey: null };
-  if (period === 'today') return { startKey: todayKey, endKey: todayKey };
-  if (period === '7d') return { startKey: shiftDateKey(todayKey, -6), endKey: todayKey };
-  if (period === 'month') {
-    return { startKey: isDateKey(todayKey) ? monthStartKey(todayKey) : todayKey, endKey: todayKey };
-  }
-  if (period === 'last_month') {
-    if (!isDateKey(todayKey)) return { startKey: todayKey, endKey: todayKey };
-    const lastDayPrev = shiftDateKey(monthStartKey(todayKey), -1);
-    return { startKey: monthStartKey(lastDayPrev), endKey: lastDayPrev };
-  }
-  const from = isDateKey(custom?.fromKey) ? custom.fromKey.trim() : null;
-  const to = isDateKey(custom?.toKey) ? custom.toKey.trim() : null;
-  if (from && to && from > to) return { startKey: to, endKey: from };
-  return { startKey: from, endKey: to };
-}
-
 export function getCajaPeriodStartKey(
   todayKey: string,
   period: CajaPeriod,
   custom?: CajaCustomRange | null,
 ): string | null {
-  return getCajaPeriodRange(todayKey, period, custom).startKey;
-}
-
-function formatRangeKey(key: string): string {
-  return formatDateKeyDisplay(key, 'short').replace(/^[^,]+,\s*/, '');
-}
-
-export function cajaPeriodLabel(
-  period: CajaPeriod,
-  custom?: CajaCustomRange | null,
-  todayKey?: string,
-): string {
-  if (period === 'today') return 'Hoy';
-  if (period === '7d') return 'Últimos 7 días';
-  if (period === 'month') return 'Este mes';
-  if (period === 'last_month') return 'Mes pasado';
-  if (period === 'all') return 'Histórico';
-  const range = getCajaPeriodRange(todayKey ?? '', 'custom', custom);
-  if (range.startKey && range.endKey) {
-    return range.startKey === range.endKey
-      ? formatRangeKey(range.startKey)
-      : `${formatRangeKey(range.startKey)} – ${formatRangeKey(range.endKey)}`;
-  }
-  if (range.startKey) return `Desde ${formatRangeKey(range.startKey)}`;
-  if (range.endKey) return `Hasta ${formatRangeKey(range.endKey)}`;
-  return 'Rango personalizado';
-}
-
-function isIsoInCajaRange(iso: string, range: CajaDateRange, tz: string): boolean {
-  if (!range.startKey && !range.endKey) return true;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return false;
-  const entryKey = getDateKeyInTimezone(parsed, tz);
-  if (range.startKey && entryKey < range.startKey) return false;
-  if (range.endKey && entryKey > range.endKey) return false;
-  return true;
-}
-
-export function isIsoInCajaPeriod(
-  iso: string,
-  todayKey: string,
-  tz: string,
-  period: CajaPeriod,
-  custom?: CajaCustomRange | null,
-): boolean {
-  return isIsoInCajaRange(iso, getCajaPeriodRange(todayKey, period, custom), tz);
+  return resolveMetricPeriodRange(todayKey, period, custom).startKey;
 }
 
 function normalizeSearchToken(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
 }
@@ -176,12 +108,12 @@ export function filterCashEntries(
   },
 ): CashRegisterEntry[] {
   const { method, entryType = 'all', query, tz, bookingLookup } = options;
-  const range = getCajaPeriodRange(options.todayKey, options.period, options.custom);
+  const range = resolveMetricPeriodRange(options.todayKey, options.period, options.custom);
   const cleanQuery = normalizeSearchToken(query);
 
   return entries
     .filter((entry) => {
-      if (!isIsoInCajaRange(entry.occurredAt, range, tz)) return false;
+      if (!isIsoInMetricRange(entry.occurredAt, range, tz)) return false;
       if (method !== 'all' && entry.paymentMethod !== method) return false;
       if (entryType === 'deposits' && entry.entryType !== 'deposit') return false;
       if (entryType === 'expenses' && entry.entryType !== 'expense') return false;
@@ -215,11 +147,11 @@ export function filterSplitDetails(
   options: CajaFilterScope & { method: CajaMethodFilter; query: string },
 ): SplitDetailRow[] {
   const { method, query, tz } = options;
-  const range = getCajaPeriodRange(options.todayKey, options.period, options.custom);
+  const range = resolveMetricPeriodRange(options.todayKey, options.period, options.custom);
   const cleanQuery = normalizeSearchToken(query);
 
   return splits.filter((row) => {
-    if (!isIsoInCajaRange(row.createdAt, range, tz)) return false;
+    if (!isIsoInMetricRange(row.createdAt, range, tz)) return false;
     if (method !== 'all' && row.method !== method) return false;
     if (!cleanQuery) return true;
     const haystack = normalizeSearchToken(
@@ -227,210 +159,6 @@ export function filterSplitDetails(
     );
     return haystack.includes(cleanQuery);
   });
-}
-
-export interface CajaPeriodSummary {
-  collectedCents: number;
-  expensesCents: number;
-  netCents: number;
-  tipsCents: number;
-  ticketCount: number;
-  averageTicketCents: number;
-  cashCents: number;
-  cashCount: number;
-  cardCents: number;
-  cardCount: number;
-  transferCents: number;
-  transferCount: number;
-  giftCardCents: number;
-  giftCardCount: number;
-}
-
-export function computeCajaPeriodSummary(
-  entries: readonly CashRegisterEntry[],
-): CajaPeriodSummary {
-  let collectedCents = 0;
-  let expensesCents = 0;
-  let tipsCents = 0;
-  let ticketCount = 0;
-  let cashCents = 0;
-  let cashCount = 0;
-  let cardCents = 0;
-  let cardCount = 0;
-  let transferCents = 0;
-  let transferCount = 0;
-  let giftCardCents = 0;
-  let giftCardCount = 0;
-
-  for (const entry of entries) {
-    tipsCents += Math.max(0, entry.tipCents);
-    if (entry.entryType === 'expense') {
-      expensesCents += Math.abs(entry.amountCents);
-      continue;
-    }
-    const positiveAmount = Math.max(0, entry.amountCents);
-    collectedCents += positiveAmount;
-    ticketCount += 1;
-    if (entry.paymentMethod === 'cash') {
-      cashCents += positiveAmount;
-      cashCount += 1;
-    } else if (entry.paymentMethod === 'card') {
-      cardCents += positiveAmount;
-      cardCount += 1;
-    } else if (entry.paymentMethod === 'transfer') {
-      transferCents += positiveAmount;
-      transferCount += 1;
-    } else {
-      giftCardCents += positiveAmount;
-      giftCardCount += 1;
-    }
-  }
-
-  return {
-    collectedCents,
-    expensesCents,
-    netCents: collectedCents - expensesCents,
-    tipsCents,
-    ticketCount,
-    averageTicketCents: ticketCount > 0 ? Math.round(collectedCents / ticketCount) : 0,
-    cashCents,
-    cashCount,
-    cardCents,
-    cardCount,
-    transferCents,
-    transferCount,
-    giftCardCents,
-    giftCardCount,
-  };
-}
-
-function clampPercent(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(100, value));
-}
-
-export function computeEntryCommissionCents(
-  entry: CashRegisterEntry,
-  commissionPercent: number,
-  retailCommissionPercent: number = DEFAULT_RETAIL_COMMISSION_PERCENT,
-): number {
-  if (entry.entryType === 'expense') return 0;
-  const amount = Math.max(0, entry.amountCents);
-  if (entry.entryType === 'service_income') {
-    return Math.round((amount * clampPercent(commissionPercent)) / 100);
-  }
-  if (entry.entryType === 'product_sale') {
-    return Math.round((amount * clampPercent(retailCommissionPercent)) / 100);
-  }
-  return Math.max(0, entry.commissionCents);
-}
-
-export function previewStaffCommission(
-  row: Pick<CommissionStaffRow, 'serviceSales' | 'retailCommission' | 'otherCommission' | 'tips'>,
-  servicePercent: number,
-): { serviceCommission: number; commission: number; totalPayout: number } {
-  const serviceCommission = Math.round((row.serviceSales * clampPercent(servicePercent)) / 100);
-  const commission = serviceCommission + row.retailCommission + row.otherCommission;
-  return { serviceCommission, commission, totalPayout: commission + row.tips };
-}
-
-export function computeCommissionsByStaff(params: {
-  staff: readonly StaffMember[];
-  cashEntries: readonly CashRegisterEntry[];
-  paymentSplits: readonly PaymentSplit[];
-  todayKey: string;
-  tz: string;
-  period: CajaPeriod;
-  custom?: CajaCustomRange | null;
-  retailCommissionPercent?: number;
-  viewerRole: AdminRole;
-  viewerStaffId: string | null;
-}): CommissionStaffRow[] {
-  const {
-    staff,
-    cashEntries,
-    paymentSplits,
-    todayKey,
-    tz,
-    period,
-    custom,
-    retailCommissionPercent = DEFAULT_RETAIL_COMMISSION_PERCENT,
-    viewerRole,
-    viewerStaffId,
-  } = params;
-  const range = getCajaPeriodRange(todayKey, period, custom);
-  const retailPct = clampPercent(retailCommissionPercent);
-
-  const visibleStaff =
-    viewerRole === 'specialist'
-      ? viewerStaffId
-        ? staff.filter((st) => st.id === viewerStaffId)
-        : []
-      : staff;
-
-  const scopedCashEntries = cashEntries.filter((entry) =>
-    isIsoInCajaRange(entry.occurredAt, range, tz),
-  );
-  const scopedSplits = paymentSplits.filter((split) =>
-    isIsoInCajaRange(split.createdAt, range, tz),
-  );
-
-  return visibleStaff
-    .map((st) => {
-      const entries = scopedCashEntries.filter(
-        (entry) => entry.staffId === st.id && entry.entryType !== 'expense',
-      );
-      let serviceSales = 0;
-      let retailSales = 0;
-      let retailCommission = 0;
-      let otherCommission = 0;
-      let tips = 0;
-      for (const entry of entries) {
-        const amount = Math.max(0, entry.amountCents);
-        tips += Math.max(0, entry.tipCents);
-        if (entry.entryType === 'service_income') {
-          serviceSales += amount;
-        } else if (entry.entryType === 'product_sale') {
-          retailSales += amount;
-          retailCommission += computeEntryCommissionCents(entry, st.commissionPercent, retailPct);
-        } else {
-          otherCommission += computeEntryCommissionCents(entry, st.commissionPercent, retailPct);
-        }
-      }
-      const sales = entries.reduce((sum, entry) => sum + Math.max(0, entry.amountCents), 0);
-      const serviceCommission = Math.round(
-        (serviceSales * clampPercent(st.commissionPercent)) / 100,
-      );
-      const commission = serviceCommission + retailCommission + otherCommission;
-      const splitTipsEntries = scopedSplits.filter(
-        (split) => split.tipStaffId === st.id && split.tipCents > 0,
-      );
-      const splitTipsCents = splitTipsEntries.reduce((sum, item) => sum + item.tipCents, 0);
-      return {
-        id: st.id,
-        name: st.name,
-        percent: st.commissionPercent,
-        retailPercent: retailPct,
-        servicesCount: entries.filter((entry) => entry.amountCents > 0).length,
-        sales,
-        serviceSales,
-        serviceCommission,
-        retailSales,
-        retailCommission,
-        otherCommission,
-        commission,
-        tips,
-        splitTipsCents,
-        splitTipsCount: splitTipsEntries.length,
-        totalPayout: commission + tips,
-      };
-    })
-    .toSorted(
-      (a, b) =>
-        b.totalPayout - a.totalPayout ||
-        b.sales - a.sales ||
-        a.name.localeCompare(b.name, 'es'),
-    );
 }
 
 export interface CashMovementDraft {
@@ -458,7 +186,7 @@ export function buildCommissionPayoutDraft(
   custom?: CajaCustomRange | null,
   todayKey?: string,
 ): CommissionPayoutDraft {
-  const periodLabel = cajaPeriodLabel(period, custom, todayKey);
+  const periodLabel = formatMetricPeriodLabel(period, custom, todayKey);
   const totalCents = Math.max(0, row.totalPayout);
   return {
     entryType: 'expense',
@@ -727,99 +455,6 @@ export function computePackageEconomics(params: {
     savingsPercent:
       regularTotalCents > 0 ? Math.round((savingsCents / regularTotalCents) * 100) : 0,
     isMoreExpensive: regularTotalCents > 0 && price > regularTotalCents,
-  };
-}
-
-export interface CashDrawerBreakdown {
-  openingFloatCents: number;
-  cashSalesCents: number;
-  cashTipsCents: number;
-  cashExpensesCents: number;
-  expectedCents: number;
-}
-
-export function computeCashDrawer(params: {
-  cashEntries: readonly CashRegisterEntry[];
-  todayKey: string;
-  tz: string;
-  openingFloatCents?: number;
-}): CashDrawerBreakdown {
-  const range: CajaDateRange = { startKey: params.todayKey, endKey: params.todayKey };
-  const openingFloatCents = Math.max(0, Math.round(params.openingFloatCents ?? 0));
-  let cashSalesCents = 0;
-  let cashTipsCents = 0;
-  let cashExpensesCents = 0;
-  for (const entry of params.cashEntries) {
-    if (entry.paymentMethod !== 'cash') continue;
-    if (!isIsoInCajaRange(entry.occurredAt, range, params.tz)) continue;
-    if (entry.entryType === 'expense') {
-      cashExpensesCents += Math.abs(entry.amountCents);
-      continue;
-    }
-    cashSalesCents += entry.amountCents;
-    cashTipsCents += Math.max(0, entry.tipCents);
-  }
-  return {
-    openingFloatCents,
-    cashSalesCents,
-    cashTipsCents,
-    cashExpensesCents,
-    expectedCents: openingFloatCents + cashSalesCents + cashTipsCents - cashExpensesCents,
-  };
-}
-
-export function computeTodayExpectedCashCents(
-  cashEntries: readonly CashRegisterEntry[],
-  todayKey: string,
-  tz: string,
-  openingFloatCents = 0,
-): number {
-  return computeCashDrawer({ cashEntries, todayKey, tz, openingFloatCents }).expectedCents;
-}
-
-export interface CashReconciliation {
-  expectedCents: number;
-  countedCents: number;
-  diffCents: number;
-  status: 'balanced' | 'over' | 'short';
-  tone: 'success' | 'warning' | 'danger';
-  shortLabel: string;
-}
-
-export function computeCashReconciliation(
-  expectedCents: number,
-  countedMxn: number,
-): CashReconciliation {
-  const safeCounted = Number.isFinite(countedMxn) ? Math.max(0, countedMxn) : 0;
-  const countedCents = Math.round(safeCounted * 100);
-  const diffCents = countedCents - expectedCents;
-  if (diffCents === 0) {
-    return {
-      expectedCents,
-      countedCents,
-      diffCents: 0,
-      status: 'balanced',
-      tone: 'success',
-      shortLabel: 'Cuadra',
-    };
-  }
-  if (diffCents > 0) {
-    return {
-      expectedCents,
-      countedCents,
-      diffCents,
-      status: 'over',
-      tone: 'warning',
-      shortLabel: 'Sobrante',
-    };
-  }
-  return {
-    expectedCents,
-    countedCents,
-    diffCents,
-    status: 'short',
-    tone: 'danger',
-    shortLabel: 'Faltante',
   };
 }
 

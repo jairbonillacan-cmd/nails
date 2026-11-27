@@ -1,8 +1,13 @@
 import type { AdminSession } from '@/lib/auth/admin-session';
-import { computeBookingBalance } from '@/lib/booking/balance';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getDateKeyInTimezone } from '@/lib/format';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
+import {
+  computeCashPeriodSummary,
+  selectPendingDeposits,
+  selectTodayAgenda,
+  selectUncollectedBookings,
+} from '@/lib/metrics';
 import {
   toAdminCalendarConnectionDTO,
   toAdminSettingsDTO,
@@ -15,7 +20,7 @@ import {
   getWhatsAppUnreadSummary,
   hydrateBookingsWithRelationsFromDb,
 } from '@/lib/repositories/db';
-import type { CashRegisterEntry, ClientProfile, PaymentSplit } from '@/lib/types';
+import type { ClientProfile } from '@/lib/types';
 import type { AdminOverviewPayload } from './overview-types';
 
 function scopeByStaff<T extends { staffId: string | null }>(
@@ -49,25 +54,16 @@ export async function buildAdminOverviewPayload(
   const tz = db.settings.timezone || 'America/Mexico_City';
   const todayKey = getDateKeyInTimezone(now, tz);
 
-  let todayBookingsCount = 0;
   let completedCount = 0;
   let noShowCount = 0;
   const visibleBookingIds = new Set<string>();
   const visibleClientIds = new Set<string>();
-  const pendingDeposits: AdminOverviewPayload['pendingDeposits'] = [];
   const clientVisitStats = new Map<
     string,
     { totalVisits: number; lastPastVisitMs: number | null; hasUpcoming: boolean }
   >();
 
   const cashEntries = scopeByStaff(db.cashEntries, isSpecialist, ownStaffId);
-  const cashByBookingId = new Map<string, CashRegisterEntry[]>();
-  for (const entry of cashEntries) {
-    if (!entry.bookingId) continue;
-    const list = cashByBookingId.get(entry.bookingId) ?? [];
-    list.push(entry);
-    cashByBookingId.set(entry.bookingId, list);
-  }
 
   for (const booking of bookings) {
     visibleBookingIds.add(booking.id);
@@ -77,56 +73,27 @@ export async function buildAdminOverviewPayload(
   const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
     visibleBookingIds.has(s.bookingId),
   );
-  const splitsByBookingId = new Map<string, PaymentSplit[]>();
-  for (const split of paymentSplits) {
-    const list = splitsByBookingId.get(split.bookingId) ?? [];
-    list.push(split);
-    splitsByBookingId.set(split.bookingId, list);
-  }
 
-  const uncollectedWithTime: Array<{
-    item: AdminOverviewPayload['uncollectedBookings'][number];
-    startMs: number;
-  }> = [];
+  const pendingDeposits = selectPendingDeposits(bookings);
+  const uncollectedBookings = selectUncollectedBookings({
+    bookings,
+    paymentSplits,
+    cashEntries,
+    nowMs,
+  });
+  const todayAgenda = selectTodayAgenda({
+    bookings,
+    todayKey,
+    timezone: tz,
+    nowMs,
+  });
+  const todayBookingsCount = todayAgenda.todayCount;
 
   for (const booking of bookings) {
-    const startDate = new Date(booking.startAt);
-    const startMs = startDate.getTime();
+    const startMs = Date.parse(booking.startAt);
     const status = booking.status;
-    const balance = computeBookingBalance(
-      booking,
-      splitsByBookingId.get(booking.id) ?? [],
-      cashByBookingId.get(booking.id) ?? [],
-      nowMs,
-    );
 
-    if (status !== 'canceled' && getDateKeyInTimezone(startDate, tz) === todayKey) {
-      todayBookingsCount += 1;
-    }
-
-    if (status === 'pending_confirmation' || status === 'pending_payment') {
-      pendingDeposits.push({
-        bookingId: booking.id,
-        bookingCode: booking.bookingCode,
-        status,
-        clientId: booking.clientId,
-        clientName: booking.client.fullName,
-        clientPhone: booking.client.phoneE164,
-        clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? null,
-        serviceName: booking.service.name,
-        staffId: booking.staffId,
-        staffName: booking.staff.name,
-        startAt: booking.startAt,
-        depositAmountCents: booking.depositAmountCents,
-        totalPriceCents: booking.totalPriceCents,
-        proofDeliveryMethod:
-          booking.proofDeliveryMethod ?? (booking.paymentProofUrl ? 'web_upload' : 'none'),
-        paymentProofUrl: booking.paymentProofUrl,
-        proofSubmitted: balance.hasDepositAwaitingReview,
-        awaitingReview: balance.hasDepositAwaitingReview,
-        missingProof: balance.hasDepositMissingProof,
-      });
-    } else if (status === 'completed') {
+    if (status === 'completed') {
       completedCount += 1;
     } else if (status === 'no_show') {
       noShowCount += 1;
@@ -156,44 +123,12 @@ export async function buildAdminOverviewPayload(
       }
       clientVisitStats.set(booking.clientId, stat);
     }
-
-    if (balance.isUncollected) {
-      uncollectedWithTime.push({
-        startMs,
-        item: {
-          bookingId: booking.id,
-          bookingCode: booking.bookingCode,
-          status: booking.status,
-          clientId: booking.clientId,
-          clientName: booking.client.fullName,
-          clientPhone: booking.client.phoneE164,
-          clientInstagram: booking.clientInstagram ?? booking.client.instagramHandle ?? null,
-          serviceName: booking.service.name,
-          staffId: booking.staffId,
-          staffName: booking.staff.name,
-          startAt: booking.startAt,
-          endAt: booking.endAt,
-          totalPriceCents: balance.totalPriceCents,
-          paidCents: balance.appliedPaidCents,
-          remainingCents: balance.remainingCents,
-          depositPaidCents: balance.depositPaidCents,
-          isPastUnclosed: balance.isPastUnclosed,
-        },
-      });
-    }
   }
 
-  let totalRevenueCents = 0;
-  let totalTipsCents = 0;
-  let totalExpensesCents = 0;
-  for (const entry of cashEntries) {
-    if (entry.entryType === 'expense') {
-      totalExpensesCents += Math.abs(entry.amountCents);
-    } else {
-      totalRevenueCents += entry.amountCents;
-    }
-    totalTipsCents += entry.tipCents;
-  }
+  const cashSummary = computeCashPeriodSummary(cashEntries);
+  const totalRevenueCents = cashSummary.collectedCents;
+  const totalTipsCents = cashSummary.tipsCents;
+  const totalExpensesCents = cashSummary.expensesCents;
 
   const scopedStaff = isSpecialist
     ? ownStaffId
@@ -322,9 +257,6 @@ export async function buildAdminOverviewPayload(
     ),
   };
 
-  const uncollectedBookings = uncollectedWithTime
-    .toSorted((a, b) => b.startMs - a.startMs)
-    .map(({ item }) => item);
   const recurringBlocks = scopeByStaff(db.recurringBlocks ?? [], isSpecialist, ownStaffId);
 
   const loyaltyPrograms = db.loyaltyPrograms ?? [];

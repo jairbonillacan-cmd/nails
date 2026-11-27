@@ -1,3 +1,4 @@
+import { agendaHref } from '@/lib/admin-links';
 import { getDateKeyInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import {
@@ -237,7 +238,7 @@ export function buildSidebarStaffRows(data: AdminOverviewPayload): SidebarStaffR
       id: member.id,
       firstName: member.name.trim().split(/\s+/)[0] || member.name,
       todayCount: todayCounts.get(member.id) ?? 0,
-      href: `/admin/citas?staff=${encodeURIComponent(member.id)}`,
+      href: agendaHref({ staff: member.id }),
     }));
 }
 
@@ -287,8 +288,8 @@ export function prefetchAdminRoute(
   }
 
   if (routeId === 'reports' && roleCanAccess(currentRole, 'reports')) {
-    void prefetchAdminData(ADMIN_CACHE_KEYS.reports('30d'), (signal) =>
-      fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.reports('30d'), signal),
+    void prefetchAdminData(ADMIN_CACHE_KEYS.reports('month'), (signal) =>
+      fetchAdminJson<unknown>(ADMIN_CACHE_KEYS.reports('month'), signal),
     );
   }
 }

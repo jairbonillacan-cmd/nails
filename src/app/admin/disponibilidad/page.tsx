@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Selector } from '@astryxdesign/core/Selector';
@@ -18,7 +19,27 @@ import {
 } from '@/components/ui';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { WeeklyScheduleEditor } from '@/components/admin/disponibilidad/WeeklyScheduleEditor';
+import {
+  horariosHref,
+  parseHorariosParams,
+  type HorariosTabParam,
+} from '@/lib/admin-links';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
+
+type AvailabilityViewTab = 'weekly' | 'breaks' | 'help';
+
+function horariosParamToViewTab(param?: HorariosTabParam): AvailabilityViewTab {
+  if (param === 'excepciones' || param === 'bloqueos') return 'breaks';
+  if (param === 'diagnostico') return 'help';
+  return 'weekly';
+}
+
+function viewTabToHorariosParam(tab: AvailabilityViewTab): HorariosTabParam {
+  if (tab === 'breaks') return 'bloqueos';
+  if (tab === 'help') return 'diagnostico';
+  return 'horarios';
+}
 
 const DateOverridesSection = dynamic(
   () =>
@@ -62,11 +83,41 @@ const VisualTroubleshooter = dynamic(
 
 export default function AdminAvailabilityPage() {
   const { data, loading, refresh } = useAdminData();
-  const [tab, setTab] = useState('weekly');
-  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const parsedParams = parseHorariosParams(searchParams);
+
+  const [tab, setTab] = useState<AvailabilityViewTab>(() =>
+    horariosParamToViewTab(parsedParams.tab),
+  );
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(
+    () => parsedParams.staff ?? null,
+  );
   const [savingWeekly, setSavingWeekly] = useState(false);
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const saveNotice = useEphemeralMessage(3200);
+  const lastUrlSyncKeyRef = useRef('');
+
+  const urlSyncKey = data
+    ? `horarios-ready|${parsedParams.staff ?? ''}|${parsedParams.tab ?? ''}|${parsedParams.date ?? ''}|${parsedParams.serviceId ?? ''}`
+    : 'horarios-loading';
+
+  useExternalSync(urlSyncKey, async (signal, key) => {
+    if (signal.aborted || !key.startsWith('horarios-ready') || !data) return;
+    if (lastUrlSyncKeyRef.current === key) return;
+    lastUrlSyncKeyRef.current = key;
+
+    const isSpecialist =
+      data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
+    if (!isSpecialist && parsedParams.staff) {
+      if (data.staff.some((s) => s.id === parsedParams.staff)) {
+        setSelectedStaffId(parsedParams.staff);
+      }
+    }
+    if (parsedParams.tab) {
+      setTab(horariosParamToViewTab(parsedParams.tab));
+    }
+  });
 
   if (loading || !data) {
     return (
@@ -82,9 +133,13 @@ export default function AdminAvailabilityPage() {
   const isSpecialistOnly =
     data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
 
+  const validSelectedStaffId =
+    selectedStaffId && data.staff.some((s) => s.id === selectedStaffId)
+      ? selectedStaffId
+      : null;
   const staffId = isSpecialistOnly
     ? (data.session.user.staffMemberId ?? '')
-    : (selectedStaffId ?? data.staff[0]?.id ?? '');
+    : (validSelectedStaffId ?? data.staff[0]?.id ?? '');
 
   const activeStaffMember = data.staff.find((s) => s.id === staffId) ?? data.staff[0] ?? null;
   const staffName = activeStaffMember?.name ?? 'la profesional';
@@ -105,9 +160,27 @@ export default function AdminAvailabilityPage() {
   const activeRecurringCount = staffRecurringBlocks.filter((b) => b.isActive).length;
   const totalBreaksBadge = activeRecurringCount + activeOverrides.length;
 
+  const syncUrl = (nextStaffId: string, nextTab: AvailabilityViewTab) => {
+    const nextHref = horariosHref({
+      ...(nextStaffId && !isSpecialistOnly ? { staff: nextStaffId } : {}),
+      tab: viewTabToHorariosParam(nextTab),
+      ...(nextTab === 'help' && parsedParams.date ? { date: parsedParams.date } : {}),
+      ...(nextTab === 'help' && parsedParams.serviceId ? { serviceId: parsedParams.serviceId } : {}),
+    });
+    router.replace(nextHref, { scroll: false });
+  };
+
   const handleSelectStaff = (nextId: string) => {
     setSelectedStaffId(nextId);
     setMsg(null);
+    syncUrl(nextId, tab);
+  };
+
+  const handleChangeTab = (nextRaw: string) => {
+    const nextTab: AvailabilityViewTab =
+      nextRaw === 'breaks' ? 'breaks' : nextRaw === 'help' ? 'help' : 'weekly';
+    setTab(nextTab);
+    syncUrl(staffId, nextTab);
   };
 
   return (
@@ -170,7 +243,7 @@ export default function AdminAvailabilityPage() {
         />
       ) : null}
 
-      <TabList value={tab} onChange={setTab} hasDivider>
+      <TabList value={tab} onChange={handleChangeTab} hasDivider>
         <Tab value="weekly" label="Turnos de la semana" />
         <Tab
           value="breaks"
@@ -219,6 +292,8 @@ export default function AdminAvailabilityPage() {
             key={`recurring-${staffId}`}
             staffId={staffId}
             staffName={staffName}
+            allStaff={data.staff}
+            serverTodayKey={data.serverTodayKey}
             recurringBlocks={staffRecurringBlocks}
             onRefresh={refresh}
             onSavedNotice={saveNotice.show}
@@ -228,11 +303,14 @@ export default function AdminAvailabilityPage() {
       ) : (
         <VStack key="tab-help" gap={0}>
           <VisualTroubleshooter
+            key={`help-${parsedParams.date ?? 'today'}-${parsedParams.serviceId ?? 'default'}`}
             staffId={staffId}
             staffMembers={data.staff}
             services={data.services}
             isSpecialistOnly={isSpecialistOnly}
             todayKey={data.serverTodayKey}
+            initialDate={parsedParams.date ?? null}
+            initialServiceId={parsedParams.serviceId ?? null}
             timezone={data.settings.timezone}
             onSelectStaff={handleSelectStaff}
           />

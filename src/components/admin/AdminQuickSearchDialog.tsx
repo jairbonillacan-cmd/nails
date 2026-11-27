@@ -10,6 +10,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
 import { Calendar, CalendarDays, Search, Sparkles, Tag, Users } from 'lucide-react';
+import { agendaHref, clientasHref } from '@/lib/admin-links';
 import {
   formatCurrency,
   formatDateShortInTimezone,
@@ -44,7 +45,7 @@ export function AdminQuickSearchDialog({
   const canViewClients = roleCanAccess(data.session.user.role, 'clients');
   const serviceTargetHref = roleCanAccess(data.session.user.role, 'services')
     ? '/admin/servicios'
-    : '/admin/citas?new=1';
+    : agendaHref({ new: true });
 
   const {
     dateJumps,
@@ -273,7 +274,7 @@ export function AdminQuickSearchDialog({
                               }
                               onMouseEnter={() => setActiveIndex(flatIdx)}
                               onClick={() =>
-                                handleNavigate(`/admin/citas?q=${encodeURIComponent(b.bookingCode)}`)
+                                handleNavigate(agendaHref({ q: b.bookingCode }))
                               }
                             />
                           );
@@ -318,7 +319,7 @@ export function AdminQuickSearchDialog({
                               }
                               onMouseEnter={() => setActiveIndex(flatIdx)}
                               onClick={() =>
-                                handleNavigate(`/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`)
+                                handleNavigate(clientasHref({ q: c.phoneE164 }))
                               }
                             />
                           );

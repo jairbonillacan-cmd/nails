@@ -47,6 +47,7 @@ import {
   PageSkeleton,
   SkeletonBlock,
 } from '@/components/ui';
+import { parseCajaParams } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import type { CajaConfig, CashRegisterEntry, Coupon, StaffMember } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
@@ -117,6 +118,7 @@ const OwnerPinDialog = dynamic(
 export default function AdminCashPage() {
   const { data: providerData, refresh } = useAdminData();
   const searchParams = useSearchParams();
+  const parsedParams = parseCajaParams(searchParams);
   const {
     data,
     cajaConfig,
@@ -154,7 +156,7 @@ export default function AdminCashPage() {
     splitSummaryByMethod,
     commissionsByStaff,
     todayCommissionsByStaff,
-  } = useCajaData(providerData, searchParams.get('tab'), searchParams.get('sub'));
+  } = useCajaData(providerData, parsedParams);
 
   const [msg, setMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -238,27 +240,34 @@ export default function AdminCashPage() {
     });
   };
 
-  const handleConfirmRejectDeposit = async () => {
-    if (!rejectConfirmTarget) return;
-    const { bookingId, bookingCode } = rejectConfirmTarget;
+  const handleRejectDepositDirect = async (
+    bookingId: string,
+    bookingCode: string,
+    reason?: string,
+  ): Promise<boolean> => {
     setRejectingId(bookingId);
     setErrorMsg(null);
     setMsg(null);
     try {
-      const result = await rejectCajaDeposit(data, bookingId, bookingCode);
+      const result = await rejectCajaDeposit(data, bookingId, bookingCode, reason);
       if (!result.ok) {
         setErrorMsg(result.error ?? 'No se pudo rechazar el comprobante.');
-        setRejectConfirmTarget(null);
-        settlePendingReject(false);
-        return;
+        return false;
       }
       setMsg(result.message ?? null);
-      setRejectConfirmTarget(null);
-      settlePendingReject(true);
       void refresh();
+      return true;
     } finally {
       setRejectingId(null);
     }
+  };
+
+  const handleConfirmRejectDeposit = async () => {
+    if (!rejectConfirmTarget) return;
+    const { bookingId, bookingCode } = rejectConfirmTarget;
+    const ok = await handleRejectDepositDirect(bookingId, bookingCode);
+    setRejectConfirmTarget(null);
+    settlePendingReject(ok);
   };
 
   const handleRecordCashEntry = async (input: RecordCajaEntryInput): Promise<FormSubmitResult> => {
@@ -583,6 +592,7 @@ export default function AdminCashPage() {
           rejectingId={rejectingId}
           onApproveDeposit={handleApproveDeposit}
           onRejectDeposit={handleRejectDeposit}
+          onRejectDepositDirect={handleRejectDepositDirect}
         />
       ) : effectiveActiveTab === 'commissions' ? (
         <CajaCommissionsTab

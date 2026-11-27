@@ -15,6 +15,7 @@ import {
   SurfaceCard,
   WaitlistStatusTag,
 } from '@/components/ui';
+import { whatsappHref } from '@/lib/admin-links';
 import type { Service, WaitlistEntry } from '@/lib/types';
 import { buildWhatsAppLink, formatDateKeyDisplay, formatPhoneDisplay } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
@@ -194,7 +195,7 @@ export function WaitlistPanel({
                             variant="secondary"
                             size="sm"
                             icon={<MessageCircle size={14} aria-hidden="true" />}
-                            href={`/admin/whatsapp?phone=${encodeURIComponent(w.clientPhoneE164)}`}
+                            href={whatsappHref({ phone: w.clientPhoneE164 })}
                           />
                         ) : null}
                         <Button

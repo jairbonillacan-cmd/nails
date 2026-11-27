@@ -1,3 +1,4 @@
+import { agendaHref, clientasHref } from '@/lib/admin-links';
 import { formatDateShortInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminRole, BookingWithRelations, ClientProfile, Service } from '@/lib/types';
@@ -191,7 +192,7 @@ export function parseAdminDateJump(
     dateKey: resolvedKey,
     label: `${titlePrefix} · ${formatted}`,
     description: `Abrir la agenda en ${resolvedKey}`,
-    href: `/admin/citas?date=${resolvedKey}`,
+    href: agendaHref({ date: resolvedKey }),
   };
 }
 
@@ -200,7 +201,7 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
     {
       label: 'Nueva cita',
       description: 'Registrar una cita nueva en la agenda (atajo N)',
-      href: '/admin/citas?new=1',
+      href: agendaHref({ new: true }),
       keywords: 'nueva cita agendar crear reserva',
       visible: true,
     },
@@ -325,14 +326,14 @@ export function buildQuickSearchResults(
             dateKey: todayKey,
             label: `Agenda de hoy · ${formatDateShortInTimezone(`${todayKey}T18:00:00Z`, tz)}`,
             description: 'Ver calendario por profesional de hoy',
-            href: `/admin/citas?date=${todayKey}`,
+            href: agendaHref({ date: todayKey }),
           },
           {
             id: `date-${shiftDateKey(todayKey, 1)}`,
             dateKey: shiftDateKey(todayKey, 1),
             label: `Agenda de mañana · ${formatDateShortInTimezone(`${shiftDateKey(todayKey, 1)}T18:00:00Z`, tz)}`,
             description: 'Ver citas y huecos libres de mañana',
-            href: `/admin/citas?date=${shiftDateKey(todayKey, 1)}`,
+            href: agendaHref({ date: shiftDateKey(todayKey, 1) }),
           },
         ]
       : [];
@@ -401,18 +402,18 @@ export function buildQuickSearchResults(
   for (const b of matchedBookings) {
     flatOptions.push({
       optionId: `ad-search-opt-booking-${b.id}`,
-      href: `/admin/citas?q=${encodeURIComponent(b.bookingCode)}`,
+      href: agendaHref({ q: b.bookingCode }),
     });
   }
   for (const c of matchedClients) {
     flatOptions.push({
       optionId: `ad-search-opt-client-${c.id}`,
-      href: `/admin/clientas?q=${encodeURIComponent(c.phoneE164)}`,
+      href: clientasHref({ q: c.phoneE164 }),
     });
   }
   const serviceTargetHref = roleCanAccess(role, 'services')
     ? '/admin/servicios'
-    : '/admin/citas?new=1';
+    : agendaHref({ new: true });
   for (const s of matchedServices) {
     flatOptions.push({
       optionId: `ad-search-opt-service-${s.id}`,

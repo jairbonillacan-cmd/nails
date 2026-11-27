@@ -40,6 +40,7 @@ import {
   SkeletonBlock,
   type MetricTileItem,
 } from '@/components/ui';
+import { parseClientasParams } from '@/lib/admin-links';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import type { ClientProfile } from '@/lib/types';
@@ -88,8 +89,11 @@ const NewClientDialog = dynamic(
 export default function AdminClientsPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
   const searchParams = useSearchParams();
+  const parsedParams = parseClientasParams(searchParams);
   const [selected, setSelected] = useState<ClientProfile | null>(null);
-  const [directoryFilter, setDirectoryFilter] = useState<ClientDirectoryFilter>('all');
+  const [directoryFilter, setDirectoryFilter] = useState<ClientDirectoryFilter>(
+    () => parsedParams.filter ?? 'all',
+  );
   const [directorySort, setDirectorySort] = useState<ClientDirectorySort>('alpha');
 
   const {
@@ -122,8 +126,8 @@ export default function AdminClientsPage() {
   } = useClientasData(
     providerData,
     bookingEventSeq,
-    searchParams.get('tab'),
-    searchParams.get('q')?.trim() ?? '',
+    parsedParams.tab ?? searchParams.get('tab'),
+    parsedParams.q ?? '',
     Boolean(selected),
   );
 

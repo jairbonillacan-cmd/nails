@@ -1,3 +1,4 @@
+import { agendaHref, clientasHref } from '@/lib/admin-links';
 import type { BookingPaymentSummary } from '@/lib/payments/splits';
 import type { AdminRole, BookingStatus } from '@/lib/types';
 
@@ -84,12 +85,10 @@ export function resolveStudioBarContext(input: {
     paidCents: paymentSummary.paidCents,
     remainingCents: paymentSummary.remainingCents,
     totalPriceCents: paymentSummary.totalPriceCents,
-    collectHref: `/admin/citas?collect=${encodeURIComponent(booking.id)}`,
-    agendaHref: `/admin/citas?q=${encodeURIComponent(booking.bookingCode)}`,
+    collectHref: agendaHref({ collect: booking.id }),
+    agendaHref: agendaHref({ q: booking.bookingCode }),
     clientProfileHref:
-      canViewClients && cleanPhone
-        ? `/admin/clientas?q=${encodeURIComponent(cleanPhone)}`
-        : null,
+      canViewClients && cleanPhone ? clientasHref({ q: cleanPhone }) : null,
   };
 }
 

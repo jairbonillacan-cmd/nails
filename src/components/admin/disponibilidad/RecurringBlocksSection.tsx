@@ -1,218 +1,37 @@
 'use client';
 
-import type React from 'react';
 import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Grid } from '@astryxdesign/core/Grid';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
-import { Selector } from '@astryxdesign/core/Selector';
-import { TextInput } from '@astryxdesign/core/TextInput';
-import { NumberInput } from '@astryxdesign/core/NumberInput';
-import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
-import { DateInput } from '@astryxdesign/core/DateInput';
-import type { ISODateString } from '@astryxdesign/core/Calendar';
 import { Coffee, Pause, Play, Plus, Trash2 } from 'lucide-react';
 import {
   ConfirmActionDialog,
   EmptyStateCard,
-  FilterPillBar,
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
-import type { RecurringBlock } from '@/lib/types';
-import type { FormDialogControls } from '@/components/ui/FormDialog';
-import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
-import {
-  FORM_SUBMIT_OK,
-  formSubmitError,
-  formSubmitResultFromResponse,
-  type FormSubmitResult,
-} from '@/lib/forms/form-submit';
-import { DAYS, FIXED_TIME_OPTIONS, formatRecurringSummary } from './scheduleConstants';
+import type { RecurringBlock, StaffMember } from '@/lib/types';
+import { BlockTimeForm } from './BlockTimeForm';
+import { formatRecurringSummary } from './scheduleConstants';
 
 interface RecurringBlocksSectionProps {
   staffId: string;
   staffName: string;
+  allStaff: StaffMember[];
+  serverTodayKey: string;
   recurringBlocks: RecurringBlock[];
   onRefresh: () => Promise<void>;
   onSavedNotice: (text: string) => void;
   onMessage: (msg: { status: 'success' | 'error'; text: string } | null) => void;
 }
 
-function RecurringBreakFormBody({
-  staffId,
-  onRefresh,
-  onSavedNotice,
-  controls,
-}: {
-  staffId: string;
-  onRefresh: () => Promise<void>;
-  onSavedNotice: (text: string) => void;
-  controls: FormDialogControls;
-}) {
-  const [recFrequency, setRecFrequency] = useState<'weekly' | 'monthly'>('weekly');
-  const [recWeekdays, setRecWeekdays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
-  const [recDayOfMonth, setRecDayOfMonth] = useState<number>(15);
-  const [recStartTime, setRecStartTime] = useState('12:30');
-  const [recEndTime, setRecEndTime] = useState('13:15');
-  const [recReason, setRecReason] = useState('');
-  const [recUntilDate, setRecUntilDate] = useState('');
-  const { isSubmitting } = controls;
-
-  const toggleRecWeekday = (dow: number, checked: boolean) => {
-    setRecWeekdays((prev) => {
-      const next = checked
-        ? Array.from(new Set([...prev, dow]))
-        : prev.filter((d) => d !== dow);
-      return next.toSorted((a, b) => a - b);
-    });
-  };
-
-  const saveBreak = async (): Promise<FormSubmitResult> => {
-    if (recFrequency === 'weekly' && recWeekdays.length === 0) {
-      return formSubmitError('Elige al menos un día de la semana.');
-    }
-    if (recStartTime >= recEndTime) {
-      return formSubmitError('La hora de inicio debe ser antes que la hora de fin.');
-    }
-    try {
-      const res = await fetch('/api/admin/availability', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'recurring_block',
-          staffId,
-          reason: recReason.trim() || 'Descanso',
-          frequency: recFrequency,
-          weekdays: recFrequency === 'weekly' ? recWeekdays : [],
-          dayOfMonth:
-            recFrequency === 'monthly'
-              ? Math.max(1, Math.min(31, Math.round(recDayOfMonth || 1)))
-              : null,
-          startTime: recStartTime,
-          endTime: recEndTime,
-          untilDate: recUntilDate.trim() || null,
-          isActive: true,
-        }),
-      });
-      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el descanso.');
-      await onRefresh();
-      onSavedNotice('Descanso guardado');
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudo guardar el descanso.');
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!staffId) return;
-    controls.submit(saveBreak);
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <VStack gap={3}>
-        <FilterPillBar<'weekly' | 'monthly'>
-          ariaLabel="Con qué frecuencia se repite"
-          mode="segmented"
-          size="sm"
-          layout="fill"
-          value={recFrequency}
-          onChange={setRecFrequency}
-          options={[
-            { value: 'weekly', label: 'Cada semana' },
-            { value: 'monthly', label: 'Cada mes' },
-          ]}
-        />
-
-        {recFrequency === 'weekly' ? (
-          <VStack gap={1.5} role="group" aria-label="Qué días">
-            <Text type="label" weight="semibold" aria-hidden="true">
-              Qué días
-            </Text>
-            <Grid columns={{ minWidth: 72, max: 4 }} gap={1.5}>
-              {DAYS.map(({ dow, short }) => (
-                <CheckboxInput
-                  key={dow}
-                  size="sm"
-                  label={short}
-                  value={recWeekdays.includes(dow)}
-                  onChange={(checked) => toggleRecWeekday(dow, checked)}
-                />
-              ))}
-            </Grid>
-          </VStack>
-        ) : (
-          <NumberInput
-            label="Qué día del mes"
-            description="Del 1 al 31."
-            value={recDayOfMonth}
-            min={1}
-            max={31}
-            isIntegerOnly
-            onChange={(val) => setRecDayOfMonth(val || 1)}
-          />
-        )}
-
-        <Grid columns={{ minWidth: 130, max: 2 }} gap={2}>
-          <Selector
-            label="Desde"
-            value={recStartTime}
-            onChange={(v) => v && setRecStartTime(v)}
-            options={FIXED_TIME_OPTIONS}
-          />
-          <Selector
-            label="Hasta"
-            value={recEndTime}
-            onChange={(v) => v && setRecEndTime(v)}
-            options={FIXED_TIME_OPTIONS}
-          />
-        </Grid>
-
-        <TextInput
-          label="Nombre"
-          placeholder="Ej. Comida"
-          value={recReason}
-          onChange={setRecReason}
-          isOptional
-        />
-
-        <DateInput
-          label="Termina el"
-          description="Déjalo vacío si se repite siempre."
-          value={(recUntilDate || undefined) as ISODateString | undefined}
-          onChange={(v) => setRecUntilDate(v ?? '')}
-          isOptional
-        />
-
-        <HStack gap={2} justify="end" wrap="wrap">
-          <Button
-            type="button"
-            label="Cancelar"
-            variant="secondary"
-            isDisabled={isSubmitting}
-            onClick={controls.close}
-          />
-          <Button
-            type="submit"
-            label="Guardar descanso"
-            variant="primary"
-            icon={<Plus size={14} aria-hidden="true" />}
-            isLoading={isSubmitting}
-            isDisabled={isSubmitting}
-          />
-        </HStack>
-      </VStack>
-    </form>
-  );
-}
-
 export function RecurringBlocksSection({
   staffId,
   staffName,
+  allStaff,
+  serverTodayKey,
   recurringBlocks,
   onRefresh,
   onSavedNotice,
@@ -221,6 +40,8 @@ export function RecurringBlocksSection({
   const [busyBlockId, setBusyBlockId] = useState<string | null>(null);
   const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
   const [pendingDelete, setPendingDelete] = useState<RecurringBlock | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addDialogKey, setAddDialogKey] = useState(0);
 
   const handleToggleRecurringBlock = async (block: RecurringBlock) => {
     if (busyBlockId) return;
@@ -232,6 +53,7 @@ export function RecurringBlocksSection({
       const res = await fetch('/api/admin/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           kind: 'recurring_block_toggle',
           id: block.id,
@@ -266,7 +88,10 @@ export function RecurringBlocksSection({
     try {
       const res = await fetch(
         `/api/admin/availability?blockId=${encodeURIComponent(target.id)}`,
-        { method: 'DELETE' },
+        {
+          method: 'DELETE',
+          signal: AbortSignal.timeout(15_000),
+        },
       );
       if (res.ok) {
         await onRefresh();
@@ -295,22 +120,17 @@ export function RecurringBlocksSection({
         subtitle={`Horarios que se repiten cada semana o cada mes para ${staffName}.`}
         count={recurringBlocks.length}
         actions={
-          <FormDialogLauncher
-            triggerLabel="Agregar descanso"
-            title="Descanso que se repite"
-            subtitle="Tu hora de comida o limpieza, sin bloquear día por día."
-            triggerVariant="secondary"
-            triggerSize="sm"
-          >
-            {(controls) => (
-              <RecurringBreakFormBody
-                staffId={staffId}
-                onRefresh={onRefresh}
-                onSavedNotice={onSavedNotice}
-                controls={controls}
-              />
-            )}
-          </FormDialogLauncher>
+          <Button
+            type="button"
+            label="Agregar descanso"
+            variant="secondary"
+            size="sm"
+            icon={<Plus size={14} aria-hidden="true" />}
+            onClick={() => {
+              setAddDialogKey((prev) => prev + 1);
+              setAddDialogOpen(true);
+            }}
+          />
         }
       >
         {recurringBlocks.length === 0 ? (
@@ -380,6 +200,32 @@ export function RecurringBlocksSection({
           </VStack>
         )}
       </SurfaceCard>
+
+      <BlockTimeForm
+        key={`recurring-add-${staffId}-${addDialogKey}`}
+        isOpen={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        visibleStaff={allStaff}
+        allStaff={allStaff}
+        lockedStaffId={staffId}
+        todayKey={serverTodayKey}
+        allowedModes={['partial']}
+        showStaffSelector={false}
+        prefill={{
+          mode: 'partial',
+          staffId,
+          dateKey: serverTodayKey,
+          startTimeHHMM: '12:30',
+          endTimeHHMM: '13:15',
+          repeat: true,
+          frequency: 'weekly',
+          weekdays: [1, 2, 3, 4, 5, 6],
+        }}
+        onSaved={async (notice) => {
+          await onRefresh();
+          onSavedNotice(notice);
+        }}
+      />
 
       <ConfirmActionDialog
         isOpen={pendingDelete !== null}

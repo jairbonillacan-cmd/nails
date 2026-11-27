@@ -18,6 +18,7 @@ import type {
   WhatsAppThreadsListResponseDTO,
   WhatsAppThreadSummaryDTO,
 } from '@/lib/contracts';
+import { whatsappHref, type WhatsAppFilterParam } from '@/lib/admin-links';
 import type { AdminOverviewPayload } from '@/lib/admin/overview-types';
 import { canonicalizeWhatsAppPhoneE164 } from '@/lib/notifications/whatsapp-inbox';
 import {
@@ -470,18 +471,19 @@ export function useWhatsAppWorkspace({
 
   const syncUrlParams = useCallback(
     (next: { tab?: WhatsAppTabId; filter?: string | null }) => {
-      const params = new URLSearchParams();
       const targetTab = next.tab ?? activeTab;
-      if (targetTab !== 'mensajes') {
-        params.set('tab', targetTab);
-      }
-      if (next.filter && next.filter !== 'all') {
-        params.set('filter', next.filter);
-      }
-      const qs = params.toString();
-      const nextUrl = qs ? `/admin/whatsapp?${qs}` : '/admin/whatsapp';
+      const targetFilter: WhatsAppFilterParam | undefined =
+        next.filter === 'unread' ||
+        next.filter === 'window_open' ||
+        next.filter === 'failed'
+          ? next.filter
+          : undefined;
+      const nextUrl = whatsappHref({
+        tab: targetTab !== 'mensajes' ? targetTab : undefined,
+        filter: targetFilter,
+      });
       const nextSig = `${targetTab === 'mensajes' ? '' : targetTab}||||${
-        next.filter && next.filter !== 'all' ? next.filter : ''
+        targetFilter ?? ''
       }`;
       setExpectedUrlSignature(nextSig);
       router.replace(nextUrl, { scroll: false });

@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { Resend } from 'resend';
+import { cajaHref, withAdminBaseUrl } from '../admin-links';
 import {
   buildTouchUpBookingUrl,
   computeSuggestedTouchUpDateKey,
@@ -315,8 +316,9 @@ export function renderRetentionWarningEmailHtml(params: {
   settings: SalonSettings;
   appUrl: string;
 }): string {
-  const normalizedUrl = params.appUrl.replace(/\/+$/, '');
-  const cajaHref = escapeHtml(sanitizeEmailHref(`${normalizedUrl}/admin/caja?tab=anticipos`));
+  const cajaLink = escapeHtml(
+    sanitizeEmailHref(withAdminBaseUrl(params.appUrl, cajaHref({ tab: 'anticipos' }))),
+  );
   const safeSalonName = escapeHtml(params.settings.name || 'Laikona Nails by Karla');
   const safeAddress = escapeHtml(params.settings.address);
   const safeInstagram = escapeHtml(params.settings.instagramHandle?.trim() || '@laikona.nailsss');
@@ -373,7 +375,7 @@ export function renderRetentionWarningEmailHtml(params: {
     '      </table>',
     `      ${extraRowHtml}`,
     '      <div style="margin-top: 24px;">',
-    `        <a href="${cajaHref}" style="display: inline-block; padding: 13px 22px; background: #8B1E2B; color: #FFFFFF; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Abrir Caja y respaldar comprobantes</a>`,
+    `        <a href="${cajaLink}" style="display: inline-block; padding: 13px 22px; background: #8B1E2B; color: #FFFFFF; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Abrir Caja y respaldar comprobantes</a>`,
     '      </div>',
     '    </div>',
     '    <div style="padding: 16px 26px; background: #FCF5F6; border-top: 1px solid #EFE0E2;">',

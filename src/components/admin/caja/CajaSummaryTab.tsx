@@ -19,6 +19,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { agendaHref } from '@/lib/admin-links';
 import {
   formatCurrency,
   formatDateShortInTimezone,
@@ -207,7 +208,7 @@ export function CajaSummaryTab({
                       size="sm"
                       className="ad-caja-touch-btn"
                       icon={<CreditCard size={14} aria-hidden="true" />}
-                      href={`/admin/citas?collect=${encodeURIComponent(row.bookingId)}`}
+                      href={agendaHref({ collect: row.bookingId })}
                     />
                   </HStack>
                 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -21,7 +22,12 @@ import {
 import { DemandHeatmapCard } from '@/components/admin/reportes/DemandHeatmapCard';
 import { ServiceProfitabilityCard } from '@/components/admin/reportes/ServiceProfitabilityCard';
 import { SpecialistOccupancyCard } from '@/components/admin/reportes/SpecialistOccupancyCard';
+import { parseReportesParams } from '@/lib/admin-links';
 import { formatCurrency, formatDateRangeDisplay } from '@/lib/format';
+import {
+  REPORT_PERIOD_OPTIONS,
+  formatMetricPeriodLabel,
+} from '@/lib/metrics';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
@@ -38,23 +44,11 @@ interface AdminReportsResponse extends ExecutiveReport {
   generatedAt: string;
 }
 
-const PERIOD_LABELS: Record<ReportPeriod, string> = {
-  '7d': 'Últimos 7 días',
-  '30d': 'Últimos 30 días',
-  '90d': 'Últimos 90 días',
-  all: 'Todo el historial',
-};
-
-const PERIOD_OPTIONS = [
-  { value: '7d' as const, label: '7 días' },
-  { value: '30d' as const, label: '30 días' },
-  { value: '90d' as const, label: '90 días' },
-  { value: 'all' as const, label: 'Todo' },
-];
-
 export default function AdminReportsPage() {
   const { data, bookingEventSeq } = useAdminData();
-  const [period, setPeriod] = useState<ReportPeriod>('30d');
+  const searchParams = useSearchParams();
+  const initialPeriod: ReportPeriod = parseReportesParams(searchParams).period ?? 'month';
+  const [period, setPeriod] = useState<ReportPeriod>(initialPeriod);
   const [reloadTick, setReloadTick] = useState(0);
 
   const reportUrl = ADMIN_CACHE_KEYS.reports(period);
@@ -93,18 +87,18 @@ export default function AdminReportsPage() {
         {
           id: 'revenue',
           label: 'Ingresos cobrados',
-          value: formatCurrency(report.summary.totalRevenueCollectedCents, currency),
-          sub: `${report.summary.completedCount} completada${report.summary.completedCount === 1 ? '' : 's'}`,
+          value: formatCurrency(report.cashSummary.collectedCents, currency),
+          sub: `${report.cashSummary.ticketCount} cobro${report.cashSummary.ticketCount === 1 ? '' : 's'} · ${report.summary.completedCount} completada${report.summary.completedCount === 1 ? '' : 's'}`,
           tone: 'default',
         },
         {
           id: 'avg-ticket',
-          label: 'Promedio por cita',
+          label: 'Ticket promedio',
           value:
-            report.summary.averageTicketCents > 0
-              ? formatCurrency(Math.round(report.summary.averageTicketCents / 100) * 100, currency)
+            report.cashSummary.averageTicketCents > 0
+              ? formatCurrency(report.cashSummary.averageTicketCents, currency)
               : '—',
-          sub: 'Por cita cobrada',
+          sub: 'Por cobro registrado',
           tone: 'default',
         },
         {
@@ -138,7 +132,7 @@ export default function AdminReportsPage() {
             report.summary.averageRating !== null
               ? `${report.summary.averageRating.toFixed(1)} ★`
               : '—',
-          sub: `${report.summary.reviewsCount} reseña${report.summary.reviewsCount === 1 ? '' : 's'} · ${formatCurrency(report.summary.totalTipsCents, currency)} en propinas`,
+          sub: `${report.summary.reviewsCount} reseña${report.summary.reviewsCount === 1 ? '' : 's'} · ${formatCurrency(report.cashSummary.tipsCents, currency)} en propinas`,
           tone: 'default',
         },
       ]
@@ -148,7 +142,9 @@ export default function AdminReportsPage() {
     <VStack gap={6} className="ad-page">
       <PageHeader
         eyebrow={
-          report ? formatDateRangeDisplay(report.rangeStartDate, report.rangeEndDate) : PERIOD_LABELS[period]
+          report
+            ? formatDateRangeDisplay(report.rangeStartDate, report.rangeEndDate)
+            : formatMetricPeriodLabel(period)
         }
         meta={
           isSpecialistScope ? <StatusTag tone="accent" label="Vista individual" /> : undefined
@@ -161,7 +157,7 @@ export default function AdminReportsPage() {
             mode="segmented"
             size="md"
             value={period}
-            options={PERIOD_OPTIONS}
+            options={REPORT_PERIOD_OPTIONS}
             onChange={setPeriod}
           />
         }
