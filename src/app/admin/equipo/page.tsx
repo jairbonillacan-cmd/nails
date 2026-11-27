@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -17,6 +18,7 @@ import {
   AdminAccessSection,
   cleanAccessDisplayName,
 } from '@/components/admin/equipo/AdminAccessSection';
+import { equipoHref, parseEquipoParams } from '@/lib/admin-links';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import type { AdminUser, StaffMember } from '@/lib/types';
 
@@ -27,6 +29,9 @@ type PendingDeactivateTarget =
 
 export default function AdminTeamPage() {
   const { data, loading, refresh } = useAdminData();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const parsedParams = parseEquipoParams(searchParams);
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [optimisticStaffActive, setOptimisticStaffActive] = useState<Record<string, boolean>>({});
@@ -179,6 +184,12 @@ export default function AdminTeamPage() {
           appUrl={data.integration.appUrl}
           defaultCommissionPercent={data.settings.defaultCommissionPercent || 35}
           busyId={busyId}
+          focusStaffId={parsedParams.staffId ?? null}
+          onClearFocusStaffId={() => {
+            if (parsedParams.staffId) {
+              router.replace(equipoHref(), { scroll: false });
+            }
+          }}
           onRequestToggleStaffActive={(st, checked) => {
             if (!checked) {
               setPendingDeactivate({ kind: 'staff', item: st });

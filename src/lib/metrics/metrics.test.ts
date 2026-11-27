@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CashRegisterEntry, PaymentSplit, StaffMember } from '../types';
 import {
+  buildActionQueueItems,
   computeCashDrawer,
   computeCashPeriodSummary,
   computeCashReconciliation,
@@ -287,5 +288,135 @@ describe('Unified Metrics Engine (src/lib/metrics/)', () => {
     expect(agenda.pastUnclosedTodayCount).toBe(1);
     expect(agenda.upcomingTodayCount).toBe(1);
     expect(agenda.tomorrowBookings).toHaveLength(1);
+  });
+
+  it('builds prioritized "Qué hacer ahora" action queue items with canonical typed links and RBAC gating', () => {
+    const items = buildActionQueueItems({
+      salonName: 'LAIKONA NAILS',
+      currency: 'MXN',
+      timezone: TZ,
+      pendingDeposits: [
+        {
+          bookingId: 'bk-missing',
+          bookingCode: 'NL-1045',
+          clientName: 'Ana Torres',
+          serviceName: 'Gel Manos',
+          staffName: 'Tere',
+          startAt: '2026-11-28T18:00:00.000Z',
+          depositAmountCents: 20000,
+          proofDeliveryMethod: 'none',
+          paymentProofUrl: null,
+        },
+        {
+          bookingId: 'bk-proof',
+          bookingCode: 'NL-1044',
+          clientName: 'Andrea López',
+          serviceName: 'Softgel',
+          staffName: 'Karla',
+          startAt: '2026-11-28T16:00:00.000Z',
+          depositAmountCents: 20000,
+          proofDeliveryMethod: 'web_upload',
+          paymentProofUrl: '/api/media/proofs/a.png',
+        },
+      ],
+      uncollectedBookings: [
+        {
+          bookingId: 'bk-uncol',
+          clientName: 'Sofía Ramírez',
+          serviceName: 'Rubber',
+          staffName: 'Karla',
+          startAt: '2026-11-27T15:00:00.000Z',
+          endAt: '2026-11-27T17:00:00.000Z',
+          remainingCents: 26000,
+        },
+      ],
+      waitlist: [
+        {
+          id: 'wl-1',
+          serviceId: 'srv-softgel',
+          preferredStaffId: 'staff-karla',
+          desiredDate: '2026-11-28',
+          preferredWindow: 'afternoon',
+          clientName: 'Renata Silva',
+          clientPhoneE164: '+522226612009',
+          clientEmail: null,
+          notes: '',
+          status: 'waiting',
+          notifiedAt: null,
+          createdAt: '2026-11-27T12:00:00.000Z',
+        },
+      ],
+      services: [{ id: 'srv-softgel', name: 'Softgel' }],
+      inventory: [
+        {
+          id: 'inv-low',
+          name: 'Base Rubber',
+          unit: 'frasco',
+          stockQuantity: 1,
+          minStockAlert: 2,
+          isActive: true,
+        },
+        {
+          id: 'inv-ok',
+          name: 'Top Coat',
+          unit: 'frasco',
+          stockQuantity: 8,
+          minStockAlert: 2,
+          isActive: true,
+        },
+      ],
+      whatsappInboxSummary: {
+        unreadCount: 2,
+        failedCount: 0,
+        failedRemindersCount: 1,
+      },
+      canAccessInventory: true,
+      canAccessWhatsApp: true,
+    });
+
+    expect(items.map((item) => item.kind)).toEqual([
+      'deposit_review',
+      'deposit_missing_proof',
+      'uncollected_booking',
+      'waitlist',
+      'whatsapp_unread',
+      'whatsapp_failed_reminders',
+      'low_stock',
+    ]);
+    expect(items[0]?.primaryHref).toBe('/admin/caja?tab=anticipos');
+    expect(items[2]?.primaryHref).toBe('/admin/citas?collect=bk-uncol');
+    expect(items[2]?.secondaryHref).toBe('/admin/citas?status=uncollected');
+    expect(items[3]?.secondaryHref).toBe('/admin/citas?panel=waitlist');
+    expect(items[4]?.primaryHref).toBe('/admin/whatsapp?tab=mensajes&filter=unread');
+    expect(items[5]?.primaryHref).toBe('/admin/whatsapp?tab=recordatorios&filter=failed');
+    expect(items[6]?.primaryHref).toBe('/admin/inventario?filter=low_stock&itemId=inv-low');
+
+    const specialistItems = buildActionQueueItems({
+      salonName: 'LAIKONA NAILS',
+      currency: 'MXN',
+      timezone: TZ,
+      pendingDeposits: [],
+      uncollectedBookings: [],
+      waitlist: [],
+      services: [],
+      inventory: [
+        {
+          id: 'inv-low',
+          name: 'Base Rubber',
+          unit: 'frasco',
+          stockQuantity: 1,
+          minStockAlert: 2,
+          isActive: true,
+        },
+      ],
+      whatsappInboxSummary: {
+        unreadCount: 3,
+        failedCount: 1,
+        failedRemindersCount: 1,
+      },
+      canAccessInventory: false,
+      canAccessWhatsApp: false,
+    });
+    expect(specialistItems).toEqual([]);
   });
 });

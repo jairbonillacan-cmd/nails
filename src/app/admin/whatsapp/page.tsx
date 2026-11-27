@@ -342,6 +342,8 @@ export default function AdminWhatsAppPage() {
             summary={summary}
             selectedThreadId={workspace.selectedThreadId}
             threadDetail={workspace.threadDetail}
+            contextBookingId={workspace.contextBookingId}
+            overviewBookings={data.bookings}
             filter={workspace.filter}
             searchQuery={workspace.searchQuery}
             isLoadingThreads={workspace.isLoadingThreads}

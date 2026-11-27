@@ -1,13 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
-import { Check, FolderTree, Plus } from 'lucide-react';
+import { BarChart3, Boxes, Check, FolderTree, Package, Plus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
@@ -23,13 +25,22 @@ import {
   buildNewServiceDraft,
   isServiceDraftDirty,
 } from '@/components/admin/servicios/ServiceThumbnail';
+import {
+  cajaHref,
+  inventarioHref,
+  parseServiciosParams,
+  reportesHref,
+  serviciosHref,
+} from '@/lib/admin-links';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
   FORM_SUBMIT_OK,
   formSubmitError,
   formSubmitResultFromResponse,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
+import { roleCanAccess } from '@/lib/rbac';
 import type { Service } from '@/lib/types';
 
 const ServiceLivePreview = dynamic(
@@ -67,8 +78,16 @@ const AddonsManagerSection = dynamic(
 
 export default function AdminServicesPage() {
   const { data, loading, refresh } = useAdminData();
-  const [section, setSection] = useState('services');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const parsedParams = parseServiciosParams(searchParams);
+  const [section, setSection] = useState(() =>
+    parsedParams.tab === 'extras' ? 'addons' : 'services',
+  );
   const [editing, setEditing] = useState<Partial<Service> | null>(null);
+  const [highlightedServiceId, setHighlightedServiceId] = useState<string | null>(
+    parsedParams.id ?? null,
+  );
   const [cleanupEnabledOverride, setCleanupEnabledOverride] = useState<boolean | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [optimisticActiveById, setOptimisticActiveById] = useState<Record<string, boolean>>({});
@@ -79,6 +98,40 @@ export default function AdminServicesPage() {
   const [savedMsg, setSavedMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(
     null,
   );
+  const lastUrlSyncKeyRef = useRef('');
+
+  const urlSyncKey = data
+    ? `servicios-ready|${parsedParams.id ?? ''}|${parsedParams.tab ?? ''}`
+    : 'servicios-loading';
+
+  useExternalSync(urlSyncKey, async (signal, key) => {
+    if (signal.aborted || !key.startsWith('servicios-ready|') || !data) return;
+    if (lastUrlSyncKeyRef.current === key) return;
+    lastUrlSyncKeyRef.current = key;
+
+    if (parsedParams.tab === 'extras') {
+      setSection('addons');
+    } else if (parsedParams.tab === 'categorias') {
+      setSection('services');
+      setCategoriesOpen(true);
+    } else if (parsedParams.tab === 'servicios') {
+      setSection('services');
+    }
+
+    if (parsedParams.id) {
+      const match = data.services.find((s) => s.id === parsedParams.id);
+      if (match) {
+        const sorted = data.services.toSorted((a, b) => a.displayOrder - b.displayOrder);
+        setSection('services');
+        setHighlightedServiceId(match.id);
+        setEditing({ ...match });
+        setCleanupEnabledOverride(
+          match.bufferBeforeMinutes > 0 || match.bufferAfterMinutes > 0,
+        );
+        setMenuPosition(sorted.findIndex((s) => s.id === match.id) + 1);
+      }
+    }
+  });
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -127,6 +180,7 @@ export default function AdminServicesPage() {
 
   const startEditingService = (srv: Service) => {
     setSection('services');
+    setHighlightedServiceId(srv.id);
     setEditing({ ...srv });
     setCleanupEnabledOverride(srv.bufferBeforeMinutes > 0 || srv.bufferAfterMinutes > 0);
     setMenuPosition(orderedServices.findIndex((s) => s.id === srv.id) + 1);
@@ -143,6 +197,10 @@ export default function AdminServicesPage() {
     setEditing(null);
     setCleanupEnabledOverride(null);
     setMenuPosition(null);
+    lastUrlSyncKeyRef.current = '';
+    if (parsedParams.id) {
+      router.replace(serviciosHref(), { scroll: false });
+    }
   };
 
   const applyMenuOrder = async (saved: Service, position: number): Promise<boolean> => {
@@ -241,6 +299,10 @@ export default function AdminServicesPage() {
     !activeDraft.depositRequired ||
     (activeDraft.depositAmountCents ?? defaultDepositCents) !== defaultDepositCents;
 
+  const canViewReports = roleCanAccess(data.session.user.role, 'reports');
+  const canViewCash = roleCanAccess(data.session.user.role, 'cash');
+  const canViewInventory = roleCanAccess(data.session.user.role, 'inventory');
+
   return (
     <AdminAccessGuard role={data.session.user.role} section="services" sectionLabel="Servicios">
     <VStack className="ad-page">
@@ -281,6 +343,43 @@ export default function AdminServicesPage() {
         }
       />
 
+      {canViewReports || canViewCash || canViewInventory ? (
+        <HStack className="ad-toolbar" justify="between" align="center" gap={2} wrap="wrap">
+          <Text type="supporting" color="secondary">
+            Relacionado con tu menú
+          </Text>
+          <HStack gap={1.5} align="center" wrap="wrap">
+            {canViewReports ? (
+              <Button
+                label="Rentabilidad"
+                variant="ghost"
+                size="sm"
+                icon={<BarChart3 size={14} aria-hidden="true" />}
+                href={reportesHref({ period: '30d' })}
+              />
+            ) : null}
+            {canViewCash ? (
+              <Button
+                label="Paquetes"
+                variant="ghost"
+                size="sm"
+                icon={<Package size={14} aria-hidden="true" />}
+                href={cajaHref({ tab: 'promos', sub: 'packages' })}
+              />
+            ) : null}
+            {canViewInventory ? (
+              <Button
+                label="Insumos"
+                variant="ghost"
+                size="sm"
+                icon={<Boxes size={14} aria-hidden="true" />}
+                href={inventarioHref({ filter: 'cabin' })}
+              />
+            ) : null}
+          </HStack>
+        </HStack>
+      ) : null}
+
       <CategoryManagerDialog
         isOpen={categoriesOpen}
         categories={data.categories}
@@ -309,11 +408,13 @@ export default function AdminServicesPage() {
       {section === 'services' ? (
         <VStack key="tab-services" gap={5}>
           <ServiceCatalogSection
+            key={parsedParams.q ?? 'all'}
             services={displayServices}
             categories={data.categories}
             categoryNameById={categoryNameById}
             currency={currency}
-            selectedServiceId={activeDraft.id}
+            selectedServiceId={activeDraft.id ?? highlightedServiceId ?? undefined}
+            initialSearch={parsedParams.q ?? ''}
             togglingId={togglingId}
             onSelectService={startEditingService}
             onRequestToggleActive={(srv, checked) => {

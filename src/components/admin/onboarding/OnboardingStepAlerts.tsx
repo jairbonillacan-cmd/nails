@@ -24,7 +24,14 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
-import { agendaHref } from '@/lib/admin-links';
+import {
+  agendaHref,
+  equipoHref,
+  horariosHref,
+  marcaHref,
+  resumenHref,
+  serviciosHref,
+} from '@/lib/admin-links';
 import { formatCurrency, formatDuration } from '@/lib/format';
 
 interface OnboardingStepAlertsProps {
@@ -108,6 +115,12 @@ export function OnboardingStepAlerts({
                   title="Salón configurado"
                   subtitle={`${displaySalonName} · ${address || 'Puebla, México'}`}
                   status={<StatusTag tone="success" label="Listo" />}
+                  actions={
+                    <HStack gap={1.5} wrap="wrap">
+                      <Button label="Mi página" variant="ghost" size="sm" href={marcaHref()} />
+                      <Button label="Equipo" variant="ghost" size="sm" href={equipoHref()} />
+                    </HStack>
+                  }
                 />
               </li>
               <li>
@@ -120,6 +133,14 @@ export function OnboardingStepAlerts({
                       : 'Sin anticipo obligatorio'
                   }
                   status={<StatusTag tone="success" label="Listo" />}
+                  actions={
+                    <Button
+                      label="Editar cobros"
+                      variant="ghost"
+                      size="sm"
+                      href={marcaHref({ tab: 'cobros' })}
+                    />
+                  }
                 />
               </li>
               <li>
@@ -128,6 +149,12 @@ export function OnboardingStepAlerts({
                   title="Turnos y servicio estrella"
                   subtitle={`${serviceName.trim() || 'Rubber'} · ${formatDuration(serviceDurationMinutes)}`}
                   status={<StatusTag tone="success" label="Listo" />}
+                  actions={
+                    <HStack gap={1.5} wrap="wrap">
+                      <Button label="Horarios" variant="ghost" size="sm" href={horariosHref()} />
+                      <Button label="Servicios" variant="ghost" size="sm" href={serviciosHref()} />
+                    </HStack>
+                  }
                 />
               </li>
             </VStack>
@@ -196,7 +223,7 @@ export function OnboardingStepAlerts({
               <Button
                 label="Ir al inicio"
                 variant="secondary"
-                href="/admin"
+                href={resumenHref()}
                 icon={<LayoutDashboard size={16} aria-hidden="true" />}
               />
               <Button

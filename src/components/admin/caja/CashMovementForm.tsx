@@ -50,6 +50,7 @@ interface CashMovementDialogProps {
   expenseCategories: readonly string[];
   retailCommissionPercent: number;
   recentEntries: readonly CashRegisterEntry[];
+  initialProductId?: string | null;
   onRecordCashEntry: (input: RecordCajaEntryInput) => Promise<FormSubmitResult>;
 }
 
@@ -62,10 +63,22 @@ export function CashMovementDialog({
   expenseCategories,
   retailCommissionPercent,
   recentEntries,
+  initialProductId = null,
   onRecordCashEntry,
 }: CashMovementDialogProps) {
   const [entryType, setEntryType] = useState<QuickEntryType>('product_sale');
-  const [selectedProductId, setSelectedProductId] = useState<string>(CUSTOM_PRODUCT_VALUE);
+  const [selectedProductId, setSelectedProductId] = useState<string>(() => {
+    if (
+      initialProductId &&
+      inventory.some(
+        (item) =>
+          item.id === initialProductId && item.isActive && item.retailPriceCents > 0,
+      )
+    ) {
+      return initialProductId;
+    }
+    return CUSTOM_PRODUCT_VALUE;
+  });
   const [quantity, setQuantity] = useState<number>(1);
   const [desc, setDesc] = useState('');
   const [amountMxn, setAmountMxn] = useState<number>(0);

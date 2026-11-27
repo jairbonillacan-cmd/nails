@@ -2,6 +2,7 @@
 
 import type React from 'react';
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -23,17 +24,30 @@ import {
   submitOnboardingStep,
 } from '@/components/admin/onboarding/onboardingActions';
 import { OnboardingStepAlerts } from '@/components/admin/onboarding/OnboardingStepAlerts';
+import { parseOnboardingParams, resumenHref } from '@/lib/admin-links';
 import { useBookingAlertSound } from '@/lib/hooks/useBookingAlertSound';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 
+function resolveOnboardingStepIndex(step: string | undefined): number {
+  const normalized = (step ?? '').trim().toLowerCase();
+  if (normalized === '1' || normalized === 'spei' || normalized === 'anticipo') return 1;
+  if (normalized === '2' || normalized === 'shifts' || normalized === 'turnos' || normalized === 'servicios') {
+    return 2;
+  }
+  if (normalized === '3' || normalized === 'ready' || normalized === 'alertas') return 3;
+  return 0;
+}
+
 export default function AdminOnboardingPage() {
   const { data, loading, refresh } = useAdminData();
+  const searchParams = useSearchParams();
+  const initialStep = resolveOnboardingStepIndex(parseOnboardingParams(searchParams).step);
   const { playBookingChime, requestBrowserNotifications, notificationPermission } =
     useBookingAlertSound();
   const feedback = useEphemeralMessage(4000);
 
-  const [stepIndex, setStepIndex] = useState(0);
-  const [maxReachedStep, setMaxReachedStep] = useState(0);
+  const [stepIndex, setStepIndex] = useState(initialStep);
+  const [maxReachedStep, setMaxReachedStep] = useState(initialStep);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notifDialogOpen, setNotifDialogOpen] = useState(false);
@@ -65,7 +79,7 @@ export default function AdminOnboardingPage() {
           role="status"
           title="Solo disponible para la Dueña"
           description="La guía inicial del salón solo puede ser editada desde la cuenta de Dueña."
-          endContent={<Button label="Volver al inicio" variant="secondary" size="sm" href="/admin" />}
+          endContent={<Button label="Volver al inicio" variant="secondary" size="sm" href={resumenHref()} />}
         />
       </VStack>
     );

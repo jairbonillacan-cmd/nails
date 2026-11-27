@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -13,7 +13,7 @@ import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Divider } from '@astryxdesign/core/Divider';
-import { Check, Copy, Save, UserPlus, Users } from 'lucide-react';
+import { CalendarDays, Check, Clock, Copy, Percent, Save, UserPlus, Users } from 'lucide-react';
 import {
   ActionRow,
   CopyableField,
@@ -25,7 +25,9 @@ import { FormDialog } from '@/components/ui/FormDialog';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
 import { staffAvatar } from '@/components/landing/landingContent';
+import { agendaHref, cajaHref, horariosHref } from '@/lib/admin-links';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
   FORM_SUBMIT_OK,
   formSubmitError,
@@ -40,6 +42,8 @@ interface StaffEditorSectionProps {
   appUrl: string;
   defaultCommissionPercent: number;
   busyId: string | null;
+  focusStaffId?: string | null;
+  onClearFocusStaffId?: () => void;
   onRequestToggleStaffActive: (st: StaffMember, checked: boolean) => void;
   onRefresh: () => Promise<void>;
   onNotice: (message: string) => void;
@@ -51,11 +55,14 @@ export function StaffEditorSection({
   appUrl,
   defaultCommissionPercent,
   busyId,
+  focusStaffId = null,
+  onClearFocusStaffId,
   onRequestToggleStaffActive,
   onRefresh,
   onNotice,
 }: StaffEditorSectionProps) {
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [highlightedStaffId, setHighlightedStaffId] = useState<string | null>(focusStaffId);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [sName, setSName] = useState('');
   const [sRoleTitle, setSRoleTitle] = useState('Nail Artist');
@@ -67,6 +74,7 @@ export function StaffEditorSection({
   const [sPosition, setSPosition] = useState<number | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const clipboard = useCopyToClipboard(2400);
+  const lastFocusedStaffKeyRef = useRef('');
 
   const allServiceIds = services.map((s) => s.id);
   const orderedStaff = staff.toSorted((a, b) => a.displayOrder - b.displayOrder);
@@ -79,7 +87,32 @@ export function StaffEditorSection({
     ? (staff.find((item) => item.id === editingStaffId) ?? null)
     : null;
 
+  const focusSyncKey =
+    focusStaffId && orderedStaff.length > 0
+      ? `equipo-focus|${focusStaffId}`
+      : 'equipo-focus-idle';
+
+  useExternalSync(focusSyncKey, async (signal, key) => {
+    if (signal.aborted || !key.startsWith('equipo-focus|') || !focusStaffId) return;
+    if (lastFocusedStaffKeyRef.current === key) return;
+    lastFocusedStaffKeyRef.current = key;
+    const match = orderedStaff.find((item) => item.id === focusStaffId);
+    if (!match) return;
+    setHighlightedStaffId(match.id);
+    setIsEditorOpen(true);
+    setEditingStaffId(match.id);
+    setSName(match.name);
+    setSRoleTitle(match.roleTitle);
+    setSBio(match.bio);
+    setSCommission(match.commissionPercent);
+    setSServiceIds(match.serviceIds.length > 0 ? [...match.serviceIds] : [...allServiceIds]);
+    setSAvatarUrl(match.avatarUrl);
+    setAvatarError(null);
+    setSPosition(orderedStaff.findIndex((item) => item.id === match.id) + 1);
+  });
+
   const startEditingStaff = (st: StaffMember) => {
+    setHighlightedStaffId(st.id);
     setIsEditorOpen(true);
     setEditingStaffId(st.id);
     setSName(st.name);
@@ -103,6 +136,8 @@ export function StaffEditorSection({
     setSAvatarUrl(null);
     setAvatarError(null);
     setSPosition(null);
+    lastFocusedStaffKeyRef.current = '';
+    onClearFocusStaffId?.();
   };
 
   const applyStaffOrder = async (savedId: string, position: number): Promise<boolean> => {
@@ -250,11 +285,32 @@ export function StaffEditorSection({
                       </HStack>
                     }
                     subtitle={`${st.roleTitle.trim() || 'Nail Artist'}${st.bio.trim() ? ` · ${st.bio.trim()}` : ''}`}
-                    isSelected={isEditingThis}
+                    isSelected={isEditingThis || highlightedStaffId === st.id}
                     isMuted={!st.isActive}
                     onClick={() => startEditingStaff(st)}
                     actions={
-                      <HStack gap={2} align="center" wrap="wrap">
+                      <HStack gap={1.5} align="center" wrap="wrap">
+                        <Button
+                          label="Agenda"
+                          variant="ghost"
+                          size="sm"
+                          icon={<CalendarDays size={13} aria-hidden="true" />}
+                          href={agendaHref({ staff: st.id })}
+                        />
+                        <Button
+                          label="Horarios"
+                          variant="ghost"
+                          size="sm"
+                          icon={<Clock size={13} aria-hidden="true" />}
+                          href={horariosHref({ staff: st.id })}
+                        />
+                        <Button
+                          label="Comisiones"
+                          variant="ghost"
+                          size="sm"
+                          icon={<Percent size={13} aria-hidden="true" />}
+                          href={cajaHref({ tab: 'comisiones', staff: st.id })}
+                        />
                         <Button
                           type="button"
                           label={isCopied ? 'Link copiado' : 'Copiar link'}
@@ -312,15 +368,40 @@ export function StaffEditorSection({
           >
             <VStack gap={4}>
               {editingStaff ? (
-                <CopyableField
-                  label="Link directo de citas"
-                  value={`${baseOrigin}/reservar?staff=${editingStaff.bookingSlug}`}
-                  displayValue={`/reservar?staff=${editingStaff.bookingSlug}`}
-                  copyLabel="Copiar link"
-                  copiedLabel="Link copiado"
-                  feedbackMessage={`Link directo de ${editingStaff.name} copiado.`}
-                  monospace
-                />
+                <VStack gap={2}>
+                  <CopyableField
+                    label="Link directo de citas"
+                    value={`${baseOrigin}/reservar?staff=${editingStaff.bookingSlug}`}
+                    displayValue={`/reservar?staff=${editingStaff.bookingSlug}`}
+                    copyLabel="Copiar link"
+                    copiedLabel="Link copiado"
+                    feedbackMessage={`Link directo de ${editingStaff.name} copiado.`}
+                    monospace
+                  />
+                  <HStack gap={1.5} align="center" wrap="wrap">
+                    <Button
+                      label="Agenda"
+                      variant="secondary"
+                      size="sm"
+                      icon={<CalendarDays size={14} aria-hidden="true" />}
+                      href={agendaHref({ staff: editingStaff.id })}
+                    />
+                    <Button
+                      label="Horarios"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Clock size={14} aria-hidden="true" />}
+                      href={horariosHref({ staff: editingStaff.id })}
+                    />
+                    <Button
+                      label="Comisiones"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Percent size={14} aria-hidden="true" />}
+                      href={cajaHref({ tab: 'comisiones', staff: editingStaff.id })}
+                    />
+                  </HStack>
+                </VStack>
               ) : null}
 
               <VStack gap={3}>

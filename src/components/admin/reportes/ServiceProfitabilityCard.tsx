@@ -5,17 +5,20 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { EmptyStateCard, SurfaceCard } from '@/components/ui';
+import { agendaHref, serviciosHref } from '@/lib/admin-links';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import type { ServiceProfitabilityRow } from '@/lib/analytics/reports';
 
 interface ServiceProfitabilityCardProps {
   rows: ServiceProfitabilityRow[];
   currency: 'MXN' | 'USD';
+  canManageServices?: boolean;
 }
 
 export function ServiceProfitabilityCard({
   rows,
   currency,
+  canManageServices = false,
 }: ServiceProfitabilityCardProps) {
   const maxRate = rows.reduce(
     (highest, row) => Math.max(highest, row.revenuePerMinuteCents),
@@ -96,16 +99,25 @@ export function ServiceProfitabilityCard({
                     hasTabularNumbers
                   >
                     {row.bookingsCount} cita{row.bookingsCount === 1 ? '' : 's'} ·{' '}
-                    {formatDuration(row.totalMinutes)}
+                    {formatDuration(row.totalMinutes)} · Total:{' '}
+                    {formatCurrency(row.revenueCents, currency)}
                   </Text>
-                  <Text
-                    type="supporting"
-                    color="secondary"
-                    size="sm"
-                    hasTabularNumbers
-                  >
-                    Total: {formatCurrency(row.revenueCents, currency)}
-                  </Text>
+                  <HStack gap={1.5} align="center" wrap="wrap">
+                    <Button
+                      label="Ver citas"
+                      variant="ghost"
+                      size="sm"
+                      href={agendaHref({ q: row.serviceName })}
+                    />
+                    {canManageServices ? (
+                      <Button
+                        label="Editar servicio"
+                        variant="secondary"
+                        size="sm"
+                        href={serviciosHref({ id: row.serviceId })}
+                      />
+                    ) : null}
+                  </HStack>
                 </HStack>
               </VStack>
             );

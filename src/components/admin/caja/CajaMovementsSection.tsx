@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -9,6 +10,7 @@ import { Table, pixel, proportional } from '@astryxdesign/core/Table';
 import { Token } from '@astryxdesign/core/Token';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Lock, Pencil, Trash2 } from 'lucide-react';
+import { agendaHref, clientasHref } from '@/lib/admin-links';
 import { formatCurrency, formatDateShortInTimezone } from '@/lib/format';
 import type { CashRegisterEntry } from '@/lib/types';
 import {
@@ -18,7 +20,11 @@ import {
   SurfaceCard,
   type FilterPillOption,
 } from '@/components/ui';
-import { isCashEntryEditable, type MovementTypeFilter } from './cajaMetrics';
+import {
+  isCashEntryEditable,
+  type CajaBookingSearchMeta,
+  type MovementTypeFilter,
+} from './cajaMetrics';
 import {
   paymentMethodLabel,
   splitMethodLabel,
@@ -44,10 +50,12 @@ function entryTypeLabel(entryType: CashRegisterEntry['entryType']): string {
 interface CajaMovementsSectionProps {
   cashEntries: readonly CashRegisterEntry[];
   splitDetails: readonly SplitDetailRow[];
+  bookingLookup?: ReadonlyMap<string, CajaBookingSearchMeta>;
   tz: string;
   currency: 'MXN' | 'USD';
-  periodLabel: string;
   canManageCash: boolean;
+  canViewClients?: boolean;
+  periodLabel: string;
   deletingEntryId: string | null;
   hasExternalFilters: boolean;
   onResetExternalFilters: () => void;
@@ -58,10 +66,12 @@ interface CajaMovementsSectionProps {
 export function CajaMovementsSection({
   cashEntries,
   splitDetails,
+  bookingLookup,
   tz,
   currency,
   periodLabel,
   canManageCash,
+  canViewClients = false,
   deletingEntryId,
   hasExternalFilters,
   onResetExternalFilters,
@@ -149,15 +159,38 @@ export function CajaMovementsSection({
                     key: 'description',
                     header: 'Concepto',
                     width: proportional(2, { minWidth: 210 }),
-                    renderCell: (entry) => (
-                      <VStack gap={0.5}>
-                        <Text weight="medium">{entry.description}</Text>
-                        <Text type="supporting" color="secondary">
-                          {entryTypeLabel(entry.entryType)} ·{' '}
-                          {paymentMethodLabel(entry.paymentMethod)} · {entry.recordedBy}
-                        </Text>
-                      </VStack>
-                    ),
+                    renderCell: (entry) => {
+                      const bookingMeta = entry.bookingId
+                        ? bookingLookup?.get(entry.bookingId)
+                        : undefined;
+                      return (
+                        <VStack gap={0.5}>
+                          <Text weight="medium">{entry.description}</Text>
+                          <Text type="supporting" color="secondary">
+                            {entryTypeLabel(entry.entryType)} ·{' '}
+                            {paymentMethodLabel(entry.paymentMethod)} · {entry.recordedBy}
+                          </Text>
+                          {bookingMeta ? (
+                            <HStack gap={2} align="center" wrap="wrap">
+                              <NextLink
+                                href={agendaHref({ q: bookingMeta.bookingCode })}
+                                className="ad-inline-link"
+                              >
+                                Cita {bookingMeta.bookingCode}
+                              </NextLink>
+                              {canViewClients && bookingMeta.clientPhone ? (
+                                <NextLink
+                                  href={clientasHref({ q: bookingMeta.clientPhone })}
+                                  className="ad-inline-link ad-inline-link-muted"
+                                >
+                                  {bookingMeta.clientName}
+                                </NextLink>
+                              ) : null}
+                            </HStack>
+                          ) : null}
+                        </VStack>
+                      );
+                    },
                   },
                   {
                     key: 'amountCents',
@@ -242,6 +275,9 @@ export function CajaMovementsSection({
             <VStack className="ad-caja-mobile-cards" gap={3}>
               {filteredEntries.map((entry) => {
                 const editable = isCashEntryEditable(entry);
+                const bookingMeta = entry.bookingId
+                  ? bookingLookup?.get(entry.bookingId)
+                  : undefined;
                 return (
                   <VStack key={entry.id} className="ad-caja-mcard" gap={2}>
                     <HStack justify="between" align="start" gap={2}>
@@ -282,39 +318,61 @@ export function CajaMovementsSection({
                       <Text type="supporting" color="secondary">
                         Registró: {entry.recordedBy}
                       </Text>
-                      {canManageCash ? (
-                        editable ? (
-                          <HStack gap={2} align="center">
+                      <HStack gap={1.5} align="center" wrap="wrap">
+                        {bookingMeta ? (
+                          <>
                             <Button
-                              type="button"
-                              label="Editar"
-                              variant="secondary"
-                              size="sm"
-                              className="ad-caja-touch-btn"
-                              icon={<Pencil size={13} aria-hidden="true" />}
-                              isDisabled={Boolean(deletingEntryId)}
-                              onClick={() => onEditEntry(entry)}
-                            />
-                            <Button
-                              type="button"
-                              label="Eliminar"
+                              label={`Cita ${bookingMeta.bookingCode}`}
                               variant="ghost"
                               size="sm"
-                              className="ad-caja-delete-btn ad-caja-touch-btn"
-                              icon={<Trash2 size={13} aria-hidden="true" />}
-                              isLoading={deletingEntryId === entry.id}
-                              isDisabled={Boolean(deletingEntryId)}
-                              onClick={() => onRequestDeleteEntry(entry)}
+                              className="ad-caja-touch-btn"
+                              href={agendaHref({ q: bookingMeta.bookingCode })}
                             />
-                          </HStack>
-                        ) : (
-                          <StatusTag
-                            tone="neutral"
-                            icon={<Lock size={11} aria-hidden="true" />}
-                            label="Cita (auto)"
-                          />
-                        )
-                      ) : null}
+                            {canViewClients && bookingMeta.clientPhone ? (
+                              <Button
+                                label="Clienta"
+                                variant="ghost"
+                                size="sm"
+                                className="ad-caja-touch-btn"
+                                href={clientasHref({ q: bookingMeta.clientPhone })}
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                        {canManageCash ? (
+                          editable ? (
+                            <>
+                              <Button
+                                type="button"
+                                label="Editar"
+                                variant="secondary"
+                                size="sm"
+                                className="ad-caja-touch-btn"
+                                icon={<Pencil size={13} aria-hidden="true" />}
+                                isDisabled={Boolean(deletingEntryId)}
+                                onClick={() => onEditEntry(entry)}
+                              />
+                              <Button
+                                type="button"
+                                label="Eliminar"
+                                variant="ghost"
+                                size="sm"
+                                className="ad-caja-delete-btn ad-caja-touch-btn"
+                                icon={<Trash2 size={13} aria-hidden="true" />}
+                                isLoading={deletingEntryId === entry.id}
+                                isDisabled={Boolean(deletingEntryId)}
+                                onClick={() => onRequestDeleteEntry(entry)}
+                              />
+                            </>
+                          ) : (
+                            <StatusTag
+                              tone="neutral"
+                              icon={<Lock size={11} aria-hidden="true" />}
+                              label="Cita (auto)"
+                            />
+                          )
+                        ) : null}
+                      </HStack>
                     </HStack>
                   </VStack>
                 );

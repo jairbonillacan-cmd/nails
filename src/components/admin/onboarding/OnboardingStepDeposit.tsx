@@ -1,5 +1,6 @@
 'use client';
 
+import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -9,6 +10,7 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Wallet } from 'lucide-react';
+import { marcaHref } from '@/lib/admin-links';
 
 interface OnboardingStepDepositProps {
   depositEnabled: boolean;
@@ -42,9 +44,14 @@ export function OnboardingStepDeposit({
   return (
     <VStack gap={4}>
       <VStack gap={1}>
-        <Heading level={2} className="lk-serif ad-h2">
-          2. Configura tu anticipo
-        </Heading>
+        <HStack justify="between" align="center" wrap="wrap" gap={2}>
+          <Heading level={2} className="lk-serif ad-h2">
+            2. Configura tu anticipo
+          </Heading>
+          <NextLink href={marcaHref({ tab: 'cobros' })} className="ad-inline-link">
+            Ajustes de cobro →
+          </NextLink>
+        </HStack>
         <Text color="secondary">
           Así evitas cancelaciones de último minuto.
         </Text>

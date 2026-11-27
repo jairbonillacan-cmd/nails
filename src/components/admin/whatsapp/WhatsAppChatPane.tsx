@@ -5,9 +5,11 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { MessageCircle, SquarePen } from 'lucide-react';
 import type {
+  WhatsAppThreadBookingContextDTO,
   WhatsAppThreadDetailResponseDTO,
   WhatsAppThreadSummaryDTO,
 } from '@/lib/contracts';
+import type { BookingWithRelations } from '@/lib/types';
 import { EmptyStateCard } from '@/components/ui';
 import {
   buildWaMeDirectUrl,
@@ -22,6 +24,8 @@ import { WhatsAppComposer } from './WhatsAppComposer';
 interface WhatsAppChatPaneProps {
   selectedThread: WhatsAppThreadSummaryDTO | null;
   threadDetail: WhatsAppThreadDetailResponseDTO | null;
+  contextBookingId?: string | null;
+  overviewBookings?: readonly BookingWithRelations[];
   isLoadingDetail: boolean;
   isSending: boolean;
   retryingMessageId: string | null;
@@ -44,6 +48,8 @@ interface WhatsAppChatPaneProps {
 export function WhatsAppChatPane({
   selectedThread,
   threadDetail,
+  contextBookingId = null,
+  overviewBookings = [],
   isLoadingDetail,
   isSending,
   retryingMessageId,
@@ -98,7 +104,33 @@ export function WhatsAppChatPane({
   const detailMatches = threadDetail?.thread.id === activeThread.id;
   const messages = detailMatches ? threadDetail.messages : [];
   const client = detailMatches ? threadDetail.client : null;
+  const resolvedContextBooking: WhatsAppThreadBookingContextDTO | null = (() => {
+    if (!contextBookingId) return null;
+    if (detailMatches) {
+      const fromDetail = threadDetail.bookings.find(
+        (bk) => bk.bookingId === contextBookingId,
+      );
+      if (fromDetail) return fromDetail;
+    }
+    const fromOverview = overviewBookings.find((bk) => bk.id === contextBookingId);
+    if (!fromOverview) return null;
+    return {
+      bookingId: fromOverview.id,
+      bookingCode: fromOverview.bookingCode,
+      serviceName: fromOverview.service.name,
+      staffId: fromOverview.staffId,
+      staffName: fromOverview.staff.name,
+      startAt: fromOverview.startAt,
+      endAt: fromOverview.endAt,
+      status: fromOverview.status,
+      attendanceStatus: fromOverview.attendanceStatus ?? 'pending',
+      totalPriceCents: fromOverview.totalPriceCents,
+      depositAmountCents: fromOverview.depositAmountCents,
+      manageToken: fromOverview.manageToken,
+    };
+  })();
   const nextBooking =
+    resolvedContextBooking ??
     activeThread.nextBooking ??
     (detailMatches ? (threadDetail.bookings[0] ?? null) : null);
   const waMeUrl =

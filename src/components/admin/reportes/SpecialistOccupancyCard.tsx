@@ -6,20 +6,45 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Table } from '@astryxdesign/core/Table';
 import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
+import {
+  agendaHref,
+  cajaHref,
+  clientasHref,
+  equipoHref,
+  horariosHref,
+} from '@/lib/admin-links';
 import { formatCurrency, formatDuration } from '@/lib/format';
+import type { MetricPeriod } from '@/lib/metrics';
 import type { SpecialistOccupancyRow } from '@/lib/analytics/reports';
 
 interface SpecialistOccupancyCardProps {
   rows: SpecialistOccupancyRow[];
   currency: 'MXN' | 'USD';
   isSpecialistScope: boolean;
+  focusedStaffId?: string | null;
+  onClearStaffFocus?: () => void;
+  canViewTeam?: boolean;
+  canViewClients?: boolean;
+  canViewCash?: boolean;
+  cajaPeriod?: MetricPeriod;
 }
 
 export function SpecialistOccupancyCard({
   rows,
   currency,
   isSpecialistScope,
+  focusedStaffId = null,
+  onClearStaffFocus,
+  canViewTeam = false,
+  canViewClients = false,
+  canViewCash = false,
+  cajaPeriod = 'month',
 }: SpecialistOccupancyCardProps) {
+  const focusedRow = focusedStaffId
+    ? (rows.find((row) => row.staffId === focusedStaffId) ?? null)
+    : null;
+  const visibleRows = focusedRow ? [focusedRow] : rows;
+
   return (
     <SurfaceCard
       id="reports-occupancy-heading"
@@ -29,8 +54,42 @@ export function SpecialistOccupancyCard({
           : 'Ocupación del equipo'
       }
       subtitle="Qué tan llena estuvo la agenda, cuánto se cobró y cuántas clientas regresan."
+      badge={
+        focusedRow ? (
+          <StatusTag tone="accent" label={`Filtrado: ${focusedRow.staffName}`} />
+        ) : undefined
+      }
+      actions={
+        <HStack gap={1.5} align="center" wrap="wrap">
+          {focusedRow && onClearStaffFocus ? (
+            <Button
+              type="button"
+              label="Ver todo el equipo"
+              variant="secondary"
+              size="sm"
+              onClick={onClearStaffFocus}
+            />
+          ) : null}
+          {canViewClients && !isSpecialistScope ? (
+            <Button
+              label="Ver retención"
+              variant="ghost"
+              size="sm"
+              href={clientasHref({ tab: 'retencion' })}
+            />
+          ) : null}
+          {canViewCash ? (
+            <Button
+              label="Ver en Caja"
+              variant="ghost"
+              size="sm"
+              href={cajaHref({ tab: 'resumen', period: cajaPeriod })}
+            />
+          ) : null}
+        </HStack>
+      }
     >
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <VStack className="ad-empty" gap={2}>
           <EmptyStateCard
             framed={false}
@@ -38,7 +97,7 @@ export function SpecialistOccupancyCard({
             title="Sin profesionales con actividad"
             description="Configura turnos en Horarios para ver la ocupación de tu equipo."
             actions={
-              <Button label="Configurar horarios" variant="secondary" size="sm" href="/admin/disponibilidad" />
+              <Button label="Configurar horarios" variant="secondary" size="sm" href={horariosHref()} />
             }
           />
         </VStack>
@@ -47,7 +106,7 @@ export function SpecialistOccupancyCard({
           <Table
             idKey="staffId"
             hasHover
-            data={rows}
+            data={visibleRows}
             columns={[
               {
                 key: 'staffName',
@@ -162,6 +221,29 @@ export function SpecialistOccupancyCard({
                   <Text weight="bold" size="sm" className="fx-tabular" hasTabularNumbers>
                     {formatCurrency(row.revenueCents, currency)}
                   </Text>
+                ),
+              },
+              {
+                key: 'staffId',
+                header: 'Ir a',
+                align: 'end',
+                renderCell: (row) => (
+                  <HStack gap={1.5} align="center" justify="end" wrap="wrap">
+                    <Button
+                      label="Agenda"
+                      variant="ghost"
+                      size="sm"
+                      href={agendaHref({ staff: row.staffId })}
+                    />
+                    {canViewTeam && !isSpecialistScope ? (
+                      <Button
+                        label="Equipo"
+                        variant="secondary"
+                        size="sm"
+                        href={equipoHref({ staffId: row.staffId })}
+                      />
+                    ) : null}
+                  </HStack>
                 ),
               },
             ]}

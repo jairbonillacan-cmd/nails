@@ -142,11 +142,23 @@ describe('Typed Admin Deep Links (src/lib/admin-links.ts)', () => {
     });
 
     const inventarioInput: InventarioLinkParams = {
-      filter: 'low',
+      filter: 'low_stock',
       itemId: 'inv-1',
       q: 'Rubber',
     };
     expect(parseInventarioParams(inventarioHref(inventarioInput))).toEqual(inventarioInput);
+    expect(parseInventarioParams('/admin/inventario?filter=low')).toEqual({
+      filter: 'low_stock',
+    });
+    expect(parseInventarioParams('/admin/inventario?filter=supplies')).toEqual({
+      filter: 'cabin',
+    });
+    expect(parseInventarioParams(inventarioHref({ filter: 'cabin' }))).toEqual({
+      filter: 'cabin',
+    });
+    expect(parseInventarioParams(inventarioHref({ filter: 'retail' }))).toEqual({
+      filter: 'retail',
+    });
 
     const reportesInput: ReportesLinkParams = {
       period: 'custom',

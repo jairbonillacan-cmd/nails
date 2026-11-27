@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Button } from '@astryxdesign/core/Button';
 import { IconButton } from '@astryxdesign/core/IconButton';
@@ -47,8 +47,9 @@ import {
   PageSkeleton,
   SkeletonBlock,
 } from '@/components/ui';
-import { parseCajaParams } from '@/lib/admin-links';
+import { cajaHref, parseCajaParams } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
+import { roleCanAccess } from '@/lib/rbac';
 import type { CajaConfig, CashRegisterEntry, Coupon, StaffMember } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
@@ -117,6 +118,7 @@ const OwnerPinDialog = dynamic(
 
 export default function AdminCashPage() {
   const { data: providerData, refresh } = useAdminData();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const parsedParams = parseCajaParams(searchParams);
   const {
@@ -153,11 +155,20 @@ export default function AdminCashPage() {
     todaySummary,
     filteredCashEntries,
     filteredSplitDetails,
+    bookingLookup,
     splitSummaryByMethod,
     commissionsByStaff,
     todayCommissionsByStaff,
   } = useCajaData(providerData, parsedParams);
 
+  const urlQuickSaleId = parsedParams.quickSaleProductId ?? null;
+  const urlStaffId = parsedParams.staff ?? null;
+  const [lastUrlQuickSaleId, setLastUrlQuickSaleId] = useState<string | null>(urlQuickSaleId);
+  const [quickSaleProductId, setQuickSaleProductId] = useState<string | null>(urlQuickSaleId);
+  const [lastUrlStaffId, setLastUrlStaffId] = useState<string | null>(urlStaffId);
+  const [focusedCommissionStaffId, setFocusedCommissionStaffId] = useState<string | null>(
+    urlStaffId,
+  );
   const [msg, setMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -175,13 +186,26 @@ export default function AdminCashPage() {
   const [deletingCashEntryId, setDeletingCashEntryId] = useState<string | null>(null);
   const [editingCommissionStaffId, setEditingCommissionStaffId] = useState<string | null>(null);
   const [payoutDraft, setPayoutDraft] = useState<CommissionPayoutDraft | null>(null);
-  const [movementOpen, setMovementOpen] = useState(false);
+  const [movementOpen, setMovementOpen] = useState(() => Boolean(urlQuickSaleId));
   const [closeOpen, setCloseOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
   const [csvPinError, setCsvPinError] = useState<string | null>(null);
+
+  if (urlQuickSaleId !== lastUrlQuickSaleId) {
+    setLastUrlQuickSaleId(urlQuickSaleId);
+    if (urlQuickSaleId) {
+      setQuickSaleProductId(urlQuickSaleId);
+      setMovementOpen(true);
+    }
+  }
+
+  if (urlStaffId !== lastUrlStaffId) {
+    setLastUrlStaffId(urlStaffId);
+    setFocusedCommissionStaffId(urlStaffId);
+  }
 
   if (!data) {
     return <PageSkeleton kpiCount={4} withSplit ariaLabel="Cargando caja" />;
@@ -193,8 +217,24 @@ export default function AdminCashPage() {
   const defaultDepositLabel = formatCurrency(data.settings.depositAmountCents ?? 20000, currency);
   const isSpecialistView = data.session.user.role === 'specialist';
   const canManageCaja = data.session.user.role === 'owner' || data.session.user.role === 'admin';
+  const canViewClients = roleCanAccess(data.session.user.role, 'clients');
   const effectiveActiveTab: CajaTab =
     activeTab === 'promos' && !canManageCaja ? 'summary' : activeTab;
+
+  const clearQuickSaleUrlParam = () => {
+    setQuickSaleProductId(null);
+    if (parsedParams.quickSaleProductId) {
+      const { quickSaleProductId: _removed, ...rest } = parsedParams;
+      router.replace(cajaHref(rest), { scroll: false });
+    }
+  };
+
+  const handleMovementOpenChange = (open: boolean) => {
+    setMovementOpen(open);
+    if (!open) {
+      clearQuickSaleUrlParam();
+    }
+  };
   const hasActiveOwnerPin = Boolean(data.settings.ownerPinEnabled && data.settings.hasOwnerPin);
   const hasActiveFilters =
     cajaPeriod !== cajaConfig.defaultPeriod ||
@@ -278,6 +318,7 @@ export default function AdminCashPage() {
     }
     setErrorMsg(null);
     setMsg(result.message ?? null);
+    clearQuickSaleUrlParam();
     await refresh();
     return FORM_SUBMIT_OK;
   };
@@ -560,6 +601,7 @@ export default function AdminCashPage() {
           depositsAwaitingReviewCount={depositsAwaitingReviewCount}
           depositsMissingProofCount={depositsMissingProofCount}
           splitDetails={filteredSplitDetails}
+          bookingLookup={bookingLookup}
           cajaPeriod={cajaPeriod}
           customRange={customRange}
           methodFilter={methodFilter}
@@ -568,6 +610,7 @@ export default function AdminCashPage() {
           tz={tz}
           currency={currency}
           canRecordCash={canManageCaja}
+          canViewClients={canViewClients}
           isSpecialistView={isSpecialistView}
           deletingEntryId={deletingCashEntryId}
           highlightUncollected={highlightUncollected}
@@ -603,6 +646,14 @@ export default function AdminCashPage() {
           periodLabel={activePeriodText}
           canManageCommissions={canManageCaja}
           isSpecialistView={isSpecialistView}
+          focusedStaffId={focusedCommissionStaffId}
+          onClearStaffFocus={() => {
+            setFocusedCommissionStaffId(null);
+            if (parsedParams.staff) {
+              const { staff: _removed, ...rest } = parsedParams;
+              router.replace(cajaHref(rest), { scroll: false });
+            }
+          }}
           onChangeCommissionPeriod={setCajaPeriod}
           onEditCommissionRate={handleOpenCommissionEditor}
           onRegisterPayout={handleOpenPayoutDraft}
@@ -633,14 +684,16 @@ export default function AdminCashPage() {
 
       {canManageCaja && movementOpen ? (
         <CashMovementDialog
+          key={quickSaleProductId ?? 'manual'}
           isOpen
-          onOpenChange={setMovementOpen}
+          onOpenChange={handleMovementOpenChange}
           inventory={data.inventory}
           staff={data.staff}
           currency={currency}
           expenseCategories={cajaConfig.expenseCategories}
           retailCommissionPercent={cajaConfig.retailCommissionPercent}
           recentEntries={data.cashEntries}
+          initialProductId={quickSaleProductId}
           onRecordCashEntry={handleRecordCashEntry}
         />
       ) : null}

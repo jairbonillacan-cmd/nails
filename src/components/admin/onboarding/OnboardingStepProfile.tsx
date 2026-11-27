@@ -1,5 +1,6 @@
 'use client';
 
+import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -7,6 +8,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Building2, Globe, Home, MapPin, Store, Users } from 'lucide-react';
 import { FilterPillBar } from '@/components/ui';
+import { equipoHref, marcaHref } from '@/lib/admin-links';
 
 export type OnboardingServiceMode = 'studio' | 'home' | 'online';
 
@@ -59,9 +61,19 @@ export function OnboardingStepProfile({
   return (
     <VStack gap={4}>
       <VStack gap={1}>
-        <Heading level={2} className="lk-serif ad-h2">
-          1. Cuéntanos de tu salón
-        </Heading>
+        <HStack justify="between" align="center" wrap="wrap" gap={2}>
+          <Heading level={2} className="lk-serif ad-h2">
+            1. Cuéntanos de tu salón
+          </Heading>
+          <HStack gap={3} align="center" wrap="wrap">
+            <NextLink href={marcaHref()} className="ad-inline-link">
+              Mi página →
+            </NextLink>
+            <NextLink href={equipoHref()} className="ad-inline-link">
+              Equipo →
+            </NextLink>
+          </HStack>
+        </HStack>
         <Text color="secondary">
           Estos datos aparecen en tu página de reservas.
         </Text>

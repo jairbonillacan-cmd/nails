@@ -22,17 +22,24 @@ import {
 import { DemandHeatmapCard } from '@/components/admin/reportes/DemandHeatmapCard';
 import { ServiceProfitabilityCard } from '@/components/admin/reportes/ServiceProfitabilityCard';
 import { SpecialistOccupancyCard } from '@/components/admin/reportes/SpecialistOccupancyCard';
-import { parseReportesParams } from '@/lib/admin-links';
+import {
+  cajaHref,
+  clientasHref,
+  parseReportesParams,
+} from '@/lib/admin-links';
 import { formatCurrency, formatDateRangeDisplay } from '@/lib/format';
 import {
   REPORT_PERIOD_OPTIONS,
   formatMetricPeriodLabel,
+  isMetricPeriod,
+  type MetricPeriod,
 } from '@/lib/metrics';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
+import { roleCanAccess } from '@/lib/rbac';
 import type { ExecutiveReport, ReportPeriod } from '@/lib/analytics/reports';
 
 interface AdminReportsResponse extends ExecutiveReport {
@@ -47,9 +54,20 @@ interface AdminReportsResponse extends ExecutiveReport {
 export default function AdminReportsPage() {
   const { data, bookingEventSeq } = useAdminData();
   const searchParams = useSearchParams();
-  const initialPeriod: ReportPeriod = parseReportesParams(searchParams).period ?? 'month';
-  const [period, setPeriod] = useState<ReportPeriod>(initialPeriod);
+  const parsedParams = parseReportesParams(searchParams);
+  const urlSignature = `${parsedParams.period ?? ''}|${parsedParams.staff ?? ''}`;
+  const [appliedUrlSignature, setAppliedUrlSignature] = useState(urlSignature);
+  const [period, setPeriod] = useState<ReportPeriod>(() => parsedParams.period ?? 'month');
+  const [focusedStaffId, setFocusedStaffId] = useState<string | null>(
+    () => parsedParams.staff ?? null,
+  );
   const [reloadTick, setReloadTick] = useState(0);
+
+  if (urlSignature !== appliedUrlSignature) {
+    setAppliedUrlSignature(urlSignature);
+    if (parsedParams.period) setPeriod(parsedParams.period);
+    setFocusedStaffId(parsedParams.staff ?? null);
+  }
 
   const reportUrl = ADMIN_CACHE_KEYS.reports(period);
   const fetchReport = useCallback(
@@ -75,8 +93,18 @@ export default function AdminReportsPage() {
     return <PageSkeleton kpiCount={6} withSplit ariaLabel="Cargando reportes" />;
   }
 
+  const role = data.session.user.role;
   const isSpecialistScope =
-    report?.scope === 'specialist' || data.session.user.role === 'specialist';
+    report?.scope === 'specialist' || role === 'specialist';
+  const canViewCash = roleCanAccess(role, 'cash');
+  const canViewClients = roleCanAccess(role, 'clients');
+  const canViewTeam = roleCanAccess(role, 'team');
+  const canManageServices = roleCanAccess(role, 'services');
+  const cajaPeriod: MetricPeriod = isMetricPeriod(period)
+    ? period
+    : period === '30d'
+      ? 'month'
+      : 'all';
   const currency = report?.currency ?? data.settings.currency;
   const scopeSubtitle = isSpecialistScope
     ? `Tus citas y resultados${report?.scopeStaffName ? `, ${report.scopeStaffName}` : ''}.`
@@ -188,12 +216,40 @@ export default function AdminReportsPage() {
             ariaLabel="Indicadores clave del período"
             items={kpiCards}
             cols={3}
+            footerLink={
+              canViewCash || (canViewClients && !isSpecialistScope) ? (
+                <HStack gap={2} wrap="wrap" align="center">
+                  {canViewCash ? (
+                    <Button
+                      label="Ver ingresos en Caja"
+                      variant="secondary"
+                      size="sm"
+                      href={cajaHref({ tab: 'resumen', period: cajaPeriod })}
+                    />
+                  ) : null}
+                  {canViewClients && !isSpecialistScope ? (
+                    <Button
+                      label="Ver retención en Clientas"
+                      variant="ghost"
+                      size="sm"
+                      href={clientasHref({ tab: 'retencion' })}
+                    />
+                  ) : null}
+                </HStack>
+              ) : undefined
+            }
           />
 
           <SpecialistOccupancyCard
             rows={report.specialistOccupancy}
             currency={currency}
             isSpecialistScope={isSpecialistScope}
+            focusedStaffId={isSpecialistScope ? null : focusedStaffId}
+            onClearStaffFocus={() => setFocusedStaffId(null)}
+            canViewTeam={canViewTeam}
+            canViewClients={canViewClients}
+            canViewCash={canViewCash}
+            cajaPeriod={cajaPeriod}
           />
 
           <section
@@ -204,6 +260,7 @@ export default function AdminReportsPage() {
             <ServiceProfitabilityCard
               rows={report.serviceProfitability}
               currency={currency}
+              canManageServices={canManageServices}
             />
           </section>
 

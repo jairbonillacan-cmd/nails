@@ -5,6 +5,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Clock } from 'lucide-react';
+import { horariosHref } from '@/lib/admin-links';
 
 export interface StaffShiftSummary {
   id: string;
@@ -30,16 +31,16 @@ export function OnboardingStepHours({
             Turnos activos del salón
           </Text>
         </HStack>
-        <NextLink href="/admin/disponibilidad" className="ad-inline-link">
+        <NextLink href={horariosHref()} className="ad-inline-link">
           Cambiar turnos →
         </NextLink>
       </HStack>
       <VStack gap={1.5}>
         {staffShiftSummaries.map((st) => (
           <HStack key={st.id} justify="between" align="center" gap={2} wrap="wrap">
-            <Text size="sm" weight="medium">
+            <NextLink href={horariosHref({ staff: st.id })} className="ad-inline-link">
               {st.name}
-            </Text>
+            </NextLink>
             <Text
               type="supporting"
               color="secondary"

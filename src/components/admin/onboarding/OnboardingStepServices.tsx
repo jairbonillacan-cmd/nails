@@ -1,6 +1,8 @@
 'use client';
 
+import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
@@ -13,6 +15,7 @@ import {
   OnboardingStepHours,
   type StaffShiftSummary,
 } from '@/components/admin/onboarding/OnboardingStepHours';
+import { serviciosHref } from '@/lib/admin-links';
 import { formatDuration } from '@/lib/format';
 import type { Service } from '@/lib/types';
 
@@ -70,9 +73,14 @@ export function OnboardingStepServices({
   return (
     <VStack gap={4}>
       <VStack gap={1}>
-        <Heading level={2} className="lk-serif ad-h2">
-          3. Revisa tus turnos y tu servicio estrella
-        </Heading>
+        <HStack justify="between" align="center" wrap="wrap" gap={2}>
+          <Heading level={2} className="lk-serif ad-h2">
+            3. Revisa tus turnos y tu servicio estrella
+          </Heading>
+          <NextLink href={serviciosHref()} className="ad-inline-link">
+            Catálogo completo →
+          </NextLink>
+        </HStack>
         <Text color="secondary">
           Confirma el servicio que más te piden y revisa los turnos fijos de tu equipo.
         </Text>

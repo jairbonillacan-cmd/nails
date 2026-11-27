@@ -121,7 +121,7 @@ export interface EquipoLinkParams {
   tab?: EquipoTabParam;
 }
 
-type InventarioFilterParam = 'all' | 'low' | 'retail' | 'supplies';
+export type InventarioFilterParam = 'all' | 'low_stock' | 'cabin' | 'retail';
 
 export interface InventarioLinkParams {
   filter?: InventarioFilterParam;
@@ -556,12 +556,17 @@ export function parseEquipoParams(input: AdminSearchParamsInput): EquipoLinkPara
   return out;
 }
 
-const INVENTARIO_FILTERS = new Set<InventarioFilterParam>([
-  'all',
-  'low',
-  'retail',
-  'supplies',
-]);
+function normalizeInventarioFilter(
+  raw: string | null | undefined,
+): InventarioFilterParam | undefined {
+  const cleaned = cleanString(raw);
+  if (!cleaned) return undefined;
+  if (cleaned === 'all') return 'all';
+  if (cleaned === 'low_stock' || cleaned === 'low') return 'low_stock';
+  if (cleaned === 'cabin' || cleaned === 'supplies') return 'cabin';
+  if (cleaned === 'retail') return 'retail';
+  return undefined;
+}
 
 export function inventarioHref(params?: InventarioLinkParams): string {
   const qs = new URLSearchParams();
@@ -578,7 +583,7 @@ export function inventarioHref(params?: InventarioLinkParams): string {
 export function parseInventarioParams(input: AdminSearchParamsInput): InventarioLinkParams {
   const reader = toParamReader(input);
   const out: InventarioLinkParams = {};
-  const filter = pickOne(reader.get('filter'), INVENTARIO_FILTERS);
+  const filter = normalizeInventarioFilter(reader.get('filter'));
   if (filter) out.filter = filter;
   const itemId = cleanString(reader.get('itemId'));
   if (itemId) out.itemId = itemId;

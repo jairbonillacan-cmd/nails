@@ -17,21 +17,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import {
-  buildWhatsAppLink,
-  formatCurrency,
-  formatDateKeyDisplay,
-  formatDateShortInTimezone,
-  formatTimeInTimezone,
-  formatUnitCount,
-} from '@/lib/format';
-import {
   ActionRow,
   EmptyStateCard,
   SurfaceCard,
   type DepositProofReviewItem,
 } from '@/components/ui';
-import { agendaHref, cajaHref, whatsappHref } from '@/lib/admin-links';
-import { hasBookingProofSubmitted } from '@/lib/booking/balance';
+import { cajaHref } from '@/lib/admin-links';
+import { buildActionQueueItems, type ActionQueueItem } from '@/lib/metrics';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminOverviewPayload } from '../AdminProvider';
 import {
@@ -57,39 +49,24 @@ interface DashboardAttentionCardProps {
   maxVisible?: number;
 }
 
-interface AttentionTask {
-  id: string;
-  tone: 'warning' | 'accent' | 'info' | 'neutral';
-  icon: React.ReactNode;
-  thumbnail?: {
-    src: string;
-    alt: string;
-    ariaLabel: string;
-    onClick: () => void;
-  };
-  title: string;
-  subtitle: string;
-  isBusy?: boolean;
-  secondary?: {
-    label: string;
-    href?: string;
-    onClick?: () => void;
-  };
-  primary: {
-    label: string;
-    href?: string;
-    isExternal?: boolean;
-    isLoading?: boolean;
-    onClick?: () => void;
-  };
+function renderQueueIcon(kind: ActionQueueItem['kind']): React.ReactNode {
+  if (kind === 'deposit_review' || kind === 'deposit_missing_proof') {
+    return <Wallet size={19} aria-hidden="true" />;
+  }
+  if (kind === 'uncollected_booking') {
+    return <ReceiptText size={19} aria-hidden="true" />;
+  }
+  if (kind === 'waitlist') {
+    return <Clock size={19} aria-hidden="true" />;
+  }
+  if (kind === 'low_stock') {
+    return <Package size={19} aria-hidden="true" />;
+  }
+  if (kind === 'whatsapp_failed_reminders' || kind === 'whatsapp_failed_messages') {
+    return <AlertTriangle size={19} aria-hidden="true" />;
+  }
+  return <MessageCircle size={19} aria-hidden="true" />;
 }
-
-const WAITLIST_WINDOW_LABELS: Record<string, string> = {
-  morning: 'mañana',
-  afternoon: 'tarde',
-  evening: 'noche',
-  any: 'cualquier horario',
-};
 
 export function DashboardAttentionCard({
   data,
@@ -98,215 +75,67 @@ export function DashboardAttentionCard({
   rejectingBookingId = null,
   onConfirmDeposit,
   onRejectDeposit,
-  maxVisible = 4,
+  maxVisible = 6,
 }: DashboardAttentionCardProps) {
   const [previewDeposit, setPreviewDeposit] = useState<DepositProofReviewItem | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const currency = data.settings.currency;
   const role = data.session.user.role;
   const tz = metrics.tz;
   const depositFallbackCents = data.settings.depositAmountCents ?? 20000;
 
-  const allTasks: AttentionTask[] = [];
-
-  const sortedPendingDeposits = data.pendingDeposits.toSorted(
-    (a, b) => Number(hasBookingProofSubmitted(b)) - Number(hasBookingProofSubmitted(a)),
+  const pendingDepositsById = new Map(
+    data.pendingDeposits.map((dep) => [dep.bookingId, dep]),
   );
 
-  for (const dep of sortedPendingDeposits) {
-    const amountCents = dep.depositAmountCents || depositFallbackCents;
-    const dateLabel = formatDateShortInTimezone(dep.startAt, tz);
-    const timeLabel = formatTimeInTimezone(dep.startAt, tz);
-    const isExternalLink =
-      dep.proofDeliveryMethod === 'web_link' ||
-      Boolean(dep.paymentProofUrl?.startsWith('https://'));
-    const proofImageUrl =
-      !isExternalLink && isDisplayableProofUrl(dep.paymentProofUrl)
-        ? dep.paymentProofUrl
-        : null;
-    const isUploaded = hasBookingProofSubmitted(dep);
-    const isLoading = confirmingBookingId === dep.bookingId;
-    const isRejecting = rejectingBookingId === dep.bookingId;
+  const queueItems = buildActionQueueItems({
+    salonName: data.settings.name,
+    currency,
+    timezone: tz,
+    depositFallbackCents,
+    pendingDeposits: data.pendingDeposits,
+    uncollectedBookings: data.uncollectedBookings,
+    waitlist: data.waitlist,
+    services: data.services,
+    inventory: data.inventory,
+    whatsappInboxSummary: data.whatsappInboxSummary,
+    whatsappUsage: data.whatsappUsage,
+    canAccessInventory: roleCanAccess(role, 'inventory'),
+    canAccessWhatsApp: roleCanAccess(role, 'whatsapp'),
+    canAccessIntegrations: roleCanAccess(role, 'integrations'),
+  });
 
-    allTasks.push({
-      id: `dep-${dep.bookingId}`,
-      tone: 'warning',
-      icon: <Wallet size={19} aria-hidden="true" />,
-      thumbnail: proofImageUrl
-        ? {
-            src: proofImageUrl,
-            alt: `Comprobante de anticipo de ${dep.clientName}`,
-            ariaLabel: `Ver comprobante de ${dep.clientName}`,
-            onClick: () => setPreviewDeposit(dep),
-          }
-        : undefined,
-      title: isUploaded
-        ? `Por revisar · ${dep.clientName} (${formatCurrency(amountCents, currency)})`
-        : `Sin comprobante · ${dep.clientName} (${formatCurrency(amountCents, currency)})`,
-      subtitle: `${dep.serviceName} · ${dateLabel} ${timeLabel} con ${dep.staffName} · ${dep.bookingCode}`,
-      isBusy: isLoading || isRejecting,
-      secondary: isUploaded
-        ? {
-            label: isExternalLink ? 'Ver enlace' : 'Ver comprobante',
-            onClick: () => setPreviewDeposit(dep),
-          }
-        : {
-            label: 'Ver en Caja',
-            href: cajaHref({ tab: 'anticipos' }),
-          },
-      primary: {
-        label: isLoading ? 'Confirmando…' : 'Confirmar cita',
-        isLoading,
-        onClick: () => void onConfirmDeposit(dep.bookingId, dep.clientName),
-      },
-    });
-  }
-
-  for (const item of data.uncollectedBookings) {
-    const dateLabel = formatDateShortInTimezone(item.startAt, tz);
-    const endTime = formatTimeInTimezone(item.endAt, tz);
-    allTasks.push({
-      id: `pay-${item.bookingId}`,
-      tone: 'accent',
-      icon: <ReceiptText size={19} aria-hidden="true" />,
-      title: `Cita terminada sin cobrar · ${formatCurrency(item.remainingCents, currency)}`,
-      subtitle: `${item.clientName} · ${item.serviceName} con ${item.staffName} · ${dateLabel} ${endTime}`,
-      secondary: {
-        label: 'Ver en Caja',
-        href: cajaHref({ tab: 'sin-cobrar' }),
-      },
-      primary: {
-        label: `Cobrar ${formatCurrency(item.remainingCents, currency)}`,
-        href: agendaHref({ collect: item.bookingId }),
-      },
-    });
-  }
-
-  for (const entry of metrics.waitingList) {
-    const srv = data.services.find((service) => service.id === entry.serviceId);
-    const serviceLabel = srv?.name ?? 'tu cita';
-    const waLink = buildWhatsAppLink(
-      entry.clientPhoneE164,
-      `Hola ${entry.clientName}, se liberó un espacio en ${data.settings.name} para ${serviceLabel} el ${formatDateKeyDisplay(entry.desiredDate)}. ¿Te lo apartamos?`,
-    );
-    const windowLabel = WAITLIST_WINDOW_LABELS[entry.preferredWindow] ?? entry.preferredWindow;
-    allTasks.push({
-      id: `wait-${entry.id}`,
-      tone: 'info',
-      icon: <Clock size={19} aria-hidden="true" />,
-      title: `${entry.clientName} en lista de espera`,
-      subtitle: `${serviceLabel} · ${formatDateKeyDisplay(entry.desiredDate, 'short')} (${windowLabel})`,
-      secondary: {
-        label: 'Ver lista de espera',
-        href: agendaHref({ tab: 'waitlist' }),
-      },
-      primary: {
-        label: 'Avisar por WhatsApp',
-        href: waLink,
-        isExternal: true,
-      },
-    });
-  }
-
-  if (roleCanAccess(role, 'inventory')) {
-    for (const item of metrics.lowStock) {
-      allTasks.push({
-        id: `stock-${item.id}`,
-        tone: 'neutral',
-        icon: <Package size={19} aria-hidden="true" />,
-        title: `${item.stockQuantity === 1 ? 'Queda' : 'Quedan'} ${formatUnitCount(item.stockQuantity, item.unit)} de ${item.name}`,
-        subtitle: `Tu mínimo es ${formatUnitCount(item.minStockAlert, item.unit)}`,
-        primary: {
-          label: 'Ir a inventario',
-          href: '/admin/inventario',
-        },
-      });
-    }
-  }
-
-  const canSeeWhatsApp = roleCanAccess(role, 'whatsapp');
-  const unreadWhatsAppCount = canSeeWhatsApp
-    ? (data.whatsappInboxSummary?.unreadCount ?? 0)
-    : 0;
-  const failedRemindersCount = canSeeWhatsApp
-    ? (data.whatsappInboxSummary?.failedRemindersCount ?? 0)
-    : 0;
-
-  if (unreadWhatsAppCount > 0) {
-    allTasks.push({
-      id: 'whatsapp-unread-alert',
-      tone: 'accent',
-      icon: <MessageCircle size={19} aria-hidden="true" />,
-      title: `${unreadWhatsAppCount} mensaje${unreadWhatsAppCount === 1 ? '' : 's'} sin leer en WhatsApp`,
-      subtitle: 'Tienes conversaciones de clientas esperando respuesta en tu bandeja.',
-      primary: {
-        label: 'Abrir mensajes',
-        href: whatsappHref({ filter: 'unread' }),
-      },
-    });
-  }
-
-  if (failedRemindersCount > 0) {
-    allTasks.push({
-      id: 'whatsapp-failed-reminders-alert',
-      tone: 'warning',
-      icon: <AlertTriangle size={19} aria-hidden="true" />,
-      title: `${failedRemindersCount} recordatorio${failedRemindersCount === 1 ? '' : 's'} de WhatsApp con fallo`,
-      subtitle: 'Revisa los envíos fallidos y reinténtalos en un clic.',
-      primary: {
-        label: 'Revisar envíos',
-        href: whatsappHref({ tab: 'recordatorios', filter: 'failed' }),
-      },
-    });
-  }
-
-  const whatsappUsage = data.whatsappUsage;
-  if (
-    (canSeeWhatsApp || roleCanAccess(role, 'integrations')) &&
-    whatsappUsage &&
-    (whatsappUsage.alertLevel === 'warning_80' || whatsappUsage.alertLevel === 'limit_100')
-  ) {
-    const remaining = Math.max(0, whatsappUsage.quotaLimit - whatsappUsage.sentCount);
-    const isAtLimit = whatsappUsage.alertLevel === 'limit_100';
-    allTasks.push({
-      id: 'whatsapp-quota-alert',
-      tone: 'warning',
-      icon: <MessageCircle size={19} aria-hidden="true" />,
-      title: isAtLimit
-        ? `Límite mensual de WhatsApp alcanzado (${whatsappUsage.sentCount} de ${whatsappUsage.quotaLimit})`
-        : `WhatsApp al ${whatsappUsage.percentUsed}% de tu límite del mes`,
-      subtitle: isAtLimit
-        ? 'Los avisos automáticos siguen saliendo por correo y enlace directo hasta el próximo mes.'
-        : `${whatsappUsage.sentCount} de ${whatsappUsage.quotaLimit} mensajes usados · Te quedan ${remaining} avisos automáticos este mes.`,
-      primary: {
-        label: 'Revisar en WhatsApp',
-        href: whatsappHref({ tab: 'conexion' }),
-      },
-    });
-  }
-
-  const visibleTasks = allTasks.slice(0, maxVisible);
-  const hiddenCount = Math.max(0, allTasks.length - visibleTasks.length);
+  const visibleItems = showAll ? queueItems : queueItems.slice(0, maxVisible);
+  const hiddenCount = Math.max(0, queueItems.length - visibleItems.length);
 
   return (
     <>
       <SurfaceCard
         id="ad-att"
-        title="Pendientes de hoy"
-        subtitle="Lo que necesita tu atención hoy"
-        count={allTasks.length > 0 ? allTasks.length : undefined}
+        title="Qué hacer ahora"
+        subtitle="Pendientes priorizados para resolver en un toque"
+        count={queueItems.length > 0 ? queueItems.length : undefined}
         className="ad-card ad-enter"
         footer={
-          hiddenCount > 0 ? (
+          queueItems.length > maxVisible ? (
             <>
               <Text type="supporting" color="secondary">
-                Hay {hiddenCount} pendiente{hiddenCount === 1 ? '' : 's'} más en tu panel.
+                {showAll
+                  ? `Mostrando los ${queueItems.length} pendientes`
+                  : `Hay ${hiddenCount} pendiente${hiddenCount === 1 ? '' : 's'} más en tu panel.`}
               </Text>
-              <Button label="Revisar en Caja" variant="ghost" size="sm" href="/admin/caja" />
+              <Button
+                type="button"
+                label={showAll ? 'Mostrar menos' : `Ver todos (${queueItems.length})`}
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAll((prev) => !prev)}
+              />
             </>
           ) : undefined
         }
       >
-        {visibleTasks.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <VStack padding={5} className="ad-card-empty-center">
             <EmptyStateCard
               framed={false}
@@ -327,70 +156,109 @@ export function DashboardAttentionCard({
           </VStack>
         ) : (
           <VStack gap={0} className="ad-task-list">
-            {visibleTasks.map((task) => (
-              <ActionRow
-                key={task.id}
-                className={task.isBusy ? 'ad-task fx-busy' : 'ad-task'}
-                leading={
-                  task.thumbnail ? (
-                    <button
-                      type="button"
-                      className="ad-proof-thumb"
-                      aria-label={task.thumbnail.ariaLabel}
-                      title="Toca para ampliar el comprobante"
-                      disabled={Boolean(task.isBusy)}
-                      onClick={task.thumbnail.onClick}
-                    >
-                      <img src={task.thumbnail.src} alt={task.thumbnail.alt} />
-                    </button>
-                  ) : (
-                    <VStack
-                      className="ad-task-icon"
-                      data-tone={task.tone}
-                      align="center"
-                      justify="center"
-                      aria-hidden="true"
-                    >
-                      {task.icon}
-                    </VStack>
-                  )
-                }
-                title={task.title}
-                subtitle={task.subtitle}
-                actions={
-                  <HStack gap={2} wrap="wrap">
-                    {task.secondary ? (
-                      <Button
-                        type={task.secondary.href ? undefined : 'button'}
-                        label={task.secondary.label}
-                        variant="secondary"
-                        size="sm"
-                        isDisabled={Boolean(task.isBusy)}
-                        href={task.secondary.href}
-                        onClick={task.secondary.onClick}
-                      />
-                    ) : null}
-                    <Button
-                      type={task.primary.href ? undefined : 'button'}
-                      label={task.primary.label}
-                      variant="primary"
-                      size="sm"
-                      icon={
-                        task.primary.isExternal ? (
-                          <MessageCircle size={14} aria-hidden="true" />
-                        ) : undefined
-                      }
-                      isLoading={Boolean(task.primary.isLoading)}
-                      isDisabled={Boolean(task.isBusy)}
-                      href={task.primary.href}
-                      target={task.primary.isExternal ? '_blank' : undefined}
-                      rel={task.primary.isExternal ? 'noopener noreferrer' : undefined}
-                      onClick={task.primary.onClick}
-                    />
-                  </HStack>
-                }
-              />
-            ))}
+            {visibleItems.map((item) => {
+              const deposit =
+                (item.kind === 'deposit_review' || item.kind === 'deposit_missing_proof') &&
+                item.bookingId
+                  ? (pendingDepositsById.get(item.bookingId) ?? null)
+                  : null;
+              const isExternalProofLink = Boolean(
+                deposit &&
+                  (deposit.proofDeliveryMethod === 'web_link' ||
+                    deposit.paymentProofUrl?.startsWith('https://')),
+              );
+              const proofImageUrl =
+                deposit && !isExternalProofLink && isDisplayableProofUrl(deposit.paymentProofUrl)
+                  ? deposit.paymentProofUrl
+                  : null;
+              const isConfirming = Boolean(deposit && confirmingBookingId === deposit.bookingId);
+              const isRejecting = Boolean(deposit && rejectingBookingId === deposit.bookingId);
+              const isBusy = isConfirming || isRejecting;
+
+              return (
+                <ActionRow
+                  key={item.id}
+                  className={isBusy ? 'ad-task fx-busy' : 'ad-task'}
+                  leading={
+                    deposit && proofImageUrl ? (
+                      <button
+                        type="button"
+                        className="ad-proof-thumb"
+                        aria-label={`Ver comprobante de ${deposit.clientName}`}
+                        title="Toca para ampliar el comprobante"
+                        disabled={isBusy}
+                        onClick={() => setPreviewDeposit(deposit)}
+                      >
+                        <img
+                          src={proofImageUrl}
+                          alt={`Comprobante de anticipo de ${deposit.clientName}`}
+                        />
+                      </button>
+                    ) : (
+                      <VStack
+                        className="ad-task-icon"
+                        data-tone={item.tone}
+                        align="center"
+                        justify="center"
+                        aria-hidden="true"
+                      >
+                        {renderQueueIcon(item.kind)}
+                      </VStack>
+                    )
+                  }
+                  title={item.title}
+                  subtitle={item.subtitle}
+                  actions={
+                    <HStack gap={2} wrap="wrap">
+                      {deposit && item.kind === 'deposit_review' ? (
+                        <Button
+                          type="button"
+                          label={isExternalProofLink ? 'Ver enlace' : 'Ver comprobante'}
+                          variant="secondary"
+                          size="sm"
+                          isDisabled={isBusy}
+                          onClick={() => setPreviewDeposit(deposit)}
+                        />
+                      ) : item.secondaryLabel && item.secondaryHref ? (
+                        <Button
+                          label={item.secondaryLabel}
+                          variant="secondary"
+                          size="sm"
+                          isDisabled={isBusy}
+                          href={item.secondaryHref}
+                        />
+                      ) : null}
+
+                      {deposit ? (
+                        <Button
+                          type="button"
+                          label={isConfirming ? 'Confirmando…' : item.primaryLabel}
+                          variant="primary"
+                          size="sm"
+                          isLoading={isConfirming}
+                          isDisabled={isBusy}
+                          onClick={() => void onConfirmDeposit(deposit.bookingId, deposit.clientName)}
+                        />
+                      ) : (
+                        <Button
+                          label={item.primaryLabel}
+                          variant="primary"
+                          size="sm"
+                          icon={
+                            item.primaryExternal ? (
+                              <MessageCircle size={14} aria-hidden="true" />
+                            ) : undefined
+                          }
+                          href={item.primaryHref}
+                          target={item.primaryExternal ? '_blank' : undefined}
+                          rel={item.primaryExternal ? 'noopener noreferrer' : undefined}
+                        />
+                      )}
+                    </HStack>
+                  }
+                />
+              );
+            })}
           </VStack>
         )}
       </SurfaceCard>

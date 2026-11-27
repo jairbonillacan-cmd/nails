@@ -30,6 +30,8 @@ interface CajaCommissionsTabProps {
   periodLabel: string;
   canManageCommissions: boolean;
   isSpecialistView?: boolean;
+  focusedStaffId?: string | null;
+  onClearStaffFocus?: () => void;
   onChangeCommissionPeriod: (period: CajaPeriod) => void;
   onEditCommissionRate: (row: CommissionStaffRow) => void;
   onRegisterPayout: (row: CommissionStaffRow) => void;
@@ -43,11 +45,18 @@ export function CajaCommissionsTab({
   periodLabel,
   canManageCommissions,
   isSpecialistView = false,
+  focusedStaffId = null,
+  onClearStaffFocus,
   onChangeCommissionPeriod,
   onEditCommissionRate,
   onRegisterPayout,
 }: CajaCommissionsTabProps) {
-  const totalPayoutCents = commissionsByStaff.reduce(
+  const focusedRow =
+    !isSpecialistView && focusedStaffId
+      ? (commissionsByStaff.find((row) => row.id === focusedStaffId) ?? null)
+      : null;
+  const displayedCommissions = focusedRow ? [focusedRow] : commissionsByStaff;
+  const totalPayoutCents = displayedCommissions.reduce(
     (sum, row) => sum + row.totalPayout,
     0,
   );
@@ -62,16 +71,18 @@ export function CajaCommissionsTab({
         title={
           isSpecialistView
             ? `Tus comisiones y propinas · ${periodLabel}`
-            : `Comisiones y propinas · ${periodLabel}`
+            : focusedRow
+              ? `Comisiones de ${focusedRow.name} · ${periodLabel}`
+              : `Comisiones y propinas · ${periodLabel}`
         }
         subtitle={
           isSpecialistView
             ? 'Desglose de tus servicios cobrados, comisión estimada y propinas del periodo.'
             : 'Ajusta porcentajes al instante y registra el pago de comisiones en un clic.'
         }
-        count={commissionsByStaff.length}
+        count={displayedCommissions.length}
         badge={
-          commissionsByStaff.length > 0 ? (
+          displayedCommissions.length > 0 ? (
             <StatusTag
               tone="accent"
               hasTabularNumbers
@@ -80,17 +91,28 @@ export function CajaCommissionsTab({
           ) : undefined
         }
         actions={
-          <FilterPillBar
-            ariaLabel="Periodo de comisiones"
-            mode="segmented"
-            size="sm"
-            value={commissionPeriod}
-            options={periodOptions}
-            onChange={onChangeCommissionPeriod}
-          />
+          <HStack gap={2} align="center" wrap="wrap">
+            {focusedRow && onClearStaffFocus ? (
+              <Button
+                type="button"
+                label="Ver todo el equipo"
+                variant="secondary"
+                size="sm"
+                onClick={onClearStaffFocus}
+              />
+            ) : null}
+            <FilterPillBar
+              ariaLabel="Periodo de comisiones"
+              mode="segmented"
+              size="sm"
+              value={commissionPeriod}
+              options={periodOptions}
+              onChange={onChangeCommissionPeriod}
+            />
+          </HStack>
         }
       >
-        {commissionsByStaff.length === 0 ? (
+        {displayedCommissions.length === 0 ? (
           <VStack padding={4}>
             <EmptyStateCard
               framed={false}
@@ -108,7 +130,7 @@ export function CajaCommissionsTab({
               <Table
                 idKey="id"
                 hasHover
-                data={[...commissionsByStaff]}
+                data={[...displayedCommissions]}
                 columns={[
                   {
                     key: 'name',
@@ -219,7 +241,7 @@ export function CajaCommissionsTab({
             </VStack>
 
             <VStack className="ad-caja-mobile-cards" gap={3}>
-              {commissionsByStaff.map((row) => (
+              {displayedCommissions.map((row) => (
                 <VStack key={row.id} className="ad-caja-mcard" gap={3}>
                   <HStack justify="between" align="center" gap={2} wrap="wrap">
                     <VStack gap={0}>

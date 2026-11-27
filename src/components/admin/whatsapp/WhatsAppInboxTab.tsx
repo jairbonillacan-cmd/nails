@@ -8,6 +8,7 @@ import type {
   WhatsAppThreadDetailResponseDTO,
   WhatsAppThreadSummaryDTO,
 } from '@/lib/contracts';
+import type { BookingWithRelations } from '@/lib/types';
 import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
 import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import {
@@ -28,6 +29,8 @@ export interface WhatsAppInboxTabProps {
   summary: WhatsAppInboxSummaryDTO | null;
   selectedThreadId: string | null;
   threadDetail: WhatsAppThreadDetailResponseDTO | null;
+  contextBookingId?: string | null;
+  overviewBookings?: readonly BookingWithRelations[];
   filter: WhatsAppThreadFilter;
   searchQuery: string;
   isLoadingThreads: boolean;
@@ -62,6 +65,8 @@ export function WhatsAppInboxTab({
   summary,
   selectedThreadId,
   threadDetail,
+  contextBookingId = null,
+  overviewBookings = [],
   filter,
   searchQuery,
   isLoadingThreads,
@@ -168,6 +173,8 @@ export function WhatsAppInboxTab({
         <WhatsAppChatPane
           selectedThread={selectedThread}
           threadDetail={threadDetail}
+          contextBookingId={contextBookingId}
+          overviewBookings={overviewBookings}
           isLoadingDetail={isLoadingDetail}
           isSending={isSending}
           retryingMessageId={retryingMessageId}

@@ -151,6 +151,7 @@ export function useCajaData(
       map.set(bk.id, {
         bookingCode: bk.bookingCode,
         clientName: bk.client.fullName,
+        clientPhone: bk.client.phoneE164,
         staffName: bk.staff.name,
       });
     }
@@ -354,6 +355,7 @@ export function useCajaData(
     todaySummary,
     filteredCashEntries,
     filteredSplitDetails,
+    bookingLookup,
     splitSummaryByMethod,
     commissionsByStaff,
     todayCommissionsByStaff,

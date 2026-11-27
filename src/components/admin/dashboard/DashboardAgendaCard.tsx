@@ -20,6 +20,8 @@ import { DashboardAgendaRow } from './DashboardAgendaRow';
 
 type DayKey = 'hoy' | 'manana';
 
+const MAX_VISIBLE_BOOKINGS = 3;
+
 interface DashboardAgendaCardProps {
   data: AdminOverviewPayload;
   metrics: DashboardMetrics;
@@ -56,12 +58,28 @@ export function DashboardAgendaCard({
     (booking) => effectiveStaffId === 'all' || booking.staffId === effectiveStaffId,
   );
 
+  const visibleBookings = (() => {
+    if (filteredBookings.length <= MAX_VISIBLE_BOOKINGS) return filteredBookings;
+    if (day === 'hoy') {
+      const upcoming = filteredBookings.filter(
+        (booking) => new Date(booking.endAt).getTime() >= metrics.serverNowMs,
+      );
+      if (upcoming.length >= MAX_VISIBLE_BOOKINGS) {
+        return upcoming.slice(0, MAX_VISIBLE_BOOKINGS);
+      }
+      return filteredBookings.slice(-MAX_VISIBLE_BOOKINGS);
+    }
+    return filteredBookings.slice(0, MAX_VISIBLE_BOOKINGS);
+  })();
+
+  const hiddenBookingsCount = Math.max(0, filteredBookings.length - visibleBookings.length);
+
   let nowInsertIndex = -1;
-  if (day === 'hoy' && filteredBookings.length > 0) {
-    const firstFutureIdx = filteredBookings.findIndex(
+  if (day === 'hoy' && visibleBookings.length > 0) {
+    const firstFutureIdx = visibleBookings.findIndex(
       (booking) => new Date(booking.startAt).getTime() > metrics.serverNowMs,
     );
-    nowInsertIndex = firstFutureIdx === -1 ? filteredBookings.length : firstFutureIdx;
+    nowInsertIndex = firstFutureIdx === -1 ? visibleBookings.length : firstFutureIdx;
   }
 
   const staffSummaryParts: string[] = [];
@@ -145,17 +163,23 @@ export function DashboardAgendaCard({
     </HStack>
   );
 
+  const fullAgendaHref = agendaHref({
+    ...(day === 'manana' ? { date: metrics.tomorrowKey } : {}),
+    ...(effectiveStaffId !== 'all' ? { staff: effectiveStaffId } : {}),
+  });
+
   return (
     <SurfaceCard
       id="ad-ag"
-      title="Agenda del día"
+      title={day === 'hoy' ? 'Próximas 3 citas' : 'Próximas de mañana'}
       subtitle={
         day === 'hoy'
-          ? `${metrics.headerDateLabel} · Horarios en vivo`
+          ? `${metrics.headerDateLabel} · Resumen rápido`
           : autoShowingTomorrow
-            ? 'Sin citas hoy · Mostrando tu agenda de mañana'
+            ? 'Sin citas hoy · Vista rápida de mañana'
             : 'Vista anticipada de mañana'
       }
+      count={filteredBookings.length > 0 ? filteredBookings.length : undefined}
       className="ad-card"
       actions={
         <FilterPillBar
@@ -170,9 +194,11 @@ export function DashboardAgendaCard({
       footer={
         <>
           <Text type="supporting" color="secondary">
-            {footerSummary}
+            {hiddenBookingsCount > 0
+              ? `Mostrando ${visibleBookings.length} de ${filteredBookings.length} · ${footerSummary}`
+              : footerSummary}
           </Text>
-          <NextLink href="/admin/citas" className="ad-inline-link">
+          <NextLink href={fullAgendaHref} className="ad-inline-link">
             Ver agenda completa ›
           </NextLink>
         </>
@@ -191,20 +217,12 @@ export function DashboardAgendaCard({
         </HStack>
       ) : null}
 
-      {filteredBookings.length > 0 ? (
-        <HStack className="ad-tbl-head ad-row ad-hide-s" aria-hidden="true">
-          <Text className="ad-tbl-th">Hora</Text>
-          <Text className="ad-tbl-th">Clienta y servicio</Text>
-          <Text className="ad-tbl-th ad-tbl-th-end">Estado y acción</Text>
-        </HStack>
-      ) : null}
-
       <VStack
         key={`${day}-${effectiveStaffId}`}
-        className={filteredBookings.length === 0 ? 'ad-card-empty-center' : 'ad-agenda-list'}
+        className={visibleBookings.length === 0 ? 'ad-card-empty-center' : 'ad-agenda-list'}
         gap={0}
       >
-        {filteredBookings.length === 0 ? (
+        {visibleBookings.length === 0 ? (
           <VStack padding={5}>
             <EmptyStateCard
               framed={false}
@@ -242,7 +260,7 @@ export function DashboardAgendaCard({
           </VStack>
         ) : (
           <>
-            {filteredBookings.map((booking, index) => (
+            {visibleBookings.map((booking, index) => (
               <VStack key={booking.id} gap={0}>
                 {nowInsertIndex === index ? renderNowLine() : null}
                 <DashboardAgendaRow
@@ -256,7 +274,7 @@ export function DashboardAgendaCard({
                 />
               </VStack>
             ))}
-            {nowInsertIndex === filteredBookings.length ? renderNowLine() : null}
+            {nowInsertIndex === visibleBookings.length ? renderNowLine() : null}
           </>
         )}
       </VStack>

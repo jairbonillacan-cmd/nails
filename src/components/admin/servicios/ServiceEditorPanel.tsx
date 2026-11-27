@@ -14,10 +14,23 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Save, SlidersHorizontal } from 'lucide-react';
+import {
+  BarChart3,
+  Boxes,
+  CalendarDays,
+  Package,
+  Save,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { StatusTag } from '@/components/ui';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
+import {
+  agendaHref,
+  cajaHref,
+  inventarioHref,
+  reportesHref,
+} from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 
@@ -66,6 +79,7 @@ export function ServiceEditorPanel({
   const hasCustomDeposit = isDepositRequired && effectiveDepositCents !== defaultDepositCents;
   const [photoError, setPhotoError] = useState<string | null>(null);
   const customPhoto = draft.imageUrl?.trim() || null;
+  const serviceNameForLinks = draft.name?.trim() || '';
 
   const handlePhotoFile = async (file: File | null) => {
     if (!file) return;
@@ -309,6 +323,47 @@ export function ServiceEditorPanel({
               />
             </VStack>
           </Collapsible>
+
+          {draft.id && serviceNameForLinks ? (
+            <>
+              <Divider />
+              <VStack gap={1.5}>
+                <Text type="supporting" color="secondary">
+                  Accesos relacionados
+                </Text>
+                <HStack gap={1.5} align="center" wrap="wrap">
+                  <Button
+                    label="Ver citas"
+                    variant="secondary"
+                    size="sm"
+                    icon={<CalendarDays size={14} aria-hidden="true" />}
+                    href={agendaHref({ q: serviceNameForLinks })}
+                  />
+                  <Button
+                    label="Rentabilidad"
+                    variant="secondary"
+                    size="sm"
+                    icon={<BarChart3 size={14} aria-hidden="true" />}
+                    href={reportesHref({ period: '30d' })}
+                  />
+                  <Button
+                    label="Paquetes"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Package size={14} aria-hidden="true" />}
+                    href={cajaHref({ tab: 'promos', sub: 'packages' })}
+                  />
+                  <Button
+                    label="Insumos"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Boxes size={14} aria-hidden="true" />}
+                    href={inventarioHref({ filter: 'cabin' })}
+                  />
+                </HStack>
+              </VStack>
+            </>
+          ) : null}
 
           <HStack gap={2} justify="end" align="center" wrap="wrap">
             {isDirty && !saving ? <StatusTag label="Sin guardar" tone="warning" className="fx-pop" /> : null}

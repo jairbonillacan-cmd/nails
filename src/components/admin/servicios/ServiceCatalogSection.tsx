@@ -7,7 +7,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Check, Copy, Lock, Scissors, Search } from 'lucide-react';
+import { CalendarDays, Check, Copy, Lock, Scissors, Search } from 'lucide-react';
 import {
   ActionRow,
   EmptyStateCard,
@@ -20,6 +20,7 @@ import {
   formatServicePriceLabel,
   ServiceThumbnail,
 } from '@/components/admin/servicios/ServiceThumbnail';
+import { agendaHref } from '@/lib/admin-links';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { formatDuration } from '@/lib/format';
 import type { Service, ServiceCategory } from '@/lib/types';
@@ -30,6 +31,7 @@ interface ServiceCatalogSectionProps {
   categoryNameById: ReadonlyMap<string, string>;
   currency: 'MXN' | 'USD';
   selectedServiceId: string | undefined;
+  initialSearch?: string;
   togglingId: string | null;
   onSelectService: (srv: Service) => void;
   onRequestToggleActive: (srv: Service, checked: boolean) => void;
@@ -42,13 +44,14 @@ export function ServiceCatalogSection({
   categoryNameById,
   currency,
   selectedServiceId,
+  initialSearch = '',
   togglingId,
   onSelectService,
   onRequestToggleActive,
   onCopyError,
 }: ServiceCatalogSectionProps) {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const clipboard = useCopyToClipboard(2400);
 
@@ -209,7 +212,14 @@ export function ServiceCatalogSection({
                     </Text>
                   }
                   actions={
-                    <HStack gap={2} align="center" wrap="wrap">
+                    <HStack gap={1.5} align="center" wrap="wrap">
+                      <Button
+                        label="Ver citas"
+                        variant="ghost"
+                        size="sm"
+                        icon={<CalendarDays size={13} aria-hidden="true" />}
+                        href={agendaHref({ q: srv.name })}
+                      />
                       <Button
                         type="button"
                         label={isCopiedRow ? 'Copiado' : 'Copiar link'}

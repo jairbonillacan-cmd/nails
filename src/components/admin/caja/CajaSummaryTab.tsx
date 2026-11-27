@@ -31,6 +31,7 @@ import { ActionRow, FilterPillBar, StatusTag, SurfaceCard } from '@/components/u
 import {
   CAJA_PERIOD_OPTIONS,
   toIsoDateValue,
+  type CajaBookingSearchMeta,
   type CajaCustomRange,
   type CajaMethodFilter,
   type CajaPeriod,
@@ -58,6 +59,7 @@ interface CajaSummaryTabProps {
   depositsAwaitingReviewCount: number;
   depositsMissingProofCount: number;
   splitDetails: readonly SplitDetailRow[];
+  bookingLookup?: ReadonlyMap<string, CajaBookingSearchMeta>;
   cajaPeriod: CajaPeriod;
   customRange: CajaCustomRange;
   methodFilter: CajaMethodFilter;
@@ -66,6 +68,7 @@ interface CajaSummaryTabProps {
   tz: string;
   currency: 'MXN' | 'USD';
   canRecordCash: boolean;
+  canViewClients?: boolean;
   isSpecialistView: boolean;
   deletingEntryId: string | null;
   highlightUncollected: boolean;
@@ -112,6 +115,7 @@ export function CajaSummaryTab({
   depositsAwaitingReviewCount,
   depositsMissingProofCount,
   splitDetails,
+  bookingLookup,
   cajaPeriod,
   customRange,
   methodFilter,
@@ -120,6 +124,7 @@ export function CajaSummaryTab({
   tz,
   currency,
   canRecordCash,
+  canViewClients = false,
   isSpecialistView,
   deletingEntryId,
   highlightUncollected,
@@ -412,10 +417,12 @@ export function CajaSummaryTab({
       <CajaMovementsSection
         cashEntries={filteredCashEntries}
         splitDetails={splitDetails}
+        bookingLookup={bookingLookup}
         tz={tz}
         currency={currency}
         periodLabel={periodLabel}
         canManageCash={canRecordCash}
+        canViewClients={canViewClients}
         deletingEntryId={deletingEntryId}
         hasExternalFilters={hasActiveFilters}
         onResetExternalFilters={onResetFilters}

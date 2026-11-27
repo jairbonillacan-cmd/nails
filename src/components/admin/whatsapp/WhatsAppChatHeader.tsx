@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   CalendarClock,
   CalendarPlus,
+  CreditCard,
   ExternalLink,
   UserRound,
 } from 'lucide-react';
@@ -158,12 +159,23 @@ export function WhatsAppChatHeader({
                 {formatCurrency(nextBooking.totalPriceCents, currency)}
               </Text>
             </HStack>
-            <Button
-              label="Ver cita"
-              variant="secondary"
-              size="sm"
-              href={agendaHref({ q: nextBooking.bookingCode })}
-            />
+            <HStack gap={1.5} align="center" wrap="wrap">
+              {nextBooking.status !== 'canceled' ? (
+                <Button
+                  label="Cobrar"
+                  variant="primary"
+                  size="sm"
+                  icon={<CreditCard size={14} aria-hidden="true" />}
+                  href={agendaHref({ collect: nextBooking.bookingId })}
+                />
+              ) : null}
+              <Button
+                label="Abrir en Agenda"
+                variant="secondary"
+                size="sm"
+                href={agendaHref({ q: nextBooking.bookingCode })}
+              />
+            </HStack>
           </>
         ) : (
           <>

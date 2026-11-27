@@ -4,13 +4,15 @@ import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
+import { Button } from '@astryxdesign/core/Button';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Divider } from '@astryxdesign/core/Divider';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
-import { Check } from 'lucide-react';
+import { BarChart3, CalendarDays, Check, Users } from 'lucide-react';
 import {
   FilterPillBar,
   PageHeader,
@@ -20,12 +22,16 @@ import {
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { WeeklyScheduleEditor } from '@/components/admin/disponibilidad/WeeklyScheduleEditor';
 import {
+  agendaHref,
+  equipoHref,
   horariosHref,
   parseHorariosParams,
+  reportesHref,
   type HorariosTabParam,
 } from '@/lib/admin-links';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { roleCanAccess } from '@/lib/rbac';
 
 type AvailabilityViewTab = 'weekly' | 'breaks' | 'help';
 
@@ -132,6 +138,8 @@ export default function AdminAvailabilityPage() {
   const isOwner = data.session.user.role === 'owner';
   const isSpecialistOnly =
     data.session.user.role === 'specialist' && Boolean(data.session.user.staffMemberId);
+  const canViewTeam = roleCanAccess(data.session.user.role, 'team');
+  const canViewReports = roleCanAccess(data.session.user.role, 'reports');
 
   const validSelectedStaffId =
     selectedStaffId && data.staff.some((s) => s.id === selectedStaffId)
@@ -232,6 +240,41 @@ export default function AdminAvailabilityPage() {
           ) : undefined
         }
       />
+
+      {staffId ? (
+        <HStack className="ad-toolbar" justify="between" align="center" gap={2} wrap="wrap">
+          <Text type="supporting" color="secondary">
+            Accesos de {staffName}
+          </Text>
+          <HStack gap={1.5} align="center" wrap="wrap">
+            <Button
+              label="Ver su agenda"
+              variant="ghost"
+              size="sm"
+              icon={<CalendarDays size={14} aria-hidden="true" />}
+              href={agendaHref({ staff: staffId })}
+            />
+            {canViewTeam ? (
+              <Button
+                label="Perfil y comisión"
+                variant="ghost"
+                size="sm"
+                icon={<Users size={14} aria-hidden="true" />}
+                href={equipoHref({ staffId })}
+              />
+            ) : null}
+            {canViewReports ? (
+              <Button
+                label="Ocupación en Reportes"
+                variant="ghost"
+                size="sm"
+                icon={<BarChart3 size={14} aria-hidden="true" />}
+                href={reportesHref({ period: '30d', staff: staffId })}
+              />
+            ) : null}
+          </HStack>
+        </HStack>
+      ) : null}
 
       {msg ? (
         <Banner

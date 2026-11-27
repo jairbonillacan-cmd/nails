@@ -84,6 +84,7 @@ function normalizeSearchToken(value: string): string {
 export interface CajaBookingSearchMeta {
   bookingCode: string;
   clientName: string;
+  clientPhone?: string;
   staffName: string;
 }
 

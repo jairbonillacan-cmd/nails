@@ -28,24 +28,23 @@ export function removeKey(
 export async function adjustInventoryRequest(
   itemId: string,
   delta: number,
-  reason: 'restock' | 'service_usage' | 'retail_sale',
+  reason: 'restock' | 'service_usage',
   notes: string,
 ): Promise<{ status: 'success' | 'error'; text: string }> {
   try {
     const res = await fetch('/api/admin/operations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({ kind: 'inventory', data: { itemId, delta, reason, notes } }),
     });
     if (res.ok) {
       return {
         status: 'success',
         text:
-          reason === 'retail_sale'
-            ? 'Venta registrada en Caja y descontada del inventario.'
-            : reason === 'restock'
-              ? `Entrada (+${Math.abs(delta)}) sumada al inventario.`
-              : `Consumo (−${Math.abs(delta)}) descontado del inventario.`,
+          reason === 'restock'
+            ? `Entrada (+${Math.abs(delta)}) sumada al inventario.`
+            : `Consumo (−${Math.abs(delta)}) descontado del inventario.`,
       };
     }
     const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -62,6 +61,7 @@ export async function createInventoryItemRequest(
     const res = await fetch('/api/admin/operations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({ kind: 'inventory', data: { newItem } }),
     });
     if (res.ok) {
