@@ -60,13 +60,14 @@ const connectSrcTokens = uniqueTokens([
   'https://www.google-analytics.com',
   'https://region1.google-analytics.com',
   'https://www.facebook.com',
+  'https://cloudflareinsights.com',
   isProduction ? null : 'ws:',
 ]);
 
 function buildContentSecurityPolicy(frameAncestors: string): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${isProduction ? '' : " 'unsafe-eval'"}`,
+    `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isProduction ? '' : " 'unsafe-eval'"}`,
     "style-src 'self' 'unsafe-inline'",
     `img-src ${imgSrcTokens.join(' ')}`,
     "font-src 'self' data:",
