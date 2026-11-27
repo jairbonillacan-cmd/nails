@@ -1,9 +1,10 @@
-import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
-import { INSTAGRAM_PHOTOS, LANDING_ASSETS } from './landingContent';
+import { INSTAGRAM_PHOTOS, LANDING_ASSETS, landingPhoto } from './landingContent';
+
+const INSTAGRAM_PHOTO_SIZES = '(max-width: 47.5rem) 46vw, 24vw';
 
 interface LandingConnectProps {
   title?: string;
@@ -49,12 +50,11 @@ export function LandingConnect({
               rel="noopener noreferrer"
               aria-label={`Ver diseño French minimal en Instagram de ${instagramHandle}`}
             >
-              <Image
-                src={leftTop}
+              <img
+                {...landingPhoto(leftTop, INSTAGRAM_PHOTO_SIZES)}
                 alt="Diseño de uñas French minimal con base Rubber hecho en LAIKONA NAILS Puebla"
                 width={400}
                 height={500}
-                sizes="(max-width: 47.5rem) 46vw, 24vw"
                 loading="lazy"
                 decoding="async"
                 style={{ background: 'var(--lk-tinte)' }}
@@ -67,12 +67,11 @@ export function LandingConnect({
               rel="noopener noreferrer"
               aria-label={`Ver diseño Milky almendra en Instagram de ${instagramHandle}`}
             >
-              <Image
-                src={leftBottom}
+              <img
+                {...landingPhoto(leftBottom, INSTAGRAM_PHOTO_SIZES)}
                 alt="Set de uñas Milky almendra en Softgel natural de LAIKONA NAILS en Puebla"
                 width={400}
                 height={400}
-                sizes="(max-width: 47.5rem) 46vw, 24vw"
                 loading="lazy"
                 decoding="async"
                 style={{ background: 'var(--lk-tinte)' }}
@@ -165,12 +164,11 @@ export function LandingConnect({
               rel="noopener noreferrer"
               aria-label={`Ver diseño Nude brillante en Instagram de ${instagramHandle}`}
             >
-              <Image
-                src={rightTop}
+              <img
+                {...landingPhoto(rightTop, INSTAGRAM_PHOTO_SIZES)}
                 alt="Manicure Nude brillante con nivelación Rubber de LAIKONA NAILS en Puebla"
                 width={400}
                 height={400}
-                sizes="(max-width: 47.5rem) 46vw, 24vw"
                 loading="lazy"
                 decoding="async"
                 style={{ background: 'var(--lk-tinte)' }}
@@ -183,12 +181,11 @@ export function LandingConnect({
               rel="noopener noreferrer"
               aria-label={`Ver diseño Acabado cristal en Instagram de ${instagramHandle}`}
             >
-              <Image
-                src={rightBottom}
+              <img
+                {...landingPhoto(rightBottom, INSTAGRAM_PHOTO_SIZES)}
                 alt="Uñas de acrílico escultural con acabado cristal hechas en LAIKONA NAILS Puebla"
                 width={400}
                 height={500}
-                sizes="(max-width: 47.5rem) 46vw, 24vw"
                 loading="lazy"
                 decoding="async"
                 style={{ background: 'var(--lk-tinte)' }}

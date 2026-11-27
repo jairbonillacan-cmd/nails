@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback } from 'react';
-import Image, { getImageProps } from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -11,9 +10,7 @@ import { Dialog } from '@astryxdesign/core/Dialog';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { PublicServiceDTO } from '@/lib/public-dto';
 import { useGalleryLightbox } from '@/lib/hooks/useGalleryLightbox';
-import { isOptimizableLocalRasterImage, type LandingCreation } from './landingContent';
-
-const LIGHTBOX_IMAGE_SIZES = '(max-width: 47.5rem) 92vw, 32rem';
+import { landingPhoto, type LandingCreation } from './landingContent';
 
 interface LandingCreationLightboxProps {
   creations: readonly LandingCreation[];
@@ -31,23 +28,7 @@ export function LandingCreationLightbox({
   const resolvePreloadItem = useCallback(
     (index: number) => {
       const item = creations[index];
-      if (!item) return null;
-      if (!isOptimizableLocalRasterImage(item.src)) {
-        return { src: item.src };
-      }
-      const { props } = getImageProps({
-        src: item.src,
-        alt: '',
-        width: item.width,
-        height: item.height,
-        sizes: LIGHTBOX_IMAGE_SIZES,
-        quality: 75,
-      });
-      return {
-        src: props.src,
-        srcSet: props.srcSet,
-        sizes: props.sizes,
-      };
+      return item ? landingPhoto(item.src) : null;
     },
     [creations],
   );
@@ -111,30 +92,16 @@ export function LandingCreationLightbox({
             onTouchEnd={swipeHandlers.onTouchEnd}
             onTouchCancel={swipeHandlers.onTouchCancel}
           >
-            {isOptimizableLocalRasterImage(activeCreation.src) ? (
-              <Image
-                key={activeCreation.src}
-                src={activeCreation.src}
-                alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
-                width={activeCreation.width}
-                height={activeCreation.height}
-                sizes={LIGHTBOX_IMAGE_SIZES}
-                loading="eager"
-                decoding="async"
-                className="lk-lightbox-img"
-              />
-            ) : (
-              <img
-                key={activeCreation.src}
-                src={activeCreation.src}
-                alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
-                width={activeCreation.width}
-                height={activeCreation.height}
-                loading="eager"
-                decoding="async"
-                className="lk-lightbox-img"
-              />
-            )}
+            <img
+              key={activeCreation.src}
+              {...landingPhoto(activeCreation.src)}
+              alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
+              width={activeCreation.width}
+              height={activeCreation.height}
+              loading="eager"
+              decoding="async"
+              className="lk-lightbox-img"
+            />
           </VStack>
         </VStack>
 

@@ -17,6 +17,7 @@ import { formatDuration } from '@/lib/format';
 import { formatServicePrice, getStaffScheduleLabel } from '../booking/bookingHelpers';
 import {
   isOptimizableLocalRasterImage,
+  landingPhoto,
   staffAvatar,
   staffPortfolio,
 } from './landingContent';
@@ -224,12 +225,11 @@ export function LandingTeamDialog({
                     className="lk-portfolio-link fx-press"
                     aria-label={`Quiero este diseño (${item.title}) con ${firstName}`}
                   >
-                    <Image
-                      src={item.src}
+                    <img
+                      {...landingPhoto(item.src, '(max-width: 47.5rem) 30vw, 12.5rem')}
                       alt={`Set ${item.title} de ${member.name}`}
                       width={item.width}
                       height={item.height}
-                      sizes="(max-width: 47.5rem) 30vw, 12.5rem"
                       loading="lazy"
                       decoding="async"
                     />

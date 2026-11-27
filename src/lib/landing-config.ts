@@ -43,8 +43,13 @@ export interface ResolvedLandingConfig {
   sections: ResolvedLandingSections;
 }
 
-export const DEFAULT_HERO_DESKTOP_IMAGE = '/landing/hero-escritorio.webp';
-export const DEFAULT_HERO_MOBILE_IMAGE = '/landing/hero-movil.webp';
+export const DEFAULT_HERO_DESKTOP_IMAGE = '/landing/fotos-v2/hero-escritorio.webp';
+export const DEFAULT_HERO_MOBILE_IMAGE = '/landing/fotos-v2/hero-movil.webp';
+
+const UPDATED_HERO_IMAGES = new Map([
+  ['/landing/hero-escritorio.webp', DEFAULT_HERO_DESKTOP_IMAGE],
+  ['/landing/hero-movil.webp', DEFAULT_HERO_MOBILE_IMAGE],
+]);
 
 const DEFAULT_LANDING_SECTIONS: ResolvedLandingSections = {
   showMarquee: true,
@@ -76,7 +81,7 @@ function resolveSafeBrandImage(
 ): string {
   const trimmed = candidate?.trim() ?? '';
   if (isSafeBrandMediaPath(trimmed)) {
-    return trimmed;
+    return UPDATED_HERO_IMAGES.get(trimmed) ?? trimmed;
   }
   return fallback;
 }

@@ -3,6 +3,7 @@
 import { Button } from '@astryxdesign/core/Button';
 import { Pause, Play } from 'lucide-react';
 import { useAutoAdvance } from '@/lib/hooks/useAutoAdvance';
+import { landingPhoto } from './landingContent';
 
 const SLIDE_INTERVAL_MS = 6500;
 
@@ -48,7 +49,15 @@ export function LandingHeroSlides({ desktopUrl, mobileUrl }: LandingHeroSlidesPr
           data-active={index === slideIndex + 1 ? 'true' : 'false'}
           aria-hidden="true"
         >
-          <img src={src} alt="" width={800} height={1000} loading="lazy" decoding="async" />
+          <img
+            {...landingPhoto(src)}
+            alt=""
+            width={800}
+            height={1000}
+            loading="lazy"
+            fetchPriority="low"
+            decoding="async"
+          />
         </picture>
       ))}
       <Button

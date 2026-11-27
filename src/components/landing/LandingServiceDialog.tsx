@@ -1,7 +1,6 @@
 'use client';
 
 import { BrandIcon } from '@/components/brand/BrandIcon';
-import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -12,7 +11,7 @@ import { ShieldCheck, X } from 'lucide-react';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import { formatServicePrice } from '../booking/bookingHelpers';
-import { isOptimizableLocalRasterImage, servicePhoto } from './landingContent';
+import { landingPhoto, servicePhoto } from './landingContent';
 
 interface LandingServiceDialogProps {
   service: PublicServiceDTO;
@@ -75,28 +74,15 @@ export function LandingServiceDialog({
 
         <VStack gap={4} padding={5} isScrollable className="lk-service-dialog-body">
           <VStack className="lk-service-dialog-media">
-            {isOptimizableLocalRasterImage(photoSrc) ? (
-              <Image
-                src={photoSrc}
-                alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
-                width={640}
-                height={480}
-                sizes="(max-width: 47.5rem) 90vw, 31rem"
-                loading="eager"
-                decoding="async"
-                className="lk-service-dialog-img"
-              />
-            ) : (
-              <img
-                src={photoSrc}
-                alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
-                width={640}
-                height={480}
-                loading="eager"
-                decoding="async"
-                className="lk-service-dialog-img"
-              />
-            )}
+            <img
+              {...landingPhoto(photoSrc)}
+              alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
+              width={640}
+              height={480}
+              loading="eager"
+              decoding="async"
+              className="lk-service-dialog-img"
+            />
           </VStack>
 
           <Text textWrap="pretty" className="lk-service-dialog-desc">

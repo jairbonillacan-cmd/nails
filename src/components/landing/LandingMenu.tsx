@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Image from 'next/image';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -20,7 +19,7 @@ import {
   LANDING_ASSETS,
   NAIL_SHAPES,
   addonIcon,
-  isOptimizableLocalRasterImage,
+  landingPhoto,
   servicePhoto,
 } from './landingContent';
 
@@ -139,30 +138,16 @@ export function LandingMenu({
                       align="center"
                       className="lk-card lk-service-card fx-card-lift"
                     >
-                      {isOptimizableLocalRasterImage(photoSrc) ? (
-                        <Image
-                          className="lk-thumb"
-                          src={photoSrc}
-                          alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
-                          width={112}
-                          height={112}
-                          sizes="(max-width: 47.5rem) 5.5rem, 7.5rem"
-                          loading="lazy"
-                          decoding="async"
-                          style={{ background: 'var(--lk-tinte)' }}
-                        />
-                      ) : (
-                        <img
-                          className="lk-thumb"
-                          src={photoSrc}
-                          alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
-                          width={112}
-                          height={112}
-                          loading="lazy"
-                          decoding="async"
-                          style={{ background: 'var(--lk-tinte)' }}
-                        />
-                      )}
+                      <img
+                        className="lk-thumb"
+                        {...landingPhoto(photoSrc, '(max-width: 47.5rem) 5.25rem, 7rem')}
+                        alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
+                        width={112}
+                        height={112}
+                        loading="lazy"
+                        decoding="async"
+                        style={{ background: 'var(--lk-tinte)' }}
+                      />
                       <VStack gap={1} className="lk-service-card-body">
                         <HStack justify="between" align="start" wrap="wrap" gap={1.5}>
                           <Heading

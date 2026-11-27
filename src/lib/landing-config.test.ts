@@ -94,4 +94,19 @@ describe('landing-config customization and media path allowlist', () => {
     expect(isSafeBrandMediaPath('javascript:alert(1)')).toBe(false);
     expect(isSafeBrandMediaPath('')).toBe(false);
   });
+
+  it('serves updated photos for saved paths to the original built-in hero images', () => {
+    const { settings } = createInitialDemoDatabase();
+    const resolved = resolveLandingContent({
+      ...settings,
+      landingContent: {
+        ...settings.landingContent,
+        heroImageDesktopUrl: '/landing/hero-escritorio.webp',
+        heroImageMobileUrl: '/landing/hero-movil.webp',
+      },
+    });
+
+    expect(resolved.heroImageDesktopUrl).toBe(DEFAULT_HERO_DESKTOP_IMAGE);
+    expect(resolved.heroImageMobileUrl).toBe(DEFAULT_HERO_MOBILE_IMAGE);
+  });
 });

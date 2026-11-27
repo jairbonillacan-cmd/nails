@@ -42,8 +42,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Set editorial cereza',
     styleTag: 'Acrílico escultural',
     suggestedServiceSlug: 'unas-acrilicas',
-    width: 800,
-    height: 874,
+    width: 1080,
+    height: 1180,
   },
   {
     src: `${SET}/01-azul-joya-4x5.webp`,
@@ -58,8 +58,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'French minimal',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 800,
-    height: 872,
+    width: 1289,
+    height: 1405,
   },
   {
     src: `${SET}/03-flor-coral-4x5.webp`,
@@ -74,8 +74,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Glazed natural',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 800,
-    height: 874,
+    width: 1080,
+    height: 1180,
   },
   {
     src: `${SET}/11-estampados-mixtos-4x5.webp`,
@@ -90,8 +90,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Milky almendra',
     styleTag: 'Softgel natural',
     suggestedServiceSlug: 'unas-softgel',
-    width: 800,
-    height: 1050,
+    width: 1320,
+    height: 1732,
   },
   {
     src: `${SET}/05-rojo-oliva-3d-4x5.webp`,
@@ -106,8 +106,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Rosa porcelana',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 800,
-    height: 1048,
+    width: 1320,
+    height: 1730,
   },
   {
     src: `${SET}/07-rubi-y-negro-4x5.webp`,
@@ -122,8 +122,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Cat eye sutil',
     styleTag: 'Gel semipermanente',
     suggestedServiceSlug: 'gel-semipermanente-manos',
-    width: 800,
-    height: 908,
+    width: 1320,
+    height: 1498,
   },
   {
     src: `${SET}/12-rojo-laca-dorado-4x5.webp`,
@@ -138,8 +138,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Nude brillante',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 800,
-    height: 1067,
+    width: 1320,
+    height: 1760,
   },
   {
     src: `${SET}/10-vino-metalizado-4x5.webp`,
@@ -154,8 +154,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Almendra suave',
     styleTag: 'Uñas Softgel',
     suggestedServiceSlug: 'unas-softgel',
-    width: 800,
-    height: 1032,
+    width: 1320,
+    height: 1702,
   },
   {
     src: `${SET}/06-estampado-retro-4x5.webp`,
@@ -170,8 +170,8 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Brillo nacarado',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 800,
-    height: 1050,
+    width: 1320,
+    height: 1732,
   },
   {
     src: `${SET}/08-verde-oliva-oscuro-4x5.webp`,
@@ -186,34 +186,47 @@ export const LANDING_CREATIONS: readonly LandingCreation[] = [
     title: 'Minimalista limpio',
     styleTag: 'Gel semipermanente',
     suggestedServiceSlug: 'gel-semipermanente-manos',
-    width: 800,
-    height: 995,
+    width: 1320,
+    height: 1641,
   },
   {
     src: `${SET}/foto-037.webp`,
     title: 'Detalle en relieve',
     styleTag: 'Softgel con 3D',
     suggestedServiceSlug: 'unas-softgel',
-    width: 800,
-    height: 1067,
+    width: 1320,
+    height: 1760,
   },
   {
     src: `${SET}/foto-040.webp`,
     title: 'Acabado cristal',
     styleTag: 'Acrílico escultural',
     suggestedServiceSlug: 'unas-acrilicas',
-    width: 800,
-    height: 1067,
+    width: 1320,
+    height: 1760,
   },
   {
     src: `${SET}/foto-042.webp`,
     title: 'Clásico atemporal',
     styleTag: 'Base Rubber',
     suggestedServiceSlug: 'rubber',
-    width: 800,
-    height: 928,
+    width: 1320,
+    height: 1531,
   },
 ];
+
+const PHOTO_WIDTHS = new Map(LANDING_CREATIONS.map(({ src, width }) => [src, width]));
+
+export function landingPhoto(src: string, sizes?: string) {
+  const width = PHOTO_WIDTHS.get(src);
+  if (!width) return { src };
+
+  const path = src.replace(SET, '/landing/fotos-v2');
+  if (!sizes) return { src: path };
+
+  const small = path.replace('.webp', '-480.webp');
+  return { src: path, srcSet: `${small} 480w, ${path} ${width}w`, sizes };
+}
 
 export const GALLERY_INITIAL_COUNT = 11;
 
@@ -238,14 +251,11 @@ export function galleryTileClass(index: number): string {
 export function galleryTileSizes(index: number): string {
   const tile = galleryTileClass(index);
   const isWideDesktop = tile === 'lk-tile-a' || tile === 'lk-tile-w';
-  const isWideMobile = index % 7 === 0 || index % 7 === 6;
-  const mobileSize = isWideMobile ? '92vw' : '46vw';
   const desktopSize = isWideDesktop ? '48vw' : '24vw';
-  return `(max-width: 47.5rem) ${mobileSize}, ${desktopSize}`;
+  return `(max-width: 47.5rem) 76vw, ${desktopSize}`;
 }
 
 export const INSTAGRAM_PHOTOS = {
-  feature: `${SET}/foto-025.webp`,
   left: [`${SET}/foto-010.webp`, `${SET}/foto-013.webp`],
   right: [`${SET}/foto-021.webp`, `${SET}/foto-040.webp`],
 } as const;

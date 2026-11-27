@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -15,7 +14,7 @@ import {
   LANDING_CREATIONS,
   galleryTileClass,
   galleryTileSizes,
-  isOptimizableLocalRasterImage,
+  landingPhoto,
   type LandingCreation,
 } from './landingContent';
 
@@ -132,26 +131,14 @@ export function LandingCreations({
                   aria-label={`Ver diseño ${creation.title} — Quiero este diseño`}
                   onClick={() => setSelectedIndex(index)}
                 >
-                  {isOptimizableLocalRasterImage(creation.src) ? (
-                    <Image
-                      src={creation.src}
-                      alt={altText}
-                      width={creation.width}
-                      height={creation.height}
-                      sizes={galleryTileSizes(index)}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  ) : (
-                    <img
-                      src={creation.src}
-                      alt={altText}
-                      width={creation.width}
-                      height={creation.height}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  )}
+                  <img
+                    {...landingPhoto(creation.src, galleryTileSizes(index))}
+                    alt={altText}
+                    width={creation.width}
+                    height={creation.height}
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <HStack
                     className="lk-bento-cap"
                     wrap="wrap"
