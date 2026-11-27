@@ -34,6 +34,22 @@ const CashEntryInputSchema = z
   })
   .strict();
 
+const CashEntryPatchSchema = z
+  .object({
+    staffId: NonEmptyIdSchema.nullable(),
+    entryType: CashEntryTypeSchema,
+    description: z.string().trim().min(1, 'Escribe una descripción').max(240),
+    amountCents: z.number().int().min(-100_000_000).max(100_000_000),
+    tipCents: CentsNonNegativeSchema.max(100_000_000),
+    commissionCents: CentsNonNegativeSchema.max(100_000_000),
+    paymentMethod: PaymentMethodSchema,
+  })
+  .partial()
+  .strict()
+  .refine((val) => Object.keys(val).length > 0, {
+    message: 'Envía al menos un campo para actualizar el movimiento.',
+  });
+
 const NewInventoryItemSchema = z
   .object({
     sku: z.string().trim().min(1).max(60),
@@ -81,7 +97,16 @@ const CouponInputSchema = z
     recipientName: z.string().max(120).nullable().default(null),
     isActive: z.boolean().default(true),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.discountType === 'percent' && val.discountValue > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['discountValue'],
+        message: 'El descuento porcentual debe estar entre 1% y 100%.',
+      });
+    }
+  });
 
 const WorkflowPatchSchema = z
   .object({
@@ -104,6 +129,15 @@ export const AdminOperationsPostSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('cash'),
     data: CashEntryInputSchema,
+  }),
+  z.object({
+    kind: z.literal('cash_update'),
+    id: NonEmptyIdSchema,
+    data: CashEntryPatchSchema,
+  }),
+  z.object({
+    kind: z.literal('cash_delete'),
+    id: NonEmptyIdSchema,
   }),
   z.object({
     kind: z.literal('inventory'),
@@ -129,8 +163,16 @@ export const AdminOperationsPostSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+export const AdminOperationsPatchSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('cash'),
+    id: NonEmptyIdSchema,
+    data: CashEntryPatchSchema,
+  }),
+]);
+
 export const AdminOperationsDeleteQuerySchema = z.object({
-  kind: z.literal('coupon'),
+  kind: z.enum(['coupon', 'cash']),
   id: NonEmptyIdSchema,
 });
 

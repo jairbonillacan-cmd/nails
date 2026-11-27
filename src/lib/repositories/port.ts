@@ -1,5 +1,6 @@
 import type { AvailableSlot, DayAvailabilitySummary } from '../availability/engine';
 import type {
+  PublicLoyaltySummaryDTO,
   PublicServiceDTO,
   PublicSettingsDTO,
   PublicStaffDTO,
@@ -214,10 +215,58 @@ export interface ProcessDueNotificationsResult {
 
 export interface UpdateClientNotesInput {
   clientId: string;
+  fullName?: string;
+  phone?: string;
   notes?: string;
   birthday?: string | null;
   email?: string | null;
   instagramHandle?: string | null;
+}
+
+export interface NearRewardClientRecord {
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  summary: PublicLoyaltySummaryDTO;
+}
+
+export interface InactiveClientRecord {
+  clientId: string;
+  fullName: string;
+  phoneE164: string;
+  instagramHandle: string | null;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
+  totalVisits: number;
+  lastServiceId: string | null;
+  lastServiceName: string | null;
+}
+
+export interface ClientArcoExport {
+  exportedAt: string;
+  privacyPolicyVersion: string;
+  client: ClientProfile;
+  bookings: Array<{
+    id: string;
+    bookingCode: string;
+    serviceId: string;
+    extraServiceIds: string[];
+    staffId: string;
+    startAt: string;
+    endAt: string;
+    status: BookingStatus;
+    source: BookingSource;
+    subtotalCents: number;
+    discountCents: number;
+    totalPriceCents: number;
+    depositAmountCents: number;
+    clientNotes: string;
+    createdAt: string;
+  }>;
+  consents: ConsentRecord[];
+  loyaltySummary: PublicLoyaltySummaryDTO | null;
+  paymentSplits: PaymentSplit[];
 }
 
 export interface RecordPaymentSplitsInput {
@@ -271,6 +320,16 @@ export interface AdjustInventoryInput {
   paymentMethod?: PaymentMethod;
   staffId?: string | null;
   createdBy?: string;
+}
+
+export interface UpdateCashEntryInput {
+  staffId?: string | null;
+  entryType?: CashRegisterEntry['entryType'];
+  description?: string;
+  amountCents?: number;
+  tipCents?: number;
+  commissionCents?: number;
+  paymentMethod?: PaymentMethod;
 }
 
 export interface RegisterMediaAssetInput {
@@ -362,7 +421,12 @@ export interface SalonRepository {
   upsertAdminUser(
     input: Omit<AdminUser, 'id' | 'createdAt'> & { id?: string },
   ): Promise<AdminUser>;
+  listClients(): Promise<ClientProfile[]>;
+  getNearRewardClients(): Promise<NearRewardClientRecord[]>;
+  getInactiveClients(inactiveDays: number): Promise<InactiveClientRecord[]>;
+  getClientArcoExport(clientId: string): Promise<ClientArcoExport | null>;
   updateClientNotes(params: UpdateClientNotesInput): Promise<ClientProfile>;
+  deleteClientProfile(clientId: string): Promise<ClientProfile>;
   addWaitlistEntry(
     input: Omit<WaitlistEntry, 'id' | 'status' | 'notifiedAt' | 'createdAt'>,
   ): Promise<WaitlistEntry>;
@@ -377,6 +441,8 @@ export interface SalonRepository {
   deleteCoupon(id: string): Promise<Coupon>;
   adjustInventoryItem(params: AdjustInventoryInput): Promise<InventoryItem>;
   addCashEntry(input: Omit<CashRegisterEntry, 'id' | 'occurredAt'>): Promise<CashRegisterEntry>;
+  updateCashEntry(id: string, patch: UpdateCashEntryInput): Promise<CashRegisterEntry>;
+  deleteCashEntry(id: string): Promise<CashRegisterEntry>;
   updateWorkflow(
     id: string,
     patch: Partial<NotificationWorkflow>,

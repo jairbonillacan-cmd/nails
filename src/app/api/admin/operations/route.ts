@@ -2,16 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
 import { AdminOperationsPostSchema } from '@/lib/contracts';
-import { AdminOperationsDeleteQuerySchema } from '@/lib/contracts/operations';
+import {
+  AdminOperationsDeleteQuerySchema,
+  AdminOperationsPatchSchema,
+} from '@/lib/contracts/operations';
 import { toAdminCalendarConnectionDTO } from '@/lib/public-dto';
 import {
   addCashEntry,
   adjustInventoryItem,
+  deleteCashEntry,
   deleteCoupon,
   getRepository,
   PolicyError,
   recordAuditEvent,
   updateCalendarConnection,
+  updateCashEntry,
   updateWaitlistStatus,
   updateWorkflow,
   upsertCoupon,
@@ -178,6 +183,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ entry });
     }
 
+    if (parsed.kind === 'cash_update') {
+      const entry = await updateCashEntry(parsed.id, parsed.data);
+      return NextResponse.json({ entry });
+    }
+
+    if (parsed.kind === 'cash_delete') {
+      const deleted = await deleteCashEntry(parsed.id);
+      return NextResponse.json({
+        ok: true,
+        deletedId: deleted.id,
+      });
+    }
+
     if (parsed.kind === 'inventory') {
       const item = await adjustInventoryItem({
         ...parsed.data,
@@ -218,10 +236,13 @@ export async function POST(request: NextRequest) {
       const status =
         err.code === 'ITEM_NOT_FOUND' ||
         err.code === 'COUPON_NOT_FOUND' ||
+        err.code === 'CASH_ENTRY_NOT_FOUND' ||
         err.code === 'WAITLIST_NOT_FOUND' ||
         err.code === 'WORKFLOW_NOT_FOUND'
           ? 404
-          : 400;
+          : err.code === 'COUPON_CODE_EXISTS'
+            ? 409
+            : 400;
       return NextResponse.json({ error: err.message, code: err.code }, { status });
     }
     if (err instanceof z.ZodError) {
@@ -231,6 +252,45 @@ export async function POST(request: NextRequest) {
       );
     }
     return NextResponse.json({ error: 'Error procesando operación.' }, { status: 400 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const session = await requireAdmin(['owner', 'admin'], request);
+  if (!session) {
+    const authenticated = await getAdminSession(request);
+    return NextResponse.json(
+      { error: authenticated ? 'Permisos insuficientes' : 'No autorizado' },
+      { status: authenticated ? 403 : 401 },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json({ error: 'Solicitud JSON inválida.' }, { status: 400 });
+  }
+
+  try {
+    const parsed = AdminOperationsPatchSchema.parse(rawBody);
+    const entry = await updateCashEntry(parsed.id, parsed.data);
+    return NextResponse.json({ entry });
+  } catch (err) {
+    if (err instanceof PolicyError) {
+      const status = err.code === 'CASH_ENTRY_NOT_FOUND' ? 404 : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
+    }
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: err.issues[0]?.message || 'Datos de movimiento inválidos.' },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json(
+      { error: 'No se pudo actualizar el movimiento de caja.' },
+      { status: 400 },
+    );
   }
 }
 
@@ -250,6 +310,13 @@ export async function DELETE(request: NextRequest) {
       kind: searchParams.get('kind') ?? undefined,
       id: searchParams.get('id') ?? undefined,
     });
+    if (parsed.kind === 'cash') {
+      const deleted = await deleteCashEntry(parsed.id);
+      return NextResponse.json({
+        ok: true,
+        deletedId: deleted.id,
+      });
+    }
     const deleted = await deleteCoupon(parsed.id);
     return NextResponse.json({
       ok: true,
@@ -258,7 +325,10 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (err) {
     if (err instanceof PolicyError) {
-      const status = err.code === 'COUPON_NOT_FOUND' ? 404 : 400;
+      const status =
+        err.code === 'COUPON_NOT_FOUND' || err.code === 'CASH_ENTRY_NOT_FOUND'
+          ? 404
+          : 400;
       return NextResponse.json({ error: err.message, code: err.code }, { status });
     }
     if (err instanceof z.ZodError) {

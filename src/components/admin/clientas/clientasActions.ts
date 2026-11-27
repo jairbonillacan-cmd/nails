@@ -14,6 +14,15 @@ export interface ClientNoShowStats {
   ratePercent: number;
 }
 
+const CLIENTAS_REQUEST_TIMEOUT_MS = 15_000;
+
+function isTimeoutOrAbortError(err: unknown): boolean {
+  return (
+    err instanceof DOMException &&
+    (err.name === 'TimeoutError' || err.name === 'AbortError')
+  );
+}
+
 export function buildVisitCountByClient(
   data: AdminOverviewPayload | null,
 ): Map<string, number> {
@@ -152,6 +161,8 @@ export function groupPackagesByClientId(
 
 export async function saveClientProfileRequest(input: {
   clientId: string;
+  fullName?: string;
+  phone?: string;
   notes: string;
   birthday: string | null;
   email: string | null;
@@ -162,14 +173,20 @@ export async function saveClientProfileRequest(input: {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
+    if (res.status === 409) {
+      return json?.error || 'Ya existe otra clienta registrada con ese WhatsApp.';
+    }
     if (!res.ok) {
       return json?.error || 'No se pudo actualizar la ficha.';
     }
     return null;
-  } catch {
-    return 'No se pudo conectar para guardar la ficha.';
+  } catch (err) {
+    return isTimeoutOrAbortError(err)
+      ? 'La solicitud tardó demasiado al guardar la ficha. Intenta de nuevo.'
+      : 'No se pudo conectar para guardar la ficha.';
   }
 }
 
@@ -186,6 +203,7 @@ export async function createClientProfileRequest(input: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (res.status === 409) {
@@ -199,8 +217,52 @@ export async function createClientProfileRequest(input: {
       return { ok: false, error: json?.error || 'Revisa los datos ingresados.' };
     }
     return { ok: true };
-  } catch {
-    return { ok: false, error: 'No se pudo conectar para guardar la clienta.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isTimeoutOrAbortError(err)
+        ? 'La solicitud tardó demasiado al guardar la clienta. Intenta de nuevo.'
+        : 'No se pudo conectar para guardar la clienta.',
+    };
+  }
+}
+
+export async function deleteClientProfileRequest(
+  clientId: string,
+): Promise<{ ok: boolean; error?: string; code?: string }> {
+  try {
+    const res = await fetch(`/api/admin/clients?id=${encodeURIComponent(clientId)}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+    } | null;
+    if (res.status === 409) {
+      return {
+        ok: false,
+        code: json?.code || 'CLIENT_HAS_HISTORY',
+        error:
+          json?.error ||
+          'No se puede eliminar esta clienta porque ya tiene citas o paquetes registrados.',
+      };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        code: json?.code,
+        error: json?.error || 'No se pudo eliminar la clienta.',
+      };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isTimeoutOrAbortError(err)
+        ? 'La solicitud tardó demasiado al eliminar la clienta. Intenta de nuevo.'
+        : 'No se pudo conectar para eliminar la clienta.',
+    };
   }
 }
 
@@ -220,6 +282,7 @@ export async function dispatchRetentionCampaignRequest(params: {
         clientId: params.clientId,
         messagePreview: params.messagePreview,
       }),
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as {
       error?: string;
@@ -247,12 +310,14 @@ export async function dispatchRetentionCampaignRequest(params: {
         whatsappUrl: targetUrl,
       },
     };
-  } catch {
+  } catch (err) {
     return {
       ok: false,
       notice: {
         status: 'error',
-        title: 'No se pudo conectar para registrar el mensaje.',
+        title: isTimeoutOrAbortError(err)
+          ? 'La solicitud tardó demasiado al registrar el mensaje. Intenta de nuevo.'
+          : 'No se pudo conectar para registrar el mensaje.',
       },
     };
   }
@@ -273,6 +338,7 @@ export async function assignClientPackageRequest(
         packageId: targetPackageId,
         notes: notesText.trim(),
       }),
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
@@ -288,12 +354,14 @@ export async function assignClientPackageRequest(
       ok: true,
       notice: { status: 'success', title: 'Paquete asignado a la clienta.' },
     };
-  } catch {
+  } catch (err) {
     return {
       ok: false,
       notice: {
         status: 'error',
-        title: 'No se pudo conectar para asignar el paquete.',
+        title: isTimeoutOrAbortError(err)
+          ? 'La solicitud tardó demasiado al asignar el paquete. Intenta de nuevo.'
+          : 'No se pudo conectar para asignar el paquete.',
       },
     };
   }
@@ -307,6 +375,7 @@ export async function redeemClientPackageSessionRequest(
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'redeem', clientPackageId: pkg.id }),
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
@@ -325,12 +394,14 @@ export async function redeemClientPackageSessionRequest(
         title: `Se descontó 1 sesión de "${pkg.packageName}" (${pkg.clientName}).`,
       },
     };
-  } catch {
+  } catch (err) {
     return {
       ok: false,
       notice: {
         status: 'error',
-        title: 'No se pudo conectar para descontar la sesión.',
+        title: isTimeoutOrAbortError(err)
+          ? 'La solicitud tardó demasiado al descontar la sesión. Intenta de nuevo.'
+          : 'No se pudo conectar para descontar la sesión.',
       },
     };
   }
@@ -344,6 +415,7 @@ export async function cancelClientPackageRequest(
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'cancel', clientPackageId: pkg.id }),
+      signal: AbortSignal.timeout(CLIENTAS_REQUEST_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
@@ -362,12 +434,14 @@ export async function cancelClientPackageRequest(
         title: `Paquete "${pkg.packageName}" de ${pkg.clientName} cancelado.`,
       },
     };
-  } catch {
+  } catch (err) {
     return {
       ok: false,
       notice: {
         status: 'error',
-        title: 'No se pudo conectar para cancelar el paquete.',
+        title: isTimeoutOrAbortError(err)
+          ? 'La solicitud tardó demasiado al cancelar el paquete. Intenta de nuevo.'
+          : 'No se pudo conectar para cancelar el paquete.',
       },
     };
   }

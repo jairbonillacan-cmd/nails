@@ -7,7 +7,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { Table } from '@astryxdesign/core/Table';
+import { Table, pixel, proportional } from '@astryxdesign/core/Table';
 import { Link } from '@astryxdesign/core/Link';
 import {
   AlertTriangle,
@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
+  Pencil,
   RotateCcw,
   Search,
   Users,
@@ -76,6 +77,7 @@ interface CajaSummaryTabProps {
   currency: 'MXN' | 'USD';
   canRecordCash: boolean;
   isSpecialistView: boolean;
+  deletingEntryId: string | null;
   highlightUncollected: boolean;
   onChangePeriod: (next: CajaPeriod) => void;
   onChangeMethodFilter: (next: CajaMethodFilter) => void;
@@ -84,6 +86,10 @@ interface CajaSummaryTabProps {
   onOpenDeposits: () => void;
   onOpenCommissions: () => void;
   onRecordCashEntry: (input: RecordCajaEntryInput) => Promise<FormSubmitResult>;
+  onEditCashEntry: (entry: CashRegisterEntry) => void;
+  onRequestDeleteCashEntry: (entry: CashRegisterEntry) => void;
+  onEditCommissionRate: (row: CommissionStaffRow) => void;
+  onRegisterPayout: (row: CommissionStaffRow) => void;
 }
 
 export function CajaSummaryTab({
@@ -108,6 +114,7 @@ export function CajaSummaryTab({
   currency,
   canRecordCash,
   isSpecialistView,
+  deletingEntryId,
   highlightUncollected,
   onChangePeriod,
   onChangeMethodFilter,
@@ -116,6 +123,10 @@ export function CajaSummaryTab({
   onOpenDeposits,
   onOpenCommissions,
   onRecordCashEntry,
+  onEditCashEntry,
+  onRequestDeleteCashEntry,
+  onEditCommissionRate,
+  onRegisterPayout,
 }: CajaSummaryTabProps) {
   const [countedCashMxn, setCountedCashMxn] = useState<number>(0);
   const closeClipboard = useCopyToClipboard(2600);
@@ -134,6 +145,7 @@ export function CajaSummaryTab({
   const hasActiveFilters =
     cajaPeriod !== 'all' || methodFilter !== 'all' || searchQuery.trim().length > 0;
   const hasSecondaryFilters = methodFilter !== 'all' || searchQuery.trim().length > 0;
+  const showCommissionActions = canRecordCash && !isSpecialistView;
 
   const handleCopyCloseSummary = () => {
     const summaryText = formatCashCloseWhatsAppSummary({
@@ -221,6 +233,7 @@ export function CajaSummaryTab({
                       label="Cobrar"
                       variant="primary"
                       size="sm"
+                      className="ad-caja-touch-btn"
                       icon={<CreditCard size={14} aria-hidden="true" />}
                       href={`/admin/citas?collect=${encodeURIComponent(row.bookingId)}`}
                     />
@@ -279,6 +292,7 @@ export function CajaSummaryTab({
               label="Revisar anticipos"
               variant="secondary"
               size="sm"
+              className="ad-caja-touch-btn"
               onClick={onOpenDeposits}
             />
           </HStack>
@@ -438,8 +452,12 @@ export function CajaSummaryTab({
             tz={tz}
             currency={currency}
             periodLabel={periodLabel}
+            canManageCash={canRecordCash}
+            deletingEntryId={deletingEntryId}
             hasExternalFilters={hasSecondaryFilters || cajaPeriod !== 'all'}
             onResetExternalFilters={onResetFilters}
+            onEditEntry={onEditCashEntry}
+            onRequestDeleteEntry={onRequestDeleteCashEntry}
           />
 
           {commissionsByStaff.length > 0 ? (
@@ -466,7 +484,7 @@ export function CajaSummaryTab({
                 />
               }
             >
-              <VStack className="ad-table-scroll" gap={0}>
+              <VStack className="ad-table-scroll ad-caja-desktop-table" gap={0}>
                 <Table
                   idKey="id"
                   hasHover
@@ -475,6 +493,7 @@ export function CajaSummaryTab({
                     {
                       key: 'name',
                       header: 'Profesional',
+                      width: proportional(1.4, { minWidth: 145 }),
                       renderCell: (row) => (
                         <VStack gap={0}>
                           <Text weight="medium">{row.name}</Text>
@@ -489,6 +508,7 @@ export function CajaSummaryTab({
                       key: 'sales',
                       header: 'Ventas',
                       align: 'end',
+                      width: pixel(96),
                       renderCell: (row) => (
                         <Text hasTabularNumbers>{formatCurrency(row.sales, currency)}</Text>
                       ),
@@ -497,6 +517,7 @@ export function CajaSummaryTab({
                       key: 'commission',
                       header: 'Comisión',
                       align: 'end',
+                      width: pixel(96),
                       renderCell: (row) => (
                         <Text hasTabularNumbers>
                           {formatCurrency(row.commission, currency)}
@@ -507,6 +528,7 @@ export function CajaSummaryTab({
                       key: 'tips',
                       header: 'Propinas',
                       align: 'end',
+                      width: pixel(96),
                       renderCell: (row) => (
                         <Text hasTabularNumbers>{formatCurrency(row.tips, currency)}</Text>
                       ),
@@ -515,14 +537,128 @@ export function CajaSummaryTab({
                       key: 'totalPayout',
                       header: 'Total',
                       align: 'end',
+                      width: pixel(104),
                       renderCell: (row) => (
                         <Text weight="bold" hasTabularNumbers>
                           {formatCurrency(row.totalPayout, currency)}
                         </Text>
                       ),
                     },
+                    ...(showCommissionActions
+                      ? [
+                          {
+                            key: 'id' as const,
+                            header: 'Acciones',
+                            align: 'end' as const,
+                            width: pixel(260),
+                            renderCell: (row: CommissionStaffRow) => (
+                              <HStack
+                                gap={1.5}
+                                align="center"
+                                justify="end"
+                                className="ad-caja-row-actions"
+                              >
+                                <Button
+                                  type="button"
+                                  label="Editar %"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="ad-caja-row-btn"
+                                  icon={<Pencil size={13} aria-hidden="true" />}
+                                  onClick={() => onEditCommissionRate(row)}
+                                />
+                                {row.totalPayout > 0 ? (
+                                  <Button
+                                    type="button"
+                                    label="Registrar pago"
+                                    variant="secondary"
+                                    size="sm"
+                                    className="ad-caja-row-btn"
+                                    icon={<Banknote size={13} aria-hidden="true" />}
+                                    onClick={() => onRegisterPayout(row)}
+                                  />
+                                ) : null}
+                              </HStack>
+                            ),
+                          },
+                        ]
+                      : []),
                   ]}
                 />
+              </VStack>
+
+              <VStack className="ad-caja-mobile-cards" gap={3}>
+                {commissionsByStaff.map((row) => (
+                  <VStack key={row.id} className="ad-caja-mcard" gap={2}>
+                    <HStack justify="between" align="center" gap={2}>
+                      <VStack gap={0}>
+                        <Text weight="semibold">{row.name}</Text>
+                        <Text type="supporting" color="secondary" hasTabularNumbers>
+                          {row.servicesCount} {row.servicesCount === 1 ? 'cobro' : 'cobros'}
+                        </Text>
+                      </VStack>
+                      <StatusTag tone="neutral" hasTabularNumbers label={`${row.percent}%`} />
+                    </HStack>
+                    <VStack className="ad-caja-mcard-grid" gap={0}>
+                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
+                        <Text type="supporting" color="secondary">
+                          Ventas
+                        </Text>
+                        <Text weight="semibold" hasTabularNumbers>
+                          {formatCurrency(row.sales, currency)}
+                        </Text>
+                      </VStack>
+                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
+                        <Text type="supporting" color="secondary">
+                          Comisión
+                        </Text>
+                        <Text weight="semibold" hasTabularNumbers>
+                          {formatCurrency(row.commission, currency)}
+                        </Text>
+                      </VStack>
+                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
+                        <Text type="supporting" color="secondary">
+                          Propinas
+                        </Text>
+                        <Text weight="semibold" hasTabularNumbers>
+                          {formatCurrency(row.tips, currency)}
+                        </Text>
+                      </VStack>
+                      <VStack className="ad-caja-mcard-cell" gap={0.5}>
+                        <Text type="supporting" color="secondary">
+                          Total
+                        </Text>
+                        <Text weight="bold" hasTabularNumbers>
+                          {formatCurrency(row.totalPayout, currency)}
+                        </Text>
+                      </VStack>
+                    </VStack>
+                    {showCommissionActions ? (
+                      <HStack gap={2} wrap="wrap" className="ad-caja-mcard-foot">
+                        <Button
+                          type="button"
+                          label="Editar %"
+                          variant="secondary"
+                          size="sm"
+                          className="ad-caja-touch-btn rb-grow"
+                          icon={<Pencil size={14} aria-hidden="true" />}
+                          onClick={() => onEditCommissionRate(row)}
+                        />
+                        {row.totalPayout > 0 ? (
+                          <Button
+                            type="button"
+                            label="Registrar pago"
+                            variant="primary"
+                            size="sm"
+                            className="ad-caja-touch-btn rb-grow"
+                            icon={<Banknote size={14} aria-hidden="true" />}
+                            onClick={() => onRegisterPayout(row)}
+                          />
+                        ) : null}
+                      </HStack>
+                    ) : null}
+                  </VStack>
+                ))}
               </VStack>
             </SurfaceCard>
           ) : null}
@@ -576,7 +712,13 @@ export function CajaSummaryTab({
                       {formatCurrency(reconciliation.countedCents, currency)}
                     </Text>
                   </HStack>
-                  <HStack justify="between" align="center" wrap="wrap" gap={2} className="ad-kv-row">
+                  <HStack
+                    justify="between"
+                    align="center"
+                    wrap="wrap"
+                    gap={2}
+                    className="ad-kv-row"
+                  >
                     <Text type="supporting" color="secondary">
                       Diferencia
                     </Text>
@@ -610,7 +752,9 @@ export function CajaSummaryTab({
                         variant="ghost"
                         size="sm"
                         onClick={() =>
-                          setCountedCashMxn(Number((reconciliation.expectedCents / 100).toFixed(2)))
+                          setCountedCashMxn(
+                            Number((reconciliation.expectedCents / 100).toFixed(2)),
+                          )
                         }
                       />
                     </HStack>
@@ -628,6 +772,7 @@ export function CajaSummaryTab({
                     variant="secondary"
                     size="sm"
                     width="100%"
+                    className="ad-caja-touch-btn"
                     icon={
                       closeClipboard.copied ? (
                         <Check size={14} aria-hidden="true" />

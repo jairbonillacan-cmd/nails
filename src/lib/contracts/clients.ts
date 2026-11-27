@@ -19,11 +19,17 @@ export const CreateClientSchema = z.object({
 
 export const PatchClientSchema = z.object({
   clientId: NonEmptyIdSchema,
+  fullName: z.string().trim().min(2, 'Escribe el nombre completo').max(120).optional(),
+  phone: PhoneInputSchema.trim().max(30).optional(),
   notes: z.string().max(1000).optional(),
   technicalNotes: z.string().max(1000).optional(),
   birthday: z.string().max(20).optional().nullable(),
   email: OptionalEmailSchema,
   instagramHandle: InstagramHandleSchema,
+});
+
+export const DeleteClientQuerySchema = z.object({
+  id: NonEmptyIdSchema,
 });
 
 export const ClientPortalOtpActionSchema = z.discriminatedUnion('action', [

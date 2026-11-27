@@ -14,9 +14,10 @@ import { formatCurrency, formatUnitCount } from '@/lib/format';
 import type { InventoryItem, PaymentMethod, StaffMember } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui';
-import type { FormDialogControls } from '@/components/ui/FormDialog';
+import { FormDialog, type FormDialogControls } from '@/components/ui/FormDialog';
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import type { RecordCajaEntryInput } from './cajaActions';
+import { NAIL_SALON_EXPENSE_PRESETS, type CashMovementDraft } from './cajaMetrics';
 
 type QuickEntryType = 'expense' | 'product_sale' | 'service_income';
 
@@ -72,20 +73,60 @@ export function CashMovementForm({
   );
 }
 
+export function CashMovementDraftDialog({
+  draft,
+  inventory,
+  staff,
+  currency,
+  onOpenChange,
+  onRecordCashEntry,
+}: CashMovementFormProps & {
+  draft: CashMovementDraft | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <FormDialog
+      isOpen={Boolean(draft)}
+      onOpenChange={onOpenChange}
+      title="Registrar pago a profesional"
+      subtitle="Revisa el monto, elige la forma de pago y registra el egreso directamente en caja."
+    >
+      {(controls) =>
+        draft ? (
+          <CashMovementFormBody
+            inventory={inventory}
+            staff={staff}
+            currency={currency}
+            initialDraft={draft}
+            onRecordCashEntry={onRecordCashEntry}
+            controls={controls}
+          />
+        ) : null
+      }
+    </FormDialog>
+  );
+}
+
 function CashMovementFormBody({
   inventory,
   staff,
   currency,
+  initialDraft,
   onRecordCashEntry,
   controls,
-}: CashMovementFormProps & { controls: FormDialogControls }) {
-  const [entryType, setEntryType] = useState<QuickEntryType>('product_sale');
+}: CashMovementFormProps & {
+  initialDraft?: CashMovementDraft;
+  controls: FormDialogControls;
+}) {
+  const [entryType, setEntryType] = useState<QuickEntryType>(
+    initialDraft?.entryType ?? 'product_sale',
+  );
   const [selectedProductId, setSelectedProductId] = useState<string>(CUSTOM_PRODUCT_VALUE);
   const [quantity, setQuantity] = useState<number>(1);
-  const [desc, setDesc] = useState('');
-  const [amountMxn, setAmountMxn] = useState(150);
-  const [method, setMethod] = useState<PaymentMethod>('cash');
-  const [staffId, setStaffId] = useState<string>(NO_STAFF_VALUE);
+  const [desc, setDesc] = useState(initialDraft?.description ?? '');
+  const [amountMxn, setAmountMxn] = useState(initialDraft?.amountMxn ?? 150);
+  const [method, setMethod] = useState<PaymentMethod>(initialDraft?.method ?? 'cash');
+  const [staffId, setStaffId] = useState<string>(initialDraft?.staffId ?? NO_STAFF_VALUE);
   const { isSubmitting } = controls;
 
   const sellableProducts = useMemo(
@@ -101,8 +142,11 @@ function CashMovementFormBody({
   );
 
   const activeStaff = useMemo(
-    () => staff.filter((member) => member.isActive),
-    [staff],
+    () =>
+      staff.filter(
+        (member) => member.isActive || member.id === initialDraft?.staffId,
+      ),
+    [staff, initialDraft?.staffId],
   );
 
   const selectedProduct = useMemo(
@@ -158,9 +202,6 @@ function CashMovementFormBody({
       setSelectedProductId(CUSTOM_PRODUCT_VALUE);
       setQuantity(1);
     }
-    if (next === 'expense') {
-      setStaffId(NO_STAFF_VALUE);
-    }
   };
 
   const handleSelectProduct = (nextId: string | null) => {
@@ -205,7 +246,7 @@ function CashMovementFormBody({
         description: desc.trim(),
         amountMxn,
         method,
-        staffId: entryType === 'expense' ? null : assignedStaffId,
+        staffId: assignedStaffId,
       }),
     );
   };
@@ -221,6 +262,27 @@ function CashMovementFormBody({
           options={ENTRY_TYPE_OPTIONS}
           onChange={handleEntryTypeChange}
         />
+
+        {entryType === 'expense' ? (
+          <VStack gap={1.5}>
+            <Text type="supporting" color="secondary">
+              Gastos frecuentes del salón
+            </Text>
+            <HStack gap={1.5} wrap="wrap">
+              {NAIL_SALON_EXPENSE_PRESETS.map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  label={preset}
+                  variant="secondary"
+                  size="sm"
+                  className="ad-caja-preset-chip"
+                  onClick={() => setDesc(preset)}
+                />
+              ))}
+            </HStack>
+          </VStack>
+        ) : null}
 
         {entryType === 'product_sale' && sellableProducts.length > 0 ? (
           <Selector
@@ -318,9 +380,9 @@ function CashMovementFormBody({
                 options={PAYMENT_METHOD_OPTIONS}
               />
             </Grid>
-            {entryType !== 'expense' && activeStaff.length > 0 ? (
+            {activeStaff.length > 0 ? (
               <Selector
-                label="Profesional"
+                label={entryType === 'expense' ? 'Profesional (opcional)' : 'Profesional'}
                 isOptional
                 value={staffId}
                 onChange={(v) => setStaffId(v || NO_STAFF_VALUE)}

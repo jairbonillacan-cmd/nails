@@ -122,6 +122,7 @@ export function AdminSidebar({
         footerNavItems={footerNavItems}
         staffRows={staffRows}
         isCompactRail={sidebarCollapsed}
+        idPrefix="side"
         onPrefetchRoute={onPrefetchRoute}
       />
 

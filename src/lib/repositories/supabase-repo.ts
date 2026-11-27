@@ -95,9 +95,12 @@ import {
   type AdjustInventoryInput,
   type AwardLoyaltyStampInput,
   type CleanupExpiredSlotHoldsResult,
+  type ClientArcoExport,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type InactiveClientRecord,
   type ManageClientBookingInput,
+  type NearRewardClientRecord,
   type NotificationDispatcher,
   type OutboxEventRecord,
   type ProcessDueNotificationsResult,
@@ -111,6 +114,7 @@ import {
   type SlotHoldResult,
   type SubmitReviewInput,
   type UpdateBookingStatusInput,
+  type UpdateCashEntryInput,
   type UpdateClientNotesInput,
   type ValidateCouponResult,
   type WriteAuditLogInput,
@@ -3841,6 +3845,9 @@ export function createSupabaseRepository(
 
       const { data, error } = await query;
       if (error || !data) {
+        if (input.id && error?.code === 'PGRST116') {
+          throw new PolicyError('STAFF_NOT_FOUND', 'Profesional no encontrada.');
+        }
         throw new PolicyError(
           'STAFF_UPSERT_FAILED',
           error?.message ?? 'No se pudo guardar profesional.',
@@ -3897,11 +3904,256 @@ export function createSupabaseRepository(
       return mapAdminUserRow(data);
     },
 
+    async listClients(): Promise<ClientProfile[]> {
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+      return (data ?? []).map(mapClientRow);
+    },
+
+    async getNearRewardClients(): Promise<NearRewardClientRecord[]> {
+      const supabase = getClient();
+      const programsRes = await supabase
+        .from('loyalty_programs')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1);
+      const activeProgramRow = (programsRes.data ?? [])[0] ?? null;
+      if (!activeProgramRow) return [];
+      const activeProgram = mapLoyaltyProgramRow(activeProgramRow);
+
+      const [stampsRes, clientsRes, rewardServiceRes] = await Promise.all([
+        supabase.from('loyalty_stamps').select('*').eq('program_id', activeProgram.id),
+        supabase.from('clients').select('*'),
+        activeProgram.rewardServiceId
+          ? supabase
+              .from('services')
+              .select('name')
+              .eq('id', activeProgram.rewardServiceId)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const stamps = (stampsRes.data ?? []).map(mapLoyaltyStampRow);
+      const clients = (clientsRes.data ?? []).map(mapClientRow);
+      const rewardServiceName = rewardServiceRes.data?.name ?? null;
+      const results: NearRewardClientRecord[] = [];
+      for (const client of clients) {
+        const summary = PublicLoyaltySummarySchema.parse(
+          computeClientLoyaltySummary(activeProgram, stamps, client.id, rewardServiceName),
+        );
+        if (summary.isNearReward || summary.isRewardReady) {
+          results.push({
+            clientId: client.id,
+            fullName: client.fullName,
+            phoneE164: client.phoneE164,
+            instagramHandle: client.instagramHandle ?? null,
+            summary,
+          });
+        }
+      }
+      return results.toSorted((a, b) => {
+        const diff = a.summary.remainingForReward - b.summary.remainingForReward;
+        return diff !== 0 ? diff : b.summary.currentStamps - a.summary.currentStamps;
+      });
+    },
+
+    async getInactiveClients(inactiveDays: number): Promise<InactiveClientRecord[]> {
+      const supabase = getClient();
+      const [clientsRes, bookingsRes, servicesRes] = await Promise.all([
+        supabase.from('clients').select('*'),
+        supabase.from('bookings').select('client_id, service_id, start_at, status'),
+        supabase.from('services').select('id, name'),
+      ]);
+
+      const nowMs = clock.nowMs();
+      const cutoffMs = nowMs - inactiveDays * 86_400_000;
+      const clients = (clientsRes.data ?? []).map(mapClientRow);
+      const serviceNameById = new Map<string, string>(
+        (servicesRes.data ?? []).map((srv) => [srv.id, srv.name]),
+      );
+      const bookingsByClientId = new Map<
+        string,
+        Array<{ service_id: string; start_at: string; status: string }>
+      >();
+      for (const row of bookingsRes.data ?? []) {
+        if (row.status === 'canceled' || row.status === 'no_show') continue;
+        const list = bookingsByClientId.get(row.client_id) ?? [];
+        list.push({
+          service_id: row.service_id,
+          start_at: row.start_at,
+          status: row.status,
+        });
+        bookingsByClientId.set(row.client_id, list);
+      }
+
+      const inactive: InactiveClientRecord[] = [];
+      for (const client of clients) {
+        const clientBookings = bookingsByClientId.get(client.id) ?? [];
+        const hasRecentOrUpcoming = clientBookings.some(
+          (b) => new Date(b.start_at).getTime() >= cutoffMs,
+        );
+        if (hasRecentOrUpcoming) continue;
+
+        let lastVisitMs: number | null = null;
+        let lastServiceId: string | null = null;
+        let totalVisits = 0;
+        for (const b of clientBookings) {
+          const startMs = new Date(b.start_at).getTime();
+          if (b.status === 'completed' || (b.status === 'confirmed' && startMs <= nowMs)) {
+            totalVisits += 1;
+            if (lastVisitMs === null || startMs > lastVisitMs) {
+              lastVisitMs = startMs;
+              lastServiceId = b.service_id;
+            }
+          }
+        }
+
+        inactive.push({
+          clientId: client.id,
+          fullName: client.fullName,
+          phoneE164: client.phoneE164,
+          instagramHandle: client.instagramHandle ?? null,
+          lastVisitAt: lastVisitMs !== null ? new Date(lastVisitMs).toISOString() : null,
+          daysSinceLastVisit:
+            lastVisitMs !== null ? Math.floor((nowMs - lastVisitMs) / 86_400_000) : null,
+          totalVisits,
+          lastServiceId,
+          lastServiceName: lastServiceId ? (serviceNameById.get(lastServiceId) ?? null) : null,
+        });
+      }
+
+      return inactive.toSorted((a, b) => {
+        if (a.daysSinceLastVisit === null && b.daysSinceLastVisit === null) return 0;
+        if (a.daysSinceLastVisit === null) return 1;
+        if (b.daysSinceLastVisit === null) return -1;
+        return b.daysSinceLastVisit - a.daysSinceLastVisit;
+      });
+    },
+
+    async getClientArcoExport(clientId: string): Promise<ClientArcoExport | null> {
+      const cleanId = clientId.trim();
+      if (!cleanId) return null;
+      const supabase = getClient();
+      const [clientRes, bookingsRes, consentsRes, programsRes, stampsRes, settingsRes] =
+        await Promise.all([
+          supabase.from('clients').select('*').eq('id', cleanId).maybeSingle(),
+          supabase.from('bookings').select('*').eq('client_id', cleanId),
+          supabase.from('consents').select('*').eq('client_id', cleanId),
+          supabase.from('loyalty_programs').select('*').eq('is_active', true).limit(1),
+          supabase.from('loyalty_stamps').select('*').eq('client_id', cleanId),
+          supabase
+            .from('salon_settings')
+            .select('privacy_policy_version')
+            .eq('id', 'default')
+            .maybeSingle(),
+        ]);
+
+      if (!clientRes.data) return null;
+
+      const client = mapClientRow(clientRes.data);
+      const bookingRows = bookingsRes.data ?? [];
+      const bookingIds = bookingRows.map((row) => row.id);
+      const activeProgramRow = (programsRes.data ?? [])[0] ?? null;
+      const activeProgram = activeProgramRow ? mapLoyaltyProgramRow(activeProgramRow) : null;
+
+      const [splitsRes, rewardServiceRes] = await Promise.all([
+        bookingIds.length > 0
+          ? supabase.from('payment_splits').select('*').in('booking_id', bookingIds)
+          : Promise.resolve({ data: [] as Tables['payment_splits']['Row'][] }),
+        activeProgram?.rewardServiceId
+          ? supabase
+              .from('services')
+              .select('name')
+              .eq('id', activeProgram.rewardServiceId)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const bookings = bookingRows.map((row) => ({
+        id: row.id,
+        bookingCode: row.booking_code,
+        serviceId: row.service_id,
+        extraServiceIds: Array.isArray(row.extra_service_ids)
+          ? row.extra_service_ids.filter((id): id is string => typeof id === 'string')
+          : [],
+        staffId: row.staff_id,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        status: row.status,
+        source: row.source,
+        subtotalCents: row.subtotal_cents,
+        discountCents: row.discount_cents,
+        totalPriceCents: row.total_price_cents,
+        depositAmountCents: row.deposit_amount_cents,
+        clientNotes: row.client_notes,
+        createdAt: row.created_at,
+      }));
+      const consents = (consentsRes.data ?? []).map(mapConsentRow);
+      const stamps = (stampsRes.data ?? []).map(mapLoyaltyStampRow);
+      const loyaltySummary = activeProgram
+        ? PublicLoyaltySummarySchema.parse(
+            computeClientLoyaltySummary(
+              activeProgram,
+              stamps,
+              client.id,
+              rewardServiceRes.data?.name ?? null,
+            ),
+          )
+        : null;
+      const paymentSplits = (splitsRes.data ?? []).map(mapPaymentSplitRow);
+
+      return {
+        exportedAt: clock.now().toISOString(),
+        privacyPolicyVersion: settingsRes.data?.privacy_policy_version ?? '2026-11',
+        client,
+        bookings,
+        consents,
+        loyaltySummary,
+        paymentSplits,
+      };
+    },
+
     async updateClientNotes(params: UpdateClientNotesInput): Promise<ClientProfile> {
       const supabase = getClient();
       const patch: Tables['clients']['Update'] = {
         updated_at: clock.now().toISOString(),
       };
+      if (params.fullName !== undefined) {
+        const trimmedName = params.fullName.trim();
+        if (trimmedName.length < 2) {
+          throw new PolicyError('INVALID_CLIENT_NAME', 'Escribe el nombre completo.');
+        }
+        patch.full_name = trimmedName;
+      }
+      if (params.phone !== undefined) {
+        const normalizedPhone = normalizePhoneE164(params.phone);
+        const digits = normalizedPhone.replace(/\D/g, '');
+        if (!normalizedPhone.startsWith('+') || digits.length < 8 || digits.length > 15) {
+          throw new PolicyError('INVALID_PHONE', 'Escribe un WhatsApp válido de 10 dígitos.');
+        }
+        const candidates = new Set<string>([normalizedPhone]);
+        const mx10 = /^\+52(\d{10})$/.exec(normalizedPhone);
+        if (mx10) candidates.add(`+521${mx10[1]}`);
+        const mx11 = /^\+521(\d{10})$/.exec(normalizedPhone);
+        if (mx11) candidates.add(`+52${mx11[1]}`);
+
+        const dupRes = await supabase
+          .from('clients')
+          .select('id')
+          .in('phone_e164', Array.from(candidates))
+          .neq('id', params.clientId)
+          .limit(1);
+        if ((dupRes.data ?? []).length > 0) {
+          throw new PolicyError(
+            'CLIENT_EXISTS',
+            'Ya existe otra clienta registrada con ese WhatsApp.',
+          );
+        }
+        patch.phone_e164 = normalizedPhone;
+      }
       if (params.notes !== undefined) patch.notes = params.notes;
       if (params.birthday !== undefined) patch.birthday = params.birthday;
       if (params.email !== undefined) patch.email = params.email;
@@ -3916,9 +4168,62 @@ export function createSupabaseRepository(
         .select('*')
         .single();
       if (error || !data) {
+        if (error?.code === '23505') {
+          throw new PolicyError(
+            'CLIENT_EXISTS',
+            'Ya existe otra clienta registrada con ese WhatsApp.',
+          );
+        }
         throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
       }
       return mapClientRow(data);
+    },
+
+    async deleteClientProfile(clientId: string): Promise<ClientProfile> {
+      const cleanId = clientId.trim();
+      if (!cleanId) {
+        throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+      }
+      const supabase = getClient();
+      const [clientRes, bookingsRes, redemptionsRes] = await Promise.all([
+        supabase.from('clients').select('*').eq('id', cleanId).maybeSingle(),
+        supabase.from('bookings').select('id').eq('client_id', cleanId).limit(1),
+        supabase.from('coupon_redemptions').select('id').eq('client_id', cleanId).limit(1),
+      ]);
+      if (!clientRes.data) {
+        throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+      }
+      if (
+        (bookingsRes.data ?? []).length > 0 ||
+        (redemptionsRes.data ?? []).length > 0
+      ) {
+        throw new PolicyError(
+          'CLIENT_HAS_HISTORY',
+          'No se puede eliminar esta clienta porque ya tiene citas o paquetes registrados.',
+        );
+      }
+      const deletedRes = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', cleanId)
+        .select('*')
+        .maybeSingle();
+      if (deletedRes.error) {
+        if (deletedRes.error.code === '23503') {
+          throw new PolicyError(
+            'CLIENT_HAS_HISTORY',
+            'No se puede eliminar esta clienta porque ya tiene citas o paquetes registrados.',
+          );
+        }
+        throw new PolicyError(
+          'CLIENT_DELETE_FAILED',
+          deletedRes.error.message || 'No se pudo eliminar la clienta.',
+        );
+      }
+      if (!deletedRes.data) {
+        throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+      }
+      return mapClientRow(deletedRes.data);
     },
 
     async addWaitlistEntry(
@@ -4025,6 +4330,18 @@ export function createSupabaseRepository(
     ): Promise<Coupon> {
       const supabase = getClient();
       const normalizedCode = input.code.trim().toUpperCase();
+      const duplicateRes = await supabase
+        .from('coupons')
+        .select('id')
+        .eq('code', normalizedCode)
+        .maybeSingle();
+      if (duplicateRes.data && duplicateRes.data.id !== input.id) {
+        throw new PolicyError(
+          'COUPON_CODE_EXISTS',
+          'Ya existe otro cupón o tarjeta con ese código.',
+        );
+      }
+
       const payload = {
         code: normalizedCode,
         kind: input.kind,
@@ -4040,16 +4357,24 @@ export function createSupabaseRepository(
         recipient_name: input.recipientName,
         is_active: input.isActive,
       };
-      const query = input.id
-        ? supabase
+      const { data, error } = input.id
+        ? await supabase
             .from('coupons')
             .update(payload)
             .eq('id', input.id)
             .select('*')
-            .single()
-        : supabase.from('coupons').insert(payload).select('*').single();
+            .maybeSingle()
+        : await supabase.from('coupons').insert(payload).select('*').single();
 
-      const { data, error } = await query;
+      if (error?.code === '23505') {
+        throw new PolicyError(
+          'COUPON_CODE_EXISTS',
+          'Ya existe otro cupón o tarjeta con ese código.',
+        );
+      }
+      if (!error && !data && input.id) {
+        throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+      }
       if (error || !data) {
         throw new PolicyError(
           'COUPON_UPSERT_FAILED',
@@ -4217,6 +4542,92 @@ export function createSupabaseRepository(
         );
       }
       return mapCashEntryRow(data);
+    },
+
+    async updateCashEntry(
+      id: string,
+      patch: UpdateCashEntryInput,
+    ): Promise<CashRegisterEntry> {
+      const cleanId = id.trim();
+      if (!cleanId) {
+        throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+      }
+      const supabase = getClient();
+      const existingRes = await supabase
+        .from('cash_register_entries')
+        .select('*')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (!existingRes.data) {
+        throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+      }
+      if (existingRes.data.booking_id !== null) {
+        throw new PolicyError(
+          'BOOKING_LINKED_ENTRY_IMMUTABLE',
+          'Los cobros vinculados a una cita no se pueden editar ni eliminar manualmente.',
+        );
+      }
+
+      const dbPatch: Tables['cash_register_entries']['Update'] = {};
+      if (patch.staffId !== undefined) dbPatch.staff_id = patch.staffId;
+      if (patch.entryType !== undefined) dbPatch.entry_type = patch.entryType;
+      if (patch.description !== undefined) dbPatch.description = patch.description.trim();
+      if (patch.amountCents !== undefined) dbPatch.amount_cents = patch.amountCents;
+      if (patch.tipCents !== undefined) dbPatch.tip_cents = patch.tipCents;
+      if (patch.commissionCents !== undefined) {
+        dbPatch.commission_cents = patch.commissionCents;
+      }
+      if (patch.paymentMethod !== undefined) dbPatch.payment_method = patch.paymentMethod;
+
+      const { data, error } = await supabase
+        .from('cash_register_entries')
+        .update(dbPatch)
+        .eq('id', cleanId)
+        .is('booking_id', null)
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError(
+          'CASH_ENTRY_UPDATE_FAILED',
+          error?.message ?? 'No se pudo actualizar el movimiento de caja.',
+        );
+      }
+      return mapCashEntryRow(data);
+    },
+
+    async deleteCashEntry(id: string): Promise<CashRegisterEntry> {
+      const cleanId = id.trim();
+      if (!cleanId) {
+        throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+      }
+      const supabase = getClient();
+      const existingRes = await supabase
+        .from('cash_register_entries')
+        .select('*')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (!existingRes.data) {
+        throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+      }
+      if (existingRes.data.booking_id !== null) {
+        throw new PolicyError(
+          'BOOKING_LINKED_ENTRY_IMMUTABLE',
+          'Los cobros vinculados a una cita no se pueden editar ni eliminar manualmente.',
+        );
+      }
+
+      const { error } = await supabase
+        .from('cash_register_entries')
+        .delete()
+        .eq('id', cleanId)
+        .is('booking_id', null);
+      if (error) {
+        throw new PolicyError(
+          'CASH_ENTRY_DELETE_FAILED',
+          error.message || 'No se pudo eliminar el movimiento de caja.',
+        );
+      }
+      return mapCashEntryRow(existingRes.data);
     },
 
     async updateWorkflow(

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -15,17 +15,32 @@ import {
   assignClientPackageRequest,
   cancelClientPackageRequest,
   createClientProfileRequest,
+  deleteClientProfileRequest,
   dispatchRetentionCampaignRequest,
   redeemClientPackageSessionRequest,
   saveClientProfileRequest,
 } from '@/components/admin/clientas/clientasActions';
+import {
+  computeClientDirectoryKpis,
+  computeClientMetricsMap,
+  filterAndSortClients,
+  type ClientDirectoryFilter,
+  type ClientDirectorySort,
+} from '@/components/admin/clientas/clientasMetrics';
 import { useClientasData } from '@/components/admin/clientas/useClientasData';
 import type {
   BannerNotice,
   ClientPackageRow,
   ClientsTab,
 } from '@/components/admin/clientas/clientasTypes';
-import { PageHeader, PageSkeleton, SkeletonBlock } from '@/components/ui';
+import {
+  MetricGrid,
+  PageHeader,
+  PageSkeleton,
+  SkeletonBlock,
+  type MetricTileItem,
+} from '@/components/ui';
+import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { invalidateAdminCache } from '@/lib/hooks/useAdminCache';
 import type { ClientProfile } from '@/lib/types';
 
@@ -74,6 +89,9 @@ export default function AdminClientsPage() {
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<ClientProfile | null>(null);
+  const [directoryFilter, setDirectoryFilter] = useState<ClientDirectoryFilter>('all');
+  const [directorySort, setDirectorySort] = useState<ClientDirectorySort>('alpha');
+
   const {
     data,
     canManageClients,
@@ -81,8 +99,6 @@ export default function AdminClientsPage() {
     setActiveTab,
     query,
     setQuery,
-    onlyBirthdays,
-    setOnlyBirthdays,
     inactiveDays,
     setInactiveDays,
     activeCatalogPackages,
@@ -93,11 +109,8 @@ export default function AdminClientsPage() {
     dispatchedTodayKeys,
     comebackCount,
     loyaltyHighlightsCount,
-    visitCountByClient,
     noShowStatsByClient,
     loyaltyByClientId,
-    rows,
-    groupedByLetter,
     returningClients,
     packagesByClientId,
     packagesLoading,
@@ -121,17 +134,117 @@ export default function AdminClientsPage() {
   const [redeemingPkgId, setRedeemingPkgId] = useState<string | null>(null);
   const [cancelingPkgId, setCancelingPkgId] = useState<string | null>(null);
 
+  const touchUpDays = normalizeTouchUpDays(data?.settings.landingContent?.touchUpDays);
+  const noShowThreshold = data?.settings.noShowDepositThreshold ?? 2;
+  const currentMonth = data ? data.serverTodayKey.slice(5, 7) : '';
+  const nowMs = data ? Date.parse(data.serverNowIso) || 0 : 0;
+
+  const metricsByClientId = useMemo(
+    () =>
+      data
+        ? computeClientMetricsMap({
+            clients: data.clients,
+            bookings: data.bookings,
+            clientPackagesByClientId: packagesByClientId,
+            loyaltyByClientId,
+            noShowStatsByClient,
+            noShowThreshold,
+            currentMonth,
+            nowMs,
+            inactiveDaysThreshold: touchUpDays,
+          })
+        : new Map(),
+    [
+      data,
+      packagesByClientId,
+      loyaltyByClientId,
+      noShowStatsByClient,
+      noShowThreshold,
+      currentMonth,
+      nowMs,
+      touchUpDays,
+    ],
+  );
+
+  const directoryKpis = useMemo(
+    () =>
+      data
+        ? computeClientDirectoryKpis(data.clients, metricsByClientId)
+        : {
+            totalClients: 0,
+            vipClients: 0,
+            packageOrRewardClients: 0,
+            alertOrInactiveClients: 0,
+          },
+    [data, metricsByClientId],
+  );
+
+  const filteredClients = useMemo(
+    () =>
+      data
+        ? filterAndSortClients({
+            clients: data.clients,
+            metricsByClientId,
+            query,
+            filter: directoryFilter,
+            sort: directorySort,
+          })
+        : [],
+    [data, metricsByClientId, query, directoryFilter, directorySort],
+  );
+
+  const lastServiceByClientId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const [clientId, metrics] of metricsByClientId.entries()) {
+      map.set(clientId, metrics.lastServiceName);
+    }
+    return map;
+  }, [metricsByClientId]);
+
   if (!data || !data.retention) {
-    return <PageSkeleton kpiCount={0} withSplit={false} ariaLabel="Cargando clientas" />;
+    return <PageSkeleton kpiCount={4} withSplit={false} ariaLabel="Cargando clientas" />;
   }
 
   const tz = data.settings.timezone || 'America/Mexico_City';
   const currency = data.settings.currency;
-  const noShowThreshold = data.settings.noShowDepositThreshold ?? 2;
   const nearRewardClients = data.nearRewardClients;
+  const selectedClient = selected
+    ? (data.clients.find((client) => client.id === selected.id) ?? selected)
+    : null;
+
+  const clientKpiItems: MetricTileItem[] = [
+    {
+      id: 'total-clients',
+      label: 'Total clientas',
+      value: String(directoryKpis.totalClients),
+      sub: `${returningClients.length} frecuentes (2+ visitas)`,
+    },
+    {
+      id: 'vip-clients',
+      label: 'Frecuentes / VIP',
+      value: String(directoryKpis.vipClients),
+      sub: '3+ visitas o mayor consumo',
+      tone: directoryKpis.vipClients > 0 ? 'accent' : 'default',
+    },
+    {
+      id: 'package-reward',
+      label: 'Paquete o premio',
+      value: String(directoryKpis.packageOrRewardClients),
+      sub: `${activeClientPackages.length} ${activeClientPackages.length === 1 ? 'paquete' : 'paquetes'} · ${nearRewardClients.length} cerca de premio`,
+    },
+    {
+      id: 'alerts-inactive',
+      label: 'Alertas / inactivas',
+      value: String(directoryKpis.alertOrInactiveClients),
+      sub: `Sin visita +${touchUpDays} d o alertas`,
+      tone: directoryKpis.alertOrInactiveClients > 0 ? 'warning' : 'success',
+    },
+  ];
 
   const handleSaveClient = async (input: {
     clientId: string;
+    fullName?: string;
+    phone?: string;
     notes: string;
     birthday: string | null;
     email: string | null;
@@ -144,6 +257,18 @@ export default function AdminClientsPage() {
     invalidateAdminCache('/api/admin/clients');
     await refresh();
     return null;
+  };
+
+  const handleDeleteClient = async (
+    clientId: string,
+  ): Promise<{ ok: boolean; error?: string; code?: string }> => {
+    const result = await deleteClientProfileRequest(clientId);
+    if (!result.ok) return result;
+    setSelected(null);
+    setBannerMsg({ status: 'success', title: 'Clienta eliminada del directorio.' });
+    invalidateAdminCache('/api/admin/clients');
+    await refresh();
+    return result;
   };
 
   const handleCreateClient = async (input: {
@@ -232,162 +357,176 @@ export default function AdminClientsPage() {
 
   return (
     <AdminAccessGuard role={data.session.user.role} section="clients" sectionLabel="Clientas">
-    <VStack gap={5} className="ad-page fx-fade-up">
-      <PageHeader
-        title="Clientas"
-        subtitle="Todas tus clientas y a quién conviene escribirle."
-        actions={
-          canManageClients ? (
-            <Button
-              type="button"
-              label="Nueva clienta"
-              variant="primary"
-              size="sm"
-              icon={<UserPlus size={15} aria-hidden="true" />}
-              onClick={() => setCreateOpen(true)}
-            />
-          ) : undefined
-        }
-      />
-
-      {bannerMsg ? (
-        <Banner
-          status={bannerMsg.status}
-          role={bannerMsg.status === 'error' ? 'alert' : 'status'}
-          title={bannerMsg.title}
-          endContent={
-            bannerMsg.whatsappUrl ? (
+      <VStack gap={5} className="ad-page fx-fade-up">
+        <PageHeader
+          title="Clientas"
+          subtitle="Historial, ficha técnica de uñas, seguimiento y retención en un solo lugar."
+          actions={
+            canManageClients ? (
               <Button
-                label="Abrir WhatsApp"
+                type="button"
+                label="Nueva clienta"
                 variant="primary"
                 size="sm"
-                icon={<MessageCircle size={14} aria-hidden="true" />}
-                href={bannerMsg.whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                icon={<UserPlus size={15} aria-hidden="true" />}
+                onClick={() => setCreateOpen(true)}
               />
             ) : undefined
           }
-          isDismissable
-          onDismiss={() => setBannerMsg(null)}
         />
-      ) : null}
 
-      <TabList value={activeTab} onChange={(v) => setActiveTab(v as ClientsTab)} hasDivider>
-        <Tab value="directory" label={`Directorio (${rows.length})`} />
-        <Tab
-          value="retention"
-          label={
-            comebackCount > 0
-              ? `Traerlas de vuelta (${comebackCount})`
-              : 'Traerlas de vuelta'
-          }
-        />
-        <Tab
-          value="loyalty"
-          label={
-            loyaltyHighlightsCount > 0
-              ? `Sellos y paquetes (${loyaltyHighlightsCount})`
-              : 'Sellos y paquetes'
-          }
-        />
-      </TabList>
+        {bannerMsg ? (
+          <Banner
+            status={bannerMsg.status}
+            role={bannerMsg.status === 'error' ? 'alert' : 'status'}
+            title={bannerMsg.title}
+            endContent={
+              bannerMsg.whatsappUrl ? (
+                <Button
+                  label="Abrir WhatsApp"
+                  variant="primary"
+                  size="sm"
+                  icon={<MessageCircle size={14} aria-hidden="true" />}
+                  href={bannerMsg.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              ) : undefined
+            }
+            isDismissable
+            onDismiss={() => setBannerMsg(null)}
+          />
+        ) : null}
 
-      {activeTab === 'directory' ? (
-        <ClientDirectoryTab
-          query={query}
-          onQueryChange={setQuery}
-          onlyBirthdays={onlyBirthdays}
-          onOnlyBirthdaysChange={setOnlyBirthdays}
-          groupedByLetter={groupedByLetter}
-          visitCountByClient={visitCountByClient}
-          noShowStatsByClient={noShowStatsByClient}
-          loyaltyByClientId={loyaltyByClientId}
-          packagesByClientId={packagesByClientId}
-          noShowThreshold={noShowThreshold}
-          salonName={data.settings.name}
-          canManageClients={canManageClients}
-          onSelectClient={setSelected}
-          onOpenNewClient={() => setCreateOpen(true)}
+        <MetricGrid
+          ariaLabel="Resumen de clientas"
+          className="ad-dash-kpis"
+          cols={4}
+          items={clientKpiItems}
         />
-      ) : activeTab === 'retention' ? (
-        <ClientRetentionTab
-          canManageClients={canManageClients}
-          salonName={data.settings.name}
-          tz={tz}
-          inactiveDays={inactiveDays}
-          onInactiveDaysChange={setInactiveDays}
-          displayedInactiveClients={displayedInactiveClients}
-          inactiveLoading={inactiveLoading}
-          inactiveError={inactiveError}
-          campaigns={campaigns}
-          campaignsLoading={campaignsLoading}
-          dispatchedTodayKeys={dispatchedTodayKeys}
-          dispatchingKey={dispatchingKey}
-          nearRewardCount={nearRewardClients.length}
-          returningClients={returningClients}
-          onOpenLoyalty={() => setActiveTab('loyalty')}
-          onDispatchCampaign={handleDispatchCampaign}
-        />
-      ) : (
-        <ClientLoyaltyTab
-          nearRewardClients={nearRewardClients}
-          loyaltyProgram={data.loyaltyProgram}
-          clients={data.clients}
-          clientPackages={clientPackages}
-          activeClientPackagesCount={activeClientPackages.length}
-          activeCatalogPackages={activeCatalogPackages}
-          packagesLoading={packagesLoading}
-          canManageClients={canManageClients}
-          salonName={data.settings.name}
-          tz={tz}
-          currency={currency}
-          assigningPkg={assigningPkg}
-          redeemingPkgId={redeemingPkgId}
-          cancelingPkgId={cancelingPkgId}
-          onOpenClientById={openClientById}
-          onAssignPackage={handleAssignPackage}
-          onRedeemPackageSession={handleRedeemPackageSession}
-          onCancelPackage={handleCancelPackage}
-        />
-      )}
 
-      {createOpen ? (
-        <NewClientDialog
-          isOpen={createOpen}
-          onOpenChange={setCreateOpen}
-          onCreateClient={handleCreateClient}
-        />
-      ) : null}
+        <TabList value={activeTab} onChange={(v) => setActiveTab(v as ClientsTab)} hasDivider>
+          <Tab value="directory" label={`Directorio (${filteredClients.length})`} />
+          <Tab
+            value="retention"
+            label={
+              comebackCount > 0
+                ? `Traerlas de vuelta (${comebackCount})`
+                : 'Traerlas de vuelta'
+            }
+          />
+          <Tab
+            value="loyalty"
+            label={
+              loyaltyHighlightsCount > 0
+                ? `Sellos y paquetes (${loyaltyHighlightsCount})`
+                : 'Sellos y paquetes'
+            }
+          />
+        </TabList>
 
-      {selected ? (
-        <ClientProfileDialog
-          key={selected.id}
-          client={selected}
-          onClose={() => setSelected(null)}
-          salonName={data.settings.name}
-          tz={tz}
-          noShowThreshold={noShowThreshold}
-          noShowStats={noShowStatsByClient.get(selected.id) ?? null}
-          canManageClients={canManageClients}
-          loyalty={loyaltyByClientId.get(selected.id) ?? null}
-          clientPackages={packagesByClientId.get(selected.id) ?? []}
-          activeCatalogPackages={activeCatalogPackages}
-          bookings={data.bookings}
-          assigningPkg={assigningPkg}
-          redeemingPkgId={redeemingPkgId}
-          cancelingPkgId={cancelingPkgId}
-          packageNotice={
-            bannerMsg ? { status: bannerMsg.status, title: bannerMsg.title } : null
-          }
-          onDismissPackageNotice={() => setBannerMsg(null)}
-          onSaveClient={handleSaveClient}
-          onAssignPackage={handleAssignPackage}
-          onRedeemPackageSession={handleRedeemPackageSession}
-          onCancelPackage={handleCancelPackage}
-        />
-      ) : null}
-    </VStack>
+        {activeTab === 'directory' ? (
+          <ClientDirectoryTab
+            query={query}
+            onQueryChange={setQuery}
+            filter={directoryFilter}
+            onFilterChange={setDirectoryFilter}
+            sort={directorySort}
+            onSortChange={setDirectorySort}
+            clients={filteredClients}
+            metricsByClientId={metricsByClientId}
+            loyaltyByClientId={loyaltyByClientId}
+            tz={tz}
+            currency={currency}
+            salonName={data.settings.name}
+            canManageClients={canManageClients}
+            onSelectClient={setSelected}
+            onOpenNewClient={() => setCreateOpen(true)}
+          />
+        ) : activeTab === 'retention' ? (
+          <ClientRetentionTab
+            canManageClients={canManageClients}
+            salonName={data.settings.name}
+            tz={tz}
+            touchUpDays={touchUpDays}
+            inactiveDays={inactiveDays}
+            onInactiveDaysChange={setInactiveDays}
+            displayedInactiveClients={displayedInactiveClients}
+            lastServiceByClientId={lastServiceByClientId}
+            inactiveLoading={inactiveLoading}
+            inactiveError={inactiveError}
+            campaigns={campaigns}
+            campaignsLoading={campaignsLoading}
+            dispatchedTodayKeys={dispatchedTodayKeys}
+            dispatchingKey={dispatchingKey}
+            nearRewardCount={nearRewardClients.length}
+            returningClients={returningClients}
+            onOpenClientById={openClientById}
+            onOpenLoyalty={() => setActiveTab('loyalty')}
+            onDispatchCampaign={handleDispatchCampaign}
+          />
+        ) : (
+          <ClientLoyaltyTab
+            nearRewardClients={nearRewardClients}
+            loyaltyProgram={data.loyaltyProgram}
+            clients={data.clients}
+            clientPackages={clientPackages}
+            activeClientPackagesCount={activeClientPackages.length}
+            activeCatalogPackages={activeCatalogPackages}
+            packagesLoading={packagesLoading}
+            canManageClients={canManageClients}
+            salonName={data.settings.name}
+            tz={tz}
+            currency={currency}
+            assigningPkg={assigningPkg}
+            redeemingPkgId={redeemingPkgId}
+            cancelingPkgId={cancelingPkgId}
+            onOpenClientById={openClientById}
+            onAssignPackage={handleAssignPackage}
+            onRedeemPackageSession={handleRedeemPackageSession}
+            onCancelPackage={handleCancelPackage}
+          />
+        )}
+
+        {createOpen ? (
+          <NewClientDialog
+            isOpen={createOpen}
+            onOpenChange={setCreateOpen}
+            onCreateClient={handleCreateClient}
+          />
+        ) : null}
+
+        {selectedClient ? (
+          <ClientProfileDialog
+            key={selectedClient.id}
+            client={selectedClient}
+            onClose={() => setSelected(null)}
+            salonName={data.settings.name}
+            tz={tz}
+            currency={currency}
+            metrics={metricsByClientId.get(selectedClient.id) ?? null}
+            noShowThreshold={noShowThreshold}
+            noShowStats={noShowStatsByClient.get(selectedClient.id) ?? null}
+            canManageClients={canManageClients}
+            loyalty={loyaltyByClientId.get(selectedClient.id) ?? null}
+            clientPackages={packagesByClientId.get(selectedClient.id) ?? []}
+            activeCatalogPackages={activeCatalogPackages}
+            bookings={data.bookings}
+            assigningPkg={assigningPkg}
+            redeemingPkgId={redeemingPkgId}
+            cancelingPkgId={cancelingPkgId}
+            packageNotice={
+              bannerMsg ? { status: bannerMsg.status, title: bannerMsg.title } : null
+            }
+            onDismissPackageNotice={() => setBannerMsg(null)}
+            onSaveClient={handleSaveClient}
+            onDeleteClient={handleDeleteClient}
+            onAssignPackage={handleAssignPackage}
+            onRedeemPackageSession={handleRedeemPackageSession}
+            onCancelPackage={handleCancelPackage}
+          />
+        ) : null}
+      </VStack>
     </AdminAccessGuard>
   );
 }

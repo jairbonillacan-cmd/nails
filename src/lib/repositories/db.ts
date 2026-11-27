@@ -135,14 +135,19 @@ import {
   PolicyError,
   SlotConflictError,
   type CleanupExpiredSlotHoldsResult,
+  type ClientArcoExport,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type InactiveClientRecord,
+  type NearRewardClientRecord,
   type OutboxEventRecord,
   type PublicBootstrapData,
   type QueryAvailabilityInput,
   type RegisterMediaAssetInput,
   type SalonRepository,
   type SlotHoldResult,
+  type UpdateCashEntryInput,
+  type UpdateClientNotesInput,
 } from './port';
 
 export { PolicyError, SlotConflictError };
@@ -4304,10 +4309,11 @@ export async function upsertServicePackage(input: {
     if (!service) {
       throw new PolicyError('SERVICE_NOT_FOUND', 'Servicio no encontrado para este paquete.');
     }
-    const existing = input.id
-      ? cols.servicePackages.find((p) => p.id === input.id)
-      : null;
-    if (existing) {
+    if (input.id) {
+      const existing = cols.servicePackages.find((p) => p.id === input.id);
+      if (!existing) {
+        throw new PolicyError('PACKAGE_NOT_FOUND', 'Paquete no encontrado.');
+      }
       existing.name = input.name.trim();
       existing.description = input.description?.trim() ?? existing.description;
       existing.serviceId = input.serviceId;
@@ -5222,55 +5228,34 @@ function computeNearRewardClientsFromDb(db: Readonly<DemoDatabase>): Array<{
   });
 }
 
-export function getNearRewardClients(): Array<{
-  clientId: string;
-  fullName: string;
-  phoneE164: string;
-  instagramHandle: string | null;
-  summary: PublicLoyaltySummaryDTO;
-}> {
+export async function listClientsAsync(): Promise<ClientProfile[]> {
+  return getRepository().listClients();
+}
+
+export function getNearRewardClients(): NearRewardClientRecord[] {
   return computeNearRewardClientsFromDb(getSnapshot());
 }
 
 export async function getNearRewardClientsAsync(
   snapshot?: Readonly<DemoDatabase>,
-): Promise<
-  Array<{
-    clientId: string;
-    fullName: string;
-    phoneE164: string;
-    instagramHandle: string | null;
-    summary: PublicLoyaltySummaryDTO;
-  }>
-> {
-  const db = snapshot ?? (await getRepository().getSnapshot());
-  return computeNearRewardClientsFromDb(db);
+): Promise<NearRewardClientRecord[]> {
+  if (snapshot) {
+    return computeNearRewardClientsFromDb(snapshot);
+  }
+  return getRepository().getNearRewardClients();
 }
 
 function computeInactiveClientsFromDb(
   db: Readonly<DemoDatabase>,
   inactiveDays: number,
-): Array<{
-  clientId: string;
-  fullName: string;
-  phoneE164: string;
-  instagramHandle: string | null;
-  lastVisitAt: string | null;
-  daysSinceLastVisit: number | null;
-  totalVisits: number;
-}> {
-  const nowMs = Date.now();
+  nowMs = Date.now(),
+): InactiveClientRecord[] {
   const cutoffMs = nowMs - inactiveDays * 86_400_000;
+  const serviceNameById = new Map<string, string>(
+    db.services.map((srv) => [srv.id, srv.name]),
+  );
 
-  const inactive: Array<{
-    clientId: string;
-    fullName: string;
-    phoneE164: string;
-    instagramHandle: string | null;
-    lastVisitAt: string | null;
-    daysSinceLastVisit: number | null;
-    totalVisits: number;
-  }> = [];
+  const inactive: InactiveClientRecord[] = [];
 
   for (const client of db.clients) {
     const clientBookings = db.bookings.filter(
@@ -5282,6 +5267,7 @@ function computeInactiveClientsFromDb(
     if (hasRecentOrUpcoming) continue;
 
     let lastVisitMs: number | null = null;
+    let lastServiceId: string | null = null;
     let totalVisits = 0;
     for (const b of clientBookings) {
       const startMs = new Date(b.startAt).getTime();
@@ -5289,6 +5275,7 @@ function computeInactiveClientsFromDb(
         totalVisits += 1;
         if (lastVisitMs === null || startMs > lastVisitMs) {
           lastVisitMs = startMs;
+          lastServiceId = b.serviceId;
         }
       }
     }
@@ -5302,6 +5289,8 @@ function computeInactiveClientsFromDb(
       daysSinceLastVisit:
         lastVisitMs !== null ? Math.floor((nowMs - lastVisitMs) / 86_400_000) : null,
       totalVisits,
+      lastServiceId,
+      lastServiceName: lastServiceId ? (serviceNameById.get(lastServiceId) ?? null) : null,
     });
   }
 
@@ -5313,37 +5302,25 @@ function computeInactiveClientsFromDb(
   });
 }
 
-export function getInactiveClients(inactiveDays: number): Array<{
-  clientId: string;
-  fullName: string;
-  phoneE164: string;
-  instagramHandle: string | null;
-  lastVisitAt: string | null;
-  daysSinceLastVisit: number | null;
-  totalVisits: number;
-}> {
+export function getInactiveClients(inactiveDays: number): InactiveClientRecord[] {
   return computeInactiveClientsFromDb(getSnapshot(), inactiveDays);
 }
 
 export async function getInactiveClientsAsync(
   inactiveDays: number,
   snapshot?: Readonly<DemoDatabase>,
-): Promise<
-  Array<{
-    clientId: string;
-    fullName: string;
-    phoneE164: string;
-    instagramHandle: string | null;
-    lastVisitAt: string | null;
-    daysSinceLastVisit: number | null;
-    totalVisits: number;
-  }>
-> {
-  const db = snapshot ?? (await getRepository().getSnapshot());
-  return computeInactiveClientsFromDb(db, inactiveDays);
+): Promise<InactiveClientRecord[]> {
+  if (snapshot) {
+    return computeInactiveClientsFromDb(snapshot, inactiveDays);
+  }
+  return getRepository().getInactiveClients(inactiveDays);
 }
 
-function computeClientArcoExportFromDb(db: Readonly<DemoDatabase>, clientId: string) {
+function computeClientArcoExportFromDb(
+  db: Readonly<DemoDatabase>,
+  clientId: string,
+  exportedAtIso = new Date().toISOString(),
+): ClientArcoExport | null {
   const client = db.clients.find((c) => c.id === clientId);
   if (!client) return null;
 
@@ -5374,7 +5351,7 @@ function computeClientArcoExportFromDb(db: Readonly<DemoDatabase>, clientId: str
   );
 
   return {
-    exportedAt: new Date().toISOString(),
+    exportedAt: exportedAtIso,
     privacyPolicyVersion: db.settings.privacyPolicyVersion ?? '2026-11',
     client,
     bookings,
@@ -5384,13 +5361,14 @@ function computeClientArcoExportFromDb(db: Readonly<DemoDatabase>, clientId: str
   };
 }
 
-export function getClientArcoExport(clientId: string) {
+export function getClientArcoExport(clientId: string): ClientArcoExport | null {
   return computeClientArcoExportFromDb(getSnapshot(), clientId);
 }
 
-export async function getClientArcoExportAsync(clientId: string) {
-  const db = await getRepository().getSnapshot();
-  return computeClientArcoExportFromDb(db, clientId);
+export async function getClientArcoExportAsync(
+  clientId: string,
+): Promise<ClientArcoExport | null> {
+  return getRepository().getClientArcoExport(clientId);
 }
 
 export async function upsertStaffMember(
@@ -5400,13 +5378,25 @@ export async function upsertStaffMember(
     return createSupabaseRepository().upsertStaffMember(input);
   }
   return withWriteLock((db) => {
-    const existing = input.id ? db.staff.find((s) => s.id === input.id) : null;
-    if (existing) {
-      Object.assign(existing, input);
-      if (typeof input.roleTitle === 'string' && !input.roleTitle.trim()) {
-        existing.roleTitle = 'Nail Artist';
+    if (input.id) {
+      const existing = db.staff.find((s) => s.id === input.id);
+      if (!existing) {
+        throw new PolicyError('STAFF_NOT_FOUND', 'Profesional no encontrada.');
       }
-      return existing;
+      if (input.name !== undefined) existing.name = input.name.trim();
+      if (input.roleTitle !== undefined) {
+        existing.roleTitle = input.roleTitle.trim() || 'Nail Artist';
+      }
+      if (input.bio !== undefined) existing.bio = input.bio.trim();
+      if (input.avatarUrl !== undefined) existing.avatarUrl = input.avatarUrl;
+      if (input.bookingSlug !== undefined) existing.bookingSlug = input.bookingSlug;
+      if (input.commissionPercent !== undefined) {
+        existing.commissionPercent = input.commissionPercent;
+      }
+      if (input.isActive !== undefined) existing.isActive = input.isActive;
+      if (input.displayOrder !== undefined) existing.displayOrder = input.displayOrder;
+      if (input.serviceIds !== undefined) existing.serviceIds = [...input.serviceIds];
+      return { ...existing, serviceIds: [...existing.serviceIds] };
     }
     const created: StaffMember = {
       id: `staff-${crypto.randomUUID().slice(0, 8)}`,
@@ -5520,7 +5510,7 @@ export async function createClientProfile(params: {
   }
   return withWriteLock((db) => {
     const phoneE164 = normalizePhoneE164(params.phone);
-    const existing = db.clients.find((c) => c.phoneE164 === phoneE164);
+    const existing = db.clients.find((c) => phonesMatchE164(c.phoneE164, phoneE164));
     if (existing) {
       throw new PolicyError(
         'CLIENT_EXISTS',
@@ -5545,13 +5535,9 @@ export async function createClientProfile(params: {
   });
 }
 
-export async function updateClientNotes(params: {
-  clientId: string;
-  notes?: string;
-  birthday?: string | null;
-  email?: string | null;
-  instagramHandle?: string | null;
-}): Promise<ClientProfile> {
+export async function updateClientNotes(
+  params: UpdateClientNotesInput,
+): Promise<ClientProfile> {
   if (isSupabaseEnabled()) {
     return createSupabaseRepository().updateClientNotes(params);
   }
@@ -5562,6 +5548,30 @@ export async function updateClientNotes(params: {
   return withWriteLock((db) => {
     const client = db.clients.find((c) => c.id === params.clientId);
     if (!client) throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+    if (params.fullName !== undefined) {
+      const trimmedName = params.fullName.trim();
+      if (trimmedName.length < 2) {
+        throw new PolicyError('INVALID_CLIENT_NAME', 'Escribe el nombre completo.');
+      }
+      client.fullName = trimmedName;
+    }
+    if (params.phone !== undefined) {
+      const normalizedPhone = normalizePhoneE164(params.phone);
+      const digits = normalizedPhone.replace(/\D/g, '');
+      if (!normalizedPhone.startsWith('+') || digits.length < 8 || digits.length > 15) {
+        throw new PolicyError('INVALID_PHONE', 'Escribe un WhatsApp válido de 10 dígitos.');
+      }
+      const duplicate = db.clients.find(
+        (c) => c.id !== params.clientId && phonesMatchE164(c.phoneE164, normalizedPhone),
+      );
+      if (duplicate) {
+        throw new PolicyError(
+          'CLIENT_EXISTS',
+          'Ya existe otra clienta registrada con ese WhatsApp.',
+        );
+      }
+      client.phoneE164 = normalizedPhone;
+    }
     if (params.notes !== undefined) client.notes = params.notes;
     if (params.birthday !== undefined) client.birthday = params.birthday;
     if (params.email !== undefined) client.email = params.email;
@@ -5569,7 +5579,53 @@ export async function updateClientNotes(params: {
       client.instagramHandle = normalizedInstagram;
     }
     client.updatedAt = new Date().toISOString();
-    return client;
+    return { ...client };
+  });
+}
+
+export async function deleteClientProfile(clientId: string): Promise<ClientProfile> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().deleteClientProfile(clientId);
+  }
+  const cleanId = clientId.trim();
+  if (!cleanId) {
+    throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+  }
+  return withWriteLock((db) => {
+    const idx = db.clients.findIndex((c) => c.id === cleanId);
+    const target = idx === -1 ? undefined : db.clients[idx];
+    if (!target) {
+      throw new PolicyError('CLIENT_NOT_FOUND', 'Clienta no encontrada.');
+    }
+    const hasBookings = db.bookings.some((b) => b.clientId === cleanId);
+    const hasPackages = (db.clientPackages ?? []).some((p) => p.clientId === cleanId);
+    const hasRedemptions = (db.couponRedemptions ?? []).some((r) => r.clientId === cleanId);
+    if (hasBookings || hasPackages || hasRedemptions) {
+      throw new PolicyError(
+        'CLIENT_HAS_HISTORY',
+        'No se puede eliminar esta clienta porque ya tiene citas o paquetes registrados.',
+      );
+    }
+    const removed: ClientProfile = { ...target };
+    db.clients.splice(idx, 1);
+    if (db.consents) {
+      db.consents = db.consents.filter((c) => c.clientId !== cleanId);
+    }
+    if (db.loyaltyStamps) {
+      db.loyaltyStamps = db.loyaltyStamps.filter((s) => s.clientId !== cleanId);
+    }
+    if (db.campaignDispatches) {
+      db.campaignDispatches = db.campaignDispatches.filter((d) => d.clientId !== cleanId);
+    }
+    if (db.mediaAssets) {
+      for (const asset of db.mediaAssets) {
+        if (asset.clientId === cleanId) asset.clientId = null;
+      }
+    }
+    for (const review of db.reviews) {
+      if (review.clientId === cleanId) review.clientId = null;
+    }
+    return removed;
   });
 }
 
@@ -5658,22 +5714,55 @@ export async function upsertCoupon(
     return createSupabaseRepository().upsertCoupon(input);
   }
   return withWriteLock((db) => {
-    const existing = input.id ? db.coupons.find((c) => c.id === input.id) : null;
-    if (existing) {
-      Object.assign(existing, { ...input, code: input.code.trim().toUpperCase() });
-      return existing;
+    const normalizedCode = input.code.trim().toUpperCase();
+    const duplicate = db.coupons.find(
+      (c) => c.code.toUpperCase() === normalizedCode && c.id !== input.id,
+    );
+    if (duplicate) {
+      throw new PolicyError(
+        'COUPON_CODE_EXISTS',
+        'Ya existe otro cupón o tarjeta con ese código.',
+      );
     }
+
+    if (input.id) {
+      const existing = db.coupons.find((c) => c.id === input.id);
+      if (!existing) {
+        throw new PolicyError('COUPON_NOT_FOUND', 'Cupón no encontrado.');
+      }
+      existing.code = normalizedCode;
+      existing.kind = input.kind;
+      existing.discountType = input.discountType;
+      existing.discountValue = input.discountValue;
+      existing.remainingBalanceCents =
+        input.kind === 'gift_card'
+          ? (input.remainingBalanceCents ??
+            existing.remainingBalanceCents ??
+            input.discountValue)
+          : null;
+      existing.maxUses = input.maxUses;
+      existing.minSubtotalCents = input.minSubtotalCents;
+      existing.expiresAt = input.expiresAt;
+      existing.recipientName = input.recipientName;
+      existing.isActive = input.isActive;
+      publishRealtimeEvent('settings_updated');
+      return { ...existing };
+    }
+
     const created: Coupon = {
       ...input,
       id: `cp-${crypto.randomUUID().slice(0, 8)}`,
-      code: input.code.trim().toUpperCase(),
+      code: normalizedCode,
       usedCount: 0,
       remainingBalanceCents:
-        input.kind === 'gift_card' ? input.discountValue : null,
+        input.kind === 'gift_card'
+          ? (input.remainingBalanceCents ?? input.discountValue)
+          : null,
       createdAt: new Date().toISOString(),
     };
     db.coupons.unshift(created);
-    return created;
+    publishRealtimeEvent('settings_updated');
+    return { ...created };
   });
 }
 
@@ -5779,6 +5868,67 @@ export async function addCashEntry(
     };
     db.cashEntries.unshift(created);
     return created;
+  });
+}
+
+export async function updateCashEntry(
+  id: string,
+  patch: UpdateCashEntryInput,
+): Promise<CashRegisterEntry> {
+  const cleanId = id.trim();
+  if (!cleanId) {
+    throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+  }
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateCashEntry(cleanId, patch);
+  }
+  return withWriteLock((db) => {
+    const entry = db.cashEntries.find((e) => e.id === cleanId);
+    if (!entry) {
+      throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+    }
+    if (entry.bookingId !== null) {
+      throw new PolicyError(
+        'BOOKING_LINKED_ENTRY_IMMUTABLE',
+        'Los cobros vinculados a una cita no se pueden editar ni eliminar manualmente.',
+      );
+    }
+    if (patch.staffId !== undefined) entry.staffId = patch.staffId;
+    if (patch.entryType !== undefined) entry.entryType = patch.entryType;
+    if (patch.description !== undefined) entry.description = patch.description.trim();
+    if (patch.amountCents !== undefined) entry.amountCents = patch.amountCents;
+    if (patch.tipCents !== undefined) entry.tipCents = patch.tipCents;
+    if (patch.commissionCents !== undefined) entry.commissionCents = patch.commissionCents;
+    if (patch.paymentMethod !== undefined) entry.paymentMethod = patch.paymentMethod;
+    return { ...entry };
+  });
+}
+
+export async function deleteCashEntry(id: string): Promise<CashRegisterEntry> {
+  const cleanId = id.trim();
+  if (!cleanId) {
+    throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+  }
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().deleteCashEntry(cleanId);
+  }
+  return withWriteLock((db) => {
+    const idx = db.cashEntries.findIndex((e) => e.id === cleanId);
+    if (idx === -1) {
+      throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+    }
+    const existing = db.cashEntries[idx];
+    if (!existing) {
+      throw new PolicyError('CASH_ENTRY_NOT_FOUND', 'Movimiento de caja no encontrado.');
+    }
+    if (existing.bookingId !== null) {
+      throw new PolicyError(
+        'BOOKING_LINKED_ENTRY_IMMUTABLE',
+        'Los cobros vinculados a una cita no se pueden editar ni eliminar manualmente.',
+      );
+    }
+    db.cashEntries.splice(idx, 1);
+    return { ...existing };
   });
 }
 
@@ -6582,7 +6732,24 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     deleteDateOverride,
     upsertStaffMember,
     upsertAdminUser,
+    async listClients() {
+      return [...getSnapshot().clients];
+    },
+    async getNearRewardClients() {
+      return computeNearRewardClientsFromDb(getSnapshot());
+    },
+    async getInactiveClients(inactiveDays) {
+      return computeInactiveClientsFromDb(getSnapshot(), inactiveDays, clock.nowMs());
+    },
+    async getClientArcoExport(clientId) {
+      return computeClientArcoExportFromDb(
+        getSnapshot(),
+        clientId,
+        clock.now().toISOString(),
+      );
+    },
     updateClientNotes,
+    deleteClientProfile,
     addWaitlistEntry,
     updateWaitlistStatus,
     submitBookingReview,
@@ -6590,6 +6757,8 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     deleteCoupon,
     adjustInventoryItem,
     addCashEntry,
+    updateCashEntry,
+    deleteCashEntry,
     updateWorkflow,
     updateCalendarConnection,
     upsertGalleryItem,

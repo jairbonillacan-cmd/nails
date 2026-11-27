@@ -58,6 +58,7 @@ function buildMockSupabase(options: {
   serviceOverrides?: Partial<Database['public']['Tables']['services']['Row']>;
   extraServicesRows?: Array<Database['public']['Tables']['services']['Row']>;
   clientOverrides?: Partial<Database['public']['Tables']['clients']['Row']>;
+  extraClientsRows?: Array<Database['public']['Tables']['clients']['Row']>;
   rulesRows?: Array<Database['public']['Tables']['availability_rules']['Row']>;
   bookingsRows?: Array<Database['public']['Tables']['bookings']['Row']>;
   outboxRows?: Array<Database['public']['Tables']['outbox_events']['Row']>;
@@ -67,6 +68,7 @@ function buildMockSupabase(options: {
   loyaltyStampsRows?: Array<Database['public']['Tables']['loyalty_stamps']['Row']>;
   couponsRows?: Array<Database['public']['Tables']['coupons']['Row']>;
   couponRedemptionsRows?: Array<Database['public']['Tables']['coupon_redemptions']['Row']>;
+  cashEntriesRows?: Array<Database['public']['Tables']['cash_register_entries']['Row']>;
   consentsRows?: Array<Database['public']['Tables']['consents']['Row']>;
   auditLogsRows?: Array<Database['public']['Tables']['audit_logs']['Row']>;
   dateOverridesRows?: Array<Database['public']['Tables']['date_overrides']['Row']>;
@@ -90,6 +92,7 @@ function buildMockSupabase(options: {
   const loyaltyStampsRows = options.loyaltyStampsRows ?? [];
   const couponsRows = [...(options.couponsRows ?? [])];
   const couponRedemptionsRows = [...(options.couponRedemptionsRows ?? [])];
+  const cashEntriesRows = [...(options.cashEntriesRows ?? [])];
   const consentsRows = options.consentsRows ?? [];
   const auditLogsRows = options.auditLogsRows ?? [];
   const dateOverridesRows = options.dateOverridesRows ?? [];
@@ -206,6 +209,11 @@ function buildMockSupabase(options: {
     updated_at: '2026-12-01T10:00:00.000Z',
     ...options.clientOverrides,
   };
+
+  const allClientsRows: Array<Database['public']['Tables']['clients']['Row']> = [
+    clientRow,
+    ...(options.extraClientsRows ?? []),
+  ];
 
   const scheduleRow: Database['public']['Tables']['availability_schedules']['Row'] = {
     id: SCHEDULE_ID,
@@ -447,14 +455,58 @@ function buildMockSupabase(options: {
       return jsonResponse(wantsSingleObject ? calendarConnectionsRows[0] ?? null : calendarConnectionsRows);
     }
     if (table === 'clients') {
+      const idParams = url.searchParams.getAll('id');
+      const eqId = idParams.find((v) => v.startsWith('eq.'))?.slice(3);
+      const neqId = idParams.find((v) => v.startsWith('neq.'))?.slice(4);
+      const phoneInParam = url.searchParams.get('phone_e164');
+
       if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
-        const merged = { ...clientRow, ...(rawBody as Record<string, unknown>) };
+        const target = eqId
+          ? allClientsRows.find((c) => c.id === eqId)
+          : allClientsRows[0];
+        if (!target) {
+          return jsonResponse(
+            { code: 'PGRST116', message: 'The result contains 0 rows' },
+            406,
+          );
+        }
+        const merged = { ...target, ...(rawBody as Record<string, unknown>) };
+        Object.assign(target, merged);
         return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      if (method === 'DELETE') {
+        const idx = allClientsRows.findIndex((c) => c.id === eqId);
+        if (idx === -1) {
+          return jsonResponse(
+            { code: 'PGRST116', message: 'The result contains 0 rows' },
+            406,
+          );
+        }
+        const [removed] = allClientsRows.splice(idx, 1);
+        return jsonResponse(wantsSingleObject ? removed : [removed]);
       }
       if (method === 'POST') {
         return jsonResponse(wantsSingleObject ? clientRow : [clientRow], 201);
       }
-      return jsonResponse(wantsSingleObject ? clientRow : [clientRow]);
+      let filtered = [...allClientsRows];
+      if (eqId) filtered = filtered.filter((c) => c.id === eqId);
+      if (neqId) filtered = filtered.filter((c) => c.id !== neqId);
+      if (phoneInParam?.startsWith('in.(') && phoneInParam.endsWith(')')) {
+        const allowed = new Set(
+          phoneInParam
+            .slice(4, -1)
+            .split(',')
+            .map((v) => v.replace(/^"|"$/g, '')),
+        );
+        filtered = filtered.filter((c) => allowed.has(c.phone_e164));
+      }
+      if (wantsSingleObject && filtered.length === 0) {
+        return jsonResponse(
+          { code: 'PGRST116', message: 'The result contains 0 rows' },
+          406,
+        );
+      }
+      return jsonResponse(wantsSingleObject ? filtered[0] : filtered);
     }
     if (table === 'slot_holds') {
       if (method === 'POST') {
@@ -485,7 +537,11 @@ function buildMockSupabase(options: {
       if (url.search.includes('idempotency_key=')) {
         return jsonResponse(null);
       }
-      return jsonResponse(wantsSingleObject ? bookingsRows[0] ?? null : bookingsRows);
+      const clientIdFilter = url.searchParams.get('client_id')?.replace(/^eq\./, '');
+      const filtered = clientIdFilter
+        ? bookingsRows.filter((b) => b.client_id === clientIdFilter)
+        : bookingsRows;
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'payment_splits') {
       if (method === 'POST' && Array.isArray(rawBody)) {
@@ -566,15 +622,56 @@ function buildMockSupabase(options: {
     }
     if (table === 'coupons') {
       const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+      const codeFilter = url.searchParams.get('code')?.replace(/^eq\./, '');
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const target = couponsRows.find((c) => c.id === idFilter);
+        if (!target) {
+          return jsonResponse(wantsSingleObject ? null : []);
+        }
+        const merged = { ...target, ...(rawBody as Record<string, unknown>) };
+        Object.assign(target, merged);
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
       if (method === 'DELETE') {
         const remaining = couponsRows.filter((c) => c.id !== idFilter);
         couponsRows.length = 0;
         couponsRows.push(...remaining);
         return jsonResponse([]);
       }
+      let filtered = [...couponsRows];
+      if (idFilter) filtered = filtered.filter((c) => c.id === idFilter);
+      if (codeFilter) filtered = filtered.filter((c) => c.code === codeFilter);
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
+    if (table === 'cash_register_entries') {
+      const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+      const bookingNullFilter = url.searchParams.get('booking_id');
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const target = cashEntriesRows.find(
+          (e) => e.id === idFilter && (bookingNullFilter !== 'is.null' || e.booking_id === null),
+        );
+        if (!target) {
+          return jsonResponse(
+            { code: 'PGRST116', message: 'The result contains 0 rows' },
+            406,
+          );
+        }
+        const merged = { ...target, ...(rawBody as Record<string, unknown>) };
+        Object.assign(target, merged);
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      if (method === 'DELETE') {
+        const remaining = cashEntriesRows.filter(
+          (e) =>
+            !(e.id === idFilter && (bookingNullFilter !== 'is.null' || e.booking_id === null)),
+        );
+        cashEntriesRows.length = 0;
+        cashEntriesRows.push(...remaining);
+        return jsonResponse([]);
+      }
       const filtered = idFilter
-        ? couponsRows.filter((c) => c.id === idFilter)
-        : couponsRows;
+        ? cashEntriesRows.filter((e) => e.id === idFilter)
+        : cashEntriesRows;
       return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'coupon_redemptions') {
@@ -587,7 +684,11 @@ function buildMockSupabase(options: {
         couponRedemptionsRows.push(...remaining);
         return jsonResponse([]);
       }
-      return jsonResponse(couponRedemptionsRows);
+      const clientIdFilter = url.searchParams.get('client_id')?.replace(/^eq\./, '');
+      const filtered = clientIdFilter
+        ? couponRedemptionsRows.filter((r) => r.client_id === clientIdFilter)
+        : couponRedemptionsRows;
+      return jsonResponse(filtered);
     }
     if (table === 'consents') {
       if (method === 'POST' && rawBody && typeof rawBody === 'object') {
@@ -2513,5 +2614,318 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
         touchUpDays: 28,
       }),
     });
+  });
+
+  it('Wave 4 Supabase: edits coupons with duplicate-code guard, edits/deletes manual cash entries in <=2 queries, and blocks booking-linked cash mutations', async () => {
+    const secondCouponId = '99999999-9999-4999-8999-999999999990';
+    const manualCashId = '88888888-8888-4888-8888-888888888881';
+    const bookingCashId = '88888888-8888-4888-8888-888888888882';
+
+    const { client, requests } = buildMockSupabase({
+      couponsRows: [
+        {
+          id: COUPON_ID,
+          code: 'VIP10',
+          kind: 'coupon',
+          discount_type: 'percent',
+          discount_value: 10,
+          remaining_balance_cents: null,
+          max_uses: 20,
+          used_count: 2,
+          min_subtotal_cents: 30000,
+          expires_at: null,
+          recipient_name: null,
+          is_active: true,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+        {
+          id: secondCouponId,
+          code: 'GIFT500',
+          kind: 'gift_card',
+          discount_type: 'fixed_cents',
+          discount_value: 50000,
+          remaining_balance_cents: 50000,
+          max_uses: 1,
+          used_count: 0,
+          min_subtotal_cents: 0,
+          expires_at: null,
+          recipient_name: 'Ana',
+          is_active: true,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      cashEntriesRows: [
+        {
+          id: manualCashId,
+          booking_id: null,
+          staff_id: null,
+          entry_type: 'expense',
+          description: 'Limas y acetona',
+          amount_cents: 15000,
+          tip_cents: 0,
+          commission_cents: 0,
+          payment_method: 'cash',
+          occurred_at: '2026-12-01T12:00:00.000Z',
+          recorded_by: 'Dueña',
+          created_at: '2026-12-01T12:00:00.000Z',
+        },
+        {
+          id: bookingCashId,
+          booking_id: BOOKING_ID,
+          staff_id: STAFF_ID,
+          entry_type: 'service_income',
+          description: 'Rubber — Sofía',
+          amount_cents: 38000,
+          tip_cents: 5000,
+          commission_cents: 15200,
+          payment_method: 'card',
+          occurred_at: '2026-12-01T12:30:00.000Z',
+          recorded_by: 'Dueña',
+          created_at: '2026-12-01T12:30:00.000Z',
+        },
+      ],
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'wave4-supabase');
+    const repo = createSupabaseRepository(clock, client);
+
+    const updatedCoupon = await repo.upsertCoupon({
+      id: COUPON_ID,
+      code: '  vip10  ',
+      kind: 'coupon',
+      discountType: 'percent',
+      discountValue: 15,
+      remainingBalanceCents: null,
+      maxUses: 30,
+      minSubtotalCents: 40000,
+      expiresAt: null,
+      recipientName: null,
+      isActive: false,
+    });
+    expect(updatedCoupon.code).toBe('VIP10');
+    expect(updatedCoupon.discountValue).toBe(15);
+    expect(updatedCoupon.minSubtotalCents).toBe(40000);
+    expect(updatedCoupon.isActive).toBe(false);
+    expect(requests.length).toBeLessThanOrEqual(2);
+
+    await expect(
+      repo.upsertCoupon({
+        id: COUPON_ID,
+        code: 'gift500',
+        kind: 'coupon',
+        discountType: 'percent',
+        discountValue: 15,
+        remainingBalanceCents: null,
+        maxUses: 30,
+        minSubtotalCents: 40000,
+        expiresAt: null,
+        recipientName: null,
+        isActive: true,
+      }),
+    ).rejects.toMatchObject({ code: 'COUPON_CODE_EXISTS' });
+
+    const beforeCashEditIdx = requests.length;
+    const editedManual = await repo.updateCashEntry(manualCashId, {
+      description: 'Insumos de esterilización',
+      amountCents: 22000,
+      paymentMethod: 'transfer',
+    });
+    expect(editedManual.description).toBe('Insumos de esterilización');
+    expect(editedManual.amountCents).toBe(22000);
+    expect(editedManual.paymentMethod).toBe('transfer');
+    expect(requests.slice(beforeCashEditIdx)).toHaveLength(2);
+
+    await expect(
+      repo.updateCashEntry(bookingCashId, { amountCents: 100 }),
+    ).rejects.toMatchObject({ code: 'BOOKING_LINKED_ENTRY_IMMUTABLE' });
+
+    await expect(repo.deleteCashEntry(bookingCashId)).rejects.toMatchObject({
+      code: 'BOOKING_LINKED_ENTRY_IMMUTABLE',
+    });
+
+    const beforeCashDelIdx = requests.length;
+    const deletedManual = await repo.deleteCashEntry(manualCashId);
+    expect(deletedManual.id).toBe(manualCashId);
+    expect(requests.slice(beforeCashDelIdx)).toHaveLength(2);
+
+    await expect(repo.deleteCashEntry(manualCashId)).rejects.toMatchObject({
+      code: 'CASH_ENTRY_NOT_FOUND',
+    });
+    expect(requests.some((r) => r.path === '/rest/v1/gallery_items')).toBe(false);
+  });
+
+  it('Wave 5: enforces targeted subrequest budgets for client edit/delete, inactive clients with lastServiceName, near-reward, and ARCO export', async () => {
+    const emptyClientId = '33333333-3333-4333-8333-333333333399';
+    const inactiveBooking: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'LKN-5001',
+      manage_token: 'tok-wave5',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      extra_service_ids: [],
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      client_instagram: '@sofia',
+      start_at: '2026-10-15T16:00:00.000Z',
+      end_at: '2026-10-15T17:00:00.000Z',
+      occupied_start_at: '2026-10-15T16:00:00.000Z',
+      occupied_end_at: '2026-10-15T17:15:00.000Z',
+      occupied_range: '[2026-10-15T16:00:00.000Z,2026-10-15T17:15:00.000Z)',
+      total_duration_minutes: 60,
+      custom_duration_minutes: null,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      custom_price_cents: null,
+      deposit_amount_cents: 10000,
+      coupon_code: null,
+      status: 'completed',
+      source: 'web',
+      client_notes: 'Almendra corta',
+      internal_notes: 'SECRETO INTERNO NO EXPORTABLE',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-10-10T10:00:00.000Z',
+      updated_at: '2026-10-15T17:30:00.000Z',
+    };
+
+    const { client, requests } = buildMockSupabase({
+      extraClientsRows: [
+        {
+          id: emptyClientId,
+          full_name: 'Clienta Sin Historial',
+          phone_e164: '+522229991111',
+          email: null,
+          birthday: null,
+          notes: '',
+          no_show_count: 0,
+          created_at: '2026-11-20T10:00:00.000Z',
+          updated_at: '2026-11-20T10:00:00.000Z',
+        },
+      ],
+      bookingsRows: [inactiveBooking],
+      consentsRows: [
+        {
+          id: CONSENT_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          policy_version: '2026-11',
+          accepted_at: '2026-10-10T10:00:00.000Z',
+          marketing_opt_in: true,
+        },
+      ],
+      paymentSplitsRows: [
+        {
+          id: SPLIT_ID,
+          booking_id: BOOKING_ID,
+          method: 'card',
+          amount_cents: 38000,
+          tip_cents: 4000,
+          tip_staff_id: STAFF_ID,
+          reference: null,
+          created_at: '2026-10-15T17:10:00.000Z',
+        },
+      ],
+      loyaltyProgramsRows: [
+        {
+          id: PROGRAM_ID,
+          is_active: true,
+          name: 'Club LAIKONA',
+          stamps_required: 2,
+          reward_type: 'free_service',
+          reward_service_id: SERVICE_ID,
+          discount_percent: null,
+          max_discount_cents: null,
+          valid_days: 90,
+          created_at: '2026-10-01T10:00:00.000Z',
+        },
+      ],
+      loyaltyStampsRows: [
+        {
+          id: STAMP_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          program_id: PROGRAM_ID,
+          stamped_date: '2026-10-15',
+          created_at: '2026-10-15T17:10:00.000Z',
+        },
+      ],
+    });
+    const clock = createFixedClock('2026-12-01T13:00:00.000Z', 'wave5-supabase');
+    const repo = createSupabaseRepository(clock, client);
+
+    const beforeEdit = requests.length;
+    const edited = await repo.updateClientNotes({
+      clientId: emptyClientId,
+      fullName: '  Clienta Editada  ',
+      phone: '222 888 7766',
+    });
+    expect(edited.fullName).toBe('Clienta Editada');
+    expect(edited.phoneE164).toBe('+522228887766');
+    expect(requests.slice(beforeEdit)).toHaveLength(2);
+
+    await expect(
+      repo.updateClientNotes({
+        clientId: emptyClientId,
+        phone: '+5215511223344',
+      }),
+    ).rejects.toMatchObject({ code: 'CLIENT_EXISTS' });
+
+    const beforeList = requests.length;
+    const allClients = await repo.listClients();
+    expect(allClients).toHaveLength(2);
+    expect(requests.slice(beforeList)).toHaveLength(1);
+
+    const beforeNear = requests.length;
+    const nearReward = await repo.getNearRewardClients();
+    expect(nearReward.some((c) => c.clientId === CLIENT_ID)).toBe(true);
+    expect(requests.slice(beforeNear).length).toBeLessThanOrEqual(4);
+
+    const beforeInactive = requests.length;
+    const inactive = await repo.getInactiveClients(30);
+    const sofiaInactive = inactive.find((c) => c.clientId === CLIENT_ID);
+    expect(sofiaInactive?.totalVisits).toBe(1);
+    expect(sofiaInactive?.lastServiceId).toBe(SERVICE_ID);
+    expect(sofiaInactive?.lastServiceName).toBe('Manicura Rusa + Gelish');
+    expect(requests.slice(beforeInactive)).toHaveLength(3);
+
+    const beforeArco = requests.length;
+    const arco = await repo.getClientArcoExport(CLIENT_ID);
+    expect(arco).not.toBeNull();
+    expect(arco?.client.id).toBe(CLIENT_ID);
+    expect(arco?.bookings).toHaveLength(1);
+    expect(arco?.consents).toHaveLength(1);
+    expect(arco?.paymentSplits).toHaveLength(1);
+    expect(arco?.loyaltySummary?.currentStamps).toBe(1);
+    expect(JSON.stringify(arco)).not.toContain('SECRETO INTERNO');
+    expect(requests.slice(beforeArco).length).toBeLessThanOrEqual(8);
+
+    const beforeBlockedDel = requests.length;
+    await expect(repo.deleteClientProfile(CLIENT_ID)).rejects.toMatchObject({
+      code: 'CLIENT_HAS_HISTORY',
+    });
+    expect(requests.slice(beforeBlockedDel).length).toBeLessThanOrEqual(3);
+
+    const beforeOkDel = requests.length;
+    const removed = await repo.deleteClientProfile(emptyClientId);
+    expect(removed.id).toBe(emptyClientId);
+    expect(requests.slice(beforeOkDel)).toHaveLength(4);
+
+    await expect(repo.deleteClientProfile(emptyClientId)).rejects.toMatchObject({
+      code: 'CLIENT_NOT_FOUND',
+    });
+
+    const snapshotOnlyTables = [
+      '/rest/v1/gallery_items',
+      '/rest/v1/inventory_items',
+      '/rest/v1/waitlist_entries',
+      '/rest/v1/audit_logs',
+      '/rest/v1/funnel_events',
+    ];
+    for (const tablePath of snapshotOnlyTables) {
+      expect(requests.some((r) => r.path === tablePath)).toBe(false);
+    }
   });
 });

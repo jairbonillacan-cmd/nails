@@ -178,6 +178,7 @@ export function AdminMobileNav({
             footerNavItems={footerNavItems}
             staffRows={staffRows}
             isCompactRail={false}
+            idPrefix="drawer"
             onPrefetchRoute={onPrefetchRoute}
             onItemClick={closeDrawer}
           />

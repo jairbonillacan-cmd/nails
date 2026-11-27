@@ -1,15 +1,25 @@
 'use client';
 
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
-import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
-import { Button } from '@astryxdesign/core/Button';
-import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
+import { DateInput } from '@astryxdesign/core/DateInput';
+import type { ISODateString } from '@astryxdesign/core/Calendar';
+import { FormDialog, type FormDialogControls } from '@/components/ui/FormDialog';
+import {
+  FORM_SUBMIT_OK,
+  formSubmitError,
+  type FormSubmitResult,
+} from '@/lib/forms/form-submit';
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function toIsoDateString(value: string): ISODateString | undefined {
+  return ISO_DATE_RE.test(value) ? (value as ISODateString) : undefined;
+}
 
 interface NewClientDialogProps {
   isOpen: boolean;
@@ -24,6 +34,124 @@ interface NewClientDialogProps {
   }) => Promise<{ ok: boolean; error?: string; conflict?: boolean }>;
 }
 
+interface NewClientFormBodyProps {
+  newName: string;
+  setNewName: (value: string) => void;
+  newPhone: string;
+  setNewPhone: (value: string) => void;
+  newEmail: string;
+  setNewEmail: (value: string) => void;
+  newInstagram: string;
+  setNewInstagram: (value: string) => void;
+  newBirthday: string;
+  setNewBirthday: (value: string) => void;
+  newNotes: string;
+  setNewNotes: (value: string) => void;
+  onCreateClient: NewClientDialogProps['onCreateClient'];
+  controls: FormDialogControls;
+}
+
+function NewClientFormBody({
+  newName,
+  setNewName,
+  newPhone,
+  setNewPhone,
+  newEmail,
+  setNewEmail,
+  newInstagram,
+  setNewInstagram,
+  newBirthday,
+  setNewBirthday,
+  newNotes,
+  setNewNotes,
+  onCreateClient,
+  controls,
+}: NewClientFormBodyProps) {
+  const createClient = async (): Promise<FormSubmitResult> => {
+    const result = await onCreateClient({
+      fullName: newName.trim(),
+      phone: newPhone.trim(),
+      email: newEmail.trim() || null,
+      instagramHandle: newInstagram.trim() || null,
+      birthday: newBirthday.trim() || null,
+      technicalNotes: newNotes.trim(),
+    });
+    if (!result.ok) {
+      return formSubmitError(
+        result.error ||
+          (result.conflict
+            ? 'Ya existe una clienta registrada con ese WhatsApp.'
+            : 'Revisa los datos ingresados.'),
+      );
+    }
+    return FORM_SUBMIT_OK;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim() || !newPhone.trim()) return;
+    controls.submit(createClient);
+  };
+
+  return (
+    <form id="new-client-form" onSubmit={handleSubmit}>
+      <VStack gap={3}>
+        <TextInput
+          label="Nombre completo"
+          placeholder="Ejemplo: Sofía Ramírez"
+          value={newName}
+          onChange={setNewName}
+          isRequired
+        />
+        <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+          <TextInput
+            label="WhatsApp"
+            type="tel"
+            placeholder="222 123 4567"
+            value={newPhone}
+            onChange={setNewPhone}
+            isRequired
+          />
+          <TextInput
+            label="Instagram"
+            placeholder="@usuario"
+            value={newInstagram}
+            onChange={setNewInstagram}
+            isOptional
+          />
+        </Grid>
+        <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
+          <TextInput
+            label="Correo electrónico"
+            type="email"
+            placeholder="clienta@correo.com"
+            value={newEmail}
+            onChange={setNewEmail}
+            isOptional
+          />
+          <DateInput
+            label="Cumpleaños"
+            value={toIsoDateString(newBirthday)}
+            format="date_long"
+            placeholder="Selecciona una fecha"
+            hasClear
+            isOptional
+            onChange={(val) => setNewBirthday(val ?? '')}
+          />
+        </Grid>
+        <TextArea
+          label="Notas y preferencias (uñas, tonos, alergias)"
+          placeholder="Ejemplo: Forma almendra corta, base milky nude…"
+          value={newNotes}
+          onChange={setNewNotes}
+          rows={3}
+          isOptional
+        />
+      </VStack>
+    </form>
+  );
+}
+
 export function NewClientDialog({
   isOpen,
   onOpenChange,
@@ -35,9 +163,6 @@ export function NewClientDialog({
   const [newInstagram, setNewInstagram] = useState('');
   const [newBirthday, setNewBirthday] = useState('');
   const [newNotes, setNewNotes] = useState('');
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createConflict, setCreateConflict] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const resetForm = () => {
     setNewName('');
@@ -46,8 +171,6 @@ export function NewClientDialog({
     setNewInstagram('');
     setNewBirthday('');
     setNewNotes('');
-    setCreateError(null);
-    setCreateConflict(false);
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -55,138 +178,37 @@ export function NewClientDialog({
     onOpenChange(open);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (creating) return;
-    setCreating(true);
-    setCreateError(null);
-    setCreateConflict(false);
-    try {
-      const result = await onCreateClient({
-        fullName: newName,
-        phone: newPhone,
-        email: newEmail.trim() || null,
-        instagramHandle: newInstagram.trim() || null,
-        birthday: newBirthday.trim() || null,
-        technicalNotes: newNotes.trim(),
-      });
-      if (!result.ok) {
-        setCreateConflict(Boolean(result.conflict));
-        setCreateError(result.error || 'Revisa los datos ingresados.');
-        return;
-      }
-      resetForm();
-      onOpenChange(false);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
-    <Dialog
+    <FormDialog
       isOpen={isOpen}
       onOpenChange={handleOpenChange}
-      width={520}
-      maxHeight="min(90dvh, calc(100dvh - 2rem))"
-      padding={5}
+      title="Nueva clienta"
+      subtitle="Agrega a tu clienta al directorio del salón."
+      width="min(32rem, 96vw)"
+      submitFooter={{
+        formId: 'new-client-form',
+        submitLabel: 'Guardar clienta',
+        isSubmitDisabled: !newName.trim() || !newPhone.trim(),
+      }}
     >
-      <Layout
-        header={
-          <DialogHeader
-            title="Nueva clienta"
-            subtitle="Agrega a tu clienta al directorio del salón."
-            hasDivider
-            onOpenChange={handleOpenChange}
-          />
-        }
-        content={
-          <LayoutContent>
-            <form id="new-client-form" onSubmit={(e) => void handleSubmit(e)}>
-              <VStack gap={3}>
-                {createError ? (
-                  <Banner
-                    status={createConflict ? 'warning' : 'error'}
-                    role="alert"
-                    title={
-                      createConflict ? 'WhatsApp ya registrado' : 'No se pudo guardar la clienta'
-                    }
-                    description={createError}
-                  />
-                ) : null}
-                <TextInput
-                  label="Nombre completo"
-                  placeholder="Ejemplo: Sofía Ramírez"
-                  value={newName}
-                  onChange={setNewName}
-                  isRequired
-                />
-                <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
-                  <TextInput
-                    label="WhatsApp"
-                    type="tel"
-                    placeholder="222 123 4567"
-                    value={newPhone}
-                    onChange={setNewPhone}
-                    isRequired
-                  />
-                  <TextInput
-                    label="Instagram"
-                    placeholder="@usuario"
-                    value={newInstagram}
-                    onChange={setNewInstagram}
-                    isOptional
-                  />
-                </Grid>
-                <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
-                  <TextInput
-                    label="Correo electrónico"
-                    type="email"
-                    placeholder="clienta@correo.com"
-                    value={newEmail}
-                    onChange={setNewEmail}
-                    isOptional
-                  />
-                  <TextInput
-                    label="Cumpleaños"
-                    placeholder="Ejemplo: 1997-08-15 (año-mes-día)"
-                    value={newBirthday}
-                    onChange={setNewBirthday}
-                    isOptional
-                  />
-                </Grid>
-                <TextArea
-                  label="Notas y preferencias (uñas, tonos, alergias)"
-                  placeholder="Ejemplo: Forma almendra corta, base milky nude…"
-                  value={newNotes}
-                  onChange={setNewNotes}
-                  rows={3}
-                  isOptional
-                />
-              </VStack>
-            </form>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter hasDivider>
-            <HStack gap={2} justify="end" wrap="wrap">
-              <Button
-                type="button"
-                label="Cancelar"
-                variant="secondary"
-                isDisabled={creating}
-                onClick={() => handleOpenChange(false)}
-              />
-              <Button
-                type="submit"
-                form="new-client-form"
-                label="Guardar clienta"
-                variant="primary"
-                isLoading={creating}
-              />
-            </HStack>
-          </LayoutFooter>
-        }
-      />
-    </Dialog>
+      {(controls) => (
+        <NewClientFormBody
+          newName={newName}
+          setNewName={setNewName}
+          newPhone={newPhone}
+          setNewPhone={setNewPhone}
+          newEmail={newEmail}
+          setNewEmail={setNewEmail}
+          newInstagram={newInstagram}
+          setNewInstagram={setNewInstagram}
+          newBirthday={newBirthday}
+          setNewBirthday={setNewBirthday}
+          newNotes={newNotes}
+          setNewNotes={setNewNotes}
+          onCreateClient={onCreateClient}
+          controls={controls}
+        />
+      )}
+    </FormDialog>
   );
 }

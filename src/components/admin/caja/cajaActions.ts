@@ -9,13 +9,17 @@ import {
 } from '@/lib/hooks/useAdminCache';
 import type {
   BookingWithRelations,
+  CashRegisterEntry,
+  Coupon,
   PaymentMethod,
   PaymentSplitMethod,
+  StaffMember,
 } from '@/lib/types';
 import {
   computeCommissionsByStaff,
   isIsoInCajaPeriod,
   type CajaPeriod,
+  type CouponPayloadData,
 } from './cajaMetrics';
 import {
   SPLIT_METHOD_ORDER,
@@ -334,14 +338,115 @@ export async function recordCajaCashEntry(
   }
 }
 
-export async function createCajaCoupon(input: {
-  code: string;
-  kind: 'coupon' | 'gift_card';
-  discountType: 'percent' | 'fixed_cents';
-  value: number;
-  recipient: string;
-}): Promise<{ ok: boolean; message?: string; error?: string }> {
-  const isFixed = input.kind === 'gift_card' || input.discountType === 'fixed_cents';
+export interface UpdateCajaCashEntryInput {
+  entryType: 'expense' | 'product_sale' | 'service_income';
+  description: string;
+  amountMxn: number;
+  method: PaymentMethod;
+  staffId: string | null;
+}
+
+export async function updateCajaCashEntry(
+  entryId: string,
+  input: UpdateCajaCashEntryInput,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/admin/operations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
+      body: JSON.stringify({
+        kind: 'cash',
+        id: entryId,
+        data: {
+          entryType: input.entryType,
+          description: input.description.trim(),
+          amountCents: Math.round(input.amountMxn * 100),
+          paymentMethod: input.method,
+          staffId: input.entryType === 'expense' ? input.staffId : input.staffId,
+        },
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      entry?: CashRegisterEntry;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: json?.error || 'No se pudo actualizar el movimiento.',
+      };
+    }
+    if (json?.entry) {
+      const updated = json.entry;
+      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+        current
+          ? {
+              ...current,
+              cashEntries: current.cashEntries.map((item) =>
+                item.id === entryId ? updated : item,
+              ),
+            }
+          : current,
+      );
+    }
+    invalidateAdminCache('/api/admin/reports');
+    return { ok: true, message: 'Movimiento actualizado correctamente.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'La actualización tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para actualizar el movimiento.',
+    };
+  }
+}
+
+export async function deleteCajaCashEntry(
+  entryId: string,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(
+      `/api/admin/operations?kind=cash&id=${encodeURIComponent(entryId)}`,
+      {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
+      },
+    );
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: json?.error || 'No se pudo eliminar el movimiento.',
+      };
+    }
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      current
+        ? {
+            ...current,
+            cashEntries: current.cashEntries.filter((item) => item.id !== entryId),
+          }
+        : current,
+    );
+    invalidateAdminCache('/api/admin/reports');
+    return { ok: true, message: 'Movimiento manual eliminado de caja.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'La eliminación tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para eliminar el movimiento.',
+    };
+  }
+}
+
+export async function saveCajaCoupon(
+  data: CouponPayloadData,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const isEditing = Boolean(data.id);
   try {
     const res = await fetch('/api/admin/operations', {
       method: 'POST',
@@ -349,29 +454,41 @@ export async function createCajaCoupon(input: {
       signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({
         kind: 'coupon',
-        data: {
-          code: input.code,
-          kind: input.kind,
-          discountType: isFixed ? 'fixed_cents' : 'percent',
-          discountValue: isFixed ? Math.round(input.value * 100) : input.value,
-          remainingBalanceCents:
-            input.kind === 'gift_card' ? Math.round(input.value * 100) : null,
-          maxUses: input.kind === 'gift_card' ? 1 : 100,
-          minSubtotalCents: 0,
-          expiresAt: null,
-          recipientName: input.recipient || null,
-          isActive: true,
-        },
+        data,
       }),
     });
+    const json = (await res.json().catch(() => null)) as {
+      coupon?: Coupon;
+      error?: string;
+    } | null;
     if (!res.ok) {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      return { ok: false, error: json?.error || 'No se pudo crear el código.' };
+      return {
+        ok: false,
+        error:
+          json?.error ||
+          (isEditing
+            ? 'No se pudieron guardar los cambios del código.'
+            : 'No se pudo crear el código.'),
+      };
+    }
+    if (json?.coupon) {
+      const saved = json.coupon;
+      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) => {
+        if (!current) return current;
+        const exists = current.coupons.some((item) => item.id === saved.id);
+        return {
+          ...current,
+          coupons: exists
+            ? current.coupons.map((item) => (item.id === saved.id ? saved : item))
+            : [saved, ...current.coupons],
+        };
+      });
     }
     return {
       ok: true,
-      message:
-        input.kind === 'gift_card'
+      message: isEditing
+        ? `Código ${data.code} actualizado.`
+        : data.kind === 'gift_card'
           ? 'Tarjeta de regalo activada para tus clientas.'
           : 'Cupón activado en tu página de citas.',
     };
@@ -379,10 +496,36 @@ export async function createCajaCoupon(input: {
     return {
       ok: false,
       error: isCajaTimeoutError(err)
-        ? 'La creación del código tardó demasiado. Intenta de nuevo.'
-        : 'No se pudo conectar para crear el código.',
+        ? 'Guardar el código tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para guardar el código.',
     };
   }
+}
+
+export async function toggleCajaCouponActive(
+  coupon: Coupon,
+  nextActive: boolean,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const result = await saveCajaCoupon({
+    id: coupon.id,
+    code: coupon.code,
+    kind: coupon.kind,
+    discountType: coupon.discountType,
+    discountValue: coupon.discountValue,
+    remainingBalanceCents: coupon.remainingBalanceCents,
+    maxUses: coupon.maxUses,
+    minSubtotalCents: coupon.minSubtotalCents,
+    expiresAt: coupon.expiresAt,
+    recipientName: coupon.recipientName,
+    isActive: nextActive,
+  });
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    message: nextActive
+      ? `Código ${coupon.code} activado.`
+      : `Código ${coupon.code} pausado.`,
+  };
 }
 
 export async function deleteCajaCoupon(
@@ -435,14 +578,80 @@ export async function deleteCajaCoupon(
   }
 }
 
-export async function createCajaPackage(input: {
+export async function updateCajaStaffCommission(
+  staffMember: StaffMember,
+  commissionPercent: number,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const safePercent = Math.max(0, Math.min(100, Math.round(commissionPercent)));
+  try {
+    const res = await fetch('/api/admin/team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
+      body: JSON.stringify({
+        kind: 'staff',
+        data: {
+          id: staffMember.id,
+          name: staffMember.name,
+          commissionPercent: safePercent,
+        },
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      staff?: StaffMember;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: json?.error || 'No se pudo actualizar el porcentaje de comisión.',
+      };
+    }
+    mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
+      current
+        ? {
+            ...current,
+            staff: current.staff.map((member) =>
+              member.id === staffMember.id
+                ? {
+                    ...member,
+                    commissionPercent: json?.staff?.commissionPercent ?? safePercent,
+                  }
+                : member,
+            ),
+          }
+        : current,
+    );
+    invalidateAdminCache('/api/admin/reports');
+    return {
+      ok: true,
+      message: `Comisión de ${staffMember.name} actualizada a ${safePercent}%.`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: isCajaTimeoutError(err)
+        ? 'La actualización tardó demasiado. Intenta de nuevo.'
+        : 'No se pudo conectar para actualizar la comisión.',
+    };
+  }
+}
+
+export interface SaveCajaPackageInput {
+  id?: string;
   name: string;
   description: string;
   serviceId: string;
   totalSessions: number;
   priceMxn: number;
   validDays: number;
-}): Promise<{ ok: boolean; message?: string; error?: string }> {
+  isActive: boolean;
+}
+
+export async function saveCajaPackage(
+  input: SaveCajaPackageInput,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const isEditing = Boolean(input.id);
   try {
     const res = await fetch('/api/admin/packages', {
       method: 'POST',
@@ -450,6 +659,7 @@ export async function createCajaPackage(input: {
       signal: AbortSignal.timeout(CAJA_MUTATION_TIMEOUT_MS),
       body: JSON.stringify({
         kind: 'catalog',
+        ...(input.id ? { id: input.id } : {}),
         name: input.name,
         description: input.description,
         serviceId: input.serviceId,
@@ -459,14 +669,26 @@ export async function createCajaPackage(input: {
           input.validDays > 0
             ? Math.max(7, Math.min(730, Math.round(input.validDays)))
             : null,
-        isActive: true,
+        isActive: input.isActive,
       }),
     });
     const json = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
-      return { ok: false, error: json?.error || 'No se pudo crear el paquete de sesiones.' };
+      return {
+        ok: false,
+        error:
+          json?.error ||
+          (isEditing
+            ? 'No se pudieron guardar los cambios del paquete.'
+            : 'No se pudo crear el paquete de sesiones.'),
+      };
     }
-    return { ok: true, message: 'Paquete de sesiones guardado.' };
+    return {
+      ok: true,
+      message: isEditing
+        ? `Paquete "${input.name}" actualizado.`
+        : 'Paquete de sesiones guardado.',
+    };
   } catch (err) {
     return {
       ok: false,

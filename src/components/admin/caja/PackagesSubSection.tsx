@@ -12,7 +12,7 @@ import { TextArea } from '@astryxdesign/core/TextArea';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Switch } from '@astryxdesign/core/Switch';
-import { Package, Plus } from 'lucide-react';
+import { Check, Package, Pencil, Plus } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { Service } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
@@ -23,18 +23,11 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
-import type { FormDialogControls } from '@/components/ui/FormDialog';
-import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
+import { FormDialog, type FormDialogControls } from '@/components/ui/FormDialog';
+import type { SaveCajaPackageInput } from './cajaActions';
 import type { ServicePackageCatalogRow } from './cajaTypes';
 
-type CreatePackageHandler = (input: {
-  name: string;
-  description: string;
-  serviceId: string;
-  totalSessions: number;
-  priceMxn: number;
-  validDays: number;
-}) => Promise<FormSubmitResult>;
+const PACKAGE_EDITOR_FORM_ID = 'caja-package-editor-form';
 
 interface PackagesSubSectionProps {
   packagesCatalog: readonly ServicePackageCatalogRow[];
@@ -43,47 +36,56 @@ interface PackagesSubSectionProps {
   currency: 'MXN' | 'USD';
   canManagePackages: boolean;
   togglingPkgId: string | null;
-  onCreatePackage: CreatePackageHandler;
+  onSavePackage: (input: SaveCajaPackageInput) => Promise<FormSubmitResult>;
   onTogglePackage: (pkg: ServicePackageCatalogRow, nextActive: boolean) => Promise<void>;
 }
 
 function PackageFormBody({
+  editingPkg,
   activeServices,
   currency,
-  onCreatePackage,
+  onSavePackage,
   controls,
 }: {
+  editingPkg: ServicePackageCatalogRow | null;
   activeServices: readonly Service[];
   currency: 'MXN' | 'USD';
-  onCreatePackage: CreatePackageHandler;
+  onSavePackage: (input: SaveCajaPackageInput) => Promise<FormSubmitResult>;
   controls: FormDialogControls;
 }) {
-  const [pkgName, setPkgName] = useState('');
-  const [pkgDescription, setPkgDescription] = useState('');
-  const [pkgServiceId, setPkgServiceId] = useState('');
-  const [pkgTotalSessions, setPkgTotalSessions] = useState(5);
-  const [pkgPriceMxn, setPkgPriceMxn] = useState(1600);
-  const [pkgValidDays, setPkgValidDays] = useState(120);
-  const { isSubmitting } = controls;
+  const [pkgName, setPkgName] = useState(editingPkg?.name ?? '');
+  const [pkgDescription, setPkgDescription] = useState(editingPkg?.description ?? '');
+  const [pkgServiceId, setPkgServiceId] = useState(editingPkg?.serviceId ?? '');
+  const [pkgTotalSessions, setPkgTotalSessions] = useState(editingPkg?.totalSessions ?? 5);
+  const [pkgPriceMxn, setPkgPriceMxn] = useState(() =>
+    editingPkg ? Number((editingPkg.priceCents / 100).toFixed(2)) : 1600,
+  );
+  const [pkgValidDays, setPkgValidDays] = useState(
+    editingPkg ? (editingPkg.validDays ?? 0) : 120,
+  );
+  const [pkgActive, setPkgActive] = useState(editingPkg?.isActive ?? true);
+
   const effectivePkgServiceId = pkgServiceId || activeServices[0]?.id || '';
 
   const handlePackageSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pkgName.trim() || !effectivePkgServiceId) return;
     controls.submit(() =>
-      onCreatePackage({
+      onSavePackage({
+        id: editingPkg?.id,
         name: pkgName.trim(),
         description: pkgDescription.trim(),
         serviceId: effectivePkgServiceId,
         totalSessions: pkgTotalSessions,
         priceMxn: pkgPriceMxn,
         validDays: pkgValidDays,
+        isActive: pkgActive,
       }),
     );
   };
 
   return (
-    <form onSubmit={handlePackageSubmit}>
+    <form id={PACKAGE_EDITOR_FORM_ID} onSubmit={handlePackageSubmit}>
       <VStack gap={3}>
         <TextInput
           label="Nombre del paquete"
@@ -106,7 +108,7 @@ function PackageFormBody({
             label="Sesiones"
             value={pkgTotalSessions}
             min={2}
-            max={20}
+            max={24}
             isIntegerOnly
             onChange={setPkgTotalSessions}
           />
@@ -134,23 +136,13 @@ function PackageFormBody({
           rows={2}
           isOptional
         />
-        <HStack gap={2} justify="end" wrap="wrap">
-          <Button
-            type="button"
-            label="Cancelar"
-            variant="secondary"
-            isDisabled={isSubmitting}
-            onClick={controls.close}
+        {editingPkg ? (
+          <Switch
+            label="Paquete activo para nuevas asignaciones"
+            value={pkgActive}
+            onChange={setPkgActive}
           />
-          <Button
-            type="submit"
-            label="Crear paquete"
-            variant="primary"
-            icon={<Plus size={15} aria-hidden="true" />}
-            isLoading={isSubmitting}
-            isDisabled={isSubmitting || !pkgName.trim() || !effectivePkgServiceId}
-          />
-        </HStack>
+        ) : null}
       </VStack>
     </form>
   );
@@ -163,13 +155,35 @@ export function PackagesSubSection({
   currency,
   canManagePackages,
   togglingPkgId,
-  onCreatePackage,
+  onSavePackage,
   onTogglePackage,
 }: PackagesSubSectionProps) {
   const activeServices = services
     .filter((s) => s.isActive)
     .toSorted((a, b) => a.displayOrder - b.displayOrder);
-  const [pendingPausePkg, setPendingPausePkg] = useState<ServicePackageCatalogRow | null>(null);
+  const [pendingPausePkg, setPendingPausePkg] = useState<ServicePackageCatalogRow | null>(
+    null,
+  );
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingPkg, setEditingPkg] = useState<ServicePackageCatalogRow | null>(null);
+
+  const handleOpenCreate = () => {
+    setEditingPkg(null);
+    setEditorOpen(true);
+  };
+
+  const handleOpenEdit = (pkg: ServicePackageCatalogRow) => {
+    setEditingPkg(pkg);
+    setEditorOpen(true);
+  };
+
+  const serviceOptionsForEditor =
+    editingPkg && !activeServices.some((s) => s.id === editingPkg.serviceId)
+      ? [
+          ...activeServices,
+          ...services.filter((s) => s.id === editingPkg.serviceId),
+        ]
+      : activeServices;
 
   return (
     <>
@@ -180,23 +194,15 @@ export function PackagesSubSection({
           count={packagesCatalog.length}
           actions={
             canManagePackages ? (
-              <FormDialogLauncher
-                triggerLabel="Nuevo paquete"
-                title="Nuevo paquete de sesiones"
-                subtitle="Elige el servicio, cuántas sesiones incluye y su precio."
-                triggerVariant="secondary"
-                triggerSize="sm"
+              <Button
+                type="button"
+                label="Nuevo paquete"
+                variant="secondary"
+                size="sm"
+                icon={<Plus size={14} aria-hidden="true" />}
                 isDisabled={activeServices.length === 0}
-              >
-                {(controls) => (
-                  <PackageFormBody
-                    activeServices={activeServices}
-                    currency={currency}
-                    onCreatePackage={onCreatePackage}
-                    controls={controls}
-                  />
-                )}
-              </FormDialogLauncher>
+                onClick={handleOpenCreate}
+              />
             ) : undefined
           }
         >
@@ -222,7 +228,7 @@ export function PackagesSubSection({
                   pkg.totalSessions > 0 ? Math.round(pkg.priceCents / pkg.totalSessions) : 0;
                 const totalPips = Math.min(12, Math.max(1, pkg.totalSessions));
                 return (
-                  <VStack key={pkg.id} className="ad-pkg-card" gap={2}>
+                  <VStack key={pkg.id} className="ad-pkg-card" gap={3}>
                     <HStack justify="between" align="start" wrap="wrap" gap={2}>
                       <VStack gap={0.5} className="rb-grow">
                         <HStack gap={2} align="center" wrap="wrap">
@@ -248,25 +254,37 @@ export function PackagesSubSection({
                         </Text>
                       </VStack>
 
-                      <VStack align="end" gap={1.5}>
+                      <VStack align="end" gap={1.5} className="ad-pkg-price-col">
                         <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
                           {formatCurrency(pkg.priceCents, currency)}
                         </Text>
                         {canManagePackages ? (
-                          <Switch
-                            label={`Activar paquete ${pkg.name}`}
-                            isLabelHidden
-                            size="sm"
-                            isDisabled={togglingPkgId === pkg.id}
-                            value={pkg.isActive}
-                            onChange={(nextVal) => {
-                              if (!nextVal) {
-                                setPendingPausePkg(pkg);
-                              } else {
-                                void onTogglePackage(pkg, true);
-                              }
-                            }}
-                          />
+                          <HStack gap={2} align="center" wrap="wrap">
+                            <Button
+                              type="button"
+                              label="Editar"
+                              variant="secondary"
+                              size="sm"
+                              className="ad-caja-touch-btn"
+                              icon={<Pencil size={13} aria-hidden="true" />}
+                              isDisabled={togglingPkgId === pkg.id}
+                              onClick={() => handleOpenEdit(pkg)}
+                            />
+                            <Switch
+                              label={`Activar paquete ${pkg.name}`}
+                              isLabelHidden
+                              size="sm"
+                              isDisabled={togglingPkgId === pkg.id}
+                              value={pkg.isActive}
+                              onChange={(nextVal) => {
+                                if (!nextVal) {
+                                  setPendingPausePkg(pkg);
+                                } else {
+                                  void onTogglePackage(pkg, true);
+                                }
+                              }}
+                            />
+                          </HStack>
                         ) : null}
                       </VStack>
                     </HStack>
@@ -285,8 +303,44 @@ export function PackagesSubSection({
             </VStack>
           )}
         </SurfaceCard>
-
       </VStack>
+
+      <FormDialog
+        isOpen={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) setEditingPkg(null);
+        }}
+        title={
+          editingPkg
+            ? `Editar paquete · ${editingPkg.name}`
+            : 'Nuevo paquete de sesiones'
+        }
+        subtitle={
+          editingPkg
+            ? 'Actualiza nombre, servicio, sesiones, precio o vigencia.'
+            : 'Elige el servicio, cuántas sesiones incluye y su precio.'
+        }
+        submitFooter={{
+          formId: PACKAGE_EDITOR_FORM_ID,
+          submitLabel: editingPkg ? 'Guardar cambios' : 'Crear paquete',
+          submitIcon: editingPkg ? (
+            <Check size={14} aria-hidden="true" />
+          ) : (
+            <Plus size={14} aria-hidden="true" />
+          ),
+        }}
+      >
+        {(controls) => (
+          <PackageFormBody
+            editingPkg={editingPkg}
+            activeServices={serviceOptionsForEditor}
+            currency={currency}
+            onSavePackage={onSavePackage}
+            controls={controls}
+          />
+        )}
+      </FormDialog>
 
       <ConfirmActionDialog
         isOpen={Boolean(pendingPausePkg)}

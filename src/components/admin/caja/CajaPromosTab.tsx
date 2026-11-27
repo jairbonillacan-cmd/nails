@@ -5,6 +5,8 @@ import { HStack } from '@astryxdesign/core/HStack';
 import type { Coupon, Service } from '@/lib/types';
 import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui';
+import type { SaveCajaPackageInput } from './cajaActions';
+import type { CouponPayloadData } from './cajaMetrics';
 import type { PromosSubTab, ServicePackageCatalogRow } from './cajaTypes';
 import { CouponsSubSection } from './CouponsSubSection';
 import { PackagesSubSection } from './PackagesSubSection';
@@ -20,24 +22,13 @@ interface CajaPromosTabProps {
   tz: string;
   nowMs: number;
   canManagePackages: boolean;
+  togglingCouponId: string | null;
   deletingCouponId: string | null;
   togglingPkgId: string | null;
-  onCreateCoupon: (input: {
-    code: string;
-    kind: 'coupon' | 'gift_card';
-    discountType: 'percent' | 'fixed_cents';
-    value: number;
-    recipient: string;
-  }) => Promise<FormSubmitResult>;
+  onSaveCoupon: (data: CouponPayloadData) => Promise<FormSubmitResult>;
+  onToggleCouponActive: (coupon: Coupon, nextActive: boolean) => Promise<void>;
   onRequestDeleteCoupon: (coupon: Coupon) => void;
-  onCreatePackage: (input: {
-    name: string;
-    description: string;
-    serviceId: string;
-    totalSessions: number;
-    priceMxn: number;
-    validDays: number;
-  }) => Promise<FormSubmitResult>;
+  onSavePackage: (input: SaveCajaPackageInput) => Promise<FormSubmitResult>;
   onTogglePackage: (pkg: ServicePackageCatalogRow, nextActive: boolean) => Promise<void>;
 }
 
@@ -52,11 +43,13 @@ export function CajaPromosTab({
   tz,
   nowMs,
   canManagePackages,
+  togglingCouponId,
   deletingCouponId,
   togglingPkgId,
-  onCreateCoupon,
+  onSaveCoupon,
+  onToggleCouponActive,
   onRequestDeleteCoupon,
-  onCreatePackage,
+  onSavePackage,
   onTogglePackage,
 }: CajaPromosTabProps) {
   const subTabOptions: FilterPillOption<PromosSubTab>[] = [
@@ -83,8 +76,10 @@ export function CajaPromosTab({
           tz={tz}
           nowMs={nowMs}
           canManageCoupons={canManagePackages}
+          togglingCouponId={togglingCouponId}
           deletingCouponId={deletingCouponId}
-          onCreateCoupon={onCreateCoupon}
+          onSaveCoupon={onSaveCoupon}
+          onToggleCouponActive={onToggleCouponActive}
           onRequestDeleteCoupon={onRequestDeleteCoupon}
         />
       ) : (
@@ -95,7 +90,7 @@ export function CajaPromosTab({
           currency={currency}
           canManagePackages={canManagePackages}
           togglingPkgId={togglingPkgId}
-          onCreatePackage={onCreatePackage}
+          onSavePackage={onSavePackage}
           onTogglePackage={onTogglePackage}
         />
       )}

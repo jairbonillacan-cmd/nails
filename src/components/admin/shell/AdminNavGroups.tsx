@@ -3,12 +3,14 @@
 import type React from 'react';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
 import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock,
   LayoutGrid,
   Package,
@@ -19,6 +21,12 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import {
+  computeCollapsedSectionBadge,
+  computeCollapsedStaffBadge,
+  useSidebarSections,
+  type SidebarSectionId,
+} from '@/lib/hooks/useSidebarSections';
 import type {
   NavGroupConfig,
   NavIconId,
@@ -61,6 +69,7 @@ interface AdminNavGroupsProps {
   footerNavItems: NavItemConfig[];
   staffRows: SidebarStaffRow[];
   isCompactRail: boolean;
+  idPrefix?: 'side' | 'drawer';
   onPrefetchRoute: (routeId: string, href: string) => void;
   onItemClick?: () => void;
 }
@@ -71,9 +80,51 @@ export function AdminNavGroups({
   footerNavItems,
   staffRows,
   isCompactRail,
+  idPrefix = 'side',
   onPrefetchRoute,
   onItemClick,
 }: AdminNavGroupsProps) {
+  const { isSectionCollapsed, toggleSection } = useSidebarSections({
+    pathname,
+    primaryNavGroups,
+    footerNavItems,
+  });
+
+  const renderSectionHeader = (params: {
+    sectionId: SidebarSectionId;
+    title: string;
+    panelId: string;
+    collapsed: boolean;
+    collapsedBadge: string | null;
+  }) => (
+    <button
+      type="button"
+      className="ad-nav-sec-btn fx-press"
+      aria-expanded={!params.collapsed}
+      aria-controls={params.panelId}
+      data-collapsed={params.collapsed ? 'true' : 'false'}
+      onClick={() => toggleSection(params.sectionId)}
+    >
+      <Text color="inherit" className="ad-nav-sec-title">
+        {params.title}
+      </Text>
+      <HStack gap={1.5} align="center" style={{ flexShrink: 0 }}>
+        {params.collapsed && params.collapsedBadge ? (
+          <Text color="inherit" weight="semibold" className="ad-nav-count" hasTabularNumbers>
+            {params.collapsedBadge}
+          </Text>
+        ) : null}
+        <ChevronDown
+          size={13}
+          strokeWidth={2}
+          aria-hidden="true"
+          className="ad-nav-chev"
+          data-collapsed={params.collapsed ? 'true' : 'false'}
+        />
+      </HStack>
+    </button>
+  );
+
   const renderNavItem = (item: NavItemConfig) => {
     const isSelected = pathname === item.matchPath;
     const tooltipText = item.badge ? `${item.label} (${item.badge})` : item.label;
@@ -123,31 +174,66 @@ export function AdminNavGroups({
     );
   };
 
+  const staffCollapsed = !isCompactRail && isSectionCollapsed('profesionales');
+  const staffPanelId = `ad-nav-sec-${idPrefix}-profesionales`;
+  const staffBadge = computeCollapsedStaffBadge(staffRows);
+
+  const footerCollapsed = !isCompactRail && isSectionCollapsed('mas');
+  const footerPanelId = `ad-nav-sec-${idPrefix}-mas`;
+  const footerBadge = computeCollapsedSectionBadge(footerNavItems);
+
   return (
-    <VStack as="nav" aria-label="Panel" gap={isCompactRail ? 2 : 4} className="ad-nav-wrap">
-      {primaryNavGroups.map((group, groupIdx) => (
-        <VStack
-          key={group.title}
-          gap={1}
-          className={isCompactRail && groupIdx > 0 ? 'ad-nav-group-rail' : undefined}
-        >
-          {!isCompactRail ? (
-            <Text type="supporting" weight="medium" className="ad-nav-group-title">
-              {group.title}
-            </Text>
-          ) : null}
-          <VStack as="ul" gap={0.5} className="ad-nav-list">
-            {group.items.map(renderNavItem)}
+    <VStack as="nav" aria-label="Panel" gap={isCompactRail ? 2 : 3} className="ad-nav-wrap">
+      {primaryNavGroups.map((group, groupIdx) => {
+        const collapsed = !isCompactRail && isSectionCollapsed(group.id);
+        const panelId = `ad-nav-sec-${idPrefix}-${group.id}`;
+        const collapsedBadge = computeCollapsedSectionBadge(group.items);
+        return (
+          <VStack
+            key={group.id}
+            gap={1}
+            className={isCompactRail && groupIdx > 0 ? 'ad-nav-group-rail' : undefined}
+          >
+            {!isCompactRail
+              ? renderSectionHeader({
+                  sectionId: group.id,
+                  title: group.title,
+                  panelId,
+                  collapsed,
+                  collapsedBadge,
+                })
+              : null}
+            <VStack
+              as="ul"
+              id={panelId}
+              gap={0.5}
+              className="ad-nav-list ad-nav-sec-panel"
+              data-collapsed={collapsed ? 'true' : 'false'}
+              hidden={collapsed}
+            >
+              {group.items.map(renderNavItem)}
+            </VStack>
           </VStack>
-        </VStack>
-      ))}
+        );
+      })}
 
       {!isCompactRail && staffRows.length > 0 ? (
         <VStack gap={1}>
-          <Text type="supporting" weight="medium" className="ad-nav-group-title">
-            Profesionales
-          </Text>
-          <VStack as="ul" gap={0.5} className="ad-nav-list">
+          {renderSectionHeader({
+            sectionId: 'profesionales',
+            title: 'Profesionales',
+            panelId: staffPanelId,
+            collapsed: staffCollapsed,
+            collapsedBadge: staffBadge,
+          })}
+          <VStack
+            as="ul"
+            id={staffPanelId}
+            gap={0.5}
+            className="ad-nav-list ad-nav-sec-panel"
+            data-collapsed={staffCollapsed ? 'true' : 'false'}
+            hidden={staffCollapsed}
+          >
             {staffRows.map((member) => (
               <li key={member.id}>
                 <NextLink
@@ -179,10 +265,26 @@ export function AdminNavGroups({
 
       {footerNavItems.length > 0 ? (
         <VStack
-          gap={0.5}
+          gap={1}
           className={isCompactRail ? 'ad-nav-group-rail ad-nav-utility' : 'ad-nav-utility'}
         >
-          <VStack as="ul" gap={0.5} className="ad-nav-list">
+          {!isCompactRail
+            ? renderSectionHeader({
+                sectionId: 'mas',
+                title: 'Más',
+                panelId: footerPanelId,
+                collapsed: footerCollapsed,
+                collapsedBadge: footerBadge,
+              })
+            : null}
+          <VStack
+            as="ul"
+            id={footerPanelId}
+            gap={0.5}
+            className="ad-nav-list ad-nav-sec-panel"
+            data-collapsed={footerCollapsed ? 'true' : 'false'}
+            hidden={footerCollapsed}
+          >
             {footerNavItems.map(renderNavItem)}
           </VStack>
         </VStack>

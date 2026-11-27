@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -9,7 +9,7 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Selector } from '@astryxdesign/core/Selector';
-import { MessageCircle, Package, PackageCheck, X } from 'lucide-react';
+import { MessageCircle, Package, PackageCheck, Search, X } from 'lucide-react';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import {
   buildWhatsAppLink,
@@ -32,6 +32,14 @@ import {
   formatInstagramUrl,
   type ClientPackageRow,
 } from './clientasTypes';
+
+function normalizeToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
 
 interface ClientLoyaltyTabProps {
   nearRewardClients: AdminOverviewPayload['nearRewardClients'];
@@ -78,12 +86,27 @@ export function ClientLoyaltyTab({
   onRedeemPackageSession,
   onCancelPackage,
 }: ClientLoyaltyTabProps) {
+  const [clientSearch, setClientSearch] = useState('');
   const [assignClientId, setAssignClientId] = useState('');
   const [assignPackageId, setAssignPackageId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
   const [confirmCancelPkg, setConfirmCancelPkg] = useState<ClientPackageRow | null>(null);
 
-  const effectiveAssignClientId = assignClientId || clients[0]?.id || '';
+  const filteredAssignClients = useMemo(() => {
+    const clean = normalizeToken(clientSearch);
+    const sorted = clients.toSorted((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+    if (!clean) return sorted;
+    return sorted.filter((client) => {
+      const haystack = normalizeToken(
+        `${client.fullName} ${client.phoneE164} ${formatPhoneDisplay(client.phoneE164)} ${client.instagramHandle ?? ''}`,
+      );
+      return haystack.includes(clean);
+    });
+  }, [clients, clientSearch]);
+
+  const effectiveAssignClientId = filteredAssignClients.some((c) => c.id === assignClientId)
+    ? assignClientId
+    : (filteredAssignClients[0]?.id ?? '');
   const effectiveAssignPackageId = assignPackageId || activeCatalogPackages[0]?.id || '';
 
   return (
@@ -185,18 +208,20 @@ export function ClientLoyaltyTab({
                     />
                   }
                   actions={
-                    <HStack gap={1.5} align="center" wrap="wrap">
+                    <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
                       <Button
                         type="button"
                         label="Ver ficha"
                         size="sm"
                         variant="secondary"
+                        className="ad-cl-touch-btn"
                         onClick={() => onOpenClientById(entry.clientId)}
                       />
                       <Button
                         label="WhatsApp"
                         size="sm"
                         variant="primary"
+                        className="ad-cl-touch-btn"
                         icon={<MessageCircle size={14} aria-hidden="true" />}
                         href={buildWhatsAppLink(entry.phoneE164, nudgeMsg)}
                         target="_blank"
@@ -281,13 +306,14 @@ export function ClientLoyaltyTab({
                         ) : null}
                       </VStack>
 
-                      <HStack gap={1.5} align="center" wrap="wrap">
+                      <HStack gap={1.5} align="center" wrap="wrap" className="ad-cl-row-actions">
                         <PackageStatusTag status={pkg.status} isExpired={pkg.isExpired} />
                         {canManageClients && pkg.status === 'active' && !pkg.isExpired ? (
                           <Button
                             type="button"
                             size="sm"
                             variant="ghost"
+                            className="ad-cl-touch-btn"
                             icon={<X size={14} aria-hidden="true" />}
                             label="Cancelar"
                             isDisabled={redeemingPkgId === pkg.id || cancelingPkgId === pkg.id}
@@ -299,6 +325,7 @@ export function ClientLoyaltyTab({
                             type="button"
                             size="sm"
                             variant="secondary"
+                            className="ad-cl-touch-btn"
                             icon={<PackageCheck size={14} aria-hidden="true" />}
                             label="Usar 1 sesión"
                             isLoading={redeemingPkgId === pkg.id}
@@ -331,7 +358,7 @@ export function ClientLoyaltyTab({
         {canManageClients ? (
           <SurfaceCard
             title="Asignar paquete a clienta"
-            subtitle="Crea o ajusta los paquetes disponibles en Caja → Promos y paquetes."
+            subtitle="Filtra por nombre o teléfono y asigna el paquete prepagado en segundos."
             headingLevel={3}
             padded
           >
@@ -345,15 +372,34 @@ export function ClientLoyaltyTab({
                 );
                 if (ok) {
                   setAssignNotes('');
+                  setClientSearch('');
                 }
               }}
             >
               <VStack gap={3}>
+                <TextInput
+                  type="search"
+                  size="sm"
+                  label="Buscar clienta"
+                  placeholder="Filtra por nombre, WhatsApp o @instagram..."
+                  startIcon={<Search size={14} aria-hidden="true" />}
+                  hasClear
+                  value={clientSearch}
+                  onChange={setClientSearch}
+                  description={
+                    clientSearch.trim()
+                      ? `${filteredAssignClients.length} ${filteredAssignClients.length === 1 ? 'coincidencia' : 'coincidencias'}`
+                      : undefined
+                  }
+                />
                 <Selector
                   label="Clienta"
                   value={effectiveAssignClientId}
                   onChange={(v) => v && setAssignClientId(v)}
-                  options={clients.map((c) => ({
+                  hasSearch={filteredAssignClients.length > 6}
+                  searchPlaceholder="Buscar en la lista..."
+                  emptyText="Sin clientas con ese filtro"
+                  options={filteredAssignClients.map((c) => ({
                     value: c.id,
                     label: `${c.fullName} (${formatPhoneDisplay(c.phoneE164)})`,
                   }))}
@@ -379,6 +425,7 @@ export function ClientLoyaltyTab({
                   label="Asignar paquete"
                   variant="primary"
                   width="100%"
+                  className="ad-cl-touch-btn"
                   icon={<Package size={14} aria-hidden="true" />}
                   isLoading={assigningPkg}
                   isDisabled={

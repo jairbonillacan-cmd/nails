@@ -6,6 +6,7 @@ import fc from 'fast-check';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { selectNextWaitlistCandidate } from '../notifications/cascade';
 import {
+  addCashEntry,
   addDateOverride,
   addDateOverrideRange,
   addWaitlistEntry,
@@ -17,6 +18,8 @@ import {
   createClientProfile,
   createOrRefreshSlotHold,
   createRecurringBookingSeries,
+  deleteCashEntry,
+  deleteClientProfile,
   deleteCoupon,
   deleteRecurringBlock,
   getBookingByToken,
@@ -55,6 +58,7 @@ import {
   SlotConflictError,
   toggleRecurringBlock,
   updateBookingStatus,
+  updateCashEntry,
   updateClientNotes,
   updateSalonSettings,
   upsertCoupon,
@@ -82,8 +86,10 @@ import { POST as postAdminServices } from '@/app/api/admin/services/route';
 import {
   DELETE as deleteAdminOperations,
   GET as getAdminOperations,
+  PATCH as patchAdminOperations,
   POST as postAdminOperations,
 } from '@/app/api/admin/operations/route';
+import { POST as postAdminTeam } from '@/app/api/admin/team/route';
 import {
   GET as getAdminPackages,
   PATCH as patchAdminPackages,
@@ -2235,7 +2241,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
 
     const badKindDel = await deleteAdminOperations(
       new NextRequest(
-        `http://localhost:3000/api/admin/operations?kind=cash&id=${createdCoupon.id}`,
+        `http://localhost:3000/api/admin/operations?kind=unknown&id=${createdCoupon.id}`,
         { method: 'DELETE', headers: { cookie: ownerCookie } },
       ),
     );
@@ -2412,5 +2418,391 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it('Wave 4: enforces coupon editing, manual cash edit/delete accounting guards, staff commission %, and package editing with full RBAC', async () => {
+    const db = getSnapshot();
+    const owner = db.adminUsers.find((u) => u.role === 'owner' && u.isActive);
+    const admin = db.adminUsers.find((u) => u.role === 'admin' && u.isActive);
+    const specialist = db.adminUsers.find((u) => u.role === 'specialist' && u.isActive);
+    const firstCoupon = db.coupons[0];
+    const secondCoupon = db.coupons[1];
+    const firstStaff = db.staff[0];
+    const firstPackage = db.servicePackages?.[0];
+    if (!owner || !admin || !specialist || !firstCoupon || !secondCoupon || !firstStaff || !firstPackage) {
+      throw new Error('Expected seed users, coupons, staff, and service packages');
+    }
+
+    const ownerCookie = `${ADMIN_SESSION_COOKIE}=${createAdminSessionToken(owner)}`;
+    const adminCookie = `${ADMIN_SESSION_COOKIE}=${createAdminSessionToken(admin)}`;
+    const specialistCookie = `${ADMIN_SESSION_COOKIE}=${createAdminSessionToken(specialist)}`;
+
+    const editCouponSpec = await postAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: specialistCookie },
+        body: JSON.stringify({
+          kind: 'coupon',
+          data: {
+            id: firstCoupon.id,
+            code: firstCoupon.code,
+            kind: firstCoupon.kind,
+            discountType: firstCoupon.discountType,
+            discountValue: firstCoupon.discountValue,
+            remainingBalanceCents: firstCoupon.remainingBalanceCents,
+            maxUses: firstCoupon.maxUses,
+            minSubtotalCents: 25000,
+            expiresAt: firstCoupon.expiresAt,
+            recipientName: firstCoupon.recipientName,
+            isActive: false,
+          },
+        }),
+      }),
+    );
+    expect(editCouponSpec.status).toBe(403);
+
+    const dupCouponRes = await postAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'coupon',
+          data: {
+            id: firstCoupon.id,
+            code: secondCoupon.code.toLowerCase(),
+            kind: firstCoupon.kind,
+            discountType: firstCoupon.discountType,
+            discountValue: firstCoupon.discountValue,
+            remainingBalanceCents: firstCoupon.remainingBalanceCents,
+            maxUses: firstCoupon.maxUses,
+            minSubtotalCents: firstCoupon.minSubtotalCents,
+            expiresAt: firstCoupon.expiresAt,
+            recipientName: firstCoupon.recipientName,
+            isActive: true,
+          },
+        }),
+      }),
+    );
+    expect(dupCouponRes.status).toBe(409);
+    expect(((await dupCouponRes.json()) as { code: string }).code).toBe('COUPON_CODE_EXISTS');
+
+    const editCouponOk = await postAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          kind: 'coupon',
+          data: {
+            id: firstCoupon.id,
+            code: `  ${firstCoupon.code.toLowerCase()}  `,
+            kind: firstCoupon.kind,
+            discountType: firstCoupon.discountType,
+            discountValue: 18,
+            remainingBalanceCents: firstCoupon.remainingBalanceCents,
+            maxUses: 50,
+            minSubtotalCents: 25000,
+            expiresAt: firstCoupon.expiresAt,
+            recipientName: 'Promo Editada',
+            isActive: false,
+          },
+        }),
+      }),
+    );
+    expect(editCouponOk.status).toBe(200);
+    const updatedCoupon = getSnapshot().coupons.find((c) => c.id === firstCoupon.id);
+    expect(updatedCoupon?.code).toBe(firstCoupon.code.toUpperCase());
+    expect(updatedCoupon?.discountValue).toBe(18);
+    expect(updatedCoupon?.minSubtotalCents).toBe(25000);
+    expect(updatedCoupon?.isActive).toBe(false);
+
+    const missingCouponEdit = await postAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'coupon',
+          data: {
+            id: 'cp-nonexistent-999',
+            code: 'NOEXISTE99',
+            kind: 'coupon',
+            discountType: 'percent',
+            discountValue: 10,
+            remainingBalanceCents: null,
+            maxUses: 5,
+            minSubtotalCents: 0,
+            expiresAt: null,
+            recipientName: null,
+            isActive: true,
+          },
+        }),
+      }),
+    );
+    expect(missingCouponEdit.status).toBe(404);
+
+    const manualCash = await addCashEntry({
+      bookingId: null,
+      staffId: null,
+      entryType: 'expense',
+      description: 'Compra de limas',
+      amountCents: 12000,
+      tipCents: 0,
+      commissionCents: 0,
+      paymentMethod: 'cash',
+      recordedBy: owner.fullName,
+    });
+    const bookingLinkedCash = await addCashEntry({
+      bookingId: db.bookings[0]?.id ?? 'bk-linked-1',
+      staffId: firstStaff.id,
+      entryType: 'service_income',
+      description: 'Cobro cita vinculada',
+      amountCents: 45000,
+      tipCents: 5000,
+      commissionCents: 18000,
+      paymentMethod: 'card',
+      recordedBy: owner.fullName,
+    });
+
+    const unauthCashPatch = await patchAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'cash',
+          id: manualCash.id,
+          data: { amountCents: 14000 },
+        }),
+      }),
+    );
+    expect(unauthCashPatch.status).toBe(401);
+
+    const specCashPatch = await patchAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie: specialistCookie },
+        body: JSON.stringify({
+          kind: 'cash',
+          id: manualCash.id,
+          data: { amountCents: 14000 },
+        }),
+      }),
+    );
+    expect(specCashPatch.status).toBe(403);
+
+    const linkedCashPatch = await patchAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'cash',
+          id: bookingLinkedCash.id,
+          data: { amountCents: 100 },
+        }),
+      }),
+    );
+    expect(linkedCashPatch.status).toBe(400);
+    expect(((await linkedCashPatch.json()) as { code: string }).code).toBe(
+      'BOOKING_LINKED_ENTRY_IMMUTABLE',
+    );
+
+    const linkedCashDelete = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=cash&id=${bookingLinkedCash.id}`,
+        { method: 'DELETE', headers: { cookie: ownerCookie } },
+      ),
+    );
+    expect(linkedCashDelete.status).toBe(400);
+    expect(((await linkedCashDelete.json()) as { code: string }).code).toBe(
+      'BOOKING_LINKED_ENTRY_IMMUTABLE',
+    );
+
+    const manualCashPatchOk = await patchAdminOperations(
+      new NextRequest('http://localhost:3000/api/admin/operations', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'cash',
+          id: manualCash.id,
+          data: {
+            description: 'Compra de limas y acetona',
+            amountCents: 19500,
+            paymentMethod: 'transfer',
+          },
+        }),
+      }),
+    );
+    expect(manualCashPatchOk.status).toBe(200);
+    const editedEntry = getSnapshot().cashEntries.find((e) => e.id === manualCash.id);
+    expect(editedEntry?.description).toBe('Compra de limas y acetona');
+    expect(editedEntry?.amountCents).toBe(19500);
+    expect(editedEntry?.paymentMethod).toBe('transfer');
+
+    const manualCashDeleteOk = await deleteAdminOperations(
+      new NextRequest(
+        `http://localhost:3000/api/admin/operations?kind=cash&id=${manualCash.id}`,
+        { method: 'DELETE', headers: { cookie: adminCookie } },
+      ),
+    );
+    expect(manualCashDeleteOk.status).toBe(200);
+    expect(getSnapshot().cashEntries.some((e) => e.id === manualCash.id)).toBe(false);
+
+    await expect(updateCashEntry(manualCash.id, { amountCents: 100 })).rejects.toMatchObject({
+      code: 'CASH_ENTRY_NOT_FOUND',
+    });
+    await expect(deleteCashEntry(manualCash.id)).rejects.toMatchObject({
+      code: 'CASH_ENTRY_NOT_FOUND',
+    });
+
+    const specCommissionRes = await postAdminTeam(
+      new NextRequest('http://localhost:3000/api/admin/team', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: specialistCookie },
+        body: JSON.stringify({
+          kind: 'staff',
+          data: { id: firstStaff.id, name: firstStaff.name, commissionPercent: 55 },
+        }),
+      }),
+    );
+    expect(specCommissionRes.status).toBe(403);
+
+    const originalRoleTitle = firstStaff.roleTitle;
+    const ownerCommissionRes = await postAdminTeam(
+      new NextRequest('http://localhost:3000/api/admin/team', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'staff',
+          data: { id: firstStaff.id, name: firstStaff.name, commissionPercent: 42 },
+        }),
+      }),
+    );
+    expect(ownerCommissionRes.status).toBe(200);
+    const updatedStaff = getSnapshot().staff.find((s) => s.id === firstStaff.id);
+    expect(updatedStaff?.commissionPercent).toBe(42);
+    expect(updatedStaff?.roleTitle).toBe(originalRoleTitle);
+
+    const specPackageEdit = await postAdminPackages(
+      new NextRequest('http://localhost:3000/api/admin/packages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: specialistCookie },
+        body: JSON.stringify({
+          kind: 'catalog',
+          id: firstPackage.id,
+          name: 'Paquete Alterado',
+          description: firstPackage.description,
+          serviceId: firstPackage.serviceId,
+          totalSessions: firstPackage.totalSessions,
+          priceCents: firstPackage.priceCents,
+          validDays: firstPackage.validDays,
+          isActive: true,
+        }),
+      }),
+    );
+    expect(specPackageEdit.status).toBe(403);
+
+    const ownerPackageEdit = await postAdminPackages(
+      new NextRequest('http://localhost:3000/api/admin/packages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'catalog',
+          id: firstPackage.id,
+          name: 'Paquete Rubber VIP 5',
+          description: 'Incluye retiro',
+          serviceId: firstPackage.serviceId,
+          totalSessions: 5,
+          priceCents: 155000,
+          validDays: 120,
+          isActive: true,
+        }),
+      }),
+    );
+    expect(ownerPackageEdit.status).toBe(201);
+    const updatedPackage = getSnapshot().servicePackages?.find((p) => p.id === firstPackage.id);
+    expect(updatedPackage?.name).toBe('Paquete Rubber VIP 5');
+    expect(updatedPackage?.totalSessions).toBe(5);
+    expect(updatedPackage?.priceCents).toBe(155000);
+
+    const missingPackageEdit = await postAdminPackages(
+      new NextRequest('http://localhost:3000/api/admin/packages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: ownerCookie },
+        body: JSON.stringify({
+          kind: 'catalog',
+          id: 'pkg-missing-999',
+          name: 'Inexistente',
+          description: '',
+          serviceId: firstPackage.serviceId,
+          totalSessions: 4,
+          priceCents: 100000,
+          validDays: 90,
+          isActive: true,
+        }),
+      }),
+    );
+    expect(missingPackageEdit.status).toBe(404);
+  });
+
+  it('Wave 5: edits client fullName/phone with duplicate guard, deletes empty clients with cascades, blocks clients with history, and includes lastServiceName in inactive clients', async () => {
+    const emptyClient = await createClientProfile({
+      fullName: 'Valeria Prueba',
+      phone: '2223339988',
+      email: 'valeria@ejemplo.mx',
+      instagramHandle: '@valeria.nails',
+      notes: 'Base rubber',
+    });
+
+    const renamed = await updateClientNotes({
+      clientId: emptyClient.id,
+      fullName: '  Valeria Prueba Editada  ',
+      phone: '2224449988',
+    });
+    expect(renamed.fullName).toBe('Valeria Prueba Editada');
+    expect(renamed.phoneE164).toBe('+522224449988');
+
+    const sofia = getSnapshot().clients.find((c) => c.id === 'client-sofia');
+    expect(sofia).toBeDefined();
+    await expect(
+      updateClientNotes({
+        clientId: emptyClient.id,
+        phone: `+521${(sofia?.phoneE164 ?? '+522224123987').replace(/^\+52/, '')}`,
+      }),
+    ).rejects.toMatchObject({ code: 'CLIENT_EXISTS' });
+
+    const repo = getRepository();
+    await repo.recordConsent({
+      clientId: emptyClient.id,
+      policyVersion: '2026-11',
+      marketingOptIn: true,
+    });
+    expect((getSnapshot().consents ?? []).some((c) => c.clientId === emptyClient.id)).toBe(true);
+
+    const deleted = await deleteClientProfile(emptyClient.id);
+    expect(deleted.id).toBe(emptyClient.id);
+    expect(getSnapshot().clients.some((c) => c.id === emptyClient.id)).toBe(false);
+    expect((getSnapshot().consents ?? []).some((c) => c.clientId === emptyClient.id)).toBe(false);
+
+    await expect(deleteClientProfile('client-sofia')).rejects.toMatchObject({
+      code: 'CLIENT_HAS_HISTORY',
+    });
+    await expect(deleteClientProfile(emptyClient.id)).rejects.toMatchObject({
+      code: 'CLIENT_NOT_FOUND',
+    });
+
+    const liveDb = getSnapshot();
+    const paulaBooking = liveDb.bookings.find((b) => b.id === 'bk-1000');
+    expect(paulaBooking).toBeDefined();
+    if (paulaBooking) {
+      const oldIso = new Date(Date.now() - 45 * 86_400_000).toISOString();
+      paulaBooking.startAt = oldIso;
+      paulaBooking.endAt = oldIso;
+      paulaBooking.status = 'completed';
+    }
+    const expectedServiceName = liveDb.services.find(
+      (s) => s.id === paulaBooking?.serviceId,
+    )?.name;
+    const inactive = getInactiveClients(30);
+    const paulaRow = inactive.find((c) => c.clientId === 'client-paula');
+    expect(paulaRow?.lastServiceId).toBe(paulaBooking?.serviceId ?? null);
+    expect(paulaRow?.lastServiceName).toBe(expectedServiceName ?? null);
   });
 });

@@ -78,7 +78,16 @@ export function NewBookingDialog({
   );
 
   const defaultServiceId = prefill?.serviceId || activeServices[0]?.id || '';
-  const defaultStaffSelection = lockedStaffId ?? (prefill?.staffId || initialStaffId || 'any');
+  const validPrefillStaffId =
+    prefill?.staffId && activeStaff.some((s) => s.id === prefill.staffId)
+      ? prefill.staffId
+      : '';
+  const validInitialStaffId =
+    initialStaffId && activeStaff.some((s) => s.id === initialStaffId)
+      ? initialStaffId
+      : '';
+  const defaultStaffSelection =
+    lockedStaffId ?? (validPrefillStaffId || validInitialStaffId || 'any');
 
   const [serviceId, setServiceId] = useState(defaultServiceId);
   const [extraServiceIds, setExtraServiceIds] = useState<string[]>(prefill?.extraServiceIds ?? []);
@@ -131,7 +140,7 @@ export function NewBookingDialog({
     staffId: effectiveStaffId,
     startDate,
     preferredStartAt: prefill?.preferredStartAt,
-    preferredStaffId: prefill?.staffId,
+    preferredStaffId: lockedStaffId ?? (validPrefillStaffId || undefined),
     onSyncStart: () => setFormError(null),
   });
 

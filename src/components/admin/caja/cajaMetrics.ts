@@ -10,6 +10,7 @@ import type {
   AdminRole,
   CashRegisterEntry,
   Coupon,
+  PaymentMethod,
   PaymentSplit,
   StaffMember,
 } from '@/lib/types';
@@ -35,6 +36,14 @@ export const CAJA_METHOD_FILTER_OPTIONS: readonly FilterPillOption<CajaMethodFil
   { value: 'cash', label: 'Efectivo' },
   { value: 'card', label: 'Tarjeta' },
   { value: 'transfer', label: 'Transferencia' },
+];
+
+export const NAIL_SALON_EXPENSE_PRESETS: readonly string[] = [
+  'Geles / acrílico',
+  'Limas y desechables',
+  'Esterilización',
+  'Renta / servicios',
+  'Pago a profesional',
 ];
 
 export function cajaPeriodLabel(period: CajaPeriod): string {
@@ -86,6 +95,10 @@ export interface CajaBookingSearchMeta {
   bookingCode: string;
   clientName: string;
   staffName: string;
+}
+
+export function isCashEntryEditable(entry: CashRegisterEntry): boolean {
+  return entry.bookingId === null;
 }
 
 export function filterCashEntries(
@@ -258,6 +271,18 @@ export function computeCajaPeriodSummary(
   };
 }
 
+export function computeEntryCommissionCents(
+  entry: CashRegisterEntry,
+  commissionPercent: number,
+): number {
+  if (entry.entryType === 'expense') return 0;
+  if (entry.entryType === 'service_income') {
+    const safePct = Math.max(0, Math.min(100, commissionPercent));
+    return Math.round((Math.max(0, entry.amountCents) * safePct) / 100);
+  }
+  return Math.max(0, entry.commissionCents);
+}
+
 export function computeCommissionsByStaff(params: {
   staff: readonly StaffMember[];
   cashEntries: readonly CashRegisterEntry[];
@@ -300,7 +325,7 @@ export function computeCommissionsByStaff(params: {
       );
       const sales = entries.reduce((sum, entry) => sum + Math.max(0, entry.amountCents), 0);
       const commission = entries.reduce(
-        (sum, entry) => sum + Math.max(0, entry.commissionCents),
+        (sum, entry) => sum + computeEntryCommissionCents(entry, st.commissionPercent),
         0,
       );
       const tips = entries.reduce((sum, entry) => sum + Math.max(0, entry.tipCents), 0);
@@ -332,6 +357,27 @@ export function computeCommissionsByStaff(params: {
     );
 }
 
+export interface CashMovementDraft {
+  entryType: 'expense' | 'product_sale' | 'service_income';
+  description: string;
+  amountMxn: number;
+  method: PaymentMethod;
+  staffId: string | null;
+}
+
+export function buildCommissionPayoutDraft(
+  row: CommissionStaffRow,
+  period: CajaPeriod,
+): CashMovementDraft {
+  return {
+    entryType: 'expense',
+    description: `Pago de comisiones y propinas · ${row.name} (${cajaPeriodLabel(period)})`,
+    amountMxn: Number((Math.max(0, row.totalPayout) / 100).toFixed(2)),
+    method: 'cash',
+    staffId: row.id,
+  };
+}
+
 export interface CouponStatusMeta {
   status: 'active' | 'paused' | 'exhausted' | 'expired';
   label: string;
@@ -356,6 +402,120 @@ export function classifyCouponStatus(coupon: Coupon, nowMs: number): CouponStatu
     return { status: 'exhausted', label: 'Agotado', tone: 'warning' };
   }
   return { status: 'active', label: 'Activo', tone: 'success' };
+}
+
+export interface CouponEditorInput {
+  id?: string;
+  code: string;
+  kind: 'coupon' | 'gift_card';
+  discountType: 'percent' | 'fixed_cents';
+  value: number;
+  remainingBalanceMxn: number;
+  minSubtotalMxn: number;
+  maxUses: number;
+  expiresDate: string;
+  recipientName: string;
+  isActive: boolean;
+}
+
+export interface CouponPayloadData {
+  id?: string;
+  code: string;
+  kind: 'coupon' | 'gift_card';
+  discountType: 'percent' | 'fixed_cents';
+  discountValue: number;
+  remainingBalanceCents: number | null;
+  maxUses: number | null;
+  minSubtotalCents: number;
+  expiresAt: string | null;
+  recipientName: string | null;
+  isActive: boolean;
+}
+
+export function formatExpiryDateInput(expiresAt: string | null): string {
+  if (!expiresAt) return '';
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(expiresAt.trim());
+  return match?.[1] ?? '';
+}
+
+export function validateCouponEditorInput(
+  input: CouponEditorInput,
+): { ok: true; data: CouponPayloadData } | { ok: false; error: string } {
+  const cleanCode = input.code.trim().toUpperCase();
+  if (cleanCode.length < 2) {
+    return { ok: false, error: 'Escribe un código de al menos 2 caracteres.' };
+  }
+  if (cleanCode.length > 40) {
+    return { ok: false, error: 'El código no puede tener más de 40 caracteres.' };
+  }
+
+  const isFixed = input.kind === 'gift_card' || input.discountType === 'fixed_cents';
+  if (!Number.isFinite(input.value) || input.value <= 0) {
+    return { ok: false, error: 'Ingresa un valor mayor a 0.' };
+  }
+  if (!isFixed && (input.value < 1 || input.value > 100)) {
+    return { ok: false, error: 'El descuento en porcentaje debe estar entre 1% y 100%.' };
+  }
+
+  const discountValue = isFixed
+    ? Math.round(input.value * 100)
+    : Math.round(input.value);
+
+  const remainingBalanceCents =
+    input.kind === 'gift_card'
+      ? input.id
+        ? Math.max(
+            0,
+            Math.round(
+              (Number.isFinite(input.remainingBalanceMxn)
+                ? input.remainingBalanceMxn
+                : 0) * 100,
+            ),
+          )
+        : discountValue
+      : null;
+
+  const minSubtotalCents = Math.max(
+    0,
+    Math.round((Number.isFinite(input.minSubtotalMxn) ? input.minSubtotalMxn : 0) * 100),
+  );
+
+  const maxUses =
+    Number.isFinite(input.maxUses) && input.maxUses > 0
+      ? Math.min(100_000, Math.round(input.maxUses))
+      : null;
+
+  const trimmedDate = input.expiresDate.trim();
+  let expiresAt: string | null = null;
+  if (trimmedDate.length > 0) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+      return { ok: false, error: 'La fecha de vencimiento debe tener formato AAAA-MM-DD.' };
+    }
+    const parsed = Date.parse(`${trimmedDate}T23:59:59.000Z`);
+    if (Number.isNaN(parsed)) {
+      return { ok: false, error: 'Ingresa una fecha de vencimiento válida.' };
+    }
+    expiresAt = `${trimmedDate}T23:59:59.000Z`;
+  }
+
+  const data: CouponPayloadData = {
+    code: cleanCode,
+    kind: input.kind,
+    discountType: isFixed ? 'fixed_cents' : 'percent',
+    discountValue,
+    remainingBalanceCents,
+    maxUses,
+    minSubtotalCents,
+    expiresAt,
+    recipientName: input.recipientName.trim() || null,
+    isActive: input.isActive,
+  };
+
+  if (input.id) {
+    data.id = input.id;
+  }
+
+  return { ok: true, data };
 }
 
 export function computeTodayExpectedCashCents(

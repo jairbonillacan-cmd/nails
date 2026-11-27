@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ staff });
   } catch (err) {
     if (err instanceof PolicyError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+      const status = err.code === 'STAFF_NOT_FOUND' ? 404 : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(

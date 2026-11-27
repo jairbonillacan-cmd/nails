@@ -7,17 +7,22 @@ import type {
 } from '@/lib/types';
 import type { SplitDetailRow } from './cajaTypes';
 import {
+  buildCommissionPayoutDraft,
   cajaPeriodLabel,
   classifyCouponStatus,
   computeCajaPeriodSummary,
   computeCashReconciliation,
   computeCommissionsByStaff,
+  computeEntryCommissionCents,
   computeTodayExpectedCashCents,
   filterCashEntries,
   filterSplitDetails,
   formatCashCloseWhatsAppSummary,
+  formatExpiryDateInput,
   getCajaPeriodStartKey,
+  isCashEntryEditable,
   isIsoInCajaPeriod,
+  validateCouponEditorInput,
 } from './cajaMetrics';
 
 const TZ = 'America/Mexico_City';
@@ -86,6 +91,11 @@ describe('cajaMetrics period filtering & summaries', () => {
     expect(cajaPeriodLabel('7d')).toBe('Últimos 7 días');
     expect(cajaPeriodLabel('month')).toBe('Este mes');
     expect(cajaPeriodLabel('all')).toBe('Histórico');
+  });
+
+  it('identifies manual vs booking-linked cash entry editability', () => {
+    expect(isCashEntryEditable(makeEntry({ bookingId: null }))).toBe(true);
+    expect(isCashEntryEditable(makeEntry({ bookingId: 'bk-1001' }))).toBe(false);
   });
 
   it('filters cash entries by period, payment method, entry type, and search query', () => {
@@ -289,7 +299,7 @@ describe('cajaMetrics period filtering & summaries', () => {
   });
 });
 
-describe('cajaMetrics specialist commissions & RBAC scoping', () => {
+describe('cajaMetrics specialist commissions, live rate recalculation & payouts', () => {
   const staff: StaffMember[] = [
     makeStaff({ id: 'st-1', name: 'Valeria', commissionPercent: 40 }),
     makeStaff({ id: 'st-2', name: 'Camila', commissionPercent: 35 }),
@@ -299,14 +309,25 @@ describe('cajaMetrics specialist commissions & RBAC scoping', () => {
     makeEntry({
       id: 'c1',
       staffId: 'st-1',
+      entryType: 'service_income',
       amountCents: 60000,
       commissionCents: 24000,
       tipCents: 5000,
       occurredAt: '2026-11-27T17:00:00.000Z',
     }),
     makeEntry({
+      id: 'c1-retail',
+      staffId: 'st-1',
+      entryType: 'product_sale',
+      amountCents: 20000,
+      commissionCents: 2000,
+      tipCents: 0,
+      occurredAt: '2026-11-27T17:30:00.000Z',
+    }),
+    makeEntry({
       id: 'c2',
       staffId: 'st-2',
+      entryType: 'service_income',
       amountCents: 90000,
       commissionCents: 31500,
       tipCents: 10000,
@@ -335,9 +356,18 @@ describe('cajaMetrics specialist commissions & RBAC scoping', () => {
     },
   ];
 
-  it('computes sorted specialist totals for owner/admin within period', () => {
+  it('recalculates live service commission when specialist % changes while preserving retail 10%', () => {
+    const updatedStaff: StaffMember[] = [
+      makeStaff({ id: 'st-1', name: 'Valeria', commissionPercent: 50 }),
+      makeStaff({ id: 'st-2', name: 'Camila', commissionPercent: 35 }),
+    ];
+
+    expect(computeEntryCommissionCents(entries[0]!, 50)).toBe(30000);
+    expect(computeEntryCommissionCents(entries[1]!, 50)).toBe(2000);
+    expect(computeEntryCommissionCents(entries[3]!, 50)).toBe(0);
+
     const rows = computeCommissionsByStaff({
-      staff,
+      staff: updatedStaff,
       cashEntries: entries,
       paymentSplits: splits,
       todayKey: TODAY_KEY,
@@ -347,24 +377,35 @@ describe('cajaMetrics specialist commissions & RBAC scoping', () => {
       viewerStaffId: null,
     });
 
-    expect(rows.map((r) => r.id)).toEqual(['st-2', 'st-1']);
-    expect(rows[0]).toMatchObject({
-      id: 'st-2',
-      servicesCount: 1,
-      sales: 90000,
-      commission: 31500,
-      tips: 10000,
-      splitTipsCents: 10000,
-      splitTipsCount: 1,
-      totalPayout: 41500,
-    });
-    expect(rows[1]).toMatchObject({
-      id: 'st-1',
-      servicesCount: 1,
-      sales: 60000,
-      commission: 24000,
+    const valeria = rows.find((r) => r.id === 'st-1');
+    expect(valeria).toMatchObject({
+      percent: 50,
+      servicesCount: 2,
+      sales: 80000,
+      commission: 32000,
       tips: 5000,
-      totalPayout: 29000,
+      totalPayout: 37000,
+    });
+  });
+
+  it('generates a prefilled expense payout draft for a specialist row', () => {
+    const rows = computeCommissionsByStaff({
+      staff,
+      cashEntries: entries,
+      paymentSplits: splits,
+      todayKey: TODAY_KEY,
+      tz: TZ,
+      period: 'month',
+      viewerRole: 'owner',
+      viewerStaffId: null,
+    });
+    const camila = rows.find((r) => r.id === 'st-2')!;
+    expect(buildCommissionPayoutDraft(camila, 'month')).toEqual({
+      entryType: 'expense',
+      description: 'Pago de comisiones y propinas · Camila (Este mes)',
+      amountMxn: 415,
+      method: 'cash',
+      staffId: 'st-2',
     });
   });
 
@@ -397,7 +438,7 @@ describe('cajaMetrics specialist commissions & RBAC scoping', () => {
   });
 });
 
-describe('cajaMetrics coupon status & cash reconciliation', () => {
+describe('cajaMetrics coupon status, editor validation & cash reconciliation', () => {
   it('classifies active, paused, exhausted, and expired coupons accurately', () => {
     const nowMs = Date.parse('2026-11-27T18:00:00.000Z');
 
@@ -448,6 +489,106 @@ describe('cajaMetrics coupon status & cash reconciliation', () => {
       status: 'exhausted',
       label: 'Agotado',
       tone: 'warning',
+    });
+  });
+
+  it('validates and normalizes coupon and gift card edit payloads', () => {
+    expect(formatExpiryDateInput('2026-12-31T23:59:59.000Z')).toBe('2026-12-31');
+    expect(formatExpiryDateInput(null)).toBe('');
+
+    expect(
+      validateCouponEditorInput({
+        code: 'a',
+        kind: 'coupon',
+        discountType: 'percent',
+        value: 20,
+        remainingBalanceMxn: 0,
+        minSubtotalMxn: 0,
+        maxUses: 50,
+        expiresDate: '',
+        recipientName: '',
+        isActive: true,
+      }),
+    ).toEqual({ ok: false, error: 'Escribe un código de al menos 2 caracteres.' });
+
+    expect(
+      validateCouponEditorInput({
+        code: 'VIP150',
+        kind: 'coupon',
+        discountType: 'percent',
+        value: 150,
+        remainingBalanceMxn: 0,
+        minSubtotalMxn: 0,
+        maxUses: 50,
+        expiresDate: '',
+        recipientName: '',
+        isActive: true,
+      }),
+    ).toEqual({
+      ok: false,
+      error: 'El descuento en porcentaje debe estar entre 1% y 100%.',
+    });
+
+    expect(
+      validateCouponEditorInput({
+        id: 'cp-edit-1',
+        code: '  navidad25 ',
+        kind: 'coupon',
+        discountType: 'percent',
+        value: 25,
+        remainingBalanceMxn: 0,
+        minSubtotalMxn: 500,
+        maxUses: 0,
+        expiresDate: '2026-12-31',
+        recipientName: 'Clientas VIP',
+        isActive: false,
+      }),
+    ).toEqual({
+      ok: true,
+      data: {
+        id: 'cp-edit-1',
+        code: 'NAVIDAD25',
+        kind: 'coupon',
+        discountType: 'percent',
+        discountValue: 25,
+        remainingBalanceCents: null,
+        maxUses: null,
+        minSubtotalCents: 50000,
+        expiresAt: '2026-12-31T23:59:59.000Z',
+        recipientName: 'Clientas VIP',
+        isActive: false,
+      },
+    });
+
+    expect(
+      validateCouponEditorInput({
+        id: 'gc-1',
+        code: 'regalo-ana',
+        kind: 'gift_card',
+        discountType: 'fixed_cents',
+        value: 1000,
+        remainingBalanceMxn: 450,
+        minSubtotalMxn: 0,
+        maxUses: 5,
+        expiresDate: '',
+        recipientName: 'Ana',
+        isActive: true,
+      }),
+    ).toEqual({
+      ok: true,
+      data: {
+        id: 'gc-1',
+        code: 'REGALO-ANA',
+        kind: 'gift_card',
+        discountType: 'fixed_cents',
+        discountValue: 100000,
+        remainingBalanceCents: 45000,
+        maxUses: 5,
+        minSubtotalCents: 0,
+        expiresAt: null,
+        recipientName: 'Ana',
+        isActive: true,
+      },
     });
   });
 

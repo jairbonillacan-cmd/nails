@@ -10,19 +10,35 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { Download, ExternalLink } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { CajaSummaryTab } from '@/components/admin/caja/CajaSummaryTab';
+import { CashMovementDraftDialog } from '@/components/admin/caja/CashMovementForm';
 import {
   approveCajaDeposit,
-  createCajaCoupon,
-  createCajaPackage,
+  deleteCajaCashEntry,
   deleteCajaCoupon,
   exportCajaCsv,
   recordCajaCashEntry,
   rejectCajaDeposit,
+  saveCajaCoupon,
+  saveCajaPackage,
+  toggleCajaCouponActive,
   toggleCajaPackage,
+  updateCajaCashEntry,
+  updateCajaStaffCommission,
   type RecordCajaEntryInput,
+  type SaveCajaPackageInput,
+  type UpdateCajaCashEntryInput,
 } from '@/components/admin/caja/cajaActions';
+import {
+  buildCommissionPayoutDraft,
+  type CashMovementDraft,
+  type CouponPayloadData,
+} from '@/components/admin/caja/cajaMetrics';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
-import type { CajaTab, ServicePackageCatalogRow } from '@/components/admin/caja/cajaTypes';
+import type {
+  CajaTab,
+  CommissionStaffRow,
+  ServicePackageCatalogRow,
+} from '@/components/admin/caja/cajaTypes';
 import {
   ConfirmActionDialog,
   MetricGrid,
@@ -31,7 +47,7 @@ import {
   SkeletonBlock,
 } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
-import type { Coupon } from '@/lib/types';
+import type { CashRegisterEntry, Coupon, StaffMember } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
 
 function CajaTabFallback() {
@@ -61,6 +77,22 @@ const CajaPromosTab = dynamic(
   () =>
     import('@/components/admin/caja/CajaPromosTab').then((mod) => mod.CajaPromosTab),
   { ssr: false, loading: CajaTabFallback },
+);
+
+const CommissionRateDialog = dynamic(
+  () =>
+    import('@/components/admin/caja/CommissionRateDialog').then(
+      (mod) => mod.CommissionRateDialog,
+    ),
+  { ssr: false },
+);
+
+const ManualCashEditDialog = dynamic(
+  () =>
+    import('@/components/admin/caja/ManualCashEditDialog').then(
+      (mod) => mod.ManualCashEditDialog,
+    ),
+  { ssr: false },
 );
 
 const OwnerPinDialog = dynamic(
@@ -112,7 +144,15 @@ export default function AdminCashPage() {
   } | null>(null);
   const rejectResolveRef = useRef<((ok: boolean) => void) | null>(null);
   const [deleteCouponTarget, setDeleteCouponTarget] = useState<Coupon | null>(null);
+  const [togglingCouponId, setTogglingCouponId] = useState<string | null>(null);
   const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
+  const [editingCashEntry, setEditingCashEntry] = useState<CashRegisterEntry | null>(null);
+  const [deleteCashTarget, setDeleteCashTarget] = useState<CashRegisterEntry | null>(null);
+  const [deletingCashEntryId, setDeletingCashEntryId] = useState<string | null>(null);
+  const [editingCommissionStaffId, setEditingCommissionStaffId] = useState<string | null>(
+    null,
+  );
+  const [payoutDraft, setPayoutDraft] = useState<CashMovementDraft | null>(null);
   const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
@@ -137,6 +177,13 @@ export default function AdminCashPage() {
   const hasActiveOwnerPin = Boolean(
     data.settings.ownerPinEnabled && data.settings.hasOwnerPin,
   );
+
+  const editingCommissionMember = editingCommissionStaffId
+    ? (data.staff.find((member) => member.id === editingCommissionStaffId) ?? null)
+    : null;
+  const editingCommissionRow = editingCommissionStaffId
+    ? (commissionsByStaff.find((row) => row.id === editingCommissionStaffId) ?? null)
+    : null;
 
   const settlePendingReject = (ok: boolean) => {
     const resolve = rejectResolveRef.current;
@@ -213,22 +260,71 @@ export default function AdminCashPage() {
     return FORM_SUBMIT_OK;
   };
 
-  const handleCreateCoupon = async (input: {
-    code: string;
-    kind: 'coupon' | 'gift_card';
-    discountType: 'percent' | 'fixed_cents';
-    value: number;
-    recipient: string;
-  }): Promise<FormSubmitResult> => {
+  const handleUpdateCashEntry = async (
+    entryId: string,
+    input: UpdateCajaCashEntryInput,
+  ): Promise<FormSubmitResult> => {
     setMsg(null);
-    const result = await createCajaCoupon(input);
+    const result = await updateCajaCashEntry(entryId, input);
     if (!result.ok) {
-      return formSubmitError(result.error ?? 'No se pudo crear el código.');
+      return formSubmitError(result.error ?? 'No se pudo actualizar el movimiento.');
     }
     setErrorMsg(null);
     setMsg(result.message ?? null);
     await refresh();
     return FORM_SUBMIT_OK;
+  };
+
+  const handleConfirmDeleteCashEntry = async () => {
+    if (!deleteCashTarget) return;
+    const target = deleteCashTarget;
+    setDeletingCashEntryId(target.id);
+    setErrorMsg(null);
+    setMsg(null);
+    try {
+      const result = await deleteCajaCashEntry(target.id);
+      if (!result.ok) {
+        setErrorMsg(result.error ?? 'No se pudo eliminar el movimiento.');
+        setDeleteCashTarget(null);
+        return;
+      }
+      setDeleteCashTarget(null);
+      setMsg(result.message ?? null);
+      await refresh();
+    } finally {
+      setDeletingCashEntryId(null);
+    }
+  };
+
+  const handleSaveCoupon = async (
+    payload: CouponPayloadData,
+  ): Promise<FormSubmitResult> => {
+    setMsg(null);
+    const result = await saveCajaCoupon(payload);
+    if (!result.ok) {
+      return formSubmitError(result.error ?? 'No se pudo guardar el código.');
+    }
+    setErrorMsg(null);
+    setMsg(result.message ?? null);
+    await refresh();
+    return FORM_SUBMIT_OK;
+  };
+
+  const handleToggleCouponActive = async (coupon: Coupon, nextActive: boolean) => {
+    setTogglingCouponId(coupon.id);
+    setErrorMsg(null);
+    setMsg(null);
+    try {
+      const result = await toggleCajaCouponActive(coupon, nextActive);
+      if (!result.ok) {
+        setErrorMsg(result.error ?? 'No se pudo actualizar el estado del código.');
+        return;
+      }
+      setMsg(result.message ?? null);
+      await refresh();
+    } finally {
+      setTogglingCouponId(null);
+    }
   };
 
   const handleConfirmDeleteCoupon = async () => {
@@ -252,18 +348,38 @@ export default function AdminCashPage() {
     }
   };
 
-  const handleCreatePackage = async (input: {
-    name: string;
-    description: string;
-    serviceId: string;
-    totalSessions: number;
-    priceMxn: number;
-    validDays: number;
-  }): Promise<FormSubmitResult> => {
+  const handleSaveCommissionRate = async (
+    staffMember: StaffMember,
+    nextPercent: number,
+  ): Promise<FormSubmitResult> => {
     setMsg(null);
-    const result = await createCajaPackage(input);
+    const result = await updateCajaStaffCommission(staffMember, nextPercent);
     if (!result.ok) {
-      return formSubmitError(result.error ?? 'No se pudo crear el paquete de sesiones.');
+      return formSubmitError(result.error ?? 'No se pudo actualizar la comisión.');
+    }
+    setErrorMsg(null);
+    setMsg(result.message ?? null);
+    await refresh();
+    return FORM_SUBMIT_OK;
+  };
+
+  const handleOpenCommissionEditor = (row: CommissionStaffRow) => {
+    if (!canManagePackages) return;
+    setEditingCommissionStaffId(row.id);
+  };
+
+  const handleOpenPayoutDraft = (row: CommissionStaffRow) => {
+    if (!canManagePackages || row.totalPayout <= 0) return;
+    setPayoutDraft(buildCommissionPayoutDraft(row, cajaPeriod));
+  };
+
+  const handleSavePackage = async (
+    input: SaveCajaPackageInput,
+  ): Promise<FormSubmitResult> => {
+    setMsg(null);
+    const result = await saveCajaPackage(input);
+    if (!result.ok) {
+      return formSubmitError(result.error ?? 'No se pudo guardar el paquete de sesiones.');
     }
     setErrorMsg(null);
     reloadPackages();
@@ -421,6 +537,7 @@ export default function AdminCashPage() {
           currency={currency}
           canRecordCash={canManagePackages}
           isSpecialistView={isSpecialistView}
+          deletingEntryId={deletingCashEntryId}
           highlightUncollected={highlightUncollected}
           onChangePeriod={setCajaPeriod}
           onChangeMethodFilter={setMethodFilter}
@@ -429,6 +546,10 @@ export default function AdminCashPage() {
           onOpenDeposits={() => setActiveTab('deposits')}
           onOpenCommissions={() => setActiveTab('commissions')}
           onRecordCashEntry={handleRecordCashEntry}
+          onEditCashEntry={setEditingCashEntry}
+          onRequestDeleteCashEntry={setDeleteCashTarget}
+          onEditCommissionRate={handleOpenCommissionEditor}
+          onRegisterPayout={handleOpenPayoutDraft}
         />
       ) : effectiveActiveTab === 'deposits' ? (
         <CajaDepositsTab
@@ -447,8 +568,11 @@ export default function AdminCashPage() {
           splitSummaryByMethod={splitSummaryByMethod}
           currency={currency}
           commissionPeriod={cajaPeriod}
+          canManageCommissions={canManagePackages}
           isSpecialistView={isSpecialistView}
           onChangeCommissionPeriod={setCajaPeriod}
+          onEditCommissionRate={handleOpenCommissionEditor}
+          onRegisterPayout={handleOpenPayoutDraft}
         />
       ) : (
         <CajaPromosTab
@@ -462,14 +586,53 @@ export default function AdminCashPage() {
           tz={tz}
           nowMs={nowMs}
           canManagePackages={canManagePackages}
+          togglingCouponId={togglingCouponId}
           deletingCouponId={deletingCouponId}
           togglingPkgId={togglingPkgId}
-          onCreateCoupon={handleCreateCoupon}
+          onSaveCoupon={handleSaveCoupon}
+          onToggleCouponActive={handleToggleCouponActive}
           onRequestDeleteCoupon={setDeleteCouponTarget}
-          onCreatePackage={handleCreatePackage}
+          onSavePackage={handleSavePackage}
           onTogglePackage={handleTogglePackage}
         />
       )}
+
+      {canManagePackages && editingCommissionMember ? (
+        <CommissionRateDialog
+          staffMember={editingCommissionMember}
+          staffRow={editingCommissionRow}
+          currency={currency}
+          onOpenChange={(open) => {
+            if (!open) setEditingCommissionStaffId(null);
+          }}
+          onSaveCommission={handleSaveCommissionRate}
+        />
+      ) : null}
+
+      {canManagePackages && payoutDraft ? (
+        <CashMovementDraftDialog
+          draft={payoutDraft}
+          inventory={data.inventory}
+          staff={data.staff}
+          currency={currency}
+          onOpenChange={(open) => {
+            if (!open) setPayoutDraft(null);
+          }}
+          onRecordCashEntry={handleRecordCashEntry}
+        />
+      ) : null}
+
+      {canManagePackages && editingCashEntry ? (
+        <ManualCashEditDialog
+          entry={editingCashEntry}
+          staff={data.staff}
+          currency={currency}
+          onOpenChange={(open) => {
+            if (!open) setEditingCashEntry(null);
+          }}
+          onUpdateEntry={handleUpdateCashEntry}
+        />
+      ) : null}
 
       {rejectConfirmTarget ? (
         <ConfirmActionDialog
@@ -487,6 +650,24 @@ export default function AdminCashPage() {
           variant="destructive"
           isLoading={rejectingId === rejectConfirmTarget.bookingId}
           onConfirm={() => void handleConfirmRejectDeposit()}
+        />
+      ) : null}
+
+      {deleteCashTarget ? (
+        <ConfirmActionDialog
+          isOpen={Boolean(deleteCashTarget)}
+          onOpenChange={(open) => {
+            if (!open && !deletingCashEntryId) {
+              setDeleteCashTarget(null);
+            }
+          }}
+          title="¿Eliminar este movimiento manual?"
+          description={`Se eliminará "${deleteCashTarget.description}" (${formatCurrency(Math.abs(deleteCashTarget.amountCents), currency)}) del historial y del corte de caja.`}
+          confirmLabel="Sí, eliminar"
+          cancelLabel="Cancelar"
+          variant="destructive"
+          isLoading={deletingCashEntryId === deleteCashTarget.id}
+          onConfirm={() => void handleConfirmDeleteCashEntry()}
         />
       ) : null}
 

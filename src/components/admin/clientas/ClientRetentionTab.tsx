@@ -8,7 +8,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
-import { Cake, MessageCircle, Sparkles } from 'lucide-react';
+import { Cake, FileText, MessageCircle, Scissors, Sparkles } from 'lucide-react';
 import {
   buildWhatsAppLink,
   formatBirthdayDisplay,
@@ -34,13 +34,19 @@ import {
 } from './clientasTypes';
 import { ClientRetentionHistorySection } from './ClientRetentionHistorySection';
 
+type InactiveClientWithService = InactiveClientRow & {
+  lastServiceName?: string | null;
+};
+
 interface ClientRetentionTabProps {
   canManageClients: boolean;
   salonName: string;
   tz: string;
+  touchUpDays: number;
   inactiveDays: number;
   onInactiveDaysChange: (days: number) => void;
-  displayedInactiveClients: readonly InactiveClientRow[];
+  displayedInactiveClients: readonly InactiveClientWithService[];
+  lastServiceByClientId: ReadonlyMap<string, string | null>;
   inactiveLoading: boolean;
   inactiveError: string | null;
   campaigns: CampaignsPayload | null;
@@ -49,6 +55,7 @@ interface ClientRetentionTabProps {
   dispatchingKey: string | null;
   nearRewardCount: number;
   returningClients: ReadonlyArray<{ client: ClientProfile; visits: number }>;
+  onOpenClientById: (clientId: string) => void;
   onOpenLoyalty: () => void;
   onDispatchCampaign: (params: {
     kind: 'birthday' | 'reactivation';
@@ -59,20 +66,36 @@ interface ClientRetentionTabProps {
   }) => Promise<void>;
 }
 
-const PRESET_OPTIONS: readonly FilterPillOption<string>[] = INACTIVE_DAY_PRESETS.map(
-  (preset) => ({
-    value: String(preset.days),
-    label: preset.label,
-  }),
-);
+function buildInactivePresetOptions(
+  touchUpDays: number,
+  currentInactiveDays: number,
+): readonly FilterPillOption<string>[] {
+  const baseDays = INACTIVE_DAY_PRESETS.map((preset) =>
+    preset.days === 21 ? touchUpDays : preset.days,
+  );
+  const uniqueDays = Array.from(new Set([...baseDays, currentInactiveDays])).toSorted(
+    (a, b) => a - b,
+  );
+  return uniqueDays.map((days) => ({
+    value: String(days),
+    label:
+      days === touchUpDays
+        ? `${days} días · Retoque`
+        : days === 45
+          ? '45 días · Te extrañamos'
+          : `${days} días`,
+  }));
+}
 
 export function ClientRetentionTab({
   canManageClients,
   salonName,
   tz,
+  touchUpDays,
   inactiveDays,
   onInactiveDaysChange,
   displayedInactiveClients,
+  lastServiceByClientId,
   inactiveLoading,
   inactiveError,
   campaigns,
@@ -81,6 +104,7 @@ export function ClientRetentionTab({
   dispatchingKey,
   nearRewardCount,
   returningClients,
+  onOpenClientById,
   onOpenLoyalty,
   onDispatchCampaign,
 }: ClientRetentionTabProps) {
@@ -91,6 +115,11 @@ export function ClientRetentionTab({
     }
     return map;
   }, [campaigns]);
+
+  const presetOptions = useMemo(
+    () => buildInactivePresetOptions(touchUpDays, inactiveDays),
+    [touchUpDays, inactiveDays],
+  );
 
   return (
     <VStack gap={5} className="fx-step-in">
@@ -114,6 +143,7 @@ export function ClientRetentionTab({
               label="Ver sellos y paquetes"
               variant="secondary"
               size="sm"
+              className="ad-cl-touch-btn"
               onClick={onOpenLoyalty}
             />
           </HStack>
@@ -123,7 +153,7 @@ export function ClientRetentionTab({
       {canManageClients ? (
         <SurfaceCard
           title="Cumpleaños de esta semana"
-          subtitle="Mándales felicidades por WhatsApp."
+          subtitle="Mándales felicidades por WhatsApp o abre su ficha antes de escribirles."
           icon={<Cake size={16} aria-hidden="true" />}
           count={campaigns?.birthdays.length ?? 0}
         >
@@ -169,23 +199,35 @@ export function ClientRetentionTab({
                       </Text>
                     }
                     actions={
-                      <Button
-                        type="button"
-                        label="Felicitar por WhatsApp"
-                        variant="primary"
-                        size="sm"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        isLoading={dispatchingKey === dispatchKey}
-                        onClick={() =>
-                          void onDispatchCampaign({
-                            kind: 'birthday',
-                            clientId: item.clientId,
-                            clientName: item.fullName,
-                            messagePreview: item.whatsappMessage,
-                            fallbackUrl: item.whatsappUrl,
-                          })
-                        }
-                      />
+                      <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
+                        <Button
+                          type="button"
+                          label="Ver ficha"
+                          variant="secondary"
+                          size="sm"
+                          className="ad-cl-touch-btn"
+                          icon={<FileText size={14} aria-hidden="true" />}
+                          onClick={() => onOpenClientById(item.clientId)}
+                        />
+                        <Button
+                          type="button"
+                          label="Felicitar por WhatsApp"
+                          variant="primary"
+                          size="sm"
+                          className="ad-cl-touch-btn"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          isLoading={dispatchingKey === dispatchKey}
+                          onClick={() =>
+                            void onDispatchCampaign({
+                              kind: 'birthday',
+                              clientId: item.clientId,
+                              clientName: item.fullName,
+                              messagePreview: item.whatsappMessage,
+                              fallbackUrl: item.whatsappUrl,
+                            })
+                          }
+                        />
+                      </HStack>
                     }
                   />
                 );
@@ -197,14 +239,15 @@ export function ClientRetentionTab({
 
       <SurfaceCard
         title="Clientas que no vienen hace tiempo"
-        subtitle="Clientas que no han vuelto. Mándales un saludo por WhatsApp."
+        subtitle={`Sugerencia de retoque configurada cada ${touchUpDays} días. Escríbeles o revisa su ficha técnica.`}
+        count={displayedInactiveClients.length}
         actions={
           <FilterPillBar
             ariaLabel="Días sin visita"
             mode="pills"
             size="sm"
             value={String(inactiveDays)}
-            options={PRESET_OPTIONS}
+            options={presetOptions}
             onChange={(val) => onInactiveDaysChange(Number(val))}
           />
         }
@@ -230,13 +273,14 @@ export function ClientRetentionTab({
               title={`Todas vinieron en los últimos ${inactiveDays} días`}
               description="Tus clientas ya tienen visita reciente o una cita agendada."
               actions={
-                inactiveDays > 21 ? (
+                inactiveDays > touchUpDays ? (
                   <Button
                     type="button"
-                    label="Revisar desde 21 días"
+                    label={`Revisar desde ${touchUpDays} días`}
                     variant="secondary"
                     size="sm"
-                    onClick={() => onInactiveDaysChange(21)}
+                    className="ad-cl-touch-btn"
+                    onClick={() => onInactiveDaysChange(touchUpDays)}
                   />
                 ) : undefined
               }
@@ -248,12 +292,15 @@ export function ClientRetentionTab({
               const reactivationMatch = reactivationByClientId.get(item.clientId) ?? null;
               const dispatchKey = `reactivation:${item.clientId}`;
               const alreadySent = dispatchedTodayKeys.has(dispatchKey);
+              const lastServiceName =
+                item.lastServiceName ?? lastServiceByClientId.get(item.clientId) ?? null;
+              const serviceMention = lastServiceName ? ` (${lastServiceName})` : '';
               const comebackMsg =
                 reactivationMatch?.whatsappMessage ??
                 (item.daysSinceLastVisit !== null
-                  ? inactiveDays <= 21
-                    ? `Hola ${item.fullName}, te saludamos de ${salonName}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última cita — ¿te apartamos horario para tu retoque?`
-                    : `Hola ${item.fullName}, te extrañamos en ${salonName}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última visita. ¿Te apartamos horario para tu nuevo set o retoque?`
+                  ? inactiveDays <= touchUpDays
+                    ? `Hola ${item.fullName}, te saludamos de ${salonName}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última cita${serviceMention} — ¿te apartamos horario para tu retoque?`
+                    : `Hola ${item.fullName}, te extrañamos en ${salonName}! Ya pasaron ${item.daysSinceLastVisit} días desde tu última visita${serviceMention}. ¿Te apartamos horario para tu nuevo set o retoque?`
                   : `Hola ${item.fullName}, te saludamos de ${salonName}! ¿Te gustaría agendar tu próxima cita con nosotras?`);
               const fallbackUrl =
                 reactivationMatch?.whatsappUrl ?? buildWhatsAppLink(item.phoneE164, comebackMsg);
@@ -306,36 +353,59 @@ export function ClientRetentionTab({
                       </Text>
                     </HStack>
                   }
+                  meta={
+                    lastServiceName ? (
+                      <HStack gap={1} align="center">
+                        <Scissors size={12} aria-hidden="true" />
+                        <Text type="supporting" color="secondary">
+                          Último servicio: {lastServiceName}
+                        </Text>
+                      </HStack>
+                    ) : undefined
+                  }
                   actions={
-                    useCampaignDispatch ? (
+                    <HStack gap={2} align="center" wrap="wrap" className="ad-cl-row-actions">
                       <Button
                         type="button"
-                        label="Enviar WhatsApp"
-                        variant="primary"
+                        label="Ver ficha"
+                        variant="secondary"
                         size="sm"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        isLoading={dispatchingKey === dispatchKey}
-                        onClick={() =>
-                          void onDispatchCampaign({
-                            kind: 'reactivation',
-                            clientId: item.clientId,
-                            clientName: item.fullName,
-                            messagePreview: comebackMsg,
-                            fallbackUrl,
-                          })
-                        }
+                        className="ad-cl-touch-btn"
+                        icon={<FileText size={14} aria-hidden="true" />}
+                        onClick={() => onOpenClientById(item.clientId)}
                       />
-                    ) : (
-                      <Button
-                        label="Enviar WhatsApp"
-                        variant="primary"
-                        size="sm"
-                        icon={<MessageCircle size={14} aria-hidden="true" />}
-                        href={fallbackUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    )
+                      {useCampaignDispatch ? (
+                        <Button
+                          type="button"
+                          label="Enviar WhatsApp"
+                          variant="primary"
+                          size="sm"
+                          className="ad-cl-touch-btn"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          isLoading={dispatchingKey === dispatchKey}
+                          onClick={() =>
+                            void onDispatchCampaign({
+                              kind: 'reactivation',
+                              clientId: item.clientId,
+                              clientName: item.fullName,
+                              messagePreview: comebackMsg,
+                              fallbackUrl,
+                            })
+                          }
+                        />
+                      ) : (
+                        <Button
+                          label="Enviar WhatsApp"
+                          variant="primary"
+                          size="sm"
+                          className="ad-cl-touch-btn"
+                          icon={<MessageCircle size={14} aria-hidden="true" />}
+                          href={fallbackUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      )}
+                    </HStack>
                   }
                 />
               );

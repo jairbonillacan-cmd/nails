@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { CreateClientSchema, PatchClientSchema } from '@/lib/contracts';
+import { DeleteClientQuerySchema } from '@/lib/contracts/clients';
 import {
   createClientProfile,
+  deleteClientProfile,
   getClientArcoExportAsync,
   getInactiveClientsAsync,
   getNearRewardClientsAsync,
-  getRepository,
+  listClientsAsync,
   PolicyError,
   updateClientNotes,
 } from '@/lib/repositories/db';
@@ -39,8 +41,6 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const db = await getRepository().getSnapshot();
-  const nearRewardClients = await getNearRewardClientsAsync(db);
   const inactiveDaysParam = searchParams.get('inactiveDays')?.trim();
   if (inactiveDaysParam) {
     const parsedDays = Number(inactiveDaysParam);
@@ -50,7 +50,10 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    const inactiveClients = await getInactiveClientsAsync(parsedDays, db);
+    const [inactiveClients, nearRewardClients] = await Promise.all([
+      getInactiveClientsAsync(parsedDays),
+      getNearRewardClientsAsync(),
+    ]);
     return NextResponse.json({
       inactiveDays: parsedDays,
       clients: inactiveClients,
@@ -58,8 +61,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const [clients, nearRewardClients] = await Promise.all([
+    listClientsAsync(),
+    getNearRewardClientsAsync(),
+  ]);
   return NextResponse.json({
-    clients: db.clients,
+    clients,
     nearRewardClients,
   });
 }
@@ -112,6 +119,8 @@ export async function PATCH(request: NextRequest) {
     const parsed = PatchClientSchema.parse(await request.json());
     const client = await updateClientNotes({
       clientId: parsed.clientId,
+      fullName: parsed.fullName,
+      phone: parsed.phone,
       notes: parsed.technicalNotes ?? parsed.notes,
       birthday: parsed.birthday,
       email: parsed.email === '' ? null : parsed.email,
@@ -120,7 +129,12 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ client });
   } catch (err) {
     if (err instanceof PolicyError) {
-      const status = err.code === 'CLIENT_NOT_FOUND' ? 404 : 400;
+      const status =
+        err.code === 'CLIENT_NOT_FOUND'
+          ? 404
+          : err.code === 'CLIENT_EXISTS'
+            ? 409
+            : 400;
       return NextResponse.json({ error: err.message, code: err.code }, { status });
     }
     if (err instanceof z.ZodError) {
@@ -130,5 +144,45 @@ export async function PATCH(request: NextRequest) {
       );
     }
     return NextResponse.json({ error: 'Error actualizando clienta.' }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const session = await requireAdmin(undefined, request);
+  if (!session) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+  if (session.user.role !== 'owner' && session.user.role !== 'admin') {
+    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const parsed = DeleteClientQuerySchema.parse({
+      id: searchParams.get('id')?.trim() ?? '',
+    });
+    const deleted = await deleteClientProfile(parsed.id);
+    return NextResponse.json({
+      ok: true,
+      deletedId: deleted.id,
+      fullName: deleted.fullName,
+    });
+  } catch (err) {
+    if (err instanceof PolicyError) {
+      const status =
+        err.code === 'CLIENT_NOT_FOUND'
+          ? 404
+          : err.code === 'CLIENT_HAS_HISTORY'
+            ? 409
+            : 400;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
+    }
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: err.issues[0]?.message || 'ID de clienta inválido.' },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json({ error: 'Error eliminando clienta.' }, { status: 500 });
   }
 }

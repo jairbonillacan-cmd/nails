@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { AdminOperationsDeleteQuerySchema } from './operations';
+import {
+  AdminOperationsDeleteQuerySchema,
+  AdminOperationsPatchSchema,
+} from './operations';
+import { DeleteClientQuerySchema } from './clients';
 import {
   AdminCreateBookingSchema,
   AdminOperationsPostSchema,
@@ -13,6 +17,7 @@ import {
   DispatchCampaignSchema,
   isSafeInternalBookingMediaPath,
   ManageBookingPatchSchema,
+  PatchClientSchema,
   PostOverrideRangeSchema,
   PostRecurringBlockSchema,
   PublicAvailabilityQuerySchema,
@@ -322,6 +327,30 @@ describe('Pure-domain shared Zod contracts', () => {
       }).success,
     ).toBe(true);
 
+    const validClientPatch = PatchClientSchema.parse({
+      clientId: 'client-sofia',
+      fullName: '  Sofía Ramírez Vega  ',
+      phone: ' 2224123987 ',
+      instagramHandle: '@sofia.nails',
+    });
+    expect(validClientPatch.fullName).toBe('Sofía Ramírez Vega');
+    expect(validClientPatch.phone).toBe('2224123987');
+
+    expect(
+      PatchClientSchema.safeParse({
+        clientId: 'client-sofia',
+        fullName: 'A',
+      }).success,
+    ).toBe(false);
+    expect(
+      PatchClientSchema.safeParse({
+        clientId: 'client-sofia',
+        phone: '1234',
+      }).success,
+    ).toBe(false);
+    expect(DeleteClientQuerySchema.safeParse({ id: 'client-123' }).success).toBe(true);
+    expect(DeleteClientQuerySchema.safeParse({ id: '' }).success).toBe(false);
+
     expect(
       ClientPortalOtpActionSchema.safeParse({
         action: 'verify',
@@ -413,6 +442,45 @@ describe('Pure-domain shared Zod contracts', () => {
       AdminOperationsDeleteQuerySchema.safeParse({
         kind: 'cash',
         id: 'cash-1',
+      }).success,
+    ).toBe(true);
+    expect(
+      AdminOperationsDeleteQuerySchema.safeParse({
+        kind: 'inventory',
+        id: 'inv-1',
+      }).success,
+    ).toBe(false);
+
+    expect(
+      AdminOperationsPatchSchema.safeParse({
+        kind: 'cash',
+        id: 'cash-1',
+        data: { description: 'Pago renta estudio', amountCents: 350000, paymentMethod: 'transfer' },
+      }).success,
+    ).toBe(true);
+    expect(
+      AdminOperationsPatchSchema.safeParse({
+        kind: 'cash',
+        id: 'cash-1',
+        data: { bookingId: 'bk-1', description: 'Intento inyección' },
+      }).success,
+    ).toBe(false);
+    expect(
+      AdminOperationsPatchSchema.safeParse({
+        kind: 'cash',
+        id: 'cash-1',
+        data: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      AdminOperationsPostSchema.safeParse({
+        kind: 'coupon',
+        data: {
+          code: 'TOO_HIGH',
+          kind: 'coupon',
+          discountType: 'percent',
+          discountValue: 120,
+        },
       }).success,
     ).toBe(false);
 

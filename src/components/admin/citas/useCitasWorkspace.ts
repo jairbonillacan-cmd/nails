@@ -14,7 +14,7 @@ import {
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import type { BookingWithRelations } from '@/lib/types';
-import { getDateKeyInTimezone } from '@/lib/format';
+import { getDateKeyInTimezone, phonesMatchE164 } from '@/lib/format';
 import type { AgendaRange } from './BookingsFiltersBar';
 import {
   filterBookingsForListRange,
@@ -42,6 +42,10 @@ export function useCitasWorkspace() {
 
   const paramCollect = searchParams.get('collect')?.trim() ?? '';
   const paramNew = searchParams.get('new')?.trim() ?? '';
+  const paramClientName = searchParams.get('clientName')?.trim() ?? '';
+  const paramClientPhone = searchParams.get('clientPhone')?.trim() ?? '';
+  const paramClientInstagram = searchParams.get('clientInstagram')?.trim() ?? '';
+  const paramStaffId = searchParams.get('staffId')?.trim() ?? '';
   const paramQuery = searchParams.get('q')?.trim() ?? '';
   const paramDate = searchParams.get('date')?.trim() ?? '';
   const paramStaff = searchParams.get('staff')?.trim() ?? '';
@@ -83,7 +87,7 @@ export function useCitasWorkspace() {
 
   const tz = data?.settings.timezone || 'America/Mexico_City';
   const urlSyncKey = data
-    ? `citas-ready|${paramCollect}|${paramNew}|${paramQuery}|${paramDate}|${paramStaff}|${paramTab}`
+    ? `citas-ready|${paramCollect}|${paramNew}|${paramClientName}|${paramClientPhone}|${paramClientInstagram}|${paramStaffId}|${paramQuery}|${paramDate}|${paramStaff}|${paramTab}`
     : 'citas-loading';
 
   useExternalSync(urlSyncKey, async (signal, key) => {
@@ -136,8 +140,42 @@ export function useCitasWorkspace() {
       }
     }
     if (paramNew === '1') {
-      setManualInitStaffId('any');
-      setManualPrefill(null);
+      const requestedStaffId = paramStaffId || paramStaff;
+      const validRequestedStaffId =
+        !isSpecialist &&
+        requestedStaffId &&
+        data.staff.some((s) => s.isActive && s.id === requestedStaffId)
+          ? requestedStaffId
+          : '';
+      const resolvedStaffId = isSpecialist
+        ? (data.session.user.staffMemberId ?? 'any')
+        : validRequestedStaffId || 'any';
+      const safeClientName = paramClientName.slice(0, 120);
+      const safeClientPhone = paramClientPhone.slice(0, 30);
+      const matchedClient = safeClientPhone
+        ? data.clients.find((c) => phonesMatchE164(c.phoneE164, safeClientPhone))
+        : undefined;
+      const resolvedInstagram = (
+        paramClientInstagram ||
+        matchedClient?.instagramHandle ||
+        ''
+      ).slice(0, 120);
+      const hasPrefillFields = Boolean(
+        safeClientName ||
+          safeClientPhone ||
+          resolvedInstagram ||
+          resolvedStaffId !== 'any',
+      );
+      const nextPrefill: NewBookingPrefill | null = hasPrefillFields
+        ? {
+            ...(safeClientName ? { clientName: safeClientName } : {}),
+            ...(safeClientPhone ? { clientPhone: safeClientPhone } : {}),
+            ...(resolvedInstagram ? { clientInstagram: resolvedInstagram } : {}),
+            ...(resolvedStaffId !== 'any' ? { staffId: resolvedStaffId } : {}),
+          }
+        : null;
+      setManualInitStaffId(resolvedStaffId);
+      setManualPrefill(nextPrefill);
       setManualSessionKey((prev) => prev + 1);
       setManualOpen(true);
       router.replace('/admin/citas', { scroll: false });

@@ -171,6 +171,7 @@ export function CajaDepositsTab({
                           label={hasImageProof ? 'Ver foto' : 'Ver enlace'}
                           variant="secondary"
                           size="sm"
+                          className="ad-caja-touch-btn"
                           icon={
                             hasImageProof ? (
                               <ImageIcon size={14} aria-hidden="true" />
@@ -187,6 +188,7 @@ export function CajaDepositsTab({
                           label={isRejecting ? 'Rechazando…' : 'Rechazar'}
                           variant="ghost"
                           size="sm"
+                          className="ad-caja-touch-btn"
                           isLoading={isRejecting}
                           isDisabled={isRowBusy}
                           onClick={() => void onRejectDeposit(dep.bookingId, dep.bookingCode)}
@@ -197,6 +199,7 @@ export function CajaDepositsTab({
                         label="Confirmar anticipo"
                         variant="primary"
                         size="sm"
+                        className="ad-caja-touch-btn"
                         icon={<Check size={14} aria-hidden="true" />}
                         isLoading={isApproving}
                         isDisabled={isRowBusy}
@@ -206,6 +209,7 @@ export function CajaDepositsTab({
                         label="Ver cita"
                         variant="ghost"
                         size="sm"
+                        className="ad-caja-touch-btn"
                         href={`/admin/citas?q=${encodeURIComponent(dep.bookingCode)}`}
                       />
                     </HStack>

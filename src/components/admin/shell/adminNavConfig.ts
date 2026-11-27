@@ -5,6 +5,7 @@ import {
   fetchAdminJson,
   prefetchAdminData,
 } from '@/lib/hooks/useAdminCache';
+import type { SidebarSectionId } from '@/lib/hooks/useSidebarSections';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
 export const ROLE_LABELS = {
@@ -36,6 +37,7 @@ export interface NavItemConfig {
 }
 
 export interface NavGroupConfig {
+  id: SidebarSectionId;
   title: string;
   items: NavItemConfig[];
 }
@@ -69,8 +71,13 @@ export function getBookingCopyUrl(appUrl: string): string {
 
 export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfig[] {
   const role = data.session.user.role;
-  const rawGroups: Array<{ title: string; items: Array<NavItemConfig & { visible: boolean }> }> = [
+  const rawGroups: Array<{
+    id: SidebarSectionId;
+    title: string;
+    items: Array<NavItemConfig & { visible: boolean }>;
+  }> = [
     {
+      id: 'operacion',
       title: 'Operación',
       items: [
         {
@@ -115,6 +122,7 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
       ],
     },
     {
+      id: 'salon',
       title: 'Salón',
       items: [
         {
@@ -152,6 +160,7 @@ export function buildPrimaryNavGroups(data: AdminOverviewPayload): NavGroupConfi
 
   return rawGroups
     .map((group) => ({
+      id: group.id,
       title: group.title,
       items: group.items
         .filter((item) => item.visible)
