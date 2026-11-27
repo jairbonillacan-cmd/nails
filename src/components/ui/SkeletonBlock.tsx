@@ -20,6 +20,7 @@ interface PageSkeletonProps {
   withSplit?: boolean;
   ariaLabel?: string;
   className?: string;
+  withHeader?: boolean;
 }
 
 interface AdminShellSkeletonProps {
@@ -55,6 +56,7 @@ export function PageSkeleton({
   withSplit = true,
   ariaLabel = 'Cargando contenido',
   className,
+  withHeader = true,
 }: PageSkeletonProps) {
   const rootClass = className ? `ad-page ${className}` : 'ad-page';
   const clampedKpis = Math.max(0, Math.min(6, kpiCount));
@@ -69,6 +71,7 @@ export function PageSkeleton({
       aria-label={ariaLabel}
       style={{ minWidth: 0, width: '100%' }}
     >
+      {withHeader ? (
       <HStack
         justify="between"
         align="end"
@@ -89,6 +92,7 @@ export function PageSkeleton({
           <SkeletonBlock width="7.5rem" height="2.25rem" radius="rounded" index={2} />
         </HStack>
       </HStack>
+      ) : null}
 
       {clampedKpis > 0 ? (
         <Grid

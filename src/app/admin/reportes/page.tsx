@@ -185,7 +185,7 @@ export default function AdminReportsPage() {
       ) : null}
 
       {loading && !report ? (
-        <PageSkeleton kpiCount={6} withSplit ariaLabel="Cargando reportes" />
+        <PageSkeleton kpiCount={6} withSplit withHeader={false} ariaLabel="Cargando reportes" />
       ) : report ? (
         <VStack gap={5} aria-busy={loading}>
           <MetricGrid

@@ -3628,3 +3628,33 @@ input.ad-pin-input,
     transform: none !important;
   }
 }
+
+.ad-stat-col {
+  padding-block: var(--spacing-1);
+  padding-inline: var(--spacing-4);
+  border-inline-start: 0.0625rem solid var(--color-border);
+}
+
+.ad-stat-col:first-child {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .ad-stat-col {
+    padding-inline: 0;
+    padding-block: var(--spacing-2);
+    border-inline-start: 0;
+    border-block-start: 0.0625rem solid var(--color-border);
+  }
+
+  .ad-stat-col:first-child {
+    border-block-start: 0;
+  }
+}
+
+@media (max-width: 90rem) {
+  .ad-split-table {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

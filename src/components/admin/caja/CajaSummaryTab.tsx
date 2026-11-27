@@ -259,8 +259,8 @@ export function CajaSummaryTab({
           </Text>
         }
       >
-        <Grid columns={{ minWidth: 150, max: 3 }} gap={3}>
-          <VStack className="ad-subpanel" gap={0.5}>
+        <Grid columns={{ minWidth: 150, max: 3 }} gap={0} className="ad-stat-cols">
+          <VStack className="ad-stat-col" gap={0.5}>
             <Text type="supporting" color="secondary">
               Efectivo
             </Text>
@@ -268,7 +268,7 @@ export function CajaSummaryTab({
               {formatCurrency(todaySummary.cashCents, currency)}
             </Text>
           </VStack>
-          <VStack className="ad-subpanel" gap={0.5}>
+          <VStack className="ad-stat-col" gap={0.5}>
             <Text type="supporting" color="secondary">
               Tarjeta
             </Text>
@@ -276,7 +276,7 @@ export function CajaSummaryTab({
               {formatCurrency(todaySummary.cardCents, currency)}
             </Text>
           </VStack>
-          <VStack className="ad-subpanel" gap={0.5}>
+          <VStack className="ad-stat-col" gap={0.5}>
             <Text type="supporting" color="secondary">
               Transferencia
             </Text>
@@ -287,7 +287,7 @@ export function CajaSummaryTab({
         </Grid>
       </SurfaceCard>
 
-      <VStack className="ad-split" gap={0}>
+      <VStack className="ad-split ad-split-table" gap={0}>
         <CajaMovementsSection
           cashEntries={cashEntries}
           splitDetails={splitDetails}

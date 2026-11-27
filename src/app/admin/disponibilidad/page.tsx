@@ -50,7 +50,12 @@ const VisualTroubleshooter = dynamic(
   {
     ssr: false,
     loading: () => (
-      <PageSkeleton kpiCount={0} withSplit={false} ariaLabel="Cargando revisión de horarios" />
+      <PageSkeleton
+        kpiCount={0}
+        withSplit={false}
+        withHeader={false}
+        ariaLabel="Cargando revisión de horarios"
+      />
     ),
   },
 );

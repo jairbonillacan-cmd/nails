@@ -72,7 +72,7 @@ export function DashboardKpiRow({ data, metrics }: DashboardKpiRowProps) {
       value: String(periodMetrics.bookingsCount),
       unitSuffix:
         periodMetrics.bookingsCount > 0
-          ? `· ${periodMetrics.confirmedCount} ${periodMetrics.confirmedCount === 1 ? 'confirmada' : 'confirmadas'}`
+          ? `${periodMetrics.confirmedCount} ${periodMetrics.confirmedCount === 1 ? 'confirmada' : 'confirmadas'}`
           : undefined,
       sparkline: bookingsSeries,
       delta: formatDeltaBadge(periodMetrics.bookingsDeltaPercent, periodMetrics.compareLabel),
