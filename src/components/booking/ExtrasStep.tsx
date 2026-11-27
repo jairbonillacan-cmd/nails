@@ -39,12 +39,12 @@ export function ExtrasStep({
     <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">
-          Suma nail art o extras
+          Extras y nail art
         </Heading>
         <Text color="secondary">
           {selectedServiceName
-            ? `Opcional para ${selectedServiceName}. Si no necesitas nada adicional, toca Continuar.`
-            : 'Opcional. Si no necesitas nada adicional, toca Continuar.'}
+            ? `Opcional para ${selectedServiceName}. Si no necesitas nada adicional, presiona Continuar.`
+            : 'Opcional. Si no necesitas nada adicional, presiona Continuar.'}
         </Text>
       </VStack>
 
@@ -103,7 +103,7 @@ export function ExtrasStep({
           defaultIsOpen={extraCount > 0}
           trigger={
             <HStack justify="between" align="center" gap={2} width="100%" style={{ minHeight: '2.75rem' }}>
-              <Text weight="semibold">¿Algo más en la misma visita?</Text>
+              <Text weight="semibold">Servicios adicionales</Text>
               <Text type="supporting" color="secondary" hasTabularNumbers>
                 {extraCount > 0 ? 'Agregado' : 'Opcional · elige uno'}
               </Text>

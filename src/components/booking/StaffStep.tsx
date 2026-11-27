@@ -54,10 +54,10 @@ export function StaffStep({
     <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">
-          ¿Con quién?
+          Profesional
         </Heading>
         <Text color="secondary">
-          Tu horario ya está apartado: {formatDateLongInTimezone(slot.startAt, timezone)},{' '}
+          Horario reservado: {formatDateLongInTimezone(slot.startAt, timezone)},{' '}
           <Text color="inherit" weight="semibold" hasTabularNumbers>
             {time}
           </Text>

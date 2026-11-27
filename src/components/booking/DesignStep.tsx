@@ -65,10 +65,10 @@ export function DesignStep({
     <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">
-          Cuéntale a {who} qué quieres
+          Diseño para {who}
         </Heading>
         <Text color="secondary">
-          Es opcional. Si aún no lo tienes claro, lo platican en tu cita.
+          Opcional. Comparte una referencia o describe lo que te gustaría; si aún no lo tienes definido, lo pueden revisar en tu cita.
         </Text>
       </VStack>
 
@@ -92,7 +92,7 @@ export function DesignStep({
       ) : null}
 
       <TextArea
-        label="¿Qué te gustaría?"
+        label="Descripción del diseño"
         placeholder="Ej. Almendra corta en tono cherry, con un detalle dorado. Traigo gel de otro salón."
         description="Forma, largo, colores, si traes algo puesto o si tienes alguna alergia."
         value={clientNotes}

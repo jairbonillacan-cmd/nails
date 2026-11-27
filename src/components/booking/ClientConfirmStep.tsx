@@ -223,14 +223,14 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
       >
         <VStack gap={0.5}>
           <Heading level={2} className="lk-serif rb-h2">
-            {isDetails ? '¿A nombre de quién?' : showDepositCard ? 'Aparta con tu anticipo' : 'Revisa y confirma'}
+            {isDetails ? 'Tus datos' : showDepositCard ? 'Anticipo' : 'Confirmación'}
           </Heading>
           <Text color="secondary">
             {isDetails
-              ? 'Ya casi. Solo necesitamos saber quién viene.'
+              ? 'Ingresa los datos de la persona que asistirá a la cita.'
               : showDepositCard
-                ? 'Se descuenta de tu total el día de tu cita.'
-                : 'Si tienes un cupón, ponlo aquí. Luego acepta el aviso de privacidad y listo.'}
+                ? 'El anticipo se descuenta del total el día de tu cita.'
+                : 'Si tienes un cupón, ingrésalo aquí. Después acepta el aviso de privacidad para confirmar.'}
           </Text>
         </VStack>
 
@@ -374,7 +374,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
               </VStack>
               <VStack gap={0.5} className="rb-grow">
                 <Heading level={3} className="rb-account-name">
-                  ¿Ya has venido?
+                  ¿Ya eres clienta?
                 </Heading>
                 <Text type="supporting" color="secondary" textWrap="pretty">
                   Entra con tu WhatsApp y llenamos todo por ti. Sin contraseñas.
@@ -419,7 +419,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
         {!profile && props.account.isEnabled && !detailsView.isGuestChoiceOpen ? (
           <HStack justify="between" align="center" gap={2} wrap="wrap" className="rb-account-inline">
             <Text type="supporting" color="secondary">
-              ¿Ya has venido antes?
+              ¿Ya eres clienta?
             </Text>
             <Button
               type="button"
@@ -457,7 +457,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           <TextInput
             ref={nameInputRef}
             htmlName="clientName"
-            label="¿Cómo te llamas?"
+            label="Nombre completo"
             placeholder="Nombre y apellido"
             autoComplete="name"
             autoCapitalize="words"

@@ -149,7 +149,7 @@ export function ScheduleStep({
   return (
     <VStack gap={4} className="fx-step-in">
       <VStack gap={0.5}>
-        <Heading level={2} className="lk-serif rb-h2">¿Cuándo?</Heading>
+        <Heading level={2} className="lk-serif rb-h2">Fecha y hora</Heading>
         <Text color="secondary">
           Hora de Puebla · {pinnedStaffName ? `horarios de ${pinnedStaffName}` : 'horarios de todo el equipo'}
         </Text>

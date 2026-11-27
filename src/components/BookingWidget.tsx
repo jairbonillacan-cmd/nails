@@ -488,9 +488,9 @@ export function BookingWidget(props: BookingWidgetProps) {
                   <BrandIcon name="iniciar-sesion" size={1.625} />
                 </VStack>
                 <VStack gap={0.5} className="rb-grow">
-                  <Text weight="semibold">¿Ya has venido?</Text>
+                  <Text weight="semibold">¿Ya eres clienta?</Text>
                   <Text type="supporting" color="secondary" textWrap="pretty">
-                    Entra con tu WhatsApp y llenamos tus datos.
+                    Entra con tu WhatsApp para completar tus datos.
                   </Text>
                 </VStack>
                 <Button

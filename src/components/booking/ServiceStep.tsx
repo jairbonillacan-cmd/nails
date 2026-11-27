@@ -50,9 +50,9 @@ export function ServiceStep({
     <VStack gap={5} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">
-          ¿Qué te hacemos?
+          Servicios
         </Heading>
-        <Text color="secondary">Elige tu servicio principal. En el siguiente paso puedes sumar nail art o extras.</Text>
+        <Text color="secondary">Selecciona el servicio principal. En el siguiente paso podrás agregar nail art o extras.</Text>
       </VStack>
 
       {tabs.length > 1 ? (
