@@ -1,3 +1,4 @@
+import type { WhatsAppInboxSummaryDTO } from '@/lib/contracts';
 import type { RuntimeIntegrationStatus } from '@/lib/env';
 import type { PublicLoyaltySummaryDTO } from '@/lib/public-dto';
 import type {
@@ -139,4 +140,5 @@ export interface AdminOverviewPayload {
   cashEntries: CashRegisterEntry[];
   whatsappUsage?: WhatsAppMonthlyUsageSummary;
   whatsappTemplates?: WhatsAppTemplateConfig[];
+  whatsappInboxSummary?: WhatsAppInboxSummaryDTO;
 }

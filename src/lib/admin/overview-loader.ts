@@ -180,7 +180,7 @@ export async function buildAdminOverviewPayload(
   const scopedAdminUsers = isSpecialist ? [] : db.adminUsers;
   const scopedNotifications = (
     isSpecialist
-      ? db.notifications.filter((n) => visibleBookingIds.has(n.bookingId))
+      ? db.notifications.filter((n) => n.bookingId !== null && visibleBookingIds.has(n.bookingId))
       : db.notifications
   ).slice(0, 30);
 

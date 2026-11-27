@@ -1,9 +1,25 @@
 import type { AdminRole } from './types';
 
+export type AdminSection =
+  | 'overview'
+  | 'bookings'
+  | 'whatsapp'
+  | 'services'
+  | 'availability'
+  | 'team'
+  | 'clients'
+  | 'cash'
+  | 'reports'
+  | 'inventory'
+  | 'coupons'
+  | 'brand'
+  | 'integrations';
+
 const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
   owner: new Set([
     'overview',
     'bookings',
+    'whatsapp',
     'services',
     'availability',
     'team',
@@ -18,6 +34,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<string>> = {
   admin: new Set([
     'overview',
     'bookings',
+    'whatsapp',
     'services',
     'availability',
     'team',

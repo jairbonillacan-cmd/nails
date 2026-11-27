@@ -57,6 +57,20 @@ import {
   shouldSkipWhatsappCascade,
   WAITLIST_OFFER_TTL_MINUTES,
 } from '../notifications/cascade';
+import {
+  canonicalizeWhatsAppPhoneE164,
+  computeNotificationRetryAt,
+  computeWhatsAppServiceWindow,
+  inferReminderTriggerKey,
+  resolveNextDeliveryStatus,
+} from '../notifications/whatsapp-inbox';
+import type {
+  WhatsAppInboxSummaryDTO,
+  WhatsAppReminderItemDTO,
+  WhatsAppServiceWindowDTO,
+  WhatsAppThreadBookingContextDTO,
+  WhatsAppThreadSummaryDTO,
+} from '../contracts/whatsapp';
 import { checkManagePolicyWindow } from '../availability/policy';
 import {
   generateBookingCode,
@@ -137,12 +151,20 @@ import {
   type CleanupExpiredSlotHoldsResult,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type GetWhatsAppThreadDetailParams,
+  type ListScheduledNotificationsParams,
+  type ListWhatsAppThreadsParams,
   type OutboxEventRecord,
+  type OutboxSummary,
   type PublicBootstrapData,
   type QueryAvailabilityInput,
+  type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
   type SalonRepository,
   type SlotHoldResult,
+  type UpdateScheduledNotificationStatusInput,
+  type UpdateWhatsAppMessageStatusInput,
+  type WhatsAppThreadDetailData,
 } from './port';
 
 export { PolicyError, SlotConflictError };
@@ -209,11 +231,13 @@ import type {
   StaffMember,
   WaitlistEntry,
   WebhookEventRecord,
+  WhatsAppMessage,
   WhatsAppMonthlyUsage,
   WhatsAppMonthlyUsageSummary,
   WhatsAppQuotaAlertLevel,
   WhatsAppTemplateConfig,
   WhatsAppTemplateTriggerKey,
+  WhatsAppThread,
 } from '../types';
 
 const DEFAULT_DEMO_DB_PATH = path.join(process.cwd(), '.nails-demo-db.json');
@@ -535,6 +559,8 @@ interface Phase3Collections {
   mediaAssets: MediaAssetRecord[];
   whatsappTemplates: WhatsAppTemplateConfig[];
   whatsappMonthlyUsage: WhatsAppMonthlyUsage[];
+  whatsappThreads: WhatsAppThread[];
+  whatsappMessages: WhatsAppMessage[];
   webhookEvents: WebhookEventRecord[];
 }
 
@@ -553,6 +579,8 @@ function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
   if (!db.mediaAssets) db.mediaAssets = [];
   if (!db.whatsappTemplates) db.whatsappTemplates = [];
   if (!db.whatsappMonthlyUsage) db.whatsappMonthlyUsage = [];
+  if (!db.whatsappThreads) db.whatsappThreads = [];
+  if (!db.whatsappMessages) db.whatsappMessages = [];
   if (!db.webhookEvents) db.webhookEvents = [];
   return {
     paymentSplits: db.paymentSplits,
@@ -569,6 +597,8 @@ function ensurePhase3Collections(db: DemoDatabase): Phase3Collections {
     mediaAssets: db.mediaAssets,
     whatsappTemplates: db.whatsappTemplates,
     whatsappMonthlyUsage: db.whatsappMonthlyUsage,
+    whatsappThreads: db.whatsappThreads,
+    whatsappMessages: db.whatsappMessages,
     webhookEvents: db.webhookEvents,
   };
 }
@@ -881,7 +911,8 @@ async function dispatchSalonBookingAlert(params: {
 
 interface WaitlistOfferDispatchPayload {
   entryId: string;
-  bookingId: string;
+  bookingId: string | null;
+  clientId?: string | null;
   clientName: string;
   clientPhoneE164: string;
   clientEmail: string | null;
@@ -897,7 +928,7 @@ interface WaitlistOfferDispatchPayload {
 
 function assignWaitlistPriorityOfferInLock(
   db: DemoDatabase,
-  vacatedSlot: { id: string; serviceId: string; staffId: string; startAt: string },
+  vacatedSlot: { id: string | null; serviceId: string; staffId: string; startAt: string },
   nowMs = Date.now(),
 ): WaitlistOfferDispatchPayload | null {
   const tz = db.settings.timezone || 'America/Mexico_City';
@@ -926,11 +957,12 @@ function assignWaitlistPriorityOfferInLock(
   const service = db.services.find((s) => s.id === vacatedSlot.serviceId);
   const staff = db.staff.find((s) => s.id === vacatedSlot.staffId);
   const matchedClient = db.clients.find(
-    (c) => c.phoneE164 === candidate.clientPhoneE164,
+    (c) => phonesMatchE164(c.phoneE164, candidate.clientPhoneE164),
   );
   return {
     entryId: candidate.id,
     bookingId: vacatedSlot.id,
+    clientId: matchedClient?.id ?? null,
     clientName: candidate.clientName,
     clientPhoneE164: candidate.clientPhoneE164,
     clientEmail: candidate.clientEmail ?? matchedClient?.email ?? null,
@@ -994,15 +1026,23 @@ async function dispatchWaitlistPriorityOffer(
   const log: ScheduledNotification = {
     id: generateId('ntf'),
     bookingId: offer.bookingId,
+    clientId: offer.clientId ?? null,
     workflowId: null,
+    triggerKey: 'waitlist_offer',
     channel: 'whatsapp',
     recipient: offer.clientPhoneE164,
     scheduledFor: nowIso,
     status: waRes.status,
+    deliveryStatus: waRes.status === 'sent' ? 'sent' : 'failed',
     subject: `Oferta prioritaria lista de espera (${WAITLIST_OFFER_TTL_MINUTES} min)`,
     previewText: bodyText,
+    bodyText,
     providerMessageId: waRes.providerMessageId,
     errorMessage: waRes.errorMessage,
+    attempts: 1,
+    maxAttempts: 3,
+    nextRetryAt: null,
+    lastAttemptAt: nowIso,
     sentAt: waRes.status === 'sent' ? nowIso : null,
     createdAt: nowIso,
   };
@@ -1011,15 +1051,23 @@ async function dispatchWaitlistPriorityOffer(
     const supabase = createSupabaseAdminClient();
     await supabase.from('scheduled_notifications').insert({
       booking_id: log.bookingId,
+      client_id: log.clientId ?? null,
       workflow_id: log.workflowId,
+      trigger_key: log.triggerKey ?? null,
       channel: log.channel,
       recipient: log.recipient,
       scheduled_for: log.scheduledFor,
       status: log.status,
+      delivery_status: log.deliveryStatus ?? null,
       subject: log.subject,
       preview_text: log.previewText,
+      body_text: log.bodyText ?? log.previewText,
       provider_message_id: log.providerMessageId,
       error_message: log.errorMessage,
+      attempts: log.attempts ?? 1,
+      max_attempts: log.maxAttempts ?? 3,
+      next_retry_at: log.nextRetryAt ?? null,
+      last_attempt_at: log.lastAttemptAt ?? nowIso,
       sent_at: log.sentAt,
     });
   } else {
@@ -5892,6 +5940,23 @@ export async function deleteGalleryItem(id: string): Promise<void> {
   });
 }
 
+function isScheduledNotificationDue(
+  notification: ScheduledNotification,
+  nowMs: number,
+): boolean {
+  if (notification.status === 'pending') {
+    const scheduledMs = Date.parse(notification.scheduledFor);
+    return Number.isFinite(scheduledMs) && scheduledMs <= nowMs;
+  }
+  if (notification.status === 'failed' && notification.nextRetryAt) {
+    const attempts = notification.attempts ?? 0;
+    const maxAttempts = notification.maxAttempts ?? 3;
+    const retryMs = Date.parse(notification.nextRetryAt);
+    return attempts < maxAttempts && Number.isFinite(retryMs) && retryMs <= nowMs;
+  }
+  return false;
+}
+
 export async function processDueScheduledNotifications(
   dispatcher: (params: {
     notification: ScheduledNotification;
@@ -5909,28 +5974,36 @@ export async function processDueScheduledNotifications(
   failedCount: number;
   canceledCount: number;
   skippedCount: number;
+  retriedCount: number;
 }> {
   if (isSupabaseEnabled()) {
     const result = await createSupabaseRepository().processDueScheduledNotifications(
       dispatcher,
       nowMs,
     );
-    return { ...result, skippedCount: 0 };
+    return {
+      ...result,
+      skippedCount: result.skippedCount ?? 0,
+      retriedCount: result.retriedCount ?? 0,
+    };
   }
   return withWriteLock(async (db) => {
-    const due = db.notifications.filter(
-      (n) => n.status === 'pending' && new Date(n.scheduledFor).getTime() <= nowMs,
-    );
+    const due = db.notifications.filter((n) => isScheduledNotificationDue(n, nowMs));
 
     let sentCount = 0;
     let failedCount = 0;
     let canceledCount = 0;
     let skippedCount = 0;
+    let retriedCount = 0;
 
     for (const item of due) {
-      const rawBooking = db.bookings.find((b) => b.id === item.bookingId);
+      const isRetry = item.status === 'failed';
+      const rawBooking = item.bookingId
+        ? db.bookings.find((b) => b.id === item.bookingId)
+        : undefined;
       if (!rawBooking || rawBooking.status === 'canceled' || rawBooking.status === 'no_show') {
         item.status = 'canceled';
+        item.nextRetryAt = null;
         canceledCount += 1;
         continue;
       }
@@ -5939,6 +6012,35 @@ export async function processDueScheduledNotifications(
         ? db.workflows.find((w) => w.id === item.workflowId)
         : null;
       const isAfterBooking = wf?.triggerEvent === 'after_booking';
+
+      if (!isAfterBooking && rawBooking.status === 'completed') {
+        item.status = 'canceled';
+        item.errorMessage = 'booking_already_completed';
+        item.nextRetryAt = null;
+        canceledCount += 1;
+        continue;
+      }
+
+      if (isAfterBooking) {
+        if (rawBooking.status !== 'completed') {
+          const endMs = Date.parse(rawBooking.endAt);
+          if (Number.isFinite(endMs) && nowMs - endMs > 7 * 86_400_000) {
+            item.status = 'canceled';
+            item.errorMessage = 'booking_not_completed';
+            item.nextRetryAt = null;
+            canceledCount += 1;
+          }
+          continue;
+        }
+        if ((wf?.offsetMinutes ?? 0) >= 1440 && rawBooking.touchupInvitedAt) {
+          item.status = 'canceled';
+          item.errorMessage = 'already_invited_touchup';
+          item.nextRetryAt = null;
+          canceledCount += 1;
+          continue;
+        }
+      }
+
       const alreadySentEmail = db.notifications.some((n) => {
         if (n.bookingId !== rawBooking.id || n.channel !== 'email' || n.status !== 'sent') {
           return false;
@@ -5957,6 +6059,7 @@ export async function processDueScheduledNotifications(
         item.status = 'canceled';
         item.errorMessage = 'skipped_cascade';
         item.sentAt = null;
+        item.nextRetryAt = null;
         skippedCount += 1;
         canceledCount += 1;
         continue;
@@ -5964,23 +6067,41 @@ export async function processDueScheduledNotifications(
 
       const hydrated = hydrateBooking(db, rawBooking);
       const res = await dispatcher({
-        notification: { ...item },
+        notification: { ...item, bodyText: item.bodyText || item.previewText },
         booking: hydrated,
         settings: db.settings,
       });
 
+      const attemptIso = new Date(nowMs).toISOString();
+      const nextAttempt = (item.attempts ?? 0) + 1;
+      const maxAttempts = item.maxAttempts ?? 3;
+      item.attempts = nextAttempt;
+      item.maxAttempts = maxAttempts;
+      item.lastAttemptAt = attemptIso;
       item.status = res.status;
       item.providerMessageId = res.providerMessageId;
       item.errorMessage = res.errorMessage;
       if (res.status === 'sent') {
-        const sentIso = new Date().toISOString();
-        item.sentAt = sentIso;
+        item.deliveryStatus = 'sent';
+        item.sentAt = attemptIso;
+        item.nextRetryAt = null;
         if (wf?.triggerEvent === 'before_booking' && wf.offsetMinutes >= 720) {
-          rawBooking.reminder24hSentAt = sentIso;
+          rawBooking.reminder24hSentAt = attemptIso;
+        }
+        if (isAfterBooking && (wf?.offsetMinutes ?? 0) >= 1440) {
+          rawBooking.touchupInvitedAt = attemptIso;
         }
         sentCount += 1;
+        if (isRetry) {
+          retriedCount += 1;
+        }
       } else {
+        item.deliveryStatus = 'failed';
         item.sentAt = null;
+        item.nextRetryAt =
+          nextAttempt < maxAttempts
+            ? computeNotificationRetryAt(nextAttempt, nowMs)
+            : null;
         failedCount += 1;
       }
     }
@@ -5991,6 +6112,7 @@ export async function processDueScheduledNotifications(
       failedCount,
       canceledCount,
       skippedCount,
+      retriedCount,
     };
   });
 }
@@ -6338,6 +6460,7 @@ export async function updateNotificationDeliveryByProviderId(
     for (const notif of db.notifications) {
       if (notif.providerMessageId === cleanId) {
         notif.status = status;
+        notif.deliveryStatus = status === 'sent' ? 'sent' : 'failed';
         notif.errorMessage = errorMessage;
         if (status === 'sent' && !notif.sentAt) {
           notif.sentAt = nowIso;
@@ -6466,6 +6589,870 @@ function getDemoOutboxStore(): OutboxEventRecord[] {
     globalThis.nailsDemoOutbox = [];
   }
   return globalThis.nailsDemoOutbox;
+}
+
+function toThreadBookingContext(
+  db: Readonly<DemoDatabase>,
+  booking: Booking,
+): WhatsAppThreadBookingContextDTO {
+  const service = db.services.find((s) => s.id === booking.serviceId);
+  const staff = db.staff.find((s) => s.id === booking.staffId);
+  return {
+    bookingId: booking.id,
+    bookingCode: booking.bookingCode,
+    serviceName: service?.name ?? 'Servicio',
+    staffId: booking.staffId,
+    staffName: staff?.name ?? 'Profesional',
+    startAt: booking.startAt,
+    endAt: booking.endAt,
+    status: booking.status,
+    attendanceStatus: booking.attendanceStatus ?? 'pending',
+    totalPriceCents: booking.totalPriceCents,
+    depositAmountCents: booking.depositAmountCents,
+    manageToken: booking.manageToken,
+  };
+}
+
+function resolveClientForThread(
+  db: Readonly<DemoDatabase>,
+  thread: WhatsAppThread,
+): ClientProfile | null {
+  if (thread.clientId) {
+    const byId = db.clients.find((c) => c.id === thread.clientId);
+    if (byId) return byId;
+  }
+  return db.clients.find((c) => phonesMatchE164(c.phoneE164, thread.phoneE164)) ?? null;
+}
+
+function resolveBookingsForThread(
+  db: Readonly<DemoDatabase>,
+  thread: WhatsAppThread,
+  nowMs: number,
+): {
+  bookings: WhatsAppThreadBookingContextDTO[];
+  nextBooking: WhatsAppThreadBookingContextDTO | null;
+} {
+  const matchedClientIds = new Set<string>();
+  if (thread.clientId) matchedClientIds.add(thread.clientId);
+  for (const client of db.clients) {
+    if (phonesMatchE164(client.phoneE164, thread.phoneE164)) {
+      matchedClientIds.add(client.id);
+    }
+  }
+  if (matchedClientIds.size === 0) {
+    return { bookings: [], nextBooking: null };
+  }
+
+  const rawBookings = db.bookings.filter((b) => matchedClientIds.has(b.clientId));
+  const upcomingActive = rawBookings
+    .filter((b) => isActiveBookingStatus(b.status) && Date.parse(b.endAt) >= nowMs)
+    .toSorted((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+  const otherBookings = rawBookings
+    .filter((b) => !(isActiveBookingStatus(b.status) && Date.parse(b.endAt) >= nowMs))
+    .toSorted((a, b) => Date.parse(b.startAt) - Date.parse(a.startAt));
+
+  const ordered = [...upcomingActive, ...otherBookings];
+  const contexts = ordered.map((b) => toThreadBookingContext(db, b));
+  return {
+    bookings: contexts,
+    nextBooking: contexts[0] ?? null,
+  };
+}
+
+function isThreadVisibleToActor(
+  db: Readonly<DemoDatabase>,
+  thread: WhatsAppThread,
+  role?: AdminRole,
+  staffMemberId?: string | null,
+): boolean {
+  if (!role || role === 'owner' || role === 'admin') {
+    return true;
+  }
+  if (!staffMemberId) {
+    return false;
+  }
+  if (thread.assignedStaffId === staffMemberId) {
+    return true;
+  }
+  const client = resolveClientForThread(db, thread);
+  if (!client) return false;
+  return db.bookings.some(
+    (b) => b.clientId === client.id && b.staffId === staffMemberId,
+  );
+}
+
+function isNotificationVisibleToActor(
+  db: Readonly<DemoDatabase>,
+  notification: ScheduledNotification,
+  role?: AdminRole,
+  staffMemberId?: string | null,
+): boolean {
+  if (!role || role === 'owner' || role === 'admin') {
+    return true;
+  }
+  if (!staffMemberId) {
+    return false;
+  }
+  if (notification.bookingId) {
+    const booking = db.bookings.find((b) => b.id === notification.bookingId);
+    return booking?.staffId === staffMemberId;
+  }
+  if (notification.clientId) {
+    return db.bookings.some(
+      (b) => b.clientId === notification.clientId && b.staffId === staffMemberId,
+    );
+  }
+  return false;
+}
+
+function buildThreadSummaryDTOFromDb(
+  db: Readonly<DemoDatabase>,
+  thread: WhatsAppThread,
+  nowMs: number,
+): WhatsAppThreadSummaryDTO {
+  const client = resolveClientForThread(db, thread);
+  const { nextBooking } = resolveBookingsForThread(db, thread, nowMs);
+  const threadMessages = (db.whatsappMessages ?? []).filter(
+    (m) => m.threadId === thread.id,
+  );
+  let latestMsg: WhatsAppMessage | null = null;
+  let latestMs = -Infinity;
+  for (const msg of threadMessages) {
+    const ms = Date.parse(msg.createdAt);
+    if (ms >= latestMs) {
+      latestMs = ms;
+      latestMsg = msg;
+    }
+  }
+  const hasFailed =
+    thread.hasFailedMessages ||
+    threadMessages.some((m) => m.deliveryStatus === 'failed');
+
+  return {
+    id: thread.id,
+    phoneE164: thread.phoneE164,
+    clientId: client?.id ?? thread.clientId,
+    contactName: thread.contactName || client?.fullName || thread.phoneE164,
+    clientEmail: client?.email ?? null,
+    clientInstagram: client?.instagramHandle ?? null,
+    lastMessageAt: thread.lastMessageAt,
+    lastMessagePreview: thread.lastMessagePreview,
+    lastMessageDirection: thread.lastMessageDirection,
+    lastInboundAt: thread.lastInboundAt,
+    unreadCount: thread.unreadCount,
+    lastReadAt: thread.lastReadAt,
+    hasFailedMessages: hasFailed,
+    isArchived: thread.isArchived,
+    assignedStaffId: thread.assignedStaffId,
+    serviceWindow: computeWhatsAppServiceWindow(thread.lastInboundAt, nowMs),
+    nextBooking,
+    lastDeliveryStatus: latestMsg?.deliveryStatus ?? null,
+    lastSenderKind: latestMsg?.senderKind ?? null,
+  };
+}
+
+function computeDemoInboxSummary(
+  db: Readonly<DemoDatabase>,
+  visibleSummaries: readonly WhatsAppThreadSummaryDTO[],
+  role?: AdminRole,
+  staffMemberId?: string | null,
+): WhatsAppInboxSummaryDTO {
+  let unreadCount = 0;
+  let failedCount = 0;
+  let windowOpenCount = 0;
+  for (const summary of visibleSummaries) {
+    unreadCount += summary.unreadCount;
+    if (summary.hasFailedMessages) failedCount += 1;
+    if (summary.serviceWindow.isOpen) windowOpenCount += 1;
+  }
+  let failedRemindersCount = 0;
+  let pendingRemindersCount = 0;
+  for (const notif of db.notifications) {
+    if (!isNotificationVisibleToActor(db, notif, role, staffMemberId)) continue;
+    if (notif.status === 'failed') failedRemindersCount += 1;
+    if (notif.status === 'pending') pendingRemindersCount += 1;
+  }
+  return {
+    unreadCount,
+    failedCount,
+    failedRemindersCount,
+    pendingRemindersCount,
+    windowOpenCount,
+    totalThreads: visibleSummaries.length,
+  };
+}
+
+export async function listWhatsAppThreads(
+  params?: ListWhatsAppThreadsParams,
+): Promise<{ threads: WhatsAppThreadSummaryDTO[]; summary: WhatsAppInboxSummaryDTO }> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().listWhatsAppThreads(params);
+  }
+  const db = getSnapshot();
+  const nowMs = params?.nowMs ?? Date.now();
+  const visibleThreads = (db.whatsappThreads ?? []).filter(
+    (t) =>
+      !t.isArchived &&
+      isThreadVisibleToActor(db, t, params?.role, params?.staffMemberId),
+  );
+  const allSummaries = visibleThreads.map((t) =>
+    buildThreadSummaryDTOFromDb(db, t, nowMs),
+  );
+  const summary = computeDemoInboxSummary(
+    db,
+    allSummaries,
+    params?.role,
+    params?.staffMemberId,
+  );
+
+  const filter = params?.filter ?? 'all';
+  const query = params?.q?.trim().toLowerCase() ?? '';
+  const phoneFilter = params?.phone?.trim() ?? '';
+  const clientIdFilter = params?.clientId?.trim() ?? '';
+  const limit = Math.max(1, Math.min(200, params?.limit ?? 50));
+
+  const filtered = allSummaries
+    .filter((item) => {
+      if (filter === 'unread' && item.unreadCount <= 0) return false;
+      if (filter === 'window_open' && !item.serviceWindow.isOpen) return false;
+      if (filter === 'failed' && !item.hasFailedMessages) return false;
+      if (phoneFilter && !phonesMatchE164(item.phoneE164, phoneFilter)) {
+        return false;
+      }
+      if (clientIdFilter && item.clientId !== clientIdFilter) {
+        return false;
+      }
+      if (query) {
+        const haystack = [
+          item.contactName,
+          item.phoneE164,
+          item.lastMessagePreview,
+          item.clientEmail ?? '',
+          item.clientInstagram ?? '',
+          item.nextBooking?.bookingCode ?? '',
+          item.nextBooking?.serviceName ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    })
+    .toSorted((a, b) => {
+      const aMs = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
+      const bMs = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
+      return bMs - aMs;
+    })
+    .slice(0, limit);
+
+  return { threads: filtered, summary };
+}
+
+export async function getWhatsAppThreadDetail(
+  params: GetWhatsAppThreadDetailParams,
+): Promise<WhatsAppThreadDetailData | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getWhatsAppThreadDetail(params);
+  }
+  const db = getSnapshot();
+  const nowMs = params.nowMs ?? Date.now();
+  const threads = db.whatsappThreads ?? [];
+  let thread: WhatsAppThread | undefined;
+
+  if (params.threadId) {
+    thread = threads.find((t) => t.id === params.threadId);
+  } else if (params.phoneE164) {
+    const canonical = canonicalizeWhatsAppPhoneE164(params.phoneE164);
+    thread = threads.find(
+      (t) =>
+        (canonical && canonicalizeWhatsAppPhoneE164(t.phoneE164) === canonical) ||
+        phonesMatchE164(t.phoneE164, params.phoneE164 ?? ''),
+    );
+  } else if (params.clientId) {
+    thread = threads.find((t) => t.clientId === params.clientId);
+  }
+
+  if (!thread || !isThreadVisibleToActor(db, thread, params.role, params.staffMemberId)) {
+    return null;
+  }
+
+  const limit = Math.max(1, Math.min(500, params.limit ?? 200));
+  const messages = (db.whatsappMessages ?? [])
+    .filter((m) => m.threadId === thread.id)
+    .toSorted((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    .slice(-limit)
+    .map((m) => ({ ...m, templateParams: [...m.templateParams] }));
+
+  const client = resolveClientForThread(db, thread);
+  const { bookings } = resolveBookingsForThread(db, thread, nowMs);
+
+  return {
+    thread: buildThreadSummaryDTOFromDb(db, thread, nowMs),
+    messages,
+    client: client ? { ...client } : null,
+    bookings,
+  };
+}
+
+export async function getWhatsAppMessageById(
+  messageId: string,
+): Promise<WhatsAppMessage | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getWhatsAppMessageById(messageId);
+  }
+  const db = getSnapshot();
+  const found = (db.whatsappMessages ?? []).find((m) => m.id === messageId);
+  return found ? { ...found, templateParams: [...found.templateParams] } : null;
+}
+
+export async function recordWhatsAppMessage(
+  input: RecordWhatsAppMessageInput,
+): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage }> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().recordWhatsAppMessage(input);
+  }
+  const canonicalPhone =
+    canonicalizeWhatsAppPhoneE164(input.phoneE164) ||
+    normalizePhoneE164(input.phoneE164);
+  if (!canonicalPhone) {
+    throw new PolicyError('INVALID_PHONE', 'Número de WhatsApp inválido.');
+  }
+  const nowIso = input.createdAt ?? new Date().toISOString();
+  const cleanProviderId = input.providerMessageId?.trim() || null;
+
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    if (cleanProviderId) {
+      const existingMessage = cols.whatsappMessages.find(
+        (m) => m.providerMessageId === cleanProviderId,
+      );
+      if (existingMessage) {
+        const existingThread = cols.whatsappThreads.find(
+          (t) => t.id === existingMessage.threadId,
+        );
+        if (existingThread) {
+          return {
+            thread: { ...existingThread },
+            message: {
+              ...existingMessage,
+              templateParams: [...existingMessage.templateParams],
+            },
+          };
+        }
+      }
+    }
+
+    const matchedClient =
+      (input.clientId ? db.clients.find((c) => c.id === input.clientId) : undefined) ??
+      db.clients.find((c) => phonesMatchE164(c.phoneE164, canonicalPhone)) ??
+      null;
+
+    let thread = cols.whatsappThreads.find(
+      (t) =>
+        canonicalizeWhatsAppPhoneE164(t.phoneE164) === canonicalPhone ||
+        phonesMatchE164(t.phoneE164, canonicalPhone),
+    );
+
+    if (!thread) {
+      thread = {
+        id: generateId('wth'),
+        phoneE164: canonicalPhone,
+        clientId: matchedClient?.id ?? input.clientId ?? null,
+        contactName:
+          input.contactName?.trim() || matchedClient?.fullName || canonicalPhone,
+        lastMessageAt: null,
+        lastMessagePreview: '',
+        lastMessageDirection: null,
+        lastInboundAt: null,
+        unreadCount: 0,
+        lastReadAt: null,
+        hasFailedMessages: false,
+        isArchived: false,
+        assignedStaffId: input.assignedStaffId ?? null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      cols.whatsappThreads.unshift(thread);
+    } else {
+      thread.phoneE164 = canonicalPhone;
+      if (!thread.clientId && (matchedClient?.id || input.clientId)) {
+        thread.clientId = matchedClient?.id ?? input.clientId ?? null;
+      }
+      if (
+        input.contactName?.trim() &&
+        (!thread.contactName || thread.contactName === thread.phoneE164)
+      ) {
+        thread.contactName = input.contactName.trim();
+      }
+      if (input.assignedStaffId) {
+        thread.assignedStaffId = input.assignedStaffId;
+      }
+    }
+
+    const isSentOrBeyond =
+      input.deliveryStatus === 'sent' ||
+      input.deliveryStatus === 'delivered' ||
+      input.deliveryStatus === 'read';
+    const isDeliveredOrRead =
+      input.deliveryStatus === 'delivered' || input.deliveryStatus === 'read';
+
+    const message: WhatsAppMessage = {
+      id: generateId('wmsg'),
+      threadId: thread.id,
+      phoneE164: canonicalPhone,
+      clientId: thread.clientId ?? input.clientId ?? null,
+      bookingId: input.bookingId ?? null,
+      notificationId: input.notificationId ?? null,
+      direction: input.direction,
+      senderKind: input.senderKind,
+      senderName: input.senderName?.trim() || null,
+      messageType: input.messageType ?? 'text',
+      bodyText: input.bodyText,
+      templateName: input.templateName ?? null,
+      templateTriggerKey: input.templateTriggerKey ?? null,
+      templateParams: [...(input.templateParams ?? [])],
+      deliveryStatus: input.deliveryStatus,
+      deliveryMode: input.deliveryMode,
+      providerMessageId: cleanProviderId,
+      errorCode: input.errorCode ?? null,
+      errorMessage: input.errorMessage ?? null,
+      sentAt: isSentOrBeyond ? nowIso : null,
+      deliveredAt: isDeliveredOrRead ? nowIso : null,
+      readAt: input.deliveryStatus === 'read' ? nowIso : null,
+      failedAt: input.deliveryStatus === 'failed' ? nowIso : null,
+      createdAt: nowIso,
+    };
+
+    cols.whatsappMessages.push(message);
+
+    const msgMs = Date.parse(nowIso);
+    const currentLastMs = thread.lastMessageAt ? Date.parse(thread.lastMessageAt) : -Infinity;
+    if (!thread.lastMessageAt || msgMs >= currentLastMs) {
+      thread.lastMessageAt = nowIso;
+      thread.lastMessagePreview = input.bodyText.trim().slice(0, 180);
+      thread.lastMessageDirection = input.direction;
+    }
+
+    if (input.direction === 'inbound') {
+      const currentInboundMs = thread.lastInboundAt
+        ? Date.parse(thread.lastInboundAt)
+        : -Infinity;
+      if (!thread.lastInboundAt || msgMs >= currentInboundMs) {
+        thread.lastInboundAt = nowIso;
+      }
+      thread.unreadCount += 1;
+      thread.isArchived = false;
+    }
+
+    thread.hasFailedMessages = cols.whatsappMessages.some(
+      (m) => m.threadId === thread.id && m.deliveryStatus === 'failed',
+    );
+    thread.updatedAt = nowIso;
+
+    return {
+      thread: { ...thread },
+      message: { ...message, templateParams: [...message.templateParams] },
+    };
+  });
+}
+
+export async function updateWhatsAppMessageStatusByProviderId(
+  params: UpdateWhatsAppMessageStatusInput,
+): Promise<{ updated: boolean; message: WhatsAppMessage | null; threadId: string | null }> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateWhatsAppMessageStatusByProviderId(params);
+  }
+  const cleanProviderId = params.providerMessageId?.trim() || null;
+  const cleanMessageId = params.messageId?.trim() || null;
+  if (!cleanProviderId && !cleanMessageId) {
+    return { updated: false, message: null, threadId: null };
+  }
+  const atIso = params.atIso ?? new Date().toISOString();
+
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const msg = cols.whatsappMessages.find(
+      (m) =>
+        (cleanProviderId && m.providerMessageId === cleanProviderId) ||
+        (cleanMessageId && m.id === cleanMessageId),
+    );
+
+    if (!msg) {
+      let notifMatched = false;
+      if (cleanProviderId) {
+        for (const notif of db.notifications) {
+          if (notif.providerMessageId === cleanProviderId) {
+            const currentAsDelivery = notif.deliveryStatus ?? (notif.status === 'sent' ? 'sent' : notif.status === 'failed' ? 'failed' : 'queued');
+            const nextStatus = resolveNextDeliveryStatus(currentAsDelivery, params.status);
+            if (nextStatus === 'failed') {
+              notif.status = 'failed';
+              notif.deliveryStatus = 'failed';
+              notif.errorMessage = params.errorMessage ?? notif.errorMessage;
+              notifMatched = true;
+            } else if (nextStatus === 'sent' || nextStatus === 'delivered' || nextStatus === 'read') {
+              notif.status = 'sent';
+              notif.deliveryStatus = nextStatus;
+              if (!notif.sentAt) notif.sentAt = atIso;
+              notif.errorMessage = null;
+              notif.nextRetryAt = null;
+              notifMatched = true;
+            }
+          }
+        }
+      }
+      return { updated: notifMatched, message: null, threadId: null };
+    }
+
+    const nextStatus = resolveNextDeliveryStatus(msg.deliveryStatus, params.status);
+    const changed =
+      nextStatus !== msg.deliveryStatus ||
+      (nextStatus === 'failed' &&
+        (Boolean(params.errorCode && params.errorCode !== msg.errorCode) ||
+          Boolean(params.errorMessage && params.errorMessage !== msg.errorMessage)));
+
+    if (!changed) {
+      return {
+        updated: false,
+        message: { ...msg, templateParams: [...msg.templateParams] },
+        threadId: msg.threadId,
+      };
+    }
+
+    msg.deliveryStatus = nextStatus;
+    if (nextStatus === 'sent') {
+      if (!msg.sentAt) msg.sentAt = atIso;
+    } else if (nextStatus === 'delivered') {
+      if (!msg.sentAt) msg.sentAt = atIso;
+      if (!msg.deliveredAt) msg.deliveredAt = atIso;
+      msg.errorCode = null;
+      msg.errorMessage = null;
+      msg.failedAt = null;
+    } else if (nextStatus === 'read') {
+      if (!msg.sentAt) msg.sentAt = atIso;
+      if (!msg.deliveredAt) msg.deliveredAt = atIso;
+      if (!msg.readAt) msg.readAt = atIso;
+      msg.errorCode = null;
+      msg.errorMessage = null;
+      msg.failedAt = null;
+    } else if (nextStatus === 'failed') {
+      msg.failedAt = atIso;
+      msg.errorCode = params.errorCode ?? msg.errorCode;
+      msg.errorMessage = params.errorMessage ?? msg.errorMessage;
+    }
+
+    const thread = cols.whatsappThreads.find((t) => t.id === msg.threadId);
+    if (thread) {
+      thread.hasFailedMessages = cols.whatsappMessages.some(
+        (m) => m.threadId === thread.id && m.deliveryStatus === 'failed',
+      );
+      thread.updatedAt = atIso;
+    }
+
+    for (const notif of db.notifications) {
+      const matchesNotif =
+        (msg.notificationId && notif.id === msg.notificationId) ||
+        (msg.providerMessageId && notif.providerMessageId === msg.providerMessageId);
+      if (!matchesNotif) continue;
+      if (nextStatus === 'failed') {
+        notif.status = 'failed';
+        notif.deliveryStatus = 'failed';
+        notif.errorMessage = params.errorMessage ?? msg.errorMessage ?? notif.errorMessage;
+      } else if (nextStatus === 'sent' || nextStatus === 'delivered' || nextStatus === 'read') {
+        notif.status = 'sent';
+        notif.deliveryStatus = nextStatus;
+        if (!notif.sentAt) notif.sentAt = atIso;
+        notif.errorMessage = null;
+        notif.nextRetryAt = null;
+      }
+    }
+
+    return {
+      updated: true,
+      message: { ...msg, templateParams: [...msg.templateParams] },
+      threadId: msg.threadId,
+    };
+  });
+}
+
+export async function markWhatsAppThreadRead(
+  threadId: string,
+  atIso?: string,
+): Promise<WhatsAppThread | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().markWhatsAppThreadRead(threadId, atIso);
+  }
+  const readAt = atIso ?? new Date().toISOString();
+  return withWriteLock((db) => {
+    const cols = ensurePhase3Collections(db);
+    const thread = cols.whatsappThreads.find((t) => t.id === threadId);
+    if (!thread) return null;
+    thread.unreadCount = 0;
+    thread.lastReadAt = readAt;
+    thread.updatedAt = readAt;
+    return { ...thread };
+  });
+}
+
+export async function getWhatsAppThreadWindow(
+  lookup: { threadId?: string; phoneE164?: string },
+  nowMs = Date.now(),
+): Promise<WhatsAppServiceWindowDTO> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getWhatsAppThreadWindow(lookup, nowMs);
+  }
+  const db = getSnapshot();
+  const threads = db.whatsappThreads ?? [];
+  let thread: WhatsAppThread | undefined;
+  if (lookup.threadId) {
+    thread = threads.find((t) => t.id === lookup.threadId);
+  } else if (lookup.phoneE164) {
+    const canonical = canonicalizeWhatsAppPhoneE164(lookup.phoneE164);
+    thread = threads.find(
+      (t) =>
+        (canonical && canonicalizeWhatsAppPhoneE164(t.phoneE164) === canonical) ||
+        phonesMatchE164(t.phoneE164, lookup.phoneE164 ?? ''),
+    );
+  }
+  return computeWhatsAppServiceWindow(thread?.lastInboundAt ?? null, nowMs);
+}
+
+export async function getWhatsAppUnreadSummary(params?: {
+  role?: AdminRole;
+  staffMemberId?: string | null;
+  nowMs?: number;
+}): Promise<WhatsAppInboxSummaryDTO> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getWhatsAppUnreadSummary(params);
+  }
+  const db = getSnapshot();
+  const nowMs = params?.nowMs ?? Date.now();
+  const visibleSummaries = (db.whatsappThreads ?? [])
+    .filter(
+      (t) =>
+        !t.isArchived &&
+        isThreadVisibleToActor(db, t, params?.role, params?.staffMemberId),
+    )
+    .map((t) => buildThreadSummaryDTOFromDb(db, t, nowMs));
+  return computeDemoInboxSummary(
+    db,
+    visibleSummaries,
+    params?.role,
+    params?.staffMemberId,
+  );
+}
+
+export async function listScheduledNotifications(
+  params?: ListScheduledNotificationsParams,
+): Promise<WhatsAppReminderItemDTO[]> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().listScheduledNotifications(params);
+  }
+  const db = getSnapshot();
+  const limit = Math.max(1, Math.min(200, params?.limit ?? 100));
+
+  const filtered = db.notifications.filter((n) => {
+    if (!isNotificationVisibleToActor(db, n, params?.role, params?.staffMemberId)) {
+      return false;
+    }
+    if (params?.status && n.status !== params.status) return false;
+    if (params?.channel && n.channel !== params.channel) return false;
+    if (params?.bookingId && n.bookingId !== params.bookingId) return false;
+    return true;
+  });
+
+  const sorted =
+    params?.status === 'pending'
+      ? filtered.toSorted(
+          (a, b) => Date.parse(a.scheduledFor) - Date.parse(b.scheduledFor),
+        )
+      : filtered.toSorted((a, b) => {
+          const aKey = Date.parse(a.sentAt ?? a.scheduledFor ?? a.createdAt);
+          const bKey = Date.parse(b.sentAt ?? b.scheduledFor ?? b.createdAt);
+          return bKey - aKey;
+        });
+
+  return sorted.slice(0, limit).map((item) => {
+    const booking = item.bookingId
+      ? db.bookings.find((b) => b.id === item.bookingId)
+      : undefined;
+    const client =
+      (booking ? db.clients.find((c) => c.id === booking.clientId) : undefined) ??
+      (item.clientId ? db.clients.find((c) => c.id === item.clientId) : undefined) ??
+      db.clients.find((c) => phonesMatchE164(c.phoneE164, item.recipient));
+    const staff = booking ? db.staff.find((s) => s.id === booking.staffId) : undefined;
+    const service = booking
+      ? db.services.find((s) => s.id === booking.serviceId)
+      : undefined;
+    const workflow = item.workflowId
+      ? db.workflows.find((w) => w.id === item.workflowId)
+      : undefined;
+
+    const deliveryStatus =
+      item.deliveryStatus ??
+      (item.status === 'sent'
+        ? 'sent'
+        : item.status === 'failed'
+          ? 'failed'
+          : item.status === 'pending'
+            ? 'queued'
+            : null);
+
+    return {
+      id: item.id,
+      bookingId: item.bookingId,
+      bookingCode: booking?.bookingCode ?? null,
+      clientId: client?.id ?? item.clientId ?? null,
+      clientName: client?.fullName ?? null,
+      staffName: staff?.name ?? null,
+      serviceName: service?.name ?? null,
+      bookingStartAt: booking?.startAt ?? null,
+      workflowId: item.workflowId,
+      workflowName: workflow?.name ?? null,
+      triggerKey: inferReminderTriggerKey(workflow, item, booking),
+      channel: item.channel,
+      recipient: item.recipient,
+      scheduledFor: item.scheduledFor,
+      status: item.status,
+      deliveryStatus,
+      subject: item.subject,
+      previewText: item.previewText,
+      bodyText: item.bodyText || item.previewText,
+      providerMessageId: item.providerMessageId,
+      errorMessage: item.errorMessage,
+      attempts: item.attempts ?? (item.status === 'pending' ? 0 : 1),
+      maxAttempts: item.maxAttempts ?? 3,
+      nextRetryAt: item.nextRetryAt ?? null,
+      lastAttemptAt: item.lastAttemptAt ?? null,
+      sentAt: item.sentAt,
+      createdAt: item.createdAt,
+    };
+  });
+}
+
+export async function getScheduledNotificationById(
+  id: string,
+): Promise<ScheduledNotification | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getScheduledNotificationById(id);
+  }
+  const db = getSnapshot();
+  const found = db.notifications.find((n) => n.id === id);
+  return found ? { ...found } : null;
+}
+
+export async function retryScheduledNotification(
+  id: string,
+  atIso?: string,
+): Promise<ScheduledNotification> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().retryScheduledNotification(id, atIso);
+  }
+  const scheduledAt = atIso ?? new Date().toISOString();
+  return withWriteLock((db) => {
+    const item = db.notifications.find((n) => n.id === id);
+    if (!item) {
+      throw new PolicyError('NOTIFICATION_NOT_FOUND', 'Recordatorio no encontrado.');
+    }
+    item.status = 'pending';
+    item.deliveryStatus = 'queued';
+    item.errorMessage = null;
+    item.scheduledFor = scheduledAt;
+    item.nextRetryAt = null;
+    item.maxAttempts = Math.max(item.maxAttempts ?? 3, (item.attempts ?? 0) + 1);
+    return { ...item };
+  });
+}
+
+export async function cancelScheduledNotification(
+  id: string,
+  reason?: string,
+): Promise<ScheduledNotification> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().cancelScheduledNotification(id, reason);
+  }
+  return withWriteLock((db) => {
+    const item = db.notifications.find((n) => n.id === id);
+    if (!item) {
+      throw new PolicyError('NOTIFICATION_NOT_FOUND', 'Recordatorio no encontrado.');
+    }
+    item.status = 'canceled';
+    item.nextRetryAt = null;
+    if (reason?.trim()) {
+      item.errorMessage = reason.trim();
+    }
+    return { ...item };
+  });
+}
+
+export async function updateScheduledNotificationStatus(
+  id: string,
+  patch: UpdateScheduledNotificationStatusInput,
+): Promise<ScheduledNotification | null> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().updateScheduledNotificationStatus(id, patch);
+  }
+  return withWriteLock((db) => {
+    const item = db.notifications.find((n) => n.id === id);
+    if (!item) return null;
+    item.status = patch.status;
+    if (patch.deliveryStatus !== undefined) item.deliveryStatus = patch.deliveryStatus;
+    if (patch.providerMessageId !== undefined) {
+      item.providerMessageId = patch.providerMessageId;
+    }
+    if (patch.errorMessage !== undefined) item.errorMessage = patch.errorMessage;
+    if (patch.sentAt !== undefined) item.sentAt = patch.sentAt;
+    if (patch.attempts !== undefined) item.attempts = patch.attempts;
+    if (patch.nextRetryAt !== undefined) item.nextRetryAt = patch.nextRetryAt;
+    if (patch.lastAttemptAt !== undefined) item.lastAttemptAt = patch.lastAttemptAt;
+    return { ...item };
+  });
+}
+
+export async function updateNotificationWorkflow(
+  id: string,
+  patch: Partial<NotificationWorkflow>,
+): Promise<NotificationWorkflow> {
+  return updateWorkflow(id, patch);
+}
+
+export async function getOutboxSummary(): Promise<OutboxSummary> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().getOutboxSummary();
+  }
+  const store = getDemoOutboxStore();
+  let pendingCount = 0;
+  let processingCount = 0;
+  let failedCount = 0;
+  let processedCount = 0;
+  for (const ev of store) {
+    if (ev.status === 'pending') pendingCount += 1;
+    else if (ev.status === 'processing') processingCount += 1;
+    else if (ev.status === 'failed') failedCount += 1;
+    else if (ev.status === 'processed') processedCount += 1;
+  }
+  return { pendingCount, processingCount, failedCount, processedCount };
+}
+
+export async function drainStaleOutboxEvents(
+  olderThanMs = 5 * 60_000,
+  nowMs = Date.now(),
+): Promise<{ drainedCount: number }> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().drainStaleOutboxEvents(olderThanMs, nowMs);
+  }
+  const cutoffMs = nowMs - Math.max(0, olderThanMs);
+  const nowIso = new Date(nowMs).toISOString();
+  let drainedCount = 0;
+  for (const ev of getDemoOutboxStore()) {
+    if (ev.status !== 'processing') continue;
+    const refMs = Date.parse(ev.availableAt || ev.createdAt);
+    if (Number.isFinite(refMs) && refMs <= cutoffMs) {
+      ev.status = 'pending';
+      ev.availableAt = nowIso;
+      drainedCount += 1;
+    }
+  }
+  return { drainedCount };
 }
 
 function createDemoRepository(clock: Clock = systemClock): SalonRepository {
@@ -6678,6 +7665,22 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     incrementWhatsAppMonthlyUsage,
     claimWebhookEventIdempotent,
     cleanupExpiredSlotHolds,
+    listWhatsAppThreads,
+    getWhatsAppThreadDetail,
+    getWhatsAppMessageById,
+    recordWhatsAppMessage,
+    updateWhatsAppMessageStatusByProviderId,
+    markWhatsAppThreadRead,
+    getWhatsAppThreadWindow,
+    getWhatsAppUnreadSummary,
+    listScheduledNotifications,
+    getScheduledNotificationById,
+    retryScheduledNotification,
+    cancelScheduledNotification,
+    updateScheduledNotificationStatus,
+    updateNotificationWorkflow,
+    getOutboxSummary,
+    drainStaleOutboxEvents,
   };
 }
 
@@ -6849,11 +7852,33 @@ export async function rejectBookingDeposit(params: {
       date: getDateKeyInTimezone(new Date(hydrated.startAt), settings.timezone),
     });
     const postCommitTask = (async () => {
-      await dispatchDepositRejectedNotification({
+      const notifyRes = await dispatchDepositRejectedNotification({
         booking: hydrated,
         settings,
         appUrl: env.appUrl,
         reason: cleanReason,
+      });
+      const bodyText = `Solicitamos un nuevo comprobante: ${cleanReason}`;
+      await supabase.from('scheduled_notifications').insert({
+        booking_id: hydrated.id,
+        client_id: hydrated.clientId,
+        workflow_id: null,
+        trigger_key: 'deposit_rejected',
+        channel: 'whatsapp',
+        recipient: hydrated.client.phoneE164,
+        scheduled_for: nowIso,
+        status: notifyRes.status,
+        delivery_status: notifyRes.status === 'sent' ? 'sent' : 'failed',
+        subject: `Comprobante rechazado (${hydrated.bookingCode})`,
+        preview_text: bodyText.slice(0, 160),
+        body_text: bodyText,
+        provider_message_id: notifyRes.providerMessageId,
+        error_message: notifyRes.errorMessage,
+        attempts: 1,
+        max_attempts: 3,
+        next_retry_at: null,
+        last_attempt_at: nowIso,
+        sent_at: notifyRes.status === 'sent' ? nowIso : null,
       });
     })();
     await runPostCommitSideEffects(postCommitTask);
@@ -6903,18 +7928,27 @@ export async function rejectBookingDeposit(params: {
   });
 
   await withWriteLock((liveDb) => {
+    const bodyText = `Solicitamos un nuevo comprobante: ${cleanReason}`;
     liveDb.notifications.unshift({
       id: generateId('ntf'),
       bookingId: committed.hydrated.id,
+      clientId: committed.hydrated.clientId,
       workflowId: null,
+      triggerKey: 'deposit_rejected',
       channel: 'whatsapp',
       recipient: committed.hydrated.client.phoneE164,
       scheduledFor: nowIso,
       status: notifyRes.status,
+      deliveryStatus: notifyRes.status === 'sent' ? 'sent' : 'failed',
       subject: `Comprobante rechazado (${committed.hydrated.bookingCode})`,
-      previewText: `Solicitamos un nuevo comprobante: ${cleanReason}`.slice(0, 160),
+      previewText: bodyText.slice(0, 160),
+      bodyText,
       providerMessageId: notifyRes.providerMessageId,
       errorMessage: notifyRes.errorMessage,
+      attempts: 1,
+      maxAttempts: 3,
+      nextRetryAt: null,
+      lastAttemptAt: nowIso,
       sentAt: notifyRes.status === 'sent' ? nowIso : null,
       createdAt: nowIso,
     });
@@ -7019,7 +8053,8 @@ export async function processExpiredWaitlistOffers(
       );
       dispatches.push({
         entryId: nextCandidate.id,
-        bookingId: nextCandidate.id,
+        bookingId: null,
+        clientId: matchedClient?.id ?? null,
         clientName: nextCandidate.clientName,
         clientPhoneE164: nextCandidate.clientPhoneE164,
         clientEmail: nextCandidate.clientEmail ?? matchedClient?.email ?? null,
@@ -7075,7 +8110,7 @@ export async function processExpiredWaitlistOffers(
       const nextOffer = assignWaitlistPriorityOfferInLock(
         db,
         {
-          id: entry.id,
+          id: null,
           serviceId: entry.serviceId,
           staffId,
           startAt: slotStartAt,
@@ -7110,7 +8145,10 @@ export async function processProactiveTouchUpInvites(
 
   const collectEligible = (db: Readonly<DemoDatabase>): TouchUpTarget[] => {
     const touchUpEnabled = db.workflows.some(
-      (w) => w.triggerEvent === 'after_booking' && w.isEnabled,
+      (w) =>
+        w.triggerEvent === 'after_booking' &&
+        w.offsetMinutes >= 1440 &&
+        w.isEnabled,
     );
     if (!touchUpEnabled) return [];
 
@@ -7179,11 +8217,36 @@ export async function processProactiveTouchUpInvites(
       const delivered =
         dispatch.whatsapp.status === 'sent' || dispatch.email?.status === 'sent';
       if (delivered) {
+        const touchUpWorkflow = snapshot.workflows.find(
+          (w) => w.triggerEvent === 'after_booking' && w.offsetMinutes >= 1440,
+        );
+        const bodyText = `Link sugerido: ${target.touchUpUrl}`;
         await supabase
           .from('bookings')
           .update({ touchup_invited_at: nowIso, updated_at: nowIso })
           .eq('id', target.hydrated.id)
           .is('touchup_invited_at', null);
+        await supabase.from('scheduled_notifications').insert({
+          booking_id: target.hydrated.id,
+          client_id: target.hydrated.clientId,
+          workflow_id: touchUpWorkflow?.id ?? null,
+          trigger_key: 'touchup_invite',
+          channel: 'whatsapp',
+          recipient: target.hydrated.client.phoneE164,
+          scheduled_for: nowIso,
+          status: dispatch.whatsapp.status,
+          delivery_status: dispatch.whatsapp.status === 'sent' ? 'sent' : 'failed',
+          subject: `Invitación de retoque (${target.hydrated.service.name})`,
+          preview_text: bodyText.slice(0, 160),
+          body_text: bodyText,
+          provider_message_id: dispatch.whatsapp.providerMessageId,
+          error_message: dispatch.whatsapp.errorMessage,
+          attempts: 1,
+          max_attempts: 3,
+          next_retry_at: null,
+          last_attempt_at: nowIso,
+          sent_at: dispatch.whatsapp.status === 'sent' ? nowIso : null,
+        });
         sentCount += 1;
       }
     }
@@ -7211,18 +8274,27 @@ export async function processProactiveTouchUpInvites(
           raw.touchupInvitedAt = nowIso;
           raw.updatedAt = nowIso;
         }
+        const bodyText = `Link sugerido: ${target.touchUpUrl}`;
         liveDb.notifications.unshift({
           id: generateId('ntf'),
           bookingId: target.hydrated.id,
+          clientId: target.hydrated.clientId,
           workflowId: 'wf-retoque',
+          triggerKey: 'touchup_invite',
           channel: 'whatsapp',
           recipient: target.hydrated.client.phoneE164,
           scheduledFor: nowIso,
           status: dispatch.whatsapp.status,
+          deliveryStatus: dispatch.whatsapp.status === 'sent' ? 'sent' : 'failed',
           subject: `Invitación de retoque (${target.hydrated.service.name})`,
-          previewText: `Link sugerido: ${target.touchUpUrl}`.slice(0, 160),
+          previewText: bodyText.slice(0, 160),
+          bodyText,
           providerMessageId: dispatch.whatsapp.providerMessageId,
           errorMessage: dispatch.whatsapp.errorMessage,
+          attempts: 1,
+          maxAttempts: 3,
+          nextRetryAt: null,
+          lastAttemptAt: nowIso,
           sentAt: dispatch.whatsapp.status === 'sent' ? nowIso : null,
           createdAt: nowIso,
         });

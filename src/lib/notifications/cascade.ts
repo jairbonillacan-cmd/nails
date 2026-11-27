@@ -153,7 +153,7 @@ export function summarizeCascadeMetrics(
   const nowMs = now.getTime();
   const bookingIdsWithReminder = new Set<string>();
   for (const log of logs) {
-    if (log.status === 'sent' || log.status === 'pending') {
+    if ((log.status === 'sent' || log.status === 'pending') && log.bookingId) {
       bookingIdsWithReminder.add(log.bookingId);
     }
   }

@@ -29,11 +29,20 @@ import {
   RatingSchema,
   RecurringFrequencySchema,
   RewardTypeSchema,
+  ScheduledNotificationStatusSchema,
   ServiceModeSchema,
   SlotIntervalMinutesSchema,
   ThemeModePreferenceSchema,
   TimeHHMMSchema,
   WaitlistStatusSchema,
+  WhatsAppDeliveryStatusSchema,
+  WhatsAppMessageDeliveryModeSchema,
+  WhatsAppMessageDirectionSchema,
+  WhatsAppMessageSenderKindSchema,
+  WhatsAppMessageTypeSchema,
+  WhatsAppNotificationDeliveryStatusSchema,
+  WhatsAppTemplateCategorySchema,
+  WhatsAppTemplateTriggerKeySchema,
 } from '@/lib/contracts';
 import type { DemoDatabase } from '../types';
 
@@ -324,16 +333,24 @@ const NotificationWorkflowSchema = z.object({
 
 const ScheduledNotificationSchema = z.object({
   id: z.string(),
-  bookingId: z.string(),
+  bookingId: z.string().nullable(),
+  clientId: z.string().nullable().optional(),
   workflowId: z.string().nullable(),
+  triggerKey: WhatsAppTemplateTriggerKeySchema.nullable().optional(),
   channel: NotificationChannelSchema,
   recipient: z.string(),
   scheduledFor: z.string(),
-  status: z.enum(['pending', 'sent', 'failed', 'canceled']),
+  status: ScheduledNotificationStatusSchema,
+  deliveryStatus: WhatsAppNotificationDeliveryStatusSchema.nullable().optional(),
   subject: z.string(),
   previewText: z.string(),
+  bodyText: z.string().optional(),
   providerMessageId: z.string().nullable(),
   errorMessage: z.string().nullable(),
+  attempts: z.number().int().nonnegative().optional(),
+  maxAttempts: z.number().int().positive().optional(),
+  nextRetryAt: z.string().nullable().optional(),
+  lastAttemptAt: z.string().nullable().optional(),
   sentAt: z.string().nullable(),
   createdAt: z.string(),
 });
@@ -581,23 +598,11 @@ const MediaAssetRecordSchema = z.object({
   purgedAt: z.string().nullable(),
 });
 
-const WhatsAppTemplateTriggerKeySchema = z.enum([
-  'booking_confirmed',
-  'reminder_24h',
-  'reminder_2h',
-  'booking_rescheduled',
-  'booking_canceled',
-  'waitlist_offer',
-  'deposit_rejected',
-  'client_otp',
-  'touchup_invite',
-]);
-
 const WhatsAppTemplateConfigSchema = z.object({
   id: z.string(),
   triggerKey: WhatsAppTemplateTriggerKeySchema,
   templateName: z.string(),
-  category: z.enum(['UTILITY', 'MARKETING', 'AUTHENTICATION']),
+  category: WhatsAppTemplateCategorySchema,
   languageCode: z.string(),
   isActive: z.boolean(),
   updatedAt: z.string(),
@@ -610,6 +615,51 @@ const WhatsAppMonthlyUsageSchema = z.object({
   warned80At: z.string().nullable(),
   warned100At: z.string().nullable(),
   updatedAt: z.string(),
+});
+
+const WhatsAppThreadSchema = z.object({
+  id: z.string(),
+  phoneE164: z.string(),
+  clientId: z.string().nullable(),
+  contactName: z.string(),
+  lastMessageAt: z.string().nullable(),
+  lastMessagePreview: z.string(),
+  lastMessageDirection: WhatsAppMessageDirectionSchema.nullable(),
+  lastInboundAt: z.string().nullable(),
+  unreadCount: z.number().int().nonnegative(),
+  lastReadAt: z.string().nullable(),
+  hasFailedMessages: z.boolean(),
+  isArchived: z.boolean(),
+  assignedStaffId: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const WhatsAppMessageSchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  phoneE164: z.string(),
+  clientId: z.string().nullable(),
+  bookingId: z.string().nullable(),
+  notificationId: z.string().nullable(),
+  direction: WhatsAppMessageDirectionSchema,
+  senderKind: WhatsAppMessageSenderKindSchema,
+  senderName: z.string().nullable(),
+  messageType: WhatsAppMessageTypeSchema,
+  bodyText: z.string(),
+  templateName: z.string().nullable(),
+  templateTriggerKey: WhatsAppTemplateTriggerKeySchema.nullable(),
+  templateParams: z.array(z.string()).default([]),
+  deliveryStatus: WhatsAppDeliveryStatusSchema,
+  deliveryMode: WhatsAppMessageDeliveryModeSchema,
+  providerMessageId: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  sentAt: z.string().nullable(),
+  deliveredAt: z.string().nullable(),
+  readAt: z.string().nullable(),
+  failedAt: z.string().nullable(),
+  createdAt: z.string(),
 });
 
 const WebhookEventRecordSchema = z.object({
@@ -663,6 +713,8 @@ export const DemoDatabaseSchema = z.object({
   mediaAssets: z.array(MediaAssetRecordSchema).default([]),
   whatsappTemplates: z.array(WhatsAppTemplateConfigSchema).default([]),
   whatsappMonthlyUsage: z.array(WhatsAppMonthlyUsageSchema).default([]),
+  whatsappThreads: z.array(WhatsAppThreadSchema).default([]),
+  whatsappMessages: z.array(WhatsAppMessageSchema).default([]),
   webhookEvents: z.array(WebhookEventRecordSchema).default([]),
   funnelEvents: z.array(FunnelEventRecordSchema).default([]),
 });

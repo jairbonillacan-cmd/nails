@@ -43,6 +43,9 @@ const HISTORY_ACTION_META: Record<
   loyalty_redeemed: { label: 'Premio canjeado', tone: 'accent' },
   media_retention_warned: { label: 'Aviso de respaldo de fotos', tone: 'warning' },
   media_retention_purged: { label: 'Fotos antiguas eliminadas', tone: 'neutral' },
+  whatsapp_message_sent: { label: 'Mensaje de WhatsApp enviado', tone: 'accent' },
+  reminder_retried: { label: 'Recordatorio reintentado', tone: 'accent' },
+  workflow_updated: { label: 'Recordatorio actualizado', tone: 'neutral' },
 };
 
 function friendlyEntityLabel(entityType: string): string {
@@ -53,6 +56,10 @@ function friendlyEntityLabel(entityType: string): string {
   if (lower === 'settings') return 'Ajustes';
   if (lower === 'loyalty') return 'Sellos';
   if (lower === 'media_asset') return 'Comprobante o foto';
+  if (lower === 'whatsapp_message' || lower === 'whatsapp_thread') return 'WhatsApp';
+  if (lower === 'scheduled_notification' || lower === 'notification_workflow') {
+    return 'Recordatorio';
+  }
   return 'Registro';
 }
 

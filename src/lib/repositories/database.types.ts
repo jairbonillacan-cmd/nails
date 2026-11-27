@@ -465,23 +465,31 @@ export interface Database {
       scheduled_notifications: {
         Row: {
           id: string;
-          booking_id: string;
+          booking_id: string | null;
+          client_id: string | null;
           workflow_id: string | null;
+          trigger_key: string | null;
           channel: 'email' | 'whatsapp' | 'sms';
           recipient: string;
           scheduled_for: string;
           status: 'pending' | 'sent' | 'failed' | 'canceled';
+          delivery_status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | null;
           subject: string;
           preview_text: string;
+          body_text: string;
           payload: Json;
           provider_message_id: string | null;
           error_message: string | null;
+          attempts: number;
+          max_attempts: number;
+          next_retry_at: string | null;
+          last_attempt_at: string | null;
           sent_at: string | null;
           created_at: string;
         };
         Insert: Pick<
           Database['public']['Tables']['scheduled_notifications']['Row'],
-          'booking_id' | 'channel' | 'recipient' | 'scheduled_for'
+          'channel' | 'recipient' | 'scheduled_for'
         > &
           Partial<Database['public']['Tables']['scheduled_notifications']['Row']>;
         Update: Partial<Database['public']['Tables']['scheduled_notifications']['Row']>;
@@ -823,7 +831,10 @@ export interface Database {
             | 'booking_rescheduled'
             | 'loyalty_redeemed'
             | 'media_retention_warned'
-            | 'media_retention_purged';
+            | 'media_retention_purged'
+            | 'whatsapp_message_sent'
+            | 'reminder_retried'
+            | 'workflow_updated';
           entity_type: string;
           entity_id: string;
           metadata: Json;
@@ -892,6 +903,73 @@ export interface Database {
         > &
           Partial<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
         Update: Partial<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      whatsapp_threads: {
+        Row: {
+          id: string;
+          phone_e164: string;
+          client_id: string | null;
+          contact_name: string;
+          last_message_at: string | null;
+          last_message_preview: string;
+          last_message_direction: 'inbound' | 'outbound' | 'echo' | null;
+          last_inbound_at: string | null;
+          unread_count: number;
+          last_read_at: string | null;
+          has_failed_messages: boolean;
+          is_archived: boolean;
+          assigned_staff_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['whatsapp_threads']['Row'],
+          'phone_e164'
+        > &
+          Partial<Database['public']['Tables']['whatsapp_threads']['Row']>;
+        Update: Partial<Database['public']['Tables']['whatsapp_threads']['Row']>;
+        Relationships: TableRelationship[];
+      };
+      whatsapp_messages: {
+        Row: {
+          id: string;
+          thread_id: string;
+          phone_e164: string;
+          client_id: string | null;
+          booking_id: string | null;
+          notification_id: string | null;
+          direction: 'inbound' | 'outbound' | 'echo';
+          sender_kind: 'client' | 'staff' | 'automation' | 'coexistence_phone';
+          sender_name: string | null;
+          message_type: 'text' | 'template' | 'interactive' | 'button' | 'media' | 'system';
+          body_text: string;
+          template_name: string | null;
+          template_trigger_key: string | null;
+          template_params: Json;
+          delivery_status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'received';
+          delivery_mode:
+            | 'template'
+            | 'text'
+            | 'fallback_email_wame'
+            | 'demo'
+            | 'coexistence'
+            | 'inbound';
+          provider_message_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+          read_at: string | null;
+          failed_at: string | null;
+          created_at: string;
+        };
+        Insert: Pick<
+          Database['public']['Tables']['whatsapp_messages']['Row'],
+          'thread_id' | 'phone_e164' | 'direction' | 'sender_kind' | 'delivery_status'
+        > &
+          Partial<Database['public']['Tables']['whatsapp_messages']['Row']>;
+        Update: Partial<Database['public']['Tables']['whatsapp_messages']['Row']>;
         Relationships: TableRelationship[];
       };
       webhook_events: {

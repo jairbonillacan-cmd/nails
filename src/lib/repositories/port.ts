@@ -1,5 +1,12 @@
 import type { AvailableSlot, DayAvailabilitySummary } from '../availability/engine';
 import type {
+  WhatsAppInboxSummaryDTO,
+  WhatsAppReminderItemDTO,
+  WhatsAppServiceWindowDTO,
+  WhatsAppThreadBookingContextDTO,
+  WhatsAppThreadSummaryDTO,
+} from '../contracts/whatsapp';
+import type {
   PublicServiceDTO,
   PublicSettingsDTO,
   PublicStaffDTO,
@@ -28,6 +35,7 @@ import type {
   MediaAccessOwner,
   MediaAssetFolder,
   MediaAssetRecord,
+  NotificationChannel,
   NotificationWorkflow,
   PaymentMethod,
   PaymentSplit,
@@ -35,15 +43,24 @@ import type {
   RecurringBlock,
   SalonSettings,
   ScheduledNotification,
+  ScheduledNotificationStatus,
   Service,
   ServiceCategory,
   ServiceAddon,
   SlotHold,
   StaffMember,
   WaitlistEntry,
+  WhatsAppDeliveryStatus,
+  WhatsAppMessage,
+  WhatsAppMessageDeliveryMode,
+  WhatsAppMessageDirection,
+  WhatsAppMessageSenderKind,
+  WhatsAppMessageType,
   WhatsAppMonthlyUsageSummary,
+  WhatsAppNotificationDeliveryStatus,
   WhatsAppTemplateConfig,
   WhatsAppTemplateTriggerKey,
+  WhatsAppThread,
 } from '../types';
 
 type OutboxEventStatus = 'pending' | 'processing' | 'processed' | 'failed';
@@ -210,6 +227,8 @@ export interface ProcessDueNotificationsResult {
   sentCount: number;
   failedCount: number;
   canceledCount: number;
+  skippedCount?: number;
+  retriedCount?: number;
 }
 
 export interface UpdateClientNotesInput {
@@ -286,6 +305,93 @@ export interface RegisterMediaAssetInput {
 export interface CleanupExpiredSlotHoldsResult {
   cleanedCount: number;
   dbAlive: boolean;
+}
+
+export interface ListWhatsAppThreadsParams {
+  filter?: 'all' | 'unread' | 'window_open' | 'failed';
+  q?: string;
+  phone?: string;
+  clientId?: string;
+  limit?: number;
+  role?: AdminRole;
+  staffMemberId?: string | null;
+  nowMs?: number;
+}
+
+export interface GetWhatsAppThreadDetailParams {
+  threadId?: string;
+  phoneE164?: string;
+  clientId?: string;
+  role?: AdminRole;
+  staffMemberId?: string | null;
+  limit?: number;
+  nowMs?: number;
+}
+
+export interface WhatsAppThreadDetailData {
+  thread: WhatsAppThreadSummaryDTO;
+  messages: WhatsAppMessage[];
+  client: ClientProfile | null;
+  bookings: WhatsAppThreadBookingContextDTO[];
+}
+
+export interface RecordWhatsAppMessageInput {
+  phoneE164: string;
+  contactName?: string | null;
+  clientId?: string | null;
+  bookingId?: string | null;
+  notificationId?: string | null;
+  direction: WhatsAppMessageDirection;
+  senderKind: WhatsAppMessageSenderKind;
+  senderName?: string | null;
+  messageType?: WhatsAppMessageType;
+  bodyText: string;
+  templateName?: string | null;
+  templateTriggerKey?: WhatsAppTemplateTriggerKey | null;
+  templateParams?: string[];
+  deliveryStatus: WhatsAppDeliveryStatus;
+  deliveryMode: WhatsAppMessageDeliveryMode;
+  providerMessageId?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  assignedStaffId?: string | null;
+  createdAt?: string;
+}
+
+export interface UpdateWhatsAppMessageStatusInput {
+  providerMessageId?: string | null;
+  messageId?: string | null;
+  status: 'sent' | 'delivered' | 'read' | 'failed';
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  atIso?: string;
+}
+
+export interface ListScheduledNotificationsParams {
+  status?: ScheduledNotificationStatus;
+  channel?: NotificationChannel;
+  bookingId?: string;
+  limit?: number;
+  role?: AdminRole;
+  staffMemberId?: string | null;
+}
+
+export interface UpdateScheduledNotificationStatusInput {
+  status: ScheduledNotificationStatus;
+  deliveryStatus?: WhatsAppNotificationDeliveryStatus | null;
+  providerMessageId?: string | null;
+  errorMessage?: string | null;
+  sentAt?: string | null;
+  attempts?: number;
+  nextRetryAt?: string | null;
+  lastAttemptAt?: string | null;
+}
+
+export interface OutboxSummary {
+  pendingCount: number;
+  processingCount: number;
+  failedCount: number;
+  processedCount: number;
 }
 
 export interface SalonRepository {
@@ -425,4 +531,50 @@ export interface SalonRepository {
   ): Promise<WhatsAppMonthlyUsageSummary>;
   claimWebhookEventIdempotent(provider: string, eventId: string): Promise<boolean>;
   cleanupExpiredSlotHolds(nowMs?: number): Promise<CleanupExpiredSlotHoldsResult>;
+
+  listWhatsAppThreads(
+    params?: ListWhatsAppThreadsParams,
+  ): Promise<{ threads: WhatsAppThreadSummaryDTO[]; summary: WhatsAppInboxSummaryDTO }>;
+  getWhatsAppThreadDetail(
+    params: GetWhatsAppThreadDetailParams,
+  ): Promise<WhatsAppThreadDetailData | null>;
+  getWhatsAppMessageById(messageId: string): Promise<WhatsAppMessage | null>;
+  recordWhatsAppMessage(
+    input: RecordWhatsAppMessageInput,
+  ): Promise<{ thread: WhatsAppThread; message: WhatsAppMessage }>;
+  updateWhatsAppMessageStatusByProviderId(
+    params: UpdateWhatsAppMessageStatusInput,
+  ): Promise<{ updated: boolean; message: WhatsAppMessage | null; threadId: string | null }>;
+  markWhatsAppThreadRead(threadId: string, atIso?: string): Promise<WhatsAppThread | null>;
+  getWhatsAppThreadWindow(
+    lookup: { threadId?: string; phoneE164?: string },
+    nowMs?: number,
+  ): Promise<WhatsAppServiceWindowDTO>;
+  getWhatsAppUnreadSummary(params?: {
+    role?: AdminRole;
+    staffMemberId?: string | null;
+    nowMs?: number;
+  }): Promise<WhatsAppInboxSummaryDTO>;
+  listScheduledNotifications(
+    params?: ListScheduledNotificationsParams,
+  ): Promise<WhatsAppReminderItemDTO[]>;
+  getScheduledNotificationById(id: string): Promise<ScheduledNotification | null>;
+  retryScheduledNotification(id: string, atIso?: string): Promise<ScheduledNotification>;
+  cancelScheduledNotification(
+    id: string,
+    reason?: string,
+  ): Promise<ScheduledNotification>;
+  updateScheduledNotificationStatus(
+    id: string,
+    patch: UpdateScheduledNotificationStatusInput,
+  ): Promise<ScheduledNotification | null>;
+  updateNotificationWorkflow(
+    id: string,
+    patch: Partial<NotificationWorkflow>,
+  ): Promise<NotificationWorkflow>;
+  getOutboxSummary(): Promise<OutboxSummary>;
+  drainStaleOutboxEvents(
+    olderThanMs?: number,
+    nowMs?: number,
+  ): Promise<{ drainedCount: number }>;
 }

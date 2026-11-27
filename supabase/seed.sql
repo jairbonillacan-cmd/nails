@@ -658,6 +658,46 @@ VALUES
     true,
     '¿Lista para tu retoque en {{salon_name}}?',
     'Hola {{client_name}}, ya casi cumplen 3 semanas tus uñas. Aparta tu retoque con horario sugerido aquí: {{touchup_url}}'
+  ),
+  (
+    '10000000-0000-4000-8000-000000000905',
+    'Confirmación de anticipo y cita aprobada',
+    'booking_confirmed',
+    0,
+    ARRAY['whatsapp', 'email'],
+    true,
+    '¡Tu cita en {{salon_name}} quedó confirmada! ({{booking_code}})',
+    'Hola {{client_name}}, confirmamos tu anticipo y tu cita de {{service_name}} con {{staff_name}} el {{date_label}} a las {{time_label}}. Consulta detalles o agrega al calendario aquí: {{manage_url}}'
+  ),
+  (
+    '10000000-0000-4000-8000-000000000906',
+    'Aviso de cita reagendada',
+    'booking_rescheduled',
+    0,
+    ARRAY['whatsapp', 'email'],
+    true,
+    'Actualizamos el horario de tu cita en {{salon_name}} ({{booking_code}})',
+    'Hola {{client_name}}, actualizamos tu cita de {{service_name}} en {{salon_name}} para el {{date_label}} a las {{time_label}} con {{staff_name}}. Aquí tienes tu enlace actualizado: {{manage_url}}'
+  ),
+  (
+    '10000000-0000-4000-8000-000000000907',
+    'Confirmación de cita cancelada',
+    'booking_canceled',
+    0,
+    ARRAY['whatsapp', 'email'],
+    true,
+    'Confirmamos la cancelación de tu cita ({{booking_code}})',
+    'Hola {{client_name}}, confirmamos la cancelación de tu cita de {{service_name}} del {{date_label}} en {{salon_name}}. Tu espacio quedó liberado y cuando gustes puedes volver a agendar aquí: {{booking_url}}'
+  ),
+  (
+    '10000000-0000-4000-8000-000000000908',
+    'Encuesta post-cita y reseña Google (2 horas después)',
+    'after_booking',
+    120,
+    ARRAY['whatsapp', 'email'],
+    true,
+    '¿Qué te parecieron tus uñas en {{salon_name}}?',
+    'Hola {{client_name}}, muchas gracias por visitarnos hoy en {{salon_name}} para tu {{service_name}} con {{staff_name}}. Nos encantaría conocer tu opinión aquí: {{manage_url}}'
   )
 ON CONFLICT (id) DO NOTHING;
 
