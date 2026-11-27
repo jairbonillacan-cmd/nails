@@ -16,7 +16,7 @@ Apartado dedicado a la propuesta comercial de **devand** (`devand.net`) para **L
 ## Resumen comercial (Propuesta devand)
 
 - **Cliente:** Laikona Nails (`@laikona.nailsss`) · **3 usuarios incluidos**
-- **Inversión anual:** **\$6,000 MXN / año** netos (equivalente a **\$500 MXN mensuales**)
+- **Tarifa regular a la medida:** ~~$9,000 MXN + IVA~~ → **Tarifa preferencial con descuento:** **\$6,000 MXN / año** netos (equivalente a **\$500 MXN mensuales**)
 - **Calendario de pagos — Año 1:**
   - Anticipo al autorizar: **\$500 MXN**
   - Meses 1 y 2 (periodo inicial): **\$250 MXN / mes** (2 × \$250)
