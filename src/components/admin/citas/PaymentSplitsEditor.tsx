@@ -13,7 +13,7 @@ import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { ArrowLeftRight, Banknote, CreditCard, Plus, Trash2 } from 'lucide-react';
 import { StatusTag, SurfaceCard } from '@/components/ui';
 import type { InventoryItem, PaymentSplitMethod, StaffMember } from '@/lib/types';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, formatPaymentSplitMethodLabel } from '@/lib/format';
 
 export interface SplitRowDraft {
   id: string;
@@ -24,28 +24,20 @@ export interface SplitRowDraft {
 
 export type TipPreset = '0' | '50' | '100' | 'other';
 
-export const PAYMENT_METHOD_LABELS: Record<PaymentSplitMethod, string> = {
-  cash: 'Efectivo',
-  card: 'Tarjeta',
-  transfer: 'Transferencia',
-  giftcard: 'Tarjeta de regalo',
-  online: 'Pago en línea',
-};
-
 const SPLIT_METHOD_OPTIONS: Array<{ value: PaymentSplitMethod; label: string }> = [
-  { value: 'cash', label: 'Efectivo' },
-  { value: 'transfer', label: 'Transferencia' },
-  { value: 'card', label: 'Tarjeta' },
-  { value: 'giftcard', label: 'Tarjeta de regalo' },
+  { value: 'cash', label: formatPaymentSplitMethodLabel('cash') },
+  { value: 'transfer', label: formatPaymentSplitMethodLabel('transfer') },
+  { value: 'card', label: formatPaymentSplitMethodLabel('card') },
+  { value: 'giftcard', label: formatPaymentSplitMethodLabel('giftcard') },
 ];
 
 const QUICK_METHODS: ReadonlyArray<{
   value: 'cash' | 'transfer' | 'card';
   label: string;
 }> = [
-  { value: 'cash', label: 'Efectivo' },
-  { value: 'transfer', label: 'Transferencia' },
-  { value: 'card', label: 'Tarjeta' },
+  { value: 'cash', label: formatPaymentSplitMethodLabel('cash') },
+  { value: 'transfer', label: formatPaymentSplitMethodLabel('transfer') },
+  { value: 'card', label: formatPaymentSplitMethodLabel('card') },
 ];
 
 const TIP_PILLS: ReadonlyArray<{ id: TipPreset; label: string }> = [

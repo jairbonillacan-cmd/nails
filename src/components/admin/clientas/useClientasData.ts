@@ -27,6 +27,7 @@ import {
 } from './clientasTypes';
 
 interface PackagesQueryPayload {
+  supported?: boolean;
   servicePackages?: ServicePackage[];
   clientPackages?: ClientPackageRow[];
 }
@@ -66,7 +67,7 @@ export function useClientasData(
     lastUrlKeyRef.current = key;
     const nextTab = resolveClientasTabParam(paramTab);
     if (nextTab) setActiveTab(nextTab);
-    if (paramQuery) setQuery(paramQuery);
+    setQuery(paramQuery);
   });
 
   const fetchPackages = useCallback(
@@ -209,6 +210,7 @@ export function useClientasData(
     groupedByLetter,
     returningClients,
     packagesByClientId,
+    packagesSupported: packagesQuery.data?.supported ?? true,
     packagesLoading: packagesQuery.isLoading,
     packagesError: packagesQuery.error ? packagesQuery.error.message : null,
     campaignsLoading: campaignsQuery.isLoading,

@@ -104,6 +104,69 @@ describe('fetchJsonWithTimeout', () => {
     }
   });
 
+  it('provides friendly Spanish fallbacks for bare 429 and 409 responses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({}), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '15' },
+        }),
+      ),
+    );
+    const bare429 = await fetchJsonWithTimeout('/api/rate-limit');
+    expect(bare429.ok).toBe(false);
+    if (!bare429.ok) {
+      expect(bare429.status).toBe(429);
+      expect(bare429.retryAfterSeconds).toBe(15);
+      expect(bare429.error).toContain('15 segundos');
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({}), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const bare409 = await fetchJsonWithTimeout('/api/conflict');
+    expect(bare409.ok).toBe(false);
+    if (!bare409.ok) {
+      expect(bare409.status).toBe(409);
+      expect(bare409.error).toContain('conflicto');
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Ya existe una clienta con este teléfono.' }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const custom409 = await fetchJsonWithTimeout('/api/conflict-custom');
+    expect(custom409.ok).toBe(false);
+    if (!custom409.ok) {
+      expect(custom409.error).toBe('Ya existe una clienta con este teléfono.');
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('', { status: 409 }),
+      ),
+    );
+    const blob409 = await fetchBlobWithTimeout('/api/export');
+    expect(blob409.ok).toBe(false);
+    if (!blob409.ok) {
+      expect(blob409.status).toBe(409);
+      expect(blob409.error).toContain('conflicto');
+    }
+  });
+
   it('handles non-JSON HTML responses on 502/524 and 200 without throwing SyntaxError', async () => {
     vi.stubGlobal(
       'fetch',

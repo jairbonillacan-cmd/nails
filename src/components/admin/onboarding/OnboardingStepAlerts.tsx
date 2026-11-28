@@ -80,7 +80,7 @@ export function OnboardingStepAlerts({
         <VStack key="wizard-step-live" gap={5}>
           <VStack gap={2}>
             <HStack gap={2} align="center">
-              <StatusDot variant="success" label="Lista para compartir" isPulsing />
+              <StatusDot variant="success" label="Lista para compartir" />
               <StatusTag tone="success" label="¡Todo listo!" className="fx-pop" />
             </HStack>
             <Heading level={2} className="lk-serif ad-h2">
@@ -241,7 +241,7 @@ export function OnboardingStepAlerts({
       <Dialog
         isOpen={notifDialogOpen}
         onOpenChange={onSetNotifDialogOpen}
-        width={480}
+        width="min(30rem, 94vw)"
         maxHeight="min(90dvh, calc(100dvh - 2rem))"
         padding={5}
         purpose="info"

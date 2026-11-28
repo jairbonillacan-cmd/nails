@@ -19,7 +19,9 @@ import {
   cleanAccessDisplayName,
 } from '@/components/admin/equipo/AdminAccessSection';
 import { equipoHref, parseEquipoParams } from '@/lib/admin-links';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { useFocusScroll } from '@/lib/hooks/useFocusScroll';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { AdminUser, StaffMember } from '@/lib/types';
 
@@ -33,12 +35,15 @@ export default function AdminTeamPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const parsedParams = parseEquipoParams(searchParams);
+  const isAccessFocused = parsedParams.tab === 'accesos';
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [optimisticStaffActive, setOptimisticStaffActive] = useState<Record<string, boolean>>({});
   const [optimisticAccessActive, setOptimisticAccessActive] = useState<Record<string, boolean>>({});
   const [pendingDeactivate, setPendingDeactivate] = useState<PendingDeactivateTarget>(null);
   const saveNotice = useEphemeralMessage(3200);
+
+  useFocusScroll(isAccessFocused ? 'team-access-heading' : null, Boolean(data));
 
   const displayStaff = useMemo(
     () =>
@@ -72,6 +77,11 @@ export default function AdminTeamPage() {
   const retailCommissionPercent =
     data.settings.landingContent?.cajaConfig?.retailCommissionPercent ?? 10;
 
+  const refreshStaffDomain = async () => {
+    invalidateAdminDomain('staff');
+    await refresh();
+  };
+
   const applyToggleStaffActive = async (st: StaffMember, checked: boolean) => {
     if (busyId) return;
     setBusyId(st.id);
@@ -84,7 +94,7 @@ export default function AdminTeamPage() {
         body: JSON.stringify({ kind: 'staff', data: { ...st, isActive: checked } }),
       });
       if (result.ok) {
-        await refresh();
+        await refreshStaffDomain();
         saveNotice.show(checked ? `${st.name} activada` : `${st.name} pausada`);
       } else {
         setMsg({ status: 'error', text: result.error || 'No se pudo actualizar el estado.' });
@@ -119,7 +129,7 @@ export default function AdminTeamPage() {
         }),
       });
       if (result.ok) {
-        await refresh();
+        await refreshStaffDomain();
         const displayName = cleanAccessDisplayName(user.fullName);
         saveNotice.show(
           checked ? `Acceso reactivado · ${displayName}` : `Acceso pausado · ${displayName}`,
@@ -189,7 +199,10 @@ export default function AdminTeamPage() {
           focusStaffId={parsedParams.staffId ?? null}
           onClearFocusStaffId={() => {
             if (parsedParams.staffId) {
-              router.replace(equipoHref(), { scroll: false });
+              router.replace(
+                equipoHref(isAccessFocused ? { tab: 'accesos' } : undefined),
+                { scroll: false },
+              );
             }
           }}
           onRequestToggleStaffActive={(st, checked) => {
@@ -199,26 +212,31 @@ export default function AdminTeamPage() {
               void applyToggleStaffActive(st, true);
             }
           }}
-          onRefresh={refresh}
+          onRefresh={refreshStaffDomain}
           onNotice={saveNotice.show}
         />
 
-        <AdminAccessSection
-          adminUsers={displayAdminUsers}
-          staff={displayStaff}
-          currentUserId={data.session.user.id}
-          isOwner={isOwner}
-          busyId={busyId}
-          onRequestToggleAccessActive={(user, checked) => {
-            if (!checked) {
-              setPendingDeactivate({ kind: 'access', item: user });
-            } else {
-              void applyToggleAccessActive(user, true);
-            }
-          }}
-          onRefresh={refresh}
-          onNotice={saveNotice.show}
-        />
+        <VStack
+          className={isAccessFocused ? 'ad-row-highlight' : undefined}
+          style={isAccessFocused ? { borderRadius: 'var(--radius-container)' } : undefined}
+        >
+          <AdminAccessSection
+            adminUsers={displayAdminUsers}
+            staff={displayStaff}
+            currentUserId={data.session.user.id}
+            isOwner={isOwner}
+            busyId={busyId}
+            onRequestToggleAccessActive={(user, checked) => {
+              if (!checked) {
+                setPendingDeactivate({ kind: 'access', item: user });
+              } else {
+                void applyToggleAccessActive(user, true);
+              }
+            }}
+            onRefresh={refreshStaffDomain}
+            onNotice={saveNotice.show}
+          />
+        </VStack>
       </VStack>
 
       <ConfirmActionDialog

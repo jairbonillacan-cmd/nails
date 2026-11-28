@@ -477,6 +477,30 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     isIsoInMetricRange(entry.occurredAt, resolvedRange, tz),
   );
   const cashSummary = computeCashPeriodSummary(periodCashEntries);
+  const hasCashLedger = input.cashEntries !== undefined;
+
+  const bookingStaffById = new Map<string, string>();
+  for (const booking of input.bookings) {
+    bookingStaffById.set(booking.id, booking.staffId);
+  }
+
+  const cashRevenueByStaffId = new Map<string, number>();
+  if (hasCashLedger) {
+    for (const entry of periodCashEntries) {
+      if (entry.entryType === 'expense') continue;
+      const amount = Math.max(0, Math.round(entry.amountCents));
+      if (amount <= 0) continue;
+      const creditedStaffId =
+        entry.staffId ??
+        (entry.bookingId ? (bookingStaffById.get(entry.bookingId) ?? null) : null);
+      if (!creditedStaffId) continue;
+      if (scopeId && creditedStaffId !== scopeId) continue;
+      cashRevenueByStaffId.set(
+        creditedStaffId,
+        (cashRevenueByStaffId.get(creditedStaffId) ?? 0) + amount,
+      );
+    }
+  }
 
   const splitsByBookingId = new Map<string, PaymentSplit[]>();
   const cashByBookingId = new Map<string, CashRegisterEntry[]>();
@@ -561,8 +585,12 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     completedCount,
     noShowCount,
     canceledCount,
-    totalRevenueCollectedCents,
-    averageTicketCents,
+    totalRevenueCollectedCents: hasCashLedger
+      ? cashSummary.collectedCents
+      : totalRevenueCollectedCents,
+    averageTicketCents: hasCashLedger
+      ? cashSummary.averageTicketCents
+      : averageTicketCents,
     completionRatePercent,
     noShowRatePercent,
     cancellationRatePercent,
@@ -586,6 +614,9 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
   }
 
   const periodStaffIds = new Set(periodBookings.map((b) => b.staffId));
+  for (const staffId of cashRevenueByStaffId.keys()) {
+    periodStaffIds.add(staffId);
+  }
   const includedStaff = scopedStaffBase
     .filter((s) => (scopeId ? s.id === scopeId : s.isActive || periodStaffIds.has(s.id)))
     .toSorted((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name, 'es'));
@@ -604,7 +635,7 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
     let bookedMinutes = 0;
     let memberCompleted = 0;
     let memberNoShow = 0;
-    let revenueCents = 0;
+    let bookingRevenueCents = 0;
     const periodClients = new Set<string>();
 
     for (const booking of periodBookings) {
@@ -612,13 +643,17 @@ export function buildExecutiveReport(input: ExecutiveReportInput): ExecutiveRepo
       if (booking.status === 'completed') memberCompleted += 1;
       else if (booking.status === 'no_show') memberNoShow += 1;
 
-      revenueCents += paidByBookingId.get(booking.id) ?? 0;
+      bookingRevenueCents += paidByBookingId.get(booking.id) ?? 0;
 
       if (booking.status !== 'canceled' && booking.status !== 'no_show') {
         bookedMinutes += Math.max(0, Math.round(booking.totalDurationMinutes));
         periodClients.add(booking.clientId);
       }
     }
+
+    const revenueCents = hasCashLedger
+      ? (cashRevenueByStaffId.get(member.id) ?? 0)
+      : bookingRevenueCents;
 
     const visitMap = staffClientVisitCounts.get(member.id);
     let newClientsCount = 0;

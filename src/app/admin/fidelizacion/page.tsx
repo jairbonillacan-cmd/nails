@@ -72,6 +72,7 @@ import {
 import {
   cajaHref,
   clientasHref,
+  fidelizacionHref,
   parseFidelizacionParams,
   whatsappHref,
   type FidelizacionTabParam,
@@ -82,7 +83,7 @@ import type { FormSubmitResult } from '@/lib/forms/form-submit';
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
-  invalidateAdminCache,
+  invalidateAdminDomain,
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
@@ -131,6 +132,7 @@ const ClientRetentionTab = dynamic(
 );
 
 interface PackagesQueryPayload {
+  supported?: boolean;
   servicePackages?: ServicePackage[];
   clientPackages?: ClientPackageRow[];
 }
@@ -140,6 +142,14 @@ interface InactiveClientsQueryPayload {
   clients?: InactiveClientRow[];
 }
 
+function normalizeSearchToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 export default function AdminLoyaltyPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -147,6 +157,7 @@ export default function AdminLoyaltyPage() {
   const { data, loading, bookingEventSeq, refresh } = useAdminData();
 
   const urlTab = parsedParams.tab ?? '';
+  const urlQuery = parsedParams.q ?? '';
   const [prevUrlTab, setPrevUrlTab] = useState(urlTab);
   const [activeTab, setActiveTab] = useState<FidelizacionTabParam>(
     () => parsedParams.tab ?? 'sellos',
@@ -226,6 +237,7 @@ export default function AdminLoyaltyPage() {
     },
   );
 
+  const packagesSupported = packagesQuery.data?.supported ?? true;
   const servicePackages = useMemo(
     () => packagesQuery.data?.servicePackages ?? [],
     [packagesQuery.data],
@@ -293,14 +305,51 @@ export default function AdminLoyaltyPage() {
   const loyaltyDraft = loyaltyOverride ?? baseLoyalty;
   const activeServices = data.services.filter((s) => s.isActive);
   const isLoyaltyDirty = !areLoyaltyProgramsEqual(loyaltyDraft, baseLoyalty);
+  const normalizedUrlQuery = normalizeSearchToken(urlQuery);
+  const filteredNearRewardClients = normalizedUrlQuery
+    ? data.nearRewardClients.filter((entry) =>
+        normalizeSearchToken(
+          `${entry.fullName} ${entry.phoneE164} ${entry.instagramHandle ?? ''}`,
+        ).includes(normalizedUrlQuery),
+      )
+    : data.nearRewardClients;
+  const filteredCoupons = normalizedUrlQuery
+    ? data.coupons.filter((coupon) =>
+        normalizeSearchToken(
+          `${coupon.code} ${coupon.recipientName ?? ''}`,
+        ).includes(normalizedUrlQuery),
+      )
+    : data.coupons;
   const activeCouponsCount = data.coupons.filter(
     (coupon) => classifyCouponStatus(coupon, nowMs).status === 'active',
   ).length;
-  const displayedInactiveClients: InactiveClientRow[] = data.retention
+  const rawInactiveClients: InactiveClientRow[] = data.retention
     ? (inactiveQuery.data?.clients ?? data.retention.inactiveClients)
     : [];
+  const displayedInactiveClients = normalizedUrlQuery
+    ? rawInactiveClients.filter((item) =>
+        normalizeSearchToken(
+          `${item.fullName} ${item.phoneE164} ${item.instagramHandle ?? ''}`,
+        ).includes(normalizedUrlQuery),
+      )
+    : rawInactiveClients;
   const comebackCount =
-    displayedInactiveClients.length + (campaignsQuery.data?.birthdays.length ?? 0);
+    rawInactiveClients.length + (campaignsQuery.data?.birthdays.length ?? 0);
+
+  const handleChangeTab = (nextTab: FidelizacionTabParam) => {
+    setActiveTab(nextTab);
+    router.replace(
+      fidelizacionHref({
+        tab: nextTab,
+        ...(urlQuery ? { q: urlQuery } : {}),
+      }),
+      { scroll: false },
+    );
+  };
+
+  const handleClearQuery = () => {
+    router.replace(fidelizacionHref({ tab: activeTab }), { scroll: false });
+  };
 
   const kpiItems: MetricTileItem[] = [
     {
@@ -335,7 +384,9 @@ export default function AdminLoyaltyPage() {
 
   const openClientById = (clientId: string) => {
     const found = data.clients.find((c) => c.id === clientId);
-    router.push(clientasHref(found ? { q: found.phoneE164 } : { clientId }));
+    router.push(
+      clientasHref(found ? { clientId: found.id, q: found.phoneE164 } : { clientId }),
+    );
   };
 
   const handleSaveLoyalty = async () => {
@@ -362,6 +413,7 @@ export default function AdminLoyaltyPage() {
         });
         return;
       }
+      invalidateAdminDomain('settings');
       await refresh();
       setLoyaltyOverride(null);
       saveNotice.show('Tarjeta de sellos guardada');
@@ -375,7 +427,7 @@ export default function AdminLoyaltyPage() {
     if (!result.ok) {
       return { ok: false, error: result.error || 'No se pudo guardar el paquete.' };
     }
-    invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
+    invalidateAdminDomain('packages');
     setPackagesSeq((prev) => prev + 1);
     saveNotice.show(result.message || 'Paquete guardado');
     return { ok: true };
@@ -385,12 +437,13 @@ export default function AdminLoyaltyPage() {
     pkg: ServicePackageCatalogRow,
     nextActive: boolean,
   ) => {
+    if (togglingPkgId) return;
     setTogglingPkgId(pkg.id);
     setBannerMsg(null);
     try {
       const result = await toggleCajaPackage(pkg, nextActive);
       if (result.ok) {
-        invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
+        invalidateAdminDomain('packages');
         setPackagesSeq((prev) => prev + 1);
         saveNotice.show(result.message || 'Paquete actualizado');
       } else {
@@ -409,7 +462,7 @@ export default function AdminLoyaltyPage() {
     targetPackageId: string,
     notesText: string,
   ): Promise<boolean> => {
-    if (!targetClientId || !targetPackageId) return false;
+    if (assigningPkg || !targetClientId || !targetPackageId) return false;
     setAssigningPkg(true);
     try {
       const result = await assignClientPackageRequest(
@@ -418,7 +471,7 @@ export default function AdminLoyaltyPage() {
         notesText,
       );
       if (result.ok) {
-        invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
+        invalidateAdminDomain('packages');
         setPackagesSeq((prev) => prev + 1);
       }
       setBannerMsg(result.notice);
@@ -429,11 +482,12 @@ export default function AdminLoyaltyPage() {
   };
 
   const handleRedeemPackageSession = async (pkg: ClientPackageRow) => {
+    if (redeemingPkgId || cancelingPkgId) return;
     setRedeemingPkgId(pkg.id);
     try {
       const result = await redeemClientPackageSessionRequest(pkg);
       if (result.ok) {
-        invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
+        invalidateAdminDomain('packages');
         setPackagesSeq((prev) => prev + 1);
       }
       setBannerMsg(result.notice);
@@ -443,11 +497,12 @@ export default function AdminLoyaltyPage() {
   };
 
   const handleCancelPackage = async (pkg: ClientPackageRow) => {
+    if (cancelingPkgId || redeemingPkgId) return;
     setCancelingPkgId(pkg.id);
     try {
       const result = await cancelClientPackageRequest(pkg);
       if (result.ok) {
-        invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
+        invalidateAdminDomain('packages');
         setPackagesSeq((prev) => prev + 1);
       }
       setBannerMsg(result.notice);
@@ -463,17 +518,20 @@ export default function AdminLoyaltyPage() {
     if (!result.ok) {
       return { ok: false, error: result.error || 'No se pudo guardar el código.' };
     }
+    invalidateAdminDomain('cash');
     await refresh();
     saveNotice.show(result.message || 'Código guardado');
     return { ok: true };
   };
 
   const handleToggleCouponActive = async (coupon: Coupon, nextActive: boolean) => {
+    if (togglingCouponId || deletingCouponId) return;
     setTogglingCouponId(coupon.id);
     setBannerMsg(null);
     try {
       const result = await toggleCajaCouponActive(coupon, nextActive);
       if (result.ok) {
+        invalidateAdminDomain('cash');
         await refresh();
         saveNotice.show(result.message || 'Código actualizado');
       } else {
@@ -488,13 +546,14 @@ export default function AdminLoyaltyPage() {
   };
 
   const handleConfirmDeleteCoupon = async () => {
-    if (!confirmDeleteCoupon) return;
+    if (!confirmDeleteCoupon || deletingCouponId || togglingCouponId) return;
     const target = confirmDeleteCoupon;
     setDeletingCouponId(target.id);
     setBannerMsg(null);
     try {
       const result = await deleteCajaCoupon(target.id, target.code);
       if (result.ok) {
+        invalidateAdminDomain('cash');
         await refresh();
         saveNotice.show(result.message || 'Código eliminado');
       } else {
@@ -516,11 +575,13 @@ export default function AdminLoyaltyPage() {
     messagePreview: string;
     fallbackUrl: string;
   }) => {
+    if (dispatchingKey) return;
     setDispatchingKey(`${params.kind}:${params.clientId}`);
     try {
       const result = await dispatchRetentionCampaignRequest(params);
       if (result.ok && result.targetUrl) {
         window.open(result.targetUrl, '_blank', 'noopener,noreferrer');
+        invalidateAdminDomain('campaigns');
         setCampaignsSeq((prev) => prev + 1);
       }
       setBannerMsg(result.notice);
@@ -574,11 +635,28 @@ export default function AdminLoyaltyPage() {
                 variant="ghost"
                 size="sm"
                 icon={<Wallet size={14} aria-hidden="true" />}
-                href={cajaHref({ tab: 'promos' })}
+                href={cajaHref({ tab: 'resumen' })}
               />
             </HStack>
           }
         />
+
+        {urlQuery ? (
+          <Banner
+            status="info"
+            role="status"
+            title={`Filtro activo: "${urlQuery}"`}
+            endContent={
+              <Button
+                type="button"
+                label="Quitar filtro"
+                variant="secondary"
+                size="sm"
+                onClick={handleClearQuery}
+              />
+            }
+          />
+        ) : null}
 
         {bannerMsg ? (
           <Banner
@@ -612,7 +690,7 @@ export default function AdminLoyaltyPage() {
 
         <TabList
           value={activeTab}
-          onChange={(v) => setActiveTab(v as FidelizacionTabParam)}
+          onChange={(v) => handleChangeTab(v as FidelizacionTabParam)}
           hasDivider
         >
           <Tab
@@ -724,20 +802,28 @@ export default function AdminLoyaltyPage() {
             <SurfaceCard
               title="Clientas cerca de su premio"
               subtitle="Clientas a 2 visitas o menos de completar su tarjeta o listas para canjear."
-              count={data.nearRewardClients.length}
+              count={filteredNearRewardClients.length}
             >
-              {data.nearRewardClients.length === 0 ? (
+              {filteredNearRewardClients.length === 0 ? (
                 <VStack padding={4}>
                   <EmptyStateCard
                     framed={false}
                     isCompact
-                    title="Aún no hay clientas cerca de su premio"
-                    description="Cada cita cobrada suma un sello automáticamente. Cuando alguna esté a 2 visitas o menos aparecerá aquí."
+                    title={
+                      urlQuery
+                        ? 'Sin clientas que coincidan con el filtro'
+                        : 'Aún no hay clientas cerca de su premio'
+                    }
+                    description={
+                      urlQuery
+                        ? 'Quita el filtro para ver todas las clientas cerca de su premio.'
+                        : 'Cada cita cobrada suma un sello automáticamente. Cuando alguna esté a 2 visitas o menos aparecerá aquí.'
+                    }
                   />
                 </VStack>
               ) : (
                 <VStack className="ad-row-list" gap={0}>
-                  {data.nearRewardClients.map((entry) => {
+                  {filteredNearRewardClients.map((entry) => {
                     const required = Math.max(1, entry.summary.stampsRequired);
                     const totalSlots = Math.min(12, required);
                     const filledSlots = Math.min(
@@ -806,7 +892,10 @@ export default function AdminLoyaltyPage() {
                               size="sm"
                               variant="secondary"
                               className="ad-cl-touch-btn"
-                              href={clientasHref({ q: entry.phoneE164 })}
+                              href={clientasHref({
+                                clientId: entry.clientId,
+                                q: entry.phoneE164,
+                              })}
                             />
                             <Button
                               label="WhatsApp"
@@ -832,6 +921,7 @@ export default function AdminLoyaltyPage() {
             <PackagesSubSection
               packagesCatalog={servicePackages}
               packagesLoading={packagesQuery.isLoading}
+              packagesSupported={packagesSupported}
               services={data.services}
               currency={currency}
               canManagePackages={canManage}
@@ -850,6 +940,8 @@ export default function AdminLoyaltyPage() {
               activeClientPackagesCount={activeClientPackages.length}
               activeCatalogPackages={activeCatalogPackages}
               packagesLoading={packagesQuery.isLoading}
+              packagesSupported={packagesSupported}
+              initialClientSearch={urlQuery}
               canManageClients={canManage}
               salonName={data.settings.name}
               tz={tz}
@@ -867,7 +959,7 @@ export default function AdminLoyaltyPage() {
 
         {activeTab === 'cupones' ? (
           <CouponsSubSection
-            coupons={data.coupons}
+            coupons={filteredCoupons}
             currency={currency}
             tz={tz}
             todayKey={data.serverTodayKey}
@@ -900,7 +992,7 @@ export default function AdminLoyaltyPage() {
             nearRewardCount={data.nearRewardClients.length}
             returningClients={returningClients}
             onOpenClientById={openClientById}
-            onOpenLoyalty={() => setActiveTab('sellos')}
+            onOpenLoyalty={() => handleChangeTab('sellos')}
             onDispatchCampaign={handleDispatchCampaign}
           />
         ) : null}

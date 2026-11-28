@@ -52,6 +52,7 @@ interface ClientLoyaltyTabProps {
   activeCatalogPackages: readonly ServicePackage[];
   packagesLoading: boolean;
   packagesSupported?: boolean;
+  initialClientSearch?: string;
   canManageClients: boolean;
   hideNearRewards?: boolean;
   showCatalogLink?: boolean;
@@ -80,6 +81,7 @@ export function ClientLoyaltyTab({
   activeCatalogPackages,
   packagesLoading,
   packagesSupported = true,
+  initialClientSearch = '',
   canManageClients,
   hideNearRewards = false,
   showCatalogLink = true,
@@ -95,11 +97,17 @@ export function ClientLoyaltyTab({
   onCancelPackage,
 }: ClientLoyaltyTabProps) {
   const effectiveCanManagePackages = canManageClients && packagesSupported;
-  const [clientSearch, setClientSearch] = useState('');
+  const [prevInitialSearch, setPrevInitialSearch] = useState(initialClientSearch);
+  const [clientSearch, setClientSearch] = useState(initialClientSearch);
   const [assignClientId, setAssignClientId] = useState('');
   const [assignPackageId, setAssignPackageId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
   const [confirmCancelPkg, setConfirmCancelPkg] = useState<ClientPackageRow | null>(null);
+
+  if (prevInitialSearch !== initialClientSearch) {
+    setPrevInitialSearch(initialClientSearch);
+    setClientSearch(initialClientSearch);
+  }
 
   const filteredAssignClients = useMemo(() => {
     const clean = normalizeToken(clientSearch);

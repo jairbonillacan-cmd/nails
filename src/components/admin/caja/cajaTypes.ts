@@ -1,8 +1,16 @@
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
-import { parseCajaParams } from '@/lib/admin-links';
+import {
+  fidelizacionHref,
+  parseCajaParams,
+  type CajaLinkParams,
+} from '@/lib/admin-links';
 import { hasBookingProofSubmitted } from '@/lib/booking/balance';
+import {
+  formatPaymentMethodLabel,
+  formatPaymentSplitMethodLabel,
+} from '@/lib/format';
 import { formatPendingDepositsBreakdown, type StaffCommissionRow } from '@/lib/metrics';
-import type { PaymentMethod, PaymentSplitMethod } from '@/lib/types';
+import type { PaymentSplitMethod } from '@/lib/types';
 
 export type CajaTab = 'summary' | 'deposits' | 'commissions' | 'promos';
 export type PromosSubTab = 'coupons' | 'packages';
@@ -51,19 +59,21 @@ export const SPLIT_METHOD_ORDER: readonly PaymentSplitMethod[] = [
   'online',
 ];
 
-export function splitMethodLabel(method: PaymentSplitMethod): string {
-  if (method === 'cash') return 'Efectivo';
-  if (method === 'card') return 'Tarjeta';
-  if (method === 'transfer') return 'Transferencia';
-  if (method === 'giftcard') return 'Tarjeta de regalo';
-  return 'Pago en línea';
-}
+export const splitMethodLabel = formatPaymentSplitMethodLabel;
+export const paymentMethodLabel = formatPaymentMethodLabel;
 
-export function paymentMethodLabel(method: PaymentMethod): string {
-  if (method === 'cash') return 'Efectivo';
-  if (method === 'card') return 'Tarjeta';
-  if (method === 'transfer') return 'Transferencia';
-  return 'Tarjeta de regalo';
+export function resolveLegacyCajaFidelizacionHref(
+  params: Pick<CajaLinkParams, 'tab' | 'sub' | 'q'>,
+): string | null {
+  if (params.tab !== 'promos' && params.tab !== 'cupones' && params.tab !== 'paquetes') {
+    return null;
+  }
+  const targetTab =
+    params.tab === 'paquetes' || params.sub === 'packages' ? 'paquetes' : 'cupones';
+  return fidelizacionHref({
+    tab: targetTab,
+    ...(params.q ? { q: params.q } : {}),
+  });
 }
 
 export function splitMethodTokenColor(

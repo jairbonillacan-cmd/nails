@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -10,12 +10,12 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
-import { CalendarPlus } from 'lucide-react';
+import { AlertTriangle, CalendarPlus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
+import { StatusTag, SurfaceCard } from '@/components/ui';
 import { computeBookingBalance } from '@/lib/booking/balance';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
-import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
+import { useClientBookingContext } from '@/lib/hooks/useClientBookingContext';
 import type {
   BookingWithRelations,
   CashRegisterEntry,
@@ -29,7 +29,6 @@ import { formatCurrency } from '@/lib/format';
 import {
   buildNextSplitRow,
   computeCheckoutDraftMetrics,
-  fetchActiveClientPackages,
   submitCheckoutSplitRequest,
 } from './checkoutApi';
 import {
@@ -108,36 +107,34 @@ export function CheckoutDrawerDialog({
   const [extraItemId, setExtraItemId] = useState<string>('none');
   const [extraQuantity, setExtraQuantity] = useState<number>(1);
   const [redeemLoyaltyReward, setRedeemLoyaltyReward] = useState(false);
-  const [clientPackages, setClientPackages] = useState<ClientPackageSummaryRow[]>([]);
   const [redeemPackageId, setRedeemPackageId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const [completedState, setCompletedState] = useState<CompletedCheckoutState | null>(null);
 
-  const packageSyncKey = booking
-    ? `checkout-pkg|${booking.clientId}|${booking.id}`
-    : 'checkout-pkg-closed';
+  const handlePackagesCleared = useCallback(() => {
+    setRedeemPackageId(null);
+  }, []);
 
-  useExternalSync(packageSyncKey, async (signal, key) => {
-    if (key === 'checkout-pkg-closed' || !booking) {
-      setClientPackages([]);
-      setRedeemPackageId(null);
-      return;
-    }
-    try {
-      const active = await fetchActiveClientPackages(booking.clientId, booking.serviceId, signal);
-      if (!signal.aborted) setClientPackages(active);
-    } catch {
-      if (!signal.aborted) setClientPackages([]);
-    }
+  const {
+    fullClientProfile,
+    loyaltySummary,
+    clientPackages,
+    parsedClientNotes,
+    techBadges,
+    safetyAlerts,
+  } = useClientBookingContext({
+    booking,
+    clients: adminData?.clients ?? [],
+    loyaltyProgram,
+    loyaltyStamps,
+    syncScope: 'checkout',
+    onPackagesCleared: handlePackagesCleared,
   });
 
   if (!booking) {
-    return (
-      <Drawer isOpen={false} onOpenChange={() => onClose()} label="Cobrar cita" side="end" width={520}>
-        <VStack gap={2} />
-      </Drawer>
-    );
+    return null;
   }
 
   const selectedExtraItem =
@@ -148,9 +145,17 @@ export function CheckoutDrawerDialog({
   const priorPaidCents = initialSummary?.paidCents ?? 0;
   const priorTipsCents = initialSummary?.totalTipsCents ?? 0;
   const depositPaidCents = initialSummary?.depositPaidCents ?? 0;
-  const loyaltySummary = loyaltyProgram
-    ? computeClientLoyaltySummary(loyaltyProgram, loyaltyStamps, booking.clientId)
-    : null;
+  const noShowCount = fullClientProfile?.noShowCount ?? booking.client.noShowCount;
+  const noShowThreshold = adminData?.settings.noShowDepositThreshold ?? 2;
+  const neutralTechBadges = techBadges.filter((badge) => badge.tone === 'neutral');
+  const hasSafetyAlert = safetyAlerts.length > 0 || noShowCount > 0;
+  const hasClientSafetyOrNotes = Boolean(
+    hasSafetyAlert ||
+      neutralTechBadges.length > 0 ||
+      parsedClientNotes.freeNotes ||
+      booking.clientNotes ||
+      booking.internalNotes,
+  );
 
   const draft = computeCheckoutDraftMetrics({
     bookingTotalCents: booking.totalPriceCents,
@@ -222,6 +227,7 @@ export function CheckoutDrawerDialog({
     if (submitting) return;
     setSubmitting(true);
     setErrorText(null);
+    setRefreshWarning(null);
     try {
       const result = await submitCheckoutSplitRequest({
         bookingId: booking.id,
@@ -242,7 +248,9 @@ export function CheckoutDrawerDialog({
       try {
         await onCompleted();
       } catch {
-        setErrorText(null);
+        setRefreshWarning(
+          'El cobro se guardó, pero no pudimos actualizar la agenda al instante. Recarga si no ves el cambio.',
+        );
       }
     } catch {
       setErrorText('No se pudo registrar el cobro. Intenta de nuevo.');
@@ -256,7 +264,7 @@ export function CheckoutDrawerDialog({
   };
 
   return (
-    <Drawer isOpen={Boolean(booking)} onOpenChange={handleDrawerOpenChange} label="Cobrar cita" side="end" width={520} purpose="form">
+    <Drawer isOpen onOpenChange={handleDrawerOpenChange} label="Cobrar cita" side="end" width={520} purpose="form">
       <Layout
         header={
           <DrawerHeader
@@ -269,27 +277,38 @@ export function CheckoutDrawerDialog({
         content={
           <LayoutContent>
             {completedState ? (
-              <CheckoutReceiptView
-                booking={booking}
-                completedState={completedState}
-                salonSettings={{
-                  name: adminData?.settings.name ?? 'LAIKONA NAILS',
-                  currency,
-                  timezone: adminData?.settings.timezone ?? 'America/Mexico_City',
-                }}
-                stampsCount={
-                  loyaltySummary
-                    ? loyaltySummary.currentStamps +
-                      (completedState.stampAwarded &&
-                      !loyaltyStamps.some((st) => st.id === completedState.stampAwarded?.id)
-                        ? 1
-                        : 0)
-                    : null
-                }
-                stampsRequired={loyaltySummary?.stampsRequired ?? loyaltyProgram?.stampsRequired ?? null}
-                touchUpDays={touchUpDays}
-                onScheduleRetouch={onScheduleRetouch}
-              />
+              <VStack gap={3}>
+                {refreshWarning ? (
+                  <Banner
+                    status="warning"
+                    role="status"
+                    title={refreshWarning}
+                    isDismissable
+                    onDismiss={() => setRefreshWarning(null)}
+                  />
+                ) : null}
+                <CheckoutReceiptView
+                  booking={booking}
+                  completedState={completedState}
+                  salonSettings={{
+                    name: adminData?.settings.name ?? 'LAIKONA NAILS',
+                    currency,
+                    timezone: adminData?.settings.timezone ?? 'America/Mexico_City',
+                  }}
+                  stampsCount={
+                    loyaltySummary
+                      ? loyaltySummary.currentStamps +
+                        (completedState.stampAwarded &&
+                        !loyaltyStamps.some((st) => st.id === completedState.stampAwarded?.id)
+                          ? 1
+                          : 0)
+                      : null
+                  }
+                  stampsRequired={loyaltySummary?.stampsRequired ?? loyaltyProgram?.stampsRequired ?? null}
+                  touchUpDays={touchUpDays}
+                  onScheduleRetouch={onScheduleRetouch}
+                />
+              </VStack>
             ) : (
               <form id="checkout-split-form" onSubmit={handleSubmit}>
                 <VStack
@@ -299,6 +318,74 @@ export function CheckoutDrawerDialog({
                 >
                   {errorText ? (
                     <Banner status="error" role="alert" title={errorText} isDismissable onDismiss={() => setErrorText(null)} />
+                  ) : null}
+
+                  {hasClientSafetyOrNotes ? (
+                    <SurfaceCard
+                      tone={hasSafetyAlert ? 'warning' : 'subtle'}
+                      padded
+                      className="ad-pop-context"
+                    >
+                      <VStack gap={2}>
+                        <HStack justify="between" align="center" gap={2} wrap="wrap">
+                          <HStack gap={1.5} align="center">
+                            {hasSafetyAlert ? (
+                              <AlertTriangle size={14} aria-hidden="true" />
+                            ) : null}
+                            <Text type="supporting" weight="semibold" color="secondary">
+                              Alertas y notas de la clienta
+                            </Text>
+                          </HStack>
+                          {noShowCount > 0 ? (
+                            <StatusTag
+                              size="sm"
+                              tone={noShowCount >= noShowThreshold ? 'danger' : 'warning'}
+                              label={`${noShowCount} ${
+                                noShowCount === 1 ? 'inasistencia' : 'inasistencias'
+                              }`}
+                              hasTabularNumbers
+                            />
+                          ) : null}
+                        </HStack>
+
+                        {safetyAlerts.length > 0 || neutralTechBadges.length > 0 ? (
+                          <HStack gap={1.5} wrap="wrap" className="ad-pop-tech-chips">
+                            {safetyAlerts.map((alert) => (
+                              <StatusTag
+                                key={alert}
+                                size="sm"
+                                tone="danger"
+                                label={alert}
+                              />
+                            ))}
+                            {neutralTechBadges.map((badge) => (
+                              <StatusTag
+                                key={badge.label}
+                                size="sm"
+                                tone="neutral"
+                                label={badge.label}
+                              />
+                            ))}
+                          </HStack>
+                        ) : null}
+
+                        {parsedClientNotes.freeNotes ? (
+                          <Text type="supporting" color="secondary">
+                            Nota de ficha: {parsedClientNotes.freeNotes}
+                          </Text>
+                        ) : null}
+                        {booking.clientNotes ? (
+                          <Text type="supporting" color="secondary">
+                            Nota de la clienta: {booking.clientNotes}
+                          </Text>
+                        ) : null}
+                        {booking.internalNotes ? (
+                          <Text type="supporting" color="secondary">
+                            Nota interna: {booking.internalNotes}
+                          </Text>
+                        ) : null}
+                      </VStack>
+                    </SurfaceCard>
                   ) : null}
 
                   <CheckoutBalanceCard

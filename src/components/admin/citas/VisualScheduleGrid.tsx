@@ -64,6 +64,7 @@ interface VisualScheduleGridProps {
   bookings: BookingWithRelations[];
   allServices: Service[];
   isSpecialistLocked?: boolean;
+  canViewTeam?: boolean;
   busyBookingId?: string | null;
   busyStatus?: BookingStatus | null;
   reschedulingBookingId?: string | null;
@@ -100,6 +101,7 @@ export function VisualScheduleGrid({
   bookings,
   allServices,
   isSpecialistLocked = false,
+  canViewTeam = true,
   busyBookingId = null,
   busyStatus = null,
   reschedulingBookingId = null,
@@ -157,9 +159,17 @@ export function VisualScheduleGrid({
     return (
       <EmptyStateCard
         title="Sin profesionales activas en la agenda"
-        description="Activa al menos una profesional en Equipo para ver el calendario del salón."
+        description={
+          canViewTeam
+            ? 'Activa al menos una profesional en Equipo para ver el calendario del salón.'
+            : 'Pide a la dueña activar tu perfil en Equipo para ver el calendario del salón.'
+        }
         icon={<CalendarDays size={22} aria-hidden="true" />}
-        actions={<Button label="Ir a Equipo" variant="secondary" size="sm" href={equipoHref()} />}
+        actions={
+          canViewTeam ? (
+            <Button label="Ir a Equipo" variant="secondary" size="sm" href={equipoHref()} />
+          ) : undefined
+        }
       />
     );
   }

@@ -89,6 +89,28 @@ describe('formSubmitResultFromFetch', () => {
       ok: false,
       error: 'No se pudo',
     });
+    expect(
+      formSubmitResultFromFetch(
+        { ok: false, status: 429, retryAfterSeconds: 30, error: '' },
+        'No se pudo',
+      ),
+    ).toEqual({
+      ok: false,
+      error: 'Demasiados intentos seguidos. Espera 30 segundos e intenta de nuevo.',
+    });
+    expect(
+      formSubmitResultFromFetch({ ok: false, status: 429, error: '' }, 'No se pudo'),
+    ).toEqual({
+      ok: false,
+      error: 'Demasiados intentos seguidos. Espera unos segundos e intenta de nuevo.',
+    });
+    expect(
+      formSubmitResultFromFetch({ ok: false, status: 409, error: '' }, 'No se pudo'),
+    ).toEqual({
+      ok: false,
+      error:
+        'Este registro cambió o ya existe un conflicto. Actualiza la vista e intenta de nuevo.',
+    });
     expect(formSubmitResultFromFetch({ ok: true }, 'No se pudo')).toEqual(FORM_SUBMIT_OK);
   });
 });

@@ -9,8 +9,8 @@ import { EmptyStateCard, StatusTag, SurfaceCard } from '@/components/ui';
 import {
   agendaHref,
   cajaHref,
-  clientasHref,
   equipoHref,
+  fidelizacionHref,
   horariosHref,
 } from '@/lib/admin-links';
 import { formatCurrency, formatDuration } from '@/lib/format';
@@ -24,7 +24,7 @@ interface SpecialistOccupancyCardProps {
   focusedStaffId?: string | null;
   onClearStaffFocus?: () => void;
   canViewTeam?: boolean;
-  canViewClients?: boolean;
+  canViewLoyalty?: boolean;
   canViewCash?: boolean;
   cajaPeriod?: MetricPeriod;
 }
@@ -36,7 +36,7 @@ export function SpecialistOccupancyCard({
   focusedStaffId = null,
   onClearStaffFocus,
   canViewTeam = false,
-  canViewClients = false,
+  canViewLoyalty = false,
   canViewCash = false,
   cajaPeriod = 'month',
 }: SpecialistOccupancyCardProps) {
@@ -70,12 +70,12 @@ export function SpecialistOccupancyCard({
               onClick={onClearStaffFocus}
             />
           ) : null}
-          {canViewClients && !isSpecialistScope ? (
+          {canViewLoyalty && !isSpecialistScope ? (
             <Button
-              label="Ver retención"
+              label="Ver campañas"
               variant="ghost"
               size="sm"
-              href={clientasHref({ tab: 'retencion' })}
+              href={fidelizacionHref({ tab: 'campanas' })}
             />
           ) : null}
           {canViewCash ? (

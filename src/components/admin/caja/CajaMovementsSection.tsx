@@ -11,7 +11,14 @@ import { Token } from '@astryxdesign/core/Token';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Lock, Pencil, Trash2 } from 'lucide-react';
 import { agendaHref, clientasHref } from '@/lib/admin-links';
-import { formatCurrency, formatDateShortInTimezone } from '@/lib/format';
+import {
+  formatCashEntryTypeLabel,
+  formatCurrency,
+  formatDateShortInTimezone,
+  formatPaymentMethodLabel,
+  formatPaymentSplitMethodLabel,
+  getDateKeyInTimezone,
+} from '@/lib/format';
 import type { CashRegisterEntry } from '@/lib/types';
 import {
   EmptyStateCard,
@@ -26,8 +33,6 @@ import {
   type MovementTypeFilter,
 } from './cajaMetrics';
 import {
-  paymentMethodLabel,
-  splitMethodLabel,
   splitMethodTokenColor,
   type SplitDetailRow,
 } from './cajaTypes';
@@ -38,14 +43,6 @@ const MOVEMENT_FILTER_OPTIONS: readonly FilterPillOption<MovementTypeFilter>[] =
   { value: 'deposits', label: 'Anticipos' },
   { value: 'expenses', label: 'Gastos' },
 ];
-
-function entryTypeLabel(entryType: CashRegisterEntry['entryType']): string {
-  if (entryType === 'expense') return 'Gasto';
-  if (entryType === 'deposit') return 'Anticipo';
-  if (entryType === 'product_sale') return 'Producto';
-  if (entryType === 'gift_card_sale') return 'Tarjeta de regalo';
-  return 'Servicio';
-}
 
 interface CajaMovementsSectionProps {
   cashEntries: readonly CashRegisterEntry[];
@@ -163,24 +160,38 @@ export function CajaMovementsSection({
                       const bookingMeta = entry.bookingId
                         ? bookingLookup?.get(entry.bookingId)
                         : undefined;
+                      const bookingDateKey = bookingMeta?.startAt
+                        ? getDateKeyInTimezone(new Date(bookingMeta.startAt), tz)
+                        : undefined;
                       return (
                         <VStack gap={0.5}>
                           <Text weight="medium">{entry.description}</Text>
                           <Text type="supporting" color="secondary">
-                            {entryTypeLabel(entry.entryType)} ·{' '}
-                            {paymentMethodLabel(entry.paymentMethod)} · {entry.recordedBy}
+                            {formatCashEntryTypeLabel(entry.entryType)} ·{' '}
+                            {formatPaymentMethodLabel(entry.paymentMethod)} · {entry.recordedBy}
                           </Text>
                           {bookingMeta ? (
                             <HStack gap={2} align="center" wrap="wrap">
                               <NextLink
-                                href={agendaHref({ q: bookingMeta.bookingCode })}
+                                href={agendaHref({
+                                  ...(bookingDateKey ? { date: bookingDateKey } : {}),
+                                  q: bookingMeta.bookingCode,
+                                })}
                                 className="ad-inline-link"
                               >
                                 Cita {bookingMeta.bookingCode}
                               </NextLink>
-                              {canViewClients && bookingMeta.clientPhone ? (
+                              {canViewClients &&
+                              (bookingMeta.clientId || bookingMeta.clientPhone) ? (
                                 <NextLink
-                                  href={clientasHref({ q: bookingMeta.clientPhone })}
+                                  href={clientasHref({
+                                    ...(bookingMeta.clientId
+                                      ? { clientId: bookingMeta.clientId }
+                                      : {}),
+                                    ...(bookingMeta.clientPhone
+                                      ? { q: bookingMeta.clientPhone }
+                                      : {}),
+                                  })}
                                   className="ad-inline-link ad-inline-link-muted"
                                 >
                                   {bookingMeta.clientName}
@@ -278,6 +289,9 @@ export function CajaMovementsSection({
                 const bookingMeta = entry.bookingId
                   ? bookingLookup?.get(entry.bookingId)
                   : undefined;
+                const bookingDateKey = bookingMeta?.startAt
+                  ? getDateKeyInTimezone(new Date(bookingMeta.startAt), tz)
+                  : undefined;
                 return (
                   <VStack key={entry.id} className="ad-caja-mcard" gap={2}>
                     <HStack justify="between" align="start" gap={2}>
@@ -285,8 +299,8 @@ export function CajaMovementsSection({
                         <Text weight="semibold">{entry.description}</Text>
                         <Text type="supporting" color="secondary" hasTabularNumbers>
                           {formatDateShortInTimezone(entry.occurredAt, tz)} ·{' '}
-                          {entryTypeLabel(entry.entryType)} ·{' '}
-                          {paymentMethodLabel(entry.paymentMethod)}
+                          {formatCashEntryTypeLabel(entry.entryType)} ·{' '}
+                          {formatPaymentMethodLabel(entry.paymentMethod)}
                         </Text>
                       </VStack>
                       <VStack gap={0} align="end">
@@ -326,15 +340,26 @@ export function CajaMovementsSection({
                               variant="ghost"
                               size="sm"
                               className="ad-caja-touch-btn"
-                              href={agendaHref({ q: bookingMeta.bookingCode })}
+                              href={agendaHref({
+                                ...(bookingDateKey ? { date: bookingDateKey } : {}),
+                                q: bookingMeta.bookingCode,
+                              })}
                             />
-                            {canViewClients && bookingMeta.clientPhone ? (
+                            {canViewClients &&
+                            (bookingMeta.clientId || bookingMeta.clientPhone) ? (
                               <Button
                                 label="Clienta"
                                 variant="ghost"
                                 size="sm"
                                 className="ad-caja-touch-btn"
-                                href={clientasHref({ q: bookingMeta.clientPhone })}
+                                href={clientasHref({
+                                  ...(bookingMeta.clientId
+                                    ? { clientId: bookingMeta.clientId }
+                                    : {}),
+                                  ...(bookingMeta.clientPhone
+                                    ? { q: bookingMeta.clientPhone }
+                                    : {}),
+                                })}
                               />
                             ) : null}
                           </>
@@ -430,7 +455,7 @@ export function CajaMovementsSection({
                     <Token
                       size="sm"
                       color={splitMethodTokenColor(row.method)}
-                      label={splitMethodLabel(row.method)}
+                      label={formatPaymentSplitMethodLabel(row.method)}
                     />
                   ),
                 },
@@ -475,7 +500,7 @@ export function CajaMovementsSection({
                   <Token
                     size="sm"
                     color={splitMethodTokenColor(row.method)}
-                    label={splitMethodLabel(row.method)}
+                    label={formatPaymentSplitMethodLabel(row.method)}
                   />
                   {row.tipCents > 0 ? (
                     <Text type="supporting" color="secondary" hasTabularNumbers>

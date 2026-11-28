@@ -90,29 +90,6 @@ export function computeCheckoutDraftMetrics(params: {
   };
 }
 
-export async function fetchActiveClientPackages(
-  clientId: string,
-  serviceId: string,
-  signal: AbortSignal,
-): Promise<ClientPackageSummaryRow[]> {
-  const res = await fetchJsonWithTimeout<{ clientPackages?: ClientPackageSummaryRow[] }>(
-    `/api/admin/packages?clientId=${encodeURIComponent(clientId)}`,
-    {
-      cache: 'no-store',
-      signal,
-    },
-  );
-  if (signal.aborted || res.aborted || !res.ok) return [];
-  return (res.data.clientPackages ?? [])
-    .filter((pkg) => pkg.status === 'active' && !pkg.isExpired && pkg.remainingSessions > 0)
-    .toSorted((a, b) => {
-      const aMatch = a.serviceId === serviceId ? 0 : 1;
-      const bMatch = b.serviceId === serviceId ? 0 : 1;
-      if (aMatch !== bMatch) return aMatch - bMatch;
-      return b.remainingSessions - a.remainingSessions;
-    });
-}
-
 export async function submitCheckoutSplitRequest(params: {
   bookingId: string;
   bookingStaffId: string;

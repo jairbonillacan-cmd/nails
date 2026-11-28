@@ -10,6 +10,7 @@ import {
   fetchAdminJson,
   getAdminCacheSnapshot,
   invalidateAdminCache,
+  invalidateAdminDomain,
   mutateAdminCache,
   setAdminCacheScope,
 } from '@/lib/hooks/useAdminCache';
@@ -158,12 +159,25 @@ export function AdminProvider({
   useRealtimeSubscription(
     useCallback(
       (evt) => {
-        if (evt.type !== 'connected') {
-          if (evt.type === 'slot_changed' || evt.type === 'booking_created') {
-            setBookingEventSeq((prev) => prev + 1);
-          }
-          void refresh();
+        if (evt.type === 'connected') return;
+        if (
+          evt.type === 'slot_changed' ||
+          evt.type === 'booking_created' ||
+          evt.type === 'booking_updated'
+        ) {
+          setBookingEventSeq((prev) => prev + 1);
+          invalidateAdminDomain('bookings');
+        } else if (
+          evt.type === 'schedule_changed' ||
+          evt.type === 'availability_updated'
+        ) {
+          invalidateAdminDomain('availability');
+        } else if (evt.type === 'settings_updated') {
+          invalidateAdminDomain('settings');
+        } else {
+          invalidateAdminDomain('bookings');
         }
+        void refresh();
       },
       [refresh],
     ),

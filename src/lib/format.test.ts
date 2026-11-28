@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   collapseDoublePeriods,
+  formatCashEntryTypeLabel,
   formatDateKeyDisplay,
   formatBirthdayDisplay,
   formatDateRangeDisplay,
   formatHour12h,
   formatMinutes12h,
+  formatPaymentMethodLabel,
+  formatPaymentSplitMethodLabel,
   formatPhoneDisplay,
   formatTimeHHMM12h,
   formatUnitCount,
+  getBookingStatusLabel,
   phonesMatchE164,
 } from './format';
 
@@ -70,5 +74,33 @@ describe('display formatters', () => {
     expect(phonesMatchE164('+522223890122', '2223890122')).toBe(true);
     expect(phonesMatchE164('+522223890122', '+522229998877')).toBe(false);
     expect(phonesMatchE164('', '+522223890122')).toBe(false);
+  });
+
+  it('formats payment methods, payment split methods, cash entry types, and booking statuses canonically', () => {
+    expect(formatPaymentMethodLabel('cash')).toBe('Efectivo');
+    expect(formatPaymentMethodLabel('card')).toBe('Tarjeta');
+    expect(formatPaymentMethodLabel('transfer')).toBe('Transferencia');
+    expect(formatPaymentMethodLabel('gift_card')).toBe('Tarjeta de regalo');
+
+    expect(formatPaymentSplitMethodLabel('cash')).toBe('Efectivo');
+    expect(formatPaymentSplitMethodLabel('card')).toBe('Tarjeta');
+    expect(formatPaymentSplitMethodLabel('transfer')).toBe('Transferencia');
+    expect(formatPaymentSplitMethodLabel('giftcard')).toBe('Tarjeta de regalo');
+    expect(formatPaymentSplitMethodLabel('online')).toBe('Pago en línea');
+
+    expect(formatCashEntryTypeLabel('service_income')).toBe('Servicio');
+    expect(formatCashEntryTypeLabel('product_sale')).toBe('Producto');
+    expect(formatCashEntryTypeLabel('deposit')).toBe('Anticipo');
+    expect(formatCashEntryTypeLabel('expense')).toBe('Gasto');
+    expect(formatCashEntryTypeLabel('gift_card_sale')).toBe('Tarjeta de regalo');
+
+    expect(getBookingStatusLabel('confirmed')).toBe('Confirmada');
+    expect(getBookingStatusLabel('pending_confirmation')).toBe('Por confirmar');
+    expect(getBookingStatusLabel('pending_confirmation', true)).toBe('Comprobante en revisión');
+    expect(getBookingStatusLabel('pending_payment')).toBe('Falta anticipo');
+    expect(getBookingStatusLabel('pending_payment', true)).toBe('Comprobante en revisión');
+    expect(getBookingStatusLabel('completed')).toBe('Completada');
+    expect(getBookingStatusLabel('canceled')).toBe('Cancelada');
+    expect(getBookingStatusLabel('no_show')).toBe('No llegó');
   });
 });

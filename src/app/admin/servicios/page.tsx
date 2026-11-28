@@ -27,12 +27,13 @@ import {
   isServiceDraftDirty,
 } from '@/components/admin/servicios/ServiceThumbnail';
 import {
-  cajaHref,
+  fidelizacionHref,
   inventarioHref,
   parseServiciosParams,
   reportesHref,
   serviciosHref,
 } from '@/lib/admin-links';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
@@ -105,7 +106,7 @@ export default function AdminServicesPage() {
   const lastUrlSyncKeyRef = useRef('');
 
   const urlSyncKey = data
-    ? `servicios-ready|${parsedParams.id ?? ''}|${parsedParams.tab ?? ''}`
+    ? `servicios-ready|${parsedParams.id ?? ''}|${parsedParams.tab ?? ''}|${parsedParams.q ?? ''}`
     : 'servicios-loading';
 
   useExternalSync(urlSyncKey, async (signal, key) => {
@@ -197,13 +198,36 @@ export default function AdminServicesPage() {
     setMenuPosition(null);
   };
 
+  const handleChangeSection = (nextSection: string) => {
+    setSection(nextSection);
+    router.replace(
+      serviciosHref({
+        tab: nextSection === 'addons' ? 'extras' : 'servicios',
+        ...(parsedParams.q ? { q: parsedParams.q } : {}),
+      }),
+      { scroll: false },
+    );
+  };
+
   const closeEditor = () => {
     setEditing(null);
     setCleanupEnabledOverride(null);
     setMenuPosition(null);
     lastUrlSyncKeyRef.current = '';
     if (parsedParams.id) {
-      router.replace(serviciosHref(), { scroll: false });
+      const preservedTab =
+        section === 'addons'
+          ? 'extras'
+          : parsedParams.tab && parsedParams.tab !== 'categorias'
+            ? parsedParams.tab
+            : undefined;
+      router.replace(
+        serviciosHref({
+          ...(preservedTab ? { tab: preservedTab } : {}),
+          ...(parsedParams.q ? { q: parsedParams.q } : {}),
+        }),
+        { scroll: false },
+      );
     }
   };
 
@@ -244,12 +268,14 @@ export default function AdminServicesPage() {
     if (positionChanged && menuPosition !== null) {
       const reordered = await applyMenuOrder(result.data.service, menuPosition);
       if (!reordered) {
+        invalidateAdminDomain('services');
         await refresh();
         return formSubmitError(
           'Se guardó el servicio, pero no se pudo cambiar su lugar en el menú.',
         );
       }
     }
+    invalidateAdminDomain('services');
     await refresh();
     saveNotice.show(
       wasEditing
@@ -273,6 +299,7 @@ export default function AdminServicesPage() {
         body: JSON.stringify({ kind: 'service', data: { ...srv, isActive: checked } }),
       });
       if (result.ok) {
+        invalidateAdminDomain('services');
         await refresh();
         saveNotice.show(checked ? `${srv.name} activado` : `${srv.name} pausado`);
       } else {
@@ -304,7 +331,7 @@ export default function AdminServicesPage() {
     (activeDraft.depositAmountCents ?? defaultDepositCents) !== defaultDepositCents;
 
   const canViewReports = roleCanAccess(data.session.user.role, 'reports');
-  const canViewCash = roleCanAccess(data.session.user.role, 'cash');
+  const canViewLoyalty = roleCanAccess(data.session.user.role, 'loyalty');
   const canViewInventory = roleCanAccess(data.session.user.role, 'inventory');
 
   return (
@@ -347,7 +374,7 @@ export default function AdminServicesPage() {
           }
         />
 
-        {canViewReports || canViewCash || canViewInventory ? (
+        {canViewReports || canViewLoyalty || canViewInventory ? (
           <HStack className="ad-toolbar" justify="between" align="center" gap={2} wrap="wrap">
             <Text type="supporting" color="secondary">
               Relacionado con tu menú
@@ -362,13 +389,13 @@ export default function AdminServicesPage() {
                   href={reportesHref({ period: '30d' })}
                 />
               ) : null}
-              {canViewCash ? (
+              {canViewLoyalty ? (
                 <Button
                   label="Paquetes"
                   variant="ghost"
                   size="sm"
                   icon={<Package size={14} aria-hidden="true" />}
-                  href={cajaHref({ tab: 'promos', sub: 'packages' })}
+                  href={fidelizacionHref({ tab: 'paquetes' })}
                 />
               ) : null}
               {canViewInventory ? (
@@ -389,6 +416,7 @@ export default function AdminServicesPage() {
           categories={data.categories}
           onOpenChange={setCategoriesOpen}
           onSaved={async () => {
+            invalidateAdminDomain('services');
             await refresh();
             saveNotice.show('Categorías guardadas');
           }}
@@ -404,7 +432,7 @@ export default function AdminServicesPage() {
           />
         ) : null}
 
-        <TabList value={section} onChange={setSection} hasDivider>
+        <TabList value={section} onChange={handleChangeSection} hasDivider>
           <Tab value="services" label={`Servicios (${data.services.length})`} />
           <Tab value="addons" label={`Extras / Diseños (${data.addons.length})`} />
         </TabList>
@@ -435,7 +463,10 @@ export default function AdminServicesPage() {
           <AddonsManagerSection
             addons={data.addons}
             currency={currency}
-            onRefresh={refresh}
+            onRefresh={async () => {
+              invalidateAdminDomain('services');
+              await refresh();
+            }}
             onError={(text) => setSavedMsg({ status: 'error', text })}
             onNotice={saveNotice.show}
           />
@@ -478,6 +509,9 @@ export default function AdminServicesPage() {
                 saving={controls.isSubmitting}
                 menuPosition={menuPosition}
                 menuPositionCount={orderedServices.length}
+                canViewReports={canViewReports}
+                canViewLoyalty={canViewLoyalty}
+                canViewInventory={canViewInventory}
                 onChangeMenuPosition={setMenuPosition}
                 onChangeDraft={setEditing}
                 onToggleCleanupTime={(checked) => {

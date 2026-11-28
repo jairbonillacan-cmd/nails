@@ -39,7 +39,7 @@ const EMPTY_PAYMENT_SPLITS: readonly PaymentSplit[] = [];
 const EMPTY_CASH_ENTRIES: readonly CashRegisterEntry[] = [];
 
 export function useCitasWorkspace() {
-  const { data: providerData, refresh } = useAdminData();
+  const { data: providerData, bookingEventSeq, refresh } = useAdminData();
 
   const overviewQuery = useAdminCachedQuery<AdminOverviewPayload>(
     providerData ? ADMIN_CACHE_KEYS.overview : null,
@@ -99,6 +99,7 @@ export function useCitasWorkspace() {
     overviewBookings: data?.bookings ?? EMPTY_BOOKINGS,
     overviewSplits: data?.paymentSplits ?? EMPTY_PAYMENT_SPLITS,
     overviewCashEntries: data?.cashEntries ?? EMPTY_CASH_ENTRIES,
+    bookingEventSeq,
   });
 
   const refreshAgenda = useCallback(async () => {
@@ -125,29 +126,49 @@ export function useCitasWorkspace() {
   const [checkoutSessionKey, setCheckoutSessionKey] = useState(0);
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockSessionKey, setBlockSessionKey] = useState(0);
+  const [collectError, setCollectError] = useState<string | null>(null);
   const lastHandledOneShotKeyRef = useRef('');
 
   const { oneShot } = urlState;
+  const collectTarget = useMemo(() => {
+    if (!data || !oneShot.collectId) return null;
+    return (
+      rangeBookings.find((b) => b.id === oneShot.collectId) ??
+      data.bookings.find((b) => b.id === oneShot.collectId) ??
+      null
+    );
+  }, [data, oneShot.collectId, rangeBookings]);
+
   const oneShotSyncKey =
     data && urlState.hasOneShotParams
-      ? `oneshot|${oneShot.collectId ?? ''}|${oneShot.isNew ? '1' : '0'}|${oneShot.clientName}|${oneShot.clientPhone}|${oneShot.clientInstagram}|${oneShot.staffId}|${oneShot.serviceId}`
+      ? oneShot.collectId
+        ? `oneshot-collect|${oneShot.collectId}|${collectTarget ? 'found' : isValidatingRange ? 'loading' : 'missing'}`
+        : `oneshot|${oneShot.isNew ? '1' : '0'}|${oneShot.clientName}|${oneShot.clientPhone}|${oneShot.clientInstagram}|${oneShot.staffId}|${oneShot.serviceId}`
       : 'oneshot-idle';
 
   useExternalSync(oneShotSyncKey, async (signal, key) => {
     if (signal.aborted || key === 'oneshot-idle' || !data) return;
-    if (lastHandledOneShotKeyRef.current === key) return;
-    lastHandledOneShotKeyRef.current = key;
 
     if (oneShot.collectId) {
-      const target = rangeBookings.find((b) => b.id === oneShot.collectId);
-      if (target) {
+      if (!collectTarget && isValidatingRange) return;
+      if (lastHandledOneShotKeyRef.current === key) return;
+      lastHandledOneShotKeyRef.current = key;
+      if (collectTarget) {
+        setCollectError(null);
         setPopoverBookingId(null);
-        setCheckoutBookingId(target.id);
+        setCheckoutBookingId(collectTarget.id);
         setCheckoutSessionKey((prev) => prev + 1);
+      } else {
+        setCollectError(
+          'No encontramos esa cita para cobrar. Revisa la fecha o búscala por nombre o código en Agenda.',
+        );
       }
       urlState.clearOneShotParams();
       return;
     }
+
+    if (lastHandledOneShotKeyRef.current === key) return;
+    lastHandledOneShotKeyRef.current = key;
 
     if (oneShot.isNew) {
       const requestedStaffId = oneShot.staffId || (urlState.staffFilter !== 'all' ? urlState.staffFilter : '');
@@ -196,6 +217,8 @@ export function useCitasWorkspace() {
     }
   });
 
+  const nowMs = useCurrentClockTick(data?.serverNowIso ?? '');
+
   const statusFilteredBookings = useMemo(() => {
     if (!data) return [];
     const filtered = filterBookingsForAgendaStatus({
@@ -203,6 +226,7 @@ export function useCitasWorkspace() {
       paymentSplits: rangePaymentSplits,
       cashEntries: rangeCashEntries,
       serverNowIso: data.serverNowIso,
+      nowMs,
       status: urlState.status,
       search,
       selectedStaffFilter: urlState.staffFilter,
@@ -215,6 +239,7 @@ export function useCitasWorkspace() {
       paymentSplits: rangePaymentSplits,
       cashEntries: rangeCashEntries,
       serverNowIso: data.serverNowIso,
+      nowMs,
       status: 'all',
       search,
       selectedStaffFilter: urlState.staffFilter,
@@ -224,6 +249,7 @@ export function useCitasWorkspace() {
     rangeBookings,
     rangePaymentSplits,
     rangeCashEntries,
+    nowMs,
     urlState.status,
     search,
     urlState.staffFilter,
@@ -242,8 +268,6 @@ export function useCitasWorkspace() {
         : [],
     [data, statusFilteredBookings, urlState.status, search, urlState.dateKey, tz],
   );
-
-  const nowMs = useCurrentClockTick(data?.serverNowIso ?? '');
 
   const chipCounts = useMemo(() => {
     if (!data) {
@@ -330,6 +354,8 @@ export function useCitasWorkspace() {
     isValidatingRange,
     rangeError,
     retryRange,
+    collectError,
+    dismissCollectError: () => setCollectError(null),
     tz,
     todayKey,
     tomorrowKey,

@@ -1,5 +1,5 @@
-import { agendaHref, clientasHref } from '@/lib/admin-links';
-import { formatDateShortInTimezone } from '@/lib/format';
+import { agendaHref, clientasHref, serviciosHref } from '@/lib/admin-links';
+import { formatDateShortInTimezone, getDateKeyInTimezone } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminRole, BookingWithRelations, ClientProfile, Service } from '@/lib/types';
 import type { AdminOverviewPayload } from './AdminProvider';
@@ -228,16 +228,16 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
     },
     {
       label: 'Clientas',
-      description: 'Directorio, sellos, cumpleaños y mensajes (G C)',
+      description: 'Directorio, ficha técnica e historial de visitas (G C)',
       href: '/admin/clientas',
-      keywords: 'clientas directorio sellos cumpleanos mensajes paquetes',
+      keywords: 'clientas directorio ficha tecnica historial cumpleanos notas',
       visible: roleCanAccess(role, 'clients'),
     },
     {
       label: 'Caja',
-      description: 'Corte del día, anticipos, comisiones y promociones (G J)',
+      description: 'Corte del día, cobros, anticipos y comisiones (G J)',
       href: '/admin/caja',
-      keywords: 'caja cobros anticipos comisiones cupones propinas paquetes',
+      keywords: 'caja cobros gastos corte anticipos comisiones propinas',
       visible: roleCanAccess(role, 'cash'),
     },
     {
@@ -320,6 +320,34 @@ function getQuickNavTargets(role: AdminRole): QuickNavTarget[] {
   ];
 }
 
+export function buildQuickSearchBookingHref(
+  booking: Pick<BookingWithRelations, 'bookingCode' | 'startAt'>,
+  timezone: string,
+): string {
+  return agendaHref({
+    date: getDateKeyInTimezone(new Date(booking.startAt), timezone),
+    q: booking.bookingCode,
+  });
+}
+
+export function buildQuickSearchClientHref(
+  client: Pick<ClientProfile, 'id' | 'phoneE164'>,
+): string {
+  return clientasHref({
+    clientId: client.id,
+    q: client.phoneE164,
+  });
+}
+
+export function buildQuickSearchServiceHref(
+  serviceId: string,
+  role: AdminRole,
+): string {
+  return roleCanAccess(role, 'services')
+    ? serviciosHref({ id: serviceId })
+    : agendaHref({ new: true, serviceId });
+}
+
 export function buildQuickSearchResults(
   data: AdminOverviewPayload,
   rawQuery: string,
@@ -352,6 +380,7 @@ export function buildQuickSearchResults(
         ]
       : [];
 
+  const nowMs = Date.parse(data.serverNowIso) || Date.now();
   const matchedBookings = !normalized
     ? data.bookings.slice(0, 3)
     : data.bookings
@@ -364,6 +393,18 @@ export function buildQuickSearchResults(
             return b.client.phoneE164.replace(/\D/g, '').includes(digitsQuery);
           }
           return false;
+        })
+        .toSorted((a, b) => {
+          const aExactCode = stripAccents(a.bookingCode) === normalized ? 0 : 1;
+          const bExactCode = stripAccents(b.bookingCode) === normalized ? 0 : 1;
+          if (aExactCode !== bExactCode) return aExactCode - bExactCode;
+          const aUpcoming = Date.parse(a.endAt) >= nowMs ? 0 : 1;
+          const bUpcoming = Date.parse(b.endAt) >= nowMs ? 0 : 1;
+          if (aUpcoming !== bUpcoming) return aUpcoming - bUpcoming;
+          if (aUpcoming === 0) {
+            return Date.parse(a.startAt) - Date.parse(b.startAt);
+          }
+          return Date.parse(b.startAt) - Date.parse(a.startAt);
         })
         .slice(0, 5);
 
@@ -416,22 +457,19 @@ export function buildQuickSearchResults(
   for (const b of matchedBookings) {
     flatOptions.push({
       optionId: `ad-search-opt-booking-${b.id}`,
-      href: agendaHref({ q: b.bookingCode }),
+      href: buildQuickSearchBookingHref(b, tz),
     });
   }
   for (const c of matchedClients) {
     flatOptions.push({
       optionId: `ad-search-opt-client-${c.id}`,
-      href: clientasHref({ q: c.phoneE164 }),
+      href: buildQuickSearchClientHref(c),
     });
   }
-  const serviceTargetHref = roleCanAccess(role, 'services')
-    ? '/admin/servicios'
-    : agendaHref({ new: true });
   for (const s of matchedServices) {
     flatOptions.push({
       optionId: `ad-search-opt-service-${s.id}`,
-      href: serviceTargetHref,
+      href: buildQuickSearchServiceHref(s.id, role),
     });
   }
   matchedNav.forEach((item, idx) => {

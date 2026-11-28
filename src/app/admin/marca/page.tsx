@@ -41,10 +41,12 @@ import { useSalonAppearance } from '@/components/SalonThemeProvider';
 import {
   ajustesHref,
   fidelizacionHref,
+  marcaHref,
   parseMarcaParams,
   type MarcaLinkParams,
 } from '@/lib/admin-links';
 import { checkThemeAccentContrast } from '@/lib/contrast';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
@@ -244,12 +246,20 @@ export default function AdminBrandPage() {
         setErrorMsg(result.error || 'No se pudieron guardar los cambios.');
         return;
       }
+      invalidateAdminDomain('settings');
       await refresh();
       setDraftOverride(null);
       saveNotice.show('Cambios guardados');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleChangeTab = (nextTab: BrandEditorTab) => {
+    setActiveTab(nextTab);
+    router.replace(marcaHref({ tab: nextTab === 'portada' ? undefined : nextTab }), {
+      scroll: false,
+    });
   };
 
   return (
@@ -303,7 +313,7 @@ export default function AdminBrandPage() {
           ariaLabel="Secciones del editor de Mi página"
           className="ad-scroll-row"
           value={activeTab}
-          onChange={setActiveTab}
+          onChange={handleChangeTab}
           options={[
             {
               value: 'portada',
@@ -369,7 +379,10 @@ export default function AdminBrandPage() {
                     gallery={data.gallery}
                     activeServices={activeServices}
                     onUpdateDraft={updateDraft}
-                    onRefresh={refresh}
+                    onRefresh={async () => {
+                      invalidateAdminDomain('settings');
+                      await refresh();
+                    }}
                     onNotify={saveNotice.show}
                   />
                 ) : null}

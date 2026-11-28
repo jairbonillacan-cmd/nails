@@ -15,7 +15,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function makeBookingStub(id: string, status: BookingWithRelations['status']): BookingWithRelations {
+function makeBookingStub(
+  id: string,
+  status: BookingWithRelations['status'],
+  updatedAt = '2026-11-20T12:00:00.000Z',
+): BookingWithRelations {
   return {
     id,
     bookingCode: `LK-${id}`,
@@ -45,7 +49,7 @@ function makeBookingStub(id: string, status: BookingWithRelations['status']): Bo
     rescheduledFromId: null,
     addons: [],
     createdAt: '2026-11-20T12:00:00.000Z',
-    updatedAt: '2026-11-20T12:00:00.000Z',
+    updatedAt,
     client: {
       id: 'client-1',
       fullName: 'Sofía Ramírez',
@@ -126,27 +130,40 @@ describe('useAgendaRangeBookings helpers', () => {
     ).toBe('/api/admin/bookings?from=2026-11-24&to=2026-11-30&staff=staff-karla');
   });
 
-  it('merges range bookings, paymentSplits, and cashEntries with range precedence by id', () => {
+  it('prefers strictly newer updatedAt rows and prevents stale rangeData from clobbering fresher overview', () => {
     const overviewBookings = [
-      makeBookingStub('bk-1', 'confirmed'),
-      makeBookingStub('bk-outside', 'pending_confirmation'),
+      makeBookingStub('bk-newer-in-range', 'confirmed', '2026-11-27T12:00:00.000Z'),
+      makeBookingStub('bk-fresher-in-overview', 'completed', '2026-11-27T18:30:00.000Z'),
+      makeBookingStub('bk-equal-optimistic', 'canceled', '2026-11-27T14:00:00.000Z'),
+      makeBookingStub('bk-outside', 'pending_confirmation', '2026-11-27T10:00:00.000Z'),
     ];
     const rangeBookings = [
-      makeBookingStub('bk-1', 'completed'),
-      makeBookingStub('bk-distant', 'confirmed'),
+      makeBookingStub('bk-newer-in-range', 'completed', '2026-11-27T15:00:00.000Z'),
+      makeBookingStub('bk-fresher-in-overview', 'confirmed', '2026-11-27T18:00:00.000Z'),
+      makeBookingStub('bk-equal-optimistic', 'confirmed', '2026-11-27T14:00:00.000Z'),
+      makeBookingStub('bk-distant', 'confirmed', '2026-12-20T12:00:00.000Z'),
     ];
     const overviewSplit: PaymentSplit = {
       id: 'sp-1',
-      bookingId: 'bk-1',
+      bookingId: 'bk-fresher-in-overview',
       method: 'cash',
-      amountCents: 20000,
+      amountCents: 50000,
       tipCents: 0,
       tipStaffId: null,
       createdAt: '2026-11-27T17:00:00.000Z',
     };
-    const rangeSplit: PaymentSplit = {
+    const staleRangeSplit: PaymentSplit = {
       ...overviewSplit,
-      amountCents: 50000,
+      amountCents: 20000,
+    };
+    const distantRangeSplit: PaymentSplit = {
+      id: 'sp-distant',
+      bookingId: 'bk-distant',
+      method: 'card',
+      amountCents: 30000,
+      tipCents: 0,
+      tipStaffId: null,
+      createdAt: '2026-12-20T17:00:00.000Z',
     };
     const rangeCash: CashRegisterEntry = {
       id: 'cash-distant',
@@ -168,7 +185,7 @@ describe('useAgendaRangeBookings helpers', () => {
       overviewCashEntries: [],
       rangeData: {
         bookings: rangeBookings,
-        paymentSplits: [rangeSplit],
+        paymentSplits: [staleRangeSplit, distantRangeSplit],
         cashEntries: [rangeCash],
         range: { from: '2026-11-24', to: '2026-12-30', staffId: null },
         timezone: 'America/Mexico_City',
@@ -176,11 +193,13 @@ describe('useAgendaRangeBookings helpers', () => {
     });
 
     expect(merged.bookings.map((b) => `${b.id}:${b.status}`)).toEqual([
-      'bk-1:completed',
+      'bk-newer-in-range:completed',
+      'bk-fresher-in-overview:completed',
+      'bk-equal-optimistic:canceled',
       'bk-outside:pending_confirmation',
       'bk-distant:confirmed',
     ]);
-    expect(merged.paymentSplits).toEqual([rangeSplit]);
+    expect(merged.paymentSplits).toEqual([overviewSplit, distantRangeSplit]);
     expect(merged.cashEntries).toEqual([rangeCash]);
   });
 

@@ -17,8 +17,7 @@ import type {
   PaymentSplit,
   SalonSettings,
 } from '@/lib/types';
-import { formatCurrency } from '@/lib/format';
-import { PAYMENT_METHOD_LABELS } from './PaymentSplitsEditor';
+import { formatCurrency, formatPaymentSplitMethodLabel } from '@/lib/format';
 
 export interface CompletedCheckoutState {
   summary: BookingPaymentSummary;
@@ -85,7 +84,7 @@ export function CheckoutBalanceCard({
                 key={split.id}
                 size="sm"
                 color="green"
-                label={`${PAYMENT_METHOD_LABELS[split.method]} ${formatCurrency(split.amountCents, currency)}`}
+                label={`${formatPaymentSplitMethodLabel(split.method)} ${formatCurrency(split.amountCents, currency)}`}
               />
             ))}
           </HStack>

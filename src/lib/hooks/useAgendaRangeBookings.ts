@@ -85,7 +85,35 @@ export function buildAgendaBookingsRangeUrl(params: {
   return `${ADMIN_CACHE_KEYS.bookings}?${qs.toString()}`;
 }
 
-function mergeRecordsById<T extends { id: string }>(
+function pickFresherBooking(
+  existing: BookingWithRelations,
+  incoming: BookingWithRelations,
+): BookingWithRelations {
+  const existingMs = Date.parse(existing.updatedAt);
+  const incomingMs = Date.parse(incoming.updatedAt);
+  if (Number.isFinite(incomingMs) && (!Number.isFinite(existingMs) || incomingMs > existingMs)) {
+    return incoming;
+  }
+  return existing;
+}
+
+function mergeBookingsByFreshness(
+  base: readonly BookingWithRelations[],
+  incoming: readonly BookingWithRelations[],
+): BookingWithRelations[] {
+  if (incoming.length === 0) return [...base];
+  const byId = new Map<string, BookingWithRelations>();
+  for (const item of base) {
+    byId.set(item.id, item);
+  }
+  for (const item of incoming) {
+    const existing = byId.get(item.id);
+    byId.set(item.id, existing ? pickFresherBooking(existing, item) : item);
+  }
+  return Array.from(byId.values());
+}
+
+function mergeRecordsPreferringBase<T extends { id: string }>(
   base: readonly T[],
   incoming: readonly T[],
 ): T[] {
@@ -95,7 +123,9 @@ function mergeRecordsById<T extends { id: string }>(
     byId.set(item.id, item);
   }
   for (const item of incoming) {
-    byId.set(item.id, item);
+    if (!byId.has(item.id)) {
+      byId.set(item.id, item);
+    }
   }
   return Array.from(byId.values());
 }
@@ -119,9 +149,9 @@ export function mergeAgendaRangeData(params: {
     };
   }
   return {
-    bookings: mergeRecordsById(overviewBookings, rangeData.bookings),
-    paymentSplits: mergeRecordsById(overviewSplits, rangeData.paymentSplits),
-    cashEntries: mergeRecordsById(overviewCashEntries, rangeData.cashEntries),
+    bookings: mergeBookingsByFreshness(overviewBookings, rangeData.bookings),
+    paymentSplits: mergeRecordsPreferringBase(overviewSplits, rangeData.paymentSplits),
+    cashEntries: mergeRecordsPreferringBase(overviewCashEntries, rangeData.cashEntries),
   };
 }
 
@@ -137,6 +167,7 @@ interface UseAgendaRangeBookingsParams {
   overviewBookings: readonly BookingWithRelations[];
   overviewSplits: readonly PaymentSplit[];
   overviewCashEntries: readonly CashRegisterEntry[];
+  bookingEventSeq?: number;
 }
 
 export function useAgendaRangeBookings({
@@ -147,6 +178,7 @@ export function useAgendaRangeBookings({
   overviewBookings,
   overviewSplits,
   overviewCashEntries,
+  bookingEventSeq = 0,
 }: UseAgendaRangeBookingsParams) {
   const windowRange = useMemo(
     () => computeAgendaFetchWindow(view, dateKey),
@@ -179,6 +211,7 @@ export function useAgendaRangeBookings({
     {
       enabled: Boolean(requestUrl),
       staleTimeMs: 30_000,
+      revalidateKey: bookingEventSeq,
     },
   );
 

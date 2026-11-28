@@ -744,4 +744,165 @@ describe('buildExecutiveReport', () => {
     expect(customReport.summary.totalBookings).toBe(1);
     expect(customReport.summary.totalRevenueCollectedCents).toBe(36000);
   });
+
+  it('maintains exact cash-basis parity between Ingresos cobrados and sum(specialistOccupancy.revenueCents)', () => {
+    const base = makeBaseInput();
+    const tomorrowBooking = makeBooking({
+      id: 'bk-tomorrow-checkout',
+      bookingCode: 'NL-1042',
+      staffId: 'staff-karla',
+      clientId: 'cli-sofia',
+      startAt: '2026-05-16T16:00:00.000Z',
+      endAt: '2026-05-16T18:00:00.000Z',
+      totalPriceCents: 46000,
+      depositAmountCents: 20000,
+      status: 'completed',
+    });
+    const inactiveStaff = makeStaff({
+      id: 'staff-paty',
+      name: 'Paty',
+      isActive: false,
+      displayOrder: 2,
+    });
+    const patyBooking = makeBooking({
+      id: 'bk-paty-month',
+      bookingCode: 'NL-1099',
+      staffId: 'staff-paty',
+      clientId: 'cli-andrea',
+      startAt: '2026-05-14T16:00:00.000Z',
+      endAt: '2026-05-14T17:00:00.000Z',
+      totalPriceCents: 18000,
+      status: 'completed',
+    });
+
+    const cashEntries: CashRegisterEntry[] = [
+      {
+        id: 'ce-deposit-tomorrow',
+        bookingId: 'bk-tomorrow-checkout',
+        staffId: 'staff-karla',
+        entryType: 'deposit',
+        description: 'Anticipo SPEI NL-1042',
+        amountCents: 20000,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'transfer',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-15T14:00:00.000Z',
+      },
+      {
+        id: 'ce-checkout-tomorrow',
+        bookingId: 'bk-tomorrow-checkout',
+        staffId: null,
+        entryType: 'service_income',
+        description: 'Saldo NL-1042',
+        amountCents: 26000,
+        tipCents: 4000,
+        commissionCents: 10400,
+        paymentMethod: 'card',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-15T18:00:00.000Z',
+      },
+      {
+        id: 'ce-service-month',
+        bookingId: 'bk-recent-1',
+        staffId: 'staff-karla',
+        entryType: 'service_income',
+        description: 'Gel Semipermanente',
+        amountCents: 15000,
+        tipCents: 5000,
+        commissionCents: 6000,
+        paymentMethod: 'card',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-14T17:30:00.000Z',
+      },
+      {
+        id: 'ce-retail-month',
+        bookingId: null,
+        staffId: 'staff-karla',
+        entryType: 'product_sale',
+        description: 'Aceite de Cutícula',
+        amountCents: 24000,
+        tipCents: 0,
+        commissionCents: 2400,
+        paymentMethod: 'transfer',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-14T18:00:00.000Z',
+      },
+      {
+        id: 'ce-paty-booking-only',
+        bookingId: 'bk-paty-month',
+        staffId: null,
+        entryType: 'service_income',
+        description: 'Cobro sin staffId explícito',
+        amountCents: 18000,
+        tipCents: 0,
+        commissionCents: 7200,
+        paymentMethod: 'cash',
+        recordedBy: 'Paty',
+        occurredAt: '2026-05-14T17:05:00.000Z',
+      },
+      {
+        id: 'ce-expense-ignored',
+        bookingId: null,
+        staffId: 'staff-karla',
+        entryType: 'expense',
+        description: 'Compra de limas',
+        amountCents: 9000,
+        tipCents: 0,
+        commissionCents: 0,
+        paymentMethod: 'cash',
+        recordedBy: 'Karla',
+        occurredAt: '2026-05-15T15:00:00.000Z',
+      },
+    ];
+
+    const report = buildExecutiveReport({
+      ...base,
+      staff: [...base.staff, inactiveStaff],
+      bookings: [...base.bookings, tomorrowBooking, patyBooking],
+      cashEntries,
+      period: 'month',
+    });
+
+    const occupancyRevenueSum = report.specialistOccupancy.reduce(
+      (sum, row) => sum + row.revenueCents,
+      0,
+    );
+    expect(report.cashSummary.collectedCents).toBe(103000);
+    expect(report.summary.totalRevenueCollectedCents).toBe(103000);
+    expect(occupancyRevenueSum).toBe(report.cashSummary.collectedCents);
+    expect(
+      report.specialistOccupancy.find((row) => row.staffId === 'staff-karla')?.revenueCents,
+    ).toBe(85000);
+    expect(
+      report.specialistOccupancy.find((row) => row.staffId === 'staff-paty')?.revenueCents,
+    ).toBe(18000);
+    expect(
+      report.specialistOccupancy.find((row) => row.staffId === 'staff-tere')?.revenueCents,
+    ).toBe(0);
+
+    const scopedKarla = buildExecutiveReport({
+      ...base,
+      staff: [...base.staff, inactiveStaff],
+      bookings: [...base.bookings, tomorrowBooking, patyBooking],
+      cashEntries,
+      period: 'month',
+      scopeStaffId: 'staff-karla',
+    });
+    expect(scopedKarla.cashSummary.collectedCents).toBe(85000);
+    expect(scopedKarla.summary.totalRevenueCollectedCents).toBe(85000);
+    expect(scopedKarla.specialistOccupancy).toHaveLength(1);
+    expect(scopedKarla.specialistOccupancy[0]?.revenueCents).toBe(85000);
+
+    const emptyLedgerReport = buildExecutiveReport({
+      ...base,
+      cashEntries: [],
+      period: 'month',
+    });
+    expect(emptyLedgerReport.cashSummary.collectedCents).toBe(0);
+    expect(emptyLedgerReport.summary.totalRevenueCollectedCents).toBe(0);
+    expect(
+      emptyLedgerReport.specialistOccupancy.reduce((sum, row) => sum + row.revenueCents, 0),
+    ).toBe(0);
+  });
 });

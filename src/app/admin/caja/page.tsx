@@ -4,7 +4,6 @@ import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
-import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
@@ -15,31 +14,24 @@ import { CajaSummaryTab } from '@/components/admin/caja/CajaSummaryTab';
 import {
   approveCajaDeposit,
   deleteCajaCashEntry,
-  deleteCajaCoupon,
   exportCajaCsv,
   recordCajaCashEntry,
   rejectCajaDeposit,
   saveCajaConfig,
-  saveCajaCoupon,
-  saveCajaPackage,
-  toggleCajaCouponActive,
-  toggleCajaPackage,
   updateCajaCashEntry,
   updateCajaStaffCommission,
   type RecordCajaEntryInput,
-  type SaveCajaPackageInput,
   type UpdateCajaCashEntryInput,
 } from '@/components/admin/caja/cajaActions';
 import {
   buildCommissionPayoutDraft,
+  type CajaPeriod,
   type CommissionPayoutDraft,
-  type CouponPayloadData,
 } from '@/components/admin/caja/cajaMetrics';
 import { useCajaData } from '@/components/admin/caja/useCajaData';
-import type {
-  CajaTab,
-  CommissionStaffRow,
-  ServicePackageCatalogRow,
+import {
+  resolveLegacyCajaFidelizacionHref,
+  type CommissionStaffRow,
 } from '@/components/admin/caja/cajaTypes';
 import {
   ConfirmActionDialog,
@@ -48,11 +40,20 @@ import {
   PageSkeleton,
   SkeletonBlock,
 } from '@/components/ui';
-import { cajaHref, parseCajaParams } from '@/lib/admin-links';
+import { cajaHref, parseCajaParams, type CajaLinkParams } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { roleCanAccess } from '@/lib/rbac';
-import type { CajaConfig, CashRegisterEntry, Coupon, StaffMember } from '@/lib/types';
+import type { CajaConfig, CashRegisterEntry, StaffMember } from '@/lib/types';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
+
+type ActiveCajaTab = 'summary' | 'deposits' | 'commissions';
+
+function cajaTabToParam(tab: ActiveCajaTab): CajaLinkParams['tab'] {
+  if (tab === 'deposits') return 'anticipos';
+  if (tab === 'commissions') return 'comisiones';
+  return undefined;
+}
 
 function CajaTabFallback() {
   return (
@@ -71,11 +72,6 @@ const CajaDepositsTab = dynamic(
 const CajaCommissionsTab = dynamic(
   () =>
     import('@/components/admin/caja/CajaCommissionsTab').then((mod) => mod.CajaCommissionsTab),
-  { ssr: false, loading: CajaTabFallback },
-);
-
-const CajaPromosTab = dynamic(
-  () => import('@/components/admin/caja/CajaPromosTab').then((mod) => mod.CajaPromosTab),
   { ssr: false, loading: CajaTabFallback },
 );
 
@@ -124,6 +120,16 @@ export default function AdminCashPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const parsedParams = parseCajaParams(searchParams);
+  const legacyFidelizacionHref = resolveLegacyCajaFidelizacionHref(parsedParams);
+
+  useExternalSync(
+    legacyFidelizacionHref ? `caja-legacy-redirect|${legacyFidelizacionHref}` : 'caja-redirect-idle',
+    async (signal) => {
+      if (signal.aborted || !legacyFidelizacionHref) return;
+      router.replace(legacyFidelizacionHref, { scroll: false });
+    },
+  );
+
   const {
     data,
     cajaConfig,
@@ -131,8 +137,6 @@ export default function AdminCashPage() {
     setActiveTab,
     highlightUncollected,
     setHighlightUncollected,
-    promosView,
-    setPromosView,
     cajaPeriod,
     setCajaPeriod,
     customRange,
@@ -144,10 +148,6 @@ export default function AdminCashPage() {
     searchQuery,
     setSearchQuery,
     resetSalesFilters,
-    packagesCatalog,
-    packagesLoading,
-    packagesError,
-    reloadPackages,
     pendingDeposits,
     uncollectedBookings,
     pendingDepositsTotalCents,
@@ -182,9 +182,6 @@ export default function AdminCashPage() {
     bookingCode: string;
   } | null>(null);
   const rejectResolveRef = useRef<((ok: boolean) => void) | null>(null);
-  const [deleteCouponTarget, setDeleteCouponTarget] = useState<Coupon | null>(null);
-  const [togglingCouponId, setTogglingCouponId] = useState<string | null>(null);
-  const [deletingCouponId, setDeletingCouponId] = useState<string | null>(null);
   const [editingCashEntry, setEditingCashEntry] = useState<CashRegisterEntry | null>(null);
   const [deleteCashTarget, setDeleteCashTarget] = useState<CashRegisterEntry | null>(null);
   const [deletingCashEntryId, setDeletingCashEntryId] = useState<string | null>(null);
@@ -193,7 +190,6 @@ export default function AdminCashPage() {
   const [movementOpen, setMovementOpen] = useState(() => Boolean(urlQuickSaleId));
   const [closeOpen, setCloseOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [togglingPkgId, setTogglingPkgId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvPinOpen, setCsvPinOpen] = useState(false);
   const [csvPinError, setCsvPinError] = useState<string | null>(null);
@@ -211,19 +207,56 @@ export default function AdminCashPage() {
     setFocusedCommissionStaffId(urlStaffId);
   }
 
+  if (legacyFidelizacionHref) {
+    return <PageSkeleton kpiCount={4} withSplit ariaLabel="Redirigiendo a Fidelización" />;
+  }
+
   if (!data) {
     return <PageSkeleton kpiCount={4} withSplit ariaLabel="Cargando caja" />;
   }
 
   const tz = data.settings.timezone || 'America/Mexico_City';
   const currency = data.settings.currency;
-  const nowMs = Date.parse(data.serverNowIso) || 0;
   const defaultDepositLabel = formatCurrency(data.settings.depositAmountCents ?? 20000, currency);
   const isSpecialistView = data.session.user.role === 'specialist';
   const canManageCaja = data.session.user.role === 'owner' || data.session.user.role === 'admin';
   const canViewClients = roleCanAccess(data.session.user.role, 'clients');
-  const effectiveActiveTab: CajaTab =
-    activeTab === 'promos' && !canManageCaja ? 'summary' : activeTab;
+
+  const syncCajaUrl = (patch: Partial<CajaLinkParams>) => {
+    const next: CajaLinkParams = {
+      ...parsedParams,
+      ...patch,
+    };
+    router.replace(cajaHref(next), { scroll: false });
+  };
+
+  const handleSelectTab = (nextTab: ActiveCajaTab) => {
+    setActiveTab(nextTab);
+    if (nextTab !== 'summary') setHighlightUncollected(false);
+    syncCajaUrl({
+      tab: cajaTabToParam(nextTab),
+      sub: undefined,
+    });
+  };
+
+  const handleChangePeriod = (nextPeriod: CajaPeriod) => {
+    setCajaPeriod(nextPeriod);
+    syncCajaUrl({
+      period: nextPeriod === cajaConfig.defaultPeriod ? undefined : nextPeriod,
+      ...(nextPeriod !== 'custom' ? { from: undefined, to: undefined } : {}),
+    });
+  };
+
+  const handleResetFilters = () => {
+    resetSalesFilters();
+    syncCajaUrl({
+      period: undefined,
+      from: undefined,
+      to: undefined,
+      method: undefined,
+      q: undefined,
+    });
+  };
 
   const clearQuickSaleUrlParam = () => {
     setQuickSaleProductId(null);
@@ -239,6 +272,7 @@ export default function AdminCashPage() {
       clearQuickSaleUrlParam();
     }
   };
+
   const hasActiveOwnerPin = Boolean(data.settings.ownerPinEnabled && data.settings.hasOwnerPin);
   const hasActiveFilters =
     cajaPeriod !== cajaConfig.defaultPeriod ||
@@ -259,6 +293,7 @@ export default function AdminCashPage() {
   };
 
   const handleApproveDeposit = async (bookingId: string, bookingCode: string): Promise<boolean> => {
+    if (approvingId === bookingId) return false;
     setApprovingId(bookingId);
     setErrorMsg(null);
     setMsg(null);
@@ -289,6 +324,7 @@ export default function AdminCashPage() {
     bookingCode: string,
     reason?: string,
   ): Promise<boolean> => {
+    if (rejectingId === bookingId) return false;
     setRejectingId(bookingId);
     setErrorMsg(null);
     setMsg(null);
@@ -307,7 +343,7 @@ export default function AdminCashPage() {
   };
 
   const handleConfirmRejectDeposit = async () => {
-    if (!rejectConfirmTarget) return;
+    if (!rejectConfirmTarget || rejectingId) return;
     const { bookingId, bookingCode } = rejectConfirmTarget;
     const ok = await handleRejectDepositDirect(bookingId, bookingCode);
     setRejectConfirmTarget(null);
@@ -343,7 +379,7 @@ export default function AdminCashPage() {
   };
 
   const handleConfirmDeleteCashEntry = async () => {
-    if (!deleteCashTarget) return;
+    if (!deleteCashTarget || deletingCashEntryId) return;
     const target = deleteCashTarget;
     setDeletingCashEntryId(target.id);
     setErrorMsg(null);
@@ -360,56 +396,6 @@ export default function AdminCashPage() {
       await refresh();
     } finally {
       setDeletingCashEntryId(null);
-    }
-  };
-
-  const handleSaveCoupon = async (payload: CouponPayloadData): Promise<FormSubmitResult> => {
-    setMsg(null);
-    const result = await saveCajaCoupon(payload);
-    if (!result.ok) {
-      return formSubmitError(result.error ?? 'No se pudo guardar el código.');
-    }
-    setErrorMsg(null);
-    setMsg(result.message ?? null);
-    await refresh();
-    return FORM_SUBMIT_OK;
-  };
-
-  const handleToggleCouponActive = async (coupon: Coupon, nextActive: boolean) => {
-    setTogglingCouponId(coupon.id);
-    setErrorMsg(null);
-    setMsg(null);
-    try {
-      const result = await toggleCajaCouponActive(coupon, nextActive);
-      if (!result.ok) {
-        setErrorMsg(result.error ?? 'No se pudo actualizar el estado del código.');
-        return;
-      }
-      setMsg(result.message ?? null);
-      await refresh();
-    } finally {
-      setTogglingCouponId(null);
-    }
-  };
-
-  const handleConfirmDeleteCoupon = async () => {
-    if (!deleteCouponTarget) return;
-    const target = deleteCouponTarget;
-    setDeletingCouponId(target.id);
-    setErrorMsg(null);
-    setMsg(null);
-    try {
-      const result = await deleteCajaCoupon(target.id, target.code);
-      if (!result.ok) {
-        setErrorMsg(result.error ?? 'No se pudo eliminar el código.');
-        setDeleteCouponTarget(null);
-        return;
-      }
-      setDeleteCouponTarget(null);
-      setMsg(result.message ?? null);
-      await refresh();
-    } finally {
-      setDeletingCouponId(null);
     }
   };
 
@@ -448,35 +434,8 @@ export default function AdminCashPage() {
     setPayoutDraft(buildCommissionPayoutDraft(row, cajaPeriod, activeCustom, data.serverTodayKey));
   };
 
-  const handleSavePackage = async (input: SaveCajaPackageInput): Promise<FormSubmitResult> => {
-    setMsg(null);
-    const result = await saveCajaPackage(input);
-    if (!result.ok) {
-      return formSubmitError(result.error ?? 'No se pudo guardar el paquete de sesiones.');
-    }
-    setErrorMsg(null);
-    reloadPackages();
-    setMsg(result.message ?? null);
-    return FORM_SUBMIT_OK;
-  };
-
-  const handleTogglePackage = async (pkg: ServicePackageCatalogRow, nextActive: boolean) => {
-    setTogglingPkgId(pkg.id);
-    setErrorMsg(null);
-    try {
-      const result = await toggleCajaPackage(pkg, nextActive);
-      if (!result.ok) {
-        setErrorMsg(result.error ?? 'No se pudo actualizar el paquete.');
-        return;
-      }
-      reloadPackages();
-      setMsg(result.message ?? null);
-    } finally {
-      setTogglingPkgId(null);
-    }
-  };
-
   const handleExportCsv = async (ownerPin?: string) => {
+    if (exportingCsv) return;
     if (!ownerPin && hasActiveOwnerPin) {
       setCsvPinError(null);
       setCsvPinOpen(true);
@@ -509,7 +468,7 @@ export default function AdminCashPage() {
       <PageHeader
         title="Caja"
         className="ad-caja-head"
-        subtitle="Cobros, gastos, corte del día, comisiones y promociones."
+        subtitle="Cobros, gastos, corte del día y comisiones."
         actions={
           canManageCaja ? (
             <>
@@ -573,10 +532,11 @@ export default function AdminCashPage() {
       <MetricGrid ariaLabel="Resumen de caja" cols={4} items={kpiItems} />
 
       <TabList
-        value={effectiveActiveTab}
+        value={activeTab}
         onChange={(v) => {
-          setActiveTab(v as CajaTab);
-          if (v !== 'summary') setHighlightUncollected(false);
+          if (v === 'summary' || v === 'deposits' || v === 'commissions') {
+            handleSelectTab(v);
+          }
         }}
         hasDivider
       >
@@ -589,10 +549,9 @@ export default function AdminCashPage() {
           label={pendingDeposits.length > 0 ? `Anticipos (${pendingDeposits.length})` : 'Anticipos'}
         />
         <Tab value="commissions" label="Comisiones" />
-        {canManageCaja ? <Tab value="promos" label="Promos" /> : null}
       </TabList>
 
-      {effectiveActiveTab === 'summary' ? (
+      {activeTab === 'summary' ? (
         <CajaSummaryTab
           filteredCashEntries={filteredCashEntries}
           periodSummary={periodSummary}
@@ -618,18 +577,18 @@ export default function AdminCashPage() {
           isSpecialistView={isSpecialistView}
           deletingEntryId={deletingCashEntryId}
           highlightUncollected={highlightUncollected}
-          onChangePeriod={setCajaPeriod}
+          onChangePeriod={handleChangePeriod}
           onChangeCustomRange={setCustomRange}
           onToggleMethodFilter={toggleMethodFilter}
           onChangeSearchQuery={setSearchQuery}
-          onResetFilters={resetSalesFilters}
-          onOpenDeposits={() => setActiveTab('deposits')}
-          onOpenCommissions={() => setActiveTab('commissions')}
+          onResetFilters={handleResetFilters}
+          onOpenDeposits={() => handleSelectTab('deposits')}
+          onOpenCommissions={() => handleSelectTab('commissions')}
           onEditCashEntry={setEditingCashEntry}
           onRequestDeleteCashEntry={setDeleteCashTarget}
           onRegisterPayout={handleOpenPayoutDraft}
         />
-      ) : effectiveActiveTab === 'deposits' ? (
+      ) : activeTab === 'deposits' ? (
         <CajaDepositsTab
           pendingDeposits={pendingDeposits}
           defaultDepositLabel={defaultDepositLabel}
@@ -641,7 +600,7 @@ export default function AdminCashPage() {
           onRejectDeposit={handleRejectDeposit}
           onRejectDepositDirect={handleRejectDepositDirect}
         />
-      ) : effectiveActiveTab === 'commissions' ? (
+      ) : (
         <CajaCommissionsTab
           commissionsByStaff={commissionsByStaff}
           splitSummaryByMethod={splitSummaryByMethod}
@@ -658,53 +617,10 @@ export default function AdminCashPage() {
               router.replace(cajaHref(rest), { scroll: false });
             }
           }}
-          onChangeCommissionPeriod={setCajaPeriod}
+          onChangeCommissionPeriod={handleChangePeriod}
           onEditCommissionRate={handleOpenCommissionEditor}
           onRegisterPayout={handleOpenPayoutDraft}
         />
-      ) : (
-        <>
-          {packagesError ? (
-            <Banner
-              collapsible={false}
-              status="error"
-              role="alert"
-              title="No pudimos cargar los paquetes de sesiones"
-              description={packagesError}
-            >
-              <HStack justify="start" paddingBlockStart={2}>
-                <Button
-                  type="button"
-                  label="Reintentar"
-                  variant="primary"
-                  size="md"
-                  onClick={reloadPackages}
-                />
-              </HStack>
-            </Banner>
-          ) : null}
-          <CajaPromosTab
-            subTab={promosView}
-            onSubTabChange={setPromosView}
-            coupons={data.coupons}
-            packagesCatalog={packagesCatalog}
-            packagesLoading={packagesLoading}
-            services={data.services}
-            currency={currency}
-            tz={tz}
-            todayKey={data.serverTodayKey}
-            nowMs={nowMs}
-            canManagePackages={canManageCaja}
-            togglingCouponId={togglingCouponId}
-            deletingCouponId={deletingCouponId}
-            togglingPkgId={togglingPkgId}
-            onSaveCoupon={handleSaveCoupon}
-            onToggleCouponActive={handleToggleCouponActive}
-            onRequestDeleteCoupon={setDeleteCouponTarget}
-            onSavePackage={handleSavePackage}
-            onTogglePackage={handleTogglePackage}
-          />
-        </>
       )}
 
       {canManageCaja && movementOpen ? (
@@ -829,28 +745,6 @@ export default function AdminCashPage() {
           variant="destructive"
           isLoading={deletingCashEntryId === deleteCashTarget.id}
           onConfirm={() => void handleConfirmDeleteCashEntry()}
-        />
-      ) : null}
-
-      {deleteCouponTarget ? (
-        <ConfirmActionDialog
-          isOpen={Boolean(deleteCouponTarget)}
-          onOpenChange={(open) => {
-            if (!open && !deletingCouponId) {
-              setDeleteCouponTarget(null);
-            }
-          }}
-          title={
-            deleteCouponTarget.kind === 'gift_card'
-              ? '¿Eliminar esta tarjeta de regalo?'
-              : '¿Eliminar este cupón?'
-          }
-          description={`El código ${deleteCouponTarget.code} dejará de aceptarse en nuevas reservas. Las citas pasadas que ya lo aplicaron conservarán su historial y descuento registrado.`}
-          confirmLabel="Sí, eliminar"
-          cancelLabel="Cancelar"
-          variant="destructive"
-          isLoading={deletingCouponId === deleteCouponTarget.id}
-          onConfirm={() => void handleConfirmDeleteCoupon()}
         />
       ) : null}
 

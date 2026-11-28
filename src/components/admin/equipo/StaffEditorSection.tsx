@@ -28,6 +28,7 @@ import { updateCajaStaffCommission } from '@/components/admin/caja/cajaActions';
 import { prepareClientImageFile, readFileAsDataUrl } from '@/components/booking/bookingHelpers';
 import { staffAvatar } from '@/components/landing/landingContent';
 import { agendaHref, cajaHref, horariosHref } from '@/lib/admin-links';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
@@ -116,6 +117,7 @@ export function StaffEditorSection({
     if (!result.ok) {
       return formSubmitError(result.error ?? 'No se pudo actualizar la comisión.');
     }
+    invalidateAdminDomain('staff', 'cash');
     await onRefresh();
     onNotice(
       result.message ?? `Comisión de ${staffMember.name} actualizada a ${nextPercent}%`,
@@ -247,10 +249,12 @@ export function StaffEditorSection({
     if (existing && sPosition !== null && sPosition !== currentPosition) {
       const reordered = await applyStaffOrder(existing.id, sPosition);
       if (!reordered) {
+        invalidateAdminDomain('staff');
         await onRefresh();
         return formSubmitError('Se guardaron los cambios, pero no se pudo cambiar su lugar en tu página.');
       }
     }
+    invalidateAdminDomain('staff');
     await onRefresh();
     onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
     return FORM_SUBMIT_OK;

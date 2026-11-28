@@ -1,7 +1,7 @@
 # ADR-0008: Reorganización de Fidelización, Ajustes del salón y consolidación de WhatsApp
 
-- **Estado:** Aceptado
-- **Fecha:** 2026-11-27
+- **Estado:** Aceptado (Consolidación completa en fase 2)
+- **Fecha:** 2026-11-28
 - **Área:** Arquitectura de Información del Panel Admin, RBAC y Fronteras de Configuración
 
 ## Contexto
@@ -24,7 +24,8 @@ Las restricciones de [ADR-0004](./0004-seguridad-rbac-otp-pin-media-r2-y-qr-rece
      - `Cupones y tarjetas`: códigos promocionales y tarjetas de regalo reutilizando `CouponsSubSection` (`/api/admin/operations`).
      - `Campañas`: cumpleaños y reactivación de clientas inactivas reutilizando `ClientRetentionTab` (`/api/admin/campaigns`).
    - La ficha individual (`ClientProfileDialog`) sigue mostrando los sellos y paquetes activos de cada clienta para contexto inmediato en mostrador.
-   - **Compatibilidad retroactiva:** `/admin/caja?tab=promos|cupones|paquetes` y `/admin/clientas?tab=retencion|paquetes` siguen funcionando sin romper marcadores ni pruebas E2E, incorporando enlaces directos hacia `fidelizacionHref(...)`.
+   - **Consolidación completa y compatibilidad retroactiva:** se eliminan las pestañas duplicadas `Promos` en `Caja` y `Retención`/`Fidelidad` en `Clientas`; cualquier URL legada (`/admin/caja?tab=promos|cupones|paquetes` y `/admin/clientas?tab=retencion|paquetes|fidelidad`) redirige de forma transparente vía `router.replace` a su pestaña canónica en `fidelizacionHref(...)`, sin romper marcadores ni pruebas E2E. Todos los accesos cruzados desde `Servicios`, `Reportes` y `Fidelización` apuntan al destino canónico sin ciclos ni rutas legadas.
+   - **Coherencia de caché por dominio:** todas las mutaciones administrativas y eventos Realtime en `AdminProvider` invalidan las cachés derivadas mediante `invalidateAdminDomain` en `src/lib/hooks/useAdminCache.ts`, eliminando estados desfasados entre módulos.
 
 2. **Nuevo módulo `/admin/ajustes` (exclusivo `owner` vía `roleCanAccess(role, 'settings')`):**
    - Concentra en 3 pestañas tipadas (`?tab=cobro|politicas|seguridad&focus=`, via `ajustesHref` / `parseAjustesParams`) toda la configuración operativa y de seguridad:
@@ -46,20 +47,22 @@ Las restricciones de [ADR-0004](./0004-seguridad-rbac-otp-pin-media-r2-y-qr-rece
 
 ## Alternativas consideradas
 
-- **Eliminar por completo las pestañas legadas en Caja y Clientas mediante redirects HTTP 308:** descartada en esta fase para no sorprender a usuarias acostumbradas a revisar promos desde Caja ni romper pruebas o accesos directos existentes; las rutas legadas permanecen funcionales con enlace al nuevo hub `Fidelización`.
+- **Mantener indefinidamente pestañas duplicadas en Caja y Clientas en paralelo con Fidelización:** descartada tras completar la transición porque duplicaba mantenimiento, generaba enlaces circulares (`Fidelización` ↔ `Caja`) y provocaba desincronización de caché de paquetes y campañas; las redirecciones cliente (`router.replace`) conservan compatibilidad total con enlaces previos sin mantener dos superficies idénticas.
 - **Dejar `Cobro y anticipo` dentro de `Conexiones` y `Políticas` dentro de `Mi página`:** descartada porque mantiene la confusión entre apariencia pública, credenciales técnicas y reglas operativas del negocio, además de duplicar el control de `paymentMode`.
 - **Crear nuevas tablas SQL o mover columnas de `salon_settings`:** descartada porque todos los campos ya existen en `salon_settings` y en las tablas de lealtad/paquetes/cupones; reorganizar en capa de aplicación conserva cero migraciones SQL y cero riesgo de datos.
 
 ## Consecuencias y trade-offs
 
-- **Positivas:** cada dominio tiene un único hogar canónico (`Mi página` = escaparate público, `Ajustes` = cobro/políticas/seguridad, `Fidelización` = sellos/paquetes/cupones/campañas, `WhatsApp › Conexión` = configuración de WhatsApp, `Conexiones` = integraciones externas); el modelo RBAC impide que `admin` modifique `Ajustes` o que `specialist` acceda a `Fidelización`; desaparecen controles duplicados de `paymentMode`, WhatsApp y edición rápida de comisiones.
-- **Trade-offs:** el menú lateral incorpora dos rutas dedicadas dentro de grupos colapsables (`Salón` y `Más`), y durante la transición coexisten accesos en Caja/Clientas hacia cupones, paquetes y campañas que se pueden simplificar en una iteración futura una vez consolidado el hábito operativo.
+- **Positivas:** cada dominio tiene un único hogar canónico (`Mi página` = escaparate público, `Ajustes` = cobro/políticas/seguridad, `Fidelización` = sellos/paquetes/cupones/campañas, `WhatsApp › Conexión` = configuración de WhatsApp, `Conexiones` = integraciones externas); el modelo RBAC impide que `admin` modifique `Ajustes` o que `specialist` acceda a `Fidelización`; desaparecen controles y pestañas duplicadas (`paymentMode`, WhatsApp, `Promos` en Caja, `Retención`/`Fidelidad` en Clientas y edición rápida de comisiones).
+- **Trade-offs:** el menú lateral incorpora dos rutas dedicadas dentro de grupos colapsables (`Salón` y `Más`), y las URLs legadas pasan por una redirección cliente inmediata (`router.replace`) hacia `/admin/fidelizacion` o `/admin/ajustes`.
 
 ## Evidencia y archivos clave
 
 - `src/lib/rbac.ts`
 - `src/lib/admin-links.ts`
 - `src/lib/admin-links.test.ts`
+- `src/lib/hooks/useAdminCache.ts`
+- `src/components/admin/AdminProvider.tsx`
 - `src/components/admin/shell/adminNavConfig.ts`
 - `src/components/admin/shell/AdminNavGroups.tsx`
 - `src/components/admin/AdminQuickSearchDialog.tsx`

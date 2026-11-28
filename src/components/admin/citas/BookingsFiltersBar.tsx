@@ -309,7 +309,12 @@ export function AgendaStatusChips({
           >
             {chip.label}
             {chip.countText ? (
-              <Text className="ad-agenda-chip-count" hasTabularNumbers>
+              <Text
+                type="inherit"
+                color="inherit"
+                className="ad-agenda-chip-count"
+                hasTabularNumbers
+              >
                 {chip.countText}
               </Text>
             ) : null}

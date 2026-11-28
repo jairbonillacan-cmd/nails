@@ -12,6 +12,7 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { RecurringBlock, StaffMember } from '@/lib/types';
 import { BlockTimeForm } from './BlockTimeForm';
@@ -61,6 +62,7 @@ export function RecurringBlocksSection({
         }),
       });
       if (result.ok) {
+        invalidateAdminDomain('availability');
         await onRefresh();
         onSavedNotice(block.isActive ? 'Descanso pausado' : 'Descanso reactivado');
       } else {
@@ -90,6 +92,7 @@ export function RecurringBlocksSection({
         },
       );
       if (result.ok) {
+        invalidateAdminDomain('availability');
         await onRefresh();
         onSavedNotice('Descanso eliminado');
       } else {
@@ -215,6 +218,7 @@ export function RecurringBlocksSection({
           weekdays: [1, 2, 3, 4, 5, 6],
         }}
         onSaved={async (notice) => {
+          invalidateAdminDomain('availability');
           await onRefresh();
           onSavedNotice(notice);
         }}

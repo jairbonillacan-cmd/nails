@@ -9,6 +9,7 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Check, RotateCcw, Save, SlidersHorizontal } from 'lucide-react';
 import { StatusTag, SurfaceCard } from '@/components/ui';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { AvailabilityRule } from '@/lib/types';
 import {
@@ -86,6 +87,7 @@ export function WeeklyScheduleEditor({
         body: JSON.stringify({ staffId, rules }),
       });
       if (result.ok) {
+        invalidateAdminDomain('availability');
         await onRefresh();
         setRulesDraft(null);
         onSavedNotice('Horario guardado');
@@ -116,6 +118,7 @@ export function WeeklyScheduleEditor({
         body: JSON.stringify({ optimizeContinuousSlots: nextVal }),
       });
       if (result.ok) {
+        invalidateAdminDomain('settings', 'availability');
         await onRefresh();
         onSavedNotice(nextVal ? 'Ajuste automático activado' : 'Ajuste automático desactivado');
       } else {

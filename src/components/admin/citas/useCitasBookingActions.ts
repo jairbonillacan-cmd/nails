@@ -6,6 +6,7 @@ import {
   findFreedSlotWaitlistMatch,
   type FreedSlotWaitlistMatch,
 } from '@/lib/booking/waitlist-match';
+import { getBookingStatusLabel } from '@/lib/format';
 import {
   ADMIN_CACHE_KEYS,
   applyOptimisticBookingReschedule,
@@ -13,7 +14,7 @@ import {
   applyOptimisticBookingStatus,
   applyOptimisticBookingStatusToList,
   getAdminCacheSnapshot,
-  invalidateAdminCache,
+  invalidateAdminDomain,
   mutateAdminCache,
 } from '@/lib/hooks/useAdminCache';
 import { invalidateAgendaRangeCache } from '@/lib/hooks/useAgendaRangeBookings';
@@ -21,7 +22,6 @@ import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { BookingStatus, BookingWithRelations } from '@/lib/types';
-import { BOOKING_STATUS_BADGE } from './BookingCard';
 
 const ADMIN_MUTATION_TIMEOUT_MS = 20_000;
 
@@ -131,9 +131,9 @@ export function useCitasBookingActions({
         );
         setPendingCancelBookingId(null);
         setPinError(null);
-        invalidateAdminCache('/api/admin/reports');
+        invalidateAdminDomain('bookings');
         invalidateAgendaRangeCache();
-        inlineNotice.show(`Estado: ${BOOKING_STATUS_BADGE[status].label}`);
+        inlineNotice.show(`Estado: ${getBookingStatusLabel(status)}`);
         if (status === 'canceled') {
           const match = findWaitlistForFreedBooking(bookingId);
           if (match) {
@@ -322,7 +322,8 @@ export function useCitasBookingActions({
         });
         return false;
       }
-      invalidateAdminCache('/api/admin/reports');
+      invalidateAdminDomain('bookings');
+      invalidateAgendaRangeCache();
       inlineNotice.show(`Comprobante ${bookingCode} rechazado`);
       void refresh();
       return true;
@@ -402,7 +403,7 @@ export function useCitasBookingActions({
         },
       );
       if (res.ok) {
-        invalidateAdminCache('/api/admin/reports');
+        invalidateAdminDomain('bookings');
         invalidateAgendaRangeCache();
         inlineNotice.show(params.summaryLabel);
         const match = findWaitlistForFreedBooking(params.bookingId);
@@ -458,6 +459,8 @@ export function useCitasBookingActions({
         });
         return false;
       }
+      invalidateAdminDomain('bookings');
+      invalidateAgendaRangeCache();
       inlineNotice.show('Llegada registrada');
       void refresh();
       return true;
@@ -477,11 +480,21 @@ export function useCitasBookingActions({
         body: JSON.stringify({ kind: 'waitlist', id: waitlistId, status: 'notified' }),
       });
       if (res.ok) {
+        invalidateAdminDomain('bookings');
         inlineNotice.show('Clienta marcada como avisada');
         setFeedback(null);
         void refresh();
         return true;
       }
+      setFeedback({
+        status: 'error',
+        title:
+          res.reason === 'timeout'
+            ? 'La actualización de lista de espera tardó demasiado. Intenta de nuevo.'
+            : res.reason === 'network'
+              ? 'Error de conexión al marcar la lista de espera como avisada.'
+              : res.error || 'No se pudo marcar a la clienta como avisada en la lista de espera.',
+      });
       return false;
     } finally {
       setNotifyingWaitlistId(null);

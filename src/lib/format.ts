@@ -1,3 +1,10 @@
+import type {
+  BookingStatus,
+  CashRegisterEntry,
+  PaymentMethod,
+  PaymentSplitMethod,
+} from './types';
+
 export function formatCurrency(cents: number, currency: 'MXN' | 'USD' = 'MXN'): string {
   const amount = cents / 100;
   return new Intl.NumberFormat('es-MX', {
@@ -194,4 +201,61 @@ export function slugify(input: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
+}
+
+const PAYMENT_METHOD_LABEL_MAP: Record<PaymentMethod, string> = {
+  cash: 'Efectivo',
+  card: 'Tarjeta',
+  transfer: 'Transferencia',
+  gift_card: 'Tarjeta de regalo',
+};
+
+const PAYMENT_SPLIT_METHOD_LABEL_MAP: Record<PaymentSplitMethod, string> = {
+  cash: 'Efectivo',
+  card: 'Tarjeta',
+  transfer: 'Transferencia',
+  giftcard: 'Tarjeta de regalo',
+  online: 'Pago en línea',
+};
+
+const CASH_ENTRY_TYPE_LABEL_MAP: Record<CashRegisterEntry['entryType'], string> = {
+  service_income: 'Servicio',
+  product_sale: 'Producto',
+  deposit: 'Anticipo',
+  expense: 'Gasto',
+  gift_card_sale: 'Tarjeta de regalo',
+};
+
+export function formatPaymentMethodLabel(method: PaymentMethod): string {
+  return PAYMENT_METHOD_LABEL_MAP[method];
+}
+
+export function formatPaymentSplitMethodLabel(method: PaymentSplitMethod): string {
+  return PAYMENT_SPLIT_METHOD_LABEL_MAP[method];
+}
+
+export function formatCashEntryTypeLabel(
+  entryType: CashRegisterEntry['entryType'],
+): string {
+  return CASH_ENTRY_TYPE_LABEL_MAP[entryType];
+}
+
+export function getBookingStatusLabel(
+  status: BookingStatus,
+  hasPaymentProof = false,
+): string {
+  switch (status) {
+    case 'confirmed':
+      return 'Confirmada';
+    case 'pending_confirmation':
+      return hasPaymentProof ? 'Comprobante en revisión' : 'Por confirmar';
+    case 'pending_payment':
+      return hasPaymentProof ? 'Comprobante en revisión' : 'Falta anticipo';
+    case 'completed':
+      return 'Completada';
+    case 'canceled':
+      return 'Cancelada';
+    case 'no_show':
+      return 'No llegó';
+  }
 }

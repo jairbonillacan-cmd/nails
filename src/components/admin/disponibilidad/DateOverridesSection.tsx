@@ -15,6 +15,7 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import { formatTimeHHMM12h } from '@/lib/format';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { DateOverride, StaffMember } from '@/lib/types';
 import { BlockTimeForm } from './BlockTimeForm';
@@ -76,6 +77,7 @@ export function DateOverridesSection({
         },
       );
       if (result.ok) {
+        invalidateAdminDomain('availability');
         await onRefresh();
         onSavedNotice(`Fecha ${target.overrideDate} eliminada`);
       } else {
@@ -109,6 +111,7 @@ export function DateOverridesSection({
       if (result.ok) {
         const createdCount = result.data.created?.length ?? 0;
         const skippedCount = result.data.skippedDates?.length ?? 0;
+        invalidateAdminDomain('availability');
         await onRefresh();
         onMessage({
           status: 'success',
@@ -299,6 +302,7 @@ export function DateOverridesSection({
           dateKey: serverTodayKey,
         }}
         onSaved={async (notice) => {
+          invalidateAdminDomain('availability');
           await onRefresh();
           onSavedNotice(notice);
         }}

@@ -4,7 +4,7 @@ import {
   applyOptimisticBookingStatus,
   applyOptimisticBookingStatusToList,
   getAdminCacheSnapshot,
-  invalidateAdminCache,
+  invalidateAdminDomain,
   mutateAdminCache,
 } from '@/lib/hooks/useAdminCache';
 import { fetchBlobWithTimeout, fetchJsonWithTimeout } from '@/lib/http/client-fetch';
@@ -160,7 +160,7 @@ export async function approveCajaDeposit(
           : current,
     );
   }
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('bookings', 'cash');
   return {
     ok: true,
     message: `Anticipo confirmado y cita ${bookingCode} lista en agenda.`,
@@ -263,7 +263,7 @@ export async function rejectCajaDeposit(
           : current,
     );
   }
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('bookings', 'cash');
   return {
     ok: true,
     message: `Comprobante de ${bookingCode} rechazado. Ya avisamos a la clienta para que suba uno nuevo.`,
@@ -330,7 +330,7 @@ export async function recordCajaCashEntry(
             : res.error || 'No se pudo guardar el movimiento.',
     };
   }
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('cash');
   const message = isInventorySale
     ? `Venta de ${input.productName ?? 'producto'} registrada y stock actualizado.`
     : input.entryType === 'expense'
@@ -400,7 +400,7 @@ export async function updateCajaCashEntry(
         : current,
     );
   }
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('cash');
   return { ok: true, message: 'Movimiento actualizado correctamente.' };
 }
 
@@ -433,7 +433,7 @@ export async function deleteCajaCashEntry(
         }
       : current,
   );
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('cash');
   return { ok: true, message: 'Movimiento manual eliminado de caja.' };
 }
 
@@ -480,6 +480,7 @@ export async function saveCajaCoupon(
       };
     });
   }
+  invalidateAdminDomain('cash');
   return {
     ok: true,
     message: isEditing
@@ -549,7 +550,7 @@ export async function deleteCajaCoupon(
         }
       : current,
   );
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('cash');
   return {
     ok: true,
     message: `Código ${res.data.code || code} eliminado.`,
@@ -603,7 +604,7 @@ export async function updateCajaStaffCommission(
         }
       : current,
   );
-  invalidateAdminCache('/api/admin/reports');
+  invalidateAdminDomain('staff', 'cash');
   return {
     ok: true,
     message: `Comisión de ${staffMember.name} actualizada a ${safePercent}%.`,
@@ -658,6 +659,7 @@ export async function saveCajaPackage(
                 : 'No se pudo crear el paquete de sesiones.'),
     };
   }
+  invalidateAdminDomain('packages');
   return {
     ok: true,
     message: isEditing
@@ -691,6 +693,7 @@ export async function toggleCajaPackage(
             : res.error || 'No se pudo actualizar el paquete.',
     };
   }
+  invalidateAdminDomain('packages');
   return {
     ok: true,
     message: nextActive
@@ -788,5 +791,6 @@ export async function saveCajaConfig(
         }
       : current,
   );
+  invalidateAdminDomain('settings');
   return { ok: true, config: saved, message: 'Preferencias de caja guardadas.' };
 }

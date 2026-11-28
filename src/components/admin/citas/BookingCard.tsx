@@ -43,18 +43,6 @@ import {
 } from '@/lib/format';
 import { useAdminData } from '../AdminProvider';
 
-export const BOOKING_STATUS_BADGE: Record<
-  BookingStatus,
-  { label: string; variant: 'success' | 'warning' | 'error' | 'info' | 'neutral' }
-> = {
-  confirmed: { label: 'Confirmada', variant: 'success' },
-  pending_confirmation: { label: 'Por confirmar', variant: 'warning' },
-  pending_payment: { label: 'Falta anticipo', variant: 'warning' },
-  completed: { label: 'Completada', variant: 'info' },
-  canceled: { label: 'Cancelada', variant: 'error' },
-  no_show: { label: 'No llegó', variant: 'error' },
-};
-
 const IG_SAFE_RE = /^[a-zA-Z0-9._]{1,30}$/;
 
 export function buildInstagramProfileUrl(handle?: string | null): string | null {
@@ -441,7 +429,7 @@ export const BookingCard = memo(function BookingCard({
               variant="ghost"
               size="sm"
               icon={<UserRound size={14} />}
-              href={clientasHref({ q: b.client.phoneE164 })}
+              href={clientasHref({ clientId: b.clientId, q: b.client.phoneE164 })}
             />
           ) : null}
         </HStack>

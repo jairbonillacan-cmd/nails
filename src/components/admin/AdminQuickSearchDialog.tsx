@@ -10,7 +10,6 @@ import { TextInput } from '@astryxdesign/core/TextInput';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
 import { Calendar, CalendarDays, Search, Sparkles, Tag, Users } from 'lucide-react';
-import { agendaHref, clientasHref } from '@/lib/admin-links';
 import {
   formatCurrency,
   formatDateShortInTimezone,
@@ -23,7 +22,12 @@ import { roleCanAccess } from '@/lib/rbac';
 import { EmptyStateCard } from '@/components/ui/EmptyStateCard';
 import { BookingStatusTag } from '@/components/ui/StatusTag';
 import type { AdminOverviewPayload } from './AdminProvider';
-import { buildQuickSearchResults } from './adminSearchIndex';
+import {
+  buildQuickSearchBookingHref,
+  buildQuickSearchClientHref,
+  buildQuickSearchResults,
+  buildQuickSearchServiceHref,
+} from './adminSearchIndex';
 
 interface AdminQuickSearchDialogProps {
   isOpen: boolean;
@@ -42,10 +46,8 @@ export function AdminQuickSearchDialog({
   const [activeIndex, setActiveIndex] = useState(0);
   const tz = data.settings.timezone || 'America/Mexico_City';
   const currency = data.settings.currency;
-  const canViewClients = roleCanAccess(data.session.user.role, 'clients');
-  const serviceTargetHref = roleCanAccess(data.session.user.role, 'services')
-    ? '/admin/servicios'
-    : agendaHref({ new: true });
+  const role = data.session.user.role;
+  const canViewClients = roleCanAccess(role, 'clients');
 
   const {
     dateJumps,
@@ -274,7 +276,7 @@ export function AdminQuickSearchDialog({
                               }
                               onMouseEnter={() => setActiveIndex(flatIdx)}
                               onClick={() =>
-                                handleNavigate(agendaHref({ q: b.bookingCode }))
+                                handleNavigate(buildQuickSearchBookingHref(b, tz))
                               }
                             />
                           );
@@ -319,7 +321,7 @@ export function AdminQuickSearchDialog({
                               }
                               onMouseEnter={() => setActiveIndex(flatIdx)}
                               onClick={() =>
-                                handleNavigate(clientasHref({ q: c.phoneE164 }))
+                                handleNavigate(buildQuickSearchClientHref(c))
                               }
                             />
                           );
@@ -363,7 +365,9 @@ export function AdminQuickSearchDialog({
                                 </Text>
                               }
                               onMouseEnter={() => setActiveIndex(flatIdx)}
-                              onClick={() => handleNavigate(serviceTargetHref)}
+                              onClick={() =>
+                                handleNavigate(buildQuickSearchServiceHref(s.id, role))
+                              }
                             />
                           );
                         })}

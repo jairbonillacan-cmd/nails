@@ -28,6 +28,7 @@ export function filterBookingsForAgendaStatus(params: {
   paymentSplits: readonly PaymentSplit[];
   cashEntries: readonly CashRegisterEntry[];
   serverNowIso: string;
+  nowMs?: number;
   status: AgendaStatusParam;
   search: string;
   selectedStaffFilter: string;
@@ -37,11 +38,15 @@ export function filterBookingsForAgendaStatus(params: {
     paymentSplits,
     cashEntries,
     serverNowIso,
+    nowMs: nowMsProp,
     status,
     search,
     selectedStaffFilter,
   } = params;
-  const nowMs = Date.parse(serverNowIso) || Date.now();
+  const nowMs =
+    typeof nowMsProp === 'number' && Number.isFinite(nowMsProp)
+      ? nowMsProp
+      : Date.parse(serverNowIso) || Date.now();
   const cleanSearch = search.trim().toLowerCase();
 
   const matches = bookings.filter((b) => {

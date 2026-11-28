@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -24,8 +24,9 @@ import { ServiceProfitabilityCard } from '@/components/admin/reportes/ServicePro
 import { SpecialistOccupancyCard } from '@/components/admin/reportes/SpecialistOccupancyCard';
 import {
   cajaHref,
-  clientasHref,
+  fidelizacionHref,
   parseReportesParams,
+  reportesHref,
 } from '@/lib/admin-links';
 import { formatCurrency, formatDateRangeDisplay } from '@/lib/format';
 import {
@@ -52,6 +53,7 @@ interface AdminReportsResponse extends ExecutiveReport {
 }
 
 export default function AdminReportsPage() {
+  const router = useRouter();
   const { data, bookingEventSeq } = useAdminData();
   const searchParams = useSearchParams();
   const parsedParams = parseReportesParams(searchParams);
@@ -68,6 +70,22 @@ export default function AdminReportsPage() {
     if (parsedParams.period) setPeriod(parsedParams.period);
     setFocusedStaffId(parsedParams.staff ?? null);
   }
+
+  const handleChangePeriod = (nextPeriod: ReportPeriod) => {
+    setPeriod(nextPeriod);
+    router.replace(
+      reportesHref({
+        period: nextPeriod,
+        ...(focusedStaffId ? { staff: focusedStaffId } : {}),
+      }),
+      { scroll: false },
+    );
+  };
+
+  const handleClearStaffFocus = () => {
+    setFocusedStaffId(null);
+    router.replace(reportesHref({ period }), { scroll: false });
+  };
 
   const reportUrl = ADMIN_CACHE_KEYS.reports(period);
   const fetchReport = useCallback(
@@ -97,7 +115,7 @@ export default function AdminReportsPage() {
   const isSpecialistScope =
     report?.scope === 'specialist' || role === 'specialist';
   const canViewCash = roleCanAccess(role, 'cash');
-  const canViewClients = roleCanAccess(role, 'clients');
+  const canViewLoyalty = roleCanAccess(role, 'loyalty');
   const canViewTeam = roleCanAccess(role, 'team');
   const canManageServices = roleCanAccess(role, 'services');
   const cajaPeriod: MetricPeriod = isMetricPeriod(period)
@@ -186,7 +204,7 @@ export default function AdminReportsPage() {
             size="md"
             value={period}
             options={REPORT_PERIOD_OPTIONS}
-            onChange={setPeriod}
+            onChange={handleChangePeriod}
           />
         }
       />
@@ -218,7 +236,7 @@ export default function AdminReportsPage() {
             items={kpiCards}
             cols={3}
             footerLink={
-              canViewCash || (canViewClients && !isSpecialistScope) ? (
+              canViewCash || (canViewLoyalty && !isSpecialistScope) ? (
                 <HStack gap={2} wrap="wrap" align="center">
                   {canViewCash ? (
                     <Button
@@ -228,12 +246,12 @@ export default function AdminReportsPage() {
                       href={cajaHref({ tab: 'resumen', period: cajaPeriod })}
                     />
                   ) : null}
-                  {canViewClients && !isSpecialistScope ? (
+                  {canViewLoyalty && !isSpecialistScope ? (
                     <Button
-                      label="Ver retención en Clientas"
+                      label="Ver campañas en Fidelización"
                       variant="ghost"
                       size="sm"
-                      href={clientasHref({ tab: 'retencion' })}
+                      href={fidelizacionHref({ tab: 'campanas' })}
                     />
                   ) : null}
                 </HStack>
@@ -246,9 +264,9 @@ export default function AdminReportsPage() {
             currency={currency}
             isSpecialistScope={isSpecialistScope}
             focusedStaffId={isSpecialistScope ? null : focusedStaffId}
-            onClearStaffFocus={() => setFocusedStaffId(null)}
+            onClearStaffFocus={handleClearStaffFocus}
             canViewTeam={canViewTeam}
-            canViewClients={canViewClients}
+            canViewLoyalty={canViewLoyalty}
             canViewCash={canViewCash}
             cajaPeriod={cajaPeriod}
           />

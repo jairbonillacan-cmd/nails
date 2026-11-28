@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -9,7 +9,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Token } from '@astryxdesign/core/Token';
 import { Link } from '@astryxdesign/core/Link';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { Banner } from '@astryxdesign/core/Banner';
 import { AtSign, ExternalLink, XCircle } from 'lucide-react';
 import {
@@ -25,9 +25,8 @@ import { clientasHref, integracionesHref, whatsappHref } from '@/lib/admin-links
 import { computeBookingBalance } from '@/lib/booking/balance';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { BOOKING_TRANSITIONS } from '@/lib/booking/state-machine';
+import { useClientBookingContext } from '@/lib/hooks/useClientBookingContext';
 import { useCurrentClockTick } from '@/lib/hooks/useCurrentClockTick';
-import { useExternalSync } from '@/lib/hooks/useExternalSync';
-import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
@@ -55,8 +54,6 @@ import {
 } from './BookingCard';
 import { BookingPopoverActions } from './BookingPopoverActions';
 import { BookingPopoverClientContext } from './BookingPopoverClientContext';
-import { fetchActiveClientPackages } from './checkoutApi';
-import type { ClientPackageSummaryRow } from './CheckoutLoyaltySection';
 
 const DepositProofReviewDialog = dynamic(
   () =>
@@ -151,56 +148,32 @@ export function BookingQuickPopover({
     bookingId: string;
     message: string;
   } | null>(null);
-  const [clientPackages, setClientPackages] = useState<ClientPackageSummaryRow[]>([]);
-
-  const packageSyncKey = booking
-    ? `popover-pkg|${booking.clientId}|${booking.id}`
-    : 'popover-pkg-closed';
-
-  useExternalSync(packageSyncKey, async (signal, key) => {
-    if (key === 'popover-pkg-closed' || !booking) {
-      setClientPackages([]);
-      return;
-    }
-    try {
-      const active = await fetchActiveClientPackages(
-        booking.clientId,
-        booking.serviceId,
-        signal,
-      );
-      if (!signal.aborted) setClientPackages(active);
-    } catch {
-      if (!signal.aborted) setClientPackages([]);
-    }
-  });
-
-  const lastCompletedBooking = useMemo(() => {
-    if (!booking) return null;
-    const pool = allBookings.length > 0 ? allBookings : (adminData?.bookings ?? []);
-    const pastVisits = pool
-      .filter(
-        (item) =>
-          item.clientId === booking.clientId &&
-          item.id !== booking.id &&
-          item.status === 'completed',
-      )
-      .toSorted((a, b) => Date.parse(b.startAt) - Date.parse(a.startAt));
-    return pastVisits[0] ?? null;
-  }, [allBookings, adminData?.bookings, booking]);
-
-  if (!booking) {
-    return null;
-  }
 
   const resolvedClients = clients.length > 0 ? clients : (adminData?.clients ?? []);
-  const fullClientProfile =
-    resolvedClients.find((c) => c.id === booking.clientId) ?? booking.client;
+  const resolvedBookingsPool =
+    allBookings.length > 0 ? allBookings : (adminData?.bookings ?? []);
   const activeLoyaltyProgram = loyaltyProgram ?? adminData?.loyaltyProgram ?? null;
   const activeLoyaltyStamps =
     loyaltyStamps.length > 0 ? loyaltyStamps : (adminData?.loyaltyStamps ?? []);
-  const loyaltySummary = activeLoyaltyProgram
-    ? computeClientLoyaltySummary(activeLoyaltyProgram, activeLoyaltyStamps, booking.clientId)
-    : null;
+
+  const {
+    fullClientProfile,
+    loyaltySummary,
+    clientPackages,
+    lastCompletedBooking,
+  } = useClientBookingContext({
+    booking,
+    clients: resolvedClients,
+    allBookings: resolvedBookingsPool,
+    loyaltyProgram: activeLoyaltyProgram,
+    loyaltyStamps: activeLoyaltyStamps,
+    syncScope: 'popover',
+  });
+
+  if (!booking || !fullClientProfile) {
+    return null;
+  }
+
   const touchUpDays = normalizeTouchUpDays(
     touchUpDaysProp ?? adminData?.settings.landingContent?.touchUpDays,
   );
@@ -360,6 +333,54 @@ export function BookingQuickPopover({
 
   const handleDialogOpenChange = (open: boolean) => {
     if (!open && !isBusy) handleClose();
+  };
+
+  const sharedActionProps = {
+    allowedNext,
+    isPending,
+    isCompleted,
+    isPastUnclosed,
+    isFullyPaid: balance.isFullyPaid,
+    canCollect,
+    canRemind,
+    canCheckIn,
+    isCheckingIn,
+    touchUpDays,
+    isBusy,
+    busyStatus,
+    isReminding,
+    isRequestingReschedule,
+    canViewClients,
+    canManageIntegrations,
+    whatsappChatHref,
+    waHref,
+    reviewWaHref,
+    reviewSettingsHref: integracionesHref({
+      section: 'resenas',
+      hash: 'analytics-heading',
+    }),
+    clientProfileHref,
+    onConfirm: () => void handleStatusAction('confirmed'),
+    onComplete: () => void handleStatusAction('completed'),
+    onCheckIn: canCheckIn ? () => void handleCheckInAction() : undefined,
+    onScheduleRetouch: onScheduleRetouch
+      ? () => {
+          handleClose();
+          onScheduleRetouch(booking);
+        }
+      : undefined,
+    onNoShowDirect: () => void handleStatusAction('no_show'),
+    onCheckout: () => {
+      handleClose();
+      onOpenCheckout(booking);
+    },
+    onReschedule: () => {
+      onRequestReschedule(booking.id);
+      handleClose();
+    },
+    onRemind: () => onSendReminder(booking.id),
+    onRequestNoShow: () => setPendingConfirm('no_show'),
+    onRequestCancel: () => setPendingConfirm('canceled'),
   };
 
   return (
@@ -588,57 +609,14 @@ export function BookingQuickPopover({
                   </Text>
                 ) : null}
 
-                <BookingPopoverActions
-                  allowedNext={allowedNext}
-                  isPending={isPending}
-                  isCompleted={isCompleted}
-                  isPastUnclosed={isPastUnclosed}
-                  isFullyPaid={balance.isFullyPaid}
-                  canCollect={canCollect}
-                  canRemind={canRemind}
-                  canCheckIn={canCheckIn}
-                  isCheckingIn={isCheckingIn}
-                  touchUpDays={touchUpDays}
-                  isBusy={isBusy}
-                  busyStatus={busyStatus}
-                  isReminding={isReminding}
-                  isRequestingReschedule={isRequestingReschedule}
-                  canViewClients={canViewClients}
-                  canManageIntegrations={canManageIntegrations}
-                  whatsappChatHref={whatsappChatHref}
-                  waHref={waHref}
-                  reviewWaHref={reviewWaHref}
-                  reviewSettingsHref={integracionesHref({
-                    section: 'resenas',
-                    hash: 'analytics-heading',
-                  })}
-                  clientProfileHref={clientProfileHref}
-                  onConfirm={() => void handleStatusAction('confirmed')}
-                  onComplete={() => void handleStatusAction('completed')}
-                  onCheckIn={canCheckIn ? () => void handleCheckInAction() : undefined}
-                  onScheduleRetouch={
-                    onScheduleRetouch
-                      ? () => {
-                          handleClose();
-                          onScheduleRetouch(booking);
-                        }
-                      : undefined
-                  }
-                  onNoShowDirect={() => void handleStatusAction('no_show')}
-                  onCheckout={() => {
-                    handleClose();
-                    onOpenCheckout(booking);
-                  }}
-                  onReschedule={() => {
-                    onRequestReschedule(booking.id);
-                    handleClose();
-                  }}
-                  onRemind={() => onSendReminder(booking.id)}
-                  onRequestNoShow={() => setPendingConfirm('no_show')}
-                  onRequestCancel={() => setPendingConfirm('canceled')}
-                />
+                <BookingPopoverActions section="secondary" {...sharedActionProps} />
               </VStack>
             </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              <BookingPopoverActions section="primary" {...sharedActionProps} />
+            </LayoutFooter>
           }
         />
       </Dialog>

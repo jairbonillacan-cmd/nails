@@ -25,7 +25,7 @@ import { canonicalizeWhatsAppPhoneE164 } from '@/lib/notifications/whatsapp-inbo
 import {
   ADMIN_CACHE_KEYS,
   fetchAdminJson,
-  invalidateAdminCache,
+  invalidateAdminDomain,
   mutateAdminCache,
   useAdminCachedQuery,
 } from './useAdminCache';
@@ -228,6 +228,7 @@ export function useWhatsAppWorkspace({
   const paramClientId = searchParams.get('clientId')?.trim() ?? '';
   const paramBookingId = searchParams.get('bookingId')?.trim() ?? '';
   const paramFilter = searchParams.get('filter')?.trim() ?? '';
+  const paramQ = searchParams.get('q')?.trim() ?? '';
 
   const [activeTab, setActiveTabState] = useState<WhatsAppTabId>(() =>
     parseWhatsAppTabParam(paramTab),
@@ -244,8 +245,8 @@ export function useWhatsAppWorkspace({
       ? parseWhatsAppReminderFilterParam(paramFilter)
       : undefined,
   );
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState(paramQ);
+  const [debouncedSearch, setDebouncedSearch] = useState(paramQ);
   const [selectedThreadId, setSelectedThreadIdState] = useState<string | null>(null);
   const [contextBookingId, setContextBookingId] = useState<string | null>(
     paramBookingId || null,
@@ -276,7 +277,7 @@ export function useWhatsAppWorkspace({
     null,
   );
 
-  const urlSignature = `${paramTab ?? ''}|${paramPhone}|${paramClientId}|${paramBookingId}|${paramFilter}`;
+  const urlSignature = `${paramTab ?? ''}|${paramPhone}|${paramClientId}|${paramBookingId}|${paramFilter}|${paramQ}`;
   const [appliedUrlSignature, setAppliedUrlSignature] = useState<string>(urlSignature);
   const [expectedUrlSignature, setExpectedUrlSignature] = useState<string | null>(null);
 
@@ -302,6 +303,8 @@ export function useWhatsAppWorkspace({
         });
       } else if (nextTab === 'mensajes') {
         setFilterState(parseWhatsAppThreadFilterParam(paramFilter));
+        setSearchQuery(paramQ);
+        setDebouncedSearch(paramQ);
       } else if (nextTab === 'recordatorios') {
         setInitialReminderFilter(parseWhatsAppReminderFilterParam(paramFilter));
       }
@@ -475,7 +478,7 @@ export function useWhatsAppWorkspace({
   }, [activeTab, enabled, pollIntervalMs, selectedThreadId]);
 
   const syncUrlParams = useCallback(
-    (next: { tab?: WhatsAppTabId; filter?: string | null }) => {
+    (next: { tab?: WhatsAppTabId; filter?: string | null; q?: string | null }) => {
       const targetTab = next.tab ?? activeTab;
       const targetFilter: WhatsAppFilterParam | undefined =
         next.filter === 'unread' ||
@@ -483,17 +486,22 @@ export function useWhatsAppWorkspace({
         next.filter === 'failed'
           ? next.filter
           : undefined;
+      const targetQ =
+        targetTab === 'mensajes'
+          ? (next.q !== undefined ? (next.q ?? '').trim() : searchQuery.trim())
+          : '';
       const nextUrl = whatsappHref({
         tab: targetTab !== 'mensajes' ? targetTab : undefined,
         filter: targetFilter,
+        q: targetQ || undefined,
       });
       const nextSig = `${targetTab === 'mensajes' ? '' : targetTab}||||${
         targetFilter ?? ''
-      }`;
+      }|${targetQ}`;
       setExpectedUrlSignature(nextSig);
       router.replace(nextUrl, { scroll: false });
     },
-    [activeTab, router],
+    [activeTab, router, searchQuery],
   );
 
   const setActiveTab = useCallback(
@@ -674,7 +682,7 @@ export function useWhatsAppWorkspace({
           );
         }
 
-        invalidateAdminCache(ADMIN_CACHE_KEYS.whatsappThreadsBase);
+        invalidateAdminDomain('whatsapp');
         void threadsQuery.revalidate();
         if (nextThreadId) {
           void fetchAdminJson<WhatsAppThreadDetailResponseDTO>(
@@ -732,7 +740,7 @@ export function useWhatsAppWorkspace({
           return false;
         }
         setBanner({ status: 'success', title: 'Mensaje reenviado correctamente.' });
-        invalidateAdminCache(ADMIN_CACHE_KEYS.whatsappThreadsBase);
+        invalidateAdminDomain('whatsapp');
         void threadsQuery.revalidate();
         if (selectedThreadId) void detailQuery.revalidate();
         void refreshOverviewRef.current?.();
@@ -777,7 +785,7 @@ export function useWhatsAppWorkspace({
           title: json?.message || describeReminderActionSuccess(action),
           fallbackWaMeUrl: json?.fallbackWaMeUrl,
         });
-        invalidateAdminCache(ADMIN_CACHE_KEYS.whatsappThreadsBase);
+        invalidateAdminDomain('whatsapp');
         void remindersQuery.revalidate();
         void threadsQuery.revalidate();
         void refreshOverviewRef.current?.();
@@ -822,6 +830,7 @@ export function useWhatsAppWorkspace({
           title: json?.message || describeSettingsActionSuccess(action),
           fallbackWaMeUrl: json?.fallbackWaMeUrl,
         });
+        invalidateAdminDomain('whatsapp');
         void settingsQuery.revalidate();
         void refreshOverviewRef.current?.();
         if (action.action === 'sync_meta_templates') {
@@ -865,7 +874,7 @@ export function useWhatsAppWorkspace({
           status: 'success',
           title: json.sideEffectSummary || 'Evento de WhatsApp simulado correctamente.',
         });
-        invalidateAdminCache(ADMIN_CACHE_KEYS.whatsappThreadsBase);
+        invalidateAdminDomain('whatsapp');
         void threadsQuery.revalidate();
         if (json.threadId) {
           void fetchAdminJson<WhatsAppThreadDetailResponseDTO>(

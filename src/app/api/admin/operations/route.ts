@@ -7,6 +7,10 @@ import {
   AdminOperationsPatchSchema,
 } from '@/lib/contracts/operations';
 import {
+  formatCashEntryTypeLabel,
+  formatPaymentMethodLabel,
+} from '@/lib/format';
+import {
   ADMIN_PRIVATE_HEADERS,
   withAdminPrivateHeaders,
 } from '@/lib/http/admin-headers';
@@ -89,20 +93,6 @@ export async function GET(request: NextRequest) {
 
     const cashEntries = await repo.listCashEntries();
     const currency = settings.currency || 'MXN';
-    const entryTypeLabels: Record<string, string> = {
-      service_income: 'Servicio',
-      product_sale: 'Venta de producto',
-      deposit: 'Anticipo',
-      expense: 'Gasto',
-      tip: 'Propina',
-      refund: 'Devolución',
-    };
-    const paymentMethodLabels: Record<string, string> = {
-      cash: 'Efectivo',
-      card: 'Tarjeta',
-      transfer: 'Transferencia',
-      gift_card: 'Tarjeta de regalo',
-    };
     const headers = [
       'Fecha',
       'Tipo',
@@ -115,9 +105,9 @@ export async function GET(request: NextRequest) {
     ];
     const rows = cashEntries.map((e) => [
       e.occurredAt,
-      entryTypeLabels[e.entryType] ?? e.entryType,
+      formatCashEntryTypeLabel(e.entryType),
       e.description,
-      paymentMethodLabels[e.paymentMethod] ?? e.paymentMethod,
+      formatPaymentMethodLabel(e.paymentMethod),
       (e.amountCents / 100).toFixed(2),
       (e.tipCents / 100).toFixed(2),
       (e.commissionCents / 100).toFixed(2),

@@ -25,6 +25,7 @@ import {
 } from '@/components/admin/onboarding/onboardingActions';
 import { OnboardingStepAlerts } from '@/components/admin/onboarding/OnboardingStepAlerts';
 import { parseOnboardingParams, resumenHref } from '@/lib/admin-links';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useBookingAlertSound } from '@/lib/hooks/useBookingAlertSound';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 
@@ -121,6 +122,7 @@ export default function AdminOnboardingPage() {
 
   const handleStepSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     setErrorMessage(null);
     setSaving(true);
     try {
@@ -141,6 +143,7 @@ export default function AdminOnboardingPage() {
         setErrorMessage(result.error);
         return;
       }
+      invalidateAdminDomain('settings', 'services');
       await refresh();
       setStepIndex(result.nextStep);
       setMaxReachedStep((prev) => Math.max(prev, result.nextStep));
@@ -153,6 +156,7 @@ export default function AdminOnboardingPage() {
   };
 
   const handleActivateNotifications = async () => {
+    if (saving) return;
     setErrorMessage(null);
     const permission = await requestBrowserNotifications();
     await playBookingChime();
@@ -169,6 +173,7 @@ export default function AdminOnboardingPage() {
         return;
       }
       setProfileDraft((prev) => ({ ...prev, soundAlertsEnabled: true }));
+      invalidateAdminDomain('settings');
       await refresh();
     } finally {
       setSaving(false);

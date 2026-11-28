@@ -29,6 +29,7 @@ import {
   reportesHref,
   type HorariosTabParam,
 } from '@/lib/admin-links';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { roleCanAccess } from '@/lib/rbac';
@@ -309,7 +310,10 @@ export default function AdminAvailabilityPage() {
           isOwner={isOwner}
           optimizeContinuousSlots={optimizeContinuousSlots}
           saveNoticeMessage={saveNotice.message}
-          onRefresh={refresh}
+          onRefresh={async () => {
+            invalidateAdminDomain('availability');
+            await refresh();
+          }}
           onSavedNotice={saveNotice.show}
           onMessage={setMsg}
           onSavingStateChange={setSavingWeekly}
@@ -324,7 +328,10 @@ export default function AdminAvailabilityPage() {
             serverTodayKey={data.serverTodayKey}
             activeOverrides={activeOverrides}
             archivedOverrides={archivedOverrides}
-            onRefresh={refresh}
+            onRefresh={async () => {
+              invalidateAdminDomain('availability');
+              await refresh();
+            }}
             onSavedNotice={saveNotice.show}
             onMessage={setMsg}
           />
@@ -338,7 +345,10 @@ export default function AdminAvailabilityPage() {
             allStaff={data.staff}
             serverTodayKey={data.serverTodayKey}
             recurringBlocks={staffRecurringBlocks}
-            onRefresh={refresh}
+            onRefresh={async () => {
+              invalidateAdminDomain('availability');
+              await refresh();
+            }}
             onSavedNotice={saveNotice.show}
             onMessage={setMsg}
           />

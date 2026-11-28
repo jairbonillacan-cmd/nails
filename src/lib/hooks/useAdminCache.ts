@@ -11,7 +11,6 @@ export const ADMIN_CACHE_KEYS = {
   bookings: '/api/admin/bookings',
   clients: '/api/admin/clients',
   clientsInactive: (days: number) => `/api/admin/clients?inactiveDays=${days}`,
-  operations: '/api/admin/operations',
   packages: '/api/admin/packages',
   campaigns: '/api/admin/campaigns?birthdayWindowDays=7&inactiveDays=45',
   reports: (period: string) => `/api/admin/reports?period=${encodeURIComponent(period)}`,
@@ -28,6 +27,69 @@ export const ADMIN_CACHE_KEYS = {
   whatsappReminders: '/api/admin/whatsapp/reminders',
   whatsappSettings: '/api/admin/whatsapp/settings',
 } as const;
+
+export type AdminCacheDomain =
+  | 'bookings'
+  | 'cash'
+  | 'clients'
+  | 'packages'
+  | 'campaigns'
+  | 'staff'
+  | 'services'
+  | 'availability'
+  | 'whatsapp'
+  | 'settings';
+
+const REPORTS_CACHE_PREFIX = '/api/admin/reports';
+const CAMPAIGNS_CACHE_PREFIX = '/api/admin/campaigns';
+
+const DOMAIN_CACHE_PREFIXES: Record<AdminCacheDomain, readonly string[]> = {
+  bookings: [
+    ADMIN_CACHE_KEYS.bookings,
+    REPORTS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.clients,
+    ADMIN_CACHE_KEYS.packages,
+    CAMPAIGNS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.whatsappThreadsBase,
+    ADMIN_CACHE_KEYS.whatsappReminders,
+  ],
+  cash: [ADMIN_CACHE_KEYS.bookings, REPORTS_CACHE_PREFIX],
+  clients: [
+    ADMIN_CACHE_KEYS.clients,
+    ADMIN_CACHE_KEYS.bookings,
+    CAMPAIGNS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.packages,
+    ADMIN_CACHE_KEYS.whatsappThreadsBase,
+  ],
+  packages: [
+    ADMIN_CACHE_KEYS.packages,
+    ADMIN_CACHE_KEYS.bookings,
+    REPORTS_CACHE_PREFIX,
+  ],
+  campaigns: [
+    CAMPAIGNS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.clients,
+    ADMIN_CACHE_KEYS.whatsappThreadsBase,
+  ],
+  staff: [ADMIN_CACHE_KEYS.bookings, REPORTS_CACHE_PREFIX],
+  services: [
+    ADMIN_CACHE_KEYS.bookings,
+    REPORTS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.packages,
+  ],
+  availability: [REPORTS_CACHE_PREFIX, ADMIN_CACHE_KEYS.bookings],
+  whatsapp: [
+    ADMIN_CACHE_KEYS.whatsappThreadsBase,
+    ADMIN_CACHE_KEYS.whatsappReminders,
+    ADMIN_CACHE_KEYS.whatsappSettings,
+  ],
+  settings: [
+    REPORTS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.whatsappSettings,
+    CAMPAIGNS_CACHE_PREFIX,
+    ADMIN_CACHE_KEYS.bookings,
+  ],
+};
 
 export class AdminFetchError extends Error {
   readonly status: number;
@@ -210,6 +272,24 @@ export function invalidateAdminCache(prefix?: string): void {
   }
   for (const key of Array.from(touched)) {
     notifyKey(key);
+  }
+}
+
+export function invalidateAdminDomain(
+  domain: AdminCacheDomain,
+  ...extraDomains: AdminCacheDomain[]
+): void {
+  const prefixes = new Set<string>();
+  for (const prefix of DOMAIN_CACHE_PREFIXES[domain]) {
+    prefixes.add(prefix);
+  }
+  for (const extra of extraDomains) {
+    for (const prefix of DOMAIN_CACHE_PREFIXES[extra]) {
+      prefixes.add(prefix);
+    }
+  }
+  for (const prefix of Array.from(prefixes)) {
+    invalidateAdminCache(prefix);
   }
 }
 

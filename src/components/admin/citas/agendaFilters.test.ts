@@ -253,5 +253,43 @@ describe('filterBookingsForAgendaStatus & filterBookingsForListDate', () => {
       timezone: TZ,
     });
     expect(uncollectedList.map((b) => b.id)).toEqual(['b-completed-unpaid']);
+
+    const pending = filterBookingsForAgendaStatus({
+      bookings,
+      paymentSplits,
+      cashEntries,
+      serverNowIso: NOW_ISO,
+      status: 'pending',
+      search: '',
+      selectedStaffFilter: 'all',
+    });
+    expect(
+      filterBookingsForListDate({
+        filtered: pending,
+        status: 'pending',
+        search: '',
+        dateKey: '2026-11-27',
+        timezone: TZ,
+      }).map((b) => b.id),
+    ).toEqual(['b-pending']);
+
+    const past = filterBookingsForAgendaStatus({
+      bookings,
+      paymentSplits,
+      cashEntries,
+      serverNowIso: NOW_ISO,
+      status: 'past',
+      search: '',
+      selectedStaffFilter: 'all',
+    });
+    expect(
+      filterBookingsForListDate({
+        filtered: past,
+        status: 'past',
+        search: '',
+        dateKey: '2026-11-27',
+        timezone: TZ,
+      }).map((b) => b.id),
+    ).toEqual(['b-completed-unpaid', 'b-completed-paid']);
   });
 });

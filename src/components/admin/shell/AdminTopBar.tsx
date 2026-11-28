@@ -23,7 +23,7 @@ import {
   VolumeX,
   Wallet,
 } from 'lucide-react';
-import { agendaHref, cajaHref, whatsappHref } from '@/lib/admin-links';
+import { agendaHref, cajaHref, inventarioHref, whatsappHref } from '@/lib/admin-links';
 import { roleCanAccess } from '@/lib/rbac';
 import type { AdminOverviewPayload } from '../AdminProvider';
 
@@ -115,7 +115,7 @@ export function AdminTopBar({
       ? {
           id: 'waitlist',
           label: `${waitingCount} en lista de espera`,
-          href: agendaHref({ tab: 'waitlist' }),
+          href: agendaHref({ panel: 'waitlist' }),
           icon: <Clock size={15} aria-hidden="true" />,
         }
       : null,
@@ -123,7 +123,7 @@ export function AdminTopBar({
       ? {
           id: 'stock',
           label: `${lowStockCount} producto${lowStockCount === 1 ? '' : 's'} con bajo inventario`,
-          href: '/admin/inventario',
+          href: inventarioHref({ filter: 'low_stock' }),
           icon: <Package size={15} aria-hidden="true" />,
         }
       : null,

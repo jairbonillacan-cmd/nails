@@ -2,12 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
-import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { Gift, MessageCircle, UserPlus } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
@@ -17,7 +16,6 @@ import {
   cancelClientPackageRequest,
   createClientProfileRequest,
   deleteClientProfileRequest,
-  dispatchRetentionCampaignRequest,
   redeemClientPackageSessionRequest,
   saveClientProfileRequest,
 } from '@/components/admin/clientas/clientasActions';
@@ -29,48 +27,23 @@ import {
   type ClientDirectorySort,
 } from '@/components/admin/clientas/clientasMetrics';
 import { useClientasData } from '@/components/admin/clientas/useClientasData';
-import type {
-  BannerNotice,
-  ClientPackageRow,
-  ClientsTab,
-} from '@/components/admin/clientas/clientasTypes';
+import type { BannerNotice, ClientPackageRow } from '@/components/admin/clientas/clientasTypes';
 import {
   MetricGrid,
   PageHeader,
   PageSkeleton,
-  SkeletonBlock,
   type MetricTileItem,
 } from '@/components/ui';
-import { fidelizacionHref, parseClientasParams } from '@/lib/admin-links';
+import {
+  clientasHref,
+  fidelizacionHref,
+  parseClientasParams,
+} from '@/lib/admin-links';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
-import { invalidateAdminCache } from '@/lib/hooks/useAdminCache';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { roleCanAccess } from '@/lib/rbac';
 import type { ClientProfile } from '@/lib/types';
-
-function ClientsTabFallback() {
-  return (
-    <VStack gap={3} role="status" aria-live="polite" aria-label="Cargando sección">
-      <SkeletonBlock width="100%" height="5rem" radius={3} index={0} />
-      <SkeletonBlock width="100%" height="10rem" radius={3} index={1} />
-    </VStack>
-  );
-}
-
-const ClientRetentionTab = dynamic(
-  () =>
-    import('@/components/admin/clientas/ClientRetentionTab').then(
-      (mod) => mod.ClientRetentionTab,
-    ),
-  { ssr: false, loading: ClientsTabFallback },
-);
-
-const ClientLoyaltyTab = dynamic(
-  () =>
-    import('@/components/admin/clientas/ClientLoyaltyTab').then(
-      (mod) => mod.ClientLoyaltyTab,
-    ),
-  { ssr: false, loading: ClientsTabFallback },
-);
 
 const ClientProfileDialog = dynamic(
   () =>
@@ -88,56 +61,107 @@ const NewClientDialog = dynamic(
   { ssr: false },
 );
 
+function resolveLegacyClientasRedirect(
+  rawTab: string | null,
+  parsedTab: 'directorio' | 'retencion' | 'paquetes' | undefined,
+  q: string | undefined,
+): string | null {
+  const cleaned = (rawTab ?? '').trim().toLowerCase();
+  if (
+    parsedTab === 'retencion' ||
+    cleaned === 'retencion' ||
+    cleaned === 'retention' ||
+    cleaned === 'campanas' ||
+    cleaned === 'campañas'
+  ) {
+    return fidelizacionHref({ tab: 'campanas', ...(q ? { q } : {}) });
+  }
+  if (
+    parsedTab === 'paquetes' ||
+    cleaned === 'paquetes' ||
+    cleaned === 'packages'
+  ) {
+    return fidelizacionHref({ tab: 'paquetes', ...(q ? { q } : {}) });
+  }
+  if (
+    cleaned === 'fidelidad' ||
+    cleaned === 'fidelizacion' ||
+    cleaned === 'sellos' ||
+    cleaned === 'lealtad' ||
+    cleaned === 'loyalty' ||
+    cleaned === 'premios' ||
+    cleaned === 'rewards'
+  ) {
+    return fidelizacionHref({ tab: 'sellos', ...(q ? { q } : {}) });
+  }
+  return null;
+}
+
 export default function AdminClientsPage() {
+  const router = useRouter();
   const { data: providerData, bookingEventSeq, refresh } = useAdminData();
   const searchParams = useSearchParams();
   const parsedParams = parseClientasParams(searchParams);
-  const [selected, setSelected] = useState<ClientProfile | null>(null);
-  const [directoryFilter, setDirectoryFilter] = useState<ClientDirectoryFilter>(
-    () => parsedParams.filter ?? 'all',
+  const legacyRedirectHref = resolveLegacyClientasRedirect(
+    searchParams.get('tab'),
+    parsedParams.tab,
+    parsedParams.q,
   );
+
+  useExternalSync(`clientas-redirect|${legacyRedirectHref ?? ''}`, async (signal) => {
+    if (signal.aborted || !legacyRedirectHref) return;
+    router.replace(legacyRedirectHref);
+  });
+
+  const [selected, setSelected] = useState<ClientProfile | null>(null);
+  const urlFilter: ClientDirectoryFilter = parsedParams.filter ?? 'all';
+  const [prevUrlFilter, setPrevUrlFilter] = useState<ClientDirectoryFilter>(urlFilter);
+  const [directoryFilter, setDirectoryFilter] = useState<ClientDirectoryFilter>(urlFilter);
   const [directorySort, setDirectorySort] = useState<ClientDirectorySort>('alpha');
+
+  if (prevUrlFilter !== urlFilter) {
+    setPrevUrlFilter(urlFilter);
+    setDirectoryFilter(urlFilter);
+  }
 
   const {
     data,
     canManageClients,
-    activeTab,
-    setActiveTab,
     query,
     setQuery,
-    inactiveDays,
-    setInactiveDays,
     activeCatalogPackages,
-    clientPackages,
     activeClientPackages,
-    campaigns,
-    displayedInactiveClients,
-    dispatchedTodayKeys,
-    comebackCount,
-    loyaltyHighlightsCount,
     noShowStatsByClient,
     loyaltyByClientId,
     returningClients,
     packagesByClientId,
-    packagesLoading,
-    packagesError,
-    campaignsLoading,
-    campaignsError,
-    inactiveLoading,
-    inactiveError,
-    reloadCampaigns,
+    packagesSupported,
     reloadPackages,
   } = useClientasData(
     providerData,
     bookingEventSeq,
-    parsedParams.tab ?? searchParams.get('tab'),
+    null,
     parsedParams.q ?? '',
-    Boolean(selected),
+    Boolean(selected || parsedParams.clientId),
   );
+
+  const urlClientId = parsedParams.clientId ?? '';
+  const matchedUrlClient = useMemo(
+    () => (data && urlClientId ? (data.clients.find((c) => c.id === urlClientId) ?? null) : null),
+    [data, urlClientId],
+  );
+  const appliedClientSyncKey = matchedUrlClient ? matchedUrlClient.id : '';
+  const [prevAppliedClientId, setPrevAppliedClientId] = useState('');
+  if (prevAppliedClientId !== appliedClientSyncKey) {
+    setPrevAppliedClientId(appliedClientSyncKey);
+    if (matchedUrlClient) {
+      setSelected(matchedUrlClient);
+    }
+  }
 
   const [createOpen, setCreateOpen] = useState(false);
   const [bannerMsg, setBannerMsg] = useState<BannerNotice | null>(null);
-  const [dispatchingKey, setDispatchingKey] = useState<string | null>(null);
+  const [savingClient, setSavingClient] = useState(false);
   const [assigningPkg, setAssigningPkg] = useState(false);
   const [redeemingPkgId, setRedeemingPkgId] = useState<string | null>(null);
   const [cancelingPkgId, setCancelingPkgId] = useState<string | null>(null);
@@ -201,16 +225,18 @@ export default function AdminClientsPage() {
     [data, metricsByClientId, query, directoryFilter, directorySort],
   );
 
-  const lastServiceByClientId = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const [clientId, metrics] of metricsByClientId.entries()) {
-      map.set(clientId, metrics.lastServiceName);
-    }
-    return map;
-  }, [metricsByClientId]);
-
-  if (!data || !data.retention) {
-    return <PageSkeleton kpiCount={4} withSplit={false} ariaLabel="Cargando clientas" />;
+  if (legacyRedirectHref || !data || !data.retention) {
+    return (
+      <PageSkeleton
+        kpiCount={4}
+        withSplit={false}
+        ariaLabel={
+          legacyRedirectHref
+            ? 'Abriendo Fidelización'
+            : 'Cargando clientas'
+        }
+      />
+    );
   }
 
   const tz = data.settings.timezone || 'America/Mexico_City';
@@ -219,6 +245,46 @@ export default function AdminClientsPage() {
   const selectedClient = selected
     ? (data.clients.find((client) => client.id === selected.id) ?? selected)
     : null;
+
+  const syncDirectoryUrl = (next: {
+    q?: string;
+    filter?: ClientDirectoryFilter;
+    clientId?: string | null;
+  }) => {
+    const nextQ = (next.q ?? query).trim();
+    const nextFilter = next.filter ?? directoryFilter;
+    const nextClientId =
+      next.clientId === undefined ? parsedParams.clientId : (next.clientId ?? undefined);
+    router.replace(
+      clientasHref({
+        ...(nextQ ? { q: nextQ } : {}),
+        ...(nextFilter !== 'all' ? { filter: nextFilter } : {}),
+        ...(nextClientId ? { clientId: nextClientId } : {}),
+      }),
+      { scroll: false },
+    );
+  };
+
+  const handleCloseProfile = () => {
+    setSelected(null);
+    if (parsedParams.clientId) {
+      syncDirectoryUrl({ clientId: null });
+    }
+  };
+
+  const handleSelectClient = (client: ClientProfile) => {
+    setSelected(client);
+  };
+
+  const handleFilterChange = (nextFilter: ClientDirectoryFilter) => {
+    setDirectoryFilter(nextFilter);
+    syncDirectoryUrl({ filter: nextFilter });
+  };
+
+  const handleQueryChange = (nextQuery: string) => {
+    setQuery(nextQuery);
+    syncDirectoryUrl({ q: nextQuery });
+  };
 
   const clientKpiItems: MetricTileItem[] = [
     {
@@ -258,25 +324,37 @@ export default function AdminClientsPage() {
     email: string | null;
     instagramHandle: string | null;
   }): Promise<string | null> => {
-    const errorText = await saveClientProfileRequest(input);
-    if (errorText) return errorText;
-    setSelected(null);
-    setBannerMsg({ status: 'success', title: 'Ficha de clienta actualizada.' });
-    invalidateAdminCache('/api/admin/clients');
-    await refresh();
-    return null;
+    if (savingClient) return null;
+    setSavingClient(true);
+    try {
+      const errorText = await saveClientProfileRequest(input);
+      if (errorText) return errorText;
+      handleCloseProfile();
+      setBannerMsg({ status: 'success', title: 'Ficha de clienta actualizada.' });
+      invalidateAdminDomain('clients');
+      await refresh();
+      return null;
+    } finally {
+      setSavingClient(false);
+    }
   };
 
   const handleDeleteClient = async (
     clientId: string,
   ): Promise<{ ok: boolean; error?: string; code?: string }> => {
-    const result = await deleteClientProfileRequest(clientId);
-    if (!result.ok) return result;
-    setSelected(null);
-    setBannerMsg({ status: 'success', title: 'Clienta eliminada del directorio.' });
-    invalidateAdminCache('/api/admin/clients');
-    await refresh();
-    return result;
+    if (savingClient) return { ok: false };
+    setSavingClient(true);
+    try {
+      const result = await deleteClientProfileRequest(clientId);
+      if (!result.ok) return result;
+      handleCloseProfile();
+      setBannerMsg({ status: 'success', title: 'Clienta eliminada del directorio.' });
+      invalidateAdminDomain('clients');
+      await refresh();
+      return result;
+    } finally {
+      setSavingClient(false);
+    }
   };
 
   const handleCreateClient = async (input: {
@@ -287,31 +365,17 @@ export default function AdminClientsPage() {
     birthday: string | null;
     technicalNotes: string;
   }) => {
-    const result = await createClientProfileRequest(input);
-    if (!result.ok) return result;
-    setBannerMsg({ status: 'success', title: 'Clienta agregada al directorio.' });
-    invalidateAdminCache('/api/admin/clients');
-    await refresh();
-    return result;
-  };
-
-  const handleDispatchCampaign = async (params: {
-    kind: 'birthday' | 'reactivation';
-    clientId: string;
-    clientName: string;
-    messagePreview: string;
-    fallbackUrl: string;
-  }) => {
-    setDispatchingKey(`${params.kind}:${params.clientId}`);
+    if (savingClient) return { ok: false, error: 'Guardando cambios…' };
+    setSavingClient(true);
     try {
-      const result = await dispatchRetentionCampaignRequest(params);
-      if (result.ok && result.targetUrl) {
-        window.open(result.targetUrl, '_blank', 'noopener,noreferrer');
-        reloadCampaigns();
-      }
-      setBannerMsg(result.notice);
+      const result = await createClientProfileRequest(input);
+      if (!result.ok) return result;
+      setBannerMsg({ status: 'success', title: 'Clienta agregada al directorio.' });
+      invalidateAdminDomain('clients');
+      await refresh();
+      return result;
     } finally {
-      setDispatchingKey(null);
+      setSavingClient(false);
     }
   };
 
@@ -320,7 +384,7 @@ export default function AdminClientsPage() {
     targetPackageId: string,
     notesText: string,
   ): Promise<boolean> => {
-    if (!targetClientId || !targetPackageId) return false;
+    if (assigningPkg || !targetClientId || !targetPackageId) return false;
     setAssigningPkg(true);
     try {
       const result = await assignClientPackageRequest(
@@ -328,7 +392,10 @@ export default function AdminClientsPage() {
         targetPackageId,
         notesText,
       );
-      if (result.ok) reloadPackages();
+      if (result.ok) {
+        invalidateAdminDomain('packages');
+        reloadPackages();
+      }
       setBannerMsg(result.notice);
       return result.ok;
     } finally {
@@ -337,10 +404,14 @@ export default function AdminClientsPage() {
   };
 
   const handleRedeemPackageSession = async (pkg: ClientPackageRow) => {
+    if (redeemingPkgId || cancelingPkgId) return;
     setRedeemingPkgId(pkg.id);
     try {
       const result = await redeemClientPackageSessionRequest(pkg);
-      if (result.ok) reloadPackages();
+      if (result.ok) {
+        invalidateAdminDomain('packages');
+        reloadPackages();
+      }
       setBannerMsg(result.notice);
     } finally {
       setRedeemingPkgId(null);
@@ -348,19 +419,18 @@ export default function AdminClientsPage() {
   };
 
   const handleCancelPackage = async (pkg: ClientPackageRow) => {
+    if (cancelingPkgId || redeemingPkgId) return;
     setCancelingPkgId(pkg.id);
     try {
       const result = await cancelClientPackageRequest(pkg);
-      if (result.ok) reloadPackages();
+      if (result.ok) {
+        invalidateAdminDomain('packages');
+        reloadPackages();
+      }
       setBannerMsg(result.notice);
     } finally {
       setCancelingPkgId(null);
     }
-  };
-
-  const openClientById = (clientId: string) => {
-    const found = data.clients.find((c) => c.id === clientId);
-    if (found) setSelected(found);
   };
 
   return (
@@ -368,24 +438,17 @@ export default function AdminClientsPage() {
       <VStack gap={5} className="ad-page">
         <PageHeader
           title="Clientas"
-          subtitle="Historial, ficha técnica de uñas, seguimiento y retención en un solo lugar."
+          subtitle="Directorio, ficha técnica de uñas, historial y seguimiento individual."
           actions={
             canManageClients || roleCanAccess(data.session.user.role, 'loyalty') ? (
               <HStack gap={2} wrap="wrap">
                 {roleCanAccess(data.session.user.role, 'loyalty') ? (
                   <Button
-                    label="Fidelización"
+                    label="Fidelización y campañas"
                     variant="secondary"
                     size="sm"
                     icon={<Gift size={15} aria-hidden="true" />}
-                    href={fidelizacionHref({
-                      tab:
-                        activeTab === 'retention'
-                          ? 'campanas'
-                          : activeTab === 'loyalty'
-                            ? 'paquetes'
-                            : 'sellos',
-                    })}
+                    href={fidelizacionHref({ tab: 'sellos' })}
                   />
                 ) : null}
                 {canManageClients ? (
@@ -433,129 +496,22 @@ export default function AdminClientsPage() {
           items={clientKpiItems}
         />
 
-        <TabList value={activeTab} onChange={(v) => setActiveTab(v as ClientsTab)} hasDivider>
-          <Tab value="directory" label={`Directorio (${filteredClients.length})`} />
-          <Tab
-            value="retention"
-            label={
-              comebackCount > 0
-                ? `Traerlas de vuelta (${comebackCount})`
-                : 'Traerlas de vuelta'
-            }
-          />
-          <Tab
-            value="loyalty"
-            label={
-              loyaltyHighlightsCount > 0
-                ? `Sellos y paquetes (${loyaltyHighlightsCount})`
-                : 'Sellos y paquetes'
-            }
-          />
-        </TabList>
-
-        {activeTab === 'directory' ? (
-          <ClientDirectoryTab
-            query={query}
-            onQueryChange={setQuery}
-            filter={directoryFilter}
-            onFilterChange={setDirectoryFilter}
-            sort={directorySort}
-            onSortChange={setDirectorySort}
-            clients={filteredClients}
-            metricsByClientId={metricsByClientId}
-            loyaltyByClientId={loyaltyByClientId}
-            tz={tz}
-            currency={currency}
-            canManageClients={canManageClients}
-            onSelectClient={setSelected}
-            onOpenNewClient={() => setCreateOpen(true)}
-          />
-        ) : activeTab === 'retention' ? (
-          <>
-            {campaignsError ? (
-              <Banner
-                collapsible={false}
-                status="error"
-                role="alert"
-                title="No pudimos cargar las campañas de retención"
-                description={campaignsError}
-              >
-                <HStack justify="start" paddingBlockStart={2}>
-                  <Button
-                    type="button"
-                    label="Reintentar"
-                    variant="primary"
-                    size="md"
-                    onClick={reloadCampaigns}
-                  />
-                </HStack>
-              </Banner>
-            ) : null}
-            <ClientRetentionTab
-              canManageClients={canManageClients}
-              salonName={data.settings.name}
-              tz={tz}
-              touchUpDays={touchUpDays}
-              inactiveDays={inactiveDays}
-              onInactiveDaysChange={setInactiveDays}
-              displayedInactiveClients={displayedInactiveClients}
-              lastServiceByClientId={lastServiceByClientId}
-              inactiveLoading={inactiveLoading}
-              inactiveError={inactiveError}
-              campaigns={campaigns}
-              campaignsLoading={campaignsLoading}
-              dispatchedTodayKeys={dispatchedTodayKeys}
-              dispatchingKey={dispatchingKey}
-              nearRewardCount={nearRewardClients.length}
-              returningClients={returningClients}
-              onOpenClientById={openClientById}
-              onOpenLoyalty={() => setActiveTab('loyalty')}
-              onDispatchCampaign={handleDispatchCampaign}
-            />
-          </>
-        ) : (
-          <>
-            {packagesError ? (
-              <Banner
-                collapsible={false}
-                status="error"
-                role="alert"
-                title="No pudimos cargar los paquetes de sesiones"
-                description={packagesError}
-              >
-                <HStack justify="start" paddingBlockStart={2}>
-                  <Button
-                    type="button"
-                    label="Reintentar"
-                    variant="primary"
-                    size="md"
-                    onClick={reloadPackages}
-                  />
-                </HStack>
-              </Banner>
-            ) : null}
-            <ClientLoyaltyTab
-              nearRewardClients={nearRewardClients}
-              loyaltyProgram={data.loyaltyProgram}
-              clients={data.clients}
-              clientPackages={clientPackages}
-              activeClientPackagesCount={activeClientPackages.length}
-              activeCatalogPackages={activeCatalogPackages}
-              packagesLoading={packagesLoading}
-              canManageClients={canManageClients}
-              salonName={data.settings.name}
-              tz={tz}
-              currency={currency}
-              assigningPkg={assigningPkg}
-              redeemingPkgId={redeemingPkgId}
-              cancelingPkgId={cancelingPkgId}
-              onOpenClientById={openClientById}
-              onAssignPackage={handleAssignPackage}
-              onRedeemPackageSession={handleRedeemPackageSession}
-              onCancelPackage={handleCancelPackage}
-            />
-          </>
-        )}
+        <ClientDirectoryTab
+          query={query}
+          onQueryChange={handleQueryChange}
+          filter={directoryFilter}
+          onFilterChange={handleFilterChange}
+          sort={directorySort}
+          onSortChange={setDirectorySort}
+          clients={filteredClients}
+          metricsByClientId={metricsByClientId}
+          loyaltyByClientId={loyaltyByClientId}
+          tz={tz}
+          currency={currency}
+          canManageClients={canManageClients}
+          onSelectClient={handleSelectClient}
+          onOpenNewClient={() => setCreateOpen(true)}
+        />
 
         {createOpen ? (
           <NewClientDialog
@@ -569,7 +525,7 @@ export default function AdminClientsPage() {
           <ClientProfileDialog
             key={selectedClient.id}
             client={selectedClient}
-            onClose={() => setSelected(null)}
+            onClose={handleCloseProfile}
             salonName={data.settings.name}
             tz={tz}
             currency={currency}
@@ -577,6 +533,7 @@ export default function AdminClientsPage() {
             noShowThreshold={noShowThreshold}
             noShowStats={noShowStatsByClient.get(selectedClient.id) ?? null}
             canManageClients={canManageClients}
+            packagesSupported={packagesSupported}
             loyalty={loyaltyByClientId.get(selectedClient.id) ?? null}
             clientPackages={packagesByClientId.get(selectedClient.id) ?? []}
             activeCatalogPackages={activeCatalogPackages}

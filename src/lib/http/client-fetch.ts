@@ -101,6 +101,13 @@ function formatRateLimitError(
   return serverError || 'Demasiados intentos seguidos. Espera unos segundos e intenta de nuevo.';
 }
 
+function formatConflictError(serverError: string | null): string {
+  return (
+    serverError ||
+    'Este registro cambió o ya existe un conflicto. Actualiza la vista e intenta de nuevo.'
+  );
+}
+
 function buildCombinedSignal(
   callerSignal: AbortSignal | null | undefined,
   timeoutMs: number,
@@ -237,10 +244,12 @@ export async function fetchJsonWithTimeout<T = unknown>(
     const error =
       response.status === 429
         ? formatRateLimitError(serverError, retryAfterSeconds)
-        : hasValidJson
-          ? (serverError ??
-            `No pudimos completar la solicitud (error ${response.status}). Intenta de nuevo.`)
-          : `El servidor tardó demasiado o no pudo responder (error ${response.status}). Intenta de nuevo en unos segundos.`;
+        : response.status === 409
+          ? formatConflictError(serverError)
+          : hasValidJson
+            ? (serverError ??
+              `No pudimos completar la solicitud (error ${response.status}). Intenta de nuevo.`)
+            : `El servidor tardó demasiado o no pudo responder (error ${response.status}). Intenta de nuevo en unos segundos.`;
 
     return {
       ok: false,
@@ -330,10 +339,12 @@ export async function fetchBlobWithTimeout(
     const error =
       response.status === 429
         ? formatRateLimitError(serverError, retryAfterSeconds)
-        : hasValidJson
-          ? (serverError ??
-            `No pudimos completar la descarga (error ${response.status}). Intenta de nuevo.`)
-          : `El servidor tardó demasiado o no pudo responder (error ${response.status}). Intenta de nuevo en unos segundos.`;
+        : response.status === 409
+          ? formatConflictError(serverError)
+          : hasValidJson
+            ? (serverError ??
+              `No pudimos completar la descarga (error ${response.status}). Intenta de nuevo.`)
+            : `El servidor tardó demasiado o no pudo responder (error ${response.status}). Intenta de nuevo en unos segundos.`;
 
     return {
       ok: false,

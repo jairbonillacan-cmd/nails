@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -21,7 +21,7 @@ import { DashboardAttentionCard } from '@/components/admin/dashboard/DashboardAt
 import { DashboardKpiRow } from '@/components/admin/dashboard/DashboardKpiRow';
 import { DashboardAgendaCard } from '@/components/admin/dashboard/DashboardAgendaCard';
 import { DashboardRightColumn } from '@/components/admin/dashboard/DashboardRightColumn';
-import { parseResumenParams } from '@/lib/admin-links';
+import { parseResumenParams, resumenHref } from '@/lib/admin-links';
 import {
   DASHBOARD_PERIOD_OPTIONS,
   isMetricPeriod,
@@ -32,7 +32,7 @@ import {
   applyOptimisticBookingStatusToList,
   fetchAdminJson,
   getAdminCacheSnapshot,
-  invalidateAdminCache,
+  invalidateAdminDomain,
   mutateAdminCache,
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
@@ -43,13 +43,20 @@ import type { BookingWithRelations } from '@/lib/types';
 
 export default function AdminOverviewPage() {
   const { data: providerData, refresh } = useAdminData();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialPeriod = parseResumenParams(searchParams).period ?? '7d';
-  const [period, setPeriod] = useState<DashboardPeriod>(initialPeriod);
+  const urlPeriod = parseResumenParams(searchParams).period ?? '7d';
+  const [lastUrlPeriod, setLastUrlPeriod] = useState<DashboardPeriod>(urlPeriod);
+  const [period, setPeriod] = useState<DashboardPeriod>(urlPeriod);
   const [confirmingBookingId, setConfirmingBookingId] = useState<string | null>(null);
   const [rejectingBookingId, setRejectingBookingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const savedNotice = useEphemeralMessage(3200);
+
+  if (urlPeriod !== lastUrlPeriod) {
+    setLastUrlPeriod(urlPeriod);
+    setPeriod(urlPeriod);
+  }
 
   const overviewQuery = useAdminCachedQuery<AdminOverviewPayload>(
     providerData ? ADMIN_CACHE_KEYS.overview : null,
@@ -145,7 +152,7 @@ export default function AdminOverviewPage() {
         );
         return false;
       }
-      invalidateAdminCache('/api/admin/reports');
+      invalidateAdminDomain('bookings');
       savedNotice.show(`Cita de ${clientName} confirmada`);
       void refresh();
       return true;
@@ -177,6 +184,7 @@ export default function AdminOverviewPage() {
         setErrorMessage(res.error || 'No se pudo rechazar el comprobante.');
         return false;
       }
+      invalidateAdminDomain('bookings');
       savedNotice.show(`Comprobante rechazado · Avisamos a ${clientName}`);
       void refresh();
       return true;
@@ -240,6 +248,10 @@ export default function AdminOverviewPage() {
             onChange={(next) => {
               if (isMetricPeriod(next)) {
                 setPeriod(next);
+                setLastUrlPeriod(next);
+                router.replace(resumenHref({ period: next === '7d' ? undefined : next }), {
+                  scroll: false,
+                });
               }
             }}
           />

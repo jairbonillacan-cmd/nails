@@ -5,7 +5,7 @@ import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
-import { ADMIN_CACHE_KEYS, invalidateAdminCache } from '@/lib/hooks/useAdminCache';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
   BookingStatus,
@@ -224,8 +224,7 @@ export function CitasDialogsHost({
           prefill={state.manualPrefill}
           requireOwnerPinForPriceOverride={hasActiveOwnerPin}
           onCreated={async (message, description) => {
-            invalidateAdminCache('/api/admin/reports');
-            invalidateAdminCache(ADMIN_CACHE_KEYS.bookings);
+            invalidateAdminDomain('bookings');
             await handlers.onRefresh();
             if (description) {
               handlers.onSetFeedback({ status: 'success', title: message, description });
@@ -250,9 +249,7 @@ export function CitasDialogsHost({
           touchUpDays={touchUpDays}
           onClose={handlers.onCloseCheckout}
           onCompleted={async () => {
-            invalidateAdminCache('/api/admin/reports');
-            invalidateAdminCache(ADMIN_CACHE_KEYS.packages);
-            invalidateAdminCache(ADMIN_CACHE_KEYS.bookings);
+            invalidateAdminDomain('bookings', 'cash');
             await handlers.onRefresh();
           }}
           onScheduleRetouch={handlers.onScheduleRetouch}

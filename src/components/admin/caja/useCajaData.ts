@@ -32,23 +32,26 @@ import {
   resolveInitialCajaRoute,
   type CajaTab,
   type PendingDepositRow,
-  type PromosSubTab,
-  type ServicePackageCatalogRow,
   type UncollectedBookingRow,
 } from './cajaTypes';
 
 const EMPTY_CUSTOM_RANGE: CajaCustomRange = { fromKey: '', toKey: '' };
+
+type ActiveCajaTab = Exclude<CajaTab, 'promos'>;
+
+function toActiveCajaTab(tab: CajaTab): ActiveCajaTab {
+  return tab === 'promos' ? 'summary' : tab;
+}
 
 export function useCajaData(
   providerData: AdminOverviewPayload | null,
   urlParams: CajaLinkParams,
 ) {
   const initialRoute = resolveInitialCajaRoute(urlParams.tab ?? null, urlParams.sub ?? null);
-  const [activeTab, setActiveTab] = useState<CajaTab>(initialRoute.tab);
+  const [activeTab, setActiveTab] = useState<ActiveCajaTab>(toActiveCajaTab(initialRoute.tab));
   const [highlightUncollected, setHighlightUncollected] = useState<boolean>(
     initialRoute.highlightUncollected,
   );
-  const [promosView, setPromosView] = useState<PromosSubTab>(initialRoute.promosView);
   const [periodChoice, setPeriodChoice] = useState<CajaPeriod | null>(
     () => urlParams.period ?? null,
   );
@@ -61,7 +64,6 @@ export function useCajaData(
     () => urlParams.method ?? 'all',
   );
   const [searchQuery, setSearchQuery] = useState(() => urlParams.q ?? '');
-  const [packagesSeq, setPackagesSeq] = useState(0);
   const routeKey = [
     urlParams.tab ?? '',
     urlParams.sub ?? '',
@@ -77,10 +79,9 @@ export function useCajaData(
     if (signal.aborted || lastRouteKeyRef.current === routeKey) return;
     lastRouteKeyRef.current = routeKey;
     const next = resolveInitialCajaRoute(urlParams.tab ?? null, urlParams.sub ?? null);
-    setActiveTab(next.tab);
+    setActiveTab(toActiveCajaTab(next.tab));
     setHighlightUncollected(next.highlightUncollected);
-    setPromosView(next.promosView);
-    if (urlParams.period) setPeriodChoice(urlParams.period);
+    setPeriodChoice(urlParams.period ?? null);
     if (urlParams.from || urlParams.to) {
       setCustomRange({ fromKey: urlParams.from ?? '', toKey: urlParams.to ?? '' });
     }
@@ -91,14 +92,6 @@ export function useCajaData(
   const fetchOverview = useCallback(
     (signal: AbortSignal) =>
       fetchAdminJson<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, signal),
-    [],
-  );
-  const fetchPackages = useCallback(
-    (signal: AbortSignal) =>
-      fetchAdminJson<{ servicePackages?: ServicePackageCatalogRow[] }>(
-        ADMIN_CACHE_KEYS.packages,
-        signal,
-      ),
     [],
   );
 
@@ -112,19 +105,7 @@ export function useCajaData(
     },
   );
 
-  const shouldLoadPackages = Boolean(providerData) && activeTab === 'promos';
-  const packagesQuery = useAdminCachedQuery<{
-    servicePackages?: ServicePackageCatalogRow[];
-  }>(providerData ? ADMIN_CACHE_KEYS.packages : null, fetchPackages, {
-    enabled: shouldLoadPackages,
-    staleTimeMs: 10_000,
-    revalidateKey: packagesSeq,
-  });
-
   const data = overviewQuery.data ?? providerData;
-  const packagesCatalog = packagesQuery.data?.servicePackages ?? [];
-  const packagesLoading = packagesQuery.isLoading;
-  const packagesError = packagesQuery.error ? packagesQuery.error.message : null;
 
   const cajaConfig = useMemo(
     () => resolveCajaConfig(data?.settings.landingContent),
@@ -151,9 +132,11 @@ export function useCajaData(
     for (const bk of data.bookings) {
       map.set(bk.id, {
         bookingCode: bk.bookingCode,
+        clientId: bk.clientId,
         clientName: bk.client.fullName,
         clientPhone: bk.client.phoneE164,
         staffName: bk.staff.name,
+        startAt: bk.startAt,
       });
     }
     return map;
@@ -244,10 +227,6 @@ export function useCajaData(
     [data, todayKey, tz],
   );
 
-  const reloadPackages = useCallback(() => {
-    setPackagesSeq((prev) => prev + 1);
-  }, []);
-
   const setCajaPeriod = useCallback((next: CajaPeriod) => {
     setPeriodChoice(next);
   }, []);
@@ -328,8 +307,6 @@ export function useCajaData(
     setActiveTab,
     highlightUncollected,
     setHighlightUncollected,
-    promosView,
-    setPromosView,
     cajaPeriod,
     setCajaPeriod,
     customRange,
@@ -342,10 +319,6 @@ export function useCajaData(
     searchQuery,
     setSearchQuery,
     resetSalesFilters,
-    packagesCatalog,
-    packagesLoading,
-    packagesError,
-    reloadPackages,
     pendingDeposits,
     uncollectedBookings,
     pendingDepositsTotalCents,

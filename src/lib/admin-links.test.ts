@@ -112,6 +112,12 @@ describe('Typed Admin Deep Links (src/lib/admin-links.ts)', () => {
       filter: 'vip',
     };
     expect(parseClientasParams(clientasHref(clientasInput))).toEqual(clientasInput);
+    expect(parseClientasParams('/admin/clientas?tab=fidelidad')).toEqual({
+      tab: 'paquetes',
+    });
+    expect(parseClientasParams('/admin/clientas?tab=loyalty')).toEqual({
+      tab: 'paquetes',
+    });
 
     const waInput: WhatsAppLinkParams = {
       tab: 'recordatorios',
@@ -133,14 +139,14 @@ describe('Typed Admin Deep Links (src/lib/admin-links.ts)', () => {
 
     const serviciosInput: ServiciosLinkParams = {
       id: 'srv-rubber',
-      tab: 'servicios',
+      tab: 'extras',
       q: 'Rubber',
     };
     expect(parseServiciosParams(serviciosHref(serviciosInput))).toEqual(serviciosInput);
 
     const equipoInput: EquipoLinkParams = {
       staffId: 'staff-karla',
-      tab: 'equipo',
+      tab: 'accesos',
     };
     expect(parseEquipoParams(equipoHref(equipoInput))).toEqual(equipoInput);
     expect(parseEquipoParams('/admin/equipo?staff=staff-paty')).toEqual({

@@ -26,6 +26,7 @@ import {
   Download,
   ExternalLink,
   MessageCircle,
+  Package,
   Shield,
   Trash2,
 } from 'lucide-react';
@@ -78,6 +79,7 @@ interface ClientProfileDialogProps {
   noShowThreshold: number;
   noShowStats: ClientNoShowStats | null;
   canManageClients: boolean;
+  packagesSupported?: boolean;
   loyalty: LoyaltySummary | null;
   metrics?: EnrichedClientMetrics | null;
   clientPackages: readonly ClientPackageRow[];
@@ -118,6 +120,7 @@ export function ClientProfileDialog({
   noShowThreshold,
   noShowStats,
   canManageClients,
+  packagesSupported = true,
   loyalty,
   metrics = null,
   clientPackages,
@@ -510,18 +513,34 @@ export function ClientProfileDialog({
                     </SurfaceCard>
                   ) : null}
 
-                  <ClientProfilePackagesSection
-                    clientId={client.id}
-                    canManageClients={canManageClients}
-                    clientPackages={clientPackages}
-                    activeCatalogPackages={activeCatalogPackages}
-                    assigningPkg={assigningPkg}
-                    redeemingPkgId={redeemingPkgId}
-                    cancelingPkgId={cancelingPkgId}
-                    onAssignPackage={onAssignPackage}
-                    onRedeemPackageSession={onRedeemPackageSession}
-                    onCancelPackage={onCancelPackage}
-                  />
+                  {packagesSupported ? (
+                    <ClientProfilePackagesSection
+                      clientId={client.id}
+                      canManageClients={canManageClients}
+                      clientPackages={clientPackages}
+                      activeCatalogPackages={activeCatalogPackages}
+                      assigningPkg={assigningPkg}
+                      redeemingPkgId={redeemingPkgId}
+                      cancelingPkgId={cancelingPkgId}
+                      onAssignPackage={onAssignPackage}
+                      onRedeemPackageSession={onRedeemPackageSession}
+                      onCancelPackage={onCancelPackage}
+                    />
+                  ) : (
+                    <SurfaceCard
+                      title="Paquetes de sesiones"
+                      headingLevel={3}
+                      icon={<Package size={15} aria-hidden="true" />}
+                      padded
+                    >
+                      <Banner
+                        status="info"
+                        collapsible={false}
+                        title="Paquetes en preparación para Supabase"
+                        description="El catálogo y canje de paquetes se activará en producción al habilitar las tablas de paquetes en Supabase."
+                      />
+                    </SurfaceCard>
+                  )}
 
                   <ClientVisitHistorySection
                     clientId={client.id}

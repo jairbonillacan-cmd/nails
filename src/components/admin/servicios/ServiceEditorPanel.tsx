@@ -25,7 +25,7 @@ import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import { prepareClientImageFile, readFileAsDataUrl } from '@/components/booking/bookingHelpers';
 import {
   agendaHref,
-  cajaHref,
+  fidelizacionHref,
   inventarioHref,
   reportesHref,
 } from '@/lib/admin-links';
@@ -48,6 +48,9 @@ interface ServiceEditorPanelProps {
   saving: boolean;
   menuPosition: number | null;
   menuPositionCount: number;
+  canViewReports?: boolean;
+  canViewLoyalty?: boolean;
+  canViewInventory?: boolean;
   onChangeMenuPosition: (position: number) => void;
   onChangeDraft: (next: Partial<Service>) => void;
   onToggleCleanupTime: (checked: boolean) => void;
@@ -65,6 +68,9 @@ export function ServiceEditorPanel({
   saving,
   menuPosition,
   menuPositionCount,
+  canViewReports = true,
+  canViewLoyalty = true,
+  canViewInventory = true,
   onChangeMenuPosition,
   onChangeDraft,
   onToggleCleanupTime,
@@ -335,27 +341,33 @@ export function ServiceEditorPanel({
                     icon={<CalendarDays size={14} aria-hidden="true" />}
                     href={agendaHref({ q: serviceNameForLinks })}
                   />
-                  <Button
-                    label="Rentabilidad"
-                    variant="secondary"
-                    size="sm"
-                    icon={<BarChart3 size={14} aria-hidden="true" />}
-                    href={reportesHref({ period: '30d' })}
-                  />
-                  <Button
-                    label="Paquetes"
-                    variant="secondary"
-                    size="sm"
-                    icon={<Package size={14} aria-hidden="true" />}
-                    href={cajaHref({ tab: 'promos', sub: 'packages' })}
-                  />
-                  <Button
-                    label="Insumos"
-                    variant="secondary"
-                    size="sm"
-                    icon={<Boxes size={14} aria-hidden="true" />}
-                    href={inventarioHref({ filter: 'cabin' })}
-                  />
+                  {canViewReports ? (
+                    <Button
+                      label="Rentabilidad"
+                      variant="secondary"
+                      size="sm"
+                      icon={<BarChart3 size={14} aria-hidden="true" />}
+                      href={reportesHref({ period: '30d' })}
+                    />
+                  ) : null}
+                  {canViewLoyalty ? (
+                    <Button
+                      label="Paquetes"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Package size={14} aria-hidden="true" />}
+                      href={fidelizacionHref({ tab: 'paquetes' })}
+                    />
+                  ) : null}
+                  {canViewInventory ? (
+                    <Button
+                      label="Insumos"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Boxes size={14} aria-hidden="true" />}
+                      href={inventarioHref({ filter: 'cabin' })}
+                    />
+                  ) : null}
                 </HStack>
               </VStack>
             </>

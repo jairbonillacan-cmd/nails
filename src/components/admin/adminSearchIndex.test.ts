@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseAdminDateJump } from './adminSearchIndex';
+import {
+  buildQuickSearchBookingHref,
+  buildQuickSearchClientHref,
+  buildQuickSearchServiceHref,
+  parseAdminDateJump,
+} from './adminSearchIndex';
 
 describe('parseAdminDateJump', () => {
   const todayKey = '2026-11-26';
@@ -31,5 +36,25 @@ describe('parseAdminDateJump', () => {
     expect(parseAdminDateJump('31/02', todayKey, tz)).toBeNull();
     expect(parseAdminDateJump('Sofía', todayKey, tz)).toBeNull();
     expect(parseAdminDateJump('NL-X7X475', todayKey, tz)).toBeNull();
+  });
+
+  it('builds deep links with booking date, clientId, and role-aware service targets', () => {
+    expect(
+      buildQuickSearchBookingHref(
+        { bookingCode: 'NL-1042', startAt: '2026-11-29T16:00:00.000Z' },
+        tz,
+      ),
+    ).toBe('/admin/citas?date=2026-11-29&q=NL-1042');
+
+    expect(
+      buildQuickSearchClientHref({ id: 'cli-1', phoneE164: '+522224123987' }),
+    ).toBe('/admin/clientas?q=%2B522224123987&clientId=cli-1');
+
+    expect(buildQuickSearchServiceHref('srv-rubber', 'owner')).toBe(
+      '/admin/servicios?id=srv-rubber',
+    );
+    expect(buildQuickSearchServiceHref('srv-rubber', 'specialist')).toBe(
+      '/admin/citas?new=1&serviceId=srv-rubber',
+    );
   });
 });

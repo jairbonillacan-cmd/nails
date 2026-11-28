@@ -407,11 +407,17 @@ const CLIENTAS_FILTERS = new Set<ClientasFilterParam>([
 ]);
 
 function normalizeClientasTab(raw: string | null | undefined): ClientasTabParam | undefined {
-  const cleaned = cleanString(raw);
+  const cleaned = cleanString(raw)?.toLowerCase();
   if (!cleaned) return undefined;
   if (cleaned === 'directorio' || cleaned === 'directory') return 'directorio';
   if (cleaned === 'retencion' || cleaned === 'retention') return 'retencion';
-  if (cleaned === 'paquetes' || cleaned === 'packages' || cleaned === 'lealtad') {
+  if (
+    cleaned === 'paquetes' ||
+    cleaned === 'packages' ||
+    cleaned === 'lealtad' ||
+    cleaned === 'fidelidad' ||
+    cleaned === 'loyalty'
+  ) {
     return 'paquetes';
   }
   return undefined;

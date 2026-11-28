@@ -13,11 +13,30 @@ export function formSubmitError(error: string | null | undefined): FormSubmitRes
 }
 
 export function formSubmitResultFromFetch(
-  result: { readonly ok: boolean; readonly error?: string },
+  result: {
+    readonly ok: boolean;
+    readonly error?: string;
+    readonly status?: number;
+    readonly retryAfterSeconds?: number;
+  },
   fallbackError: string,
 ): FormSubmitResult {
   if (result.ok) return FORM_SUBMIT_OK;
-  return formSubmitError(result.error || fallbackError);
+  const cleanError = (result.error ?? '').trim();
+  if (cleanError) return formSubmitError(cleanError);
+  if (result.status === 429) {
+    return formSubmitError(
+      result.retryAfterSeconds
+        ? `Demasiados intentos seguidos. Espera ${result.retryAfterSeconds} segundos e intenta de nuevo.`
+        : 'Demasiados intentos seguidos. Espera unos segundos e intenta de nuevo.',
+    );
+  }
+  if (result.status === 409) {
+    return formSubmitError(
+      'Este registro cambió o ya existe un conflicto. Actualiza la vista e intenta de nuevo.',
+    );
+  }
+  return formSubmitError(fallbackError);
 }
 
 export interface SubmitGate {

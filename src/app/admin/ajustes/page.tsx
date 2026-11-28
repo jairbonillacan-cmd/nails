@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -33,6 +33,7 @@ import {
   DEFAULT_LOYALTY_PROGRAM,
 } from '@/components/admin/marca/brandFormUtils';
 import {
+  ajustesHref,
   cajaHref,
   integracionesHref,
   marcaHref,
@@ -40,7 +41,9 @@ import {
   type AjustesLinkParams,
   type AjustesTabParam,
 } from '@/lib/admin-links';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { useFocusScroll } from '@/lib/hooks/useFocusScroll';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { SalonSettings } from '@/lib/types';
 
@@ -56,7 +59,18 @@ function resolveInitialAjustesTab(params: AjustesLinkParams): AjustesTabParam {
   return 'cobro';
 }
 
+function resolveAjustesFocusElementId(focus: string | null): string | null {
+  if (!focus) return null;
+  if (focus === 'clabe' || focus === 'cobro') return 'brand-spei-heading';
+  if (focus === 'noshow') return 'brand-noshow-policy-heading';
+  if (focus === 'politicas' || focus === 'reservas') return 'brand-rules-heading';
+  if (focus === 'pin' || focus === 'seguridad') return 'brand-owner-pin-heading';
+  if (focus === 'auditoria') return 'brand-history-heading';
+  return null;
+}
+
 export default function AdminSettingsPage() {
+  const router = useRouter();
   const { data, loading, refresh } = useAdminData();
   const searchParams = useSearchParams();
   const parsedParams = parseAjustesParams(searchParams);
@@ -76,6 +90,10 @@ export default function AdminSettingsPage() {
       setActiveTab(resolveInitialAjustesTab(parsedParams));
     }
   }
+
+  const focusTarget = parsedParams.focus?.toLowerCase() ?? null;
+  const focusElementId = resolveAjustesFocusElementId(focusTarget);
+  useFocusScroll(focusElementId, Boolean(data));
 
   if (loading || !data) {
     return (
@@ -100,8 +118,12 @@ export default function AdminSettingsPage() {
     (c) => c.noShowCount >= noShowDepositThreshold,
   ).length;
   const activeServices = data.services.filter((s) => s.isActive);
-  const focusTarget = parsedParams.focus?.toLowerCase() ?? null;
   const isDirty = !areSettingsEqual(draft, baseSettings);
+
+  const handleChangeTab = (nextTab: AjustesTabParam) => {
+    setActiveTab(nextTab);
+    router.replace(ajustesHref({ tab: nextTab }), { scroll: false });
+  };
 
   const updateDraft = (patch: Partial<SalonSettings>) => {
     setDraftOverride({ ...draft, ...patch });
@@ -133,6 +155,7 @@ export default function AdminSettingsPage() {
         setErrorMsg(result.error || 'No se pudieron guardar los ajustes.');
         return;
       }
+      invalidateAdminDomain('settings');
       await refresh();
       setDraftOverride(null);
       saveNotice.show('Ajustes guardados');
@@ -221,7 +244,7 @@ export default function AdminSettingsPage() {
 
         <TabList
           value={activeTab}
-          onChange={(value) => setActiveTab(value as AjustesTabParam)}
+          onChange={(value) => handleChangeTab(value as AjustesTabParam)}
           hasDivider
         >
           <Tab value="cobro" label="Cobro y anticipo" />
@@ -314,7 +337,10 @@ export default function AdminSettingsPage() {
                   onSyncOwnerPinEnabled={(enabled) =>
                     updateDraft({ ownerPinEnabled: enabled })
                   }
-                  onRefresh={refresh}
+                  onRefresh={async () => {
+                    invalidateAdminDomain('settings');
+                    await refresh();
+                  }}
                   onNotify={saveNotice.show}
                 />
                 <OwnerAuditHistoryCard

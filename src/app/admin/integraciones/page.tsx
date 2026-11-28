@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -12,9 +12,16 @@ import { PageHeader, PageSkeleton } from '@/components/ui';
 import { GoogleCalendarSection } from '@/components/admin/integraciones/GoogleCalendarSection';
 import { WhatsAppSection } from '@/components/admin/integraciones/WhatsAppSection';
 import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/PaymentsAnalyticsSection';
-import { parseIntegracionesParams } from '@/lib/admin-links';
+import {
+  integracionesHref,
+  parseIntegracionesParams,
+  type IntegracionesLinkParams,
+} from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { useFocusScroll } from '@/lib/hooks/useFocusScroll';
 import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
@@ -23,6 +30,46 @@ import type {
   NotificationWorkflow,
   SalonSettings,
 } from '@/lib/types';
+
+function resolveIntegracionesFocusId(parsed: IntegracionesLinkParams): string | null {
+  const token = (parsed.focus ?? parsed.tab ?? parsed.section ?? '').trim().toLowerCase();
+  if (!token) return null;
+  if (
+    token === 'google' ||
+    token === 'gcal' ||
+    token === 'calendar' ||
+    token === 'calendario'
+  ) {
+    return 'gcal-heading';
+  }
+  if (token === 'whatsapp' || token === 'recordatorios') {
+    return 'whatsapp-reminders-heading';
+  }
+  if (
+    token === 'cobro' ||
+    token === 'pagos' ||
+    token === 'mercadopago' ||
+    token === 'resenas' ||
+    token === 'analytics' ||
+    token === 'sms' ||
+    token === 'webhooks' ||
+    token === 'more'
+  ) {
+    return 'payments-heading';
+  }
+  return null;
+}
+
+function shouldOpenAdvancedIntegraciones(parsed: IntegracionesLinkParams): boolean {
+  const token = (parsed.focus ?? parsed.tab ?? parsed.section ?? '').trim().toLowerCase();
+  return (
+    token === 'resenas' ||
+    token === 'analytics' ||
+    token === 'sms' ||
+    token === 'webhooks' ||
+    token === 'more'
+  );
+}
 
 function extractOptimisticSettingsPatch(
   patch: Record<string, unknown>,
@@ -47,8 +94,11 @@ function extractOptimisticSettingsPatch(
 }
 
 export default function AdminIntegrationsPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialOpenMore = parseIntegracionesParams(searchParams).section === 'resenas';
+  const parsed = parseIntegracionesParams(searchParams);
+  const initialOpenMore = shouldOpenAdvancedIntegraciones(parsed);
+  const focusTargetId = resolveIntegracionesFocusId(parsed);
   const { data, loading, refresh } = useAdminData();
   const [msg, setMsg] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -65,6 +115,34 @@ export default function AdminIntegrationsPage() {
     >
   >({});
   const saveNotice = useEphemeralMessage(3200);
+  const handledGoogleParamRef = useRef<string | null>(null);
+
+  useExternalSync(`integraciones-google|${parsed.google ?? ''}`, async (signal) => {
+    if (signal.aborted || !parsed.google) return;
+    if (handledGoogleParamRef.current === parsed.google) return;
+    handledGoogleParamRef.current = parsed.google;
+    setMsg(
+      parsed.google === 'connected'
+        ? {
+            status: 'success',
+            text: 'Google Calendar conectado correctamente.',
+          }
+        : {
+            status: 'error',
+            text: 'No se pudo completar la conexión con Google Calendar. Intenta de nuevo.',
+          },
+    );
+    router.replace(
+      integracionesHref({
+        ...(parsed.tab ? { tab: parsed.tab } : {}),
+        ...(parsed.focus ? { focus: parsed.focus } : {}),
+        ...(parsed.section ? { section: parsed.section } : {}),
+      }),
+      { scroll: false },
+    );
+  });
+
+  useFocusScroll(focusTargetId, Boolean(data));
 
   const displayWorkflows = useMemo(
     () =>
@@ -143,6 +221,7 @@ export default function AdminIntegrationsPage() {
         body: JSON.stringify({ kind: 'workflow', id: workflowId, patch: { channels: next } }),
       });
       if (result.ok) {
+        invalidateAdminDomain('whatsapp', 'settings');
         await refresh();
         saveNotice.show('Canal actualizado');
       } else {
@@ -172,6 +251,7 @@ export default function AdminIntegrationsPage() {
         body: JSON.stringify(patch),
       });
       if (result.ok) {
+        invalidateAdminDomain('settings');
         await refresh();
         saveNotice.show('Cambios guardados');
       } else {
@@ -205,6 +285,7 @@ export default function AdminIntegrationsPage() {
         body: JSON.stringify({ kind: 'calendar', staffId, patch }),
       });
       if (result.ok) {
+        invalidateAdminDomain('availability', 'settings');
         await refresh();
         saveNotice.show('Calendario actualizado');
       } else {
@@ -265,6 +346,7 @@ export default function AdminIntegrationsPage() {
 
         {msg ? (
           <Banner
+            collapsible={false}
             status={msg.status}
             role={msg.status === 'error' ? 'alert' : 'status'}
             title={msg.text}
@@ -300,6 +382,7 @@ export default function AdminIntegrationsPage() {
         />
 
         <PaymentsAnalyticsSection
+          key={initialOpenMore ? 'more-open' : 'more-default'}
           settings={settings}
           depositLabel={depositLabel}
           canAccessSettings={canAccessSettings}

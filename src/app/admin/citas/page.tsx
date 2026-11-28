@@ -127,6 +127,7 @@ export default function AdminBookingsPage() {
   const data = ws.data;
   const canViewClients = roleCanAccess(data.session.user.role, 'clients');
   const canViewAvailability = roleCanAccess(data.session.user.role, 'availability');
+  const canViewTeam = roleCanAccess(data.session.user.role, 'team');
   const canViewWaitlist = !ws.isSpecialistOnly;
   const visibleStaff = ws.lockedStaffId
     ? ws.orderedStaff.filter((s) => s.id === ws.lockedStaffId)
@@ -328,6 +329,16 @@ export default function AdminBookingsPage() {
         </Banner>
       ) : null}
 
+      {ws.collectError ? (
+        <Banner
+          status="error"
+          role="alert"
+          title={ws.collectError}
+          isDismissable
+          onDismiss={ws.dismissCollectError}
+        />
+      ) : null}
+
       {feedback ? (
         <Banner
           status={feedback.status}
@@ -459,6 +470,7 @@ export default function AdminBookingsPage() {
           bookings={ws.statusFilteredBookings}
           allServices={data.services}
           isSpecialistLocked={Boolean(ws.lockedStaffId)}
+          canViewTeam={canViewTeam}
           busyBookingId={actions.busyAction?.bookingId ?? null}
           busyStatus={actions.busyAction?.status ?? null}
           reschedulingBookingId={actions.reschedulingId}

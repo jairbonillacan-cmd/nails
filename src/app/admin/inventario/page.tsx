@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -35,15 +35,18 @@ import {
 } from '@/components/ui';
 import {
   cajaHref,
+  inventarioHref,
   parseInventarioParams,
   serviciosHref,
   type InventarioFilterParam,
 } from '@/lib/admin-links';
 import { formatCurrency, formatUnitCount } from '@/lib/format';
 import { FORM_SUBMIT_OK, formSubmitError, type FormSubmitResult } from '@/lib/forms/form-submit';
+import { invalidateAdminDomain } from '@/lib/hooks/useAdminCache';
 import { roleCanAccess } from '@/lib/rbac';
 
 export default function AdminInventoryPage() {
+  const router = useRouter();
   const { data, loading, refresh } = useAdminData();
   const searchParams = useSearchParams();
   const parsedParams = parseInventarioParams(searchParams);
@@ -72,6 +75,23 @@ export default function AdminInventoryPage() {
   if (loading || !data) {
     return <PageSkeleton kpiCount={0} withSplit ariaLabel="Cargando inventario" />;
   }
+
+  const syncInventoryUrl = (nextFilter: InventarioFilterParam, nextQuery = searchQuery) => {
+    const cleanQ = nextQuery.trim();
+    router.replace(
+      inventarioHref({
+        ...(nextFilter !== 'all' ? { filter: nextFilter } : {}),
+        ...(cleanQ ? { q: cleanQ } : {}),
+      }),
+      { scroll: false },
+    );
+  };
+
+  const handleFilterChange = (nextFilter: InventarioFilterParam) => {
+    setFilterMode(nextFilter);
+    setHighlightedItemId(null);
+    syncInventoryUrl(nextFilter);
+  };
 
   const currency = data.settings.currency;
   const role = data.session.user.role;
@@ -124,14 +144,18 @@ export default function AdminInventoryPage() {
     reason: 'restock' | 'service_usage',
     notes: string,
   ) => {
+    if (busyByItem[itemId]) return;
     setBusyByItem((prev) => ({ ...prev, [itemId]: reason }));
     setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, delta));
     try {
       const result = await adjustInventoryRequest(itemId, delta, reason, notes);
       setMsg(result);
-      if (result.status === 'success') await refresh();
-      setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, -delta));
+      if (result.status === 'success') {
+        invalidateAdminDomain('cash');
+        await refresh();
+      }
     } finally {
+      setOptimisticDeltas((prev) => applyDeltaMap(prev, itemId, -delta));
       setBusyByItem((prev) => removeKey(prev, itemId));
     }
   };
@@ -140,6 +164,7 @@ export default function AdminInventoryPage() {
     const result = await createInventoryItemRequest(newItem);
     if (result.status !== 'success') return formSubmitError(result.text);
     setMsg(result);
+    invalidateAdminDomain('cash');
     await refresh();
     return FORM_SUBMIT_OK;
   };
@@ -181,7 +206,7 @@ export default function AdminInventoryPage() {
           busyByItem={busyByItem}
           optimisticDeltas={optimisticDeltas}
           onToggleFilterLow={() =>
-            setFilterMode((prev) => (prev === 'low_stock' ? 'all' : 'low_stock'))
+            handleFilterChange(filterMode === 'low_stock' ? 'all' : 'low_stock')
           }
           onRestock={(itemId) => void adjust(itemId, 1, 'restock', 'Reposición rápida desde alerta')}
         />
@@ -218,10 +243,7 @@ export default function AdminInventoryPage() {
                 size="sm"
                 value={filterMode}
                 options={filterOptions}
-                onChange={(next) => {
-                  setFilterMode(next);
-                  setHighlightedItemId(null);
-                }}
+                onChange={handleFilterChange}
               />
               <VStack width="min(14rem, 100%)">
                 <TextInput
@@ -255,6 +277,7 @@ export default function AdminInventoryPage() {
                           setFilterMode('all');
                           setSearchQuery('');
                           setHighlightedItemId(null);
+                          syncInventoryUrl('all', '');
                         }}
                       />
                     ) : undefined

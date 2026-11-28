@@ -83,9 +83,11 @@ function normalizeSearchToken(value: string): string {
 
 export interface CajaBookingSearchMeta {
   bookingCode: string;
+  clientId?: string;
   clientName: string;
   clientPhone?: string;
   staffName: string;
+  startAt?: string;
 }
 
 export function isCashEntryEditable(entry: CashRegisterEntry): boolean {
