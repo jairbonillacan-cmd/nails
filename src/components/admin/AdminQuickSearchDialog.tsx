@@ -134,7 +134,7 @@ export function AdminQuickSearchDialog({
           setActiveIndex(0);
         }
       }}
-      width={560}
+      width="min(35rem, 94vw)"
       maxHeight="min(86dvh, calc(100dvh - 2rem))"
       padding={5}
     >
@@ -192,11 +192,11 @@ export function AdminQuickSearchDialog({
                   gap={3}
                 >
                   {dateJumps.length > 0 ? (
-                    <VStack className="ad-surface" gap={0}>
+                    <VStack className="ad-surface" gap={0} role="group" aria-labelledby="ad-search-grp-dates">
                       <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
                         <HStack gap={1.5} align="center">
                           <Calendar size={14} aria-hidden="true" />
-                          <Text type="label" color="secondary" weight="semibold">
+                          <Text id="ad-search-grp-dates" type="label" color="secondary" weight="semibold">
                             Ir a fecha en Agenda
                           </Text>
                         </HStack>
@@ -233,11 +233,11 @@ export function AdminQuickSearchDialog({
                   ) : null}
 
                   {matchedBookings.length > 0 ? (
-                    <VStack className="ad-surface" gap={0}>
+                    <VStack className="ad-surface" gap={0} role="group" aria-labelledby="ad-search-grp-bookings">
                       <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
                         <HStack gap={1.5} align="center">
                           <CalendarDays size={14} aria-hidden="true" />
-                          <Text type="label" color="secondary" weight="semibold">
+                          <Text id="ad-search-grp-bookings" type="label" color="secondary" weight="semibold">
                             Citas
                           </Text>
                         </HStack>
@@ -284,11 +284,11 @@ export function AdminQuickSearchDialog({
                   ) : null}
 
                   {matchedClients.length > 0 ? (
-                    <VStack className="ad-surface" gap={0}>
+                    <VStack className="ad-surface" gap={0} role="group" aria-labelledby="ad-search-grp-clients">
                       <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
                         <HStack gap={1.5} align="center">
                           <Users size={14} aria-hidden="true" />
-                          <Text type="label" color="secondary" weight="semibold">
+                          <Text id="ad-search-grp-clients" type="label" color="secondary" weight="semibold">
                             Clientas
                           </Text>
                         </HStack>
@@ -329,11 +329,11 @@ export function AdminQuickSearchDialog({
                   ) : null}
 
                   {matchedServices.length > 0 ? (
-                    <VStack className="ad-surface" gap={0}>
+                    <VStack className="ad-surface" gap={0} role="group" aria-labelledby="ad-search-grp-services">
                       <HStack gap={1.5} align="center" justify="between" className="ad-section-head">
                         <HStack gap={1.5} align="center">
                           <Tag size={14} aria-hidden="true" />
-                          <Text type="label" color="secondary" weight="semibold">
+                          <Text id="ad-search-grp-services" type="label" color="secondary" weight="semibold">
                             Servicios
                           </Text>
                         </HStack>
@@ -372,10 +372,10 @@ export function AdminQuickSearchDialog({
                   ) : null}
 
                   {matchedNav.length > 0 ? (
-                    <VStack className="ad-surface" gap={0}>
+                    <VStack className="ad-surface" gap={0} role="group" aria-labelledby="ad-search-grp-nav">
                       <HStack gap={1.5} align="center" className="ad-section-head">
                         <Sparkles size={14} aria-hidden="true" />
-                        <Text type="label" color="secondary" weight="semibold">
+                        <Text id="ad-search-grp-nav" type="label" color="secondary" weight="semibold">
                           Acciones y secciones
                         </Text>
                       </HStack>

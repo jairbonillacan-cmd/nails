@@ -5,6 +5,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Link } from '@astryxdesign/core/Link';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -50,6 +51,7 @@ interface ClientLoyaltyTabProps {
   activeClientPackagesCount: number;
   activeCatalogPackages: readonly ServicePackage[];
   packagesLoading: boolean;
+  packagesSupported?: boolean;
   canManageClients: boolean;
   hideNearRewards?: boolean;
   showCatalogLink?: boolean;
@@ -77,6 +79,7 @@ export function ClientLoyaltyTab({
   activeClientPackagesCount,
   activeCatalogPackages,
   packagesLoading,
+  packagesSupported = true,
   canManageClients,
   hideNearRewards = false,
   showCatalogLink = true,
@@ -91,6 +94,7 @@ export function ClientLoyaltyTab({
   onRedeemPackageSession,
   onCancelPackage,
 }: ClientLoyaltyTabProps) {
+  const effectiveCanManagePackages = canManageClients && packagesSupported;
   const [clientSearch, setClientSearch] = useState('');
   const [assignClientId, setAssignClientId] = useState('');
   const [assignPackageId, setAssignPackageId] = useState('');
@@ -249,7 +253,15 @@ export function ClientLoyaltyTab({
           subtitle="Sesiones usadas y disponibles de cada clienta."
           count={activeClientPackagesCount}
         >
-          {packagesLoading && clientPackages.length === 0 ? (
+          {!packagesSupported ? (
+            <VStack padding={4}>
+              <Banner
+                status="info"
+                title="Paquetes de sesiones no disponibles en este entorno"
+                description="Esta sección requiere las tablas de paquetes en Supabase; mientras tanto tus tarjetas de sellos, cupones y campañas siguen operando con normalidad."
+              />
+            </VStack>
+          ) : packagesLoading && clientPackages.length === 0 ? (
             <VStack padding={4} gap={2} role="status" aria-busy="true">
               <SkeletonBlock width="100%" height="4.5rem" radius={2} index={0} />
               <SkeletonBlock width="100%" height="4.5rem" radius={2} index={1} />
@@ -285,7 +297,7 @@ export function ClientLoyaltyTab({
                 const totalPips = Math.min(12, Math.max(1, pkg.totalSessions));
                 const usedPips = Math.min(totalPips, pkg.usedSessions);
                 const canRedeem =
-                  canManageClients &&
+                  effectiveCanManagePackages &&
                   pkg.status === 'active' &&
                   !pkg.isExpired &&
                   pkg.remainingSessions > 0;
@@ -317,7 +329,7 @@ export function ClientLoyaltyTab({
 
                       <HStack gap={1.5} align="center" wrap="wrap" className="ad-cl-row-actions">
                         <PackageStatusTag status={pkg.status} isExpired={pkg.isExpired} />
-                        {canManageClients && pkg.status === 'active' && !pkg.isExpired ? (
+                        {effectiveCanManagePackages && pkg.status === 'active' && !pkg.isExpired ? (
                           <Button
                             type="button"
                             size="sm"
@@ -364,7 +376,7 @@ export function ClientLoyaltyTab({
           )}
         </SurfaceCard>
 
-        {canManageClients ? (
+        {effectiveCanManagePackages ? (
           <SurfaceCard
             title="Asignar paquete a clienta"
             subtitle="Filtra por nombre o teléfono y asigna el paquete prepagado en segundos."

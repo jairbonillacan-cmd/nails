@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -14,7 +15,6 @@ import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import { formatCurrency, formatDuration } from '@/lib/format';
 import { formatServicePrice } from '../booking/bookingHelpers';
 import { SectionHeading } from './LandingParts';
-import { LandingServiceDialog } from './LandingServiceDialog';
 import {
   LANDING_ASSETS,
   NAIL_SHAPES,
@@ -22,6 +22,11 @@ import {
   landingPhoto,
   servicePhoto,
 } from './landingContent';
+
+const LandingServiceDialog = dynamic(
+  () => import('./LandingServiceDialog').then((mod) => mod.LandingServiceDialog),
+  { ssr: false },
+);
 
 const ART_TAB = 'arte-y-acabados';
 

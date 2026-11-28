@@ -27,10 +27,13 @@ export function PublicShell({ hero, children }: PublicShellProps) {
 
   return (
     <VStack className="lk-root rb-root" gap={0} width="100%">
+      <a href="#main-content" className="lk-skip-link">
+        Saltar al contenido principal
+      </a>
       <BookingHeader settings={settings} />
       {hero}
 
-      <VStack as="main" gap={0} width="100%" style={{ flex: '1 1 auto' }}>
+      <VStack as="main" id="main-content" tabIndex={-1} gap={0} width="100%" style={{ flex: '1 1 auto' }}>
         {children}
       </VStack>
 

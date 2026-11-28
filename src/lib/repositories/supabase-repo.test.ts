@@ -84,6 +84,8 @@ function buildMockSupabase(options: {
   mediaAssetsRows?: Array<Database['public']['Tables']['media_assets']['Row']>;
   whatsappTemplatesRows?: Array<Database['public']['Tables']['whatsapp_templates']['Row']>;
   whatsappUsageRows?: Array<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
+  whatsappThreadsRows?: Array<Database['public']['Tables']['whatsapp_threads']['Row']>;
+  whatsappMessagesRows?: Array<Database['public']['Tables']['whatsapp_messages']['Row']>;
   workflowsRows?: Array<Database['public']['Tables']['notification_workflows']['Row']>;
   scheduledNotificationsRows?: Array<
     Database['public']['Tables']['scheduled_notifications']['Row']
@@ -114,6 +116,8 @@ function buildMockSupabase(options: {
   const mediaAssetsRows = options.mediaAssetsRows ?? [];
   const whatsappTemplatesRows = options.whatsappTemplatesRows ?? [];
   const whatsappUsageRows = options.whatsappUsageRows ?? [];
+  const whatsappThreadsRows = [...(options.whatsappThreadsRows ?? [])];
+  const whatsappMessagesRows = [...(options.whatsappMessagesRows ?? [])];
   const workflowsRows = options.workflowsRows ?? [];
   const scheduledNotificationsRows = [...(options.scheduledNotificationsRows ?? [])];
   const seenWebhookKeys = new Set<string>();
@@ -616,6 +620,7 @@ function buildMockSupabase(options: {
         return jsonResponse(null);
       }
       const idParam = url.searchParams.get('id');
+      const manageTokenParam = url.searchParams.get('manage_token');
       const clientIdParam = url.searchParams.get('client_id');
       const staffIdFilter = url.searchParams.get('staff_id')?.replace(/^eq\./, '');
       const statusParam = url.searchParams.get('status');
@@ -629,6 +634,10 @@ function buildMockSupabase(options: {
       } else if (idParam?.startsWith('in.(') && idParam.endsWith(')')) {
         const ids = new Set(idParam.slice(4, -1).split(','));
         filtered = filtered.filter((b) => ids.has(b.id));
+      }
+      if (manageTokenParam?.startsWith('eq.')) {
+        const targetToken = manageTokenParam.slice(3);
+        filtered = filtered.filter((b) => b.manage_token === targetToken);
       }
       if (clientIdParam?.startsWith('eq.')) {
         filtered = filtered.filter((b) => b.client_id === clientIdParam.slice(3));
@@ -652,9 +661,52 @@ function buildMockSupabase(options: {
       return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'booking_reviews') {
-      return jsonResponse(wantsSingleObject ? reviewsRows[0] ?? null : reviewsRows);
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+        const target = reviewsRows.find((r) => r.id === idFilter);
+        if (!target) {
+          return jsonResponse(wantsSingleObject ? null : []);
+        }
+        const merged = { ...target, ...(rawBody as Record<string, unknown>) };
+        Object.assign(target, merged);
+        return jsonResponse(wantsSingleObject ? merged : [merged]);
+      }
+      if (method === 'POST' && rawBody && typeof rawBody === 'object') {
+        const created: Database['public']['Tables']['booking_reviews']['Row'] = {
+          id: 'rev-sb-new',
+          booking_id: BOOKING_ID,
+          client_id: CLIENT_ID,
+          staff_id: STAFF_ID,
+          rating: 5,
+          comment: '',
+          clicked_google_review: false,
+          created_at: '2026-12-01T13:00:00.000Z',
+          ...(rawBody as Record<string, unknown>),
+        };
+        reviewsRows.push(created);
+        return jsonResponse(wantsSingleObject ? created : [created], 201);
+      }
+      const bookingFilter = url.searchParams.get('booking_id')?.replace(/^eq\./, '');
+      const filtered = bookingFilter
+        ? reviewsRows.filter((r) => r.booking_id === bookingFilter)
+        : reviewsRows;
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'funnel_events') {
+      if (method === 'DELETE') {
+        const ltFilter = url.searchParams.get('created_at')?.replace(/^lt\./, '');
+        const beforeCount = funnelEventsRows.length;
+        const kept = ltFilter
+          ? funnelEventsRows.filter((e) => e.created_at >= ltFilter)
+          : [];
+        const removed = beforeCount - kept.length;
+        funnelEventsRows.length = 0;
+        funnelEventsRows.push(...kept);
+        return new Response(null, {
+          status: 204,
+          headers: { 'Content-Range': `*/${removed}` },
+        });
+      }
       return jsonResponse(funnelEventsRows);
     }
     if (table === 'payment_splits') {
@@ -808,9 +860,12 @@ function buildMockSupabase(options: {
         return jsonResponse([]);
       }
       const clientIdFilter = url.searchParams.get('client_id')?.replace(/^eq\./, '');
-      const filtered = clientIdFilter
-        ? couponRedemptionsRows.filter((r) => r.client_id === clientIdFilter)
-        : couponRedemptionsRows;
+      const couponIdFilter = url.searchParams.get('coupon_id')?.replace(/^eq\./, '');
+      const statusFilter = url.searchParams.get('status')?.replace(/^eq\./, '');
+      let filtered = [...couponRedemptionsRows];
+      if (clientIdFilter) filtered = filtered.filter((r) => r.client_id === clientIdFilter);
+      if (couponIdFilter) filtered = filtered.filter((r) => r.coupon_id === couponIdFilter);
+      if (statusFilter) filtered = filtered.filter((r) => r.status === statusFilter);
       return jsonResponse(filtered);
     }
     if (table === 'consents') {
@@ -847,6 +902,16 @@ function buildMockSupabase(options: {
       return jsonResponse(auditLogsRows);
     }
     if (table === 'outbox_events') {
+      if (method === 'HEAD') {
+        const statusFilter = url.searchParams.get('status')?.replace(/^eq\./, '');
+        const matched = statusFilter
+          ? outboxRows.filter((r) => r.status === statusFilter)
+          : outboxRows;
+        return new Response(null, {
+          status: 200,
+          headers: { 'Content-Range': `*/${matched.length}` },
+        });
+      }
       if (method === 'POST') {
         const created: Database['public']['Tables']['outbox_events']['Row'] = {
           id: '77777777-7777-4777-8777-777777777777',
@@ -932,6 +997,41 @@ function buildMockSupabase(options: {
       }
       const channelFilter = url.searchParams.get('channel')?.replace(/^eq\./, '');
       if (channelFilter) filtered = filtered.filter((n) => n.channel === channelFilter);
+      return jsonResponse(filtered);
+    }
+    if (table === 'whatsapp_threads') {
+      let filtered = [...whatsappThreadsRows];
+      const archivedFilter = url.searchParams.get('is_archived');
+      if (archivedFilter === 'eq.false') {
+        filtered = filtered.filter((t) => !t.is_archived);
+      }
+      const phoneIn = url.searchParams.get('phone_e164');
+      if (phoneIn?.startsWith('in.(') && phoneIn.endsWith(')')) {
+        const allowed = new Set(
+          phoneIn
+            .slice(4, -1)
+            .split(',')
+            .map((v) => v.replace(/^"|"$/g, '')),
+        );
+        filtered = filtered.filter((t) => allowed.has(t.phone_e164));
+      }
+      const limitParam = Number(url.searchParams.get('limit'));
+      if (Number.isFinite(limitParam) && limitParam > 0) {
+        filtered = filtered.slice(0, limitParam);
+      }
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
+    if (table === 'whatsapp_messages') {
+      let filtered = [...whatsappMessagesRows];
+      const threadIn = url.searchParams.get('thread_id');
+      if (threadIn?.startsWith('in.(') && threadIn.endsWith(')')) {
+        const ids = new Set(threadIn.slice(4, -1).split(','));
+        filtered = filtered.filter((m) => ids.has(m.thread_id));
+      }
+      const limitParam = Number(url.searchParams.get('limit'));
+      if (Number.isFinite(limitParam) && limitParam > 0) {
+        filtered = filtered.slice(0, limitParam);
+      }
       return jsonResponse(filtered);
     }
     if (table === 'whatsapp_templates') {
@@ -4170,7 +4270,12 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
       staffMemberId: null,
       nowMs,
     });
-    expect(mock.requests.slice(beforeReminders).length).toBe(7);
+    const reminderReqs = mock.requests.slice(beforeReminders);
+    expect(reminderReqs.length).toBeLessThanOrEqual(10);
+    expect(
+      reminderReqs.filter((r) => r.path === '/rest/v1/outbox_events' && r.method === 'HEAD')
+        .length,
+    ).toBe(4);
     expect(remindersSnap.queue).toHaveLength(1);
     expect(remindersSnap.metrics.pendingCount).toBe(1);
     expect(remindersSnap.metrics.bookingsWithoutRemindersCount).toBe(0);
@@ -4227,5 +4332,325 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     expect(diagnosed.diagnosis.length).toBeGreaterThan(0);
     expect(diagnoseReqs.some((r) => r.path === '/rest/v1/clients')).toBe(false);
     expect(diagnoseReqs.some((r) => r.path === '/rest/v1/audit_logs')).toBe(false);
+  });
+
+  it('Hardening: bounds PostgREST queries (occupied_range ov, due notifications limit=12 + single WA thread prefetch, report windowing, HEAD outbox counts, funnel pruning) and preserves Demo-vs-Supabase parity', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-02', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-02', '11:00', TZ).toISOString();
+    const bookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-HRD01',
+      manage_token: 'tok-hrd-001',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: startAt,
+      end_at: endAt,
+      occupied_start_at: startAt,
+      occupied_end_at: endAt,
+      occupied_range: `[${startAt},${endAt})`,
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 0,
+      coupon_code: null,
+      status: 'completed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-02T11:00:00.000Z',
+    };
+    const canceledBookingRow: Database['public']['Tables']['bookings']['Row'] = {
+      ...bookingRow,
+      id: '44444444-4444-4444-8444-444444444499',
+      booking_code: 'NL-HRD02',
+      manage_token: 'tok-hrd-canceled',
+      status: 'canceled',
+    };
+
+    const dueNotifs: Array<Database['public']['Tables']['scheduled_notifications']['Row']> =
+      Array.from({ length: 15 }, (_, idx) => ({
+        id: `ntf-batch-${idx + 1}`,
+        booking_id: BOOKING_ID,
+        client_id: CLIENT_ID,
+        workflow_id: 'wf-24h',
+        trigger_key: 'reminder_24h',
+        channel: 'whatsapp',
+        recipient: '+525511223344',
+        scheduled_for: `2026-12-01T12:${String(idx).padStart(2, '0')}:00.000Z`,
+        status: 'pending',
+        delivery_status: 'queued',
+        subject: 'Recordatorio',
+        preview_text: 'Hola',
+        body_text: 'Hola',
+        payload: {},
+        provider_message_id: null,
+        error_message: null,
+        attempts: 0,
+        max_attempts: 3,
+        next_retry_at: null,
+        last_attempt_at: null,
+        sent_at: null,
+        created_at: '2026-12-01T10:00:00.000Z',
+      }));
+
+    const mock = buildMockSupabase({
+      bookingsRows: [bookingRow, canceledBookingRow],
+      workflowsRows: [
+        {
+          id: 'wf-24h',
+          name: 'Recordatorio 24h',
+          trigger_event: 'before_booking',
+          offset_minutes: 1440,
+          channels: ['whatsapp'],
+          subject_template: 'Tu cita mañana',
+          message_template: 'Hola {clientName}',
+          is_enabled: true,
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      scheduledNotificationsRows: dueNotifs,
+      whatsappThreadsRows: [
+        {
+          id: 'wa-thr-1',
+          phone_e164: '+525511223344',
+          client_id: CLIENT_ID,
+          contact_name: 'Sofía Ramírez',
+          last_message_at: '2026-12-01T12:30:00.000Z',
+          last_message_preview: 'Hola',
+          last_message_direction: 'inbound',
+          last_inbound_at: '2026-12-01T12:30:00.000Z',
+          unread_count: 1,
+          last_read_at: null,
+          has_failed_messages: false,
+          is_archived: false,
+          assigned_staff_id: STAFF_ID,
+          created_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T12:30:00.000Z',
+        },
+      ],
+      whatsappMessagesRows: [
+        {
+          id: 'wa-msg-1',
+          thread_id: 'wa-thr-1',
+          phone_e164: '+525511223344',
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          notification_id: null,
+          direction: 'inbound',
+          sender_kind: 'client',
+          sender_name: 'Sofía Ramírez',
+          message_type: 'text',
+          body_text: 'Confirmo',
+          template_name: null,
+          template_trigger_key: null,
+          template_params: [],
+          delivery_status: 'read',
+          delivery_mode: 'text',
+          provider_message_id: null,
+          error_code: null,
+          error_message: null,
+          sent_at: null,
+          delivered_at: null,
+          read_at: '2026-12-01T12:30:00.000Z',
+          failed_at: null,
+          created_at: '2026-12-01T12:30:00.000Z',
+        },
+      ],
+      outboxRows: [
+        {
+          id: 'ob-1',
+          event_type: 'booking_created',
+          payload: {},
+          status: 'pending',
+          attempts: 0,
+          available_at: '2026-12-01T12:00:00.000Z',
+          processed_at: null,
+          last_error: null,
+          created_at: '2026-12-01T12:00:00.000Z',
+        },
+        {
+          id: 'ob-2',
+          event_type: 'booking_created',
+          payload: {},
+          status: 'failed',
+          attempts: 2,
+          available_at: '2026-12-01T12:00:00.000Z',
+          processed_at: null,
+          last_error: 'timeout',
+          created_at: '2026-12-01T12:00:00.000Z',
+        },
+      ],
+      funnelEventsRows: [
+        {
+          id: 'fe-old',
+          session_id: 's-old',
+          event_type: 'page_view',
+          service_slug: null,
+          staff_slug: null,
+          created_at: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 'fe-new',
+          session_id: 's-new',
+          event_type: 'page_view',
+          service_slug: null,
+          staff_slug: null,
+          created_at: '2026-12-01T12:00:00.000Z',
+        },
+      ],
+      reviewsRows: [
+        {
+          id: 'rev-existing-1',
+          booking_id: BOOKING_ID,
+          client_id: CLIENT_ID,
+          staff_id: STAFF_ID,
+          rating: 5,
+          comment: 'Excelente',
+          clicked_google_review: true,
+          created_at: '2026-12-02T12:00:00.000Z',
+        },
+      ],
+      couponsRows: [
+        {
+          id: COUPON_ID,
+          code: 'ONCE10',
+          kind: 'coupon',
+          discount_type: 'percent',
+          discount_value: 10,
+          remaining_balance_cents: null,
+          recipient_name: null,
+          max_uses: 100,
+          used_count: 1,
+          min_subtotal_cents: 0,
+          expires_at: null,
+          is_active: true,
+          created_at: '2026-11-01T00:00:00.000Z',
+        },
+      ],
+      couponRedemptionsRows: [
+        {
+          id: REDEMPTION_ID,
+          coupon_id: COUPON_ID,
+          client_id: CLIENT_ID,
+          booking_id: BOOKING_ID,
+          amount_cents: 3800,
+          status: 'active',
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+    });
+
+    const repo = createSupabaseRepository(
+      createFixedClock('2026-12-01T13:00:00.000Z', 'hardening-supabase'),
+      mock.client,
+    );
+
+    const beforeAvail = mock.requests.length;
+    await repo.queryAvailability({
+      serviceId: SERVICE_ID,
+      addonIds: [],
+      startDate: '2026-12-02',
+      days: 7,
+    });
+    const busyReq = mock.requests
+      .slice(beforeAvail)
+      .find((r) => r.path === '/rest/v1/public_busy_intervals');
+    expect(busyReq?.search).toContain('occupied_range=ov.');
+
+    const beforeReport = mock.requests.length;
+    await repo.getExecutiveReportData({
+      scopeStaffId: null,
+      fromDate: '2026-12-01',
+      toDate: '2026-12-07',
+    });
+    const reportReqs = mock.requests.slice(beforeReport);
+    const reportBookingReq = reportReqs.find((r) => r.path === '/rest/v1/bookings');
+    const reportFunnelReq = reportReqs.find((r) => r.path === '/rest/v1/funnel_events');
+    expect(reportBookingReq?.search).toContain('start_at=gte.');
+    expect(reportBookingReq?.search).not.toContain('inspo_photo_url');
+    expect(reportBookingReq?.search).not.toContain('payment_proof_url');
+    expect(reportFunnelReq?.search).toContain('limit=5000');
+
+    const beforeDue = mock.requests.length;
+    const seenWindows: boolean[] = [];
+    const dueSummary = await repo.processDueScheduledNotifications(async (p) => {
+      if (p.whatsappServiceWindow) {
+        seenWindows.push(p.whatsappServiceWindow.isOpen);
+      }
+      return { status: 'sent', providerMessageId: 'wamid-1', errorMessage: null };
+    }, Date.parse('2026-12-01T13:00:00.000Z'));
+    const dueReqs = mock.requests.slice(beforeDue);
+    const notifFetchReq = dueReqs.find(
+      (r) => r.method === 'GET' && r.path === '/rest/v1/scheduled_notifications',
+    );
+    expect(notifFetchReq?.search).toContain('limit=12');
+    expect(notifFetchReq?.search).toContain('order=scheduled_for.asc');
+    expect(notifFetchReq?.search).toContain('or=');
+    expect(dueSummary.processed).toBe(12);
+    expect(
+      dueReqs.filter((r) => r.path === '/rest/v1/whatsapp_threads').length,
+    ).toBe(1);
+    expect(seenWindows.every(Boolean)).toBe(true);
+
+    const beforeThreads = mock.requests.length;
+    const inbox = await repo.listWhatsAppThreads({ nowMs: Date.parse('2026-12-01T13:00:00.000Z') });
+    const threadReqs = mock.requests.slice(beforeThreads);
+    expect(inbox.threads).toHaveLength(1);
+    expect(
+      threadReqs.find((r) => r.path === '/rest/v1/whatsapp_threads')?.search,
+    ).toContain('limit=150');
+    expect(
+      threadReqs.find((r) => r.path === '/rest/v1/whatsapp_messages')?.search,
+    ).toContain('thread_id=in.');
+    expect(
+      threadReqs.find((r) => r.path === '/rest/v1/bookings')?.search,
+    ).not.toContain('inspo_photo_url');
+
+    const beforeOutbox = mock.requests.length;
+    const outboxSummary = await repo.getOutboxSummary();
+    const outboxReqs = mock.requests.slice(beforeOutbox);
+    expect(outboxReqs.every((r) => r.method === 'HEAD')).toBe(true);
+    expect(outboxSummary).toEqual({
+      pendingCount: 1,
+      processingCount: 0,
+      failedCount: 1,
+      processedCount: 0,
+    });
+
+    const pruned = await repo.pruneOldFunnelEvents('2026-09-02T00:00:00.000Z');
+    expect(pruned).toBe(1);
+
+    const updatedReview = await repo.submitBookingReview({
+      manageToken: 'tok-hrd-001',
+      rating: 4,
+      comment: 'Actualizado sin borrar flag de Google',
+    });
+    expect(updatedReview.clickedGoogleReview).toBe(true);
+
+    await expect(
+      repo.submitBookingReview({
+        manageToken: 'tok-hrd-canceled',
+        rating: 5,
+        comment: 'No debe permitirse',
+      }),
+    ).rejects.toMatchObject({ code: 'BOOKING_REVIEW_NOT_ALLOWED' });
+
+    const couponDup = await repo.validateCouponCode('ONCE10', 38000, CLIENT_ID);
+    expect(couponDup.valid).toBe(false);
+    const couponOtherClient = await repo.validateCouponCode(
+      'ONCE10',
+      38000,
+      '33333333-3333-4333-8333-333333333399',
+    );
+    expect(couponOtherClient.valid).toBe(true);
   });
 });

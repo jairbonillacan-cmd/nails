@@ -22,33 +22,24 @@ import { Collapsible } from '@astryxdesign/core/Collapsible';
 import {
   AlertTriangle,
   Award,
-  Calendar,
   CalendarPlus,
   Download,
   ExternalLink,
   MessageCircle,
   Shield,
-  Sparkles,
   Trash2,
 } from 'lucide-react';
 import { extractMxPhoneDigits } from '@/components/booking/bookingHelpers';
-import { agendaHref, whatsappHref } from '@/lib/admin-links';
+import { whatsappHref } from '@/lib/admin-links';
 import {
   buildWhatsAppLink,
   formatCurrency,
   formatDateShortInTimezone,
   formatPhoneDisplay,
-  formatTimeInTimezone,
 } from '@/lib/format';
 import type { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import type { BookingWithRelations, ClientProfile, ServicePackage } from '@/lib/types';
-import {
-  ActionRow,
-  BookingStatusTag,
-  ConfirmActionDialog,
-  StatusTag,
-  SurfaceCard,
-} from '@/components/ui';
+import { ConfirmActionDialog, StatusTag, SurfaceCard } from '@/components/ui';
 import type { ClientNoShowStats } from './clientasActions';
 import {
   buildClientNewBookingUrl,
@@ -62,19 +53,13 @@ import {
 } from './clientasTypes';
 import {
   formatNailTechBadges,
-  NAIL_ALERTS,
-  NAIL_BASES,
-  NAIL_LENGTHS,
-  NAIL_SHAPES,
   parseNailTechNotes,
   serializeNailTechNotes,
-  type NailAlert,
-  type NailBase,
-  type NailLength,
-  type NailShape,
   type NailTechProfile,
 } from './nailTechProfile';
 import { ClientProfilePackagesSection } from './ClientProfilePackagesSection';
+import { ClientNailTechEditor } from './ClientNailTechEditor';
+import { ClientVisitHistorySection } from './ClientVisitHistorySection';
 
 type LoyaltySummary = ReturnType<typeof computeClientLoyaltySummary>;
 
@@ -82,27 +67,6 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function toIsoDateString(value: string): ISODateString | undefined {
   return ISO_DATE_RE.test(value) ? (value as ISODateString) : undefined;
-}
-
-function isSafeInspoPhotoUrl(url: string | null): url is string {
-  return Boolean(url && url.startsWith('/api/media/'));
-}
-
-function toggleSingleChoice<T extends string>(current: T | null, next: T): T | null {
-  return current === next ? null : next;
-}
-
-function toggleAlertChoice(current: readonly NailAlert[], alert: NailAlert): NailAlert[] {
-  if (current.includes(alert)) {
-    return current.filter((item) => item !== alert);
-  }
-  return [...current, alert];
-}
-
-interface InspoPreviewState {
-  url: string;
-  title: string;
-  subtitle: string;
 }
 
 interface ClientProfileDialogProps {
@@ -190,8 +154,6 @@ export function ClientProfileDialog({
   const [editError, setEditError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [showAllVisits, setShowAllVisits] = useState(false);
-  const [previewInspo, setPreviewInspo] = useState<InspoPreviewState | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingClient, setDeletingClient] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -199,8 +161,6 @@ export function ClientProfileDialog({
   if (lastClientId !== currentClientId) {
     setLastClientId(currentClientId);
     setSaveSuccess(false);
-    setShowAllVisits(false);
-    setPreviewInspo(null);
     setConfirmDeleteOpen(false);
     setDeleteError(null);
   }
@@ -239,7 +199,6 @@ export function ClientProfileDialog({
     });
   }, [client, metrics, clientVisits, clientPackages, loyalty, noShowStats, noShowThreshold]);
 
-  const visibleVisits = showAllVisits ? clientVisits : clientVisits.slice(0, 5);
   const hasHistory = clientVisits.length > 0 || clientPackages.length > 0;
   const headerTechBadges = resolvedMetrics
     ? formatNailTechBadges(resolvedMetrics.techProfile)
@@ -318,38 +277,6 @@ export function ClientProfileDialog({
     if (!open && !savingEdit && !deletingClient) {
       onClose();
     }
-  };
-
-  const handleShapeToggle = (shape: NailShape) => {
-    setSaveSuccess(false);
-    setTechProfileDraft((prev) => ({
-      ...prev,
-      shape: toggleSingleChoice(prev.shape, shape),
-    }));
-  };
-
-  const handleLengthToggle = (length: NailLength) => {
-    setSaveSuccess(false);
-    setTechProfileDraft((prev) => ({
-      ...prev,
-      length: toggleSingleChoice(prev.length, length),
-    }));
-  };
-
-  const handleBaseToggle = (base: NailBase) => {
-    setSaveSuccess(false);
-    setTechProfileDraft((prev) => ({
-      ...prev,
-      base: toggleSingleChoice(prev.base, base),
-    }));
-  };
-
-  const handleAlertToggle = (alert: NailAlert) => {
-    setSaveSuccess(false);
-    setTechProfileDraft((prev) => ({
-      ...prev,
-      alerts: toggleAlertChoice(prev.alerts, alert),
-    }));
   };
 
   return (
@@ -596,82 +523,12 @@ export function ClientProfileDialog({
                     onCancelPackage={onCancelPackage}
                   />
 
-                  {clientVisits.length > 0 ? (
-                    <SurfaceCard
-                      title="Historial de visitas"
-                      headingLevel={3}
-                      icon={<Calendar size={15} aria-hidden="true" />}
-                      count={clientVisits.length}
-                    >
-                      <VStack className="ad-row-list" gap={0}>
-                        {visibleVisits.map((visit) => {
-                          const inspoUrl = isSafeInspoPhotoUrl(visit.inspoPhotoUrl)
-                            ? visit.inspoPhotoUrl
-                            : null;
-                          return (
-                            <ActionRow
-                              key={visit.id}
-                              leading={
-                                inspoUrl ? (
-                                  <button
-                                    type="button"
-                                    className="ad-inspo-thumb"
-                                    aria-label={`Ver foto de referencia de ${visit.service.name}`}
-                                    onClick={() =>
-                                      setPreviewInspo({
-                                        url: inspoUrl,
-                                        title: visit.service.name,
-                                        subtitle: `${formatDateShortInTimezone(visit.startAt, tz)} · ${visit.staff.name}`,
-                                      })
-                                    }
-                                  >
-                                    <img
-                                      src={inspoUrl}
-                                      alt={`Referencia de ${visit.service.name}`}
-                                      loading="lazy"
-                                    />
-                                  </button>
-                                ) : undefined
-                              }
-                              title={visit.service.name}
-                              subtitle={`${formatDateShortInTimezone(visit.startAt, tz)} · ${formatTimeInTimezone(visit.startAt, tz)} con ${visit.staff.name}`}
-                              meta={`${formatCurrency(visit.totalPriceCents, currency)} · #${visit.bookingCode}`}
-                              status={
-                                <BookingStatusTag
-                                  status={visit.status}
-                                  hasPaymentProof={Boolean(visit.paymentProofUrl)}
-                                />
-                              }
-                              actions={
-                                <Button
-                                  label="Agenda"
-                                  variant="ghost"
-                                  size="sm"
-                                  icon={<ExternalLink size={13} aria-hidden="true" />}
-                                  href={agendaHref({ q: visit.bookingCode })}
-                                />
-                              }
-                            />
-                          );
-                        })}
-                      </VStack>
-                      {clientVisits.length > 5 ? (
-                        <HStack justify="center" paddingBlock={2} paddingInline={3}>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            label={
-                              showAllVisits
-                                ? 'Mostrar últimas 5'
-                                : `Ver todas (${clientVisits.length})`
-                            }
-                            onClick={() => setShowAllVisits((prev) => !prev)}
-                          />
-                        </HStack>
-                      ) : null}
-                    </SurfaceCard>
-                  ) : null}
+                  <ClientVisitHistorySection
+                    clientId={client.id}
+                    visits={clientVisits}
+                    tz={tz}
+                    currency={currency}
+                  />
 
                   <form id="client-profile-form" noValidate onSubmit={(e) => void handleSave(e)}>
                     <VStack gap={3}>
@@ -738,112 +595,14 @@ export function ClientProfileDialog({
                         }}
                       />
 
-                      <SurfaceCard
-                        title="Ficha técnica de uñas"
-                        headingLevel={3}
-                        icon={<Sparkles size={15} aria-hidden="true" />}
-                        tone="subtle"
-                        padded
-                      >
-                        <VStack gap={3}>
-                          <VStack gap={1.5}>
-                            <Text type="supporting" weight="semibold">
-                              Forma
-                            </Text>
-                            <HStack gap={1.5} wrap="wrap">
-                              {NAIL_SHAPES.map((shape) => {
-                                const selected = techProfileDraft.shape === shape;
-                                return (
-                                  <button
-                                    key={shape}
-                                    type="button"
-                                    className="ad-tech-chip"
-                                    aria-pressed={selected}
-                                    data-selected={selected ? 'true' : 'false'}
-                                    disabled={!canManageClients}
-                                    onClick={() => handleShapeToggle(shape)}
-                                  >
-                                    {shape}
-                                  </button>
-                                );
-                              })}
-                            </HStack>
-                          </VStack>
-
-                          <VStack gap={1.5}>
-                            <Text type="supporting" weight="semibold">
-                              Largo
-                            </Text>
-                            <HStack gap={1.5} wrap="wrap">
-                              {NAIL_LENGTHS.map((length) => {
-                                const selected = techProfileDraft.length === length;
-                                return (
-                                  <button
-                                    key={length}
-                                    type="button"
-                                    className="ad-tech-chip"
-                                    aria-pressed={selected}
-                                    data-selected={selected ? 'true' : 'false'}
-                                    disabled={!canManageClients}
-                                    onClick={() => handleLengthToggle(length)}
-                                  >
-                                    {length}
-                                  </button>
-                                );
-                              })}
-                            </HStack>
-                          </VStack>
-
-                          <VStack gap={1.5}>
-                            <Text type="supporting" weight="semibold">
-                              Base favorita
-                            </Text>
-                            <HStack gap={1.5} wrap="wrap">
-                              {NAIL_BASES.map((base) => {
-                                const selected = techProfileDraft.base === base;
-                                return (
-                                  <button
-                                    key={base}
-                                    type="button"
-                                    className="ad-tech-chip"
-                                    aria-pressed={selected}
-                                    data-selected={selected ? 'true' : 'false'}
-                                    disabled={!canManageClients}
-                                    onClick={() => handleBaseToggle(base)}
-                                  >
-                                    {base}
-                                  </button>
-                                );
-                              })}
-                            </HStack>
-                          </VStack>
-
-                          <VStack gap={1.5}>
-                            <Text type="supporting" weight="semibold">
-                              Alertas y sensibilidad
-                            </Text>
-                            <HStack gap={1.5} wrap="wrap">
-                              {NAIL_ALERTS.map((alert) => {
-                                const selected = techProfileDraft.alerts.includes(alert);
-                                return (
-                                  <button
-                                    key={alert}
-                                    type="button"
-                                    className="ad-tech-chip"
-                                    aria-pressed={selected}
-                                    data-selected={selected ? 'true' : 'false'}
-                                    data-tone="warning"
-                                    disabled={!canManageClients}
-                                    onClick={() => handleAlertToggle(alert)}
-                                  >
-                                    {alert}
-                                  </button>
-                                );
-                              })}
-                            </HStack>
-                          </VStack>
-                        </VStack>
-                      </SurfaceCard>
+                      <ClientNailTechEditor
+                        value={techProfileDraft}
+                        canEdit={canManageClients}
+                        onChange={(next) => {
+                          setSaveSuccess(false);
+                          setTechProfileDraft(next);
+                        }}
+                      />
 
                       <TextArea
                         label="Notas adicionales (tonos, diseños o preferencias)"
@@ -991,66 +750,6 @@ export function ClientProfileDialog({
           onConfirm={handleConfirmDelete}
         />
       ) : null}
-
-      <Dialog
-        isOpen={Boolean(previewInspo)}
-        onOpenChange={(open) => {
-          if (!open) setPreviewInspo(null);
-        }}
-        width="min(34rem, 96vw)"
-        maxHeight="min(90dvh, calc(100dvh - 2rem))"
-        padding={5}
-      >
-        <Layout
-          header={
-            <DialogHeader
-              title={previewInspo?.title ?? 'Foto de referencia'}
-              subtitle={previewInspo?.subtitle}
-              hasDivider
-              onOpenChange={(open) => {
-                if (!open) setPreviewInspo(null);
-              }}
-            />
-          }
-          content={
-            <LayoutContent>
-              {previewInspo ? (
-                <VStack gap={3} align="center">
-                  <img
-                    src={previewInspo.url}
-                    alt={`Referencia de ${previewInspo.title}`}
-                    className="ad-inspo-preview-img"
-                  />
-                </VStack>
-              ) : null}
-            </LayoutContent>
-          }
-          footer={
-            previewInspo ? (
-              <LayoutFooter hasDivider>
-                <HStack justify="end" gap={2} wrap="wrap">
-                  <Button
-                    label="Abrir imagen"
-                    variant="secondary"
-                    size="md"
-                    icon={<ExternalLink size={14} aria-hidden="true" />}
-                    href={previewInspo.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                  <Button
-                    type="button"
-                    label="Cerrar"
-                    variant="primary"
-                    size="md"
-                    onClick={() => setPreviewInspo(null)}
-                  />
-                </HStack>
-              </LayoutFooter>
-            ) : undefined
-          }
-        />
-      </Dialog>
     </>
   );
 }

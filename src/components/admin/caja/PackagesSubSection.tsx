@@ -7,6 +7,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
@@ -34,6 +35,7 @@ const PACKAGE_EDITOR_FORM_ID = 'caja-package-editor-form';
 interface PackagesSubSectionProps {
   packagesCatalog: readonly ServicePackageCatalogRow[];
   packagesLoading: boolean;
+  packagesSupported?: boolean;
   services: readonly Service[];
   currency: 'MXN' | 'USD';
   canManagePackages: boolean;
@@ -185,6 +187,7 @@ function PackageFormBody({
 export function PackagesSubSection({
   packagesCatalog,
   packagesLoading,
+  packagesSupported = true,
   services,
   currency,
   canManagePackages,
@@ -193,6 +196,7 @@ export function PackagesSubSection({
   onSavePackage,
   onTogglePackage,
 }: PackagesSubSectionProps) {
+  const effectiveCanManage = canManagePackages && packagesSupported;
   const activeServices = services
     .filter((s) => s.isActive)
     .toSorted((a, b) => a.displayOrder - b.displayOrder);
@@ -228,7 +232,7 @@ export function PackagesSubSection({
           subtitle="Paquetes prepagados (ej. 5 retoques) que luego asignas a una clienta."
           count={packagesCatalog.length}
           actions={
-            canManagePackages ? (
+            effectiveCanManage ? (
               <Button
                 type="button"
                 label="Nuevo paquete"
@@ -241,7 +245,15 @@ export function PackagesSubSection({
             ) : undefined
           }
         >
-          {packagesLoading && packagesCatalog.length === 0 ? (
+          {!packagesSupported ? (
+            <VStack padding={4}>
+              <Banner
+                status="info"
+                title="Paquetes de sesiones en preparación para Supabase"
+                description="El catálogo y canje de paquetes ya funciona en modo demo; en producción se activará automáticamente al habilitar las tablas de paquetes en Supabase."
+              />
+            </VStack>
+          ) : packagesLoading && packagesCatalog.length === 0 ? (
             <VStack padding={4} gap={2} role="status" aria-busy="true">
               <SkeletonBlock width="100%" height="4.5rem" radius={2} index={0} />
               <SkeletonBlock width="100%" height="4.5rem" radius={2} index={1} />
@@ -307,7 +319,7 @@ export function PackagesSubSection({
                         <Text className="lk-serif ad-h3 fx-tabular" hasTabularNumbers>
                           {formatCurrency(pkg.priceCents, currency)}
                         </Text>
-                        {canManagePackages ? (
+                        {effectiveCanManage ? (
                           <HStack gap={2} align="center" wrap="wrap">
                             <Button
                               type="button"

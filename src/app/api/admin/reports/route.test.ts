@@ -74,7 +74,13 @@ describe('GET /api/admin/reports (Phase 5 zero-snapshot & RBAC)', () => {
     expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(res.headers.get('vary')).toContain('Cookie');
     expect(snapshotSpy).not.toHaveBeenCalled();
-    expect(reportDataSpy).toHaveBeenCalledWith({ scopeStaffId: null });
+    expect(reportDataSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeStaffId: null,
+        fromDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        toDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    );
 
     const body = (await res.json()) as {
       scope: string;

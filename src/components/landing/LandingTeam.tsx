@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import Image from 'next/image';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
@@ -10,11 +9,7 @@ import { Text } from '@astryxdesign/core/Text';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import { getStaffScheduleLabel } from '../booking/bookingHelpers';
 import { SectionHeading, WaveBottom, WaveTop } from './LandingParts';
-import {
-  LANDING_ASSETS,
-  isOptimizableLocalRasterImage,
-  staffAvatar,
-} from './landingContent';
+import { LANDING_ASSETS, staffAvatar } from './landingContent';
 
 const SpecialistProfileDialog = dynamic(
   () => import('./SpecialistProfileDialog').then((mod) => mod.SpecialistProfileDialog),
@@ -22,6 +17,7 @@ const SpecialistProfileDialog = dynamic(
 );
 
 interface LandingTeamProps {
+  salonName?: string;
   title?: string;
   subtitle?: string;
   staff: PublicStaffDTO[];
@@ -30,6 +26,7 @@ interface LandingTeamProps {
 }
 
 export function LandingTeam({
+  salonName = 'LAIKONA NAILS',
   title = 'Elige a tu profesional',
   subtitle = 'Una clienta por bloque. Toca un perfil para ver turnos, servicios y portafolio.',
   staff,
@@ -61,7 +58,6 @@ export function LandingTeam({
         height={572}
         loading="lazy"
         decoding="async"
-        fetchPriority="low"
         style={{ left: '-6%', top: '10%', width: '40%', opacity: 0.06 }}
       />
       <VStack
@@ -111,28 +107,15 @@ export function LandingTeam({
                   aria-label={`${person.name}, ${roleLabel}. Ver perfil, servicios y portafolio`}
                   onClick={() => setOpenId(person.id)}
                 >
-                  {isOptimizableLocalRasterImage(avatarSrc) ? (
-                    <Image
-                      className="lk-artist-photo"
-                      src={avatarSrc}
-                      alt={`Retrato de ${person.name}, ${roleLabel} en LAIKONA NAILS`}
-                      width={220}
-                      height={220}
-                      sizes="(max-width: 47.5rem) 60vw, 13.75rem"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  ) : (
-                    <img
-                      className="lk-artist-photo"
-                      src={avatarSrc}
-                      alt={`Retrato de ${person.name}, ${roleLabel} en LAIKONA NAILS`}
-                      width={220}
-                      height={220}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  )}
+                  <img
+                    className="lk-artist-photo"
+                    src={avatarSrc}
+                    alt={`Retrato de ${person.name}, ${roleLabel} en ${salonName}`}
+                    width={220}
+                    height={220}
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <Text className="lk-artist-chip" color="inherit">
                     ✿ {roleLabel}
                   </Text>

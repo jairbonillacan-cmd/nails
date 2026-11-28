@@ -30,6 +30,10 @@ import type {
 
 export const dynamic = 'force-dynamic';
 
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store',
+} as const;
+
 function resolveEmailSituationFromTrigger(
   triggerKey: WhatsAppTemplateTriggerKey | null,
   notification: ScheduledNotification,
@@ -86,19 +90,25 @@ export async function POST(request: NextRequest) {
     logError('cron_reminders_missing_secret');
     return NextResponse.json(
       { error: 'CRON_SECRET no configurado' },
-      { status: 503 },
+      { status: 503, headers: NO_STORE_HEADERS },
     );
   }
 
   const authHeader = request.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     logWarn('cron_reminders_unauthorized', { reason: 'missing_bearer' });
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401, headers: NO_STORE_HEADERS },
+    );
   }
   const provided = authHeader.slice('Bearer '.length);
   if (!provided || !constantTimeEqual(provided, secret)) {
     logWarn('cron_reminders_unauthorized', { reason: 'invalid_token' });
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401, headers: NO_STORE_HEADERS },
+    );
   }
 
   try {
@@ -115,7 +125,7 @@ export async function POST(request: NextRequest) {
     const pendingWhatsAppRecords: RecordWhatsAppMessageInput[] = [];
 
     const summary = await processDueScheduledNotifications(
-      async ({ notification, booking, settings }) => {
+      async ({ notification, booking, settings, whatsappServiceWindow }) => {
         const workflow = notification.workflowId
           ? workflowsById.get(notification.workflowId) ?? null
           : null;
@@ -155,10 +165,12 @@ export async function POST(request: NextRequest) {
                   { id: `reschedule_booking:${booking.id}`, title: 'Necesito reagendar' },
                 ]
               : undefined;
-          const serviceWindow = await getRepository().getWhatsAppThreadWindow(
-            { phoneE164: notification.recipient },
-            nowMs,
-          );
+          const serviceWindow =
+            whatsappServiceWindow ??
+            (await getRepository().getWhatsAppThreadWindow(
+              { phoneE164: notification.recipient },
+              nowMs,
+            ));
           const workflowIncludesEmail = Boolean(workflow?.channels.includes('email'));
           const waRes = await dispatchWhatsAppNotification({
             toPhoneE164: notification.recipient,
@@ -252,12 +264,12 @@ export async function POST(request: NextRequest) {
       logInfo('cron_reminders_completed', result);
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { headers: NO_STORE_HEADERS });
   } catch (err) {
     logError('cron_reminders_exception', { error: err });
     return NextResponse.json(
       { error: 'Error procesando recordatorios' },
-      { status: 500 },
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 }

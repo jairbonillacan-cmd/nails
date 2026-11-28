@@ -33,9 +33,8 @@ import { BookingConflictBanner } from './booking/BookingConflictBanner';
 import { BookingStepRouter, prefetchBookingNextStep } from './booking/BookingStepRouter';
 import { BookingDesktopActions, BookingStickyBar } from './booking/BookingStickyBar';
 import { BookingSummaryCard } from './booking/BookingSummaryCard';
-import { HoldExtendDialog, shouldPromptHoldExtension } from './booking/HoldExtendDialog';
 import { HoldExpiredBanner } from './booking/HoldExpiredBanner';
-import { resolveEffectiveSelectedDate } from './booking/bookingHelpers';
+import { resolveEffectiveSelectedDate, shouldPromptHoldExtension } from './booking/bookingHelpers';
 import type { ClientAccountBinding } from './booking/ClientConfirmStep';
 import type { ClientSignInIntent } from './booking/ClientSignInDialog';
 import {
@@ -66,6 +65,11 @@ const WaitlistDialog = dynamic(
 
 const ClientSignInDialog = dynamic(
   () => import('./booking/ClientSignInDialog').then((mod) => mod.ClientSignInDialog),
+  { ssr: false },
+);
+
+const HoldExtendDialog = dynamic(
+  () => import('./booking/HoldExtendDialog').then((mod) => mod.HoldExtendDialog),
   { ssr: false },
 );
 
@@ -247,7 +251,7 @@ export function BookingWidget(props: BookingWidgetProps) {
       [invalidateFromRealtime, realtimePing],
     ),
     undefined,
-    !isSubmittingOrConfirmed,
+    flow.step !== 'service' && !isSubmittingOrConfirmed,
   );
 
   const holdRemainingSec = useCountdownTimer(
@@ -496,6 +500,9 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   return (
     <VStack className={isEmbed ? 'lk-root rb-root rb-embed' : 'lk-root rb-root'}>
+      <a href="#main-content" className="lk-skip-link">
+        Saltar al contenido principal
+      </a>
       <JsonLdScript id="jsonld-reservar" data={bookingBreadcrumbData} />
       <p role="status" aria-live="polite" aria-atomic="true" className="rb-sr-only">
         {liveAnnouncement}
@@ -513,7 +520,7 @@ export function BookingWidget(props: BookingWidgetProps) {
         holdRemainingSec={holdRemainingSec}
       />
 
-      <VStack as="main" className="rb-wrap rb-main">
+      <VStack as="main" id="main-content" tabIndex={-1} className="rb-wrap rb-main">
         <VStack className="rb-layout">
           <VStack as="section" className="rb-panel" aria-label={STEP_LABELS[flow.step]}>
             {isEmbed && handleBack ? (
@@ -702,14 +709,16 @@ export function BookingWidget(props: BookingWidgetProps) {
         onSummaryOpenChange={setSummaryOpen}
       />
 
-      <HoldExtendDialog
-        isOpen={isHoldPromptOpen}
-        holdRemainingSec={holdRemainingSec}
-        extraMinutes={settings.slotHoldMinutes || 5}
-        isExtending={actions.isExtendingHold}
-        onExtend={() => void handleExtendHold()}
-        onDecline={() => setHoldPromptDismissedFor(flow.holdExpiresAt)}
-      />
+      {isHoldPromptOpen ? (
+        <HoldExtendDialog
+          isOpen
+          holdRemainingSec={holdRemainingSec}
+          extraMinutes={settings.slotHoldMinutes || 5}
+          isExtending={actions.isExtendingHold}
+          onExtend={() => void handleExtendHold()}
+          onDecline={() => setHoldPromptDismissedFor(flow.holdExpiresAt)}
+        />
+      ) : null}
 
       {signInRequest ? (
         <ClientSignInDialog

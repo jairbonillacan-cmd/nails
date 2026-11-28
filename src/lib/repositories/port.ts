@@ -282,6 +282,7 @@ export type NotificationDispatcher = (params: {
   notification: ScheduledNotification;
   booking: BookingWithRelations;
   settings: SalonSettings;
+  whatsappServiceWindow?: WhatsAppServiceWindowDTO;
 }) => Promise<{
   status: 'sent' | 'failed';
   providerMessageId: string | null;
@@ -686,6 +687,8 @@ export interface SalonRepository {
   ): Promise<AdminBookingsRangeData>;
   getExecutiveReportData(options?: {
     scopeStaffId?: string | null;
+    fromDate?: string | null;
+    toDate?: string | null;
   }): Promise<ExecutiveReportData>;
   getBookingByToken(token: string): Promise<BookingWithRelations | null>;
   queryAvailability(params: QueryAvailabilityInput): Promise<QueryAvailabilityOutput>;
@@ -696,7 +699,11 @@ export interface SalonRepository {
     serviceId: string,
     staffId?: string | null,
   ): Promise<Array<AvailableSlot & { date: string }>>;
-  validateCouponCode(code: string, subtotalCents: number): Promise<ValidateCouponResult>;
+  validateCouponCode(
+    code: string,
+    subtotalCents: number,
+    clientId?: string | null,
+  ): Promise<ValidateCouponResult>;
 
   createOrRefreshSlotHold(params: CreateSlotHoldInput): Promise<SlotHoldResult>;
   releaseSlotHold(sessionToken: string): Promise<void>;
@@ -875,4 +882,5 @@ export interface SalonRepository {
     olderThanMs?: number,
     nowMs?: number,
   ): Promise<{ drainedCount: number }>;
+  pruneOldFunnelEvents(olderThanIso: string): Promise<number>;
 }

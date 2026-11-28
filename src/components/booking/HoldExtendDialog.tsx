@@ -7,22 +7,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { formatHoldClock } from './BookingChrome';
 
-export const HOLD_EXTEND_PROMPT_SEC = 30;
-
-export function shouldPromptHoldExtension(input: {
-  holdRemainingSec: number;
-  holdExpiresAt: number | null;
-  dismissedForExpiresAt: number | null;
-  isSubmitting: boolean;
-}): boolean {
-  return (
-    input.holdExpiresAt !== null &&
-    !input.isSubmitting &&
-    input.holdRemainingSec > 0 &&
-    input.holdRemainingSec <= HOLD_EXTEND_PROMPT_SEC &&
-    input.dismissedForExpiresAt !== input.holdExpiresAt
-  );
-}
+export { HOLD_EXTEND_PROMPT_SEC, shouldPromptHoldExtension } from './bookingHelpers';
 
 interface HoldExtendDialogProps {
   isOpen: boolean;

@@ -1,8 +1,12 @@
+'use client';
+
+import { useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Link } from '@astryxdesign/core/Link';
+import { MapPin } from 'lucide-react';
 import { SectionHeading } from './LandingParts';
 import { LANDING_ASSETS } from './landingContent';
 
@@ -33,6 +37,8 @@ export function LandingVisit({
   instagramUrl,
   instagramHandle,
 }: LandingVisitProps) {
+  const [mapLoaded, setMapLoaded] = useState(false);
+
   return (
     <VStack as="section" id="visitanos" aria-labelledby="visita-t" className="lk-section">
       <HStack gap={5} wrap="wrap" align="stretch" className="lk-wrap">
@@ -125,14 +131,58 @@ export function LandingVisit({
         </VStack>
         {showMapEmbed ? (
           <VStack className="lk-reveal-2" style={{ flex: '2 1 24rem', minWidth: 0, maxWidth: '100%' }}>
-            <iframe
-              className="lk-map"
-              src={buildMapEmbedUrl(address)}
-              title={`Mapa de ${address}`}
-              loading="lazy"
-              sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
+            {mapLoaded ? (
+              <iframe
+                className="lk-map"
+                src={buildMapEmbedUrl(address)}
+                title={`Mapa de ${address}`}
+                sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            ) : (
+              <VStack
+                className="lk-map-facade"
+                align="center"
+                justify="center"
+                gap={4}
+                padding={6}
+              >
+                <VStack className="lk-map-facade-pin" aria-hidden="true">
+                  <MapPin size={26} />
+                </VStack>
+                <VStack gap={1.5} align="center" style={{ maxWidth: '28rem' }}>
+                  <Text color="accent" className="lk-eyebrow">
+                    Mapa interactivo
+                  </Text>
+                  <Text size="lg" weight="semibold" textWrap="balance">
+                    {address}
+                  </Text>
+                  <Text type="supporting" color="secondary" textWrap="pretty">
+                    Carga el mapa interactivo de Google aquí o ábrelo directamente en tu app de
+                    mapas.
+                  </Text>
+                </VStack>
+                <HStack gap={2} wrap="wrap" justify="center">
+                  <Button
+                    type="button"
+                    label="Ver mapa interactivo"
+                    variant="primary"
+                    size="lg"
+                    className="fx-press"
+                    onClick={() => setMapLoaded(true)}
+                  />
+                  <Button
+                    label="Abrir en Google Maps"
+                    variant="secondary"
+                    size="lg"
+                    className="fx-press"
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                </HStack>
+              </VStack>
+            )}
           </VStack>
         ) : null}
       </HStack>

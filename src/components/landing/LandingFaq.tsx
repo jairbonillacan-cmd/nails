@@ -35,7 +35,6 @@ export function LandingFaq({
         height={572}
         loading="lazy"
         decoding="async"
-        fetchPriority="low"
         style={{ right: '-8%', bottom: '6%', width: '36%', opacity: 0.06 }}
       />
       <VStack

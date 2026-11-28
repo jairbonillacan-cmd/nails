@@ -100,7 +100,7 @@ export function AdminMobileNav({
     <>
       <HStack
         as="nav"
-        aria-label="Navegación rápida móvil"
+        aria-label="Rápida móvil"
         className="ad-bottom"
         justify="around"
         align="center"

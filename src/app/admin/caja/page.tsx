@@ -86,7 +86,9 @@ const CashMovementDialog = dynamic(
 
 const CommissionPayoutDialog = dynamic(
   () =>
-    import('@/components/admin/caja/CashMovementForm').then((mod) => mod.CommissionPayoutDialog),
+    import('@/components/admin/caja/CommissionPayoutDialog').then(
+      (mod) => mod.CommissionPayoutDialog,
+    ),
   { ssr: false },
 );
 

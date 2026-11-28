@@ -106,6 +106,7 @@ export function AgendaToolbar({
           ariaLabel="Vista de agenda"
           mode="segmented"
           size="sm"
+          className="ad-agenda-view-switch"
           value={resolvedView ?? ''}
           onChange={(next) => {
             if (next === 'day' || next === 'week' || next === 'list') {

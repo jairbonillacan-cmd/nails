@@ -174,15 +174,17 @@ export function PortalOtpGate({
           </HStack>
 
           {errorMessage ? (
-            <Banner
-              status="error"
-              role="alert"
-              title="No pudimos verificar"
-              description={errorMessage}
-              isDismissable
-              dismissLabel="Cerrar aviso"
-              onDismiss={clearErrors}
-            />
+            <VStack id="pt-otp-error" gap={0}>
+              <Banner
+                status="error"
+                role="alert"
+                title="No pudimos verificar"
+                description={errorMessage}
+                isDismissable
+                dismissLabel="Cerrar aviso"
+                onDismiss={clearErrors}
+              />
+            </VStack>
           ) : null}
 
           {infoMessage ? (
@@ -214,6 +216,7 @@ export function PortalOtpGate({
                   }}
                   isDisabled={busy}
                   isRequired
+                  status={errorMessage ? { type: 'error', message: errorMessage } : undefined}
                   description={
                     showDemoHint
                       ? 'Modo de prueba: usa 222 412 3987 (Sofía Ramírez).'
@@ -291,6 +294,8 @@ export function PortalOtpGate({
                         autoComplete={index === 0 ? 'one-time-code' : 'off'}
                         maxLength={6}
                         aria-label={`Dígito ${index + 1} de 6`}
+                        aria-invalid={Boolean(errorMessage) || undefined}
+                        aria-describedby={errorMessage ? 'pt-otp-error' : undefined}
                         disabled={busy}
                         value={digit}
                         onChange={(e) => handleDigitChange(index, e.target.value)}

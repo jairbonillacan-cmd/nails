@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildExecutiveReport, type ReportPeriod } from '@/lib/analytics/reports';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { ReportPeriodSchema } from '@/lib/contracts';
+import { getDateKeyInTimezone } from '@/lib/format';
 import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
-import { isMetricDateKey } from '@/lib/metrics';
+import { isMetricDateKey, resolveMetricPeriodRange } from '@/lib/metrics';
 import { roleCanAccess } from '@/lib/rbac';
 import { getRepository } from '@/lib/repositories/db';
 
@@ -86,8 +87,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const approxTodayKey = getDateKeyInTimezone(now, 'America/Mexico_City');
+  const queryWindow = resolveMetricPeriodRange(approxTodayKey, period, customRange);
   const reportData = await getRepository().getExecutiveReportData({
     scopeStaffId: isSpecialist ? scopeStaffId : null,
+    ...(queryWindow.startKey ? { fromDate: queryWindow.startKey } : {}),
+    ...(queryWindow.endKey ? { toDate: queryWindow.endKey } : {}),
   });
   const tz = reportData.settings.timezone || 'America/Mexico_City';
 

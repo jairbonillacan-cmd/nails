@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@astryxdesign/core/Button';
 import { Pause, Play } from 'lucide-react';
 import { useAutoAdvance } from '@/lib/hooks/useAutoAdvance';
@@ -22,6 +23,11 @@ interface LandingHeroSlidesProps {
 export function LandingHeroSlides({ desktopUrl, mobileUrl }: LandingHeroSlidesProps) {
   const slideCount = EXTRA_SLIDES.length + 1;
   const { index, isPaused, togglePause } = useAutoAdvance(slideCount, SLIDE_INTERVAL_MS);
+  const [hasAdvanced, setHasAdvanced] = useState(false);
+
+  if (index > 0 && !hasAdvanced) {
+    setHasAdvanced(true);
+  }
 
   return (
     <>
@@ -38,28 +44,28 @@ export function LandingHeroSlides({ desktopUrl, mobileUrl }: LandingHeroSlidesPr
           height={900}
           loading="eager"
           fetchPriority="high"
-          decoding="sync"
         />
       </picture>
-      {EXTRA_SLIDES.map((src, slideIndex) => (
-        <picture
-          key={src}
-          className="lk-hero-media lk-hero-slide"
-          data-kind="portrait"
-          data-active={index === slideIndex + 1 ? 'true' : 'false'}
-          aria-hidden="true"
-        >
-          <img
-            {...landingPhoto(src)}
-            alt=""
-            width={800}
-            height={1000}
-            loading="lazy"
-            fetchPriority="low"
-            decoding="async"
-          />
-        </picture>
-      ))}
+      {hasAdvanced
+        ? EXTRA_SLIDES.map((src, slideIndex) => (
+            <picture
+              key={src}
+              className="lk-hero-media lk-hero-slide"
+              data-kind="portrait"
+              data-active={index === slideIndex + 1 ? 'true' : 'false'}
+              aria-hidden="true"
+            >
+              <img
+                {...landingPhoto(src, '100vw')}
+                alt=""
+                width={800}
+                height={1000}
+                fetchPriority="low"
+                decoding="async"
+              />
+            </picture>
+          ))
+        : null}
       <Button
         label={isPaused ? 'Reanudar fotos' : 'Pausar fotos'}
         variant="ghost"

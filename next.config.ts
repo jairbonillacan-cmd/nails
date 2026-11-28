@@ -34,9 +34,32 @@ function uniqueTokens(tokens: ReadonlyArray<string | null | undefined>): string[
   return Array.from(new Set(tokens.filter((token): token is string => Boolean(token))));
 }
 
-const supabaseOrigin = extractHttpOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
-const supabaseWsOrigin = extractWsOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const rawSupabaseOrigin = extractHttpOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const rawSupabaseWsOrigin = extractWsOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseOrigin =
+  rawSupabaseOrigin && !rawSupabaseOrigin.endsWith('.supabase.co')
+    ? rawSupabaseOrigin
+    : null;
+const supabaseWsOrigin =
+  rawSupabaseWsOrigin && !rawSupabaseWsOrigin.endsWith('.supabase.co')
+    ? rawSupabaseWsOrigin
+    : null;
 const r2PublicOrigin = extractHttpOrigin(process.env.R2_PUBLIC_BASE_URL);
+
+const SAFE_FRAME_ANCESTOR_RE =
+  /^(?:'self'|'none'|\*|https:\/\/(?:\*\.)?[a-z0-9.-]+(?::\d+)?|http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?)$/i;
+
+function resolveEmbedFrameAncestors(rawValue: string | undefined): string {
+  const trimmed = rawValue?.trim();
+  if (!trimmed) return '*';
+  const tokens = uniqueTokens(
+    trimmed
+      .split(/[\s,]+/)
+      .map((token) => token.trim())
+      .filter((token) => SAFE_FRAME_ANCESTOR_RE.test(token)),
+  );
+  return tokens.length > 0 ? tokens.join(' ') : "'self'";
+}
 
 const imgSrcTokens = uniqueTokens([
   "'self'",
@@ -67,7 +90,7 @@ const connectSrcTokens = uniqueTokens([
 function buildContentSecurityPolicy(frameAncestors: string): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isProduction ? '' : " 'unsafe-eval'"}`,
+    `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://www.googletagmanager.com https://connect.facebook.net${isProduction ? '' : " 'unsafe-eval'"}`,
     "style-src 'self' 'unsafe-inline'",
     `img-src ${imgSrcTokens.join(' ')}`,
     "font-src 'self' data:",
@@ -85,11 +108,15 @@ function buildContentSecurityPolicy(frameAncestors: string): string {
 }
 
 const strictContentSecurityPolicy = buildContentSecurityPolicy("'none'");
-const embedContentSecurityPolicy = buildContentSecurityPolicy('*');
+const embedContentSecurityPolicy = buildContentSecurityPolicy(
+  resolveEmbedFrameAncestors(process.env.EMBED_FRAME_ANCESTORS),
+);
 
 const baseSecurityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
   {
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=()',
@@ -111,10 +138,16 @@ const strictFrameHeaders = [
 
 const embedFrameHeaders = [
   { key: 'Content-Security-Policy', value: embedContentSecurityPolicy },
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
 ];
 
 const immutableAssetHeaders = [
   { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+];
+
+const publicGalleryMediaHeaders = [
+  { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
 ];
 
 const serviceWorkerHeaders = [
@@ -126,6 +159,7 @@ const serviceWorkerHeaders = [
 const privateManageHeaders = [
   { key: 'Referrer-Policy', value: 'no-referrer' },
   { key: 'Cache-Control', value: 'private, no-store' },
+  { key: 'Vary', value: 'Cookie' },
 ];
 
 const distDir = process.env.NEXT_DIST_DIR?.trim() || '.next';
@@ -184,11 +218,27 @@ const nextConfig: NextConfig = {
         headers: privateManageHeaders,
       },
       {
+        source: '/admin',
+        headers: privateManageHeaders,
+      },
+      {
+        source: '/admin/:path*',
+        headers: privateManageHeaders,
+      },
+      {
+        source: '/mis-citas',
+        headers: privateManageHeaders,
+      },
+      {
         source: '/api/admin/:path*',
         headers: [
           { key: 'Cache-Control', value: 'private, no-store' },
           { key: 'Vary', value: 'Cookie' },
         ],
+      },
+      {
+        source: '/api/media/gallery/:path*',
+        headers: publicGalleryMediaHeaders,
       },
       {
         source: '/landing/:path*',

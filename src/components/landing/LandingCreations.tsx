@@ -86,7 +86,6 @@ export function LandingCreations({
         height={572}
         loading="lazy"
         decoding="async"
-        fetchPriority="low"
         style={{ right: '-8%', top: '3%', width: '52%' }}
       />
       <img
@@ -98,7 +97,6 @@ export function LandingCreations({
         height={429}
         loading="lazy"
         decoding="async"
-        fetchPriority="low"
         style={{ left: '-10%', top: '48%', width: '38%', opacity: 0.05 }}
       />
       <VStack

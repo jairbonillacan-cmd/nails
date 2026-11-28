@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
 import Script from 'next/script';
@@ -13,7 +14,8 @@ import {
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
 import esES from '@astryxdesign/core/locales/es-ES.generated.js';
 import { LinkProvider } from '@astryxdesign/core/Link';
-import { themes, defaultThemeSlug } from '../astryx-themes';
+import { nailsTheme } from '../themes/nails/nails.js';
+import '../themes/nails/nails.css';
 import {
   CORNER_RADIUS_MAP,
   DEFAULT_BRAND_ACCENT_DARK,
@@ -24,6 +26,27 @@ import type { SalonSettings, ThemeModePreference } from '@/lib/types';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 
 const ASTRYX_MESSAGES = { 'es-MX': esES };
+
+const AdminAstryxTheme = dynamic(
+  () =>
+    import('../astryx-themes').then(({ themes }) => {
+      function AdminThemeHost({
+        mode,
+        children,
+      }: {
+        mode: ThemeModePreference;
+        children: React.ReactNode;
+      }) {
+        return (
+          <Theme theme={themes['nails-admin']} mode={mode}>
+            {children}
+          </Theme>
+        );
+      }
+      return AdminThemeHost;
+    }),
+  { ssr: true },
+);
 
 type AppearanceSettings = PublicSettingsDTO | SalonSettings;
 
@@ -88,7 +111,7 @@ function sanitizeMetaPixelId(value: string | null | undefined): string | null {
 }
 
 function resolveSalonTheme(settings: AppearanceSettings): ResolvedSalonTheme {
-  const baseTheme = themes[defaultThemeSlug];
+  const baseTheme = nailsTheme;
   const cornerStyle = settings.cornerStyle ?? 'soft';
   const accentLight = normalizeHexColor(
     settings.brandAccentLight,
@@ -158,63 +181,69 @@ export function SalonThemeProvider({
   const isAdminRoute = safePathname === '/admin' || safePathname.startsWith('/admin/');
   const effectiveMode: ThemeModePreference = isAdminRoute ? mode : 'light';
 
-  const resolvedTheme = useMemo<ResolvedSalonTheme>(() => {
-    if (isAdminRoute) {
-      return {
-        theme: themes['nails-admin'],
-        ssrStyleId: null,
-        ssrCss: null,
-      };
-    }
-    return resolveSalonTheme(settings);
-  }, [isAdminRoute, settings]);
+  const resolvedTheme = useMemo<ResolvedSalonTheme>(
+    () => resolveSalonTheme(settings),
+    [settings],
+  );
   const safeGa4Id = sanitizeGa4MeasurementId(settings.ga4MeasurementId);
   const safeMetaPixelId = sanitizeMetaPixelId(settings.metaPixelId);
 
-  const contextValue = useMemo(
-    () => ({ mode, setMode, settings, setSettingsOverride }),
-    [mode, setMode, settings],
-  );
+  const contextValue: AppearanceContextValue = {
+    mode,
+    setMode,
+    settings,
+    setSettingsOverride,
+  };
 
-  return (
-    <AppearanceContext.Provider value={contextValue}>
-      <InternationalizationProvider locale="es-MX" messages={ASTRYX_MESSAGES}>
-        <LinkProvider component={NextLinkAdapter}>
-          {resolvedTheme.ssrStyleId && resolvedTheme.ssrCss ? (
-            <style href={resolvedTheme.ssrStyleId} precedence="astryx-theme">
-              {resolvedTheme.ssrCss}
-            </style>
-          ) : null}
-          <Theme theme={resolvedTheme.theme} mode={effectiveMode}>
-            {safeGa4Id ? (
-              <>
-                <Script
-                  src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(safeGa4Id)}`}
-                  strategy="afterInteractive"
-                />
-                <Script id="nails-ga4" strategy="afterInteractive">
-                  {`window.dataLayer = window.dataLayer || [];
+  const analyticsAndChildren = (
+    <>
+      {safeGa4Id ? (
+        <>
+          <Script
+            src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(safeGa4Id)}`}
+            strategy="afterInteractive"
+          />
+          <Script id="nails-ga4" strategy="afterInteractive">
+            {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', ${JSON.stringify(safeGa4Id)});`}
-                </Script>
-              </>
-            ) : null}
+          </Script>
+        </>
+      ) : null}
 
-            {safeMetaPixelId ? (
-              <Script id="nails-meta-pixel" strategy="afterInteractive">
-                {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      {safeMetaPixelId ? (
+        <Script id="nails-meta-pixel" strategy="afterInteractive">
+          {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
 n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
 document,'script','https://connect.facebook.net/en_US/fbevents.js');
 fbq('init', ${JSON.stringify(safeMetaPixelId)});
 fbq('track', 'PageView');`}
-              </Script>
-            ) : null}
+        </Script>
+      ) : null}
 
-            {children}
-          </Theme>
+      {children}
+    </>
+  );
+
+  return (
+    <AppearanceContext.Provider value={contextValue}>
+      <InternationalizationProvider locale="es-MX" messages={ASTRYX_MESSAGES}>
+        <LinkProvider component={NextLinkAdapter}>
+          {!isAdminRoute && resolvedTheme.ssrStyleId && resolvedTheme.ssrCss ? (
+            <style href={resolvedTheme.ssrStyleId} precedence="astryx-theme">
+              {resolvedTheme.ssrCss}
+            </style>
+          ) : null}
+          {isAdminRoute ? (
+            <AdminAstryxTheme mode={effectiveMode}>{analyticsAndChildren}</AdminAstryxTheme>
+          ) : (
+            <Theme theme={resolvedTheme.theme} mode={effectiveMode}>
+              {analyticsAndChildren}
+            </Theme>
+          )}
         </LinkProvider>
       </InternationalizationProvider>
     </AppearanceContext.Provider>

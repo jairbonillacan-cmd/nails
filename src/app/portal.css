@@ -68,7 +68,6 @@
 }
 
 .pt-otp-grid input:focus {
-  outline: none;
   border-color: var(--lk-cereza);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lk-cereza) 18%, transparent);
 }

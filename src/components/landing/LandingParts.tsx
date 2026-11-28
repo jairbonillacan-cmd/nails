@@ -40,7 +40,7 @@ export function SectionHeading({
         id={id}
         color="inherit"
         textWrap="balance"
-        className="lk-serif lk-h2 lk-reveal"
+        className="lk-serif lk-h2"
       >
         {title}
       </Heading>

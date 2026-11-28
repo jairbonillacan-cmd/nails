@@ -221,6 +221,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return (
       <VStack
         as="main"
+        id="main-content"
+        tabIndex={-1}
         className="ad-sheet"
         gap={4}
         padding={6}
@@ -268,6 +270,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <VStack className="ad-shell" gap={0}>
+      <a href="#main-content" className="lk-skip-link">
+        Saltar al contenido principal
+      </a>
       <HStack
         className="ad-frame"
         data-collapsed={sidebarCollapsed ? 'true' : 'false'}
@@ -305,7 +310,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             onToggleMute={toggleMute}
           />
 
-          <VStack as="main" className="ad-sheet" gap={5}>
+          <VStack as="main" id="main-content" tabIndex={-1} className="ad-sheet" gap={5}>
             <VStack gap={5} width="100%" className="ad-content-inner">
               {overviewError ? (
                 <Banner

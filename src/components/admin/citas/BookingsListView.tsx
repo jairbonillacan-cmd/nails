@@ -165,6 +165,7 @@ export function BookingsListView({
     return (
       <EmptyStateCard
         key={`${status}-${dateKey}-empty`}
+        headingLevel={2}
         isCompact
         title="No hay citas en esta vista"
         description={

@@ -1815,7 +1815,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
     expect(campDispatchRes.status).toBe(201);
 
     resetRateLimiterForTests();
-    for (let i = 0; i < 30; i += 1) {
+    for (let i = 0; i < 15; i += 1) {
       const okRes = await postValidateCoupon(
         new NextRequest('http://localhost:3000/api/coupons/validate', {
           method: 'POST',
@@ -1827,7 +1827,7 @@ describe('Atomic Booking Concurrency, Slot Holds & Domain Guards (D1/D2/D3)', ()
         }),
       );
       expect(okRes.status).toBe(200);
-      expect(okRes.headers.get('X-RateLimit-Remaining')).toBe(String(29 - i));
+      expect(okRes.headers.get('X-RateLimit-Remaining')).toBe(String(14 - i));
     }
     const limitedRes = await postValidateCoupon(
       new NextRequest('http://localhost:3000/api/coupons/validate', {

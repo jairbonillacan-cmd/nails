@@ -392,7 +392,8 @@ html[data-lk-curtain='done'] .lk-nav .lk-lm path {
   border-bottom: 1px solid color-mix(in srgb, var(--lk-blanco) 18%, transparent);
   color: var(--lk-blanco);
   text-decoration: none;
-  font-family: 'Source Serif 4', 'Source Serif 4 Fallback', var(--font-family-heading);
+  font-family: var(--font-family-heading);
+  font-size-adjust: from-font;
   font-size: 2.25rem;
 }
 
@@ -1160,22 +1161,31 @@ a.lk-card:focus-visible,
   text-decoration: none;
   color: var(--lk-blanco);
   text-align: center;
-  background: var(--lk-cereza) url('/landing/fotos-v2/foto-025-640.webp') center / cover no-repeat;
-  background-image: image-set(
-    url('/landing/fotos-v2/foto-025-640.webp') 1x,
-    url('/landing/fotos-v2/foto-025.webp') 2x
-  );
+  background: var(--lk-cereza);
+}
+
+.lk-ig-main-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .lk-ig-main::before {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 1;
+  pointer-events: none;
   background: linear-gradient(180deg, color-mix(in srgb, var(--lk-cereza) 72%, transparent), color-mix(in srgb, var(--lk-cereza) 92%, var(--lk-tinta)));
 }
 
-.lk-ig-main > * {
+.lk-ig-main > :not(.lk-ig-main-bg) {
   position: relative;
+  z-index: 2;
 }
 
 .lk-map {
@@ -1188,6 +1198,44 @@ a.lk-card:focus-visible,
   background: var(--lk-tinte);
   content-visibility: auto;
   contain-intrinsic-size: auto 31rem;
+}
+
+.lk-map-facade {
+  width: 100%;
+  height: 100%;
+  min-height: 31rem;
+  border-radius: 2rem;
+  border: 1px solid var(--lk-linea);
+  box-sizing: border-box;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--lk-cereza) 12%, transparent) 0%, transparent 56%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 2.75rem,
+      color-mix(in srgb, var(--lk-cereza) 6%, transparent) 2.75rem,
+      color-mix(in srgb, var(--lk-cereza) 6%, transparent) 2.8125rem
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 2.75rem,
+      color-mix(in srgb, var(--lk-cereza) 6%, transparent) 2.75rem,
+      color-mix(in srgb, var(--lk-cereza) 6%, transparent) 2.8125rem
+    ),
+    var(--lk-rosa);
+}
+
+.lk-map-facade-pin {
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: var(--radius-full);
+  background: var(--lk-cereza);
+  color: var(--lk-blanco);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1rem 2rem -0.75rem var(--lk-sombra);
 }
 
 .lk-footer-grid {

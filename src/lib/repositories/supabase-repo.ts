@@ -1600,6 +1600,64 @@ function buildWaitlistOfferSlotHolds(
   return holds;
 }
 
+function computeBusyRangeForDateWindow(
+  startDate: string,
+  days: number,
+): { fromIso: string; toIso: string } | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return undefined;
+  const spanDays = Math.min(Math.max(Math.trunc(days), 1), 60);
+  return {
+    fromIso: `${shiftMetricDateKey(startDate, -1)}T00:00:00.000Z`,
+    toIso: `${shiftMetricDateKey(startDate, spanDays + 1)}T23:59:59.999Z`,
+  };
+}
+
+function computeBusyRangeForSlotIso(
+  slotIso: string,
+  fallbackNowMs: number,
+): { fromIso: string; toIso: string } {
+  const slotMs = Date.parse(slotIso);
+  if (Number.isFinite(slotMs)) {
+    return {
+      fromIso: new Date(slotMs - 36 * 3_600_000).toISOString(),
+      toIso: new Date(slotMs + 36 * 3_600_000).toISOString(),
+    };
+  }
+  return {
+    fromIso: new Date(fallbackNowMs - 48 * 3_600_000).toISOString(),
+    toIso: new Date(fallbackNowMs + 60 * 86_400_000).toISOString(),
+  };
+}
+
+async function countOutboxEventsByStatus(
+  supabase: SupabaseClient<Database>,
+): Promise<OutboxSummary> {
+  const [pendingRes, processingRes, failedRes, processedRes] = await Promise.all([
+    supabase
+      .from('outbox_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+    supabase
+      .from('outbox_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'processing'),
+    supabase
+      .from('outbox_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'failed'),
+    supabase
+      .from('outbox_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'processed'),
+  ]);
+  return {
+    pendingCount: pendingRes.count ?? 0,
+    processingCount: processingRes.count ?? 0,
+    failedCount: failedRes.count ?? 0,
+    processedCount: processedRes.count ?? 0,
+  };
+}
+
 export function createSupabaseRepository(
   clock: Clock = systemClock,
   clientOverride?: SupabaseClient<Database>,
@@ -1614,6 +1672,7 @@ export function createSupabaseRepository(
     sessionToken?: string | null;
     ignoreBookingId?: string | null;
     waitlistOfferToken?: string | null;
+    busyRange?: { fromIso: string; toIso: string };
   }): Promise<{
     settings: SalonSettings;
     service: Service;
@@ -1651,10 +1710,21 @@ export function createSupabaseRepository(
         supabase.from('public_busy_overrides').select('*'),
       ]);
 
+    let busyIntervalsQuery = supabase
+      .from('public_busy_intervals')
+      .select('source_kind, source_id, staff_id, occupied_range, updated_at');
+    if (params.busyRange) {
+      busyIntervalsQuery = busyIntervalsQuery.filter(
+        'occupied_range',
+        'ov',
+        `[${params.busyRange.fromIso},${params.busyRange.toIso}]`,
+      );
+    }
+
     const [recurringBlocksRes, busyIntervalsRes, holdsRes, calRes, waitlistOffersRes] =
       await Promise.all([
         supabase.from('recurring_blocks').select('*').eq('is_active', true),
-        supabase.from('public_busy_intervals').select('*'),
+        busyIntervalsQuery,
         supabase.from('slot_holds').select('*').gt('expires_at', nowIso),
         supabase.from('calendar_connections').select('*').eq('is_connected', true),
         supabase
@@ -2285,6 +2355,7 @@ export function createSupabaseRepository(
   async function validateCouponCode(
     code: string,
     subtotalCents: number,
+    clientId?: string | null,
   ): Promise<ValidateCouponResult> {
     const supabase = getClient();
     const normalized = code.trim().toUpperCase();
@@ -2310,6 +2381,23 @@ export function createSupabaseRepository(
         valid: false,
         error: `Monto mínimo requerido: $${(coupon.minSubtotalCents / 100).toFixed(0)} MXN.`,
       };
+    }
+
+    const cleanClientId = clientId?.trim() || null;
+    if (coupon.kind === 'coupon' && cleanClientId) {
+      const redemptionRes = await supabase
+        .from('coupon_redemptions')
+        .select('id')
+        .eq('coupon_id', coupon.id)
+        .eq('client_id', cleanClientId)
+        .eq('status', 'active')
+        .limit(1);
+      if ((redemptionRes.data ?? []).length > 0) {
+        return {
+          valid: false,
+          error: 'Ya usaste este cupón en una cita activa.',
+        };
+      }
     }
 
     let discountCents = 0;
@@ -2727,7 +2815,8 @@ export function createSupabaseRepository(
         supabase
           .from('scheduled_notifications')
           .select('*')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .limit(60),
         supabase.from('waitlist_entries').select('*'),
         supabase.from('coupons').select('*'),
         supabase.from('notification_workflows').select('*'),
@@ -2863,9 +2952,11 @@ export function createSupabaseRepository(
     async getCampaignAudienceData(): Promise<CampaignAudienceData> {
       const supabase = getClient();
       const [settingsRes, clientsRes, bookingsRes, servicesRes] = await Promise.all([
-        supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('salon_settings').select('name, timezone').eq('id', 'default').maybeSingle(),
         supabase.from('clients').select('*'),
-        supabase.from('bookings').select('*'),
+        supabase
+          .from('bookings')
+          .select('id, client_id, service_id, staff_id, start_at, end_at, status'),
         supabase.from('services').select('id, name'),
       ]);
 
@@ -2873,14 +2964,44 @@ export function createSupabaseRepository(
         throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
       }
 
-      const settings = mapSettingsRow(settingsRes.data);
       return {
         settings: {
-          name: settings.name,
-          timezone: settings.timezone,
+          name: settingsRes.data.name,
+          timezone: settingsRes.data.timezone,
         },
         clients: (clientsRes.data ?? []).map(mapClientRow),
-        bookings: (bookingsRes.data ?? []).map((row) => mapBookingRow(row, [])),
+        bookings: (bookingsRes.data ?? []).map((row) => ({
+          id: row.id,
+          bookingCode: '',
+          manageToken: '',
+          idempotencyKey: null,
+          serviceId: row.service_id,
+          extraServiceIds: [],
+          staffId: row.staff_id,
+          clientId: row.client_id,
+          startAt: row.start_at,
+          endAt: row.end_at,
+          occupiedStartAt: row.start_at,
+          occupiedEndAt: row.end_at,
+          totalDurationMinutes: 0,
+          subtotalCents: 0,
+          discountCents: 0,
+          totalPriceCents: 0,
+          depositAmountCents: 0,
+          couponCode: null,
+          status: row.status,
+          source: 'web',
+          clientNotes: '',
+          internalNotes: '',
+          inspoPhotoUrl: null,
+          paymentProofUrl: null,
+          googleEventId: null,
+          cancellationReason: null,
+          rescheduledFromId: null,
+          addons: [],
+          createdAt: row.start_at,
+          updatedAt: row.start_at,
+        })),
         services: (servicesRes.data ?? []).map((row) => ({
           id: row.id,
           name: row.name,
@@ -2895,31 +3016,109 @@ export function createSupabaseRepository(
     }): Promise<WhatsAppRemindersSnapshotData> {
       const supabase = getClient();
       const nowMs = params?.nowMs ?? clock.nowMs();
+      const nowIso = new Date(nowMs).toISOString();
       const isSpecialist = params?.role === 'specialist';
       const staffMemberId = params?.staffMemberId ?? null;
 
-      const [
-        workflowsRes,
-        notifsRes,
-        bookingsRes,
-        clientsRes,
-        servicesRes,
-        staffRes,
-        outboxRes,
-      ] = await Promise.all([
-        supabase.from('notification_workflows').select('*'),
-        supabase.from('scheduled_notifications').select('*'),
-        supabase.from('bookings').select('*'),
-        supabase.from('clients').select('*'),
-        supabase.from('services').select('id, name'),
-        supabase.from('staff_members').select('id, name'),
-        supabase.from('outbox_events').select('status'),
-      ]);
+      const [workflowsRes, notifsRes, servicesRes, staffRes, outboxSummary] =
+        await Promise.all([
+          supabase.from('notification_workflows').select('*'),
+          supabase
+            .from('scheduled_notifications')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(500),
+          supabase.from('services').select('id, name'),
+          supabase.from('staff_members').select('id, name'),
+          countOutboxEventsByStatus(supabase),
+        ]);
 
       const workflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
       const notifications = (notifsRes.data ?? []).map(mapNotificationRow);
-      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
-      const clients = (clientsRes.data ?? []).map(mapClientRow);
+
+      const referencedBookingIds = Array.from(
+        new Set(
+          notifications
+            .map((item) => item.bookingId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const referencedClientIds = Array.from(
+        new Set(
+          notifications
+            .map((item) => item.clientId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const activeStatusList = 'pending_payment,pending_confirmation,confirmed';
+      const bookingFilter =
+        referencedBookingIds.length > 0
+          ? `id.in.(${referencedBookingIds.join(',')}),and(start_at.gt.${nowIso},status.in.(${activeStatusList}))`
+          : `and(start_at.gt.${nowIso},status.in.(${activeStatusList}))`;
+
+      let bookingsQuery = supabase
+        .from('bookings')
+        .select('id, booking_code, client_id, service_id, staff_id, start_at, end_at, status')
+        .or(bookingFilter);
+      if (isSpecialist && staffMemberId) {
+        bookingsQuery = bookingsQuery.eq('staff_id', staffMemberId);
+      }
+
+      const bookingsRes = await bookingsQuery;
+      const bookings = (bookingsRes.data ?? []).map((row) => ({
+        id: row.id,
+        bookingCode: row.booking_code,
+        manageToken: '',
+        idempotencyKey: null,
+        serviceId: row.service_id,
+        extraServiceIds: [],
+        staffId: row.staff_id,
+        clientId: row.client_id,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        occupiedStartAt: row.start_at,
+        occupiedEndAt: row.end_at,
+        totalDurationMinutes: 0,
+        subtotalCents: 0,
+        discountCents: 0,
+        totalPriceCents: 0,
+        depositAmountCents: 0,
+        couponCode: null,
+        status: row.status,
+        source: 'web' as const,
+        clientNotes: '',
+        internalNotes: '',
+        inspoPhotoUrl: null,
+        paymentProofUrl: null,
+        googleEventId: null,
+        cancellationReason: null,
+        rescheduledFromId: null,
+        addons: [],
+        createdAt: row.start_at,
+        updatedAt: row.start_at,
+      }));
+
+      const allClientIds = Array.from(
+        new Set([
+          ...referencedClientIds,
+          ...bookings.map((b) => b.clientId).filter(Boolean),
+        ]),
+      );
+      const clientsRes =
+        allClientIds.length > 0
+          ? await supabase
+              .from('clients')
+              .select('id, full_name, phone_e164')
+              .in('id', allClientIds)
+          : {
+              data: [] as Array<{ id: string; full_name: string; phone_e164: string }>,
+            };
+
+      const clients = (clientsRes.data ?? []).map((row) => ({
+        id: row.id,
+        fullName: row.full_name,
+        phoneE164: row.phone_e164,
+      }));
 
       const workflowById = new Map(workflows.map((w) => [w.id, w]));
       const bookingById = new Map(bookings.map((b) => [b.id, b]));
@@ -3055,17 +3254,6 @@ export function createSupabaseRepository(
         .filter((item) => item.status !== 'pending')
         .map(toReminderItem);
 
-      let outboxPending = 0;
-      let outboxProcessing = 0;
-      let outboxFailed = 0;
-      let outboxProcessed = 0;
-      for (const row of outboxRes.data ?? []) {
-        if (row.status === 'pending') outboxPending += 1;
-        else if (row.status === 'processing') outboxProcessing += 1;
-        else if (row.status === 'failed') outboxFailed += 1;
-        else if (row.status === 'processed') outboxProcessed += 1;
-      }
-
       return {
         workflows,
         queue,
@@ -3080,12 +3268,7 @@ export function createSupabaseRepository(
           skippedCascadeCount,
           bookingsWithoutRemindersCount,
         },
-        outboxSummary: {
-          pendingCount: outboxPending,
-          processingCount: outboxProcessing,
-          failedCount: outboxFailed,
-          processedCount: outboxProcessed,
-        },
+        outboxSummary,
       };
     },
 
@@ -3901,9 +4084,29 @@ export function createSupabaseRepository(
 
     async getExecutiveReportData(options?: {
       scopeStaffId?: string | null;
+      fromDate?: string | null;
+      toDate?: string | null;
     }): Promise<ExecutiveReportData> {
       const supabase = getClient();
       const scopeStaffId = options?.scopeStaffId?.trim() || null;
+      const fromDate =
+        options?.fromDate && /^\d{4}-\d{2}-\d{2}$/.test(options.fromDate)
+          ? options.fromDate
+          : null;
+      const toDate =
+        options?.toDate && /^\d{4}-\d{2}-\d{2}$/.test(options.toDate)
+          ? options.toDate
+          : null;
+
+      const bufferedFromIso = fromDate
+        ? `${shiftMetricDateKey(fromDate, -2)}T00:00:00.000Z`
+        : null;
+      const bufferedToIso = toDate
+        ? `${shiftMetricDateKey(toDate, 2)}T23:59:59.999Z`
+        : null;
+      const depositLookbackFromIso = fromDate
+        ? `${shiftMetricDateKey(fromDate, -46)}T00:00:00.000Z`
+        : null;
 
       const staffQuery = scopeStaffId
         ? supabase.from('staff_members').select('*').eq('id', scopeStaffId)
@@ -3911,9 +4114,47 @@ export function createSupabaseRepository(
       const schedulesQuery = scopeStaffId
         ? supabase.from('availability_schedules').select('*').eq('staff_id', scopeStaffId)
         : supabase.from('availability_schedules').select('*');
-      const bookingsQuery = scopeStaffId
-        ? supabase.from('bookings').select('*').eq('staff_id', scopeStaffId)
-        : supabase.from('bookings').select('*');
+
+      let bookingsQuery = supabase
+        .from('bookings')
+        .select(
+          'id, booking_code, service_id, staff_id, client_id, start_at, end_at, occupied_start_at, occupied_end_at, total_duration_minutes, subtotal_cents, discount_cents, total_price_cents, deposit_amount_cents, status, source, cancellation_reason, created_at, updated_at',
+        );
+      if (scopeStaffId) bookingsQuery = bookingsQuery.eq('staff_id', scopeStaffId);
+      if (bufferedFromIso) bookingsQuery = bookingsQuery.gte('start_at', bufferedFromIso);
+      if (bufferedToIso) bookingsQuery = bookingsQuery.lte('start_at', bufferedToIso);
+
+      let reviewsQuery = supabase
+        .from('booking_reviews')
+        .select('id, booking_id, client_id, staff_id, rating, comment, clicked_google_review, created_at');
+      if (bufferedFromIso) reviewsQuery = reviewsQuery.gte('created_at', bufferedFromIso);
+      if (bufferedToIso) reviewsQuery = reviewsQuery.lte('created_at', bufferedToIso);
+
+      let splitsQuery = supabase
+        .from('payment_splits')
+        .select('id, booking_id, method, amount_cents, tip_cents, tip_staff_id, reference, created_at');
+      if (depositLookbackFromIso) {
+        splitsQuery = splitsQuery.gte('created_at', depositLookbackFromIso);
+      }
+      if (bufferedToIso) splitsQuery = splitsQuery.lte('created_at', bufferedToIso);
+
+      let cashQuery = supabase
+        .from('cash_register_entries')
+        .select(
+          'id, booking_id, staff_id, entry_type, description, amount_cents, tip_cents, commission_cents, payment_method, occurred_at, recorded_by, created_at',
+        );
+      if (depositLookbackFromIso) {
+        cashQuery = cashQuery.gte('occurred_at', depositLookbackFromIso);
+      }
+      if (bufferedToIso) cashQuery = cashQuery.lte('occurred_at', bufferedToIso);
+
+      let funnelQuery = supabase
+        .from('funnel_events')
+        .select('id, session_id, event_type, service_slug, staff_slug, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (bufferedFromIso) funnelQuery = funnelQuery.gte('created_at', bufferedFromIso);
+      if (bufferedToIso) funnelQuery = funnelQuery.lte('created_at', bufferedToIso);
 
       const [
         settingsRes,
@@ -3927,25 +4168,63 @@ export function createSupabaseRepository(
         cashRes,
         funnelEventsRes,
       ] = await Promise.all([
-        supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase
+          .from('salon_settings')
+          .select('timezone, currency')
+          .eq('id', 'default')
+          .maybeSingle(),
         supabase.from('services').select('*'),
         staffQuery,
         schedulesQuery,
         supabase.from('availability_rules').select('*'),
         bookingsQuery,
-        supabase.from('booking_reviews').select('*'),
-        supabase.from('payment_splits').select('*'),
-        supabase.from('cash_register_entries').select('*'),
+        reviewsQuery,
+        splitsQuery,
+        cashQuery,
         scopeStaffId
           ? Promise.resolve({ data: [] as Tables['funnel_events']['Row'][] })
-          : supabase.from('funnel_events').select('*'),
+          : funnelQuery,
       ]);
 
-      const settings = settingsRes.data
-        ? mapSettingsRow(settingsRes.data)
-        : { timezone: 'America/Mexico_City', currency: 'MXN' as const };
+      const settings: Pick<SalonSettings, 'timezone' | 'currency'> = settingsRes.data
+        ? {
+            timezone: settingsRes.data.timezone || 'America/Mexico_City',
+            currency: settingsRes.data.currency === 'USD' ? 'USD' : 'MXN',
+          }
+        : { timezone: 'America/Mexico_City', currency: 'MXN' };
       const services = (servicesRes.data ?? []).map(mapServiceRow);
-      const allBookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      const allBookings: Booking[] = (bookingsRes.data ?? []).map((row) => ({
+        id: row.id,
+        bookingCode: row.booking_code,
+        manageToken: '',
+        idempotencyKey: null,
+        serviceId: row.service_id,
+        extraServiceIds: [],
+        staffId: row.staff_id,
+        clientId: row.client_id,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        occupiedStartAt: row.occupied_start_at,
+        occupiedEndAt: row.occupied_end_at,
+        totalDurationMinutes: row.total_duration_minutes,
+        subtotalCents: row.subtotal_cents,
+        discountCents: row.discount_cents,
+        totalPriceCents: row.total_price_cents,
+        depositAmountCents: row.deposit_amount_cents,
+        couponCode: null,
+        status: row.status,
+        source: row.source,
+        clientNotes: '',
+        internalNotes: '',
+        inspoPhotoUrl: null,
+        paymentProofUrl: null,
+        googleEventId: null,
+        cancellationReason: row.cancellation_reason,
+        rescheduledFromId: null,
+        addons: [],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
       const bookings = scopeStaffId
         ? allBookings.filter((b) => b.staffId === scopeStaffId)
         : allBookings;
@@ -4017,6 +4296,7 @@ export function createSupabaseRepository(
     async queryAvailability(
       params: QueryAvailabilityInput,
     ): Promise<QueryAvailabilityOutput> {
+      const boundedDays = Math.min(Math.max(params.days, 1), 45);
       const { settings, service, extraServices, addons, eligibleStaff, ctx } =
         await loadPublicAvailabilityContext({
           serviceId: params.serviceId,
@@ -4025,12 +4305,13 @@ export function createSupabaseRepository(
           sessionToken: params.sessionToken,
           ignoreBookingId: params.ignoreBookingId,
           waitlistOfferToken: params.waitlistOfferToken,
+          busyRange: computeBusyRangeForDateWindow(params.startDate, boundedDays),
         });
 
       const days = getAvailabilityForRange(
         ctx,
         params.startDate,
-        Math.min(Math.max(params.days, 1), 45),
+        boundedDays,
         params.staffId || null,
       );
       const totals = computeServiceTotals(service, addons, extraServices);
@@ -4049,6 +4330,7 @@ export function createSupabaseRepository(
     async quickSearchAvailability(
       params: QuickSearchAvailabilityInput,
     ): Promise<QuickSearchAvailabilityOutput> {
+      const boundedDays = Math.min(Math.max(params.days, 1), 45);
       const { service, extraServices, addons, ctx } =
         await loadPublicAvailabilityContext({
           serviceId: params.serviceId,
@@ -4056,12 +4338,13 @@ export function createSupabaseRepository(
           addonIds: params.addonIds,
           sessionToken: params.sessionToken,
           waitlistOfferToken: params.waitlistOfferToken,
+          busyRange: computeBusyRangeForDateWindow(params.startDate, boundedDays),
         });
 
       const slots = findEarliestAvailableSlots(
         ctx,
         params.startDate,
-        Math.min(Math.max(params.days, 1), 45),
+        boundedDays,
         Math.min(Math.max(params.limit ?? 12, 1), 30),
         params.staffId || null,
       );
@@ -4083,6 +4366,10 @@ export function createSupabaseRepository(
       const { settings, ctx } = await loadPublicAvailabilityContext({
         serviceId,
         addonIds: [],
+        busyRange: {
+          fromIso: new Date(clock.nowMs() - 24 * 3_600_000).toISOString(),
+          toIso: new Date(clock.nowMs() + 16 * 86_400_000).toISOString(),
+        },
       });
       const found: Array<AvailableSlot & { date: string }> = [];
       for (let i = 0; i < 14 && found.length < 6; i++) {
@@ -4109,6 +4396,7 @@ export function createSupabaseRepository(
         addonIds: params.addonIds,
         sessionToken: params.sessionToken,
         waitlistOfferToken: params.waitlistOfferToken,
+        busyRange: computeBusyRangeForSlotIso(params.startAt, clock.nowMs()),
       });
 
       const slot = resolveBookableSlotOrThrow({
@@ -4207,6 +4495,7 @@ export function createSupabaseRepository(
           addonIds: params.addonIds,
           sessionToken: params.sessionToken,
           waitlistOfferToken: params.waitlistOfferToken,
+          busyRange: computeBusyRangeForSlotIso(params.startAt, clock.nowMs()),
         });
 
       if (!service.isActive) {
@@ -5156,6 +5445,7 @@ export function createSupabaseRepository(
         extraServiceIds: hydratedBefore.extraServiceIds,
         addonIds: hydratedBefore.addons.map((a) => a.addonId),
         ignoreBookingId: hydratedBefore.id,
+        busyRange: computeBusyRangeForSlotIso(params.newStartAt, clock.nowMs()),
       });
       const slot = resolveBookableSlotOrThrow({
         ctx,
@@ -5268,13 +5558,20 @@ export function createSupabaseRepository(
       nowMs = clock.nowMs(),
     ): Promise<ProcessDueNotificationsResult> {
       const supabase = getClient();
+      const DUE_NOTIFICATIONS_BATCH_LIMIT = 12;
+      const nowIso = new Date(nowMs).toISOString();
       const notificationsRes = await supabase
         .from('scheduled_notifications')
         .select('*')
-        .in('status', ['pending', 'failed']);
+        .or(
+          `and(status.eq.pending,scheduled_for.lte.${nowIso}),and(status.eq.failed,next_retry_at.lte.${nowIso})`,
+        )
+        .order('scheduled_for', { ascending: true })
+        .limit(DUE_NOTIFICATIONS_BATCH_LIMIT);
       const due = (notificationsRes.data ?? [])
         .map(mapNotificationRow)
-        .filter((n) => isSupabaseScheduledNotificationDue(n, nowMs));
+        .filter((n) => isSupabaseScheduledNotificationDue(n, nowMs))
+        .slice(0, DUE_NOTIFICATIONS_BATCH_LIMIT);
 
       if (due.length === 0) {
         return {
@@ -5290,26 +5587,67 @@ export function createSupabaseRepository(
       const dueBookingIds = Array.from(
         new Set(due.map((item) => item.bookingId).filter((id): id is string => Boolean(id))),
       );
+      const waRecipientPhoneVariants = Array.from(
+        new Set(
+          due
+            .filter((item) => item.channel === 'whatsapp')
+            .flatMap((item) => {
+              const canonical =
+                canonicalizeWhatsAppPhoneE164(item.recipient) ||
+                normalizePhoneE164(item.recipient);
+              return canonical ? phoneLookupVariants(canonical) : [];
+            }),
+        ),
+      );
 
-      const [settings, workflowsRes, bookingsRes, bookingAddonsRes, sentEmailsRes] =
-        await Promise.all([
-          getSalonSettings(),
-          supabase.from('notification_workflows').select('*'),
-          dueBookingIds.length > 0
-            ? supabase.from('bookings').select('*').in('id', dueBookingIds)
-            : Promise.resolve({ data: [] as Tables['bookings']['Row'][] }),
-          dueBookingIds.length > 0
-            ? supabase.from('booking_addons').select('*').in('booking_id', dueBookingIds)
-            : Promise.resolve({ data: [] as Tables['booking_addons']['Row'][] }),
-          dueBookingIds.length > 0
-            ? supabase
-                .from('scheduled_notifications')
-                .select('*')
-                .in('booking_id', dueBookingIds)
-                .eq('channel', 'email')
-                .eq('status', 'sent')
-            : Promise.resolve({ data: [] as Tables['scheduled_notifications']['Row'][] }),
-        ]);
+      const [
+        settings,
+        workflowsRes,
+        bookingsRes,
+        bookingAddonsRes,
+        sentEmailsRes,
+        waThreadsRes,
+      ] = await Promise.all([
+        getSalonSettings(),
+        supabase.from('notification_workflows').select('*'),
+        dueBookingIds.length > 0
+          ? supabase.from('bookings').select('*').in('id', dueBookingIds)
+          : Promise.resolve({ data: [] as Tables['bookings']['Row'][] }),
+        dueBookingIds.length > 0
+          ? supabase.from('booking_addons').select('*').in('booking_id', dueBookingIds)
+          : Promise.resolve({ data: [] as Tables['booking_addons']['Row'][] }),
+        dueBookingIds.length > 0
+          ? supabase
+              .from('scheduled_notifications')
+              .select('*')
+              .in('booking_id', dueBookingIds)
+              .eq('channel', 'email')
+              .eq('status', 'sent')
+          : Promise.resolve({ data: [] as Tables['scheduled_notifications']['Row'][] }),
+        waRecipientPhoneVariants.length > 0
+          ? supabase
+              .from('whatsapp_threads')
+              .select('phone_e164, last_inbound_at')
+              .in('phone_e164', waRecipientPhoneVariants)
+          : Promise.resolve({
+              data: [] as Array<{ phone_e164: string; last_inbound_at: string | null }>,
+            }),
+      ]);
+
+      const prefetchedWaThreads = waThreadsRes.data ?? [];
+      const resolvePrefetchedWaWindow = (
+        recipientPhone: string,
+      ): WhatsAppServiceWindowDTO => {
+        const canonical =
+          canonicalizeWhatsAppPhoneE164(recipientPhone) ||
+          normalizePhoneE164(recipientPhone);
+        const match = prefetchedWaThreads.find(
+          (row) =>
+            (canonical && canonicalizeWhatsAppPhoneE164(row.phone_e164) === canonical) ||
+            phonesMatchE164(row.phone_e164, recipientPhone),
+        );
+        return computeWhatsAppServiceWindow(match?.last_inbound_at ?? null, nowMs);
+      };
 
       const workflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
       const workflowById = new Map(workflows.map((w) => [w.id, w]));
@@ -5490,6 +5828,10 @@ export function createSupabaseRepository(
           notification: { ...item, bodyText: item.bodyText || item.previewText },
           booking: hydrated,
           settings,
+          whatsappServiceWindow:
+            item.channel === 'whatsapp'
+              ? resolvePrefetchedWaWindow(item.recipient)
+              : undefined,
         });
 
         const attemptIso = new Date(nowMs).toISOString();
@@ -6643,15 +6985,24 @@ export function createSupabaseRepository(
       const supabase = getClient();
       const bookingRes = await supabase
         .from('bookings')
-        .select('id, client_id, staff_id')
+        .select('id, client_id, staff_id, status')
         .eq('manage_token', params.manageToken)
         .maybeSingle();
       if (!bookingRes.data) {
         throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
       }
+      if (
+        bookingRes.data.status === 'canceled' ||
+        bookingRes.data.status === 'no_show'
+      ) {
+        throw new PolicyError(
+          'BOOKING_REVIEW_NOT_ALLOWED',
+          'No se puede calificar una cita cancelada o con inasistencia.',
+        );
+      }
       const existing = await supabase
         .from('booking_reviews')
-        .select('id')
+        .select('id, clicked_google_review')
         .eq('booking_id', bookingRes.data.id)
         .maybeSingle();
 
@@ -6661,7 +7012,8 @@ export function createSupabaseRepository(
             .update({
               rating: params.rating,
               comment: params.comment,
-              clicked_google_review: Boolean(params.clickedGoogleReview),
+              clicked_google_review:
+                existing.data.clicked_google_review || Boolean(params.clickedGoogleReview),
             })
             .eq('id', existing.data.id)
             .select('*')
@@ -7796,38 +8148,166 @@ export function createSupabaseRepository(
     ): Promise<{ threads: WhatsAppThreadSummaryDTO[]; summary: WhatsAppInboxSummaryDTO }> {
       const supabase = getClient();
       const nowMs = params?.nowMs ?? clock.nowMs();
+      const role = params?.role;
+      const staffMemberId = params?.staffMemberId ?? null;
+      const isSpecialist = role === 'specialist';
 
-      const [
-        threadsRes,
-        messagesRes,
-        clientsRes,
-        bookingsRes,
-        servicesRes,
-        staffRes,
-        notifsRes,
-      ] = await Promise.all([
+      const [threadsRes, servicesRes, staffRes, notifsRes] = await Promise.all([
         supabase
           .from('whatsapp_threads')
           .select('*')
           .eq('is_archived', false)
-          .order('last_message_at', { ascending: false, nullsFirst: false }),
-        supabase
-          .from('whatsapp_messages')
-          .select('thread_id, delivery_status, sender_kind, created_at')
-          .order('created_at', { ascending: false }),
-        supabase.from('clients').select('*'),
-        supabase.from('bookings').select('*'),
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+          .limit(150),
         supabase.from('services').select('id, name'),
         supabase.from('staff_members').select('id, name'),
         supabase
           .from('scheduled_notifications')
           .select('id, booking_id, client_id, status')
-          .in('status', ['pending', 'failed']),
+          .in('status', ['pending', 'failed'])
+          .limit(500),
       ]);
 
       const threads = (threadsRes.data ?? []).map(mapWhatsAppThreadRow);
-      const clients = (clientsRes.data ?? []).map(mapClientRow);
-      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      const threadIds = threads.map((t) => t.id);
+      const threadClientIds = Array.from(
+        new Set(
+          threads
+            .map((t) => t.clientId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const unlinkedPhoneVariants = Array.from(
+        new Set(
+          threads
+            .filter((t) => !t.clientId)
+            .flatMap((t) => {
+              const canonical =
+                canonicalizeWhatsAppPhoneE164(t.phoneE164) ||
+                normalizePhoneE164(t.phoneE164);
+              return canonical ? phoneLookupVariants(canonical) : [];
+            }),
+        ),
+      );
+
+      type ProjectedThreadClientRow = {
+        id: string;
+        full_name: string;
+        phone_e164: string;
+        email: string | null;
+        instagram_handle?: string | null;
+      };
+
+      const [messagesRes, clientsByIdRes, clientsByPhoneRes] = await Promise.all([
+        threadIds.length > 0
+          ? supabase
+              .from('whatsapp_messages')
+              .select('thread_id, delivery_status, sender_kind, created_at')
+              .in('thread_id', threadIds)
+              .order('created_at', { ascending: false })
+              .limit(Math.min(1000, threadIds.length * 4))
+          : Promise.resolve({
+              data: [] as Array<{
+                thread_id: string;
+                delivery_status: WhatsAppMessage['deliveryStatus'];
+                sender_kind: WhatsAppMessage['senderKind'];
+                created_at: string;
+              }>,
+            }),
+        threadClientIds.length > 0
+          ? supabase
+              .from('clients')
+              .select('id, full_name, phone_e164, email, instagram_handle')
+              .in('id', threadClientIds)
+          : Promise.resolve({ data: [] as ProjectedThreadClientRow[] }),
+        unlinkedPhoneVariants.length > 0
+          ? supabase
+              .from('clients')
+              .select('id, full_name, phone_e164, email, instagram_handle')
+              .in('phone_e164', unlinkedPhoneVariants)
+          : Promise.resolve({ data: [] as ProjectedThreadClientRow[] }),
+      ]);
+
+      const clientRowById = new Map<string, ProjectedThreadClientRow>();
+      for (const row of [...(clientsByIdRes.data ?? []), ...(clientsByPhoneRes.data ?? [])]) {
+        clientRowById.set(row.id, row);
+      }
+      const clients = Array.from(clientRowById.values()).map((row) => ({
+        id: row.id,
+        fullName: row.full_name,
+        phoneE164: row.phone_e164,
+        email: row.email,
+        instagramHandle: row.instagram_handle ?? null,
+      }));
+
+      const allReferencedClientIds = Array.from(
+        new Set([...threadClientIds, ...clients.map((c) => c.id)]),
+      );
+      const notifBookingIds = Array.from(
+        new Set(
+          (notifsRes.data ?? [])
+            .map((n) => n.booking_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      type ProjectedThreadBookingRow = {
+        id: string;
+        booking_code: string;
+        client_id: string;
+        service_id: string;
+        staff_id: string;
+        start_at: string;
+        end_at: string;
+        status: Booking['status'];
+        attendance_status?: Booking['attendanceStatus'];
+        total_price_cents: number;
+        deposit_amount_cents: number;
+        manage_token: string;
+      };
+
+      const bookingColumns =
+        'id, booking_code, client_id, service_id, staff_id, start_at, end_at, status, attendance_status, total_price_cents, deposit_amount_cents, manage_token';
+      const bookingQueries: Array<PromiseLike<{ data: ProjectedThreadBookingRow[] | null }>> = [];
+      if (allReferencedClientIds.length > 0) {
+        bookingQueries.push(
+          supabase
+            .from('bookings')
+            .select(bookingColumns)
+            .in('client_id', allReferencedClientIds),
+        );
+      }
+      if (isSpecialist && staffMemberId && notifBookingIds.length > 0) {
+        bookingQueries.push(
+          supabase
+            .from('bookings')
+            .select(bookingColumns)
+            .eq('staff_id', staffMemberId)
+            .in('id', notifBookingIds),
+        );
+      }
+      const bookingQueryResults = await Promise.all(bookingQueries);
+      const bookingRowById = new Map<string, ProjectedThreadBookingRow>();
+      for (const res of bookingQueryResults) {
+        for (const row of res.data ?? []) {
+          bookingRowById.set(row.id, row);
+        }
+      }
+
+      const bookings = Array.from(bookingRowById.values()).map((row) => ({
+        id: row.id,
+        bookingCode: row.booking_code,
+        manageToken: row.manage_token,
+        serviceId: row.service_id,
+        staffId: row.staff_id,
+        clientId: row.client_id,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        status: row.status,
+        attendanceStatus: row.attendance_status ?? 'pending',
+        totalPriceCents: row.total_price_cents,
+        depositAmountCents: row.deposit_amount_cents,
+      }));
       const serviceNameById = new Map(
         (servicesRes.data ?? []).map((s) => [s.id, s.name]),
       );
@@ -7855,11 +8335,10 @@ export function createSupabaseRepository(
         }
       }
 
-      const role = params?.role;
-      const staffMemberId = params?.staffMemberId ?? null;
-      const isSpecialist = role === 'specialist';
+      type ProjectedThreadClient = (typeof clients)[number];
+      type ProjectedThreadBooking = (typeof bookings)[number];
 
-      const findClientForThread = (thread: WhatsAppThread): ClientProfile | null => {
+      const findClientForThread = (thread: WhatsAppThread): ProjectedThreadClient | null => {
         if (thread.clientId) {
           const byId = clients.find((c) => c.id === thread.clientId);
           if (byId) return byId;
@@ -7867,7 +8346,10 @@ export function createSupabaseRepository(
         return clients.find((c) => phonesMatchE164(c.phoneE164, thread.phoneE164)) ?? null;
       };
 
-      const isVisibleThread = (thread: WhatsAppThread, client: ClientProfile | null): boolean => {
+      const isVisibleThread = (
+        thread: WhatsAppThread,
+        client: ProjectedThreadClient | null,
+      ): boolean => {
         if (!isSpecialist) return true;
         if (!staffMemberId) return false;
         if (thread.assignedStaffId === staffMemberId) return true;
@@ -7877,7 +8359,7 @@ export function createSupabaseRepository(
         );
       };
 
-      const toContext = (b: Booking): WhatsAppThreadBookingContextDTO => ({
+      const toContext = (b: ProjectedThreadBooking): WhatsAppThreadBookingContextDTO => ({
         bookingId: b.id,
         bookingCode: b.bookingCode,
         serviceName: serviceNameById.get(b.serviceId) ?? 'Servicio',
@@ -8776,20 +9258,129 @@ export function createSupabaseRepository(
         .order('scheduled_for', { ascending: params?.status === 'pending' })
         .limit(limit * 2);
 
-      const [notifsRes, workflowsRes, bookingsRes, clientsRes, servicesRes, staffRes] =
-        await Promise.all([
-          notifQuery,
-          supabase.from('notification_workflows').select('*'),
-          supabase.from('bookings').select('*'),
-          supabase.from('clients').select('*'),
-          supabase.from('services').select('id, name'),
-          supabase.from('staff_members').select('id, name'),
-        ]);
+      const [notifsRes, workflowsRes, servicesRes, staffRes] = await Promise.all([
+        notifQuery,
+        supabase.from('notification_workflows').select('*'),
+        supabase.from('services').select('id, name'),
+        supabase.from('staff_members').select('id, name'),
+      ]);
 
       const notifications = (notifsRes.data ?? []).map(mapNotificationRow);
       const workflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
-      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
-      const clients = (clientsRes.data ?? []).map(mapClientRow);
+
+      const isSpecialist = params?.role === 'specialist';
+      const staffMemberId = params?.staffMemberId ?? null;
+
+      const referencedBookingIds = Array.from(
+        new Set(
+          notifications
+            .map((item) => item.bookingId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const referencedClientIds = Array.from(
+        new Set(
+          notifications
+            .map((item) => item.clientId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const clientOnlyNotifClientIds = Array.from(
+        new Set(
+          notifications
+            .filter((item) => !item.bookingId && Boolean(item.clientId))
+            .map((item) => item.clientId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      type ProjectedReminderBookingRow = {
+        id: string;
+        booking_code: string;
+        client_id: string;
+        service_id: string;
+        staff_id: string;
+        start_at: string;
+        end_at: string;
+        status: Booking['status'];
+      };
+
+      const [bookingsRes, specialistClientBookingsRes] = await Promise.all([
+        referencedBookingIds.length > 0
+          ? supabase
+              .from('bookings')
+              .select('id, booking_code, client_id, service_id, staff_id, start_at, end_at, status')
+              .in('id', referencedBookingIds)
+          : Promise.resolve({ data: [] as ProjectedReminderBookingRow[] }),
+        isSpecialist && staffMemberId && clientOnlyNotifClientIds.length > 0
+          ? supabase
+              .from('bookings')
+              .select('client_id')
+              .eq('staff_id', staffMemberId)
+              .in('client_id', clientOnlyNotifClientIds)
+          : Promise.resolve({ data: [] as Array<{ client_id: string }> }),
+      ]);
+
+      const bookings = (bookingsRes.data ?? []).map((row) => ({
+        id: row.id,
+        bookingCode: row.booking_code,
+        manageToken: '',
+        idempotencyKey: null,
+        serviceId: row.service_id,
+        extraServiceIds: [],
+        staffId: row.staff_id,
+        clientId: row.client_id,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        occupiedStartAt: row.start_at,
+        occupiedEndAt: row.end_at,
+        totalDurationMinutes: 0,
+        subtotalCents: 0,
+        discountCents: 0,
+        totalPriceCents: 0,
+        depositAmountCents: 0,
+        couponCode: null,
+        status: row.status,
+        source: 'web' as const,
+        clientNotes: '',
+        internalNotes: '',
+        inspoPhotoUrl: null,
+        paymentProofUrl: null,
+        googleEventId: null,
+        cancellationReason: null,
+        rescheduledFromId: null,
+        addons: [],
+        createdAt: row.start_at,
+        updatedAt: row.start_at,
+      }));
+      const specialistClientIds = new Set(
+        (specialistClientBookingsRes.data ?? []).map((row) => row.client_id),
+      );
+      for (const b of bookings) {
+        if (isSpecialist && staffMemberId && b.staffId === staffMemberId) {
+          specialistClientIds.add(b.clientId);
+        }
+      }
+
+      const allClientIds = Array.from(
+        new Set([
+          ...referencedClientIds,
+          ...bookings.map((b) => b.clientId).filter(Boolean),
+        ]),
+      );
+      const clientsRes =
+        allClientIds.length > 0
+          ? await supabase
+              .from('clients')
+              .select('id, full_name, phone_e164')
+              .in('id', allClientIds)
+          : { data: [] as Array<{ id: string; full_name: string; phone_e164: string }> };
+
+      const clients = (clientsRes.data ?? []).map((row) => ({
+        id: row.id,
+        fullName: row.full_name,
+        phoneE164: row.phone_e164,
+      }));
 
       const workflowById = new Map(workflows.map((w) => [w.id, w]));
       const bookingById = new Map(bookings.map((b) => [b.id, b]));
@@ -8801,9 +9392,6 @@ export function createSupabaseRepository(
         (staffRes.data ?? []).map((s) => [s.id, s.name]),
       );
 
-      const isSpecialist = params?.role === 'specialist';
-      const staffMemberId = params?.staffMemberId ?? null;
-
       const visible = notifications.filter((item) => {
         if (!isSpecialist) return true;
         if (!staffMemberId) return false;
@@ -8811,9 +9399,7 @@ export function createSupabaseRepository(
           return bookingById.get(item.bookingId)?.staffId === staffMemberId;
         }
         if (item.clientId) {
-          return bookings.some(
-            (b) => b.clientId === item.clientId && b.staffId === staffMemberId,
-          );
+          return specialistClientIds.has(item.clientId);
         }
         return false;
       });
@@ -9026,19 +9612,7 @@ export function createSupabaseRepository(
     },
 
     async getOutboxSummary(): Promise<OutboxSummary> {
-      const supabase = getClient();
-      const { data } = await supabase.from('outbox_events').select('status');
-      let pendingCount = 0;
-      let processingCount = 0;
-      let failedCount = 0;
-      let processedCount = 0;
-      for (const row of data ?? []) {
-        if (row.status === 'pending') pendingCount += 1;
-        else if (row.status === 'processing') processingCount += 1;
-        else if (row.status === 'failed') failedCount += 1;
-        else if (row.status === 'processed') processedCount += 1;
-      }
-      return { pendingCount, processingCount, failedCount, processedCount };
+      return countOutboxEventsByStatus(getClient());
     },
 
     async drainStaleOutboxEvents(
@@ -9058,6 +9632,18 @@ export function createSupabaseRepository(
         .lte('available_at', cutoffIso)
         .select('id');
       return { drainedCount: data?.length ?? 0 };
+    },
+
+    async pruneOldFunnelEvents(olderThanIso: string): Promise<number> {
+      const supabase = getClient();
+      const { count, error } = await supabase
+        .from('funnel_events')
+        .delete({ count: 'exact' })
+        .lt('created_at', olderThanIso);
+      if (error) {
+        return 0;
+      }
+      return count ?? 0;
     },
   };
 }

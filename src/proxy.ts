@@ -20,6 +20,14 @@ function hasSupabaseAuthCookie(request: NextRequest): boolean {
     );
 }
 
+function isSupabaseRuntimeConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() &&
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+  );
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -31,13 +39,18 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const supabaseEnabled = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL?.trim());
+  const supabaseEnabled = isSupabaseRuntimeConfigured();
   const isAuthenticated = supabaseEnabled
     ? hasSupabaseAuthCookie(request)
     : hasSignedDemoAdminCookie(request);
 
   if (!isAuthenticated) {
-    return NextResponse.redirect(new URL('/admin/login', request.url));
+    const redirectResponse = NextResponse.redirect(
+      new URL('/admin/login', request.url),
+    );
+    redirectResponse.headers.set('Cache-Control', 'private, no-store');
+    redirectResponse.headers.set('Vary', 'Cookie');
+    return redirectResponse;
   }
 
   return NextResponse.next();

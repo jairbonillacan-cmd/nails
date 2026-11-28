@@ -19,6 +19,12 @@ import {
   toggleServicePackage,
   upsertServicePackage,
 } from '@/lib/repositories/db';
+import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
+
+const PACKAGES_UNSUPPORTED_PAYLOAD = {
+  code: 'NOT_SUPPORTED',
+  error: 'Los paquetes aún no están disponibles con almacenamiento persistente en Supabase.',
+} as const;
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin', 'specialist'], request);
@@ -26,6 +32,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { error: 'No autorizado' },
       { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  if (isSupabaseEnabled()) {
+    return NextResponse.json(
+      {
+        supported: false,
+        servicePackages: [],
+        clientPackages: [],
+      },
+      { headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -40,7 +57,7 @@ export async function GET(request: NextRequest) {
     const staffMemberId = session.user.staffMemberId;
     if (!staffMemberId || allClientPackages.length === 0) {
       return NextResponse.json(
-        { servicePackages, clientPackages: [] },
+        { supported: true, servicePackages, clientPackages: [] },
         { headers: ADMIN_PRIVATE_HEADERS },
       );
     }
@@ -49,12 +66,13 @@ export async function GET(request: NextRequest) {
     );
     if (clientId && !visibleClientIds.has(clientId)) {
       return NextResponse.json(
-        { servicePackages, clientPackages: [] },
+        { supported: true, servicePackages, clientPackages: [] },
         { headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     return NextResponse.json(
       {
+        supported: true,
         servicePackages,
         clientPackages: allClientPackages.filter((pkg) =>
           visibleClientIds.has(pkg.clientId),
@@ -66,6 +84,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(
     {
+      supported: true,
       servicePackages,
       clientPackages: allClientPackages,
     },
@@ -86,6 +105,12 @@ export async function POST(request: NextRequest) {
       { error: 'Permisos insuficientes para gestionar paquetes.' },
       { status: 403, headers: ADMIN_PRIVATE_HEADERS },
     );
+  }
+  if (isSupabaseEnabled()) {
+    return NextResponse.json(PACKAGES_UNSUPPORTED_PAYLOAD, {
+      status: 501,
+      headers: ADMIN_PRIVATE_HEADERS,
+    });
   }
 
   let raw: unknown;
@@ -170,6 +195,12 @@ export async function PATCH(request: NextRequest) {
       { error: 'Permisos insuficientes para modificar paquetes.' },
       { status: 403, headers: ADMIN_PRIVATE_HEADERS },
     );
+  }
+  if (isSupabaseEnabled()) {
+    return NextResponse.json(PACKAGES_UNSUPPORTED_PAYLOAD, {
+      status: 501,
+      headers: ADMIN_PRIVATE_HEADERS,
+    });
   }
 
   let rawBody: unknown;

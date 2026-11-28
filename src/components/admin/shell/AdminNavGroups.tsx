@@ -197,7 +197,12 @@ export function AdminNavGroups({
   const footerBadge = computeCollapsedSectionBadge(footerNavItems);
 
   return (
-    <VStack as="nav" aria-label="Panel" gap={isCompactRail ? 2 : 3} className="ad-nav-wrap">
+    <VStack
+      as="nav"
+      aria-label={idPrefix === 'drawer' ? 'Menú móvil' : 'Principal'}
+      gap={isCompactRail ? 2 : 3}
+      className="ad-nav-wrap"
+    >
       {primaryNavGroups.map((group, groupIdx) => {
         const collapsed = !isCompactRail && isSectionCollapsed(group.id);
         const panelId = `ad-nav-sec-${idPrefix}-${group.id}`;

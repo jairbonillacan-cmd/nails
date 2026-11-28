@@ -179,6 +179,7 @@ import {
   type ListScheduledNotificationsParams,
   type ListWhatsAppThreadsParams,
   type NearRewardClientRecord,
+  type NotificationDispatcher,
   type OutboxEventRecord,
   type OutboxSummary,
   type PublicBootstrapData,
@@ -557,6 +558,8 @@ function getAdminBookingsRangeFromDemo(
 
 function getExecutiveReportDataFromDemo(options?: {
   scopeStaffId?: string | null;
+  fromDate?: string | null;
+  toDate?: string | null;
 }): ExecutiveReportData {
   const db = getSnapshot();
   const scopeStaffId = options?.scopeStaffId?.trim() || null;
@@ -6119,6 +6122,12 @@ export async function submitBookingReview(params: {
   return withWriteLock((db) => {
     const booking = db.bookings.find((b) => b.manageToken === params.manageToken);
     if (!booking) throw new PolicyError('BOOKING_NOT_FOUND', 'Cita no encontrada.');
+    if (booking.status === 'canceled' || booking.status === 'no_show') {
+      throw new PolicyError(
+        'BOOKING_REVIEW_NOT_ALLOWED',
+        'No se puede calificar una cita cancelada o con inasistencia.',
+      );
+    }
     const existing = db.reviews.find((r) => r.bookingId === booking.id);
     if (existing) {
       existing.rating = params.rating;
@@ -6494,15 +6503,7 @@ function isScheduledNotificationDue(
 }
 
 export async function processDueScheduledNotifications(
-  dispatcher: (params: {
-    notification: ScheduledNotification;
-    booking: BookingWithRelations;
-    settings: SalonSettings;
-  }) => Promise<{
-    status: 'sent' | 'failed';
-    providerMessageId: string | null;
-    errorMessage: string | null;
-  }>,
+  dispatcher: NotificationDispatcher,
   nowMs = Date.now(),
 ): Promise<{
   processed: number;
@@ -6525,6 +6526,7 @@ export async function processDueScheduledNotifications(
   }
   const phase1 = await withWriteLock((db) => {
     const due = db.notifications.filter((n) => isScheduledNotificationDue(n, nowMs));
+    const threads = db.whatsappThreads ?? [];
 
     let canceledCount = 0;
     let skippedCount = 0;
@@ -6534,6 +6536,7 @@ export async function processDueScheduledNotifications(
       notification: ScheduledNotification;
       booking: BookingWithRelations;
       settings: SalonSettings;
+      whatsappServiceWindow?: WhatsAppServiceWindowDTO;
       isReminder24h: boolean;
       isTouchUp: boolean;
     }> = [];
@@ -6608,12 +6611,26 @@ export async function processDueScheduledNotifications(
       }
 
       const hydrated = hydrateBooking(db, rawBooking);
+      let whatsappServiceWindow: WhatsAppServiceWindowDTO | undefined;
+      if (item.channel === 'whatsapp') {
+        const canonical = canonicalizeWhatsAppPhoneE164(item.recipient);
+        const matchingThread = threads.find(
+          (t) =>
+            (canonical && canonicalizeWhatsAppPhoneE164(t.phoneE164) === canonical) ||
+            phonesMatchE164(t.phoneE164, item.recipient),
+        );
+        whatsappServiceWindow = computeWhatsAppServiceWindow(
+          matchingThread?.lastInboundAt ?? null,
+          nowMs,
+        );
+      }
       workItems.push({
         notificationId: item.id,
         isRetry,
         notification: { ...item, bodyText: item.bodyText || item.previewText },
         booking: hydrated,
         settings: { ...db.settings },
+        whatsappServiceWindow,
         isReminder24h: Boolean(wf?.triggerEvent === 'before_booking' && wf.offsetMinutes >= 720),
         isTouchUp: Boolean(isAfterBooking && (wf?.offsetMinutes ?? 0) >= 1440),
       });
@@ -6652,6 +6669,7 @@ export async function processDueScheduledNotifications(
       notification: work.notification,
       booking: work.booking,
       settings: work.settings,
+      whatsappServiceWindow: work.whatsappServiceWindow,
     });
     dispatchResults.push({ work, res });
   }
@@ -8101,6 +8119,27 @@ export async function drainStaleOutboxEvents(
   return { drainedCount };
 }
 
+export async function pruneOldFunnelEvents(olderThanIso: string): Promise<number> {
+  if (isSupabaseEnabled()) {
+    return createSupabaseRepository().pruneOldFunnelEvents(olderThanIso);
+  }
+  const cutoffMs = Date.parse(olderThanIso);
+  if (!Number.isFinite(cutoffMs)) return 0;
+  return withWriteLock((db) => {
+    const existing = db.funnelEvents ?? [];
+    if (existing.length === 0) return 0;
+    const kept = existing.filter((event) => {
+      const ts = Date.parse(event.createdAt);
+      return !Number.isFinite(ts) || ts >= cutoffMs;
+    });
+    const removedCount = existing.length - kept.length;
+    if (removedCount > 0) {
+      db.funnelEvents = kept;
+    }
+    return removedCount;
+  });
+}
+
 function createDemoRepository(clock: Clock = systemClock): SalonRepository {
   return {
     async getSalonSettings() {
@@ -8703,8 +8742,8 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     async getNextQuickSlots(serviceId, staffId) {
       return getNextQuickSlots(serviceId, staffId);
     },
-    async validateCouponCode(code, subtotalCents) {
-      return validateCouponCode(code, subtotalCents);
+    async validateCouponCode(code, subtotalCents, clientId) {
+      return validateCouponCode(code, subtotalCents, clientId);
     },
     createOrRefreshSlotHold,
     releaseSlotHold,
@@ -8900,6 +8939,7 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     updateNotificationWorkflow,
     getOutboxSummary,
     drainStaleOutboxEvents,
+    pruneOldFunnelEvents,
   };
 }
 

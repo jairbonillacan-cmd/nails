@@ -1,8 +1,7 @@
 import { cache, Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
-import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
+import { DM_Sans, Source_Serif_4 } from 'next/font/google';
 import './globals.css';
-import { defaultThemeSlug } from '@/astryx-themes';
 import { isSiteNoIndexEnabled } from '@/lib/env';
 import { getRepository } from '@/lib/repositories/db';
 import { toPublicSettingsDTO, type PublicSettingsDTO } from '@/lib/public-dto';
@@ -18,20 +17,22 @@ import { RouteProgressBar } from '@/components/RouteProgressBar';
 
 export const dynamic = 'force-dynamic';
 
-const adminSans = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-admin-sans',
+const DEFAULT_THEME_SLUG = 'nails';
+
+const publicSans = DM_Sans({
+  subsets: ['latin', 'latin-ext'],
+  weight: ['400', '500', '700'],
+  variable: '--font-public-sans',
   display: 'swap',
-  preload: false,
+  adjustFontFallback: true,
 });
 
-const adminDisplay = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--font-admin-display',
+const publicSerif = Source_Serif_4({
+  subsets: ['latin', 'latin-ext'],
+  weight: ['500', '600'],
+  variable: '--font-public-serif',
   display: 'swap',
-  preload: false,
+  adjustFontFallback: true,
 });
 
 const THEME_BOOT_SCRIPT =
@@ -59,7 +60,7 @@ function resolveInitialThemeName(settings: PublicSettingsDTO): string {
     accentLight.toLowerCase() === DEFAULT_BRAND_ACCENT_LIGHT.toLowerCase() &&
     accentDark.toLowerCase() === DEFAULT_BRAND_ACCENT_DARK.toLowerCase()
   ) {
-    return defaultThemeSlug;
+    return DEFAULT_THEME_SLUG;
   }
   return `salon-${cornerStyle}-${accentLight.slice(1).toLowerCase()}-${accentDark.slice(1).toLowerCase()}`;
 }
@@ -139,7 +140,7 @@ export default async function RootLayout({
   return (
     <html
       lang="es-MX"
-      className={`${adminSans.variable} ${adminDisplay.variable}`}
+      className={`${publicSans.variable} ${publicSerif.variable}`}
       data-astryx-theme={initialThemeName}
       data-theme="light"
       data-palette={publicSettings.publicPalette}

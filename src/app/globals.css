@@ -75,6 +75,8 @@ body {
 .lk-portal,
 .lk-curtain {
   color-scheme: light;
+  --font-family-body: var(--font-public-sans), 'DM Sans', 'DM Sans Fallback', system-ui, sans-serif;
+  --font-family-heading: var(--font-public-serif), 'Source Serif 4', 'Source Serif 4 Fallback', Georgia, serif;
   --lk-cereza: var(--color-accent);
   --lk-rosa: color-mix(in srgb, var(--color-accent) 4%, var(--color-background-surface));
   --lk-tinte: color-mix(in srgb, var(--color-accent) 10%, var(--color-background-surface));
@@ -110,8 +112,44 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
 .lk-root {
   background: var(--lk-rosa);
   color: var(--lk-tinta);
-  font-family: 'DM Sans', 'DM Sans Fallback', var(--font-family-body);
+  font-family: var(--font-family-body);
+  font-size-adjust: from-font;
   overflow-x: clip;
+}
+
+.lk-skip-link {
+  position: fixed;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 250;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.625rem 1.125rem;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  box-shadow: 0 0.75rem 1.75rem -0.5rem color-mix(in srgb, var(--color-on-light) 35%, transparent);
+}
+
+.lk-skip-link:where(:not(:focus, :focus-visible, :active)) {
+  clip-path: inset(50%);
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
+.lk-skip-link:focus-visible {
+  outline: 2px solid var(--color-on-light);
+  outline-offset: 2px;
 }
 
 .lk-portal {
@@ -342,7 +380,8 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   }
 }
 .lk-serif {
-  font-family: 'Source Serif 4', 'Source Serif 4 Fallback', var(--font-family-heading);
+  font-family: var(--font-family-heading);
+  font-size-adjust: from-font;
   font-weight: 500;
   letter-spacing: -0.03em;
   line-height: 0.95;
@@ -460,6 +499,12 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
+}
+
+.lk-boundary-btn-primary:focus-visible,
+.lk-boundary-btn-secondary:focus-visible {
+  outline: 2px solid var(--focus-outline-color, var(--lk-cereza));
+  outline-offset: 2px;
 }
 
 .lk-boundary-btn-primary {
@@ -1233,24 +1278,6 @@ html[data-palette='monochrome'] :is(.lk-root, .lk-portal) img:is([src*='cereza.s
 
 .sk-eyebrow[data-on='cherry'] {
   color: var(--lk-suave);
-}
-
-.sk-service-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.5rem 0.5rem 0.75rem;
-  border-radius: 1.25rem;
-  background: var(--color-background-surface);
-  border: 1.5px solid var(--lk-tinte);
-  box-sizing: border-box;
-  min-width: 0;
-}
-
-.sk-service-media {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border-radius: 0.875rem;
 }
 
 .sk-step-pill {

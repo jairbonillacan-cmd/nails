@@ -2,6 +2,7 @@
 
 import { BrandIcon } from '@/components/brand/BrandIcon';
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -25,10 +26,22 @@ import type {
 } from '@/lib/public-dto';
 import { BookingHeader } from '../booking/BookingChrome';
 import { LANDING_ASSETS } from '../landing/landingContent';
-import { PortalBookingsTab } from './PortalBookingsTab';
 import { PortalOtpGate } from './PortalOtpGate';
-import { PortalProfileTab } from './PortalProfileTab';
-import { PortalRewardsTab } from './PortalRewardsTab';
+
+const PortalBookingsTab = dynamic(
+  () => import('./PortalBookingsTab').then((mod) => mod.PortalBookingsTab),
+  { ssr: false },
+);
+
+const PortalRewardsTab = dynamic(
+  () => import('./PortalRewardsTab').then((mod) => mod.PortalRewardsTab),
+  { ssr: false },
+);
+
+const PortalProfileTab = dynamic(
+  () => import('./PortalProfileTab').then((mod) => mod.PortalProfileTab),
+  { ssr: false },
+);
 
 type PortalTab = 'upcoming' | 'history' | 'rewards' | 'profile';
 
@@ -136,6 +149,9 @@ export function ClientPortalView({
 
   return (
     <VStack className="lk-root pt-shell">
+      <a href="#main-content" className="lk-skip-link">
+        Saltar al contenido principal
+      </a>
       <BookingHeader settings={settings} />
 
       <VStack as="section" className="rb-hero ck-hero" aria-labelledby="pt-hero-title">
@@ -168,7 +184,7 @@ export function ClientPortalView({
         </svg>
       </VStack>
 
-      <VStack as="main" gap={4} className="rb-wrap rb-main">
+      <VStack as="main" id="main-content" tabIndex={-1} gap={4} className="rb-wrap rb-main">
         {isOffline ? (
           <HStack role="status" aria-live="polite" align="center" gap={2} className="pt-offline-pill" data-inline="true">
             <WifiOff size={15} aria-hidden="true" />

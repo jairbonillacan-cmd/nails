@@ -23,6 +23,7 @@ export async function GET(request?: NextRequest) {
       {
         status: 429,
         headers: {
+          'Cache-Control': 'no-store',
           'Retry-After': String(rate.retryAfterSeconds),
           'X-RateLimit-Remaining': '0',
         },
@@ -46,18 +47,61 @@ export async function GET(request?: NextRequest) {
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let cleanedUp = false;
+  let abortListener: (() => void) | null = null;
+
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+    if (unsubscribe) {
+      const release = unsubscribe;
+      unsubscribe = null;
+      release();
+    }
+    if (abortListener && request?.signal) {
+      request.signal.removeEventListener('abort', abortListener);
+      abortListener = null;
+    }
+  };
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = (event: PublicRealtimeEvent) => {
+      const closeSilently = () => {
+        cleanup();
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          controller.close();
         } catch {
           return;
         }
       };
 
+      const send = (event: PublicRealtimeEvent) => {
+        if (cleanedUp) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          cleanup();
+        }
+      };
+
+      if (request?.signal) {
+        if (request.signal.aborted) {
+          closeSilently();
+          return;
+        }
+        abortListener = () => {
+          closeSilently();
+        };
+        request.signal.addEventListener('abort', abortListener, { once: true });
+      }
+
       send(toPublicRealtimeEvent('connected'));
+      if (cleanedUp) return;
+
       unsubscribe = subscribeRealtime((event) => {
         send(
           toPublicRealtimeEvent(
@@ -71,16 +115,16 @@ export async function GET(request?: NextRequest) {
         );
       });
       heartbeat = setInterval(() => {
+        if (cleanedUp) return;
         try {
           controller.enqueue(encoder.encode(`: ping\n\n`));
         } catch {
-          if (heartbeat) clearInterval(heartbeat);
+          cleanup();
         }
       }, 20_000);
     },
     cancel() {
-      if (heartbeat) clearInterval(heartbeat);
-      if (unsubscribe) unsubscribe();
+      cleanup();
     },
   });
 
@@ -88,6 +132,7 @@ export async function GET(request?: NextRequest) {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
       Connection: 'keep-alive',
     },
   });

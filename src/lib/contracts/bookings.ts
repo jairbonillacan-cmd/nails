@@ -171,5 +171,8 @@ export const CreateWaitlistSchema = z.object({
 
 export const ValidateCouponSchema = z.object({
   code: NonEmptyIdSchema,
-  subtotalCents: CentsNonNegativeSchema,
+  subtotalCents: CentsNonNegativeSchema.max(
+    5_000_000,
+    'El subtotal excede el límite permitido para validación.',
+  ),
 });

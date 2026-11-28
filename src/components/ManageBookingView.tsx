@@ -162,6 +162,9 @@ export function ManageBookingView({
 
   return (
     <VStack className="lk-root rb-root">
+      <a href="#main-content" className="lk-skip-link">
+        Saltar al contenido principal
+      </a>
       <BookingHeader settings={settings} />
 
       <CitaHero
@@ -172,7 +175,7 @@ export function ManageBookingView({
         requiresDeposit={requiresDeposit}
       />
 
-      <VStack as="main" gap={4} className="rb-wrap rb-main ck-wrap">
+      <VStack as="main" id="main-content" tabIndex={-1} gap={4} className="rb-wrap rb-main ck-wrap">
         {studioContext ? (
           <CitaStudioBar
             context={studioContext}

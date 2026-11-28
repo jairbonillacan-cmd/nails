@@ -153,6 +153,8 @@ export function ClientSignInDialog({
                   value={otp.phone}
                   onChange={(value) => otp.setPhone(formatMxPhoneDisplay(value))}
                   isDisabled={otp.isBusy}
+                  isRequired
+                  status={otp.error ? { type: 'error', message: otp.error } : undefined}
                   hasAutoFocus
                 />
                 <Button
@@ -208,6 +210,8 @@ export function ClientSignInDialog({
                   value={otp.code}
                   onChange={(value) => otp.setCode(value.replace(/\D/g, '').slice(0, 6))}
                   isDisabled={otp.isBusy}
+                  isRequired
+                  status={otp.error ? { type: 'error', message: otp.error } : undefined}
                   hasAutoFocus
                 />
                 </VStack>

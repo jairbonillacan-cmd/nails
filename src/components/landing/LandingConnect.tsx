@@ -38,7 +38,7 @@ export function LandingConnect({
             decoding="async"
           />
           <VStack className="lk-cereza-text">
-            <Heading level={2} id="ig-t" color="inherit" className="lk-serif lk-h2 lk-reveal">
+            <Heading level={2} id="ig-t" color="inherit" className="lk-serif lk-h2">
               {title}
             </Heading>
           </VStack>
@@ -86,6 +86,18 @@ export function LandingConnect({
             target="_blank"
             rel="noopener noreferrer"
           >
+            <img
+              className="lk-ig-main-bg"
+              src="/landing/fotos-v2/foto-025-640.webp"
+              srcSet="/landing/fotos-v2/foto-025-640.webp 640w, /landing/fotos-v2/foto-025.webp 1280w"
+              sizes="(max-width: 47.5rem) 94vw, 34rem"
+              alt=""
+              aria-hidden="true"
+              width={640}
+              height={800}
+              loading="lazy"
+              decoding="async"
+            />
             <VStack
               gap={4}
               align="center"

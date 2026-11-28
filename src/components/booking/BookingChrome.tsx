@@ -46,7 +46,7 @@ export function BookingHeader({
 
   return (
     <header className="rb-header">
-      <nav className="rb-header-bar" aria-label="Navegación principal">
+      <nav className="rb-header-bar" aria-label="Principal">
         <HStack align="center">
           {onBack ? (
             <button type="button" className="rb-ghost fx-press" onClick={onBack} aria-label="Paso anterior">
@@ -71,7 +71,6 @@ export function BookingHeader({
             alt={salonName}
             width={120}
             height={50}
-            fetchPriority="high"
             decoding="async"
           />
         </NextLink>
@@ -186,8 +185,6 @@ export function BookingHero({
               aria-hidden="true"
               width={180}
               height={20}
-              loading="lazy"
-              fetchPriority="low"
               decoding="async"
             />
           </VStack>

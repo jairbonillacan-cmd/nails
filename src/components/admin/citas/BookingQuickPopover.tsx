@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
@@ -10,28 +11,16 @@ import { Link } from '@astryxdesign/core/Link';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Banner } from '@astryxdesign/core/Banner';
-import {
-  AtSign,
-  ExternalLink,
-  History,
-  Package,
-  Sparkles,
-  XCircle,
-} from 'lucide-react';
+import { AtSign, ExternalLink, XCircle } from 'lucide-react';
 import {
   BookingStatusTag,
   ConfirmActionDialog,
   CopyableField,
-  DepositProofReviewDialog,
   StatusTag,
   SurfaceCard,
   type DepositProofReviewItem,
   type StatusTagTone,
 } from '@/components/ui';
-import {
-  formatNailTechBadges,
-  parseNailTechNotes,
-} from '@/components/admin/clientas/nailTechProfile';
 import { clientasHref, integracionesHref, whatsappHref } from '@/lib/admin-links';
 import { computeBookingBalance } from '@/lib/booking/balance';
 import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
@@ -65,8 +54,17 @@ import {
   isDisplayableProofImage,
 } from './BookingCard';
 import { BookingPopoverActions } from './BookingPopoverActions';
+import { BookingPopoverClientContext } from './BookingPopoverClientContext';
 import { fetchActiveClientPackages } from './checkoutApi';
 import type { ClientPackageSummaryRow } from './CheckoutLoyaltySection';
+
+const DepositProofReviewDialog = dynamic(
+  () =>
+    import('@/components/ui/DepositProofReviewDialog').then(
+      (mod) => mod.DepositProofReviewDialog,
+    ),
+  { ssr: false },
+);
 
 interface BookingQuickPopoverProps {
   booking: BookingWithRelations | null;
@@ -197,8 +195,6 @@ export function BookingQuickPopover({
   const resolvedClients = clients.length > 0 ? clients : (adminData?.clients ?? []);
   const fullClientProfile =
     resolvedClients.find((c) => c.id === booking.clientId) ?? booking.client;
-  const parsedClientNotes = parseNailTechNotes(fullClientProfile.notes ?? '');
-  const techBadges = formatNailTechBadges(parsedClientNotes.profile);
   const activeLoyaltyProgram = loyaltyProgram ?? adminData?.loyaltyProgram ?? null;
   const activeLoyaltyStamps =
     loyaltyStamps.length > 0 ? loyaltyStamps : (adminData?.loyaltyStamps ?? []);
@@ -271,15 +267,6 @@ export function BookingQuickPopover({
     q: booking.client.phoneE164,
   });
   const headerSubtitle = `${formatDateShortInTimezone(booking.startAt, timezone)} · ${formatTimeInTimezone(booking.startAt, timezone)} – ${formatTimeInTimezone(booking.endAt, timezone)} (${formatDuration(booking.totalDurationMinutes)})`;
-
-  const hasClientContext = Boolean(
-    techBadges.length > 0 ||
-      loyaltySummary ||
-      clientPackages.length > 0 ||
-      fullClientProfile.noShowCount > 0 ||
-      lastCompletedBooking ||
-      parsedClientNotes.freeNotes,
-  );
 
   const handleClose = () => {
     setProofZoomOpen(false);
@@ -473,6 +460,9 @@ export function BookingQuickPopover({
                           <img
                             src={booking.paymentProofUrl}
                             alt={`Comprobante de anticipo de ${booking.client.fullName}`}
+                            width={72}
+                            height={72}
+                            decoding="async"
                           />
                         </button>
                         <VStack gap={1} className="rb-grow">
@@ -548,94 +538,14 @@ export function BookingQuickPopover({
                   </VStack>
                 </SurfaceCard>
 
-                {hasClientContext ? (
-                  <SurfaceCard tone="subtle" padded className="ad-pop-context">
-                    <VStack gap={2}>
-                      <HStack justify="between" align="center" gap={2} wrap="wrap">
-                        <Text type="supporting" weight="semibold" color="secondary">
-                          Ficha de la clienta
-                        </Text>
-                        {fullClientProfile.noShowCount > 0 ? (
-                          <StatusTag
-                            size="sm"
-                            tone={
-                              fullClientProfile.noShowCount >= noShowThreshold
-                                ? 'danger'
-                                : 'warning'
-                            }
-                            label={`${fullClientProfile.noShowCount} ${
-                              fullClientProfile.noShowCount === 1
-                                ? 'inasistencia'
-                                : 'inasistencias'
-                            }`}
-                            hasTabularNumbers
-                          />
-                        ) : (
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            0 inasistencias
-                          </Text>
-                        )}
-                      </HStack>
-
-                      {techBadges.length > 0 ? (
-                        <HStack gap={1.5} wrap="wrap" className="ad-pop-tech-chips">
-                          {techBadges.map((badge) => (
-                            <StatusTag
-                              key={badge.label}
-                              size="sm"
-                              tone={badge.tone}
-                              label={badge.label}
-                            />
-                          ))}
-                        </HStack>
-                      ) : null}
-
-                      {loyaltySummary || clientPackages.length > 0 ? (
-                        <HStack gap={1.5} wrap="wrap" align="center" className="ad-pop-loyalty-row">
-                          {loyaltySummary ? (
-                            <StatusTag
-                              size="sm"
-                              tone={loyaltySummary.isRewardReady ? 'success' : 'accent'}
-                              icon={<Sparkles size={12} aria-hidden="true" />}
-                              label={
-                                loyaltySummary.isRewardReady
-                                  ? `Premio listo (${loyaltySummary.currentStamps}/${loyaltySummary.stampsRequired})`
-                                  : `${loyaltySummary.currentStamps}/${loyaltySummary.stampsRequired} sellos`
-                              }
-                              hasTabularNumbers
-                            />
-                          ) : null}
-                          {clientPackages.map((pkg) => (
-                            <StatusTag
-                              key={pkg.id}
-                              size="sm"
-                              tone="info"
-                              icon={<Package size={12} aria-hidden="true" />}
-                              label={`${pkg.packageName} · ${pkg.remainingSessions}/${pkg.totalSessions}`}
-                              hasTabularNumbers
-                            />
-                          ))}
-                        </HStack>
-                      ) : null}
-
-                      {lastCompletedBooking ? (
-                        <HStack gap={1.5} align="center" wrap="wrap">
-                          <History size={13} aria-hidden="true" />
-                          <Text type="supporting" color="secondary" hasTabularNumbers>
-                            Última visita: {lastCompletedBooking.service.name} (
-                            {formatDateShortInTimezone(lastCompletedBooking.startAt, timezone)})
-                          </Text>
-                        </HStack>
-                      ) : null}
-
-                      {parsedClientNotes.freeNotes ? (
-                        <Text type="supporting" color="secondary" className="ad-pop-note">
-                          Nota de ficha: {parsedClientNotes.freeNotes}
-                        </Text>
-                      ) : null}
-                    </VStack>
-                  </SurfaceCard>
-                ) : null}
+                <BookingPopoverClientContext
+                  clientProfile={fullClientProfile}
+                  noShowThreshold={noShowThreshold}
+                  loyaltySummary={loyaltySummary}
+                  clientPackages={clientPackages}
+                  lastCompletedBooking={lastCompletedBooking}
+                  timezone={timezone}
+                />
 
                 <SurfaceCard tone={balance.isFullyPaid ? 'subtle' : 'warning'} padded>
                   <HStack justify="between" align="center" wrap="wrap" gap={2}>
@@ -733,19 +643,21 @@ export function BookingQuickPopover({
         />
       </Dialog>
 
-      <DepositProofReviewDialog
-        deposit={proofReviewItem}
-        onClose={() => setProofZoomOpen(false)}
-        currency={currency}
-        timezone={timezone}
-        canApprove={isPending}
-        isApproving={busyStatus === 'confirmed'}
-        isRejecting={isRejectingDeposit}
-        onApprove={isPending ? () => handleStatusAction('confirmed') : undefined}
-        onReject={
-          canRejectProof ? (_item, reason) => handleRejectDepositAction(reason) : undefined
-        }
-      />
+      {proofReviewItem ? (
+        <DepositProofReviewDialog
+          deposit={proofReviewItem}
+          onClose={() => setProofZoomOpen(false)}
+          currency={currency}
+          timezone={timezone}
+          canApprove={isPending}
+          isApproving={busyStatus === 'confirmed'}
+          isRejecting={isRejectingDeposit}
+          onApprove={isPending ? () => handleStatusAction('confirmed') : undefined}
+          onReject={
+            canRejectProof ? (_item, reason) => handleRejectDepositAction(reason) : undefined
+          }
+        />
+      ) : null}
 
       <ConfirmActionDialog
         isOpen={pendingConfirm !== null}

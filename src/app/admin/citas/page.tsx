@@ -18,7 +18,7 @@ import {
   Plus,
   Sparkles,
 } from 'lucide-react';
-import { PageSkeleton, SkeletonBlock } from '@/components/ui/SkeletonBlock';
+import { SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import type { BlockTimePrefill } from '@/components/admin/disponibilidad/BlockTimeForm';
 import {
   AgendaStatusChips,
@@ -54,6 +54,40 @@ const BlockTimeForm = dynamic(
   { ssr: false },
 );
 
+function AgendaLoadingSkeleton() {
+  return (
+    <VStack
+      gap={2}
+      className="ad-page ad-agenda-page"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Cargando agenda"
+    >
+      <HStack className="ad-agenda-header" justify="between" align="center" gap={2}>
+        <SkeletonBlock width="6.5rem" height="2rem" radius={2} index={0} />
+        <HStack gap={1.5} align="center">
+          <SkeletonBlock width="6.5rem" height="2rem" radius="rounded" index={1} />
+          <SkeletonBlock width="4rem" height="2rem" radius="rounded" index={2} />
+        </HStack>
+      </HStack>
+      <VStack className="ad-agenda-toolbar" gap={1.5} aria-hidden="true">
+        <SkeletonBlock width="100%" height="2.25rem" radius={2} index={3} />
+      </VStack>
+      <HStack className="ad-agenda-chips" gap={1.5} aria-hidden="true">
+        <SkeletonBlock width="5rem" height="2rem" radius="rounded" index={4} />
+        <SkeletonBlock width="6.5rem" height="2rem" radius="rounded" index={5} />
+        <SkeletonBlock width="5.5rem" height="2rem" radius="rounded" index={6} />
+      </HStack>
+      <VStack gap={2} aria-hidden="true">
+        <SkeletonBlock width="100%" height="5.5rem" radius={3} index={7} />
+        <SkeletonBlock width="100%" height="5.5rem" radius={3} index={8} />
+        <SkeletonBlock width="100%" height="5.5rem" radius={3} index={9} />
+      </VStack>
+    </VStack>
+  );
+}
+
 function ScheduleGridFallback() {
   return (
     <VStack gap={3} role="status" aria-live="polite" aria-label="Cargando agenda visual">
@@ -87,7 +121,7 @@ export default function AdminBookingsPage() {
   });
 
   if (!ws.data) {
-    return <PageSkeleton kpiCount={0} withSplit={false} ariaLabel="Cargando agenda" />;
+    return <AgendaLoadingSkeleton />;
   }
 
   const data = ws.data;
@@ -394,18 +428,20 @@ export default function AdminBookingsPage() {
         />
       ) : null}
 
+      {ws.resolvedView === 'list' || ws.resolvedView === null ? (
+        <VStack
+          className={ws.resolvedView === null ? 'ad-agenda-default-mobile' : undefined}
+          gap={0}
+        >
+          {renderListView()}
+        </VStack>
+      ) : null}
       {ws.resolvedView === null ? (
-        <>
-          <VStack className="ad-agenda-default-mobile" gap={0}>
-            {renderListView()}
-          </VStack>
-          <VStack className="ad-agenda-default-desktop" gap={0}>
-            <ScheduleGridFallback />
-          </VStack>
-        </>
-      ) : ws.resolvedView === 'list' ? (
-        renderListView()
-      ) : (
+        <VStack className="ad-agenda-default-desktop" gap={0}>
+          <ScheduleGridFallback />
+        </VStack>
+      ) : null}
+      {ws.resolvedView === 'day' || ws.resolvedView === 'week' ? (
         <VisualScheduleGrid
           rangeMode={ws.resolvedView}
           hideInternalToolbar
@@ -447,7 +483,7 @@ export default function AdminBookingsPage() {
           onRescheduleBooking={actions.rescheduleAdmin}
           onOpenCheckout={ws.openCheckoutDrawer}
         />
-      )}
+      ) : null}
 
       <CitasDialogsHost
         scope={{

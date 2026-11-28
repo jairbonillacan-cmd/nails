@@ -424,6 +424,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
                 value={props.clientName}
                 onChange={props.onChangeClientName}
                 isDisabled={props.isSubmitting}
+                isRequired
                 status={
                   props.fieldErrors.name
                     ? { type: 'error', message: props.fieldErrors.name }
@@ -446,6 +447,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
                 value={props.clientPhone}
                 onChange={props.onChangeClientPhone}
                 isDisabled={props.isSubmitting}
+                isRequired
                 status={
                   props.fieldErrors.phone
                     ? { type: 'error', message: props.fieldErrors.phone }

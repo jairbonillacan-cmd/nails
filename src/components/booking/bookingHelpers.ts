@@ -581,3 +581,20 @@ export function findAlternativeSlotsForDate(
   }
   return collected;
 }
+
+export const HOLD_EXTEND_PROMPT_SEC = 30;
+
+export function shouldPromptHoldExtension(input: {
+  holdRemainingSec: number;
+  holdExpiresAt: number | null;
+  dismissedForExpiresAt: number | null;
+  isSubmitting: boolean;
+}): boolean {
+  return (
+    input.holdExpiresAt !== null &&
+    !input.isSubmitting &&
+    input.holdRemainingSec > 0 &&
+    input.holdRemainingSec <= HOLD_EXTEND_PROMPT_SEC &&
+    input.dismissedForExpiresAt !== input.holdExpiresAt
+  );
+}
