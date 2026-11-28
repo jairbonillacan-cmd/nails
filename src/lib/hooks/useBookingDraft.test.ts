@@ -55,7 +55,6 @@ const SAMPLE_DRAFT: BookingDraftFields = {
   clientEmail: 'sofia@example.com',
   clientBirthday: '1998-05-14',
   clientNotes: 'Me gustaría tono rosa lechoso',
-  proofDeliveryMethod: 'instagram_dm',
 };
 
 describe('useBookingDraft storage helpers', () => {
@@ -86,7 +85,7 @@ describe('useBookingDraft storage helpers', () => {
     expect(readBookingDraft(storage, now + 5_000)).toBeNull();
   });
 
-  it('strips raw data URLs, expired holds, and unknown keys on read and sanitize', () => {
+  it('strips raw data URLs, expired holds, and unknown keys on read and migrates legacy payment step to details', () => {
     const storage = createMemoryStorage();
     const now = 1_700_000_000_000;
 
@@ -104,7 +103,8 @@ describe('useBookingDraft storage helpers', () => {
         clientEmail: '',
         clientBirthday: '',
         clientNotes: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==',
-        proofDeliveryMethod: 'invalid_method',
+        proofDeliveryMethod: 'web_upload',
+        step: 'payment',
         inspoDataUrl: 'data:image/webp;base64,AAAA',
         proofDataUrl: 'data:image/jpeg;base64,BBBB',
         holdId: 'hold-expired-123',
@@ -125,15 +125,15 @@ describe('useBookingDraft storage helpers', () => {
       clientEmail: '',
       clientBirthday: '',
       clientNotes: '',
-      proofDeliveryMethod: 'none',
+      step: 'details',
     });
 
     const sanitized = sanitizeBookingDraftFields({
       clientNotes: '  DATA:image/jpeg;base64,xyz',
-      proofDeliveryMethod: 'web_upload',
+      step: 'anticipo',
     });
     expect(sanitized.clientNotes).toBe('');
-    expect(sanitized.proofDeliveryMethod).toBe('web_upload');
+    expect(sanitized.step).toBe('details');
   });
 
   it('drops corrupt JSON, wrong version, and expired drafts automatically', () => {
@@ -189,7 +189,6 @@ describe('useBookingDraft storage helpers', () => {
       clientEmail: 'sofia@example.com',
       clientBirthday: '1998-05-14',
       clientNotes: 'Me gustaría tono rosa lechoso',
-      proofDeliveryMethod: 'instagram_dm',
     });
 
     const overriddenPatch = resolveBookingDraftHydration(SAMPLE_DRAFT, {
@@ -207,7 +206,6 @@ describe('useBookingDraft storage helpers', () => {
       clientInstagram: '@sofia.nails',
       clientEmail: 'sofia@example.com',
       clientBirthday: '1998-05-14',
-      proofDeliveryMethod: 'instagram_dm',
     });
     expect(overriddenPatch).not.toHaveProperty('serviceId');
     expect(overriddenPatch).not.toHaveProperty('extraServiceIds');
@@ -225,7 +223,6 @@ describe('useBookingDraft storage helpers', () => {
     const onChangeClientEmail = vi.fn();
     const onChangeClientBirthday = vi.fn();
     const onChangeClientNotes = vi.fn();
-    const onChangeProofMethod = vi.fn();
 
     const binding: BookingDraftSelectionBinding = {
       selectedService: undefined,
@@ -243,9 +240,6 @@ describe('useBookingDraft storage helpers', () => {
         clientNotes: '',
         inspoFile: null,
         inspoDataUrl: null,
-        proofDeliveryMethod: 'none',
-        proofFile: null,
-        proofDataUrl: null,
         onChangeClientName,
         onChangeClientPhone,
         onChangeClientInstagram,
@@ -253,8 +247,6 @@ describe('useBookingDraft storage helpers', () => {
         onChangeClientBirthday,
         onChangeClientNotes,
         onChangeInspoFile: vi.fn(),
-        onChangeProofMethod,
-        onChangeProofFile: vi.fn(),
       },
     };
 
@@ -262,35 +254,33 @@ describe('useBookingDraft storage helpers', () => {
       {
         serviceId: 'srv-rubber',
         clientName: 'Sofía Ramírez',
-        proofDeliveryMethod: 'instagram_dm',
       },
       binding,
     );
 
     expect(setSelectedServiceId).toHaveBeenCalledWith('srv-rubber');
     expect(onChangeClientName).toHaveBeenCalledWith('Sofía Ramírez');
-    expect(onChangeProofMethod).toHaveBeenCalledWith('instagram_dm');
     expect(setSelectedExtraServiceIds).not.toHaveBeenCalled();
     expect(onChangeClientNotes).not.toHaveBeenCalled();
   });
 
-  it('detects whether a draft holds meaningful non-default content', () => {
-    const emptyDraft = sanitizeBookingDraftFields({ serviceId: 'srv-default' });
-    expect(hasMeaningfulBookingDraft(emptyDraft, 'srv-default')).toBe(false);
+  it('detects whether a draft holds meaningful non-default content including bare /reservar empty default', () => {
+    const emptyDraft = sanitizeBookingDraftFields({ serviceId: '' });
+    expect(hasMeaningfulBookingDraft(emptyDraft, '')).toBe(false);
+    expect(
+      hasMeaningfulBookingDraft({ ...emptyDraft, serviceId: 'srv-rubber' }, ''),
+    ).toBe(true);
     expect(
       hasMeaningfulBookingDraft({ ...emptyDraft, serviceId: 'srv-rubber' }, 'srv-default'),
     ).toBe(true);
     expect(
-      hasMeaningfulBookingDraft({ ...emptyDraft, clientName: 'Karla' }, 'srv-default'),
-    ).toBe(true);
-    expect(
-      hasMeaningfulBookingDraft({ ...emptyDraft, proofDeliveryMethod: 'web_upload' }, 'srv-default'),
+      hasMeaningfulBookingDraft({ ...emptyDraft, clientName: 'Karla' }, ''),
     ).toBe(true);
     expect(
       resolveBookingDraftHydration(emptyDraft, {
         validServiceIds: new Set(['srv-default']),
         validAddonIds: new Set(),
-        defaultServiceId: 'srv-default',
+        defaultServiceId: '',
       }),
     ).toBeNull();
   });

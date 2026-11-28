@@ -214,6 +214,9 @@ export function BookingStepRouter({
         timeFormat={selection.timeFormat}
         todayKey={schedule.todayKey}
         selectedDate={schedule.effectiveSelectedDate}
+        layoutView={selection.layoutView}
+        canToggleLayout={selection.canToggleLayout}
+        onChangeLayoutView={selection.setLayoutView}
         availabilityDays={schedule.availabilityDays}
         availableDateSet={schedule.availableDateSet}
         selectedDaySummary={schedule.selectedDaySummary}
@@ -280,7 +283,7 @@ export function BookingStepRouter({
     );
   }
 
-  if (flow.step === 'details' || flow.step === 'payment') {
+  if (flow.step === 'details') {
     const allowInspo =
       Boolean(selection.selectedService?.allowInspoPhoto) ||
       selection.selectedExtraServices.some((srv) => srv.allowInspoPhoto);
@@ -289,11 +292,8 @@ export function BookingStepRouter({
       <VStack gap={3}>
         {renderMobileScheduleStrip(true)}
         <ClientConfirmStep
-          key={flow.step}
-          section={flow.step}
           todayKey={schedule.todayKey}
           account={clientAccount}
-          onContinueDetails={actions.handleDetailsContinue}
           formId={formId}
           settings={settings}
           selectedService={selection.selectedService}
@@ -319,9 +319,6 @@ export function BookingStepRouter({
           clientInstagram={selection.clientForm.clientInstagram}
           clientEmail={selection.clientForm.clientEmail}
           clientBirthday={selection.clientForm.clientBirthday}
-          proofDeliveryMethod={selection.clientForm.proofDeliveryMethod}
-          proofFile={selection.clientForm.proofFile}
-          proofDataUrl={selection.clientForm.proofDataUrl}
           privacyConsentAccepted={flow.privacyConsentAccepted}
           marketingOptIn={flow.marketingOptIn}
           privacyConsentError={flow.privacyConsentError}
@@ -340,8 +337,6 @@ export function BookingStepRouter({
           onChangeClientBirthday={selection.clientForm.onChangeClientBirthday}
           onChangeClientNotes={selection.clientForm.onChangeClientNotes}
           onChangeInspoFile={selection.clientForm.onChangeInspoFile}
-          onChangeProofMethod={selection.clientForm.onChangeProofMethod}
-          onChangeProofFile={selection.clientForm.onChangeProofFile}
           onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}
           onChangeMarketingOptIn={(optedIn) => dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })}
           onSubmit={(e) => void actions.handleConfirmBooking(e)}

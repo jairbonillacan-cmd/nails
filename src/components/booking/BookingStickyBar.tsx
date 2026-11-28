@@ -34,7 +34,7 @@ function BookingPrimaryCta({
   holdExpired,
   onNext,
 }: PrimaryCtaProps) {
-  if (step === 'details' || step === 'payment') {
+  if (step === 'details') {
     return (
       <Button
         type="submit"
@@ -42,7 +42,7 @@ function BookingPrimaryCta({
         variant="primary"
         size="lg"
         label={nextLabel}
-        isDisabled={isSubmittingBooking || (step === 'payment' && holdExpired)}
+        isDisabled={isSubmittingBooking || holdExpired}
         isLoading={isSubmittingBooking}
         className="rb-cta fx-press"
       />
@@ -102,6 +102,7 @@ interface BookingSummaryProps {
   hasStartingPrice: boolean;
   discountCents: number;
   depositAmountCents: number;
+  hasSelectedService?: boolean;
   autoSelectedStaffName?: string | null;
   holdRemainingSec: number;
   holdTotalSec: number;
@@ -131,6 +132,7 @@ export function BookingStickyBar({
   onSummaryOpenChange,
   ...ctaProps
 }: BookingStickyBarProps) {
+  const hasSelectedService = summaryProps.hasSelectedService !== false;
   const handleSheetChangeSchedule = summaryProps.onChangeSchedule
     ? () => {
         onSummaryOpenChange(false);
@@ -149,13 +151,17 @@ export function BookingStickyBar({
           onClick={onOpenSummary}
         >
           <Text className="lk-serif rb-bottom-total" hasTabularNumbers>
-            {formatServicePrice(totalPriceCents, hasStartingPrice, currency)}
+            {hasSelectedService && totalPriceCents > 0
+              ? formatServicePrice(totalPriceCents, hasStartingPrice, currency)
+              : 'Elige un servicio'}
           </Text>
           <Text type="supporting" color="accent" weight="semibold" className="rb-bottom-hint" hasTabularNumbers>
             {summaryProps.holdRemainingSec > 0 ? <BrandIcon name="duracion" size={1} label="Tiempo de apartado" /> : null}
             {summaryProps.holdRemainingSec > 0
               ? `${formatHoldClock(summaryProps.holdRemainingSec)} · Resumen`
-              : `${formatDuration(totalDurationMinutes)} · Ver resumen`}
+              : hasSelectedService && totalDurationMinutes > 0
+                ? `${formatDuration(totalDurationMinutes)} · Ver resumen`
+                : 'Toca un servicio para empezar'}
             <ChevronUp size={14} aria-hidden="true" />
           </Text>
         </button>

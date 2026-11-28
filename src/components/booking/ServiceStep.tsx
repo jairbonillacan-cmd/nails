@@ -65,7 +65,11 @@ export function ServiceStep({
         <Heading level={2} className="lk-serif rb-h2">
           Servicios
         </Heading>
-        <Text color="secondary">Selecciona el servicio principal. Si deseas, agrega nail art o extras abajo.</Text>
+        <Text color="secondary">
+          {selectedService
+            ? 'Si deseas, agrega nail art o extras abajo y pulsa Continuar.'
+            : 'Elige un servicio para ver fechas y horarios disponibles.'}
+        </Text>
       </VStack>
 
       {tabs.length > 1 ? (

@@ -1076,6 +1076,229 @@ async function runWave2BrowserBookingAssertions(browser) {
       }
     }
   }
+
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+
+    try {
+      await page.goto(`${BASE_URL}/reservar`, { waitUntil: 'networkidle' });
+      assert.equal(
+        new URL(page.url()).searchParams.get('servicio'),
+        null,
+        `B7: /reservar sin parámetros no debe escribir ?servicio= automáticamente, URL: ${page.url()}`,
+      );
+      const summaryText = await page.locator('.rb-summary').first().innerText();
+      assert.ok(
+        summaryText.includes('Elige un servicio'),
+        `B7: Resumen inicial debe mostrar "Elige un servicio", recibido: ${summaryText}`,
+      );
+      const continueBtn = page.getByRole('button', { name: 'Continuar' }).first();
+      assert.equal(
+        await continueBtn.isDisabled(),
+        true,
+        'B7: Continuar debe permanecer deshabilitado hasta elegir un servicio',
+      );
+
+      const rubberBtn = page
+        .locator('button[aria-pressed="false"]', { hasText: /Rubber/i })
+        .first();
+      await rubberBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      await rubberBtn.click();
+
+      await page.waitForFunction(
+        () => new URL(window.location.href).searchParams.get('servicio') === 'rubber',
+        null,
+        { timeout: 10_000 },
+      );
+      assert.equal(
+        await continueBtn.isDisabled(),
+        false,
+        'B7: Continuar debe habilitarse tras elegir servicio',
+      );
+      assert.deepEqual(pageErrors, [], `Errores JS en B7: ${pageErrors.join('; ')}`);
+    } finally {
+      await context.close();
+    }
+  }
+
+  {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+
+    try {
+      await page.goto(`${BASE_URL}/reservar/rubber`, { waitUntil: 'networkidle' });
+      await enterScheduleStep(page);
+
+      const firstSlot = page.locator('button.rb-time:not([disabled])').first();
+      await firstSlot.waitFor({ state: 'visible', timeout: 15_000 });
+
+      const metrics = await page.evaluate(() => {
+        const slotEl = document.querySelector('button.rb-time:not([disabled])');
+        const stickyEl = document.querySelector('.rb-bottom, .rb-bar');
+        const slotRect = slotEl ? slotEl.getBoundingClientRect() : null;
+        const stickyRect = stickyEl ? stickyEl.getBoundingClientRect() : null;
+        return {
+          scrollY: window.scrollY,
+          slotTop: slotRect ? slotRect.top : null,
+          slotBottom: slotRect ? slotRect.bottom : null,
+          stickyTop: stickyRect ? stickyRect.top : null,
+        };
+      });
+      assert.ok(
+        metrics.slotTop !== null &&
+          metrics.slotBottom !== null &&
+          metrics.stickyTop !== null,
+        `B3: No se encontraron el primer horario o la barra fija a 375x812: ${JSON.stringify(metrics)}`,
+      );
+      assert.equal(metrics.scrollY, 0, `B3: scrollY esperado 0, recibido ${metrics.scrollY}`);
+      assert.ok(
+        metrics.slotBottom <= metrics.stickyTop,
+        `B3: Primer horario a 375x812 debe quedar arriba de BookingStickyBar sin scroll (slotBottom=${metrics.slotBottom}, stickyTop=${metrics.stickyTop})`,
+      );
+
+      const viewMonthBtn = page.getByRole('button', { name: /Ver mes/i }).first();
+      await viewMonthBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      await viewMonthBtn.click();
+
+      const viewWeekBtn = page.getByRole('button', { name: /Ver semana/i }).first();
+      await viewWeekBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      await page.waitForFunction(
+        () => new URL(window.location.href).searchParams.get('layout') === 'month',
+        null,
+        { timeout: 10_000 },
+      );
+
+      await viewWeekBtn.click();
+      await viewMonthBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      assert.deepEqual(pageErrors, [], `Errores JS en B3/C2 móvil: ${pageErrors.join('; ')}`);
+    } finally {
+      await context.close();
+    }
+  }
+
+  {
+    const candidate = await findAvailabilityCandidate(() => true, { offsetDays: 16 });
+    assert.ok(candidate, 'Se esperaba un horario futuro disponible para prueba B4 (4 pasos)');
+    const suffix = crypto.randomInt(1000, 9999);
+
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+    const bookingBodies = [];
+    page.on('request', (req) => {
+      if (req.url().endsWith('/api/bookings') && req.method() === 'POST') {
+        try {
+          bookingBodies.push(JSON.parse(req.postData() || '{}'));
+        } catch {
+          bookingBodies.push({});
+        }
+      }
+    });
+
+    let createdManageToken = null;
+    try {
+      await page.goto(
+        `${BASE_URL}/reservar/rubber?date=${encodeURIComponent(candidate.date)}`,
+        { waitUntil: 'networkidle' },
+      );
+      await enterScheduleStep(page);
+
+      const slotBtn = page
+        .locator('button.rb-time:not([disabled])', {
+          hasText: candidate.slot.localTime12,
+        })
+        .first();
+      await slotBtn.waitFor({ state: 'visible', timeout: 15_000 });
+      await slotBtn.click();
+
+      await page.waitForFunction(
+        () => {
+          const paso = new URL(window.location.href).searchParams.get('paso');
+          return paso === 'profesional' || paso === 'datos';
+        },
+        null,
+        { timeout: 15_000 },
+      );
+
+      if (new URL(page.url()).searchParams.get('paso') === 'profesional') {
+        const nextBtn = page.getByRole('button', { name: 'Continuar' }).first();
+        await nextBtn.waitFor({ state: 'visible', timeout: 10_000 });
+        await nextBtn.click();
+        await page.waitForFunction(
+          () => new URL(window.location.href).searchParams.get('paso') === 'datos',
+          null,
+          { timeout: 10_000 },
+        );
+      }
+
+      await page
+        .getByText('¿Ya viniste? Llena tus datos con WhatsApp')
+        .first()
+        .waitFor({ state: 'visible', timeout: 10_000 });
+
+      await page.locator('input[name="clientName"]').fill('Clienta Cuatro Pasos');
+      await page.locator('input[name="clientPhone"]').fill(`222950${suffix}`);
+      await page.locator('input[name="privacyConsentAccepted"]').check({ force: true });
+
+      const submitBtn = page
+        .getByRole('button', { name: /Apartar mi cita|Confirmar cita/i })
+        .first();
+      await submitBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      await submitBtn.click();
+
+      await page.waitForFunction(
+        () => window.location.pathname.startsWith('/cita/'),
+        null,
+        { timeout: 20_000 },
+      );
+      createdManageToken = new URL(page.url()).pathname.replace(/^\/cita\//, '').trim();
+      assert.ok(createdManageToken.length > 4, 'B4: Debe redirigir a /cita/<token> válido');
+
+      assert.ok(
+        bookingBodies.length >= 1,
+        'B4: Debe enviar POST /api/bookings desde Tus datos',
+      );
+      const sentBody = bookingBodies[bookingBodies.length - 1];
+      assert.equal(
+        sentBody.proofDeliveryMethod,
+        'none',
+        `B4: proofDeliveryMethod debe ser "none", recibido: ${sentBody.proofDeliveryMethod}`,
+      );
+      assert.equal(
+        'sessionToken' in sentBody,
+        false,
+        'C4: POST /api/bookings no debe enviar sessionToken en el body',
+      );
+
+      await page.locator('main').waitFor({ state: 'visible', timeout: 10_000 });
+      const citaText = await page.locator('main').innerText();
+      assert.ok(
+        citaText.includes('CLABE') || citaText.includes('Anticipo') || citaText.includes('cita'),
+        'B4: /cita/<token> debe mostrar seguimiento e instrucciones de anticipo',
+      );
+      assert.deepEqual(pageErrors, [], `Errores JS en B4/B6: ${pageErrors.join('; ')}`);
+    } finally {
+      if (createdManageToken) {
+        await fetchJson(`/api/bookings/manage/${encodeURIComponent(createdManageToken)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'cancel',
+            reason: 'Limpieza automática E2E 4 pasos B4',
+          }),
+        }).catch(() => {});
+      } else {
+        await releaseBrowserSlotHold(page);
+      }
+      await context.close();
+    }
+  }
 }
 
 async function testOptionalPlaywrightBrowser() {
@@ -1829,7 +2052,7 @@ async function main() {
       },
     ],
     ['4. Admin RBAC, specialist isolation & ARCO JSON export', testAdminRbacAndSpecialistIsolation],
-    ['5. Optional Playwright browser verification (routes + Wave 2 A1/A2/A3/B1/B2)', testOptionalPlaywrightBrowser],
+    ['5. Optional Playwright browser verification (routes + Wave 2/3 A1/A2/A3/B1/B2/B3/B4/B6/B7/C2)', testOptionalPlaywrightBrowser],
     ['6. PWA Service Worker (/sw.js) & compact embed mode (/reservar?embed=1)', testPwaServiceWorkerAndEmbedMode],
     ['7. Client portal /mis-citas OTP flow, isolation & logout', testClientPortalOtpFlow],
     ['8. Executive reports (/api/admin/reports) RBAC & specialist scoping', testAdminReportsRbac],

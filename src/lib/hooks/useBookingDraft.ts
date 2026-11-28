@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { normalizeUniqueSortedIds } from '@/components/booking/bookingHelpers';
 import {
-  normalizeUniqueSortedIds,
-  type ProofDeliveryMethod,
-} from '@/components/booking/bookingHelpers';
-import type { BookingFlowState } from '@/components/booking/bookingMachine';
+  parseBookingStepParam,
+  type BookingFlowState,
+  type BookingStep,
+} from '@/components/booking/bookingMachine';
 import type { BookingSelectionState } from './useBookingSelectionState';
 
 export const BOOKING_DRAFT_STORAGE_KEY = 'laikona_booking_draft_v1';
@@ -28,7 +29,7 @@ export interface BookingDraftFields {
   clientEmail: string;
   clientBirthday: string;
   clientNotes: string;
-  proofDeliveryMethod: ProofDeliveryMethod;
+  step?: BookingStep;
 }
 
 export interface StoredBookingDraft extends BookingDraftFields {
@@ -101,16 +102,16 @@ function sanitizeIdList(value: unknown, maxItems: number, excludeId?: string): s
   return normalizeUniqueSortedIds(rawStrings, excludeId).slice(0, maxItems);
 }
 
-function sanitizeProofMethod(value: unknown): ProofDeliveryMethod {
-  return value === 'instagram_dm' || value === 'none' || value === 'web_upload'
-    ? value
-    : 'none';
+function sanitizeDraftStep(value: unknown): BookingStep | undefined {
+  if (typeof value !== 'string') return undefined;
+  return parseBookingStepParam(value) ?? undefined;
 }
 
 export function sanitizeBookingDraftFields(
   input: Partial<Record<keyof BookingDraftFields, unknown>>,
 ): BookingDraftFields {
   const serviceId = sanitizeText(input.serviceId, MAX_SHORT_FIELD_LENGTH).trim();
+  const migratedStep = sanitizeDraftStep(input.step);
   return {
     serviceId,
     extraServiceIds: sanitizeIdList(input.extraServiceIds, MAX_EXTRA_SERVICES, serviceId),
@@ -121,7 +122,7 @@ export function sanitizeBookingDraftFields(
     clientEmail: sanitizeText(input.clientEmail, MAX_SHORT_FIELD_LENGTH),
     clientBirthday: sanitizeText(input.clientBirthday, MAX_SHORT_FIELD_LENGTH),
     clientNotes: sanitizeText(input.clientNotes, MAX_NOTES_LENGTH),
-    proofDeliveryMethod: sanitizeProofMethod(input.proofDeliveryMethod),
+    ...(migratedStep ? { step: migratedStep } : {}),
   };
 }
 
@@ -136,7 +137,6 @@ export function hasMeaningfulBookingDraft(
     fields.clientEmail.trim().length > 0 ||
     fields.clientBirthday.trim().length > 0 ||
     fields.clientNotes.trim().length > 0 ||
-    fields.proofDeliveryMethod !== 'none' ||
     fields.extraServiceIds.length > 0 ||
     fields.addonIds.length > 0 ||
     Boolean(fields.serviceId && fields.serviceId !== defaultServiceId)
@@ -264,10 +264,6 @@ export function resolveBookingDraftHydration(
       hasChanges = true;
     }
   }
-  if (draft.proofDeliveryMethod !== 'none') {
-    patch.proofDeliveryMethod = draft.proofDeliveryMethod;
-    hasChanges = true;
-  }
   return hasChanges ? patch : null;
 }
 
@@ -284,7 +280,6 @@ export function applyBookingDraftPatch(
   if (patch.clientEmail !== undefined) selection.clientForm.onChangeClientEmail(patch.clientEmail);
   if (patch.clientBirthday !== undefined) selection.clientForm.onChangeClientBirthday(patch.clientBirthday);
   if (patch.clientNotes !== undefined) selection.clientForm.onChangeClientNotes(patch.clientNotes);
-  if (patch.proofDeliveryMethod) selection.clientForm.onChangeProofMethod(patch.proofDeliveryMethod);
 }
 
 export function useBookingDraft({
@@ -333,7 +328,7 @@ export function useBookingDraft({
   const serviceId = selection.selectedService?.id ?? '';
   const extraKey = selection.selectedExtraServiceIds.join(',');
   const addonKey = selection.selectedAddonIds.join(',');
-  const { clientName, clientPhone, clientInstagram, clientEmail, clientBirthday, clientNotes, proofDeliveryMethod } =
+  const { clientName, clientPhone, clientInstagram, clientEmail, clientBirthday, clientNotes } =
     selection.clientForm;
 
   useEffect(() => {
@@ -352,14 +347,13 @@ export function useBookingDraft({
       clientEmail,
       clientBirthday,
       clientNotes,
-      proofDeliveryMethod,
     };
     if (hasMeaningfulBookingDraft(currentFields, defaultServiceId)) {
       writeBookingDraft(currentFields);
     } else {
       clearBookingDraft();
     }
-  }, [phase, defaultServiceId, serviceId, extraKey, addonKey, clientName, clientPhone, clientInstagram, clientEmail, clientBirthday, clientNotes, proofDeliveryMethod]);
+  }, [phase, defaultServiceId, serviceId, extraKey, addonKey, clientName, clientPhone, clientInstagram, clientEmail, clientBirthday, clientNotes]);
 
   const dismissRestoredBanner = useCallback(() => setRestoredBannerOpen(false), []);
 
@@ -376,9 +370,7 @@ export function useBookingDraft({
     current.clientForm.onChangeClientEmail('');
     current.clientForm.onChangeClientBirthday('');
     current.clientForm.onChangeClientNotes('');
-    current.clientForm.onChangeProofMethod('none');
     current.clientForm.onChangeInspoFile(null, null);
-    current.clientForm.onChangeProofFile(null, null);
   }, [defaultServiceId]);
 
   return {

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import type { DayAvailabilitySummary } from '@/lib/availability/engine';
 import { OptionalEmailSchema } from '@/lib/contracts/primitives';
+import { createInitialDemoDatabase } from '@/lib/demo-seed';
 import { normalizePhoneE164 } from '@/lib/format';
+import { toPublicServiceDTO, toPublicSettingsDTO, toPublicStaffDTO } from '@/lib/public-dto';
+import { resolveInitialBookingSelections } from './bookingViewHelpers';
 import {
   birthdayInputToIso,
   buildAvailabilityCacheKey,
@@ -239,6 +242,37 @@ describe('buildAvailabilityCacheKey and media/date helpers', () => {
 
     expect(findAlternativeSlotsForDate(days, '2026-12-14', 3)).toEqual([slotA, slotB, slotC]);
     expect(findAlternativeSlotsForDate(days, '2026-12-15', 2)).toEqual([slotC, slotA]);
+  });
+
+  it('leaves bare /reservar unselected while preselecting explicit slug and resolving enabled booking layouts', () => {
+    const db = createInitialDemoDatabase();
+    const settings = toPublicSettingsDTO(db.settings);
+    const services = db.services.map(toPublicServiceDTO);
+    const staff = db.staff.map(toPublicStaffDTO);
+
+    const bare = resolveInitialBookingSelections({
+      settings,
+      services,
+      addons: db.addons,
+      staff,
+      initialTodayKey: '2026-11-27',
+    });
+    expect(bare.initialServiceId).toBe('');
+    expect(bare.defaultScheduleLayout).toBe('month');
+    expect(bare.enabledScheduleLayouts).toEqual(['month', 'week']);
+    expect(bare.initialLayoutOverride).toBeNull();
+
+    const withSlugAndLayout = resolveInitialBookingSelections({
+      settings,
+      services,
+      addons: db.addons,
+      staff,
+      initialTodayKey: '2026-11-27',
+      initialServiceSlug: services[0]?.slug,
+      initialLayout: 'week',
+    });
+    expect(withSlugAndLayout.initialServiceId).toBe(services[0]?.id);
+    expect(withSlugAndLayout.initialLayoutOverride).toBe('week');
   });
 });
 

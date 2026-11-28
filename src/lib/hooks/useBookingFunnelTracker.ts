@@ -25,7 +25,6 @@ function getOrCreateFunnelSessionId(): string {
 interface UseBookingFunnelTrackerInput {
   step: BookingStep;
   hasHeldSlot: boolean;
-  hasProofAttached: boolean;
   serviceSlug?: string | null;
   staffSlug?: string | null;
 }
@@ -33,7 +32,6 @@ interface UseBookingFunnelTrackerInput {
 export function useBookingFunnelTracker({
   step,
   hasHeldSlot,
-  hasProofAttached,
   serviceSlug = null,
   staffSlug = null,
 }: UseBookingFunnelTrackerInput) {
@@ -75,9 +73,6 @@ export function useBookingFunnelTracker({
     if (step !== 'service') {
       track('booking_started');
     }
-    if (step === 'payment') {
-      track('details_completed');
-    }
   }, [step, track]);
 
   useEffect(() => {
@@ -85,12 +80,6 @@ export function useBookingFunnelTracker({
       track('slot_held');
     }
   }, [hasHeldSlot, track]);
-
-  useEffect(() => {
-    if (step === 'payment' && hasProofAttached) {
-      track('deposit_submitted');
-    }
-  }, [step, hasProofAttached, track]);
 
   return { track };
 }

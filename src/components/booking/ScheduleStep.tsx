@@ -22,6 +22,9 @@ export interface ScheduleStepProps {
   timeFormat: '12h' | '24h';
   todayKey: string;
   selectedDate: string;
+  layoutView?: ScheduleLayout;
+  canToggleLayout?: boolean;
+  onChangeLayoutView?: (layout: ScheduleLayout) => void;
   availabilityDays: DayAvailabilitySummary[];
   availableDateSet: Set<string>;
   selectedDaySummary: DayAvailabilitySummary | null;
@@ -113,6 +116,9 @@ export function ScheduleStep({
   timeFormat,
   todayKey,
   selectedDate,
+  layoutView = 'month',
+  canToggleLayout = false,
+  onChangeLayoutView,
   availabilityDays,
   availableDateSet,
   selectedDaySummary,
@@ -151,7 +157,7 @@ export function ScheduleStep({
   const publicNote = selectedDaySummary?.publicNote?.trim() || null;
 
   return (
-    <VStack gap={4} className="fx-step-in">
+    <VStack gap={3} className="fx-step-in">
       <VStack gap={0.5}>
         <Heading level={2} className="lk-serif rb-h2">Fecha y hora</Heading>
         <Text color="secondary">
@@ -259,6 +265,9 @@ export function ScheduleStep({
           timezone={timezone}
           todayKey={todayKey}
           selectedDate={selectedDate}
+          layout={layoutView}
+          canSwitchLayout={canToggleLayout}
+          onChangeLayout={onChangeLayoutView}
           availabilityDays={availabilityDays}
           availableDateSet={availableDateSet}
           isBusy={isBusy}
@@ -279,6 +288,7 @@ export function ScheduleStep({
             </Text>
             <FilterPillBar
               ariaLabel="Formato de hora"
+              className="rb-time-format-toggle"
               mode="segmented"
               size="sm"
               value={timeFormat}

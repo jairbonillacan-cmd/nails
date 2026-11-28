@@ -57,7 +57,6 @@ import {
   buildSummaryRows,
   computeStepNavigation,
   resolveTopBookingNotice,
-  toScheduleLayout,
 } from './booking/bookingViewHelpers';
 
 const WaitlistDialog = dynamic(
@@ -102,14 +101,15 @@ export function BookingWidget(props: BookingWidgetProps) {
   const searchParams = useSearchParams();
   const isEmbed = searchParams.get('embed') === '1';
   const waitlistOfferToken = searchParams.get('offer')?.trim() || null;
-  const initialStep: BookingStep =
-    parseBookingStepParam(searchParams.get('paso')) ??
-    (initialSlot?.trim() ? 'schedule' : 'service');
+  const selection = useBookingSelectionState(props);
+  const initialStep: BookingStep = selection.selectedService
+    ? (parseBookingStepParam(searchParams.get('paso')) ??
+      (initialSlot?.trim() ? 'schedule' : 'service'))
+    : 'service';
   const [flow, dispatch] = useReducer(bookingReducer, initialStep, createInitialBookingFlowState);
   const timezone = settings.timezone || 'America/Mexico_City';
   const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
-  const selection = useBookingSelectionState(props);
   const account = useClientAccount(props.initialClientProfile ?? null);
   const bookingMemory = useBookingMemory();
   const clientAuthEnabled = isClientAuthMethodEnabled('whatsapp_otp');
@@ -170,7 +170,9 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const validServiceIds = useMemo(() => services.map((s) => s.id), [services]);
   const validAddonIds = useMemo(() => addons.map((a) => a.id), [addons]);
-  const defaultServiceId = services[0]?.id ?? '';
+  const defaultServiceId = initialServiceSlug
+    ? (services.find((s) => s.slug === initialServiceSlug)?.id ?? '')
+    : '';
 
   const bookingDraft = useBookingDraft({
     selection,
@@ -214,9 +216,12 @@ export function BookingWidget(props: BookingWidgetProps) {
     extras: selection.selectedExtraServices.map((srv) => srv.slug),
     addons: selection.activeAddonIds,
     staff: selection.pinnedStaff?.bookingSlug ?? '',
-    date: effectiveSelectedDate,
+    date:
+      flow.step === 'service' && !selection.selectedService && !props.initialDate && !initialSlot
+        ? ''
+        : effectiveSelectedDate,
     layout: selection.layoutView,
-    defaultLayout: toScheduleLayout(settings.defaultBookingLayout),
+    defaultLayout: selection.defaultEffectiveLayout,
     slot:
       flow.selectedSlot?.startAt ??
       (flow.conflict || flow.step === 'service' ? '' : (initialSlot ?? '')),
@@ -268,11 +273,6 @@ export function BookingWidget(props: BookingWidgetProps) {
   const funnel = useBookingFunnelTracker({
     step: flow.step,
     hasHeldSlot: Boolean(flow.selectedSlot),
-    hasProofAttached: Boolean(
-      selection.showsDeposit &&
-        selection.clientForm.proofDeliveryMethod !== 'none' &&
-        selection.clientForm.proofDataUrl,
-    ),
     serviceSlug: selection.selectedService?.slug ?? null,
     staffSlug: selectedSlotStaffSlug,
   });
@@ -289,7 +289,6 @@ export function BookingWidget(props: BookingWidgetProps) {
     pinnedStaffId: selection.pinnedStaffId,
     skipsStaffStep: selection.skipsStaffStep,
     subtotalCents: selection.subtotalCents,
-    showsDeposit: selection.showsDeposit,
     client: selection.clientForm,
     signedInPhoneE164: account.profile?.phoneE164 ?? null,
     waitlistOfferToken,
@@ -297,6 +296,10 @@ export function BookingWidget(props: BookingWidgetProps) {
     revalidateActive,
     onBookingConfirmed: (summary) => {
       saveBookingMemory(summary);
+      funnel.track('details_completed', {
+        serviceSlug: summary.serviceSlug,
+        staffSlug: summary.staffSlug,
+      });
       funnel.track('booking_confirmed', {
         serviceSlug: summary.serviceSlug,
         staffSlug: summary.staffSlug,
@@ -409,8 +412,6 @@ export function BookingWidget(props: BookingWidgetProps) {
     chosenStaffId: actions.chosenStaffId,
     skipsStaffStep: selection.skipsStaffStep,
     showsDeposit: selection.showsDeposit,
-    proofDataUrl: selection.clientForm.proofDataUrl,
-    proofDeliveryMethod: selection.clientForm.proofDeliveryMethod,
   });
 
   const handleGoToStep = (targetStep: BookingStep) => {
@@ -468,6 +469,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const summaryProps = {
     currency: settings.currency, rows: summaryRows, totalPriceCents,
+    hasSelectedService: Boolean(selection.selectedService),
     hasStartingPrice: selection.hasStartingPrice, discountCents,
     depositAmountCents: selection.showsDeposit ? selection.depositAmountCents : 0,
     autoSelectedStaffName,

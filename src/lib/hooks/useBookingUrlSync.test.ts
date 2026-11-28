@@ -62,18 +62,6 @@ describe('useBookingUrlSync helpers', () => {
       step: 'details',
     });
     expect(onDetails.get('paso')).toBe('datos');
-
-    const onPayment = buildBookingSearchParams(onDetails, {
-      servicio: 'rubber',
-      extrasCsv: '',
-      addonsCsv: '',
-      staff: '',
-      date: '2026-12-14',
-      layout: '',
-      slot: '2026-12-14T16:00:00.000Z',
-      step: 'payment',
-    });
-    expect(onPayment.get('paso')).toBe('anticipo');
   });
 
   it('uses pushState only on forward step transitions and replaceState on backward, same-step, or popstate updates', () => {
@@ -84,7 +72,7 @@ describe('useBookingUrlSync helpers', () => {
       resolveHistoryNavigationMode({ prevStep: 'schedule', nextStep: 'details', fromPopState: false }),
     ).toBe('push');
     expect(
-      resolveHistoryNavigationMode({ prevStep: 'details', nextStep: 'payment', fromPopState: false }),
+      resolveHistoryNavigationMode({ prevStep: 'staff', nextStep: 'details', fromPopState: false }),
     ).toBe('push');
     expect(
       resolveHistoryNavigationMode({ prevStep: 'details', nextStep: 'schedule', fromPopState: false }),
@@ -97,13 +85,14 @@ describe('useBookingUrlSync helpers', () => {
     ).toBe('replace');
   });
 
-  it('parses ?paso= from search strings and clamps slot-required steps safely on popstate without a slot', () => {
+  it('parses ?paso= (including legacy anticipo/payment aliases) and clamps slot-required steps safely on popstate without a slot', () => {
     expect(parseStepFromSearch('')).toBe('service');
     expect(parseStepFromSearch('?paso=servicio')).toBe('service');
     expect(parseStepFromSearch('?paso=horario')).toBe('schedule');
     expect(parseStepFromSearch('?paso=profesional')).toBe('staff');
     expect(parseStepFromSearch('?paso=datos')).toBe('details');
-    expect(parseStepFromSearch('?paso=anticipo')).toBe('payment');
+    expect(parseStepFromSearch('?paso=anticipo')).toBe('details');
+    expect(parseStepFromSearch('?paso=payment')).toBe('details');
     expect(parseStepFromSearch('?paso=desconocido')).toBe('service');
 
     expect(resolvePopStateStep('?paso=datos', false)).toEqual({
@@ -115,7 +104,7 @@ describe('useBookingUrlSync helpers', () => {
       clampedStep: 'schedule',
     });
     expect(resolvePopStateStep('?paso=anticipo', false)).toEqual({
-      targetStep: 'payment',
+      targetStep: 'details',
       clampedStep: 'schedule',
     });
     expect(resolvePopStateStep('?paso=datos', true)).toEqual({

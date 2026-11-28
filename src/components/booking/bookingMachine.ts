@@ -8,14 +8,13 @@ type BookingPhase =
   | 'confirmed'
   | 'conflict';
 
-export type BookingStep = 'service' | 'schedule' | 'staff' | 'details' | 'payment';
+export type BookingStep = 'service' | 'schedule' | 'staff' | 'details';
 
 export const BOOKING_STEPS: readonly BookingStep[] = [
   'service',
   'schedule',
   'staff',
   'details',
-  'payment',
 ];
 
 export const BOOKING_STEP_URL_SLUGS: Readonly<Record<BookingStep, string>> = {
@@ -23,15 +22,14 @@ export const BOOKING_STEP_URL_SLUGS: Readonly<Record<BookingStep, string>> = {
   schedule: 'horario',
   staff: 'profesional',
   details: 'datos',
-  payment: 'anticipo',
 };
 
 export function isSlotRequiredStep(step: BookingStep): boolean {
-  return step === 'staff' || step === 'details' || step === 'payment';
+  return step === 'staff' || step === 'details';
 }
 
 export function isPostHoldStep(step: BookingStep): boolean {
-  return step === 'details' || step === 'payment';
+  return step === 'details';
 }
 
 export function parseBookingStepParam(raw: string | null | undefined): BookingStep | null {
@@ -40,8 +38,14 @@ export function parseBookingStepParam(raw: string | null | undefined): BookingSt
   if (normalized === 'servicio' || normalized === 'service') return 'service';
   if (normalized === 'horario' || normalized === 'schedule') return 'schedule';
   if (normalized === 'profesional' || normalized === 'staff') return 'staff';
-  if (normalized === 'datos' || normalized === 'details') return 'details';
-  if (normalized === 'anticipo' || normalized === 'payment') return 'payment';
+  if (
+    normalized === 'datos' ||
+    normalized === 'details' ||
+    normalized === 'anticipo' ||
+    normalized === 'payment'
+  ) {
+    return 'details';
+  }
   return null;
 }
 

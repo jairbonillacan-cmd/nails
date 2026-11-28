@@ -9,7 +9,6 @@ import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/
 import type { BookingLayoutView, ServiceAddon } from '@/lib/types';
 import type { SummaryRow } from './BookingSummaryCard';
 import type { ScheduleLayout } from './ScheduleCalendarView';
-import type { ProofDeliveryMethod } from './bookingHelpers';
 import { isPostHoldStep, type BookingFlowState, type BookingStep } from './bookingMachine';
 
 export type BookingTopNoticeKind = 'offer' | 'draft' | 'repeat' | null;
@@ -48,7 +47,7 @@ export function getNextMonthStartKey(dateKey: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
-export function toScheduleLayout(view: BookingLayoutView | undefined): ScheduleLayout {
+function toScheduleLayout(view: BookingLayoutView | undefined): ScheduleLayout {
   return view === 'week' || view === 'column' ? 'week' : 'month';
 }
 
@@ -119,16 +118,21 @@ export function buildSummaryRows(input: {
       skipsStaffStep: Boolean(input.skipsStaffStep),
       slot,
     });
+  const hasService = Boolean(input.selectedService);
   return [
     {
       key: 'service',
       label: 'Servicio',
-      value: [input.selectedService?.name, ...input.selectedExtraServices.map((srv) => srv.name)]
-        .filter(Boolean)
-        .join(' + '),
-      sub: input.activeSelectedAddons.map((a) => a.name).join(' · ') || 'Sin extras',
+      value: hasService
+        ? [input.selectedService?.name, ...input.selectedExtraServices.map((srv) => srv.name)]
+            .filter(Boolean)
+            .join(' + ')
+        : 'Elige un servicio',
+      sub: hasService
+        ? input.activeSelectedAddons.map((a) => a.name).join(' · ') || 'Sin extras'
+        : 'Aún sin seleccionar',
       mark: '1',
-      isDone: true,
+      isDone: hasService,
     },
     {
       key: 'when',
@@ -160,10 +164,10 @@ export function buildSummaryRows(input: {
     {
       key: 'duration',
       label: 'Duración',
-      value: formatDuration(input.totalDurationMinutes),
+      value: input.totalDurationMinutes > 0 ? formatDuration(input.totalDurationMinutes) : 'Por definir',
       sub: null,
       mark: 'clock',
-      isDone: true,
+      isDone: input.totalDurationMinutes > 0,
     },
   ];
 }
@@ -177,8 +181,6 @@ export function computeStepNavigation(input: {
   chosenStaffId: string;
   skipsStaffStep?: boolean;
   showsDeposit: boolean;
-  proofDataUrl: string | null;
-  proofDeliveryMethod: ProofDeliveryMethod;
 }) {
   const { flow } = input;
   const step = flow.step;
@@ -188,36 +190,34 @@ export function computeStepNavigation(input: {
     slot: flow.selectedSlot,
   });
 
-  const completedSteps = new Set<BookingStep>(['service']);
+  const completedSteps = new Set<BookingStep>();
+  if (input.hasSelectedService) completedSteps.add('service');
   if (hasSlot) completedSteps.add('schedule');
   if (hasSlot && isPostHoldStep(step)) completedSteps.add('staff');
-  if (hasSlot && step === 'payment') completedSteps.add('details');
 
   const skippedSteps = new Set<BookingStep>();
   if (skipStaff) skippedSteps.add('staff');
 
   const backTarget: BookingStep | null =
-    step === 'payment'
-      ? 'details'
-      : step === 'details'
-        ? skipStaff
-          ? 'schedule'
-          : 'staff'
-        : step === 'staff'
-          ? 'schedule'
-          : step === 'schedule'
-            ? 'service'
-            : null;
+    step === 'details'
+      ? skipStaff
+        ? 'schedule'
+        : 'staff'
+      : step === 'staff'
+        ? 'schedule'
+        : step === 'schedule'
+          ? 'service'
+          : null;
 
   const canContinue =
     step === 'service'
       ? input.hasSelectedService
-      : step === 'schedule' || step === 'staff' || step === 'details'
+      : step === 'schedule' || step === 'staff'
         ? hasSlot
-        : !flow.holdExpired;
+        : hasSlot && !flow.holdExpired;
 
   const nextLabel =
-    step === 'payment'
+    step === 'details'
       ? flow.phase === 'confirmed'
         ? 'Abriendo tu cita…'
         : flow.phase === 'submitting'
@@ -229,9 +229,11 @@ export function computeStepNavigation(input: {
 
   const nextHint =
     step === 'service'
-      ? input.extrasSelectedCount > 0
-        ? `${input.extrasSelectedCount} extra${input.extrasSelectedCount > 1 ? 's' : ''} · ${formatDuration(input.totalDurationMinutes)}`
-        : `${formatDuration(input.totalDurationMinutes)} en total`
+      ? !input.hasSelectedService
+        ? 'Elige un servicio'
+        : input.extrasSelectedCount > 0
+          ? `${input.extrasSelectedCount} extra${input.extrasSelectedCount > 1 ? 's' : ''} · ${formatDuration(input.totalDurationMinutes)}`
+          : `${formatDuration(input.totalDurationMinutes)} en total`
       : step === 'schedule'
         ? hasSlot
           ? 'Horario apartado'
@@ -240,19 +242,15 @@ export function computeStepNavigation(input: {
           ? input.chosenStaffId === 'any'
             ? 'Cualquier profesional'
             : ''
-          : step === 'details'
-            ? ''
-            : flow.holdExpired
-              ? 'Reverifica tu horario arriba'
-              : flow.phase === 'confirmed'
-                ? ''
-                : flow.phase === 'submitting'
-                  ? 'Guardando tu reserva…'
-                  : input.showsDeposit && input.proofDataUrl && input.proofDeliveryMethod !== 'none'
-                    ? 'Comprobante listo para enviar'
-                    : input.showsDeposit
-                      ? 'Subes tu comprobante desde tu link'
-                      : '';
+          : flow.holdExpired
+            ? 'Reverifica tu horario arriba'
+            : flow.phase === 'confirmed'
+              ? ''
+              : flow.phase === 'submitting'
+                ? 'Guardando tu reserva…'
+                : input.showsDeposit
+                  ? 'Subes tu comprobante desde tu link'
+                  : '';
 
   return { completedSteps, skippedSteps, skipStaff, backTarget, canContinue, nextLabel, nextHint };
 }
@@ -271,8 +269,9 @@ export function resolveInitialBookingSelections(input: {
   initialSlot?: string;
   initialLayout?: BookingLayoutView;
 }) {
-  const initialService =
-    input.services.find((s) => s.slug === input.initialServiceSlug) ?? input.services[0] ?? null;
+  const initialService = input.initialServiceSlug
+    ? (input.services.find((s) => s.slug === input.initialServiceSlug) ?? null)
+    : null;
   const initialPinnedStaff =
     input.staff.length === 1 && input.staff[0]
       ? input.staff[0].id
@@ -312,13 +311,18 @@ export function resolveInitialBookingSelections(input: {
         ? slotDerivedDate
         : input.initialTodayKey;
 
-  const initialLayout = toScheduleLayout(
-    input.initialLayout &&
-      (input.settings.enabledBookingLayouts.length === 0 ||
-        input.settings.enabledBookingLayouts.includes(input.initialLayout))
-      ? input.initialLayout
-      : input.settings.defaultBookingLayout,
+  const enabledLayoutsRaw = Array.from(
+    new Set(input.settings.enabledBookingLayouts.map((view) => toScheduleLayout(view))),
   );
+  const enabledScheduleLayouts: ScheduleLayout[] =
+    enabledLayoutsRaw.length > 0 ? enabledLayoutsRaw : ['month', 'week'];
+  const configuredDefault = toScheduleLayout(input.settings.defaultBookingLayout);
+  const defaultScheduleLayout: ScheduleLayout = enabledScheduleLayouts.includes(configuredDefault)
+    ? configuredDefault
+    : (enabledScheduleLayouts[0] ?? 'month');
+  const requestedLayout = input.initialLayout ? toScheduleLayout(input.initialLayout) : null;
+  const initialLayoutOverride: ScheduleLayout | null =
+    requestedLayout && enabledScheduleLayouts.includes(requestedLayout) ? requestedLayout : null;
 
   return {
     initialServiceId: initialService?.id ?? '',
@@ -326,6 +330,8 @@ export function resolveInitialBookingSelections(input: {
     initialExtraIds,
     initialAddonIds,
     initialDate,
-    initialLayout,
+    enabledScheduleLayouts,
+    defaultScheduleLayout,
+    initialLayoutOverride,
   };
 }

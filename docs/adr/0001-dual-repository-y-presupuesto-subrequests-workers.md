@@ -22,10 +22,11 @@ En las primeras iteraciones, varias mutaciones y páginas del servidor llamaban 
      - **Modo Producción:** implementación en `src/lib/repositories/supabase-repo.ts` sobre Supabase PostgreSQL (`supabase/migrations/0001_initial_schema.sql` a `supabase/migrations/0011_whatsapp_templates_extra.sql`) con `service_role` exclusivamente en servidor.
 
 2. **Eliminación de `getSnapshot()` en rutas calientes y mutaciones a favor de consultas puntuales:**
-   - Reemplazar las lecturas completas de base de datos en flujos críticos (`/cita/[token]`, creación/confirmación/cancelación/reagendado de citas, eliminación y edición de cupones, edición de movimientos manuales de caja, paquetes, staff, medios privados, reportes ejecutivos y agenda por rango de fechas) por consultas acotadas únicamente a las tablas necesarias:
+   - Reemplazar las lecturas completas de base de datos en flujos críticos (`/reservar`, `/reservar/[slug]`, `/reservar/[slug]/opengraph-image`, `/links`, `/sitemap.xml`, `/cita/[token]`, creación/confirmación/cancelación/reagendado de citas, eliminación y edición de cupones, edición de movimientos manuales de caja, paquetes, staff, medios privados, reportes ejecutivos y agenda por rango de fechas) por consultas acotadas únicamente a las tablas necesarias:
+     - **Páginas públicas `/reservar`, `/reservar/[slug]`, `/reservar/[slug]/opengraph-image`, `/links` y `/sitemap.xml` → `getPublicBootstrap()` + `React.cache()` + consultas puntuales:** reemplazan `getSnapshot()` (y la doble carga entre `generateMetadata` y el render de `/reservar/[slug]` y `/links`) por `getCachedPublicBootstrap()` y `getCachedPublicServiceBySlug()` (`src/lib/public/bootstrap.ts`), con `<= 8` consultas PostgREST paralelas sobre catálogo público (`salon_settings`, `service_categories`, `services`, `service_addons`, `staff_members`, `staff_services`, `gallery_items`, `booking_reviews`) sin escanear jamás `clients`, `bookings`, `audit_logs` ni `waitlist_entries`. Para enlaces privados (`isPrivate: true`) se añade `getPublicServiceBySlug(slug)` (`<= 1` consulta), para reseñas verificadas en `/reservar/[slug]` se usa `getPublicReviewsForService(serviceId)` (`<= 3` consultas, `<= 1` si no hay reseñas), y `readSignedInClientProfile()` (`src/lib/auth/client-portal-profile.ts`) usa `getClientPortalRecordByPhone(phoneE164)` (`0` consultas cuando no hay sesión activa y `<= 2` consultas para clienta autenticada).
      - **`GET /api/admin/reports` → `getExecutiveReportData(options)`:** reemplaza `getSnapshot()` (36 tablas) por `<= 10` consultas PostgREST en paralelo (`salon_settings`, `services`, `staff_members`, `availability_schedules`, `availability_rules`, `bookings`, `booking_reviews`, `payment_splits`, `cash_register_entries`, y `funnel_events` solo en alcance estudio; `<= 9` para `specialist`, `1` para especialista sin vincular), sin consultar `audit_logs`, `whatsapp_messages`, `inventory_items`, `waitlist_entries`, `gallery_items` ni `clients`.
      - **`GET /api/admin/bookings?from&to&staff` → `getAdminBookingsRange(filter)` y `getBookingsWithRelations(filter)`:** eliminan `getSnapshot()` en `supabase-repo.ts` mediante consultas puntuales con ventana UTC amortiguada (±1 día) más filtrado exacto por `dateKey` en zona horaria del salón (`<= 6` consultas en `getBookingsWithRelations`, `<= 7` en `getAdminBookingsRange`, y `<= 4` cuando no hay citas en el rango) junto con bloqueo estricto de `staff_id` para rol `specialist`.
-   - Sostener un presupuesto explícito de subrequests verificado por pruebas en `src/lib/repositories/supabase-repo.test.ts`, `src/app/api/admin/reports/route.test.ts` y `src/app/api/admin/bookings/route.test.ts` para asegurar margen holgado bajo el límite de 50 subrequests de Cloudflare Workers Free.
+   - Sostener un presupuesto explícito de subrequests e invariantes de fuente (`0` llamadas a `getSnapshot(` en páginas públicas) verificados por pruebas en `src/lib/repositories/supabase-repo.test.ts`, `src/app/route-states.test.ts`, `src/app/api/admin/reports/route.test.ts` y `src/app/api/admin/bookings/route.test.ts` para asegurar margen holgado bajo el límite de 50 subrequests de Cloudflare Workers Free.
 
 3. **Despacho no bloqueante de efectos secundarios post-commit con `ctx.waitUntil`:**
    - Centralizar el envío de efectos secundarios (sincronización con Google Calendar, notificaciones inmediatas por correo/WhatsApp y eventos Realtime) a través de `dispatchOutboxEvent` (`src/lib/use-cases/outbox.ts`) y envolver su ejecución en `runPostCommitSideEffects` (`src/lib/repositories/supabase-repo.ts`).
@@ -57,6 +58,14 @@ En las primeras iteraciones, varias mutaciones y páginas del servidor llamaban 
 - `src/lib/repositories/supabase-client.ts`
 - `src/lib/repositories/supabase-repo.ts`
 - `src/lib/repositories/supabase-repo.test.ts`
+- `src/lib/public/bootstrap.ts`
+- `src/lib/auth/client-portal-profile.ts`
+- `src/app/reservar/page.tsx`
+- `src/app/reservar/[slug]/page.tsx`
+- `src/app/reservar/[slug]/opengraph-image.tsx`
+- `src/app/links/page.tsx`
+- `src/app/sitemap.ts`
+- `src/app/route-states.test.ts`
 - `src/app/api/admin/reports/route.ts`
 - `src/app/api/admin/reports/route.test.ts`
 - `src/app/api/admin/bookings/route.ts`

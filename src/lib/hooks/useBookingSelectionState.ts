@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ClientPortalProfile } from '@/lib/contracts';
+import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
 import type { ScheduleLayout } from '@/components/booking/ScheduleStep';
@@ -12,7 +13,6 @@ import {
   getStaffScheduleLabel,
   hasConfiguredDeposit,
   resolveDepositAmountCents,
-  type ProofDeliveryMethod,
 } from '@/components/booking/bookingHelpers';
 import {
   getNextMonthStartKey,
@@ -88,14 +88,29 @@ export function useBookingSelectionState({
     ],
   );
 
+  const isNarrowViewport = useIsNarrowScreen('(max-width: 40rem)');
   const [selectedServiceId, setSelectedServiceId] = useState(initial.initialServiceId);
   const [selectedExtraServiceIds, setSelectedExtraServiceIds] = useState<string[]>(initial.initialExtraIds);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(initial.initialAddonIds);
   const [pinnedStaffId, setPinnedStaffId] = useState(initial.initialPinnedStaff);
-  const [layoutView, setLayoutView] = useState<ScheduleLayout>(initial.initialLayout);
+  const [layoutOverride, setLayoutOverride] = useState<ScheduleLayout | null>(initial.initialLayoutOverride);
   const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h');
   const [windowStartDate, setWindowStartDate] = useState(initial.initialDate);
   const [selectedDate, setSelectedDate] = useState(initial.initialDate);
+
+  const canToggleLayout = initial.enabledScheduleLayouts.length > 1;
+  const defaultEffectiveLayout: ScheduleLayout =
+    isNarrowViewport && initial.enabledScheduleLayouts.includes('week')
+      ? 'week'
+      : initial.defaultScheduleLayout;
+  const layoutView: ScheduleLayout =
+    layoutOverride && initial.enabledScheduleLayouts.includes(layoutOverride)
+      ? layoutOverride
+      : defaultEffectiveLayout;
+  const setLayoutView = (nextLayout: ScheduleLayout) => {
+    if (!initial.enabledScheduleLayouts.includes(nextLayout)) return;
+    setLayoutOverride(nextLayout);
+  };
 
   const [initialContact] = useState(() =>
     initialClientProfile ? profileToContactFields(initialClientProfile) : null,
@@ -110,12 +125,9 @@ export function useBookingSelectionState({
   );
   const [inspoFile, setInspoFile] = useState<File | null>(null);
   const [inspoDataUrl, setInspoDataUrl] = useState<string | null>(null);
-  const [proofDeliveryMethod, setProofDeliveryMethod] = useState<ProofDeliveryMethod>('none');
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
 
   const selectedService = useMemo(
-    () => services.find((s) => s.id === selectedServiceId) ?? services[0],
+    () => (selectedServiceId ? services.find((s) => s.id === selectedServiceId) : undefined),
     [services, selectedServiceId],
   );
   const combos = useMemo(
@@ -215,9 +227,6 @@ export function useBookingSelectionState({
     clientNotes,
     inspoFile,
     inspoDataUrl,
-    proofDeliveryMethod,
-    proofFile,
-    proofDataUrl,
     onChangeClientName: setClientName,
     onChangeClientPhone: (value: string) => setClientPhone(formatMxPhoneDisplay(value)),
     onChangeClientInstagram: setClientInstagram,
@@ -227,11 +236,6 @@ export function useBookingSelectionState({
     onChangeInspoFile: (file: File | null, dataUrl: string | null) => {
       setInspoFile(file);
       setInspoDataUrl(dataUrl);
-    },
-    onChangeProofMethod: setProofDeliveryMethod,
-    onChangeProofFile: (file: File | null, dataUrl: string | null) => {
-      setProofFile(file);
-      setProofDataUrl(dataUrl);
     },
   };
 
@@ -279,6 +283,8 @@ export function useBookingSelectionState({
     setPinnedStaffId,
     layoutView,
     setLayoutView,
+    defaultEffectiveLayout,
+    canToggleLayout,
     timeFormat,
     setTimeFormat,
     windowStartDate,

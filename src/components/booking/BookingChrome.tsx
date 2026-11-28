@@ -22,8 +22,7 @@ export const STEP_LABELS: Readonly<Record<BookingStep, string>> = {
   service: 'Servicios',
   schedule: 'Fecha y hora',
   staff: 'Profesional',
-  details: 'Tus datos',
-  payment: 'Anticipo',
+  details: 'Tus datos y apartar',
 };
 
 export function formatHoldClock(totalSeconds: number): string {
@@ -134,7 +133,8 @@ export function BookingHero({
   isCompact = false,
   holdRemainingSec = 0,
 }: BookingHeroProps) {
-  const stepIndex = BOOKING_STEPS.indexOf(step);
+  const visibleSteps = BOOKING_STEPS.filter((item) => item === step || !skippedSteps?.has(item));
+  const stepIndex = Math.max(0, visibleSteps.indexOf(step));
 
   if (isCompact) {
     return (
@@ -162,7 +162,7 @@ export function BookingHero({
                 </p>
               ) : null}
               <Text color="inherit" type="supporting" weight="semibold">
-                Paso {stepIndex + 1} de {BOOKING_STEPS.length} · {STEP_LABELS[step]}
+                Paso {stepIndex + 1} de {visibleSteps.length} · {STEP_LABELS[step]}
               </Text>
             </HStack>
           </HStack>
@@ -193,12 +193,15 @@ export function BookingHero({
           </VStack>
         </HStack>
 
-        <ol className="rb-stepper rb-d" aria-label="Pasos">
-          {BOOKING_STEPS.map((item, index) => {
+        <ol
+          className="rb-stepper rb-d"
+          aria-label="Pasos"
+          style={{ gridTemplateColumns: `repeat(${visibleSteps.length}, minmax(0, 1fr))` }}
+        >
+          {visibleSteps.map((item, index) => {
             const isCurrent = item === step;
-            const isSkipped = Boolean(skippedSteps?.has(item));
             const isDone = completedSteps.has(item) && !isCurrent;
-            const isReachable = index < stepIndex && !isSkipped;
+            const isReachable = index < stepIndex;
             return (
               <li key={item}>
                 <button
@@ -229,12 +232,16 @@ export function BookingHero({
         <VStack gap={1.5} className="rb-m rb-hero-mobile">
           <Text color="inherit">
             <Text color="inherit" weight="bold">
-              Paso {stepIndex + 1} de {BOOKING_STEPS.length}
+              Paso {stepIndex + 1} de {visibleSteps.length}
             </Text>{' '}
             · {STEP_LABELS[step]}
           </Text>
-          <ol className="rb-segments" aria-hidden="true">
-            {BOOKING_STEPS.map((item, index) => (
+          <ol
+            className="rb-segments"
+            aria-hidden="true"
+            style={{ gridTemplateColumns: `repeat(${visibleSteps.length}, minmax(0, 1fr))` }}
+          >
+            {visibleSteps.map((item, index) => (
               <li
                 key={item}
                 className="rb-segment"

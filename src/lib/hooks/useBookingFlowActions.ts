@@ -3,7 +3,6 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
-import { isSafeExternalProofUrl } from '@/lib/contracts';
 import { normalizePhoneE164 } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { ServiceAddon } from '@/lib/types';
@@ -22,7 +21,6 @@ import {
   prefersReducedMotion,
   validateClientBookingFields,
   type ClientFieldErrors,
-  type ProofDeliveryMethod,
 } from '@/components/booking/bookingHelpers';
 import type {
   BookingFlowAction,
@@ -64,8 +62,6 @@ interface ClientFormValues {
   clientBirthday: string;
   clientNotes: string;
   inspoDataUrl: string | null;
-  proofDeliveryMethod: ProofDeliveryMethod;
-  proofDataUrl: string | null;
 }
 
 interface UseBookingFlowActionsInput {
@@ -80,7 +76,6 @@ interface UseBookingFlowActionsInput {
   pinnedStaffId: string;
   skipsStaffStep: boolean;
   subtotalCents: number;
-  showsDeposit: boolean;
   client: ClientFormValues;
   signedInPhoneE164?: string | null;
   waitlistOfferToken?: string | null;
@@ -107,7 +102,6 @@ export function useBookingFlowActions({
   pinnedStaffId,
   skipsStaffStep,
   subtotalCents,
-  showsDeposit,
   client,
   signedInPhoneE164 = null,
   waitlistOfferToken = null,
@@ -376,14 +370,6 @@ export function useBookingFlowActions({
     signedInPhoneE164 && !isPhoneMatchingSession(client.clientPhone, signedInPhoneE164),
   );
 
-  const handleDetailsContinue = (e: React.FormEvent) => {
-    e.preventDefault();
-    setHasTriedSubmit(true);
-    if (hasSessionPhoneMismatch) return;
-    if (hasClientFieldErrors(validateClientBookingFields(contactInput, salonTodayKey))) return;
-    goToStep('payment');
-  };
-
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
@@ -400,21 +386,10 @@ export function useBookingFlowActions({
       hasSessionPhoneMismatch ||
       hasClientFieldErrors(validateClientBookingFields(contactInput, salonTodayKey))
     ) {
-      goToStep('details');
       return;
     }
     if (!flow.privacyConsentAccepted) {
       dispatch({ type: 'CONSENT_REQUIRED_ERROR', message: 'Necesitamos tu aceptación para apartar la cita.' });
-      return;
-    }
-
-    const trimmedProof = client.proofDataUrl?.trim() ?? '';
-    if (showsDeposit && client.proofDeliveryMethod === 'web_link' && trimmedProof && !isSafeExternalProofUrl(trimmedProof)) {
-      dispatch({
-        type: 'SUBMIT_FAILED',
-        error: 'Pega un enlace HTTPS válido para tu comprobante o elige subirlo después.',
-      });
-      revealPanel();
       return;
     }
 
@@ -424,12 +399,6 @@ export function useBookingFlowActions({
 
     submitLockRef.current = true;
     dispatch({ type: 'START_SUBMIT' });
-    const effectiveProofMethod: ProofDeliveryMethod =
-      showsDeposit && client.proofDeliveryMethod === 'web_link' && trimmedProof && isSafeExternalProofUrl(trimmedProof)
-        ? 'web_link'
-        : showsDeposit && client.proofDeliveryMethod === 'web_upload' && trimmedProof
-          ? 'web_upload'
-          : 'none';
 
     try {
       const result = await submitBookingRequest(idempotencyKeyRef.current, {
@@ -445,11 +414,8 @@ export function useBookingFlowActions({
         clientBirthday: birthdayInputToIso(client.clientBirthday, salonTodayKey),
         clientNotes: client.clientNotes,
         inspoPhotoUrl: client.inspoDataUrl,
-        paymentProofUrl:
-          effectiveProofMethod === 'web_upload' || effectiveProofMethod === 'web_link'
-            ? trimmedProof
-            : null,
-        proofDeliveryMethod: effectiveProofMethod,
+        paymentProofUrl: null,
+        proofDeliveryMethod: 'none',
         couponCode: appliedCoupon?.code || null,
         holdId: flow.holdId ?? undefined,
         privacyConsentAccepted: true,
@@ -516,7 +482,6 @@ export function useBookingFlowActions({
     handleRetryHold,
     handleApplyCoupon,
     handleRemoveCoupon,
-    handleDetailsContinue,
     handleConfirmBooking,
   };
 }

@@ -30,11 +30,9 @@ const NAV_BASE = {
   extrasSelectedCount: 0,
   chosenStaffId: 'any',
   showsDeposit: false,
-  proofDataUrl: null,
-  proofDeliveryMethod: 'none' as const,
 };
 
-function heldOn(step: 'schedule' | 'staff' | 'details' | 'payment', slot: AvailableSlot = SLOT) {
+function heldOn(step: 'schedule' | 'staff' | 'details', slot: AvailableSlot = SLOT) {
   return bookingReducer(createInitialBookingFlowState(), {
     type: 'SELECT_SLOT_HOLD_ACQUIRED',
     slot,
@@ -60,24 +58,19 @@ describe('details & design hold recovery', () => {
     expect(onDetailsMulti.backTarget).toBe('staff');
     expect(onDetailsMulti.skipStaff).toBe(false);
     expect(onDetailsMulti.canContinue).toBe(true);
-    expect(onDetailsMulti.nextLabel).toBe('Continuar');
+    expect(onDetailsMulti.nextLabel).toBe('Confirmar cita');
     expect(onDetailsMulti.completedSteps.has('schedule')).toBe(true);
     expect(onDetailsMulti.completedSteps.has('staff')).toBe(true);
 
     const onDetailsSingle = computeStepNavigation({
       ...NAV_BASE,
+      showsDeposit: true,
       flow: heldOn('details', SLOT),
     });
     expect(onDetailsSingle.backTarget).toBe('schedule');
     expect(onDetailsSingle.skipStaff).toBe(true);
     expect(onDetailsSingle.skippedSteps.has('staff')).toBe(true);
-  });
-
-  it('keeps slot and step when the hold expires on the payment step', () => {
-    const onPayment = bookingReducer(heldOn('details'), { type: 'GO_TO_STEP', step: 'payment' });
-    const expired = bookingReducer(onPayment, { type: 'HOLD_EXPIRED', message: 'x' });
-    expect(expired.step).toBe('payment');
-    expect(expired.selectedSlot?.startAt).toBe(SLOT.startAt);
+    expect(onDetailsSingle.nextLabel).toBe('Apartar mi cita');
   });
 
   it('labels a hold that ran out before details as expired, not as taken by someone else', () => {
@@ -95,9 +88,8 @@ describe('details & design hold recovery', () => {
     expect(taken.conflict?.kind).toBe('taken');
   });
 
-  it('flags details and payment as post-hold steps', () => {
+  it('flags details as the post-hold final step', () => {
     expect(isPostHoldStep('details')).toBe(true);
-    expect(isPostHoldStep('payment')).toBe(true);
     expect(isPostHoldStep('staff')).toBe(false);
     expect(isPostHoldStep('schedule')).toBe(false);
     expect(isPostHoldStep('service')).toBe(false);

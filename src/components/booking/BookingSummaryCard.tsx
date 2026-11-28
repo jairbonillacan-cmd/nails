@@ -28,6 +28,7 @@ interface BookingSummaryCardProps {
   hasStartingPrice: boolean;
   discountCents: number;
   depositAmountCents: number;
+  hasSelectedService?: boolean;
   depositLabel?: string;
   codeBadge?: string | null;
   autoSelectedStaffName?: string | null;
@@ -45,6 +46,7 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
   hasStartingPrice,
   discountCents,
   depositAmountCents,
+  hasSelectedService = true,
   depositLabel = 'Anticipo para apartar',
   codeBadge = null,
   autoSelectedStaffName = null,
@@ -118,13 +120,15 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
         ) : null}
         <HStack justify="between" align="end" gap={2}>
           <Text color="inherit" weight="semibold">
-            Total aprox.
+            {hasSelectedService && totalPriceCents > 0 ? 'Total aprox.' : 'Total'}
           </Text>
           <Text color="inherit" className="lk-serif rb-summary-amount" hasTabularNumbers>
-            {formatServicePrice(totalPriceCents, hasStartingPrice, currency)}
+            {hasSelectedService && totalPriceCents > 0
+              ? formatServicePrice(totalPriceCents, hasStartingPrice, currency)
+              : 'Por definir'}
           </Text>
         </HStack>
-        {depositAmountCents > 0 ? (
+        {hasSelectedService && depositAmountCents > 0 ? (
           <HStack justify="between">
             <Text color="inherit" type="supporting" className="rb-summary-sub">
               {depositLabel}
@@ -133,6 +137,10 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
               {formatCurrency(depositAmountCents, currency)}
             </Text>
           </HStack>
+        ) : !hasSelectedService ? (
+          <Text color="inherit" type="supporting" className="rb-summary-sub">
+            Elige un servicio para ver el total y el anticipo.
+          </Text>
         ) : null}
       </VStack>
 

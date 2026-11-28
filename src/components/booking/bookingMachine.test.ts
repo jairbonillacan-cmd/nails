@@ -55,8 +55,8 @@ const ALT_SLOT: AvailableSlot = {
 };
 
 describe('bookingMachine reducer', () => {
-  it('orders the 5 streamlined booking steps cleanly and navigates across them', () => {
-    expect(BOOKING_STEPS).toEqual(['service', 'schedule', 'staff', 'details', 'payment']);
+  it('orders the 4 streamlined booking steps cleanly and navigates across them', () => {
+    expect(BOOKING_STEPS).toEqual(['service', 'schedule', 'staff', 'details']);
     const initial = createInitialBookingFlowState();
     const schedule = bookingReducer(initial, { type: 'GO_TO_STEP', step: 'schedule' });
     expect(schedule.step).toBe('schedule');
@@ -345,7 +345,7 @@ describe('bookingMachine reducer', () => {
     expect(navigated.holdError).toBeNull();
   });
 
-  it('computes backTarget, nextLabel, and nextHint accurately across all 5 streamlined steps', () => {
+  it('computes backTarget, nextLabel, and nextHint accurately across all 4 streamlined steps', () => {
     const baseInput = {
       hasSelectedService: true,
       requiresConfirmation: false,
@@ -353,9 +353,18 @@ describe('bookingMachine reducer', () => {
       extrasSelectedCount: 0,
       chosenStaffId: 'any',
       showsDeposit: true,
-      proofDataUrl: null,
-      proofDeliveryMethod: 'none' as const,
     };
+
+    const onServiceUnselected = computeStepNavigation({
+      ...baseInput,
+      hasSelectedService: false,
+      totalDurationMinutes: 0,
+      showsDeposit: false,
+      flow: createInitialBookingFlowState(),
+    });
+    expect(onServiceUnselected.canContinue).toBe(false);
+    expect(onServiceUnselected.nextHint).toBe('Elige un servicio');
+    expect(onServiceUnselected.completedSteps.has('service')).toBe(false);
 
     const onService = computeStepNavigation({
       ...baseInput,
@@ -365,6 +374,7 @@ describe('bookingMachine reducer', () => {
     expect(onService.canContinue).toBe(true);
     expect(onService.nextLabel).toBe('Continuar');
     expect(onService.nextHint).toBe('1 h 30 min en total');
+    expect(onService.completedSteps.has('service')).toBe(true);
 
     const onServiceWithExtras = computeStepNavigation({
       ...baseInput,
@@ -404,39 +414,31 @@ describe('bookingMachine reducer', () => {
       },
     });
     expect(onDetails.backTarget).toBe('staff');
-    expect(onDetails.nextLabel).toBe('Continuar');
+    expect(onDetails.nextLabel).toBe('Apartar mi cita');
+    expect(onDetails.nextHint).toBe('Subes tu comprobante desde tu link');
     expect(onDetails.completedSteps.has('service')).toBe(true);
     expect(onDetails.completedSteps.has('schedule')).toBe(true);
     expect(onDetails.completedSteps.has('staff')).toBe(true);
 
-    const onPayment = computeStepNavigation({
+    const onDetailsSubmitting = computeStepNavigation({
       ...baseInput,
-      flow: { ...createInitialBookingFlowState(), step: 'payment', phase: 'holding', selectedSlot: SAMPLE_SLOT },
+      flow: { ...createInitialBookingFlowState(), step: 'details', phase: 'submitting', selectedSlot: SAMPLE_SLOT },
     });
-    expect(onPayment.backTarget).toBe('details');
-    expect(onPayment.nextLabel).toBe('Apartar mi cita');
-    expect(onPayment.nextHint).toBe('Subes tu comprobante desde tu link');
-    expect(onPayment.completedSteps.has('details')).toBe(true);
+    expect(onDetailsSubmitting.nextLabel).toBe('Apartando tu cita...');
+    expect(onDetailsSubmitting.nextHint).toBe('Guardando tu reserva…');
 
-    const onPaymentSubmitting = computeStepNavigation({
-      ...baseInput,
-      flow: { ...createInitialBookingFlowState(), step: 'payment', phase: 'submitting', selectedSlot: SAMPLE_SLOT },
-    });
-    expect(onPaymentSubmitting.nextLabel).toBe('Apartando tu cita...');
-    expect(onPaymentSubmitting.nextHint).toBe('Guardando tu reserva…');
-
-    const onPaymentConfirmed = computeStepNavigation({
+    const onDetailsConfirmed = computeStepNavigation({
       ...baseInput,
       flow: {
         ...createInitialBookingFlowState(),
-        step: 'payment',
+        step: 'details',
         phase: 'confirmed',
         selectedSlot: SAMPLE_SLOT,
         confirmedManageUrl: '/cita/token-abc',
       },
     });
-    expect(onPaymentConfirmed.nextLabel).toBe('Abriendo tu cita…');
-    expect(onPaymentConfirmed.nextHint).toBe('');
+    expect(onDetailsConfirmed.nextLabel).toBe('Abriendo tu cita…');
+    expect(onDetailsConfirmed.nextHint).toBe('');
 
     const onDetailsSingleStaff = computeStepNavigation({
       ...baseInput,
@@ -452,7 +454,7 @@ describe('bookingMachine reducer', () => {
     expect(onDetailsSingleStaff.skippedSteps.has('staff')).toBe(true);
   });
 
-  it('enforces single top notice priority (offer > draft > repeat) and formats auto-assigned staff summary', () => {
+  it('enforces single top notice priority (offer > draft > repeat) and formats auto-assigned staff and empty service summary', () => {
     expect(
       resolveTopBookingNotice({
         hasWaitlistOffer: true,
@@ -498,28 +500,35 @@ describe('bookingMachine reducer', () => {
       chosenStaffId: 'staff-paty',
       isPinned: false,
       skipsStaffStep: false,
-      totalDurationMinutes: 90,
+      totalDurationMinutes: 0,
     });
+    const serviceRow = rows.find((row) => row.key === 'service');
+    expect(serviceRow?.value).toBe('Elige un servicio');
+    expect(serviceRow?.isDone).toBe(false);
+    const durationRow = rows.find((row) => row.key === 'duration');
+    expect(durationRow?.value).toBe('Por definir');
+    expect(durationRow?.isDone).toBe(false);
     const staffRow = rows.find((row) => row.key === 'staff');
     expect(staffRow?.value).toBe('Te atiende Paty');
     expect(staffRow?.sub).toBe('Única profesional libre en este horario');
   });
 
-  it('parses ?paso= slugs and clamps invalid initial or post-clear steps safely', () => {
+  it('parses ?paso= slugs including legacy anticipo/payment aliases and clamps invalid steps safely', () => {
     expect(parseBookingStepParam('servicio')).toBe('service');
     expect(parseBookingStepParam('horario')).toBe('schedule');
     expect(parseBookingStepParam('profesional')).toBe('staff');
     expect(parseBookingStepParam('datos')).toBe('details');
-    expect(parseBookingStepParam('anticipo')).toBe('payment');
+    expect(parseBookingStepParam('anticipo')).toBe('details');
+    expect(parseBookingStepParam('payment')).toBe('details');
     expect(parseBookingStepParam('nope')).toBeNull();
 
     expect(createInitialBookingFlowState('details').step).toBe('schedule');
-    expect(clampBookingStep('payment', null)).toBe('schedule');
+    expect(clampBookingStep('details', null)).toBe('schedule');
     expect(clampBookingStep('service', null)).toBe('service');
     expect(clampBookingStep('details', SAMPLE_SLOT)).toBe('details');
   });
 
-  it('invariant (fast-check): step NEVER lands on staff, details, or payment without a valid selectedSlot', () => {
+  it('invariant (fast-check): step NEVER lands on staff or details without a valid selectedSlot', () => {
     const stepArb = fc.constantFrom<BookingStep>(...BOOKING_STEPS);
     const slotArb = fc.constantFrom<AvailableSlot>(SAMPLE_SLOT, ALT_SLOT);
     const holdErrorKindArb = fc.constantFrom<'rate_limited' | 'policy' | 'unavailable'>(
