@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_CLIENT_FETCH_TIMEOUT_MS,
+  fetchBlobWithTimeout,
   fetchJsonWithTimeout,
   parseRetryAfterSeconds,
+  sendBestEffortRequest,
 } from './client-fetch';
 
 afterEach(() => {
@@ -199,5 +201,61 @@ describe('fetchJsonWithTimeout', () => {
       expect(inFlightAborted.reason).toBe('aborted');
       expect(inFlightAborted.aborted).toBe(true);
     }
+  });
+});
+
+describe('fetchBlobWithTimeout & sendBestEffortRequest', () => {
+  it('returns Blob on 200 CSV download and parses JSON error code on 403', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('col1,col2\n1,2\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/csv' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const csvRes = await fetchBlobWithTimeout('/api/admin/operations?export=csv', {
+      timeoutMs: 30_000,
+    });
+    expect(csvRes.ok).toBe(true);
+    if (csvRes.ok) {
+      expect(await csvRes.blob.text()).toContain('col1,col2');
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ code: 'OWNER_PIN_REQUIRED', error: 'Se requiere PIN.' }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const pinRes = await fetchBlobWithTimeout('/api/admin/operations?export=csv');
+    expect(pinRes.ok).toBe(false);
+    if (!pinRes.ok) {
+      expect(pinRes.status).toBe(403);
+      expect(pinRes.code).toBe('OWNER_PIN_REQUIRED');
+      expect(pinRes.error).toBe('Se requiere PIN.');
+    }
+  });
+
+  it('swallows rejections safely in sendBestEffortRequest and attaches AbortSignal', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(() =>
+      sendBestEffortRequest('/api/analytics/events', {
+        method: 'POST',
+        body: JSON.stringify({ eventType: 'page_view' }),
+        keepalive: true,
+      }),
+    ).not.toThrow();
+
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.signal).toBeDefined();
+    expect(init?.keepalive).toBe(true);
   });
 });

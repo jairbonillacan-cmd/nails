@@ -6,6 +6,8 @@ import {
   CreateServicePackageSchema,
   PatchClientPackageSchema,
 } from '@/lib/contracts';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
 import {
   assignClientPackage,
   cancelClientPackage,
@@ -21,56 +23,82 @@ import {
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin', 'specialist'], request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId')?.trim() || undefined;
-  const servicePackages = await listServicePackagesAsync();
+  const [servicePackages, allClientPackages] = await Promise.all([
+    listServicePackagesAsync(),
+    listClientPackagesAsync(clientId),
+  ]);
 
   if (session.user.role === 'specialist') {
     const staffMemberId = session.user.staffMemberId;
-    if (!staffMemberId) {
-      return NextResponse.json({ servicePackages, clientPackages: [] });
+    if (!staffMemberId || allClientPackages.length === 0) {
+      return NextResponse.json(
+        { servicePackages, clientPackages: [] },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
-    const snap = await getRepository().getSnapshot();
     const visibleClientIds = new Set(
-      snap.bookings
-        .filter((b) => b.staffId === staffMemberId)
-        .map((b) => b.clientId),
+      await getRepository().listStaffClientIds(staffMemberId),
     );
     if (clientId && !visibleClientIds.has(clientId)) {
-      return NextResponse.json({ servicePackages, clientPackages: [] });
+      return NextResponse.json(
+        { servicePackages, clientPackages: [] },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
-    const allClientPackages = await listClientPackagesAsync(clientId);
-    return NextResponse.json({
-      servicePackages,
-      clientPackages: allClientPackages.filter((pkg) =>
-        visibleClientIds.has(pkg.clientId),
-      ),
-    });
+    return NextResponse.json(
+      {
+        servicePackages,
+        clientPackages: allClientPackages.filter((pkg) =>
+          visibleClientIds.has(pkg.clientId),
+        ),
+      },
+      { headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
-  return NextResponse.json({
-    servicePackages,
-    clientPackages: await listClientPackagesAsync(clientId),
-  });
+  return NextResponse.json(
+    {
+      servicePackages,
+      clientPackages: allClientPackages,
+    },
+    { headers: ADMIN_PRIVATE_HEADERS },
+  );
 }
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   if (session.user.role !== 'owner' && session.user.role !== 'admin') {
     return NextResponse.json(
       { error: 'Permisos insuficientes para gestionar paquetes.' },
-      { status: 403 },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
   try {
-    const raw = (await request.json()) as unknown;
     const rawKind =
       typeof raw === 'object' && raw !== null && 'kind' in raw
         ? (raw as { kind?: unknown }).kind
@@ -79,7 +107,10 @@ export async function POST(request: NextRequest) {
     if (rawKind === 'assign') {
       const parsed = AssignClientPackageSchema.parse(raw);
       const clientPackage = await assignClientPackage(parsed);
-      return NextResponse.json({ clientPackage }, { status: 201 });
+      return NextResponse.json(
+        { clientPackage },
+        { status: 201, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     const parsed = CreateServicePackageSchema.parse(raw);
@@ -93,7 +124,10 @@ export async function POST(request: NextRequest) {
       validDays: parsed.validDays,
       isActive: parsed.isActive,
     });
-    return NextResponse.json({ servicePackage }, { status: 201 });
+    return NextResponse.json(
+      { servicePackage },
+      { status: 201, headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
@@ -102,48 +136,70 @@ export async function POST(request: NextRequest) {
         err.code === 'SERVICE_NOT_FOUND'
           ? 404
           : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos inválidos de paquete.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'Error creando paquete.' }, { status: 500 });
+    logError('admin_packages_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'Error creando paquete.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
 export async function PATCH(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   if (session.user.role !== 'owner' && session.user.role !== 'admin') {
     return NextResponse.json(
       { error: 'Permisos insuficientes para modificar paquetes.' },
-      { status: 403 },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
   try {
-    const parsed = PatchClientPackageSchema.parse(await request.json());
+    const parsed = PatchClientPackageSchema.parse(rawBody);
     if (parsed.action === 'toggle_catalog') {
       const servicePackage = await toggleServicePackage(
         parsed.packageId,
         parsed.isActive,
       );
-      return NextResponse.json({ servicePackage });
+      return NextResponse.json({ servicePackage }, { headers: ADMIN_PRIVATE_HEADERS });
     }
     if (parsed.action === 'redeem') {
       const clientPackage = await redeemClientPackageSession({
         clientPackageId: parsed.clientPackageId,
         bookingId: parsed.bookingId ?? null,
       });
-      return NextResponse.json({ clientPackage });
+      return NextResponse.json({ clientPackage }, { headers: ADMIN_PRIVATE_HEADERS });
     }
     const clientPackage = await cancelClientPackage(parsed.clientPackageId);
-    return NextResponse.json({ clientPackage });
+    return NextResponse.json({ clientPackage }, { headers: ADMIN_PRIVATE_HEADERS });
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
@@ -152,14 +208,23 @@ export async function PATCH(request: NextRequest) {
           : err.code === 'PACKAGE_ALREADY_REDEEMED'
             ? 409
             : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos inválidos.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'Error actualizando paquete.' }, { status: 500 });
+    logError('admin_packages_patch_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'Error actualizando paquete.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }

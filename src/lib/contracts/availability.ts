@@ -104,13 +104,13 @@ export const ToggleRecurringBlockSchema = z.object({
 
 export const PublicAvailabilityQuerySchema = z.object({
   mode: z.enum(['range', 'quick', 'quick_search']).default('range'),
-  serviceId: z.string().trim().optional(),
-  staffId: z.string().trim().nullable().optional(),
+  serviceId: z.string().trim().max(128).optional(),
+  staffId: z.string().trim().max(128).nullable().optional(),
   startDate: DateKeySchema.optional(),
   days: z.number().int().min(1).max(90).optional(),
   limit: z.number().int().min(1).max(30).optional(),
   addonIds: z.array(NonEmptyIdSchema).max(20).default([]),
   extraServiceIds: z.array(NonEmptyIdSchema).max(8).default([]),
-  manageToken: z.string().trim().optional(),
+  manageToken: z.string().trim().max(128).optional(),
   offer: z.string().trim().max(120).optional(),
 });

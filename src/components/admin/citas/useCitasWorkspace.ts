@@ -88,7 +88,9 @@ export function useCitasWorkspace() {
     paymentSplits: rangePaymentSplits,
     cashEntries: rangeCashEntries,
     isValidating: isValidatingRange,
+    error: rangeError,
     revalidate: revalidateRange,
+    retry: retryRange,
   } = useAgendaRangeBookings({
     enabled: Boolean(data),
     view: urlState.resolvedView,
@@ -326,6 +328,8 @@ export function useCitasWorkspace() {
     paymentSplits: rangePaymentSplits,
     cashEntries: rangeCashEntries,
     isValidatingRange,
+    rangeError,
+    retryRange,
     tz,
     todayKey,
     tomorrowKey,

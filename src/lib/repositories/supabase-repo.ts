@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   assertSlotBookable,
   computeServiceTotals,
+  diagnoseDateSlots,
   findEarliestAvailableSlots,
   findNearestAvailableSlots,
   getAvailabilityForRange,
@@ -33,6 +34,7 @@ import {
 } from '../env';
 import {
   getOfficialWhatsAppTemplateSpec,
+  getWhatsAppMonthKey,
   sanitizeWhatsAppTemplateName,
 } from '../integrations/whatsapp-templates';
 import {
@@ -134,13 +136,18 @@ import {
   SlotConflictError,
   type AdjustInventoryInput,
   type AdminBookingsRangeData,
+  type AdminOverviewData,
+  type AdminOverviewDataParams,
   type AwardLoyaltyStampInput,
   type BookingsRangeFilter,
+  type CampaignAudienceData,
   type CleanupExpiredSlotHoldsResult,
   type ClientArcoExport,
   type ClientPortalRecordData,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type DiagnoseAvailabilityInput,
+  type DiagnoseAvailabilityOutput,
   type ExecutiveReportData,
   type GetWhatsAppThreadDetailParams,
   type InactiveClientRecord,
@@ -173,6 +180,7 @@ import {
   type UpdateWhatsAppMessageStatusInput,
   type UpsertClientPortalProfileInput,
   type ValidateCouponResult,
+  type WhatsAppRemindersSnapshotData,
   type WhatsAppContactContextData,
   type WhatsAppThreadDetailData,
   type WriteAuditLogInput,
@@ -2342,6 +2350,1018 @@ export function createSupabaseRepository(
   return {
     getSalonSettings,
     getSnapshot,
+
+    async getAdminOverviewData(
+      params: AdminOverviewDataParams,
+    ): Promise<AdminOverviewData> {
+      const supabase = getClient();
+      const isSpecialist = params.role === 'specialist';
+      const isOwner = params.role === 'owner';
+      const ownStaffId = isSpecialist ? params.staffMemberId : null;
+
+      const buildUsage = (
+        settings: SalonSettings,
+        monthKey: string,
+        row: Tables['whatsapp_monthly_usage']['Row'] | null | undefined,
+      ): WhatsAppMonthlyUsageSummary => {
+        const envQuota = getConfiguredWhatsAppMonthlyQuota();
+        const dbQuota =
+          typeof settings.whatsappMonthlyQuota === 'number' &&
+          settings.whatsappMonthlyQuota >= 1
+            ? Math.floor(settings.whatsappMonthlyQuota)
+            : 500;
+        const quotaLimit = envQuota !== undefined && envQuota >= 1 ? envQuota : dbQuota;
+        return buildWhatsAppUsageSummary({
+          monthKey,
+          sentCount: row?.sent_count ?? 0,
+          quotaLimit: row?.quota_limit ?? quotaLimit,
+          warned80At: row?.warned_80_at ?? null,
+          warned100At: row?.warned_100_at ?? null,
+        });
+      };
+
+      const hydrateOverviewBookings = (paramsHydrate: {
+        bookingRows: Tables['bookings']['Row'][];
+        bookingAddonRows: Tables['booking_addons']['Row'][];
+        services: Service[];
+        staff: StaffMember[];
+        clients: ClientProfile[];
+        reviews: BookingReview[];
+        defaultCommissionPercent: number;
+      }): BookingWithRelations[] => {
+        const servicesById = new Map(paramsHydrate.services.map((s) => [s.id, s]));
+        const staffById = new Map(paramsHydrate.staff.map((s) => [s.id, s]));
+        const clientsById = new Map(paramsHydrate.clients.map((c) => [c.id, c]));
+        const reviewByBookingId = new Map(
+          paramsHydrate.reviews.map((r) => [r.bookingId, r]),
+        );
+
+        return paramsHydrate.bookingRows
+          .map((row) => {
+            const mapped = mapBookingRow(row, paramsHydrate.bookingAddonRows);
+            const service =
+              servicesById.get(mapped.serviceId) ?? buildFallbackServiceForBooking(mapped);
+            const staffMember =
+              staffById.get(mapped.staffId) ??
+              buildFallbackStaffForBooking(mapped, paramsHydrate.defaultCommissionPercent);
+            const client =
+              clientsById.get(mapped.clientId) ?? buildFallbackClientForBooking(mapped);
+            const review = reviewByBookingId.get(mapped.id) ?? null;
+            return { ...mapped, service, staff: staffMember, client, review };
+          })
+          .toSorted(
+            (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+          );
+      };
+
+      if (isSpecialist && !ownStaffId) {
+        const [
+          settingsRes,
+          categoriesRes,
+          servicesRes,
+          addonsRes,
+          galleryRes,
+          loyaltyProgramsRes,
+        ] = await Promise.all([
+          supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+          supabase.from('service_categories').select('*'),
+          supabase.from('services').select('*'),
+          supabase.from('service_addons').select('*'),
+          supabase.from('gallery_items').select('*'),
+          supabase.from('loyalty_programs').select('*'),
+        ]);
+
+        if (!settingsRes.data) {
+          throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+        }
+
+        const settings = mapSettingsRow(settingsRes.data);
+        const tz = settings.timezone || 'America/Mexico_City';
+        const monthKey =
+          params.whatsappMonthKey?.trim() ||
+          getWhatsAppMonthKey(new Date(params.nowMs), tz);
+        const usageRes = await supabase
+          .from('whatsapp_monthly_usage')
+          .select('*')
+          .eq('month_key', monthKey)
+          .maybeSingle();
+
+        return {
+          settings,
+          bookings: [],
+          services: (servicesRes.data ?? []).map(mapServiceRow),
+          categories: (categoriesRes.data ?? []).map(mapCategoryRow),
+          addons: (addonsRes.data ?? []).map(mapAddonRow),
+          staff: [],
+          adminUsers: [],
+          schedules: [],
+          dateOverrides: [],
+          calendarConnections: [],
+          clients: [],
+          workflows: [],
+          notifications: [],
+          gallery: (galleryRes.data ?? []).map(mapGalleryRow),
+          coupons: [],
+          waitlist: [],
+          reviews: [],
+          inventory: [],
+          inventoryMovements: [],
+          cashEntries: [],
+          paymentSplits: [],
+          recurringBlocks: [],
+          loyaltyPrograms: (loyaltyProgramsRes.data ?? []).map(mapLoyaltyProgramRow),
+          loyaltyStamps: [],
+          recentAuditLogs: [],
+          whatsappUsage: buildUsage(settings, monthKey, usageRes.data),
+          whatsappTemplates: [],
+        };
+      }
+
+      if (isSpecialist && ownStaffId) {
+        const [
+          settingsRes,
+          staffRes,
+          staffServicesRes,
+          categoriesRes,
+          servicesRes,
+          addonsRes,
+          galleryRes,
+          schedulesRes,
+          overridesRes,
+          recurringBlocksRes,
+          calendarsRes,
+          bookingsRes,
+          cashRes,
+          loyaltyProgramsRes,
+        ] = await Promise.all([
+          supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+          supabase.from('staff_members').select('*').eq('id', ownStaffId),
+          supabase.from('staff_services').select('*').eq('staff_id', ownStaffId),
+          supabase.from('service_categories').select('*'),
+          supabase.from('services').select('*'),
+          supabase.from('service_addons').select('*'),
+          supabase.from('gallery_items').select('*'),
+          supabase.from('availability_schedules').select('*').eq('staff_id', ownStaffId),
+          supabase.from('date_overrides').select('*').eq('staff_id', ownStaffId),
+          supabase.from('recurring_blocks').select('*').eq('staff_id', ownStaffId),
+          supabase.from('calendar_connections').select('*').eq('staff_id', ownStaffId),
+          supabase.from('bookings').select('*').eq('staff_id', ownStaffId),
+          supabase.from('cash_register_entries').select('*').eq('staff_id', ownStaffId),
+          supabase.from('loyalty_programs').select('*'),
+        ]);
+
+        if (!settingsRes.data) {
+          throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+        }
+
+        const settings = mapSettingsRow(settingsRes.data);
+        const tz = settings.timezone || 'America/Mexico_City';
+        const monthKey =
+          params.whatsappMonthKey?.trim() ||
+          getWhatsAppMonthKey(new Date(params.nowMs), tz);
+
+        const scopedBookingRows = (bookingsRes.data ?? []).filter(
+          (row) => row.staff_id === ownStaffId,
+        );
+        const scopedScheduleRows = (schedulesRes.data ?? []).filter(
+          (row) => row.staff_id === ownStaffId,
+        );
+        const scheduleIds = scopedScheduleRows.map((row) => row.id);
+        const bookingIds = scopedBookingRows.map((row) => row.id);
+        const bookingIdSet = new Set(bookingIds);
+        const clientIds = Array.from(new Set(scopedBookingRows.map((row) => row.client_id)));
+        const clientIdSet = new Set(clientIds);
+        const loyaltyPrograms = (loyaltyProgramsRes.data ?? []).map(mapLoyaltyProgramRow);
+
+        const [
+          usageRes,
+          rulesRes,
+          bookingAddonsRes,
+          clientsRes,
+          paymentSplitsRes,
+          reviewsRes,
+          loyaltyStampsRes,
+          notificationsRes,
+        ] = await Promise.all([
+          supabase
+            .from('whatsapp_monthly_usage')
+            .select('*')
+            .eq('month_key', monthKey)
+            .maybeSingle(),
+          scheduleIds.length > 0
+            ? supabase
+                .from('availability_rules')
+                .select('*')
+                .in('schedule_id', scheduleIds)
+            : Promise.resolve({ data: [] as Tables['availability_rules']['Row'][] }),
+          bookingIds.length > 0
+            ? supabase.from('booking_addons').select('*').in('booking_id', bookingIds)
+            : Promise.resolve({ data: [] as Tables['booking_addons']['Row'][] }),
+          clientIds.length > 0
+            ? supabase.from('clients').select('*').in('id', clientIds)
+            : Promise.resolve({ data: [] as Tables['clients']['Row'][] }),
+          bookingIds.length > 0
+            ? supabase.from('payment_splits').select('*').in('booking_id', bookingIds)
+            : Promise.resolve({ data: [] as Tables['payment_splits']['Row'][] }),
+          bookingIds.length > 0
+            ? supabase.from('booking_reviews').select('*').in('booking_id', bookingIds)
+            : Promise.resolve({ data: [] as Tables['booking_reviews']['Row'][] }),
+          loyaltyPrograms.length > 0 && clientIds.length > 0
+            ? supabase.from('loyalty_stamps').select('*').in('client_id', clientIds)
+            : Promise.resolve({ data: [] as Tables['loyalty_stamps']['Row'][] }),
+          bookingIds.length > 0
+            ? supabase
+                .from('scheduled_notifications')
+                .select('*')
+                .in('booking_id', bookingIds)
+                .order('created_at', { ascending: false })
+                .limit(30)
+            : Promise.resolve({
+                data: [] as Tables['scheduled_notifications']['Row'][],
+              }),
+        ]);
+
+        const staffLinks = staffServicesRes.data ?? [];
+        const staff = (staffRes.data ?? [])
+          .filter((row) => row.id === ownStaffId)
+          .map((row) => mapStaffRow(row, staffLinks));
+        const services = (servicesRes.data ?? []).map(mapServiceRow);
+        const clients = (clientsRes.data ?? [])
+          .filter((row) => clientIdSet.has(row.id))
+          .map(mapClientRow);
+        const reviews = (reviewsRes.data ?? [])
+          .map(mapReviewRow)
+          .filter(
+            (r) =>
+              r.staffId === ownStaffId ||
+              (r.staffId === null && bookingIdSet.has(r.bookingId)),
+          );
+        const bookings = hydrateOverviewBookings({
+          bookingRows: scopedBookingRows,
+          bookingAddonRows: bookingAddonsRes.data ?? [],
+          services,
+          staff,
+          clients,
+          reviews,
+          defaultCommissionPercent: settings.defaultCommissionPercent,
+        });
+
+        return {
+          settings,
+          bookings,
+          services,
+          categories: (categoriesRes.data ?? []).map(mapCategoryRow),
+          addons: (addonsRes.data ?? []).map(mapAddonRow),
+          staff,
+          adminUsers: [],
+          schedules: scopedScheduleRows.map((row) =>
+            mapScheduleRow(row, rulesRes.data ?? []),
+          ),
+          dateOverrides: (overridesRes.data ?? [])
+            .filter((row) => row.staff_id === ownStaffId)
+            .map(mapDateOverrideRow),
+          calendarConnections: (calendarsRes.data ?? [])
+            .filter((row) => row.staff_id === ownStaffId)
+            .map(mapCalendarConnectionRow),
+          clients,
+          workflows: [],
+          notifications: (notificationsRes.data ?? [])
+            .map(mapNotificationRow)
+            .filter((n) => n.bookingId !== null && bookingIdSet.has(n.bookingId))
+            .slice(0, 30),
+          gallery: (galleryRes.data ?? []).map(mapGalleryRow),
+          coupons: [],
+          waitlist: [],
+          reviews,
+          inventory: [],
+          inventoryMovements: [],
+          cashEntries: (cashRes.data ?? [])
+            .filter((row) => row.staff_id === ownStaffId)
+            .map(mapCashEntryRow),
+          paymentSplits: (paymentSplitsRes.data ?? [])
+            .map(mapPaymentSplitRow)
+            .filter((s) => bookingIdSet.has(s.bookingId)),
+          recurringBlocks: (recurringBlocksRes.data ?? [])
+            .filter((row) => row.staff_id === ownStaffId)
+            .map(mapRecurringBlockRow),
+          loyaltyPrograms,
+          loyaltyStamps: (loyaltyStampsRes.data ?? [])
+            .map(mapLoyaltyStampRow)
+            .filter((st) => clientIdSet.has(st.clientId)),
+          recentAuditLogs: [],
+          whatsappUsage: buildUsage(settings, monthKey, usageRes.data),
+          whatsappTemplates: [],
+        };
+      }
+
+      const [
+        settingsRes,
+        staffRes,
+        staffServicesRes,
+        categoriesRes,
+        servicesRes,
+        addonsRes,
+        galleryRes,
+        schedulesRes,
+        rulesRes,
+        overridesRes,
+        recurringBlocksRes,
+        calendarsRes,
+        bookingsRes,
+        clientsRes,
+        loyaltyProgramsRes,
+        inventoryRes,
+      ] = await Promise.all([
+        supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('staff_members').select('*'),
+        supabase.from('staff_services').select('*'),
+        supabase.from('service_categories').select('*'),
+        supabase.from('services').select('*'),
+        supabase.from('service_addons').select('*'),
+        supabase.from('gallery_items').select('*'),
+        supabase.from('availability_schedules').select('*'),
+        supabase.from('availability_rules').select('*'),
+        supabase.from('date_overrides').select('*'),
+        supabase.from('recurring_blocks').select('*'),
+        supabase.from('calendar_connections').select('*'),
+        supabase.from('bookings').select('*'),
+        supabase.from('clients').select('*'),
+        supabase.from('loyalty_programs').select('*'),
+        supabase.from('inventory_items').select('*'),
+      ]);
+
+      if (!settingsRes.data) {
+        throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+      }
+
+      const settings = mapSettingsRow(settingsRes.data);
+      const tz = settings.timezone || 'America/Mexico_City';
+      const monthKey =
+        params.whatsappMonthKey?.trim() ||
+        getWhatsAppMonthKey(new Date(params.nowMs), tz);
+
+      const bookingRows = bookingsRes.data ?? [];
+      const loyaltyPrograms = (loyaltyProgramsRes.data ?? []).map(mapLoyaltyProgramRow);
+      const inventoryRows = inventoryRes.data ?? [];
+
+      const [
+        cashRes,
+        paymentSplitsRes,
+        reviewsRes,
+        notificationsRes,
+        waitlistRes,
+        couponsRes,
+        workflowsRes,
+        adminUsersRes,
+        usageRes,
+        templatesRes,
+        threadsRes,
+        auditLogsRes,
+        bookingAddonsRes,
+        loyaltyStampsRes,
+        movementsRes,
+      ] = await Promise.all([
+        supabase.from('cash_register_entries').select('*'),
+        supabase.from('payment_splits').select('*'),
+        supabase.from('booking_reviews').select('*'),
+        supabase
+          .from('scheduled_notifications')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        supabase.from('waitlist_entries').select('*'),
+        supabase.from('coupons').select('*'),
+        supabase.from('notification_workflows').select('*'),
+        supabase.from('admin_users').select('*'),
+        supabase
+          .from('whatsapp_monthly_usage')
+          .select('*')
+          .eq('month_key', monthKey)
+          .maybeSingle(),
+        supabase.from('whatsapp_templates').select('*'),
+        supabase
+          .from('whatsapp_threads')
+          .select(
+            'id, client_id, phone_e164, unread_count, has_failed_messages, last_inbound_at, assigned_staff_id',
+          )
+          .eq('is_archived', false),
+        isOwner
+          ? supabase
+              .from('audit_logs')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(40)
+          : Promise.resolve({ data: [] as Tables['audit_logs']['Row'][] }),
+        bookingRows.length > 0
+          ? supabase.from('booking_addons').select('*')
+          : Promise.resolve({ data: [] as Tables['booking_addons']['Row'][] }),
+        loyaltyPrograms.length > 0
+          ? supabase.from('loyalty_stamps').select('*')
+          : Promise.resolve({ data: [] as Tables['loyalty_stamps']['Row'][] }),
+        inventoryRows.length > 0
+          ? supabase
+              .from('inventory_movements')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(30)
+          : Promise.resolve({ data: [] as Tables['inventory_movements']['Row'][] }),
+      ]);
+
+      const staffLinks = staffServicesRes.data ?? [];
+      const staff = (staffRes.data ?? []).map((row) => mapStaffRow(row, staffLinks));
+      const services = (servicesRes.data ?? []).map(mapServiceRow);
+      const clients = (clientsRes.data ?? []).map(mapClientRow);
+      const reviews = (reviewsRes.data ?? []).map(mapReviewRow);
+      const bookings = hydrateOverviewBookings({
+        bookingRows,
+        bookingAddonRows: bookingAddonsRes.data ?? [],
+        services,
+        staff,
+        clients,
+        reviews,
+        defaultCommissionPercent: settings.defaultCommissionPercent,
+      });
+
+      const allNotifications = (notificationsRes.data ?? []).map(mapNotificationRow);
+
+      let unreadCount = 0;
+      let failedCount = 0;
+      let windowOpenCount = 0;
+      let totalThreads = 0;
+      for (const t of threadsRes.data ?? []) {
+        totalThreads += 1;
+        unreadCount += t.unread_count;
+        if (t.has_failed_messages) failedCount += 1;
+        if (computeWhatsAppServiceWindow(t.last_inbound_at, params.nowMs).isOpen) {
+          windowOpenCount += 1;
+        }
+      }
+      let failedRemindersCount = 0;
+      let pendingRemindersCount = 0;
+      for (const n of allNotifications) {
+        if (n.status === 'failed') failedRemindersCount += 1;
+        if (n.status === 'pending') pendingRemindersCount += 1;
+      }
+
+      const mappedTemplates = (templatesRes.data ?? [])
+        .map(mapWhatsAppTemplateRow)
+        .filter((tpl): tpl is WhatsAppTemplateConfig => tpl !== null);
+      const defaultTemplates = createDefaultWhatsAppTemplates(clock.now().toISOString());
+      const tplByTrigger = new Map<WhatsAppTemplateTriggerKey, WhatsAppTemplateConfig>();
+      for (const tpl of defaultTemplates) tplByTrigger.set(tpl.triggerKey, tpl);
+      for (const tpl of mappedTemplates) tplByTrigger.set(tpl.triggerKey, tpl);
+      const tplOverrides = getWhatsAppTemplateNameOverrides();
+      const whatsappTemplates = Array.from(tplByTrigger.values()).map((tpl) => ({
+        ...tpl,
+        templateName: tplOverrides[tpl.triggerKey] ?? tpl.templateName,
+      }));
+
+      return {
+        settings,
+        bookings,
+        services,
+        categories: (categoriesRes.data ?? []).map(mapCategoryRow),
+        addons: (addonsRes.data ?? []).map(mapAddonRow),
+        staff,
+        adminUsers: (adminUsersRes.data ?? []).map(mapAdminUserRow),
+        schedules: (schedulesRes.data ?? []).map((row) =>
+          mapScheduleRow(row, rulesRes.data ?? []),
+        ),
+        dateOverrides: (overridesRes.data ?? []).map(mapDateOverrideRow),
+        calendarConnections: (calendarsRes.data ?? []).map(mapCalendarConnectionRow),
+        clients,
+        workflows: (workflowsRes.data ?? []).map(mapWorkflowRow),
+        notifications: allNotifications.slice(0, 30),
+        gallery: (galleryRes.data ?? []).map(mapGalleryRow),
+        coupons: (couponsRes.data ?? []).map(mapCouponRow),
+        waitlist: (waitlistRes.data ?? []).map(mapWaitlistRow),
+        reviews,
+        inventory: inventoryRows.map(mapInventoryItemRow),
+        inventoryMovements: (movementsRes.data ?? [])
+          .map(mapInventoryMovementRow)
+          .slice(0, 30),
+        cashEntries: (cashRes.data ?? []).map(mapCashEntryRow),
+        paymentSplits: (paymentSplitsRes.data ?? []).map(mapPaymentSplitRow),
+        recurringBlocks: (recurringBlocksRes.data ?? []).map(mapRecurringBlockRow),
+        loyaltyPrograms,
+        loyaltyStamps: (loyaltyStampsRes.data ?? []).map(mapLoyaltyStampRow),
+        recentAuditLogs: isOwner
+          ? (auditLogsRes.data ?? []).map(mapAuditLogRow).slice(0, 40)
+          : [],
+        whatsappUsage: buildUsage(settings, monthKey, usageRes.data),
+        whatsappTemplates,
+        whatsappInboxSummary: {
+          unreadCount,
+          failedCount,
+          failedRemindersCount,
+          pendingRemindersCount,
+          windowOpenCount,
+          totalThreads,
+        },
+      };
+    },
+
+    async getCampaignAudienceData(): Promise<CampaignAudienceData> {
+      const supabase = getClient();
+      const [settingsRes, clientsRes, bookingsRes, servicesRes] = await Promise.all([
+        supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('clients').select('*'),
+        supabase.from('bookings').select('*'),
+        supabase.from('services').select('id, name'),
+      ]);
+
+      if (!settingsRes.data) {
+        throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+      }
+
+      const settings = mapSettingsRow(settingsRes.data);
+      return {
+        settings: {
+          name: settings.name,
+          timezone: settings.timezone,
+        },
+        clients: (clientsRes.data ?? []).map(mapClientRow),
+        bookings: (bookingsRes.data ?? []).map((row) => mapBookingRow(row, [])),
+        services: (servicesRes.data ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+        })),
+      };
+    },
+
+    async getWhatsAppRemindersSnapshot(params?: {
+      role?: AdminRole;
+      staffMemberId?: string | null;
+      nowMs?: number;
+    }): Promise<WhatsAppRemindersSnapshotData> {
+      const supabase = getClient();
+      const nowMs = params?.nowMs ?? clock.nowMs();
+      const isSpecialist = params?.role === 'specialist';
+      const staffMemberId = params?.staffMemberId ?? null;
+
+      const [
+        workflowsRes,
+        notifsRes,
+        bookingsRes,
+        clientsRes,
+        servicesRes,
+        staffRes,
+        outboxRes,
+      ] = await Promise.all([
+        supabase.from('notification_workflows').select('*'),
+        supabase.from('scheduled_notifications').select('*'),
+        supabase.from('bookings').select('*'),
+        supabase.from('clients').select('*'),
+        supabase.from('services').select('id, name'),
+        supabase.from('staff_members').select('id, name'),
+        supabase.from('outbox_events').select('status'),
+      ]);
+
+      const workflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
+      const notifications = (notifsRes.data ?? []).map(mapNotificationRow);
+      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      const clients = (clientsRes.data ?? []).map(mapClientRow);
+
+      const workflowById = new Map(workflows.map((w) => [w.id, w]));
+      const bookingById = new Map(bookings.map((b) => [b.id, b]));
+      const clientById = new Map(clients.map((c) => [c.id, c]));
+      const serviceNameById = new Map(
+        (servicesRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+      const staffNameById = new Map(
+        (staffRes.data ?? []).map((s) => [s.id, s.name]),
+      );
+
+      let pendingCount = 0;
+      let sentCount = 0;
+      let deliveredCount = 0;
+      let readCount = 0;
+      let failedCount = 0;
+      let canceledCount = 0;
+      let skippedCascadeCount = 0;
+      const coveredBookingIds = new Set<string>();
+
+      for (const n of notifications) {
+        if (n.status === 'pending') pendingCount += 1;
+        else if (n.status === 'sent') {
+          sentCount += 1;
+          if (n.deliveryStatus === 'delivered' || n.deliveryStatus === 'read') {
+            deliveredCount += 1;
+          }
+          if (n.deliveryStatus === 'read') {
+            readCount += 1;
+          }
+        } else if (n.status === 'failed') failedCount += 1;
+        else if (n.status === 'canceled') {
+          canceledCount += 1;
+          if (n.errorMessage === 'skipped_cascade') {
+            skippedCascadeCount += 1;
+          }
+        }
+
+        if (n.bookingId && (n.status === 'pending' || n.status === 'sent')) {
+          const wf = n.workflowId ? workflowById.get(n.workflowId) : undefined;
+          if (
+            wf?.triggerEvent === 'before_booking' ||
+            n.triggerKey === 'reminder_24h' ||
+            n.triggerKey === 'reminder_2h'
+          ) {
+            coveredBookingIds.add(n.bookingId);
+          }
+        }
+      }
+
+      const bookingsWithoutRemindersCount = bookings.filter(
+        (b) =>
+          isActiveBookingStatus(b.status) &&
+          Date.parse(b.startAt) > nowMs &&
+          !coveredBookingIds.has(b.id),
+      ).length;
+
+      const visible = notifications.filter((item) => {
+        if (!isSpecialist) return true;
+        if (!staffMemberId) return false;
+        if (item.bookingId) {
+          return bookingById.get(item.bookingId)?.staffId === staffMemberId;
+        }
+        if (item.clientId) {
+          return bookings.some(
+            (b) => b.clientId === item.clientId && b.staffId === staffMemberId,
+          );
+        }
+        return false;
+      });
+
+      const toReminderItem = (item: ScheduledNotification): WhatsAppReminderItemDTO => {
+        const booking = item.bookingId ? bookingById.get(item.bookingId) : undefined;
+        const client =
+          (booking ? clientById.get(booking.clientId) : undefined) ??
+          (item.clientId ? clientById.get(item.clientId) : undefined) ??
+          clients.find((c) => phonesMatchE164(c.phoneE164, item.recipient));
+        const workflow = item.workflowId ? workflowById.get(item.workflowId) : undefined;
+        const deliveryStatus =
+          item.deliveryStatus ??
+          (item.status === 'sent'
+            ? 'sent'
+            : item.status === 'failed'
+              ? 'failed'
+              : item.status === 'pending'
+                ? 'queued'
+                : null);
+
+        return {
+          id: item.id,
+          bookingId: item.bookingId,
+          bookingCode: booking?.bookingCode ?? null,
+          clientId: client?.id ?? item.clientId ?? null,
+          clientName: client?.fullName ?? null,
+          staffName: booking ? (staffNameById.get(booking.staffId) ?? null) : null,
+          serviceName: booking ? (serviceNameById.get(booking.serviceId) ?? null) : null,
+          bookingStartAt: booking?.startAt ?? null,
+          workflowId: item.workflowId,
+          workflowName: workflow?.name ?? null,
+          triggerKey: inferReminderTriggerKey(workflow, item, booking),
+          channel: item.channel,
+          recipient: item.recipient,
+          scheduledFor: item.scheduledFor,
+          status: item.status,
+          deliveryStatus,
+          subject: item.subject,
+          previewText: item.previewText,
+          bodyText: item.bodyText || item.previewText,
+          providerMessageId: item.providerMessageId,
+          errorMessage: item.errorMessage,
+          attempts: item.attempts ?? (item.status === 'pending' ? 0 : 1),
+          maxAttempts: item.maxAttempts ?? 3,
+          nextRetryAt: item.nextRetryAt ?? null,
+          lastAttemptAt: item.lastAttemptAt ?? null,
+          sentAt: item.sentAt,
+          createdAt: item.createdAt,
+        };
+      };
+
+      const queue = visible
+        .filter((item) => item.status === 'pending')
+        .toSorted((a, b) => Date.parse(a.scheduledFor) - Date.parse(b.scheduledFor))
+        .slice(0, 100)
+        .map(toReminderItem);
+
+      const history = visible
+        .toSorted((a, b) => {
+          const aKey = Date.parse(a.sentAt ?? a.scheduledFor ?? a.createdAt);
+          const bKey = Date.parse(b.sentAt ?? b.scheduledFor ?? b.createdAt);
+          return bKey - aKey;
+        })
+        .slice(0, 180)
+        .filter((item) => item.status !== 'pending')
+        .map(toReminderItem);
+
+      let outboxPending = 0;
+      let outboxProcessing = 0;
+      let outboxFailed = 0;
+      let outboxProcessed = 0;
+      for (const row of outboxRes.data ?? []) {
+        if (row.status === 'pending') outboxPending += 1;
+        else if (row.status === 'processing') outboxProcessing += 1;
+        else if (row.status === 'failed') outboxFailed += 1;
+        else if (row.status === 'processed') outboxProcessed += 1;
+      }
+
+      return {
+        workflows,
+        queue,
+        history,
+        metrics: {
+          pendingCount,
+          sentCount,
+          deliveredCount,
+          readCount,
+          failedCount,
+          canceledCount,
+          skippedCascadeCount,
+          bookingsWithoutRemindersCount,
+        },
+        outboxSummary: {
+          pendingCount: outboxPending,
+          processingCount: outboxProcessing,
+          failedCount: outboxFailed,
+          processedCount: outboxProcessed,
+        },
+      };
+    },
+
+    async getClientById(clientId: string): Promise<ClientProfile | null> {
+      const cleanId = clientId.trim();
+      if (!cleanId) return null;
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', cleanId)
+        .maybeSingle();
+      return data ? mapClientRow(data) : null;
+    },
+
+    async getBookingById(bookingId: string): Promise<BookingWithRelations | null> {
+      return fetchSupabaseBookingById(bookingId, getClient());
+    },
+
+    async listActiveAdminUsers(): Promise<AdminUser[]> {
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('admin_users')
+        .select('*')
+        .eq('is_active', true);
+      return (data ?? []).map(mapAdminUserRow).filter((u) => u.isActive);
+    },
+
+    async listActiveServices(limit?: number): Promise<Service[]> {
+      const supabase = getClient();
+      let query = supabase
+        .from('services')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+      if (limit !== undefined && limit > 0) {
+        query = query.limit(Math.floor(limit));
+      }
+      const { data } = await query;
+      const active = (data ?? [])
+        .map(mapServiceRow)
+        .filter((s) => s.isActive)
+        .toSorted((a, b) => a.displayOrder - b.displayOrder);
+      return limit !== undefined && limit > 0
+        ? active.slice(0, Math.floor(limit))
+        : active;
+    },
+
+    async listCashEntries(): Promise<CashRegisterEntry[]> {
+      const supabase = getClient();
+      const { data } = await supabase.from('cash_register_entries').select('*');
+      return (data ?? []).map(mapCashEntryRow);
+    },
+
+    async listRecurringBlocks(staffId?: string | null): Promise<RecurringBlock[]> {
+      const supabase = getClient();
+      const cleanStaffId = staffId?.trim() || null;
+      let query = supabase.from('recurring_blocks').select('*');
+      if (cleanStaffId) {
+        query = query.eq('staff_id', cleanStaffId);
+      }
+      const { data } = await query;
+      const blocks = (data ?? []).map(mapRecurringBlockRow);
+      return cleanStaffId ? blocks.filter((b) => b.staffId === cleanStaffId) : blocks;
+    },
+
+    async toggleRecurringBlock(id: string, isActive: boolean): Promise<RecurringBlock> {
+      const supabase = getClient();
+      const { data, error } = await supabase
+        .from('recurring_blocks')
+        .update({ is_active: isActive })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new PolicyError('BLOCK_NOT_FOUND', 'Bloqueo recurrente no encontrado.');
+      }
+      return mapRecurringBlockRow(data);
+    },
+
+    async listStaffOverrideDates(staffId: string): Promise<string[]> {
+      const cleanStaffId = staffId.trim();
+      if (!cleanStaffId) return [];
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('date_overrides')
+        .select('staff_id, override_date')
+        .eq('staff_id', cleanStaffId);
+      return (data ?? [])
+        .filter((row) => row.staff_id === cleanStaffId)
+        .map((row) => row.override_date);
+    },
+
+    async listStaffClientIds(staffId: string): Promise<string[]> {
+      const cleanStaffId = staffId.trim();
+      if (!cleanStaffId) return [];
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('bookings')
+        .select('client_id, staff_id')
+        .eq('staff_id', cleanStaffId);
+      return Array.from(
+        new Set(
+          (data ?? [])
+            .filter((row) => row.staff_id === cleanStaffId)
+            .map((row) => row.client_id),
+        ),
+      );
+    },
+
+    async diagnoseAvailability(
+      params: DiagnoseAvailabilityInput,
+    ): Promise<DiagnoseAvailabilityOutput> {
+      const supabase = getClient();
+      const isSpecialist = params.role === 'specialist';
+      const requestedStaffId = params.staffId?.trim() || '';
+      const scopedBlockStaffId = isSpecialist
+        ? (params.staffMemberId ?? null)
+        : requestedStaffId || null;
+
+      let blocksQuery = supabase.from('recurring_blocks').select('*');
+      if (scopedBlockStaffId) {
+        blocksQuery = blocksQuery.eq('staff_id', scopedBlockStaffId);
+      }
+
+      const [settingsRes, servicesRes, staffRes, staffServicesRes, blocksRes] =
+        await Promise.all([
+          supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+          supabase.from('services').select('*'),
+          supabase.from('staff_members').select('*'),
+          supabase.from('staff_services').select('*'),
+          blocksQuery,
+        ]);
+
+      if (!settingsRes.data) {
+        throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+      }
+
+      const settings = mapSettingsRow(settingsRes.data);
+      const tz = settings.timezone || 'America/Mexico_City';
+      const date = params.date?.trim() || getDateKeyInTimezone(clock.now(), tz);
+      const services = (servicesRes.data ?? [])
+        .map(mapServiceRow)
+        .toSorted((a, b) => a.displayOrder - b.displayOrder);
+      const staffLinks = staffServicesRes.data ?? [];
+      const staffMembers = (staffRes.data ?? [])
+        .map((row) => mapStaffRow(row, staffLinks))
+        .toSorted((a, b) => a.displayOrder - b.displayOrder);
+      const allBlocks = (blocksRes.data ?? []).map(mapRecurringBlockRow);
+      const scopedBlocks = isSpecialist
+        ? params.staffMemberId
+          ? allBlocks.filter((b) => b.staffId === params.staffMemberId)
+          : []
+        : requestedStaffId
+          ? allBlocks.filter((b) => b.staffId === requestedStaffId)
+          : allBlocks;
+
+      const targetStaffId = isSpecialist
+        ? (params.staffMemberId ?? '')
+        : requestedStaffId || staffMembers[0]?.id || '';
+      const targetServiceId = params.serviceId?.trim() || services[0]?.id || '';
+      const service = services.find((s) => s.id === targetServiceId);
+
+      if (!targetStaffId || !service) {
+        return {
+          date,
+          diagnosis: [],
+          recurringBlocks: scopedBlocks,
+        };
+      }
+
+      const cleanAddonIds = Array.from(
+        new Set((params.addonIds ?? []).map((id) => id.trim()).filter(Boolean)),
+      );
+      const cleanExtraServiceIds = Array.from(
+        new Set(
+          (params.extraServiceIds ?? [])
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0 && id !== service.id),
+        ),
+      );
+      const extraServices = services.filter(
+        (s) => cleanExtraServiceIds.includes(s.id) && s.isActive,
+      );
+
+      const nowIso = clock.now().toISOString();
+      const bufferedFromIso = `${shiftMetricDateKey(date, -1)}T00:00:00.000Z`;
+      const bufferedToIso = `${shiftMetricDateKey(date, 1)}T23:59:59.999Z`;
+
+      const [addonsRes, schedulesRes, overridesRes, bookingsRes, holdsRes, calendarsRes] =
+        await Promise.all([
+          cleanAddonIds.length > 0
+            ? supabase
+                .from('service_addons')
+                .select('*')
+                .in('id', cleanAddonIds)
+                .eq('is_active', true)
+            : Promise.resolve({ data: [] as Tables['service_addons']['Row'][] }),
+          supabase
+            .from('availability_schedules')
+            .select('*')
+            .eq('staff_id', targetStaffId),
+          supabase.from('date_overrides').select('*').eq('staff_id', targetStaffId),
+          supabase
+            .from('bookings')
+            .select('*')
+            .eq('staff_id', targetStaffId)
+            .gte('start_at', bufferedFromIso)
+            .lte('start_at', bufferedToIso),
+          supabase
+            .from('slot_holds')
+            .select('*')
+            .eq('staff_id', targetStaffId)
+            .gt('expires_at', nowIso),
+          supabase
+            .from('calendar_connections')
+            .select('*')
+            .eq('staff_id', targetStaffId),
+        ]);
+
+      const scheduleRows = (schedulesRes.data ?? []).filter(
+        (row) => row.staff_id === targetStaffId,
+      );
+      const scheduleIds = scheduleRows.map((row) => row.id);
+      const rulesRes =
+        scheduleIds.length > 0
+          ? await supabase
+              .from('availability_rules')
+              .select('*')
+              .in('schedule_id', scheduleIds)
+          : { data: [] as Tables['availability_rules']['Row'][] };
+
+      const addons = (addonsRes.data ?? [])
+        .map(mapAddonRow)
+        .filter((a) => cleanAddonIds.includes(a.id) && a.isActive);
+      const schedules = scheduleRows.map((row) =>
+        mapScheduleRow(row, rulesRes.data ?? []),
+      );
+      const dateOverrides = (overridesRes.data ?? [])
+        .filter((row) => row.staff_id === targetStaffId)
+        .map(mapDateOverrideRow);
+      const bookings = (bookingsRes.data ?? [])
+        .filter((row) => row.staff_id === targetStaffId)
+        .map((row) => mapBookingRow(row, []));
+      const slotHolds = (holdsRes.data ?? [])
+        .filter((row) => row.staff_id === targetStaffId)
+        .map(mapSlotHoldRow);
+      const calendarConnections = (calendarsRes.data ?? [])
+        .filter((row) => row.staff_id === targetStaffId)
+        .map(mapCalendarConnectionRow);
+
+      const diagnosis = diagnoseDateSlots(
+        {
+          settings,
+          service,
+          extraServices,
+          addons,
+          staffMembers,
+          schedules,
+          dateOverrides,
+          recurringBlocks: allBlocks,
+          bookings,
+          slotHolds,
+          calendarConnections,
+          now: clock.now(),
+        },
+        date,
+        targetStaffId,
+      );
+
+      return {
+        date,
+        diagnosis,
+        recurringBlocks: scopedBlocks,
+      };
+    },
 
     async getPublicBootstrap(): Promise<PublicBootstrapData> {
       const supabase = getClient();

@@ -9,7 +9,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
-import { BarChart3, Boxes, Check, FolderTree, Package, Plus } from 'lucide-react';
+import { BarChart3, Boxes, Check, FolderTree, Package, Plus, Save } from 'lucide-react';
 import { useAdminData } from '@/components/admin/AdminProvider';
 import { AdminAccessGuard } from '@/components/admin/AdminAccessGuard';
 import {
@@ -17,6 +17,7 @@ import {
   PageHeader,
   PageSkeleton,
   SkeletonBlock,
+  StatusTag,
 } from '@/components/ui';
 import { FormDialog } from '@/components/ui/FormDialog';
 import { ServiceCatalogSection } from '@/components/admin/servicios/ServiceCatalogSection';
@@ -37,11 +38,14 @@ import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
   FORM_SUBMIT_OK,
   formSubmitError,
-  formSubmitResultFromResponse,
+  formSubmitResultFromFetch,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { roleCanAccess } from '@/lib/rbac';
 import type { Service } from '@/lib/types';
+
+const SERVICE_EDITOR_FORM_ID = 'service-editor-form';
 
 const ServiceLivePreview = dynamic(
   () =>
@@ -158,7 +162,7 @@ export default function AdminServicesPage() {
   }
 
   const currency = data.settings.currency;
-  const defaultDepositCents = data.settings.depositAmountCents ?? 20000;
+  const defaultDepositCents = data.settings.depositAmountCents ?? 0;
   const activeDraft: Partial<Service> =
     editing ?? buildNewServiceDraft(defaultDepositCents, data.categories[0]?.id ?? null);
   const originalService = activeDraft.id
@@ -208,12 +212,12 @@ export default function AdminServicesPage() {
     const next = [...rest.slice(0, position - 1), saved, ...rest.slice(position - 1)];
     for (const [index, srv] of next.entries()) {
       if (srv.displayOrder === index) continue;
-      const res = await fetch('/api/admin/services', {
+      const result = await fetchJsonWithTimeout('/api/admin/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: 'service', data: { ...srv, displayOrder: index } }),
       });
-      if (!res.ok) return false;
+      if (!result.ok) return false;
     }
     return true;
   };
@@ -229,29 +233,32 @@ export default function AdminServicesPage() {
       isPrivate: Boolean(activeDraft.isPrivate),
       ...(activeDraft.id ? {} : { displayOrder: orderedServices.length }),
     };
-    try {
-      const res = await fetch('/api/admin/services', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
-      });
-      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar el servicio.');
-      if (positionChanged && menuPosition !== null) {
-        const json = (await res.json()) as { service: Service };
-        const reordered = await applyMenuOrder(json.service, menuPosition);
-        if (!reordered) {
-          await refresh();
-          return formSubmitError('Se guardó el servicio, pero no se pudo cambiar su lugar en el menú.');
-        }
-      }
-      await refresh();
-      saveNotice.show(
-        wasEditing ? 'Cambios guardados' : activeDraft.isPrivate ? 'Servicio privado creado' : 'Servicio creado',
-      );
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudo guardar el servicio.');
+    const result = await fetchJsonWithTimeout<{ service: Service }>('/api/admin/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'service', data: normalizedPayload }),
+    });
+    if (!result.ok) {
+      return formSubmitResultFromFetch(result, 'No se pudo guardar el servicio.');
     }
+    if (positionChanged && menuPosition !== null) {
+      const reordered = await applyMenuOrder(result.data.service, menuPosition);
+      if (!reordered) {
+        await refresh();
+        return formSubmitError(
+          'Se guardó el servicio, pero no se pudo cambiar su lugar en el menú.',
+        );
+      }
+    }
+    await refresh();
+    saveNotice.show(
+      wasEditing
+        ? 'Cambios guardados'
+        : activeDraft.isPrivate
+          ? 'Servicio privado creado'
+          : 'Servicio creado',
+    );
+    return FORM_SUBMIT_OK;
   };
 
   const applyToggleServiceActive = async (srv: Service, checked: boolean) => {
@@ -260,23 +267,20 @@ export default function AdminServicesPage() {
     setOptimisticActiveById((prev) => ({ ...prev, [srv.id]: checked }));
     setSavedMsg(null);
     try {
-      const res = await fetch('/api/admin/services', {
+      const result = await fetchJsonWithTimeout('/api/admin/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: 'service', data: { ...srv, isActive: checked } }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await refresh();
         saveNotice.show(checked ? `${srv.name} activado` : `${srv.name} pausado`);
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setSavedMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo actualizar el estado del servicio.',
+          text: result.error || 'No se pudo actualizar el estado del servicio.',
         });
       }
-    } catch {
-      setSavedMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el servicio.' });
     } finally {
       setTogglingId(null);
       setOptimisticActiveById((prev) =>
@@ -305,210 +309,218 @@ export default function AdminServicesPage() {
 
   return (
     <AdminAccessGuard role={data.session.user.role} section="services" sectionLabel="Servicios">
-    <VStack className="ad-page">
-      <PageHeader
-        title="Servicios"
-        subtitle="Precios y duraciones tal como los ven tus clientas."
-        meta={
-          togglingId ? (
-            <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
-              Guardando…
-            </Text>
-          ) : saveNotice.message ? (
-            <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
-              <Check size={12} aria-hidden="true" />
-              {saveNotice.message}
-            </Text>
-          ) : undefined
-        }
-        actions={
-          <>
-            <Button
-              type="button"
-              label="Categorías"
-              variant="secondary"
-              size="md"
-              icon={<FolderTree size={16} aria-hidden="true" />}
-              onClick={() => setCategoriesOpen(true)}
-            />
-            <Button
-              type="button"
-              label="Nuevo servicio"
-              variant="primary"
-              size="md"
-              icon={<Plus size={16} aria-hidden="true" />}
-              onClick={startNewService}
-            />
-          </>
-        }
-      />
+      <VStack className="ad-page">
+        <PageHeader
+          title="Servicios"
+          subtitle="Precios y duraciones tal como los ven tus clientas."
+          meta={
+            togglingId ? (
+              <Text className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+                Guardando…
+              </Text>
+            ) : saveNotice.message ? (
+              <Text className="fx-save-pill" data-state="saved" role="status" aria-live="polite">
+                <Check size={12} aria-hidden="true" />
+                {saveNotice.message}
+              </Text>
+            ) : undefined
+          }
+          actions={
+            <>
+              <Button
+                type="button"
+                label="Categorías"
+                variant="secondary"
+                size="md"
+                icon={<FolderTree size={16} aria-hidden="true" />}
+                onClick={() => setCategoriesOpen(true)}
+              />
+              <Button
+                type="button"
+                label="Nuevo servicio"
+                variant="primary"
+                size="md"
+                icon={<Plus size={16} aria-hidden="true" />}
+                onClick={startNewService}
+              />
+            </>
+          }
+        />
 
-      {canViewReports || canViewCash || canViewInventory ? (
-        <HStack className="ad-toolbar" justify="between" align="center" gap={2} wrap="wrap">
-          <Text type="supporting" color="secondary">
-            Relacionado con tu menú
-          </Text>
-          <HStack gap={1.5} align="center" wrap="wrap">
-            {canViewReports ? (
-              <Button
-                label="Rentabilidad"
-                variant="ghost"
-                size="sm"
-                icon={<BarChart3 size={14} aria-hidden="true" />}
-                href={reportesHref({ period: '30d' })}
-              />
-            ) : null}
-            {canViewCash ? (
-              <Button
-                label="Paquetes"
-                variant="ghost"
-                size="sm"
-                icon={<Package size={14} aria-hidden="true" />}
-                href={cajaHref({ tab: 'promos', sub: 'packages' })}
-              />
-            ) : null}
-            {canViewInventory ? (
-              <Button
-                label="Insumos"
-                variant="ghost"
-                size="sm"
-                icon={<Boxes size={14} aria-hidden="true" />}
-                href={inventarioHref({ filter: 'cabin' })}
-              />
-            ) : null}
+        {canViewReports || canViewCash || canViewInventory ? (
+          <HStack className="ad-toolbar" justify="between" align="center" gap={2} wrap="wrap">
+            <Text type="supporting" color="secondary">
+              Relacionado con tu menú
+            </Text>
+            <HStack gap={1.5} align="center" wrap="wrap">
+              {canViewReports ? (
+                <Button
+                  label="Rentabilidad"
+                  variant="ghost"
+                  size="sm"
+                  icon={<BarChart3 size={14} aria-hidden="true" />}
+                  href={reportesHref({ period: '30d' })}
+                />
+              ) : null}
+              {canViewCash ? (
+                <Button
+                  label="Paquetes"
+                  variant="ghost"
+                  size="sm"
+                  icon={<Package size={14} aria-hidden="true" />}
+                  href={cajaHref({ tab: 'promos', sub: 'packages' })}
+                />
+              ) : null}
+              {canViewInventory ? (
+                <Button
+                  label="Insumos"
+                  variant="ghost"
+                  size="sm"
+                  icon={<Boxes size={14} aria-hidden="true" />}
+                  href={inventarioHref({ filter: 'cabin' })}
+                />
+              ) : null}
+            </HStack>
           </HStack>
-        </HStack>
-      ) : null}
+        ) : null}
 
-      <CategoryManagerDialog
-        isOpen={categoriesOpen}
-        categories={data.categories}
-        onOpenChange={setCategoriesOpen}
-        onSaved={async () => {
-          await refresh();
-          saveNotice.show('Categorías guardadas');
-        }}
-      />
-
-      {savedMsg ? (
-        <Banner
-          status={savedMsg.status}
-          role={savedMsg.status === 'error' ? 'alert' : 'status'}
-          title={savedMsg.text}
-          isDismissable
-          onDismiss={() => setSavedMsg(null)}
+        <CategoryManagerDialog
+          isOpen={categoriesOpen}
+          categories={data.categories}
+          onOpenChange={setCategoriesOpen}
+          onSaved={async () => {
+            await refresh();
+            saveNotice.show('Categorías guardadas');
+          }}
         />
-      ) : null}
 
-      <TabList value={section} onChange={setSection} hasDivider>
-        <Tab value="services" label={`Servicios (${data.services.length})`} />
-        <Tab value="addons" label={`Extras / Diseños (${data.addons.length})`} />
-      </TabList>
-
-      {section === 'services' ? (
-        <VStack key="tab-services" gap={5}>
-          <ServiceCatalogSection
-            key={parsedParams.q ?? 'all'}
-            services={displayServices}
-            categories={data.categories}
-            categoryNameById={categoryNameById}
-            currency={currency}
-            selectedServiceId={activeDraft.id ?? highlightedServiceId ?? undefined}
-            initialSearch={parsedParams.q ?? ''}
-            togglingId={togglingId}
-            onSelectService={startEditingService}
-            onRequestToggleActive={(srv, checked) => {
-              if (!checked) {
-                setPendingPauseService(srv);
-              } else {
-                void applyToggleServiceActive(srv, true);
-              }
-            }}
-            onCopyError={(text) => setSavedMsg({ status: 'error', text })}
+        {savedMsg ? (
+          <Banner
+            status={savedMsg.status}
+            role={savedMsg.status === 'error' ? 'alert' : 'status'}
+            title={savedMsg.text}
+            isDismissable
+            onDismiss={() => setSavedMsg(null)}
           />
-        </VStack>
-      ) : (
-        <AddonsManagerSection
-          addons={data.addons}
-          currency={currency}
-          onRefresh={refresh}
-          onError={(text) => setSavedMsg({ status: 'error', text })}
-          onNotice={saveNotice.show}
-        />
-      )}
+        ) : null}
 
-      <FormDialog
-        isOpen={editing !== null}
-        onOpenChange={(open) => {
-          if (!open) closeEditor();
-        }}
-        title={activeDraft.id ? 'Editar servicio' : 'Nuevo servicio'}
-        subtitle="Solo necesitas nombre, precio y duración."
-        width="min(40rem, 96vw)"
-      >
-        {(controls) => (
-          <VStack gap={4}>
-            <ServiceLivePreview
-              draft={activeDraft}
-              categoryName={previewCategoryName}
+        <TabList value={section} onChange={setSection} hasDivider>
+          <Tab value="services" label={`Servicios (${data.services.length})`} />
+          <Tab value="addons" label={`Extras / Diseños (${data.addons.length})`} />
+        </TabList>
+
+        {section === 'services' ? (
+          <VStack key="tab-services" gap={5}>
+            <ServiceCatalogSection
+              key={parsedParams.q ?? 'all'}
+              services={displayServices}
+              categories={data.categories}
+              categoryNameById={categoryNameById}
               currency={currency}
-              appUrl={data.integration.appUrl}
-            />
-            <ServiceEditorPanel
-              draft={activeDraft}
-              categoryOptions={categoryOptions}
-              currency={currency}
-              defaultDepositCents={defaultDepositCents}
-              hasCleanupTime={hasCleanupTime}
-              hasCustomAdvancedValues={hasCustomAdvancedValues}
-              isDirty={isServiceDirty}
-              saving={controls.isSubmitting}
-              menuPosition={menuPosition}
-              menuPositionCount={orderedServices.length}
-              onChangeMenuPosition={setMenuPosition}
-              onChangeDraft={setEditing}
-              onToggleCleanupTime={(checked) => {
-                setCleanupEnabledOverride(checked);
+              selectedServiceId={activeDraft.id ?? highlightedServiceId ?? undefined}
+              initialSearch={parsedParams.q ?? ''}
+              togglingId={togglingId}
+              onSelectService={startEditingService}
+              onRequestToggleActive={(srv, checked) => {
                 if (!checked) {
-                  setEditing({ ...activeDraft, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 });
-                } else if (
-                  (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
-                  (activeDraft.bufferAfterMinutes ?? 0) === 0
-                ) {
-                  setEditing({ ...activeDraft, bufferAfterMinutes: 15 });
+                  setPendingPauseService(srv);
+                } else {
+                  void applyToggleServiceActive(srv, true);
                 }
               }}
-              onCancel={controls.close}
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!isServiceDirty) return;
-                controls.submit(saveService);
-              }}
+              onCopyError={(text) => setSavedMsg({ status: 'error', text })}
             />
           </VStack>
+        ) : (
+          <AddonsManagerSection
+            addons={data.addons}
+            currency={currency}
+            onRefresh={refresh}
+            onError={(text) => setSavedMsg({ status: 'error', text })}
+            onNotice={saveNotice.show}
+          />
         )}
-      </FormDialog>
 
-      <ConfirmActionDialog
-        isOpen={Boolean(pendingPauseService)}
-        onOpenChange={(open) => {
-          if (!open) setPendingPauseService(null);
-        }}
-        title={
-          pendingPauseService ? `¿Pausar "${pendingPauseService.name}"?` : '¿Pausar servicio?'
-        }
-        description="Dejará de aparecer en tu página de reservas hasta que vuelvas a activarlo. Tus citas ya agendadas no se modifican."
-        confirmLabel="Pausar servicio"
-        variant="destructive"
-        isLoading={Boolean(pendingPauseService && togglingId === pendingPauseService.id)}
-        onConfirm={async () => {
-          if (!pendingPauseService) return;
-          const target = pendingPauseService;
-          setPendingPauseService(null);
-          await applyToggleServiceActive(target, false);
-        }}
-      />
-    </VStack>
+        <FormDialog
+          isOpen={editing !== null}
+          onOpenChange={(open) => {
+            if (!open) closeEditor();
+          }}
+          title={activeDraft.id ? 'Editar servicio' : 'Nuevo servicio'}
+          subtitle="Solo necesitas nombre, precio y duración."
+          width="min(40rem, 96vw)"
+          submitFooter={{
+            formId: SERVICE_EDITOR_FORM_ID,
+            submitLabel: activeDraft.id ? 'Guardar cambios' : 'Crear servicio',
+            submitIcon: <Save size={15} aria-hidden="true" />,
+            isSubmitDisabled: !isServiceDirty,
+            secondaryAction: isServiceDirty ? (
+              <StatusTag label="Sin guardar" tone="warning" className="fx-pop" />
+            ) : undefined,
+          }}
+        >
+          {(controls) => (
+            <VStack gap={4}>
+              <ServiceLivePreview
+                draft={activeDraft}
+                categoryName={previewCategoryName}
+                currency={currency}
+                appUrl={data.integration.appUrl}
+              />
+              <ServiceEditorPanel
+                formId={SERVICE_EDITOR_FORM_ID}
+                draft={activeDraft}
+                categoryOptions={categoryOptions}
+                currency={currency}
+                defaultDepositCents={defaultDepositCents}
+                hasCleanupTime={hasCleanupTime}
+                hasCustomAdvancedValues={hasCustomAdvancedValues}
+                saving={controls.isSubmitting}
+                menuPosition={menuPosition}
+                menuPositionCount={orderedServices.length}
+                onChangeMenuPosition={setMenuPosition}
+                onChangeDraft={setEditing}
+                onToggleCleanupTime={(checked) => {
+                  setCleanupEnabledOverride(checked);
+                  if (!checked) {
+                    setEditing({ ...activeDraft, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 });
+                  } else if (
+                    (activeDraft.bufferBeforeMinutes ?? 0) === 0 &&
+                    (activeDraft.bufferAfterMinutes ?? 0) === 0
+                  ) {
+                    setEditing({ ...activeDraft, bufferAfterMinutes: 15 });
+                  }
+                }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!isServiceDirty) return;
+                  controls.submit(saveService);
+                }}
+              />
+            </VStack>
+          )}
+        </FormDialog>
+
+        <ConfirmActionDialog
+          isOpen={Boolean(pendingPauseService)}
+          onOpenChange={(open) => {
+            if (!open) setPendingPauseService(null);
+          }}
+          title={
+            pendingPauseService ? `¿Pausar "${pendingPauseService.name}"?` : '¿Pausar servicio?'
+          }
+          description="Dejará de aparecer en tu página de reservas hasta que vuelvas a activarlo. Tus citas ya agendadas no se modifican."
+          confirmLabel="Pausar servicio"
+          variant="destructive"
+          isLoading={Boolean(pendingPauseService && togglingId === pendingPauseService.id)}
+          onConfirm={async () => {
+            if (!pendingPauseService) return;
+            const target = pendingPauseService;
+            setPendingPauseService(null);
+            await applyToggleServiceActive(target, false);
+          }}
+        />
+      </VStack>
     </AdminAccessGuard>
   );
 }

@@ -254,7 +254,9 @@ test('H2 admin-auth-required: requires requireAdmin in every exported admin rout
   ].join('\n');
 
   assert.deepEqual(
-    rulesOf('src/app/api/admin/overview/route.ts', missingAuth),
+    rulesOf('src/app/api/admin/overview/route.ts', missingAuth).filter(
+      (r) => r === 'admin-auth-required',
+    ),
     ['admin-auth-required'],
   );
 
@@ -270,24 +272,32 @@ test('H2 admin-auth-required: requires requireAdmin in every exported admin rout
   ].join('\n');
 
   assert.deepEqual(
-    rulesOf('src/app/api/admin/bookings/route.ts', partialAuth),
+    rulesOf('src/app/api/admin/bookings/route.ts', partialAuth).filter(
+      (r) => r === 'admin-auth-required',
+    ),
     ['admin-auth-required'],
   );
 
   const validAuth = [
     'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'import { ADMIN_PRIVATE_HEADERS } from "@/lib/http/admin-headers";',
     'export async function GET() {',
     '  await requireAdmin(["owner", "admin"]);',
-    '  return Response.json({ ok: true });',
+    '  return Response.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });',
     '}',
     'export const POST = async () => {',
     '  await requireAdmin();',
-    '  return Response.json({ ok: true });',
+    '  return Response.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });',
     '};',
   ].join('\n');
 
   assert.deepEqual(rulesOf('src/app/api/admin/bookings/route.ts', validAuth), []);
-  assert.deepEqual(rulesOf('src/app/api/admin/session/route.ts', missingAuth), []);
+  assert.deepEqual(
+    rulesOf('src/app/api/admin/session/route.ts', missingAuth).filter(
+      (r) => r === 'admin-auth-required',
+    ),
+    [],
+  );
   assert.deepEqual(rulesOf('src/app/api/public/bootstrap/route.ts', missingAuth), []);
 });
 
@@ -387,9 +397,10 @@ test('H2 no-privileged-public-fields: forbids forceConfirmed/source/role in Zod 
 
   const adminWithAuth = [
     bad,
+    'import { ADMIN_PRIVATE_HEADERS } from "@/lib/http/admin-headers";',
     'export async function POST() {',
     '  await requireAdmin(["owner"]);',
-    '  return Response.json({ ok: true });',
+    '  return Response.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });',
     '}',
   ].join('\n');
   assert.deepEqual(rulesOf('src/app/api/admin/team/route.ts', adminWithAuth), []);
@@ -819,7 +830,9 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
   ].join('\n');
 
   assert.deepEqual(
-    rulesOf('src/app/api/admin/overview/route.ts', badDirectSecrets),
+    rulesOf('src/app/api/admin/overview/route.ts', badDirectSecrets).filter(
+      (r) => r === 'no-sensitive-admin-secrets-in-api',
+    ),
     [
       'no-sensitive-admin-secrets-in-api',
       'no-sensitive-admin-secrets-in-api',
@@ -850,7 +863,9 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
   ].join('\n');
 
   assert.deepEqual(
-    rulesOf('src/app/api/admin/brand/route.ts', badRawModels),
+    rulesOf('src/app/api/admin/brand/route.ts', badRawModels).filter(
+      (r) => r === 'no-sensitive-admin-secrets-in-api',
+    ),
     [
       'no-sensitive-admin-secrets-in-api',
       'no-sensitive-admin-secrets-in-api',
@@ -863,6 +878,7 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
   const cleanSanitizedApi = [
     'import { NextResponse } from "next/server";',
     'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'import { ADMIN_PRIVATE_HEADERS } from "@/lib/http/admin-headers";',
     'import { toAdminCalendarConnectionDTO, toAdminSettingsDTO, toPublicSettingsDTO } from "@/lib/public-dto";',
     'import { getRepository, saveOnboardingSetup, updateCalendarConnection, updateSalonSettings } from "@/lib/repositories/db";',
     'function scopeByStaff<T>(items: T[]) { return items; }',
@@ -885,7 +901,7 @@ test('W5 no-sensitive-admin-secrets-in-api: blocks raw admin secrets and unsanit
     '    publicSettings: toPublicSettingsDTO(updated),',
     '    connection: toAdminCalendarConnectionDTO(connection),',
     '    calendarConnections: scopedConnections,',
-    '  });',
+    '  }, { headers: ADMIN_PRIVATE_HEADERS });',
     '}',
   ].join('\n');
 
@@ -1091,4 +1107,102 @@ test('no-raw-admin-links: blocks hardcoded /admin/<mod>?... query strings outsid
 
   assert.deepEqual(rulesOf('src/components/admin/Sample.tsx', cleanLinks), []);
   assert.deepEqual(rulesOf('src/lib/hooks/useAdminCache.ts', cleanLinks), []);
+});
+
+test('admin-api-no-store: every response in src/app/api/admin/**/route.ts must set private, no-store headers', () => {
+  const badRoute = [
+    'import { NextResponse } from "next/server";',
+    'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'export async function GET() {',
+    '  await requireAdmin();',
+    '  return NextResponse.json({ ok: true });',
+    '}',
+    'export async function POST() {',
+    '  await requireAdmin();',
+    '  return new NextResponse("csv", { status: 200, headers: { "Cache-Control": "no-store" } });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    rulesOf('src/app/api/admin/overview/route.ts', badRoute).filter(
+      (r) => r === 'admin-api-no-store',
+    ),
+    ['admin-api-no-store', 'admin-api-no-store'],
+  );
+
+  const badSession = [
+    'import { NextResponse } from "next/server";',
+    'export async function DELETE() {',
+    '  return NextResponse.json({ ok: true });',
+    '}',
+  ].join('\n');
+  assert.deepEqual(rulesOf('src/app/api/admin/session/route.ts', badSession), [
+    'admin-api-no-store',
+  ]);
+
+  const goodRoute = [
+    'import { NextResponse } from "next/server";',
+    'import { requireAdmin } from "@/lib/auth/admin-session";',
+    'import { ADMIN_PRIVATE_HEADERS, withAdminPrivateHeaders } from "@/lib/http/admin-headers";',
+    'const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;',
+    'export async function GET() {',
+    '  await requireAdmin();',
+    '  return NextResponse.json({ ok: true }, { headers: PRIVATE_NO_STORE });',
+    '}',
+    'export async function POST() {',
+    '  await requireAdmin();',
+    '  const h = withAdminPrivateHeaders({ "Retry-After": "10" });',
+    '  return NextResponse.json({ ok: true }, { status: 429, headers: h });',
+    '}',
+    'export async function DELETE() {',
+    '  await requireAdmin();',
+    '  return new NextResponse("csv", { status: 200, headers: { ...ADMIN_PRIVATE_HEADERS, "Content-Type": "text/csv" } });',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/app/api/admin/operations/route.ts', goodRoute), []);
+  assert.deepEqual(rulesOf('src/app/api/public/bootstrap/route.ts', badSession), []);
+  assert.deepEqual(rulesOf('src/app/api/admin/overview/route.test.ts', badRoute), []);
+});
+
+test('no-bare-client-fetch: blocks bare fetch/window.fetch/globalThis.fetch in client UI and hooks, allows client-fetch.ts, API routes, and tests', () => {
+  const badClient = [
+    'export async function load() {',
+    '  const a = await fetch("/api/admin/overview");',
+    '  const b = await window.fetch("/api/admin/bookings");',
+    '  const c = await globalThis.fetch("/api/admin/clients");',
+    '  const d = await self["fetch"]("/api/admin/reports");',
+    '  return [a, b, c, d];',
+    '}',
+  ].join('\n');
+
+  for (const rel of [
+    'src/app/admin/citas/page.tsx',
+    'src/components/admin/citas/checkoutApi.ts',
+    'src/lib/hooks/useAdminCache.ts',
+  ]) {
+    assert.deepEqual(rulesOf(rel, badClient), [
+      'no-bare-client-fetch',
+      'no-bare-client-fetch',
+      'no-bare-client-fetch',
+      'no-bare-client-fetch',
+    ]);
+  }
+
+  assert.deepEqual(rulesOf('src/lib/http/client-fetch.ts', badClient), []);
+  assert.deepEqual(rulesOf('src/app/api/webhooks/whatsapp/route.ts', badClient), []);
+  assert.deepEqual(rulesOf('src/lib/integrations/whatsapp-cloud.ts', badClient), []);
+  assert.deepEqual(rulesOf('src/lib/hooks/useAdminCache.test.ts', badClient), []);
+
+  const goodClient = [
+    'import { fetchJsonWithTimeout, fetchBlobWithTimeout, sendBestEffortRequest } from "@/lib/http/client-fetch";',
+    'export async function load() {',
+    '  const a = await fetchJsonWithTimeout("/api/admin/overview");',
+    '  const b = await fetchBlobWithTimeout("/api/admin/operations?export=csv");',
+    '  sendBestEffortRequest("/api/funnel", { method: "POST" });',
+    '  return [a, b];',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(rulesOf('src/components/admin/caja/cajaActions.ts', goodClient), []);
 });

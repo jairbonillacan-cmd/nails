@@ -12,17 +12,12 @@ export function formSubmitError(error: string | null | undefined): FormSubmitRes
   return { ok: false, error: clean || FORM_SUBMIT_FALLBACK_ERROR };
 }
 
-export async function formSubmitResultFromResponse(
-  res: Response,
+export function formSubmitResultFromFetch(
+  result: { readonly ok: boolean; readonly error?: string },
   fallbackError: string,
-): Promise<FormSubmitResult> {
-  if (res.ok) return FORM_SUBMIT_OK;
-  const json: unknown = await res.json().catch(() => null);
-  const apiError =
-    json !== null && typeof json === 'object' && 'error' in json && typeof json.error === 'string'
-      ? json.error
-      : '';
-  return formSubmitError(apiError || fallbackError);
+): FormSubmitResult {
+  if (result.ok) return FORM_SUBMIT_OK;
+  return formSubmitError(result.error || fallbackError);
 }
 
 export interface SubmitGate {

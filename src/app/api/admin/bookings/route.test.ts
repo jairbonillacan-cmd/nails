@@ -85,7 +85,8 @@ describe('GET /api/admin/bookings (Phase 5 range queries, validation & RBAC)', (
       ),
     );
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
+    expect(res.headers.get('vary')).toContain('Cookie');
 
     const body = (await res.json()) as {
       bookings: BookingWithRelations[];

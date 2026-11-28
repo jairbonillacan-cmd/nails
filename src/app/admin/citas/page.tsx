@@ -274,6 +274,26 @@ export default function AdminBookingsPage() {
         onToggleWaitlist={() => ws.setWaitlistOpen(!ws.waitlistOpen)}
       />
 
+      {ws.rangeError ? (
+        <Banner
+          collapsible={false}
+          status="error"
+          role="alert"
+          title="No pudimos cargar las citas de estas fechas"
+          description={ws.rangeError}
+        >
+          <HStack justify="start" paddingBlockStart={2}>
+            <Button
+              type="button"
+              label="Reintentar"
+              variant="primary"
+              size="md"
+              onClick={ws.retryRange}
+            />
+          </HStack>
+        </Banner>
+      ) : null}
+
       {feedback ? (
         <Banner
           status={feedback.status}

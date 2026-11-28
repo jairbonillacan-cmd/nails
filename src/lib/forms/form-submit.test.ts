@@ -5,7 +5,7 @@ import {
   FORM_SUBMIT_OK,
   createSubmitGate,
   formSubmitError,
-  formSubmitResultFromResponse,
+  formSubmitResultFromFetch,
   type FormSubmitResult,
 } from './form-submit';
 
@@ -77,19 +77,18 @@ describe('formSubmitError', () => {
   });
 });
 
-describe('formSubmitResultFromResponse', () => {
-  it('uses the API error when present and the fallback otherwise', async () => {
-    const withError = new Response(JSON.stringify({ error: 'Ese código ya existe.' }), { status: 409 });
-    const withoutBody = new Response('nope', { status: 500 });
-    const ok = new Response('{}', { status: 200 });
-    expect(await formSubmitResultFromResponse(withError, 'No se pudo')).toEqual({
+describe('formSubmitResultFromFetch', () => {
+  it('uses the fetch error when present and the fallback otherwise', () => {
+    expect(
+      formSubmitResultFromFetch({ ok: false, error: 'Ese código ya existe.' }, 'No se pudo'),
+    ).toEqual({
       ok: false,
       error: 'Ese código ya existe.',
     });
-    expect(await formSubmitResultFromResponse(withoutBody, 'No se pudo')).toEqual({
+    expect(formSubmitResultFromFetch({ ok: false, error: '' }, 'No se pudo')).toEqual({
       ok: false,
       error: 'No se pudo',
     });
-    expect(await formSubmitResultFromResponse(ok, 'No se pudo')).toEqual(FORM_SUBMIT_OK);
+    expect(formSubmitResultFromFetch({ ok: true }, 'No se pudo')).toEqual(FORM_SUBMIT_OK);
   });
 });

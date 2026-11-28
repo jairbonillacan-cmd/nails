@@ -1,3 +1,4 @@
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { BookingPaymentSummary } from '@/lib/payments/splits';
 import type {
   InventoryItem,
@@ -94,14 +95,15 @@ export async function fetchActiveClientPackages(
   serviceId: string,
   signal: AbortSignal,
 ): Promise<ClientPackageSummaryRow[]> {
-  const res = await fetch(`/api/admin/packages?clientId=${encodeURIComponent(clientId)}`, {
-    cache: 'no-store',
-    signal,
-  });
-  if (signal.aborted || !res.ok) return [];
-  const json = (await res.json()) as { clientPackages?: ClientPackageSummaryRow[] };
-  if (signal.aborted) return [];
-  return (json.clientPackages ?? [])
+  const res = await fetchJsonWithTimeout<{ clientPackages?: ClientPackageSummaryRow[] }>(
+    `/api/admin/packages?clientId=${encodeURIComponent(clientId)}`,
+    {
+      cache: 'no-store',
+      signal,
+    },
+  );
+  if (signal.aborted || res.aborted || !res.ok) return [];
+  return (res.data.clientPackages ?? [])
     .filter((pkg) => pkg.status === 'active' && !pkg.isExpired && pkg.remainingSessions > 0)
     .toSorted((a, b) => {
       const aMatch = a.serviceId === serviceId ? 0 : 1;
@@ -133,57 +135,55 @@ export async function submitCheckoutSplitRequest(params: {
     ...(row.reference.trim() ? { reference: row.reference.trim() } : {}),
   }));
 
-  let res: Response;
-  try {
-    res = await fetch('/api/admin/bookings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(20_000),
-      body: JSON.stringify({
-        action: 'checkout_split',
-        bookingId: params.bookingId,
-        splits: payloadSplits,
-        extraItem: params.extraItem,
-        markCompleted: true,
-        redeemLoyaltyReward: params.redeemLoyaltyReward,
-        ...(params.selectedPackage ? { redeemClientPackageId: params.selectedPackage.id } : {}),
-      }),
-    });
-  } catch (err) {
-    const isTimeout =
-      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return {
-      ok: false,
-      error: isTimeout
-        ? 'El registro del cobro tardó demasiado. Intenta de nuevo en unos segundos.'
-        : 'Sin conexión. No se pudo registrar el cobro.',
-    };
-  }
-
-  const json = (await res.json().catch(() => null)) as {
+  const res = await fetchJsonWithTimeout<{
     error?: string;
     code?: string;
     summary?: BookingPaymentSummary;
     splits?: PaymentSplit[];
     stampAwarded?: LoyaltyStamp | null;
-  } | null;
+  }>('/api/admin/bookings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    timeoutMs: 20_000,
+    body: JSON.stringify({
+      action: 'checkout_split',
+      bookingId: params.bookingId,
+      splits: payloadSplits,
+      extraItem: params.extraItem,
+      markCompleted: true,
+      redeemLoyaltyReward: params.redeemLoyaltyReward,
+      ...(params.selectedPackage ? { redeemClientPackageId: params.selectedPackage.id } : {}),
+    }),
+  });
 
   if (!res.ok) {
+    if (res.reason === 'timeout') {
+      return {
+        ok: false,
+        error: 'El registro del cobro tardó demasiado. Intenta de nuevo en unos segundos.',
+      };
+    }
+    if (res.reason === 'network') {
+      return {
+        ok: false,
+        error: 'Sin conexión. No se pudo registrar el cobro.',
+      };
+    }
     return {
       ok: false,
       error:
-        res.status === 403 && json?.code === 'PAST_BOOKING_LOCKED'
-          ? json.error || 'Esta cita ya pasó y está bloqueada; solo la Dueña puede cobrarla.'
-          : json?.error || 'No se pudo registrar el cobro.',
+        res.status === 403 && res.data?.code === 'PAST_BOOKING_LOCKED'
+          ? res.data.error || 'Esta cita ya pasó y está bloqueada; solo la Dueña puede cobrarla.'
+          : res.error || 'No se pudo registrar el cobro.',
     };
   }
 
   return {
     ok: true,
     state: {
-      summary: json?.summary ?? params.fallbackSummary,
-      splitsCount: json?.splits?.length ?? payloadSplits.length,
-      stampAwarded: json?.stampAwarded ?? null,
+      summary: res.data.summary ?? params.fallbackSummary,
+      splitsCount: res.data.splits?.length ?? payloadSplits.length,
+      stampAwarded: res.data.stampAwarded ?? null,
       redeemedReward: params.redeemLoyaltyReward,
       redeemedPackageName: params.selectedPackage?.packageName ?? null,
     },

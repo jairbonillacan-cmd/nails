@@ -210,7 +210,7 @@ export default function AdminWhatsAppPage() {
 
         <HStack
           className="ad-cal-kpi-strip"
-          gap={2}
+          gap={3}
           align="center"
           wrap="wrap"
           aria-label="Resumen de WhatsApp"
@@ -237,10 +237,6 @@ export default function AdminWhatsAppPage() {
             </Text>
           </button>
 
-          <Text color="secondary" aria-hidden="true">
-            ·
-          </Text>
-
           <button
             type="button"
             className="ad-cal-strip-btn"
@@ -259,10 +255,6 @@ export default function AdminWhatsAppPage() {
             </Text>
           </button>
 
-          <Text color="secondary" aria-hidden="true">
-            ·
-          </Text>
-
           <button
             type="button"
             className="ad-cal-strip-btn"
@@ -279,10 +271,6 @@ export default function AdminWhatsAppPage() {
               Pendientes / fallidos
             </Text>
           </button>
-
-          <Text color="secondary" aria-hidden="true">
-            ·
-          </Text>
 
           <button
             type="button"
@@ -348,6 +336,8 @@ export default function AdminWhatsAppPage() {
             searchQuery={workspace.searchQuery}
             isLoadingThreads={workspace.isLoadingThreads}
             isLoadingDetail={workspace.isLoadingDetail}
+            threadsError={workspace.threadsError}
+            detailError={workspace.detailError}
             isSending={workspace.isSending}
             retryingMessageId={workspace.retryingMessageId}
             quotaPercent={quota.percentUsed}
@@ -380,6 +370,7 @@ export default function AdminWhatsAppPage() {
           <WhatsAppRemindersTab
             data={workspace.remindersData}
             isLoading={workspace.isLoadingReminders}
+            errorMessage={workspace.remindersError}
             isSubmitting={workspace.isSubmittingReminder}
             role={role}
             studioName={settings.name}
@@ -393,6 +384,7 @@ export default function AdminWhatsAppPage() {
           <WhatsAppConnectionTab
             data={workspace.settingsData}
             isLoading={workspace.isLoadingSettings}
+            errorMessage={workspace.settingsError}
             isSubmitting={workspace.isSubmittingSettings}
             isCheckingLive={workspace.isCheckingLive}
             isSimulating={workspace.isSimulating}

@@ -25,7 +25,7 @@ import {
 import { FormDialog } from '@/components/ui/FormDialog';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import { updateCajaStaffCommission } from '@/components/admin/caja/cajaActions';
-import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
+import { prepareClientImageFile, readFileAsDataUrl } from '@/components/booking/bookingHelpers';
 import { staffAvatar } from '@/components/landing/landingContent';
 import { agendaHref, cajaHref, horariosHref } from '@/lib/admin-links';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
@@ -33,9 +33,10 @@ import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import {
   FORM_SUBMIT_OK,
   formSubmitError,
-  formSubmitResultFromResponse,
+  formSubmitResultFromFetch,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { Service, StaffMember } from '@/lib/types';
 
 const CommissionRateDialog = dynamic(
@@ -182,12 +183,12 @@ export function StaffEditorSection({
     const next = [...rest.slice(0, position - 1), saved, ...rest.slice(position - 1)];
     for (const [index, item] of next.entries()) {
       if (item.displayOrder === index) continue;
-      const res = await fetch('/api/admin/team', {
+      const result = await fetchJsonWithTimeout('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: 'staff', data: { id: item.id, name: item.name, displayOrder: index } }),
       });
-      if (!res.ok) return false;
+      if (!result.ok) return false;
     }
     return true;
   };
@@ -195,13 +196,13 @@ export function StaffEditorSection({
   const handleAvatarFile = async (file: File | null) => {
     if (!file) return;
     setAvatarError(null);
-    const err = await validateClientImageFile(file);
-    if (err) {
-      setAvatarError(err);
+    const prepared = await prepareClientImageFile(file);
+    if (prepared.error) {
+      setAvatarError(prepared.error);
       return;
     }
     try {
-      setSAvatarUrl(await readFileAsDataUrl(file));
+      setSAvatarUrl(await readFileAsDataUrl(prepared.file));
     } catch {
       setAvatarError('No se pudo leer esa foto. Intenta con otra.');
     }
@@ -219,42 +220,40 @@ export function StaffEditorSection({
       return formSubmitError('Elige al menos un servicio que haga.');
     }
     const existing = editingStaffId ? staff.find((item) => item.id === editingStaffId) : null;
-    try {
-      const res = await fetch('/api/admin/team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'staff',
-          data: {
-            ...(existing
-              ? { id: existing.id, isActive: existing.isActive }
-              : { displayOrder: orderedStaff.length }),
-            name: sName.trim(),
-            roleTitle: sRoleTitle.trim() || 'Nail Artist',
-            bio: sBio.trim(),
-            avatarUrl: sAvatarUrl,
-            commissionPercent: sCommission,
-            serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
-          },
-        }),
-      });
-      if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo guardar a la profesional.');
-      const currentPosition = existing
-        ? orderedStaff.findIndex((item) => item.id === existing.id) + 1
-        : null;
-      if (existing && sPosition !== null && sPosition !== currentPosition) {
-        const reordered = await applyStaffOrder(existing.id, sPosition);
-        if (!reordered) {
-          await onRefresh();
-          return formSubmitError('Se guardaron los cambios, pero no se pudo cambiar su lugar en tu página.');
-        }
-      }
-      await onRefresh();
-      onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudo guardar a la profesional.');
+    const result = await fetchJsonWithTimeout('/api/admin/team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'staff',
+        data: {
+          ...(existing
+            ? { id: existing.id, isActive: existing.isActive }
+            : { displayOrder: orderedStaff.length }),
+          name: sName.trim(),
+          roleTitle: sRoleTitle.trim() || 'Nail Artist',
+          bio: sBio.trim(),
+          avatarUrl: sAvatarUrl,
+          commissionPercent: sCommission,
+          serviceIds: effectiveServiceIds.length > 0 ? effectiveServiceIds : allServiceIds,
+        },
+      }),
+    });
+    if (!result.ok) {
+      return formSubmitResultFromFetch(result, 'No se pudo guardar a la profesional.');
     }
+    const currentPosition = existing
+      ? orderedStaff.findIndex((item) => item.id === existing.id) + 1
+      : null;
+    if (existing && sPosition !== null && sPosition !== currentPosition) {
+      const reordered = await applyStaffOrder(existing.id, sPosition);
+      if (!reordered) {
+        await onRefresh();
+        return formSubmitError('Se guardaron los cambios, pero no se pudo cambiar su lugar en tu página.');
+      }
+    }
+    await onRefresh();
+    onNotice(existing ? 'Cambios guardados' : 'Profesional agregada');
+    return FORM_SUBMIT_OK;
   };
 
   const handleCopyStaffLink = async (slug: string, name: string) => {

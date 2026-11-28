@@ -40,10 +40,10 @@ export const AdminTeamPostSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const DemoLoginSchema = z.object({
-  email: z.string().trim().email(),
+  email: z.string().trim().max(254).email(),
 });
 
 export const SupabaseLoginSchema = z.object({
-  email: z.string().trim().email(),
-  password: z.string().min(1),
+  email: z.string().trim().max(254).email(),
+  password: z.string().min(1).max(256),
 });

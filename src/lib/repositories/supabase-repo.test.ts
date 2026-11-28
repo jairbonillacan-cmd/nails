@@ -3949,4 +3949,283 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     ).toBeNull();
     expect(mock.requests.slice(beforeTouchUp).length).toBeLessThanOrEqual(2);
   });
+
+  it('Wave 5 Admin: enforces strict Workers Free subrequest budgets across overview (owner/admin/specialist), campaigns, reminders, availability diagnose, and targeted admin lookups', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-02', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-02', '11:00', TZ).toISOString();
+    const otherStaffId = '11111111-1111-4111-8111-111111111122';
+    const otherClientId = '33333333-3333-4333-8333-333333333322';
+
+    const ownBooking: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-W5001',
+      manage_token: 'tok-wave5-001',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: startAt,
+      end_at: endAt,
+      occupied_start_at: startAt,
+      occupied_end_at: endAt,
+      occupied_range: `[${startAt},${endAt})`,
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 20000,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+
+    const mock = buildMockSupabase({
+      bookingsRows: [ownBooking],
+      extraClientsRows: [
+        {
+          id: otherClientId,
+          full_name: 'Clienta Otra Staff',
+          phone_e164: '+522229998877',
+          email: null,
+          birthday: null,
+          notes: '',
+          no_show_count: 0,
+          created_at: '2026-11-01T10:00:00.000Z',
+          updated_at: '2026-11-01T10:00:00.000Z',
+        },
+      ],
+      extraStaffRows: [
+        {
+          id: otherStaffId,
+          name: 'Otra Especialista',
+          role_title: 'Nail Artist',
+          bio: '',
+          avatar_url: null,
+          booking_slug: 'otra',
+          commission_percent: 35,
+          is_active: true,
+          display_order: 1,
+          created_at: '2026-12-01T10:00:00.000Z',
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      recurringBlocksRows: [
+        {
+          id: BLOCK_ID,
+          staff_id: STAFF_ID,
+          reason: 'Comida',
+          frequency: 'weekly',
+          weekdays: [2, 3],
+          day_of_month: null,
+          start_time: '14:00',
+          end_time: '15:00',
+          until_date: null,
+          is_active: true,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      dateOverridesRows: [
+        {
+          id: 'ovr-w5-1',
+          staff_id: STAFF_ID,
+          override_date: '2026-12-25',
+          is_unavailable: true,
+          start_time: null,
+          end_time: null,
+          reason: 'Navidad',
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      workflowsRows: [
+        {
+          id: 'wf-24h',
+          name: 'Recordatorio 24h',
+          trigger_event: 'before_booking',
+          offset_minutes: 1440,
+          channels: ['whatsapp'],
+          subject_template: 'Tu cita mañana',
+          message_template: 'Hola {clientName}',
+          is_enabled: true,
+          updated_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      scheduledNotificationsRows: [
+        {
+          id: 'ntf-w5-1',
+          booking_id: BOOKING_ID,
+          client_id: CLIENT_ID,
+          workflow_id: 'wf-24h',
+          trigger_key: 'reminder_24h',
+          channel: 'whatsapp',
+          recipient: '+525511223344',
+          scheduled_for: '2026-12-01T16:00:00.000Z',
+          status: 'pending',
+          delivery_status: 'queued',
+          subject: 'Recordatorio 24h',
+          preview_text: 'Hola Sofía',
+          body_text: 'Hola Sofía',
+          payload: {},
+          provider_message_id: null,
+          error_message: null,
+          attempts: 0,
+          max_attempts: 3,
+          next_retry_at: null,
+          last_attempt_at: null,
+          sent_at: null,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+    });
+    const nowMs = Date.parse('2026-12-01T13:00:00.000Z');
+    const repo = createSupabaseRepository(
+      createFixedClock('2026-12-01T13:00:00.000Z', 'wave5-admin-supabase'),
+      mock.client,
+    );
+
+    const beforeOwner = mock.requests.length;
+    const ownerOverview = await repo.getAdminOverviewData({
+      role: 'owner',
+      staffMemberId: null,
+      nowMs,
+    });
+    const ownerReqs = mock.requests.slice(beforeOwner);
+    expect(ownerReqs.length).toBeLessThanOrEqual(31);
+    expect(ownerOverview.bookings).toHaveLength(1);
+    expect(ownerOverview.whatsappInboxSummary?.pendingRemindersCount).toBe(1);
+    for (const unused of [
+      '/rest/v1/slot_holds',
+      '/rest/v1/funnel_events',
+      '/rest/v1/booking_payments',
+      '/rest/v1/media_assets',
+      '/rest/v1/consents',
+      '/rest/v1/coupon_redemptions',
+      '/rest/v1/whatsapp_messages',
+    ]) {
+      expect(ownerReqs.some((r) => r.path === unused)).toBe(false);
+    }
+
+    const beforeAdmin = mock.requests.length;
+    await repo.getAdminOverviewData({
+      role: 'admin',
+      staffMemberId: null,
+      nowMs,
+    });
+    const adminReqs = mock.requests.slice(beforeAdmin);
+    expect(adminReqs.length).toBeLessThanOrEqual(30);
+    expect(adminReqs.some((r) => r.path === '/rest/v1/audit_logs')).toBe(false);
+
+    const beforeSpecialist = mock.requests.length;
+    const specialistOverview = await repo.getAdminOverviewData({
+      role: 'specialist',
+      staffMemberId: STAFF_ID,
+      nowMs,
+    });
+    const specialistReqs = mock.requests.slice(beforeSpecialist);
+    expect(specialistReqs.length).toBeLessThanOrEqual(22);
+    expect(specialistOverview.clients.map((c) => c.id)).toEqual([CLIENT_ID]);
+    expect(specialistOverview.staff.map((s) => s.id)).toEqual([STAFF_ID]);
+    expect(specialistOverview.whatsappInboxSummary).toBeUndefined();
+    for (const forbidden of [
+      '/rest/v1/audit_logs',
+      '/rest/v1/inventory_items',
+      '/rest/v1/inventory_movements',
+      '/rest/v1/waitlist_entries',
+      '/rest/v1/coupons',
+      '/rest/v1/notification_workflows',
+      '/rest/v1/admin_users',
+      '/rest/v1/whatsapp_templates',
+      '/rest/v1/whatsapp_threads',
+      '/rest/v1/whatsapp_messages',
+    ]) {
+      expect(specialistReqs.some((r) => r.path === forbidden)).toBe(false);
+    }
+
+    const beforeUnlinked = mock.requests.length;
+    const unlinkedOverview = await repo.getAdminOverviewData({
+      role: 'specialist',
+      staffMemberId: null,
+      nowMs,
+    });
+    expect(mock.requests.slice(beforeUnlinked).length).toBeLessThanOrEqual(7);
+    expect(unlinkedOverview.bookings).toEqual([]);
+
+    const beforeCampaigns = mock.requests.length;
+    const audience = await repo.getCampaignAudienceData();
+    expect(mock.requests.slice(beforeCampaigns).length).toBe(4);
+    expect(audience.clients.length).toBeGreaterThanOrEqual(1);
+    expect(audience.services.length).toBeGreaterThanOrEqual(1);
+
+    const beforeReminders = mock.requests.length;
+    const remindersSnap = await repo.getWhatsAppRemindersSnapshot({
+      role: 'owner',
+      staffMemberId: null,
+      nowMs,
+    });
+    expect(mock.requests.slice(beforeReminders).length).toBe(7);
+    expect(remindersSnap.queue).toHaveLength(1);
+    expect(remindersSnap.metrics.pendingCount).toBe(1);
+    expect(remindersSnap.metrics.bookingsWithoutRemindersCount).toBe(0);
+
+    const beforeClient = mock.requests.length;
+    const foundClient = await repo.getClientById(CLIENT_ID);
+    expect(foundClient?.id).toBe(CLIENT_ID);
+    expect(mock.requests.slice(beforeClient).length).toBe(1);
+
+    const beforeAdmins = mock.requests.length;
+    await repo.listActiveAdminUsers();
+    expect(mock.requests.slice(beforeAdmins).length).toBe(1);
+
+    const beforeServices = mock.requests.length;
+    const activeServices = await repo.listActiveServices(5);
+    expect(activeServices.length).toBeGreaterThanOrEqual(1);
+    expect(mock.requests.slice(beforeServices).length).toBe(1);
+
+    const beforeCash = mock.requests.length;
+    await repo.listCashEntries();
+    expect(mock.requests.slice(beforeCash).length).toBe(1);
+
+    const beforeBlocks = mock.requests.length;
+    const blocks = await repo.listRecurringBlocks(STAFF_ID);
+    expect(blocks).toHaveLength(1);
+    expect(mock.requests.slice(beforeBlocks).length).toBe(1);
+
+    const beforeToggle = mock.requests.length;
+    const toggled = await repo.toggleRecurringBlock(BLOCK_ID, false);
+    expect(toggled.isActive).toBe(false);
+    expect(mock.requests.slice(beforeToggle).length).toBe(1);
+
+    const beforeOverrideDates = mock.requests.length;
+    const overrideDates = await repo.listStaffOverrideDates(STAFF_ID);
+    expect(overrideDates).toEqual(['2026-12-25']);
+    expect(mock.requests.slice(beforeOverrideDates).length).toBe(1);
+
+    const beforeStaffClients = mock.requests.length;
+    const staffClientIds = await repo.listStaffClientIds(STAFF_ID);
+    expect(staffClientIds).toEqual([CLIENT_ID]);
+    expect(mock.requests.slice(beforeStaffClients).length).toBe(1);
+
+    const beforeDiagnose = mock.requests.length;
+    const diagnosed = await repo.diagnoseAvailability({
+      date: '2026-12-02',
+      serviceId: SERVICE_ID,
+      staffId: STAFF_ID,
+      role: 'owner',
+      staffMemberId: null,
+    });
+    const diagnoseReqs = mock.requests.slice(beforeDiagnose);
+    expect(diagnoseReqs.length).toBeLessThanOrEqual(13);
+    expect(diagnosed.date).toBe('2026-12-02');
+    expect(diagnosed.diagnosis.length).toBeGreaterThan(0);
+    expect(diagnoseReqs.some((r) => r.path === '/rest/v1/clients')).toBe(false);
+    expect(diagnoseReqs.some((r) => r.path === '/rest/v1/audit_logs')).toBe(false);
+  });
 });

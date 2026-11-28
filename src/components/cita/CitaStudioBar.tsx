@@ -28,6 +28,7 @@ import {
   formatDateShortInTimezone,
   formatTimeInTimezone,
 } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import type { BookingStatus } from '@/lib/types';
 import {
@@ -61,16 +62,6 @@ interface AdminPatchResponse {
     updatedAt?: string;
   };
   error?: string;
-}
-
-async function parseJsonSafe(response: Response): Promise<AdminPatchResponse> {
-  const text = await response.text();
-  if (!text.trim()) return {};
-  try {
-    return JSON.parse(text) as AdminPatchResponse;
-  } catch {
-    return { error: 'Respuesta inesperada del servidor.' };
-  }
 }
 
 export function CitaStudioBar({
@@ -115,29 +106,27 @@ export function CitaStudioBar({
     setFeedbackError(null);
     setFeedbackSuccess(null);
     try {
-      const response = await fetch('/api/admin/bookings', {
+      const response = await fetchJsonWithTimeout<AdminPatchResponse>('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(STUDIO_ACTION_TIMEOUT_MS),
+        timeoutMs: STUDIO_ACTION_TIMEOUT_MS,
       });
-      const data = await parseJsonSafe(response);
       if (!response.ok) {
-        setFeedbackError(data.error || 'No se pudo actualizar la cita. Intenta de nuevo.');
+        setFeedbackError(
+          response.error || 'No se pudo actualizar la cita. Intenta de nuevo.',
+        );
         return false;
       }
       onBookingUpdated({
         bookingId: booking.id,
-        status: data.booking?.status ?? fallbackPatch.status,
+        status: response.data.booking?.status ?? fallbackPatch.status,
         attendanceStatus:
-          data.booking?.attendanceStatus ?? fallbackPatch.attendanceStatus,
-        updatedAt: data.booking?.updatedAt ?? new Date().toISOString(),
+          response.data.booking?.attendanceStatus ?? fallbackPatch.attendanceStatus,
+        updatedAt: response.data.booking?.updatedAt ?? new Date().toISOString(),
       });
       setFeedbackSuccess(successMessage);
       return true;
-    } catch {
-      setFeedbackError('Tiempo de espera agotado o sin conexión. Intenta nuevamente.');
-      return false;
     } finally {
       setBusyAction(null);
     }

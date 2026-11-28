@@ -4,12 +4,17 @@ import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
 import { AdminWhatsAppActionSchema } from '@/lib/contracts';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import {
+  ADMIN_PRIVATE_HEADERS,
+  withAdminPrivateHeaders,
+} from '@/lib/http/admin-headers';
+import {
   fetchMetaWhatsAppStatus,
   getWhatsAppReadinessReport,
   sendWhatsAppLiveTestMessage,
   syncOfficialTemplatesToMeta,
 } from '@/lib/integrations/whatsapp-cloud';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
+import { logError } from '@/lib/logger';
 import {
   getRepository,
   getWhatsAppMonthlyUsage,
@@ -30,13 +35,13 @@ export async function GET(request: NextRequest) {
           ? 'Solo la dueña puede administrar WhatsApp Business.'
           : 'No autorizado',
       },
-      { status: authenticated ? 403 : 401 },
+      { status: authenticated ? 403 : 401, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
   const env = getRuntimeIntegrationStatus();
-  const snapshot = await getRepository().getSnapshot();
-  const tz = snapshot.settings.timezone || 'America/Mexico_City';
+  const settings = await getRepository().getSalonSettings();
+  const tz = settings.timezone || 'America/Mexico_City';
   const monthKey = getWhatsAppMonthKey(new Date(), tz);
   const [templates, usage] = await Promise.all([
     getWhatsAppTemplates(),
@@ -56,7 +61,7 @@ export async function GET(request: NextRequest) {
       usage,
       ...(liveMeta ? { liveMeta } : {}),
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: ADMIN_PRIVATE_HEADERS },
   );
 }
 
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
           ? 'Solo la dueña puede administrar WhatsApp Business.'
           : 'No autorizado',
       },
-      { status: authenticated ? 403 : 401 },
+      { status: authenticated ? 403 : 401, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -83,7 +88,12 @@ export async function POST(request: NextRequest) {
   if (!rate.allowed) {
     return NextResponse.json(
       { error: 'Espera un momento antes de intentar de nuevo.' },
-      { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+      {
+        status: 429,
+        headers: withAdminPrivateHeaders({
+          'Retry-After': String(rate.retryAfterSeconds),
+        }),
+      },
     );
   }
 
@@ -91,7 +101,10 @@ export async function POST(request: NextRequest) {
   try {
     rawBody = (await request.json()) as unknown;
   } catch {
-    return NextResponse.json({ error: 'Solicitud JSON inválida.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   try {
@@ -102,7 +115,10 @@ export async function POST(request: NextRequest) {
         ...(parsed.templateName !== undefined ? { templateName: parsed.templateName } : {}),
         ...(parsed.isActive !== undefined ? { isActive: parsed.isActive } : {}),
       });
-      return NextResponse.json({ ok: true, template: updated });
+      return NextResponse.json(
+        { ok: true, template: updated },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (parsed.action === 'sync_meta_templates') {
@@ -110,17 +126,20 @@ export async function POST(request: NextRequest) {
       const report = await syncOfficialTemplatesToMeta({
         configuredTemplates: templates,
       });
-      return NextResponse.json(report, { status: report.ok ? 200 : 400 });
+      return NextResponse.json(report, {
+        status: report.ok ? 200 : 400,
+        headers: ADMIN_PRIVATE_HEADERS,
+      });
     }
 
     const env = getRuntimeIntegrationStatus();
-    const snapshot = await getRepository().getSnapshot();
+    const settings = await getRepository().getSalonSettings();
     const result = await sendWhatsAppLiveTestMessage({
       toPhone: parsed.toPhone,
-      salonName: snapshot.settings.name,
-      salonAddress: snapshot.settings.address,
+      salonName: settings.name,
+      salonAddress: settings.address,
       appUrl: env.appUrl,
-      timezone: snapshot.settings.timezone || 'America/Mexico_City',
+      timezone: settings.timezone || 'America/Mexico_City',
     });
 
     if (result.status !== 'sent') {
@@ -131,27 +150,33 @@ export async function POST(request: NextRequest) {
           deliveryMode: result.deliveryMode,
           fallbackWaMeUrl: result.fallbackWaMeUrl,
         },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
 
-    return NextResponse.json({
-      ok: true,
-      normalizedPhone: result.normalizedPhone,
-      deliveryMode: result.deliveryMode,
-      providerMessageId: result.providerMessageId,
-      fallbackWaMeUrl: result.fallbackWaMeUrl,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        normalizedPhone: result.normalizedPhone,
+        deliveryMode: result.deliveryMode,
+        providerMessageId: result.providerMessageId,
+        fallbackWaMeUrl: result.fallbackWaMeUrl,
+      },
+      { headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos inválidos.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
+    logError('admin_integrations_whatsapp_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       { error: 'No se pudo completar la operación de WhatsApp.' },
-      { status: 500 },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 }

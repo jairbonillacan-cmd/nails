@@ -9,6 +9,7 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Check, RotateCcw, Save, SlidersHorizontal } from 'lucide-react';
 import { StatusTag, SurfaceCard } from '@/components/ui';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { AvailabilityRule } from '@/lib/types';
 import {
   DAYS,
@@ -79,26 +80,23 @@ export function WeeklyScheduleEditor({
     onSavingStateChange(true);
     onMessage(null);
     try {
-      const res = await fetch('/api/admin/availability', {
+      const result = await fetchJsonWithTimeout('/api/admin/availability', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ staffId, rules }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await onRefresh();
         setRulesDraft(null);
         onSavedNotice('Horario guardado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         onMessage({
           status: 'error',
           text:
-            errJson?.error ||
+            result.error ||
             'Revisa que cada hora fija esté dentro del horario de apertura y cierre.',
         });
       }
-    } catch {
-      onMessage({ status: 'error', text: 'Error de conexión al guardar el horario.' });
     } finally {
       setSavingWeekly(false);
       onSavingStateChange(false);
@@ -112,20 +110,17 @@ export function WeeklyScheduleEditor({
     onSavingStateChange(true);
     onMessage(null);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ optimizeContinuousSlots: nextVal }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await onRefresh();
         onSavedNotice(nextVal ? 'Ajuste automático activado' : 'Ajuste automático desactivado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        onMessage({ status: 'error', text: errJson?.error || 'No se pudo actualizar esta opción.' });
+        onMessage({ status: 'error', text: result.error || 'No se pudo actualizar esta opción.' });
       }
-    } catch {
-      onMessage({ status: 'error', text: 'Sin conexión. No se pudo actualizar esta opción.' });
     } finally {
       setSavingOptimize(false);
       setOptimisticOptimize(null);

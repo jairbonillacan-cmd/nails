@@ -1,4 +1,5 @@
 export const DEFAULT_CLIENT_FETCH_TIMEOUT_MS = 15_000;
+const BEST_EFFORT_TIMEOUT_MS = 10_000;
 
 interface ClientFetchOptions extends RequestInit {
   timeoutMs?: number;
@@ -29,6 +30,24 @@ type ClientFetchResult<T> =
       aborted: boolean;
     };
 
+type ClientBlobFetchResult =
+  | {
+      ok: true;
+      status: number;
+      blob: Blob;
+      retryAfterSeconds?: undefined;
+      aborted: false;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      code?: string;
+      retryAfterSeconds?: number;
+      reason: ClientFetchFailureReason;
+      aborted: boolean;
+    };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -39,6 +58,14 @@ function extractServerError(parsed: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function extractServerCode(parsed: unknown): string | undefined {
+  if (!isRecord(parsed)) return undefined;
+  const raw = parsed.code;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function parseRetryAfterSeconds(
@@ -243,4 +270,120 @@ export async function fetchJsonWithTimeout<T = unknown>(
     data: parsed as T,
     aborted: false,
   };
+}
+
+export async function fetchBlobWithTimeout(
+  input: string | URL,
+  options: ClientFetchOptions = {},
+): Promise<ClientBlobFetchResult> {
+  const { timeoutMs = DEFAULT_CLIENT_FETCH_TIMEOUT_MS, signal: callerSignal, ...init } = options;
+
+  if (callerSignal?.aborted) {
+    return {
+      ok: false,
+      status: 0,
+      error: 'Solicitud cancelada.',
+      reason: 'aborted',
+      aborted: true,
+    };
+  }
+
+  const { signal, timeoutSignal } = buildCombinedSignal(callerSignal, timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(input, {
+      ...init,
+      ...(signal ? { signal } : {}),
+    });
+  } catch (err) {
+    const classified = classifyFetchError(err, callerSignal, timeoutSignal);
+    return {
+      ok: false,
+      status: 0,
+      error: classified.error,
+      reason: classified.reason,
+      aborted: classified.aborted,
+    };
+  }
+
+  if (!response.ok) {
+    const retryAfterSeconds =
+      response.status === 429 || response.status === 503
+        ? parseRetryAfterSeconds(response.headers.get('Retry-After'))
+        : undefined;
+    let parsed: unknown = null;
+    let hasValidJson = false;
+    try {
+      const rawText = await response.text();
+      if (rawText.trim().length > 0) {
+        parsed = JSON.parse(rawText) as unknown;
+        hasValidJson = true;
+      }
+    } catch {
+      parsed = null;
+      hasValidJson = false;
+    }
+
+    const serverError = hasValidJson ? extractServerError(parsed) : null;
+    const code = hasValidJson ? extractServerCode(parsed) : undefined;
+    const error =
+      response.status === 429
+        ? formatRateLimitError(serverError, retryAfterSeconds)
+        : hasValidJson
+          ? (serverError ??
+            `No pudimos completar la descarga (error ${response.status}). Intenta de nuevo.`)
+          : `El servidor tardó demasiado o no pudo responder (error ${response.status}). Intenta de nuevo en unos segundos.`;
+
+    return {
+      ok: false,
+      status: response.status,
+      error,
+      ...(code ? { code } : {}),
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      reason: hasValidJson ? 'http_error' : 'invalid_json',
+      aborted: false,
+    };
+  }
+
+  try {
+    const blob = await response.blob();
+    if (callerSignal?.aborted) {
+      return {
+        ok: false,
+        status: response.status,
+        error: 'Solicitud cancelada.',
+        reason: 'aborted',
+        aborted: true,
+      };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      blob,
+      aborted: false,
+    };
+  } catch (err) {
+    const classified = classifyFetchError(err, callerSignal, timeoutSignal);
+    return {
+      ok: false,
+      status: response.status,
+      error: classified.error,
+      reason: classified.reason,
+      aborted: classified.aborted,
+    };
+  }
+}
+
+export function sendBestEffortRequest(
+  input: string | URL,
+  options: ClientFetchOptions = {},
+): void {
+  const { timeoutMs = BEST_EFFORT_TIMEOUT_MS, signal: callerSignal, ...init } = options;
+  if (callerSignal?.aborted) return;
+  const { signal } = buildCombinedSignal(callerSignal, timeoutMs);
+  void fetch(input, {
+    ...init,
+    ...(signal ? { signal } : {}),
+  }).catch(() => undefined);
 }

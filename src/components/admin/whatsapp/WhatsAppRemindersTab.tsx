@@ -9,7 +9,6 @@ import { Button } from '@astryxdesign/core/Button';
 import { Banner } from '@astryxdesign/core/Banner';
 import { ArrowRight, CheckCircle2, Play, RefreshCw } from 'lucide-react';
 import {
-  EmptyStateCard,
   MetricGrid,
   SkeletonBlock,
   type MetricTileItem,
@@ -28,6 +27,7 @@ export type WhatsAppReminderFilter = 'pending' | 'sent' | 'failed' | 'canceled';
 export interface WhatsAppRemindersTabProps {
   data: WhatsAppRemindersResponseDTO | null;
   isLoading: boolean;
+  errorMessage?: string | null;
   isSubmitting: boolean;
   role: AdminRole;
   studioName: string;
@@ -41,6 +41,7 @@ export interface WhatsAppRemindersTabProps {
 export function WhatsAppRemindersTab({
   data,
   isLoading,
+  errorMessage = null,
   isSubmitting,
   role,
   studioName,
@@ -75,21 +76,27 @@ export function WhatsAppRemindersTab({
 
   if (!data) {
     return (
-      <EmptyStateCard
-        isCompact
+      <Banner
+        collapsible={false}
+        status="error"
+        role="alert"
         title="No pudimos cargar los recordatorios"
-        description="Revisa tu conexión e intenta cargar la cola de automatizaciones de nuevo."
-        actions={
+        description={
+          errorMessage ||
+          'Revisa tu conexión e intenta cargar la cola de automatizaciones de nuevo.'
+        }
+      >
+        <HStack justify="start" paddingBlockStart={2}>
           <Button
             type="button"
             label="Reintentar"
             variant="primary"
-            size="sm"
+            size="md"
             icon={<RefreshCw size={14} aria-hidden="true" />}
             onClick={onRefresh}
           />
-        }
-      />
+        </HStack>
+      </Banner>
     );
   }
 

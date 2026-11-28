@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import { executeWhatsAppBookingFlow } from '@/lib/integrations/whatsapp-booking';
 import { getRepository } from '@/lib/repositories/db';
 
 const simulateSchema = z.object({
   clientName: z.string().trim().min(1).max(120).optional(),
   phone: z.string().trim().min(8).max(32).optional(),
-  serviceId: z.string().min(1).optional(),
-  addonIds: z.array(z.string().min(1)).optional(),
-  staffId: z.string().min(1).nullable().optional(),
-  startAt: z.string().min(1).optional(),
+  serviceId: z.string().trim().min(1).max(128).optional(),
+  addonIds: z.array(z.string().trim().min(1).max(128)).max(30).optional(),
+  staffId: z.string().trim().min(1).max(128).nullable().optional(),
+  startAt: z.string().trim().min(1).max(64).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -23,14 +24,14 @@ export async function POST(request: NextRequest) {
           ? 'Solo la dueña puede ejecutar el simulador de WhatsApp.'
           : 'No autorizado',
       },
-      { status: authenticated ? 403 : 401 },
+      { status: authenticated ? 403 : 401, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json(
       { error: 'El simulador de WhatsApp está deshabilitado en producción.' },
-      { status: 403 },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -38,23 +39,29 @@ export async function POST(request: NextRequest) {
   try {
     rawBody = (await request.json()) as unknown;
   } catch {
-    return NextResponse.json({ error: 'Solicitud inválida' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Solicitud inválida' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   const parsed = simulateSchema.safeParse(rawBody);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message || 'Datos inválidos' },
-      { status: 400 },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
-  const db = await getRepository().getSnapshot();
-  const serviceId = parsed.data.serviceId ?? db.services.find((s) => s.isActive)?.id;
+  let serviceId = parsed.data.serviceId;
+  if (!serviceId) {
+    const activeServices = await getRepository().listActiveServices(1);
+    serviceId = activeServices[0]?.id;
+  }
   if (!serviceId) {
     return NextResponse.json(
       { error: 'No hay servicios activos para simular.' },
-      { status: 400 },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -67,5 +74,8 @@ export async function POST(request: NextRequest) {
     startAt: parsed.data.startAt,
   });
 
-  return NextResponse.json(result, { status: result.ok ? 201 : 409 });
+  return NextResponse.json(result, {
+    status: result.ok ? 201 : 409,
+    headers: ADMIN_PRIVATE_HEADERS,
+  });
 }

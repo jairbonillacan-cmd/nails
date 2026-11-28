@@ -4,6 +4,7 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import { normalizePhoneE164 } from '@/lib/format';
+import { sendBestEffortRequest } from '@/lib/http/client-fetch';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { ServiceAddon } from '@/lib/types';
 import {
@@ -145,7 +146,7 @@ export function useBookingFlowActions({
   };
 
   const resetSelection = () => {
-    if (flow.holdId) void fetch('/api/slot-holds', { method: 'DELETE' });
+    if (flow.holdId) sendBestEffortRequest('/api/slot-holds', { method: 'DELETE' });
     lastFailedHoldRef.current = null;
     setAppliedCoupon(null);
     setCouponError(null);

@@ -184,6 +184,13 @@ const nextConfig: NextConfig = {
         headers: privateManageHeaders,
       },
       {
+        source: '/api/admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store' },
+          { key: 'Vary', value: 'Cookie' },
+        ],
+      },
+      {
         source: '/landing/:path*',
         headers: immutableAssetHeaders,
       },

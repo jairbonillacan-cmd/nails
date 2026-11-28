@@ -21,10 +21,10 @@ import { FormDialog, type FormDialogControls } from '@/components/ui/FormDialog'
 import { FormDialogLauncher } from '@/components/ui/FormDialogLauncher';
 import {
   FORM_SUBMIT_OK,
-  formSubmitError,
-  formSubmitResultFromResponse,
+  formSubmitResultFromFetch,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { AdminRole, AdminUser, StaffMember } from '@/lib/types';
 
 const ROLE_META: Record<AdminRole, { label: string; tone: StatusTagTone }> = {
@@ -84,35 +84,31 @@ function AccessFormBody({
   const isEditing = Boolean(initialUser);
 
   const saveAccess = async (): Promise<FormSubmitResult> => {
-    try {
-      const res = await fetch('/api/admin/team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'admin_user',
-          data: {
-            ...(initialUser ? { id: initialUser.id, isActive: initialUser.isActive } : { isActive: true }),
-            fullName: aName.trim(),
-            email: aEmail.trim(),
-            role: aRole,
-            staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
-          },
-        }),
-      });
-      if (!res.ok) {
-        return formSubmitResultFromResponse(
-          res,
-          isEditing
-            ? 'No se pudieron guardar los cambios de acceso.'
-            : 'No se pudo dar acceso a esta persona.',
-        );
-      }
-      await onRefresh();
-      onNotice(isEditing ? 'Acceso actualizado' : 'Acceso creado');
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudo guardar el acceso.');
+    const result = await fetchJsonWithTimeout('/api/admin/team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'admin_user',
+        data: {
+          ...(initialUser ? { id: initialUser.id, isActive: initialUser.isActive } : { isActive: true }),
+          fullName: aName.trim(),
+          email: aEmail.trim(),
+          role: aRole,
+          staffMemberId: aRole === 'specialist' && aStaffId !== 'none' ? aStaffId : null,
+        },
+      }),
+    });
+    if (!result.ok) {
+      return formSubmitResultFromFetch(
+        result,
+        isEditing
+          ? 'No se pudieron guardar los cambios de acceso.'
+          : 'No se pudo dar acceso a esta persona.',
+      );
     }
+    await onRefresh();
+    onNotice(isEditing ? 'Acceso actualizado' : 'Acceso creado');
+    return FORM_SUBMIT_OK;
   };
 
   const handleSubmit = (e: React.FormEvent) => {

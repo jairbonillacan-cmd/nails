@@ -22,6 +22,24 @@ function collectFilesByName(dir: string, targetName: string): string[] {
   return results;
 }
 
+function collectSourceFiles(dir: string): string[] {
+  const results: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...collectSourceFiles(full));
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+      !entry.name.endsWith('.test.ts') &&
+      !entry.name.endsWith('.test.tsx')
+    ) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
 describe('route loading, error, 404, theme, and performance invariants', () => {
   it('provides dedicated loading.tsx coverage for every public and admin route segment', () => {
     const expectedLoaders = [
@@ -239,32 +257,22 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     expect(citaPageSource).not.toContain('getSnapshot(');
     expect(citaPageSource).toContain('cache(');
 
-    const publicNoSnapshotFiles = [
-      'src/app/page.tsx',
-      'src/app/mis-citas/page.tsx',
-      'src/app/reservar/page.tsx',
-      'src/app/reservar/[slug]/page.tsx',
-      'src/app/reservar/[slug]/opengraph-image.tsx',
-      'src/app/links/page.tsx',
-      'src/app/sitemap.ts',
-      'src/app/api/availability/route.ts',
-      'src/app/api/bookings/manage/[token]/route.ts',
-      'src/app/api/bookings/manage/[token]/ics/route.ts',
-      'src/app/api/client-portal/otp/route.ts',
-      'src/app/api/client-portal/profile/route.ts',
-      'src/app/api/client-portal/bookings/route.ts',
-      'src/app/api/cron/reminders/route.ts',
-      'src/app/api/cron/retention/route.ts',
-      'src/app/api/webhooks/mercadopago/route.ts',
-      'src/app/api/webhooks/whatsapp/route.ts',
-      'src/app/api/webhooks/google-calendar/route.ts',
-      'src/app/api/integrations/google/route.ts',
-      'src/app/api/integrations/google/callback/route.ts',
+    const allAppAndAdminFiles = [
+      ...collectSourceFiles(APP_DIR),
+      ...collectSourceFiles(path.join(ROOT, 'src', 'lib', 'admin')),
+    ];
+    for (const fullPath of allAppAndAdminFiles) {
+      const rel = path.relative(ROOT, fullPath).replace(/\\/g, '/');
+      const source = fs.readFileSync(fullPath, 'utf8');
+      expect(source, `${rel} must not call getSnapshot()`).not.toContain('getSnapshot(');
+    }
+
+    const extraNoSnapshotFiles = [
       'src/lib/auth/client-portal-profile.ts',
       'src/lib/integrations/whatsapp-processor.ts',
       'src/lib/integrations/whatsapp-booking.ts',
     ];
-    for (const rel of publicNoSnapshotFiles) {
+    for (const rel of extraNoSnapshotFiles) {
       const source = readText(rel);
       expect(source, `${rel} must not call getSnapshot()`).not.toContain('getSnapshot(');
     }

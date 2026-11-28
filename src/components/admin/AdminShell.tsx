@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { agendaHref } from '@/lib/admin-links';
 import {
   ADMIN_CACHE_KEYS,
@@ -44,11 +46,21 @@ const AdminQuickSearchDialog = dynamic(
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: providerData, loading, bookingEventSeq, switchDemoUser, logout } = useAdminData();
+  const {
+    data: providerData,
+    loading,
+    error: providerError,
+    bookingEventSeq,
+    refresh,
+    dismissError,
+    switchDemoUser,
+    logout,
+  } = useAdminData();
   const { mode, setMode } = useSalonAppearance();
   const soundFeedback = useEphemeralMessage(2200);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [dismissedCacheError, setDismissedCacheError] = useState<string | null>(null);
   const [sidebarCollapsed, toggleSidebarCollapsed] = useSidebarCollapsed();
 
   const isLoginRoute = pathname === '/admin/login';
@@ -66,6 +78,22 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 
   const data = overviewCacheQuery.data ?? providerData;
+  const rawCacheError = overviewCacheQuery.error ? overviewCacheQuery.error.message : null;
+  const visibleCacheError =
+    rawCacheError && rawCacheError !== dismissedCacheError ? rawCacheError : null;
+  const overviewError = providerError ?? visibleCacheError;
+
+  const handleRetryOverview = useCallback(() => {
+    setDismissedCacheError(null);
+    void refresh();
+  }, [refresh]);
+
+  const handleDismissOverviewError = useCallback(() => {
+    dismissError();
+    if (rawCacheError) {
+      setDismissedCacheError(rawCacheError);
+    }
+  }, [dismissError, rawCacheError]);
   const soundConfigured = data?.settings.soundAlertsEnabled ?? true;
   const { playBookingChime, isMuted, toggleMute } = useBookingAlertSound({
     enabled: Boolean(data) && !isLoginRoute,
@@ -189,6 +217,46 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  if (!data && overviewError && !loading) {
+    return (
+      <VStack
+        as="main"
+        className="ad-sheet"
+        gap={4}
+        padding={6}
+        align="center"
+        justify="center"
+        style={{ minHeight: '100dvh' }}
+      >
+        <VStack width="100%" gap={3} style={{ maxWidth: '32rem' }}>
+          <Banner
+            collapsible={false}
+            status="error"
+            role="alert"
+            title="No pudimos cargar tu panel"
+            description={overviewError}
+          >
+            <HStack justify="start" gap={2} wrap="wrap" paddingBlockStart={2}>
+              <Button
+                type="button"
+                label="Reintentar"
+                variant="primary"
+                size="md"
+                onClick={handleRetryOverview}
+              />
+              <Button
+                label="Volver a iniciar sesión"
+                variant="secondary"
+                size="md"
+                href="/admin/login"
+              />
+            </HStack>
+          </Banner>
+        </VStack>
+      </VStack>
+    );
+  }
+
   if (loading || !data) {
     return (
       <AdminShellSkeleton ariaLabel="Abriendo tu panel" />
@@ -239,6 +307,28 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
           <VStack as="main" className="ad-sheet" gap={5}>
             <VStack gap={5} width="100%" className="ad-content-inner">
+              {overviewError ? (
+                <Banner
+                  collapsible={false}
+                  status="error"
+                  role="alert"
+                  title="No pudimos actualizar los datos del panel"
+                  description={overviewError}
+                  isDismissable
+                  dismissLabel="Cerrar aviso"
+                  onDismiss={handleDismissOverviewError}
+                >
+                  <HStack justify="start" paddingBlockStart={2}>
+                    <Button
+                      type="button"
+                      label="Reintentar"
+                      variant="primary"
+                      size="md"
+                      onClick={handleRetryOverview}
+                    />
+                  </HStack>
+                </Banner>
+              ) : null}
               {children}
             </VStack>
           </VStack>

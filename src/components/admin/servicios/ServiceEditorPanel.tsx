@@ -19,12 +19,10 @@ import {
   Boxes,
   CalendarDays,
   Package,
-  Save,
   SlidersHorizontal,
 } from 'lucide-react';
-import { StatusTag } from '@/components/ui';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
-import { readFileAsDataUrl, validateClientImageFile } from '@/components/booking/bookingHelpers';
+import { prepareClientImageFile, readFileAsDataUrl } from '@/components/booking/bookingHelpers';
 import {
   agendaHref,
   cajaHref,
@@ -40,38 +38,36 @@ interface CategoryOption {
 }
 
 interface ServiceEditorPanelProps {
+  formId: string;
   draft: Partial<Service>;
   categoryOptions: readonly CategoryOption[];
   currency: 'MXN' | 'USD';
   defaultDepositCents: number;
   hasCleanupTime: boolean;
   hasCustomAdvancedValues: boolean;
-  isDirty: boolean;
   saving: boolean;
   menuPosition: number | null;
   menuPositionCount: number;
   onChangeMenuPosition: (position: number) => void;
   onChangeDraft: (next: Partial<Service>) => void;
   onToggleCleanupTime: (checked: boolean) => void;
-  onCancel: () => void;
   onSubmit: (e: React.FormEvent) => void;
 }
 
 export function ServiceEditorPanel({
+  formId,
   draft,
   categoryOptions,
   currency,
   defaultDepositCents,
   hasCleanupTime,
   hasCustomAdvancedValues,
-  isDirty,
   saving,
   menuPosition,
   menuPositionCount,
   onChangeMenuPosition,
   onChangeDraft,
   onToggleCleanupTime,
-  onCancel,
   onSubmit,
 }: ServiceEditorPanelProps) {
   const isDepositRequired = draft.depositRequired ?? true;
@@ -84,13 +80,13 @@ export function ServiceEditorPanel({
   const handlePhotoFile = async (file: File | null) => {
     if (!file) return;
     setPhotoError(null);
-    const err = await validateClientImageFile(file);
-    if (err) {
-      setPhotoError(err);
+    const prepared = await prepareClientImageFile(file);
+    if (prepared.error) {
+      setPhotoError(prepared.error);
       return;
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await readFileAsDataUrl(prepared.file);
       onChangeDraft({ ...draft, imageUrl: dataUrl });
     } catch {
       setPhotoError('No se pudo leer esa foto. Intenta con otra.');
@@ -98,7 +94,7 @@ export function ServiceEditorPanel({
   };
 
   return (
-      <form onSubmit={onSubmit}>
+      <form id={formId} onSubmit={onSubmit}>
         <VStack gap={3}>
           <TextInput
             label="Nombre"
@@ -364,19 +360,6 @@ export function ServiceEditorPanel({
               </VStack>
             </>
           ) : null}
-
-          <HStack gap={2} justify="end" align="center" wrap="wrap">
-            {isDirty && !saving ? <StatusTag label="Sin guardar" tone="warning" className="fx-pop" /> : null}
-            <Button type="button" label="Cancelar" variant="secondary" isDisabled={saving} onClick={onCancel} />
-            <Button
-              type="submit"
-              label={saving ? 'Guardando…' : draft.id ? 'Guardar cambios' : 'Crear servicio'}
-              variant="primary"
-              icon={<Save size={15} aria-hidden="true" />}
-              isLoading={saving}
-              isDisabled={!isDirty || saving}
-            />
-          </HStack>
         </VStack>
       </form>
   );

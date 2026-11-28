@@ -7,6 +7,7 @@ import { Grid } from '@astryxdesign/core/Grid';
 import { ClickableCard } from '@astryxdesign/core/ClickableCard';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { Token } from '@astryxdesign/core/Token';
 import { Divider } from '@astryxdesign/core/Divider';
 import { Selector } from '@astryxdesign/core/Selector';
@@ -21,6 +22,7 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { SlotDiagnosis } from '@/lib/availability/engine';
 import { formatTimeHHMM12h } from '@/lib/format';
 import type { Service, StaffMember } from '@/lib/types';
@@ -44,6 +46,11 @@ interface VisualTroubleshooterProps {
 
 type AvailabilityFilter = 'all' | 'available' | 'blocked';
 
+interface DiagnosisResponsePayload {
+  diagnosis?: SlotDiagnosis[];
+  diagnostics?: SlotDiagnosis[];
+}
+
 export function VisualTroubleshooter({
   staffId,
   staffMembers,
@@ -60,6 +67,7 @@ export function VisualTroubleshooter({
   const [inspectedTime, setInspectedTime] = useState<string | null>(null);
   const [slotChecks, setSlotChecks] = useState<SlotDiagnosis[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [reloadCounter, setReloadCounter] = useState(0);
 
   const serviceId = serviceIdInput ?? services[0]?.id ?? '';
@@ -70,27 +78,28 @@ export function VisualTroubleshooter({
     async (signal: AbortSignal) => {
       if (!selectedDate || !serviceId || !staffId) {
         setSlotChecks([]);
+        setFetchError(null);
         return;
       }
       setLoading(true);
+      setFetchError(null);
       try {
         const qs = new URLSearchParams({ mode: 'diagnose', date: selectedDate, serviceId, staffId });
-        const res = await fetch(`/api/admin/availability?${qs.toString()}`, {
-          cache: 'no-store',
-          signal,
-        });
-        if (signal.aborted) return;
-        if (!res.ok) {
-          setSlotChecks([]);
+        const result = await fetchJsonWithTimeout<DiagnosisResponsePayload>(
+          `/api/admin/availability?${qs.toString()}`,
+          {
+            cache: 'no-store',
+            signal,
+          },
+        );
+        if (signal.aborted || result.aborted) return;
+        if (!result.ok) {
+          setFetchError(
+            result.error || 'No se pudo consultar el diagnóstico de horarios. Intenta de nuevo.',
+          );
           return;
         }
-        const json = (await res.json()) as {
-          diagnosis?: SlotDiagnosis[];
-          diagnostics?: SlotDiagnosis[];
-        };
-        setSlotChecks(json.diagnosis ?? json.diagnostics ?? []);
-      } catch {
-        if (!signal.aborted) setSlotChecks([]);
+        setSlotChecks(result.data.diagnosis ?? result.data.diagnostics ?? []);
       } finally {
         if (!signal.aborted) setLoading(false);
       }
@@ -194,6 +203,26 @@ export function VisualTroubleshooter({
           aria-busy={loading || undefined}
           style={{ minWidth: 0 }}
         >
+          {fetchError ? (
+            <Banner
+              status="error"
+              role="alert"
+              collapsible={false}
+              title={fetchError}
+              endContent={
+                <Button
+                  type="button"
+                  label="Reintentar"
+                  variant="secondary"
+                  size="md"
+                  icon={<RefreshCw size={14} aria-hidden="true" />}
+                  isDisabled={loading}
+                  onClick={() => setReloadCounter((prev) => prev + 1)}
+                />
+              }
+            />
+          ) : null}
+
           {inspectedSlot ? (
             <SurfaceCard tone={inspectedSlot.isAvailable ? 'subtle' : 'warning'} padded>
               <VStack gap={1.5} role="status" aria-live="polite" style={{ minWidth: 0 }}>
@@ -233,7 +262,7 @@ export function VisualTroubleshooter({
                 <SkeletonBlock key={idx} height="2.75rem" radius={2} index={idx} />
               ))}
             </Grid>
-          ) : groups.length === 0 ? (
+          ) : fetchError && slotChecks.length === 0 ? null : groups.length === 0 ? (
             <EmptyStateCard
               framed={false}
               isCompact
@@ -310,6 +339,7 @@ export function VisualTroubleshooter({
 
       <SurfaceCard
         id="slot-help-picker-heading"
+        className="ad-troubleshooter-picker"
         icon={<HelpCircle size={16} aria-hidden="true" />}
         title="¿Qué día quieres revisar?"
         subtitle="Elige un servicio y una fecha para ver por qué una hora aparece libre o no."
@@ -352,7 +382,7 @@ export function VisualTroubleshooter({
             options={quickDateOptions}
           />
 
-          <VStack width="100%" style={{ minWidth: 0, overflowX: 'auto' }}>
+          <VStack width="100%" className="ad-troubleshooter-cal" style={{ minWidth: 0 }}>
             <Calendar
               mode="single"
               weekStartsOn="mon"

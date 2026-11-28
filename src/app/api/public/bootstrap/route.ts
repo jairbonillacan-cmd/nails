@@ -18,6 +18,7 @@ export async function GET(request?: NextRequest) {
       {
         status: 429,
         headers: {
+          'Cache-Control': 'no-store',
           'Retry-After': String(rate.retryAfterSeconds),
           'X-RateLimit-Remaining': '0',
         },
@@ -34,7 +35,10 @@ export async function GET(request?: NextRequest) {
       integrationMode: integration.mode,
     },
     {
-      headers: { 'X-RateLimit-Remaining': String(rate.remaining) },
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-RateLimit-Remaining': String(rate.remaining),
+      },
     },
   );
 }

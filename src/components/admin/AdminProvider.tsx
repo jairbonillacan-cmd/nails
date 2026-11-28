@@ -16,6 +16,7 @@ import {
 import { useAdminProviderSync } from '@/lib/hooks/useAdminProviderSync';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { BookingWithRelations } from '@/lib/types';
 import { useSalonAppearance } from '../SalonThemeProvider';
 
@@ -24,13 +25,24 @@ export type { AdminOverviewPayload } from '@/lib/admin/overview-types';
 interface AdminContextValue {
   data: AdminOverviewPayload | null;
   loading: boolean;
+  error: string | null;
   bookingEventSeq: number;
   refresh: () => Promise<void>;
+  dismissError: () => void;
   switchDemoUser: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);
+
+function isAbortFailure(err: unknown): boolean {
+  return (
+    (err instanceof Error && err.name === 'AbortError') ||
+    (typeof DOMException !== 'undefined' &&
+      err instanceof DOMException &&
+      err.name === 'AbortError')
+  );
+}
 
 export function useAdminData() {
   const ctx = useContext(AdminContext);
@@ -51,12 +63,14 @@ export function AdminProvider({
   const { setSettingsOverride } = useSalonAppearance();
   const [data, setData] = useState<AdminOverviewPayload | null>(initialData);
   const [loading, setLoading] = useState(!initialData && !isLoginRoute);
+  const [error, setError] = useState<string | null>(null);
   const [bookingEventSeq, setBookingEventSeq] = useState(0);
 
   const applyPayload = useCallback(
     (next: AdminOverviewPayload) => {
       setData(next);
       setLoading(false);
+      setError(null);
       setSettingsOverride(next.settings);
       if (getAdminCacheSnapshot<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview) !== next) {
         mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, next);
@@ -82,6 +96,7 @@ export function AdminProvider({
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
+      setError(null);
       try {
         const json = await fetchAdminCached<AdminOverviewPayload>(
           ADMIN_CACHE_KEYS.overview,
@@ -92,14 +107,20 @@ export function AdminProvider({
         if (signal?.aborted) return;
         applyPayload(json);
       } catch (err: unknown) {
-        if (signal?.aborted) return;
+        if (signal?.aborted || isAbortFailure(err)) return;
         if (err instanceof AdminFetchError && err.status === 401) {
           invalidateAdminCache();
           setAdminCacheScope(null);
           setData(null);
+          setError(null);
           router.push('/admin/login');
+          return;
         }
-        return;
+        setError(
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'No pudimos cargar el panel del salón. Intenta de nuevo.',
+        );
       } finally {
         if (!signal?.aborted) {
           setLoading(false);
@@ -108,6 +129,10 @@ export function AdminProvider({
     },
     [applyPayload, router],
   );
+
+  const dismissError = useCallback(() => {
+    setError(null);
+  }, []);
 
   const syncKey = isLoginRoute
     ? 'admin-login'
@@ -148,32 +173,29 @@ export function AdminProvider({
 
   const switchDemoUser = useCallback(
     async (email: string) => {
-      try {
-        const res = await fetch('/api/admin/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-        if (!res.ok) return;
-        invalidateAdminCache();
-        setAdminCacheScope(null);
-        await refresh();
-      } catch {
+      setError(null);
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) {
+        setError(res.error || 'No se pudo cambiar de cuenta de prueba. Intenta de nuevo.');
         return;
       }
+      invalidateAdminCache();
+      setAdminCacheScope(null);
+      await refresh();
     },
     [refresh],
   );
 
   const logout = useCallback(async () => {
-    try {
-      await fetch('/api/admin/session', { method: 'DELETE' });
-    } catch {
-      void 0;
-    }
+    await fetchJsonWithTimeout<unknown>('/api/admin/session', { method: 'DELETE' });
     invalidateAdminCache();
     setAdminCacheScope(null);
     setData(null);
+    setError(null);
     router.push('/admin/login');
   }, [router]);
 
@@ -181,12 +203,14 @@ export function AdminProvider({
     () => ({
       data,
       loading,
+      error,
       bookingEventSeq,
       refresh,
+      dismissError,
       switchDemoUser,
       logout,
     }),
-    [data, loading, bookingEventSeq, refresh, switchDemoUser, logout],
+    [data, loading, error, bookingEventSeq, refresh, dismissError, switchDemoUser, logout],
   );
 
   return (

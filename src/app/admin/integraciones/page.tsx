@@ -15,6 +15,7 @@ import { PaymentsAnalyticsSection } from '@/components/admin/integraciones/Payme
 import { parseIntegracionesParams } from '@/lib/admin-links';
 import { formatCurrency } from '@/lib/format';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { roleCanAccess } from '@/lib/rbac';
 import type {
   CalendarConnection,
@@ -99,7 +100,7 @@ export default function AdminIntegrationsPage() {
 
   const { integration } = data;
   const settings: SalonSettings = { ...data.settings, ...optimisticSettings };
-  const depositLabel = formatCurrency(settings.depositAmountCents ?? 20000, settings.currency);
+  const depositLabel = formatCurrency(settings.depositAmountCents ?? 0, settings.currency);
   const timezone = settings.timezone || 'America/Mexico_City';
   const normalizedAppUrl = integration.appUrl.replace(/\/+$/, '');
   const mercadoPagoTechUrl = `${normalizedAppUrl}/api/webhooks/mercadopago`;
@@ -136,24 +137,20 @@ export default function AdminIntegrationsPage() {
     }));
     setMsg(null);
     try {
-      const res = await fetch('/api/admin/operations', {
+      const result = await fetchJsonWithTimeout('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ kind: 'workflow', id: workflowId, patch: { channels: next } }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await refresh();
         saveNotice.show('Canal actualizado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo actualizar este recordatorio.',
+          text: result.error || 'No se pudo actualizar este recordatorio.',
         });
       }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar este recordatorio.' });
     } finally {
       setBusyWorkflowId(null);
       setOptimisticWorkflows((prev) =>
@@ -169,24 +166,20 @@ export default function AdminIntegrationsPage() {
     setOptimisticSettings((prev) => ({ ...prev, ...optimisticPatch }));
     setMsg(null);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(patch),
       });
-      if (res.ok) {
+      if (result.ok) {
         await refresh();
         saveNotice.show('Cambios guardados');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudieron guardar los cambios.',
+          text: result.error || 'No se pudieron guardar los cambios.',
         });
       }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudieron guardar los cambios.' });
     } finally {
       setSavingSettings(false);
       setOptimisticSettings({});
@@ -206,24 +199,20 @@ export default function AdminIntegrationsPage() {
     }));
     setMsg(null);
     try {
-      const res = await fetch('/api/admin/operations', {
+      const result = await fetchJsonWithTimeout('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ kind: 'calendar', staffId, patch }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await refresh();
         saveNotice.show('Calendario actualizado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         setMsg({
           status: 'error',
-          text: errJson?.error || 'No se pudo actualizar la configuración de Google Calendar.',
+          text: result.error || 'No se pudo actualizar la configuración de Google Calendar.',
         });
       }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar Google Calendar.' });
     } finally {
       setBusyCalendarStaffId(null);
       setOptimisticCalendars((prev) =>
@@ -236,31 +225,19 @@ export default function AdminIntegrationsPage() {
     if (busyCalendarStaffId) return;
     setBusyCalendarStaffId(staffId);
     setMsg(null);
-    try {
-      const res = await fetch(
-        `/api/integrations/google?staffId=${encodeURIComponent(staffId)}`,
-        { signal: AbortSignal.timeout(15_000) },
-      );
-      if (!res.ok) {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        setMsg({
-          status: 'error',
-          text: errJson?.error || 'No se pudo consultar la conexión con Google Calendar.',
-        });
-        setBusyCalendarStaffId(null);
-        return;
-      }
-      const json = (await res.json().catch(() => null)) as {
-        configured?: boolean;
-        oauthUrl?: string;
-      } | null;
-      if (json?.configured && json.oauthUrl && !isConnected) {
-        window.location.href = json.oauthUrl;
-        return;
-      }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudo consultar Google Calendar.' });
+    const result = await fetchJsonWithTimeout<{ configured?: boolean; oauthUrl?: string }>(
+      `/api/integrations/google?staffId=${encodeURIComponent(staffId)}`,
+    );
+    if (!result.ok) {
+      setMsg({
+        status: 'error',
+        text: result.error || 'No se pudo consultar la conexión con Google Calendar.',
+      });
       setBusyCalendarStaffId(null);
+      return;
+    }
+    if (result.data.configured && result.data.oauthUrl && !isConnected) {
+      window.location.href = result.data.oauthUrl;
       return;
     }
     await patchCalendar(staffId, { isConnected: !isConnected });

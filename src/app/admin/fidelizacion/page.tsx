@@ -86,6 +86,7 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { Coupon, LoyaltyProgram, ServicePackage } from '@/lib/types';
 
 function FidelizacionTabFallback() {
@@ -342,10 +343,9 @@ export default function AdminLoyaltyPage() {
     setSavingLoyalty(true);
     setBannerMsg(null);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(
           buildBrandPatchPayload({
             draft: data.settings,
@@ -355,22 +355,16 @@ export default function AdminLoyaltyPage() {
           }),
         ),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
+      if (!result.ok) {
         setBannerMsg({
           status: 'error',
-          title: json?.error || 'No se pudo guardar la tarjeta de sellos.',
+          title: result.error || 'No se pudo guardar la tarjeta de sellos.',
         });
         return;
       }
       await refresh();
       setLoyaltyOverride(null);
       saveNotice.show('Tarjeta de sellos guardada');
-    } catch {
-      setBannerMsg({
-        status: 'error',
-        title: 'Error de conexión al guardar la tarjeta de sellos.',
-      });
     } finally {
       setSavingLoyalty(false);
     }

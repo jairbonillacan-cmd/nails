@@ -6,6 +6,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Badge } from '@astryxdesign/core/Badge';
@@ -47,6 +48,7 @@ interface WhatsAppThreadListProps {
   filter: WhatsAppThreadFilter;
   searchQuery: string;
   isLoading: boolean;
+  errorMessage?: string | null;
   nowMs: number;
   timezone: string;
   onFilterChange: (filter: WhatsAppThreadFilter) => void;
@@ -107,6 +109,7 @@ export function WhatsAppThreadList({
   filter,
   searchQuery,
   isLoading,
+  errorMessage = null,
   nowMs,
   timezone,
   onFilterChange,
@@ -229,6 +232,26 @@ export function WhatsAppThreadList({
               </HStack>
             ))}
           </VStack>
+        ) : errorMessage && threads.length === 0 ? (
+          <VStack padding={3}>
+            <Banner
+              collapsible={false}
+              status="error"
+              role="alert"
+              title="No pudimos cargar las conversaciones"
+              description={errorMessage}
+            >
+              <HStack justify="start" paddingBlockStart={2}>
+                <Button
+                  type="button"
+                  label="Reintentar"
+                  variant="primary"
+                  size="md"
+                  onClick={onRefresh}
+                />
+              </HStack>
+            </Banner>
+          </VStack>
         ) : threads.length === 0 ? (
           <VStack padding={4}>
             <EmptyStateCard
@@ -268,7 +291,29 @@ export function WhatsAppThreadList({
             />
           </VStack>
         ) : (
-          <VStack as="ul" gap={0} role="list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          <>
+            {errorMessage ? (
+              <VStack padding={3}>
+                <Banner
+                  collapsible={false}
+                  status="error"
+                  role="alert"
+                  title="No pudimos actualizar las conversaciones"
+                  description={errorMessage}
+                >
+                  <HStack justify="start" paddingBlockStart={2}>
+                    <Button
+                      type="button"
+                      label="Reintentar"
+                      variant="primary"
+                      size="md"
+                      onClick={onRefresh}
+                    />
+                  </HStack>
+                </Banner>
+              </VStack>
+            ) : null}
+            <VStack as="ul" gap={0} role="list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {threads.map((thread) => {
               const isSelected = thread.id === selectedThreadId;
               const isUnread = thread.unreadCount > 0;
@@ -365,6 +410,7 @@ export function WhatsAppThreadList({
               );
             })}
           </VStack>
+          </>
         )}
       </VStack>
     </VStack>

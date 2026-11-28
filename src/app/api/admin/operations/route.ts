@@ -6,6 +6,11 @@ import {
   AdminOperationsDeleteQuerySchema,
   AdminOperationsPatchSchema,
 } from '@/lib/contracts/operations';
+import {
+  ADMIN_PRIVATE_HEADERS,
+  withAdminPrivateHeaders,
+} from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
 import { toAdminCalendarConnectionDTO } from '@/lib/public-dto';
 import {
   addCashEntry,
@@ -31,16 +36,17 @@ export async function GET(request: NextRequest) {
     const authenticated = await getAdminSession(request);
     return NextResponse.json(
       { error: authenticated ? 'Permisos insuficientes' : 'No autorizado' },
-      { status: authenticated ? 403 : 401 },
+      { status: authenticated ? 403 : 401, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
   const { searchParams } = new URL(request.url);
   if (searchParams.get('export') === 'csv') {
-    const db = await getRepository().getSnapshot();
+    const repo = getRepository();
+    const settings = await repo.getSalonSettings();
     const providedPin = request.headers.get('x-owner-pin') ?? undefined;
     const ownerPinGateActive = Boolean(
-      (db.settings.ownerPinEnabled && db.settings.ownerPinHash) || providedPin?.trim(),
+      (settings.ownerPinEnabled && settings.ownerPinHash) || providedPin?.trim(),
     );
     if (ownerPinGateActive) {
       const pinRate = checkRateLimit({
@@ -58,10 +64,10 @@ export async function GET(request: NextRequest) {
           },
           {
             status: 429,
-            headers: {
+            headers: withAdminPrivateHeaders({
               'Retry-After': String(pinRate.retryAfterSeconds),
               'X-RateLimit-Remaining': '0',
-            },
+            }),
           },
         );
       }
@@ -77,11 +83,12 @@ export async function GET(request: NextRequest) {
             ? 'El PIN de autorización de dueña es incorrecto.'
             : 'Exportar el reporte CSV requiere el PIN de autorización de dueña.',
         },
-        { status: 403 },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
 
-    const currency = db.settings.currency || 'MXN';
+    const cashEntries = await repo.listCashEntries();
+    const currency = settings.currency || 'MXN';
     const entryTypeLabels: Record<string, string> = {
       service_income: 'Servicio',
       product_sale: 'Venta de producto',
@@ -106,7 +113,7 @@ export async function GET(request: NextRequest) {
       `Comisión (${currency})`,
       'Registrado por',
     ];
-    const rows = db.cashEntries.map((e) => [
+    const rows = cashEntries.map((e) => [
       e.occurredAt,
       entryTypeLabels[e.entryType] ?? e.entryType,
       e.description,
@@ -133,26 +140,33 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(csv, {
       status: 200,
-      headers: {
-        'Cache-Control': 'private, no-store',
+      headers: withAdminPrivateHeaders({
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': 'attachment; filename="nails-reporte-caja.csv"',
-      },
+      }),
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });
 }
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   let rawBody: unknown;
   try {
     rawBody = (await request.json()) as unknown;
   } catch {
-    return NextResponse.json({ error: 'Solicitud JSON inválida.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   try {
@@ -163,16 +177,25 @@ export async function POST(request: NextRequest) {
         session.user.role === 'specialist' &&
         (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
       ) {
-        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        return NextResponse.json(
+          { error: 'Permisos insuficientes' },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+        );
       }
       const connection = await updateCalendarConnection(parsed.staffId, parsed.patch);
-      return NextResponse.json({
-        connection: toAdminCalendarConnectionDTO(connection),
-      });
+      return NextResponse.json(
+        {
+          connection: toAdminCalendarConnectionDTO(connection),
+        },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Permisos insuficientes' },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (parsed.kind === 'cash') {
@@ -180,20 +203,23 @@ export async function POST(request: NextRequest) {
         ...parsed.data,
         recordedBy: session.user.fullName,
       });
-      return NextResponse.json({ entry });
+      return NextResponse.json({ entry }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (parsed.kind === 'cash_update') {
       const entry = await updateCashEntry(parsed.id, parsed.data);
-      return NextResponse.json({ entry });
+      return NextResponse.json({ entry }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (parsed.kind === 'cash_delete') {
       const deleted = await deleteCashEntry(parsed.id);
-      return NextResponse.json({
-        ok: true,
-        deletedId: deleted.id,
-      });
+      return NextResponse.json(
+        {
+          ok: true,
+          deletedId: deleted.id,
+        },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (parsed.kind === 'inventory') {
@@ -201,36 +227,39 @@ export async function POST(request: NextRequest) {
         ...parsed.data,
         createdBy: session.user.fullName,
       });
-      return NextResponse.json({ item });
+      return NextResponse.json({ item }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (parsed.kind === 'coupon') {
       const coupon = await upsertCoupon(parsed.data);
-      return NextResponse.json({ coupon });
+      return NextResponse.json({ coupon }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (parsed.kind === 'coupon_delete') {
       const deleted = await deleteCoupon(parsed.id);
-      return NextResponse.json({
-        ok: true,
-        deletedId: deleted.id,
-        code: deleted.code,
-      });
+      return NextResponse.json(
+        {
+          ok: true,
+          deletedId: deleted.id,
+          code: deleted.code,
+        },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (parsed.kind === 'waitlist') {
       const entry = await updateWaitlistStatus(parsed.id, parsed.status);
-      return NextResponse.json({ entry });
+      return NextResponse.json({ entry }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (session.user.role !== 'owner') {
       return NextResponse.json(
         { error: 'Solo la Dueña puede editar workflows de automatización.' },
-        { status: 403 },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     const workflow = await updateWorkflow(parsed.id, parsed.patch);
-    return NextResponse.json({ workflow });
+    return NextResponse.json({ workflow }, { headers: ADMIN_PRIVATE_HEADERS });
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
@@ -243,15 +272,24 @@ export async function POST(request: NextRequest) {
           : err.code === 'COUPON_CODE_EXISTS'
             ? 409
             : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos de operación inválidos.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'Error procesando operación.' }, { status: 400 });
+    logError('admin_operations_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'Error procesando operación.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
@@ -261,7 +299,7 @@ export async function PATCH(request: NextRequest) {
     const authenticated = await getAdminSession(request);
     return NextResponse.json(
       { error: authenticated ? 'Permisos insuficientes' : 'No autorizado' },
-      { status: authenticated ? 403 : 401 },
+      { status: authenticated ? 403 : 401, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -269,27 +307,36 @@ export async function PATCH(request: NextRequest) {
   try {
     rawBody = (await request.json()) as unknown;
   } catch {
-    return NextResponse.json({ error: 'Solicitud JSON inválida.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   try {
     const parsed = AdminOperationsPatchSchema.parse(rawBody);
     const entry = await updateCashEntry(parsed.id, parsed.data);
-    return NextResponse.json({ entry });
+    return NextResponse.json({ entry }, { headers: ADMIN_PRIVATE_HEADERS });
   } catch (err) {
     if (err instanceof PolicyError) {
       const status = err.code === 'CASH_ENTRY_NOT_FOUND' ? 404 : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos de movimiento inválidos.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
+    logError('admin_operations_patch_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       { error: 'No se pudo actualizar el movimiento de caja.' },
-      { status: 400 },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 }
@@ -300,7 +347,7 @@ export async function DELETE(request: NextRequest) {
     const authenticated = await getAdminSession(request);
     return NextResponse.json(
       { error: authenticated ? 'Permisos insuficientes' : 'No autorizado' },
-      { status: authenticated ? 403 : 401 },
+      { status: authenticated ? 403 : 401, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -312,31 +359,46 @@ export async function DELETE(request: NextRequest) {
     });
     if (parsed.kind === 'cash') {
       const deleted = await deleteCashEntry(parsed.id);
-      return NextResponse.json({
-        ok: true,
-        deletedId: deleted.id,
-      });
+      return NextResponse.json(
+        {
+          ok: true,
+          deletedId: deleted.id,
+        },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     const deleted = await deleteCoupon(parsed.id);
-    return NextResponse.json({
-      ok: true,
-      deletedId: deleted.id,
-      code: deleted.code,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        deletedId: deleted.id,
+        code: deleted.code,
+      },
+      { headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
         err.code === 'COUPON_NOT_FOUND' || err.code === 'CASH_ENTRY_NOT_FOUND'
           ? 404
           : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Parámetros de eliminación inválidos.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'No se pudo eliminar el registro.' }, { status: 400 });
+    logError('admin_operations_delete_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'No se pudo eliminar el registro.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }

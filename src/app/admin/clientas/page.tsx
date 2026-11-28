@@ -120,7 +120,9 @@ export default function AdminClientsPage() {
     returningClients,
     packagesByClientId,
     packagesLoading,
+    packagesError,
     campaignsLoading,
+    campaignsError,
     inactiveLoading,
     inactiveError,
     reloadCampaigns,
@@ -469,48 +471,90 @@ export default function AdminClientsPage() {
             onOpenNewClient={() => setCreateOpen(true)}
           />
         ) : activeTab === 'retention' ? (
-          <ClientRetentionTab
-            canManageClients={canManageClients}
-            salonName={data.settings.name}
-            tz={tz}
-            touchUpDays={touchUpDays}
-            inactiveDays={inactiveDays}
-            onInactiveDaysChange={setInactiveDays}
-            displayedInactiveClients={displayedInactiveClients}
-            lastServiceByClientId={lastServiceByClientId}
-            inactiveLoading={inactiveLoading}
-            inactiveError={inactiveError}
-            campaigns={campaigns}
-            campaignsLoading={campaignsLoading}
-            dispatchedTodayKeys={dispatchedTodayKeys}
-            dispatchingKey={dispatchingKey}
-            nearRewardCount={nearRewardClients.length}
-            returningClients={returningClients}
-            onOpenClientById={openClientById}
-            onOpenLoyalty={() => setActiveTab('loyalty')}
-            onDispatchCampaign={handleDispatchCampaign}
-          />
+          <>
+            {campaignsError ? (
+              <Banner
+                collapsible={false}
+                status="error"
+                role="alert"
+                title="No pudimos cargar las campañas de retención"
+                description={campaignsError}
+              >
+                <HStack justify="start" paddingBlockStart={2}>
+                  <Button
+                    type="button"
+                    label="Reintentar"
+                    variant="primary"
+                    size="md"
+                    onClick={reloadCampaigns}
+                  />
+                </HStack>
+              </Banner>
+            ) : null}
+            <ClientRetentionTab
+              canManageClients={canManageClients}
+              salonName={data.settings.name}
+              tz={tz}
+              touchUpDays={touchUpDays}
+              inactiveDays={inactiveDays}
+              onInactiveDaysChange={setInactiveDays}
+              displayedInactiveClients={displayedInactiveClients}
+              lastServiceByClientId={lastServiceByClientId}
+              inactiveLoading={inactiveLoading}
+              inactiveError={inactiveError}
+              campaigns={campaigns}
+              campaignsLoading={campaignsLoading}
+              dispatchedTodayKeys={dispatchedTodayKeys}
+              dispatchingKey={dispatchingKey}
+              nearRewardCount={nearRewardClients.length}
+              returningClients={returningClients}
+              onOpenClientById={openClientById}
+              onOpenLoyalty={() => setActiveTab('loyalty')}
+              onDispatchCampaign={handleDispatchCampaign}
+            />
+          </>
         ) : (
-          <ClientLoyaltyTab
-            nearRewardClients={nearRewardClients}
-            loyaltyProgram={data.loyaltyProgram}
-            clients={data.clients}
-            clientPackages={clientPackages}
-            activeClientPackagesCount={activeClientPackages.length}
-            activeCatalogPackages={activeCatalogPackages}
-            packagesLoading={packagesLoading}
-            canManageClients={canManageClients}
-            salonName={data.settings.name}
-            tz={tz}
-            currency={currency}
-            assigningPkg={assigningPkg}
-            redeemingPkgId={redeemingPkgId}
-            cancelingPkgId={cancelingPkgId}
-            onOpenClientById={openClientById}
-            onAssignPackage={handleAssignPackage}
-            onRedeemPackageSession={handleRedeemPackageSession}
-            onCancelPackage={handleCancelPackage}
-          />
+          <>
+            {packagesError ? (
+              <Banner
+                collapsible={false}
+                status="error"
+                role="alert"
+                title="No pudimos cargar los paquetes de sesiones"
+                description={packagesError}
+              >
+                <HStack justify="start" paddingBlockStart={2}>
+                  <Button
+                    type="button"
+                    label="Reintentar"
+                    variant="primary"
+                    size="md"
+                    onClick={reloadPackages}
+                  />
+                </HStack>
+              </Banner>
+            ) : null}
+            <ClientLoyaltyTab
+              nearRewardClients={nearRewardClients}
+              loyaltyProgram={data.loyaltyProgram}
+              clients={data.clients}
+              clientPackages={clientPackages}
+              activeClientPackagesCount={activeClientPackages.length}
+              activeCatalogPackages={activeCatalogPackages}
+              packagesLoading={packagesLoading}
+              canManageClients={canManageClients}
+              salonName={data.settings.name}
+              tz={tz}
+              currency={currency}
+              assigningPkg={assigningPkg}
+              redeemingPkgId={redeemingPkgId}
+              cancelingPkgId={cancelingPkgId}
+              onOpenClientById={openClientById}
+              onAssignPackage={handleAssignPackage}
+              onRedeemPackageSession={handleRedeemPackageSession}
+              onCancelPackage={handleCancelPackage}
+            />
+          </>
         )}
 
         {createOpen ? (

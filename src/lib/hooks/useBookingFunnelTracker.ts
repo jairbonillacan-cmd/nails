@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { FunnelEventType } from '../types';
 import type { BookingStep } from '@/components/booking/bookingMachine';
+import { sendBestEffortRequest } from '@/lib/http/client-fetch';
 
 const SESSION_KEY = 'laikona_funnel_sid';
 
@@ -55,12 +56,12 @@ export function useBookingFunnelTracker({
         staffSlug: overrides?.staffSlug ?? staffSlug ?? null,
       });
 
-      void fetch('/api/analytics/events', {
+      sendBestEffortRequest('/api/analytics/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
         keepalive: true,
-      }).catch(() => undefined);
+      });
     },
     [serviceSlug, staffSlug],
   );

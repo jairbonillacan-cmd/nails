@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
@@ -143,6 +144,7 @@ export default function AdminCashPage() {
     resetSalesFilters,
     packagesCatalog,
     packagesLoading,
+    packagesError,
     reloadPackages,
     pendingDeposits,
     uncollectedBookings,
@@ -659,27 +661,48 @@ export default function AdminCashPage() {
           onRegisterPayout={handleOpenPayoutDraft}
         />
       ) : (
-        <CajaPromosTab
-          subTab={promosView}
-          onSubTabChange={setPromosView}
-          coupons={data.coupons}
-          packagesCatalog={packagesCatalog}
-          packagesLoading={packagesLoading}
-          services={data.services}
-          currency={currency}
-          tz={tz}
-          todayKey={data.serverTodayKey}
-          nowMs={nowMs}
-          canManagePackages={canManageCaja}
-          togglingCouponId={togglingCouponId}
-          deletingCouponId={deletingCouponId}
-          togglingPkgId={togglingPkgId}
-          onSaveCoupon={handleSaveCoupon}
-          onToggleCouponActive={handleToggleCouponActive}
-          onRequestDeleteCoupon={setDeleteCouponTarget}
-          onSavePackage={handleSavePackage}
-          onTogglePackage={handleTogglePackage}
-        />
+        <>
+          {packagesError ? (
+            <Banner
+              collapsible={false}
+              status="error"
+              role="alert"
+              title="No pudimos cargar los paquetes de sesiones"
+              description={packagesError}
+            >
+              <HStack justify="start" paddingBlockStart={2}>
+                <Button
+                  type="button"
+                  label="Reintentar"
+                  variant="primary"
+                  size="md"
+                  onClick={reloadPackages}
+                />
+              </HStack>
+            </Banner>
+          ) : null}
+          <CajaPromosTab
+            subTab={promosView}
+            onSubTabChange={setPromosView}
+            coupons={data.coupons}
+            packagesCatalog={packagesCatalog}
+            packagesLoading={packagesLoading}
+            services={data.services}
+            currency={currency}
+            tz={tz}
+            todayKey={data.serverTodayKey}
+            nowMs={nowMs}
+            canManagePackages={canManageCaja}
+            togglingCouponId={togglingCouponId}
+            deletingCouponId={deletingCouponId}
+            togglingPkgId={togglingPkgId}
+            onSaveCoupon={handleSaveCoupon}
+            onToggleCouponActive={handleToggleCouponActive}
+            onRequestDeleteCoupon={setDeleteCouponTarget}
+            onSavePackage={handleSavePackage}
+            onTogglePackage={handleTogglePackage}
+          />
+        </>
       )}
 
       {canManageCaja && movementOpen ? (

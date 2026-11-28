@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import { getRepository } from '@/lib/repositories/db';
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 export async function POST(
   request: NextRequest,
@@ -25,7 +26,7 @@ export async function POST(
 
   const { threadId } = await context.params;
   const cleanThreadId = threadId?.trim();
-  if (!cleanThreadId) {
+  if (!cleanThreadId || cleanThreadId.length > 128) {
     return NextResponse.json(
       { error: 'Conversación inválida.' },
       { status: 400, headers: PRIVATE_NO_STORE },

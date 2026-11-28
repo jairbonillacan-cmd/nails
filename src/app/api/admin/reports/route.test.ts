@@ -71,7 +71,8 @@ describe('GET /api/admin/reports (Phase 5 zero-snapshot & RBAC)', () => {
 
     const res = await getAdminReports(getRequest('?period=7d', cookieFor('owner')));
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
+    expect(res.headers.get('vary')).toContain('Cookie');
     expect(snapshotSpy).not.toHaveBeenCalled();
     expect(reportDataSpy).toHaveBeenCalledWith({ scopeStaffId: null });
 

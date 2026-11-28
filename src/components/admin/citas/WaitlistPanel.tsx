@@ -16,6 +16,7 @@ import {
   WaitlistStatusTag,
 } from '@/components/ui';
 import { whatsappHref } from '@/lib/admin-links';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { Service, WaitlistEntry } from '@/lib/types';
 import { buildWhatsAppLink, formatDateKeyDisplay, formatPhoneDisplay } from '@/lib/format';
 import { roleCanAccess } from '@/lib/rbac';
@@ -64,10 +65,10 @@ export function WaitlistPanel({
     setBusyEntry({ id: waitlistId, status });
     setErrorMessage(null);
     try {
-      const res = await fetch('/api/admin/operations', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
+        timeoutMs: 15_000,
         body: JSON.stringify({
           kind: 'waitlist',
           id: waitlistId,
@@ -78,15 +79,10 @@ export function WaitlistPanel({
         setConfirmCancelEntry(null);
         await onStatusUpdated(successMessage);
       } else {
-        const json = (await res.json().catch(() => null)) as { error?: string } | null;
         setErrorMessage(
-          json?.error || 'No se pudo actualizar la lista de espera. Inténtalo de nuevo.',
+          res.error || 'No se pudo actualizar la lista de espera. Inténtalo de nuevo.',
         );
       }
-    } catch {
-      setErrorMessage(
-        'Error de conexión al actualizar la lista de espera. Revisa tu conexión e inténtalo de nuevo.',
-      );
     } finally {
       setBusyEntry(null);
     }

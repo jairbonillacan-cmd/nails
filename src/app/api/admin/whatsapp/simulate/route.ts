@@ -8,13 +8,14 @@ import { normalizePhoneE164 } from '@/lib/format';
 import { executeWhatsAppBookingFlow } from '@/lib/integrations/whatsapp-booking';
 import { processWhatsAppWebhookPayload } from '@/lib/integrations/whatsapp-processor';
 import { canonicalizeWhatsAppPhoneE164 } from '@/lib/notifications/whatsapp-inbox';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import { getRepository } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 function isWhatsAppSimulatorAllowed(): boolean {
   if (process.env.WHATSAPP_SIMULATOR_ENABLED === 'false') {
@@ -412,13 +413,13 @@ export async function POST(request: NextRequest) {
 
   const phoneE164 =
     canonicalizeWhatsAppPhoneE164(input.phone) || normalizePhoneE164(input.phone);
-  const snapshot = await repo.getSnapshot();
+  const activeServices = await repo.listActiveServices();
   const targetService =
     (input.serviceId
-      ? snapshot.services.find((s) => s.id === input.serviceId)
+      ? activeServices.find((s) => s.id === input.serviceId)
       : undefined) ??
-    snapshot.services.find((s) => s.isActive && !s.isPrivate) ??
-    snapshot.services[0];
+    activeServices.find((s) => !s.isPrivate) ??
+    activeServices[0];
 
   if (!targetService) {
     return NextResponse.json(

@@ -511,6 +511,154 @@ function hasExportModifier(node) {
   );
 }
 
+function isAdminApiRouteFile(rel) {
+  return (
+    rel.startsWith('src/app/api/admin/') &&
+    rel.endsWith('/route.ts') &&
+    !isTestFile(rel)
+  );
+}
+
+function isClientFetchGuardFile(rel) {
+  if (isTestFile(rel)) return false;
+  if (rel === 'src/lib/http/client-fetch.ts') return false;
+  if (rel.startsWith('src/app/api/')) return false;
+  return (
+    rel.startsWith('src/app/') ||
+    rel.startsWith('src/components/') ||
+    rel.startsWith('src/lib/hooks/')
+  );
+}
+
+function checkAdminApiNoStore(rel, sf, addViolation) {
+  const safeHeaderIdentifiers = new Set(['ADMIN_PRIVATE_HEADERS']);
+
+  function isPrivateNoStoreString(value) {
+    if (typeof value !== 'string') return false;
+    const lower = value.toLowerCase();
+    return lower.includes('private') && lower.includes('no-store');
+  }
+
+  function isSafeHeadersExpr(expr) {
+    if (!expr) return false;
+    const node = unwrapExpression(expr);
+
+    if (ts.isIdentifier(node)) {
+      return safeHeaderIdentifiers.has(node.text);
+    }
+
+    if (ts.isCallExpression(node)) {
+      const callee = unwrapExpression(node.expression);
+      if (ts.isIdentifier(callee) && callee.text === 'withAdminPrivateHeaders') {
+        return true;
+      }
+      const method = getCalleeMethodName(callee);
+      if (method === 'withAdminPrivateHeaders') {
+        return true;
+      }
+    }
+
+    if (ts.isObjectLiteralExpression(node)) {
+      for (const prop of node.properties) {
+        if (ts.isSpreadAssignment(prop) && isSafeHeadersExpr(prop.expression)) {
+          return true;
+        }
+        if (ts.isPropertyAssignment(prop)) {
+          const propName = getPropertyNameText(prop.name);
+          if (propName && propName.toLowerCase() === 'cache-control') {
+            const val = getStringLiteralValue(prop.initializer);
+            if (isPrivateNoStoreString(val)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function collectSafeAliases(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      if (isSafeHeadersExpr(node.initializer)) {
+        safeHeaderIdentifiers.add(node.name.text);
+      }
+    }
+    ts.forEachChild(node, collectSafeAliases);
+  }
+
+  collectSafeAliases(sf);
+
+  function hasSafeHeadersInInit(initExpr) {
+    if (!initExpr) return false;
+    const init = unwrapExpression(initExpr);
+    if (!ts.isObjectLiteralExpression(init)) return false;
+    for (const prop of init.properties) {
+      if (ts.isPropertyAssignment(prop)) {
+        const propName = getPropertyNameText(prop.name);
+        if (propName === 'headers') {
+          return isSafeHeadersExpr(prop.initializer);
+        }
+      } else if (ts.isShorthandPropertyAssignment(prop)) {
+        if (prop.name.text === 'headers') {
+          return safeHeaderIdentifiers.has('headers');
+        }
+      }
+    }
+    return false;
+  }
+
+  function visitResponses(node) {
+    if (ts.isCallExpression(node)) {
+      const callee = unwrapExpression(node.expression);
+      const method = getCalleeMethodName(callee);
+      if (
+        method === 'json' &&
+        (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
+      ) {
+        const receiver = unwrapExpression(callee.expression);
+        if (
+          ts.isIdentifier(receiver) &&
+          (receiver.text === 'NextResponse' || receiver.text === 'Response')
+        ) {
+          if (!hasSafeHeadersInInit(node.arguments[1])) {
+            const { line, col } = getLineCol(sf, node.getStart(sf));
+            addViolation(
+              rel,
+              line,
+              col,
+              'admin-api-no-store',
+              `Toda respuesta en ${rel} debe incluir headers: ADMIN_PRIVATE_HEADERS (Cache-Control: private, no-store y Vary: Cookie).`,
+            );
+          }
+        }
+      }
+    } else if (ts.isNewExpression(node)) {
+      const callee = unwrapExpression(node.expression);
+      if (
+        ts.isIdentifier(callee) &&
+        (callee.text === 'NextResponse' || callee.text === 'Response')
+      ) {
+        const initArg = node.arguments?.[1];
+        if (!hasSafeHeadersInInit(initArg)) {
+          const { line, col } = getLineCol(sf, node.getStart(sf));
+          addViolation(
+            rel,
+            line,
+            col,
+            'admin-api-no-store',
+            `Toda respuesta en ${rel} debe incluir headers: ADMIN_PRIVATE_HEADERS / withAdminPrivateHeaders(...) (Cache-Control: private, no-store).`,
+          );
+        }
+      }
+    }
+
+    ts.forEachChild(node, visitResponses);
+  }
+
+  visitResponses(sf);
+}
+
 function checkAdminAuthRequired(rel, sf, addViolation) {
   const localFunctions = new Map();
   const exportedHandlers = [];
@@ -1651,9 +1799,15 @@ export function checkSourceText(rawRel, text) {
     checkAdminAuthRequired(rel, sf, addViolation);
   }
 
+  if (isAdminApiRouteFile(rel)) {
+    checkAdminApiNoStore(rel, sf, addViolation);
+  }
+
   if (isApiRoute) {
     checkSensitiveAdminSecretsInApi(rel, sf, addViolation);
   }
+
+  const checkClientFetch = isClientFetchGuardFile(rel);
 
   if (!testFile) {
     checkSnapshotMutation(rel, sf, addViolation);
@@ -2025,6 +2179,43 @@ export function checkSourceText(rawRel, text) {
             `Los componentes UI (${rel}) no pueden importar "${spec}" (${resolvedRel}).`,
           );
         }
+      }
+    }
+
+    if (checkClientFetch && ts.isCallExpression(node)) {
+      const expr = unwrapExpression(node.expression);
+      let isBareFetch = false;
+      if (ts.isIdentifier(expr) && expr.text === 'fetch') {
+        isBareFetch = true;
+      } else if (
+        ts.isPropertyAccessExpression(expr) &&
+        expr.name.text === 'fetch' &&
+        ts.isIdentifier(expr.expression) &&
+        (expr.expression.text === 'window' ||
+          expr.expression.text === 'globalThis' ||
+          expr.expression.text === 'self')
+      ) {
+        isBareFetch = true;
+      } else if (
+        ts.isElementAccessExpression(expr) &&
+        expr.argumentExpression &&
+        getStringLiteralValue(expr.argumentExpression) === 'fetch' &&
+        ts.isIdentifier(expr.expression) &&
+        (expr.expression.text === 'window' ||
+          expr.expression.text === 'globalThis' ||
+          expr.expression.text === 'self')
+      ) {
+        isBareFetch = true;
+      }
+      if (isBareFetch) {
+        const { line, col } = getLineCol(sf, expr.getStart(sf));
+        addViolation(
+          rel,
+          line,
+          col,
+          'no-bare-client-fetch',
+          `Prohibido llamar fetch() directamente en código cliente (${rel}). Usa fetchJsonWithTimeout, fetchBlobWithTimeout o sendBestEffortRequest de @/lib/http/client-fetch.`,
+        );
       }
     }
 

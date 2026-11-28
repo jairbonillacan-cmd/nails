@@ -20,6 +20,7 @@ import type {
 } from '@/lib/contracts';
 import { whatsappHref, type WhatsAppFilterParam } from '@/lib/admin-links';
 import type { AdminOverviewPayload } from '@/lib/admin/overview-types';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { canonicalizeWhatsAppPhoneE164 } from '@/lib/notifications/whatsapp-inbox';
 import {
   ADMIN_CACHE_KEYS,
@@ -88,6 +89,10 @@ export interface UseWhatsAppWorkspaceReturn {
   isLoadingDetail: boolean;
   isLoadingReminders: boolean;
   isLoadingSettings: boolean;
+  threadsError: string | null;
+  detailError: string | null;
+  remindersError: string | null;
+  settingsError: string | null;
   isSending: boolean;
   retryingMessageId: string | null;
   isSubmittingReminder: boolean;
@@ -417,13 +422,13 @@ export function useWhatsAppWorkspace({
         };
       });
 
-      try {
-        await fetch(
-          `/api/admin/whatsapp/threads/${encodeURIComponent(thread.id)}/read`,
-          { method: 'POST' },
-        );
+      const res = await fetchJsonWithTimeout<{ ok?: boolean }>(
+        `/api/admin/whatsapp/threads/${encodeURIComponent(thread.id)}/read`,
+        { method: 'POST', timeoutMs: 10_000 },
+      );
+      if (res.ok) {
         void refreshOverviewRef.current?.();
-      } catch {
+      } else {
         lastMarkedReadKeyRef.current = '';
       }
     },
@@ -618,17 +623,20 @@ export function useWhatsAppWorkspace({
       setIsSending(true);
       setBanner(null);
       try {
-        const res = await fetch('/api/admin/whatsapp/send', {
+        const res = await fetchJsonWithTimeout<
+          Partial<WhatsAppSendResponseDTO> & { error?: string; code?: string }
+        >('/api/admin/whatsapp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(input),
+          timeoutMs: 20_000,
         });
-        const json = (await res.json().catch(() => null)) as
-          | (Partial<WhatsAppSendResponseDTO> & { error?: string; code?: string })
-          | null;
+        const json = res.data;
 
         if (!res.ok || !json?.ok) {
-          const errorText = json?.error || 'No se pudo enviar el mensaje por WhatsApp.';
+          const errorText = res.ok
+            ? json?.error || 'No se pudo enviar el mensaje por WhatsApp.'
+            : res.error || 'No se pudo enviar el mensaje por WhatsApp.';
           setBanner({
             status: res.status === 422 || res.status === 429 ? 'warning' : 'error',
             title: errorText,
@@ -693,10 +701,6 @@ export function useWhatsAppWorkspace({
           threadId: nextThreadId ?? undefined,
           fallbackWaMeUrl: json.fallbackWaMeUrl,
         };
-      } catch {
-        const errorText = 'Sin conexión. No se pudo enviar el mensaje.';
-        setBanner({ status: 'error', title: errorText });
-        return { ok: false, error: errorText };
       } finally {
         setIsSending(false);
       }
@@ -710,17 +714,19 @@ export function useWhatsAppWorkspace({
       setRetryingMessageId(messageId);
       setBanner(null);
       try {
-        const res = await fetch(
-          `/api/admin/whatsapp/messages/${encodeURIComponent(messageId)}/retry`,
-          { method: 'POST' },
-        );
-        const json = (await res.json().catch(() => null)) as
-          | (Partial<WhatsAppSendResponseDTO> & { error?: string; code?: string })
-          | null;
+        const res = await fetchJsonWithTimeout<
+          Partial<WhatsAppSendResponseDTO> & { error?: string; code?: string }
+        >(`/api/admin/whatsapp/messages/${encodeURIComponent(messageId)}/retry`, {
+          method: 'POST',
+          timeoutMs: 20_000,
+        });
+        const json = res.data;
         if (!res.ok || !json?.ok) {
           setBanner({
             status: res.status === 422 || res.status === 429 ? 'warning' : 'error',
-            title: json?.error || 'No se pudo reintentar el envío.',
+            title: res.ok
+              ? json?.error || 'No se pudo reintentar el envío.'
+              : res.error || 'No se pudo reintentar el envío.',
             fallbackWaMeUrl: json?.fallbackWaMeUrl,
           });
           return false;
@@ -731,9 +737,6 @@ export function useWhatsAppWorkspace({
         if (selectedThreadId) void detailQuery.revalidate();
         void refreshOverviewRef.current?.();
         return true;
-      } catch {
-        setBanner({ status: 'error', title: 'Sin conexión al reintentar el mensaje.' });
-        return false;
       } finally {
         setRetryingMessageId(null);
       }
@@ -747,21 +750,24 @@ export function useWhatsAppWorkspace({
       setIsSubmittingReminder(true);
       setBanner(null);
       try {
-        const res = await fetch('/api/admin/whatsapp/reminders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(action),
-        });
-        const json = (await res.json().catch(() => null)) as {
+        const res = await fetchJsonWithTimeout<{
           ok?: boolean;
           error?: string;
           message?: string;
           fallbackWaMeUrl?: string;
-        } | null;
+        }>('/api/admin/whatsapp/reminders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(action),
+          timeoutMs: 20_000,
+        });
+        const json = res.data;
         if (!res.ok || json?.ok === false) {
           setBanner({
             status: 'error',
-            title: json?.error || 'No se pudo completar la acción de recordatorios.',
+            title: res.ok
+              ? json?.error || 'No se pudo completar la acción de recordatorios.'
+              : res.error || 'No se pudo completar la acción de recordatorios.',
             fallbackWaMeUrl: json?.fallbackWaMeUrl,
           });
           return false;
@@ -776,12 +782,6 @@ export function useWhatsAppWorkspace({
         void threadsQuery.revalidate();
         void refreshOverviewRef.current?.();
         return true;
-      } catch {
-        setBanner({
-          status: 'error',
-          title: 'Sin conexión al actualizar los recordatorios.',
-        });
-        return false;
       } finally {
         setIsSubmittingReminder(false);
       }
@@ -795,21 +795,24 @@ export function useWhatsAppWorkspace({
       setIsSubmittingSettings(true);
       setBanner(null);
       try {
-        const res = await fetch('/api/admin/whatsapp/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(action),
-        });
-        const json = (await res.json().catch(() => null)) as {
+        const res = await fetchJsonWithTimeout<{
           ok?: boolean;
           error?: string;
           message?: string;
           fallbackWaMeUrl?: string;
-        } | null;
+        }>('/api/admin/whatsapp/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(action),
+          timeoutMs: 20_000,
+        });
+        const json = res.data;
         if (!res.ok || json?.ok === false) {
           setBanner({
             status: 'error',
-            title: json?.error || 'No se pudo guardar la configuración de WhatsApp.',
+            title: res.ok
+              ? json?.error || 'No se pudo guardar la configuración de WhatsApp.'
+              : res.error || 'No se pudo guardar la configuración de WhatsApp.',
             fallbackWaMeUrl: json?.fallbackWaMeUrl,
           });
           return false;
@@ -825,12 +828,6 @@ export function useWhatsAppWorkspace({
           void refreshLiveMeta();
         }
         return true;
-      } catch {
-        setBanner({
-          status: 'error',
-          title: 'Sin conexión al actualizar la configuración de WhatsApp.',
-        });
-        return false;
       } finally {
         setIsSubmittingSettings(false);
       }
@@ -844,18 +841,22 @@ export function useWhatsAppWorkspace({
       setIsSimulating(true);
       setBanner(null);
       try {
-        const res = await fetch('/api/admin/whatsapp/simulate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(input),
-        });
-        const json = (await res.json().catch(() => null)) as
-          | (WhatsAppSimulateResponseDTO & { error?: string })
-          | null;
+        const res = await fetchJsonWithTimeout<WhatsAppSimulateResponseDTO & { error?: string }>(
+          '/api/admin/whatsapp/simulate',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(input),
+            timeoutMs: 20_000,
+          },
+        );
+        const json = res.data;
         if (!res.ok || !json?.ok) {
           setBanner({
             status: 'error',
-            title: json?.error || 'No se pudo ejecutar la simulación.',
+            title: res.ok
+              ? json?.error || 'No se pudo ejecutar la simulación.'
+              : res.error || 'No se pudo ejecutar la simulación.',
           });
           return false;
         }
@@ -878,9 +879,6 @@ export function useWhatsAppWorkspace({
         void remindersQuery.revalidate();
         void refreshOverviewRef.current?.();
         return true;
-      } catch {
-        setBanner({ status: 'error', title: 'Sin conexión al ejecutar el simulador.' });
-        return false;
       } finally {
         setIsSimulating(false);
       }
@@ -912,6 +910,10 @@ export function useWhatsAppWorkspace({
     isLoadingDetail: detailQuery.isLoading,
     isLoadingReminders: remindersQuery.isLoading,
     isLoadingSettings: settingsQuery.isLoading,
+    threadsError: threadsQuery.error ? threadsQuery.error.message : null,
+    detailError: detailQuery.error ? detailQuery.error.message : null,
+    remindersError: remindersQuery.error ? remindersQuery.error.message : null,
+    settingsError: settingsQuery.error ? settingsQuery.error.message : null,
     isSending,
     retryingMessageId,
     isSubmittingReminder,

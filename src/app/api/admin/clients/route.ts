@@ -4,6 +4,11 @@ import { requireAdmin } from '@/lib/auth/admin-session';
 import { CreateClientSchema, PatchClientSchema } from '@/lib/contracts';
 import { DeleteClientQuerySchema } from '@/lib/contracts/clients';
 import {
+  ADMIN_PRIVATE_HEADERS,
+  withAdminPrivateHeaders,
+} from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
+import {
   createClientProfile,
   deleteClientProfile,
   getClientArcoExportAsync,
@@ -13,31 +18,63 @@ import {
   PolicyError,
   updateClientNotes,
 } from '@/lib/repositories/db';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    return NextResponse.json(
+      { error: 'Permisos insuficientes' },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   const { searchParams } = new URL(request.url);
   const exportClientId = searchParams.get('exportClientId')?.trim();
   if (exportClientId) {
+    const rate = checkRateLimit({
+      bucket: 'admin:clients-arco-export',
+      key: `${session.user.id}:${getRequestIp(request)}`,
+      limit: 15,
+      windowMs: 5 * 60_000,
+    });
+    if (!rate.allowed) {
+      return NextResponse.json(
+        {
+          code: 'RATE_LIMITED',
+          error:
+            'Demasiadas exportaciones ARCO. Espera unos minutos antes de volver a descargar.',
+        },
+        {
+          status: 429,
+          headers: withAdminPrivateHeaders({
+            'Retry-After': String(rate.retryAfterSeconds),
+            'X-RateLimit-Remaining': '0',
+          }),
+        },
+      );
+    }
+
     const exported = await getClientArcoExportAsync(exportClientId);
     if (!exported) {
-      return NextResponse.json({ error: 'Clienta no encontrada' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Clienta no encontrada' },
+        { status: 404, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     const safeFileId = exportClientId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || 'client';
     return new NextResponse(JSON.stringify(exported, null, 2), {
       status: 200,
-      headers: {
-        'Cache-Control': 'private, no-store',
+      headers: withAdminPrivateHeaders({
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Disposition': `attachment; filename="arco-${safeFileId}.json"`,
-      },
+      }),
     });
   }
 
@@ -47,41 +84,63 @@ export async function GET(request: NextRequest) {
     if (!Number.isInteger(parsedDays) || parsedDays < 1 || parsedDays > 3650) {
       return NextResponse.json(
         { error: 'inactiveDays debe ser un entero entre 1 y 3650.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     const [inactiveClients, nearRewardClients] = await Promise.all([
       getInactiveClientsAsync(parsedDays),
       getNearRewardClientsAsync(),
     ]);
-    return NextResponse.json({
-      inactiveDays: parsedDays,
-      clients: inactiveClients,
-      nearRewardClients,
-    });
+    return NextResponse.json(
+      {
+        inactiveDays: parsedDays,
+        clients: inactiveClients,
+        nearRewardClients,
+      },
+      { headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   const [clients, nearRewardClients] = await Promise.all([
     listClientsAsync(),
     getNearRewardClientsAsync(),
   ]);
-  return NextResponse.json({
-    clients,
-    nearRewardClients,
-  });
+  return NextResponse.json(
+    {
+      clients,
+      nearRewardClients,
+    },
+    { headers: ADMIN_PRIVATE_HEADERS },
+  );
 }
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    return NextResponse.json(
+      { error: 'Permisos insuficientes' },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   try {
-    const parsed = CreateClientSchema.parse(await request.json());
+    const parsed = CreateClientSchema.parse(rawBody);
     const client = await createClientProfile({
       fullName: parsed.fullName,
       phone: parsed.phone,
@@ -90,33 +149,61 @@ export async function POST(request: NextRequest) {
       birthday: parsed.birthday || null,
       notes: parsed.technicalNotes ?? parsed.notes ?? '',
     });
-    return NextResponse.json({ client }, { status: 201 });
+    return NextResponse.json(
+      { client },
+      { status: 201, headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof PolicyError) {
       const status = err.code === 'CLIENT_EXISTS' ? 409 : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos de la clienta.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'No se pudo registrar la clienta.' }, { status: 500 });
+    logError('admin_clients_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'No se pudo registrar la clienta.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
 export async function PATCH(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    return NextResponse.json(
+      { error: 'Permisos insuficientes' },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   try {
-    const parsed = PatchClientSchema.parse(await request.json());
+    const parsed = PatchClientSchema.parse(rawBody);
     const client = await updateClientNotes({
       clientId: parsed.clientId,
       fullName: parsed.fullName,
@@ -126,7 +213,7 @@ export async function PATCH(request: NextRequest) {
       email: parsed.email === '' ? null : parsed.email,
       instagramHandle: parsed.instagramHandle,
     });
-    return NextResponse.json({ client });
+    return NextResponse.json({ client }, { headers: ADMIN_PRIVATE_HEADERS });
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
@@ -135,25 +222,62 @@ export async function PATCH(request: NextRequest) {
           : err.code === 'CLIENT_EXISTS'
             ? 409
             : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos de la clienta.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'Error actualizando clienta.' }, { status: 400 });
+    logError('admin_clients_patch_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'Error actualizando clienta.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
 export async function DELETE(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   if (session.user.role !== 'owner' && session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    return NextResponse.json(
+      { error: 'Permisos insuficientes' },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  const rate = checkRateLimit({
+    bucket: 'admin:clients-delete',
+    key: `${session.user.id}:${getRequestIp(request)}`,
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      {
+        code: 'RATE_LIMITED',
+        error: 'Demasiadas eliminaciones seguidas. Espera unos segundos e intenta de nuevo.',
+      },
+      {
+        status: 429,
+        headers: withAdminPrivateHeaders({
+          'Retry-After': String(rate.retryAfterSeconds),
+          'X-RateLimit-Remaining': '0',
+        }),
+      },
+    );
   }
 
   try {
@@ -162,11 +286,14 @@ export async function DELETE(request: NextRequest) {
       id: searchParams.get('id')?.trim() ?? '',
     });
     const deleted = await deleteClientProfile(parsed.id);
-    return NextResponse.json({
-      ok: true,
-      deletedId: deleted.id,
-      fullName: deleted.fullName,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        deletedId: deleted.id,
+        fullName: deleted.fullName,
+      },
+      { headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof PolicyError) {
       const status =
@@ -175,14 +302,23 @@ export async function DELETE(request: NextRequest) {
           : err.code === 'CLIENT_HAS_HISTORY'
             ? 409
             : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'ID de clienta inválido.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'Error eliminando clienta.' }, { status: 500 });
+    logError('admin_clients_delete_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'Error eliminando clienta.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }

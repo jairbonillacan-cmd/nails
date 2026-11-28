@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import {
   CopyableField,
-  EmptyStateCard,
   SkeletonBlock,
   StatusTag,
   SurfaceCard,
@@ -48,6 +47,7 @@ type WhatsAppSimulateEventInput = z.infer<typeof WhatsAppSimulateEventSchema>;
 export interface WhatsAppConnectionTabProps {
   data: WhatsAppSettingsResponseDTO | null;
   isLoading: boolean;
+  errorMessage?: string | null;
   isSubmitting: boolean;
   isCheckingLive: boolean;
   isSimulating: boolean;
@@ -79,6 +79,7 @@ function qualityLabel(rating: string | null): string {
 export function WhatsAppConnectionTab({
   data,
   isLoading,
+  errorMessage = null,
   isSubmitting,
   isCheckingLive,
   isSimulating,
@@ -111,21 +112,27 @@ export function WhatsAppConnectionTab({
 
   if (!data) {
     return (
-      <EmptyStateCard
-        isCompact
+      <Banner
+        collapsible={false}
+        status="error"
+        role="alert"
         title="No pudimos cargar el estado de WhatsApp"
-        description="Intenta recargar la configuración de conexión y plantillas de Meta."
-        actions={
+        description={
+          errorMessage ||
+          'Intenta recargar la configuración de conexión y plantillas de Meta.'
+        }
+      >
+        <HStack justify="start" paddingBlockStart={2}>
           <Button
             type="button"
             label="Reintentar"
             variant="primary"
-            size="sm"
+            size="md"
             icon={<RefreshCw size={14} aria-hidden="true" />}
             onClick={onRefresh}
           />
-        }
-      />
+        </HStack>
+      </Banner>
     );
   }
 

@@ -9,12 +9,13 @@ import {
   isWhatsAppCoexistenceEnabled,
 } from '@/lib/env';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import { getRepository } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin'], request);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildExecutiveReport, type ReportPeriod } from '@/lib/analytics/reports';
 import { requireAdmin } from '@/lib/auth/admin-session';
 import { ReportPeriodSchema } from '@/lib/contracts';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import { isMetricDateKey } from '@/lib/metrics';
 import { roleCanAccess } from '@/lib/rbac';
 import { getRepository } from '@/lib/repositories/db';
@@ -11,11 +12,17 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autenticado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   if (!roleCanAccess(session.user.role, 'reports')) {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    return NextResponse.json(
+      { error: 'Permisos insuficientes' },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   const url = new URL(request.url);
@@ -27,7 +34,7 @@ export async function GET(request: NextRequest) {
         error:
           'Período inválido. Usa today, 7d, 30d, 90d, month, last_month, custom o all.',
       },
-      { status: 400 },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -75,11 +82,7 @@ export async function GET(request: NextRequest) {
         generatedAt: now.toISOString(),
         ...emptyReport,
       },
-      {
-        headers: {
-          'Cache-Control': 'no-store',
-        },
-      },
+      { headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -117,10 +120,6 @@ export async function GET(request: NextRequest) {
       generatedAt: now.toISOString(),
       ...report,
     },
-    {
-      headers: {
-        'Cache-Control': 'no-store',
-      },
-    },
+    { headers: ADMIN_PRIVATE_HEADERS },
   );
 }

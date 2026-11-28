@@ -9,10 +9,10 @@ import { Save } from 'lucide-react';
 import { FormDialog } from '@/components/ui/FormDialog';
 import {
   FORM_SUBMIT_OK,
-  formSubmitError,
-  formSubmitResultFromResponse,
+  formSubmitResultFromFetch,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { ServiceCategory } from '@/lib/types';
 
 interface CategoryManagerDialogProps {
@@ -45,35 +45,35 @@ export function CategoryManagerDialog({
   };
 
   const save = async (): Promise<FormSubmitResult> => {
-    try {
-      for (const cat of changed) {
-        const res = await fetch('/api/admin/services', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kind: 'category',
-            data: { id: cat.id, name: (names[cat.id] ?? cat.name).trim() },
-          }),
-        });
-        if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo renombrar la categoría.');
+    for (const cat of changed) {
+      const result = await fetchJsonWithTimeout('/api/admin/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'category',
+          data: { id: cat.id, name: (names[cat.id] ?? cat.name).trim() },
+        }),
+      });
+      if (!result.ok) {
+        return formSubmitResultFromFetch(result, 'No se pudo renombrar la categoría.');
       }
-      if (hasNew) {
-        const res = await fetch('/api/admin/services', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kind: 'category',
-            data: { name: newName.trim(), displayOrder: ordered.length },
-          }),
-        });
-        if (!res.ok) return formSubmitResultFromResponse(res, 'No se pudo crear la categoría.');
-      }
-      await onSaved();
-      reset();
-      return FORM_SUBMIT_OK;
-    } catch {
-      return formSubmitError('Sin conexión. No se pudieron guardar las categorías.');
     }
+    if (hasNew) {
+      const result = await fetchJsonWithTimeout('/api/admin/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'category',
+          data: { name: newName.trim(), displayOrder: ordered.length },
+        }),
+      });
+      if (!result.ok) {
+        return formSubmitResultFromFetch(result, 'No se pudo crear la categoría.');
+      }
+    }
+    await onSaved();
+    reset();
+    return FORM_SUBMIT_OK;
   };
 
   return (

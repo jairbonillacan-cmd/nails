@@ -25,8 +25,8 @@ import { StatusTag, SurfaceCard } from '@/components/ui';
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import {
   formatFileSize,
+  prepareClientImageFile,
   readFileAsDataUrl,
-  validateClientImageFile,
 } from '@/components/booking/bookingHelpers';
 import {
   DEFAULT_HERO_DESKTOP_IMAGE,
@@ -146,15 +146,15 @@ export function LandingContentEditorSection({
           : setLogoFileMeta;
 
     setErr(null);
-    const validationErr = await validateClientImageFile(file);
-    if (validationErr) {
-      setErr(validationErr);
+    const prepared = await prepareClientImageFile(file);
+    if (prepared.error) {
+      setErr(prepared.error);
       return;
     }
 
     try {
-      const dataUrl = await readFileAsDataUrl(file);
-      setMeta({ name: file.name, size: formatFileSize(file.size) });
+      const dataUrl = await readFileAsDataUrl(prepared.file);
+      setMeta({ name: prepared.file.name, size: formatFileSize(prepared.file.size) });
       if (target === 'desktop') {
         onUpdateDraft({
           coverImageUrl: dataUrl,
@@ -178,11 +178,13 @@ export function LandingContentEditorSection({
   const customMobileHero = draft.landingContent.heroImageMobileUrl ?? null;
   const customLogo = draft.logoUrl ?? null;
   const marqueeList = draft.landingContent.marqueeItems ?? [];
-  const depositLabel = formatCurrency(draft.depositAmountCents ?? 20000, draft.currency);
+  const depositCents = draft.depositAmountCents ?? 0;
+  const hasDeposit = draft.paymentMode !== 'none' && depositCents > 0;
+  const depositLabel = hasDeposit ? formatCurrency(depositCents, draft.currency) : null;
   const defaultMarqueePresets = [
     'Acrílico escultural · Softgel · Rubber',
     resolved.visitHoursDays,
-    draft.paymentMode !== 'none' ? `Anticipo ${depositLabel}` : 'Reserva en línea',
+    depositLabel ? `Anticipo ${depositLabel}` : 'Reserva en línea',
     draft.city?.trim() || 'Puebla',
   ];
 

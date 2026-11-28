@@ -14,6 +14,8 @@ import {
 } from '@/lib/integrations/whatsapp-cloud';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
 import { WHATSAPP_TEMPLATE_CATALOG } from '@/lib/notifications/whatsapp-inbox';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
 import { toAdminSettingsDTO } from '@/lib/public-dto';
 import { getRepository } from '@/lib/repositories/db';
 import { isSupabaseEnabled } from '@/lib/repositories/supabase-client';
@@ -21,7 +23,7 @@ import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 function isWhatsAppSimulatorAllowed(): boolean {
   if (process.env.WHATSAPP_SIMULATOR_ENABLED === 'false') {
@@ -282,6 +284,9 @@ export async function POST(request: NextRequest) {
         { status: 400, headers: PRIVATE_NO_STORE },
       );
     }
+    logError('admin_whatsapp_settings_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       { error: 'No se pudo completar la operación de configuración de WhatsApp.' },
       { status: 500, headers: PRIVATE_NO_STORE },

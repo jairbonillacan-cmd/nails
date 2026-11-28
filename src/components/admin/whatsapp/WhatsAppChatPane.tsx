@@ -2,7 +2,9 @@
 
 import type React from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
+import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { MessageCircle, SquarePen } from 'lucide-react';
 import type {
   WhatsAppThreadBookingContextDTO,
@@ -27,6 +29,7 @@ interface WhatsAppChatPaneProps {
   contextBookingId?: string | null;
   overviewBookings?: readonly BookingWithRelations[];
   isLoadingDetail: boolean;
+  detailError?: string | null;
   isSending: boolean;
   retryingMessageId: string | null;
   quotaPercent: number;
@@ -41,6 +44,7 @@ interface WhatsAppChatPaneProps {
   timelineContainerRef?: React.RefObject<HTMLElement | null>;
   onBack: () => void;
   onOpenNewChat: () => void;
+  onRetryDetail?: () => void;
   onSendMessage: (input: WhatsAppSendMessageInput) => Promise<WhatsAppInboxActionResult>;
   onRetryMessage: (messageId: string) => Promise<WhatsAppInboxActionResult>;
 }
@@ -51,6 +55,7 @@ export function WhatsAppChatPane({
   contextBookingId = null,
   overviewBookings = [],
   isLoadingDetail,
+  detailError = null,
   isSending,
   retryingMessageId,
   quotaPercent,
@@ -65,6 +70,7 @@ export function WhatsAppChatPane({
   timelineContainerRef,
   onBack,
   onOpenNewChat,
+  onRetryDetail,
   onSendMessage,
   onRetryMessage,
 }: WhatsAppChatPaneProps) {
@@ -157,15 +163,64 @@ export function WhatsAppChatPane({
         onBack={onBack}
       />
 
-      <WhatsAppMessageTimeline
-        messages={messages}
-        isLoading={isLoadingDetail && !detailMatches}
-        retryingMessageId={retryingMessageId}
-        nowMs={nowMs}
-        timezone={timezone}
-        containerRef={timelineContainerRef}
-        onRetryMessage={onRetryMessage}
-      />
+      {detailError && !detailMatches ? (
+        <VStack padding={4} style={{ flex: '1 1 0%' }}>
+          <Banner
+            collapsible={false}
+            status="error"
+            role="alert"
+            title="No pudimos cargar los mensajes"
+            description={detailError}
+          >
+            {onRetryDetail ? (
+              <HStack justify="start" paddingBlockStart={2}>
+                <Button
+                  type="button"
+                  label="Reintentar"
+                  variant="primary"
+                  size="md"
+                  onClick={onRetryDetail}
+                />
+              </HStack>
+            ) : null}
+          </Banner>
+        </VStack>
+      ) : (
+        <>
+          {detailError ? (
+            <VStack paddingInline={4} paddingBlockStart={3}>
+              <Banner
+                collapsible={false}
+                status="error"
+                role="alert"
+                title="No pudimos actualizar los mensajes"
+                description={detailError}
+              >
+                {onRetryDetail ? (
+                  <HStack justify="start" paddingBlockStart={2}>
+                    <Button
+                      type="button"
+                      label="Reintentar"
+                      variant="primary"
+                      size="md"
+                      onClick={onRetryDetail}
+                    />
+                  </HStack>
+                ) : null}
+              </Banner>
+            </VStack>
+          ) : null}
+          <WhatsAppMessageTimeline
+            messages={messages}
+            isLoading={isLoadingDetail && !detailMatches}
+            retryingMessageId={retryingMessageId}
+            nowMs={nowMs}
+            timezone={timezone}
+            containerRef={timelineContainerRef}
+            onRetryMessage={onRetryMessage}
+          />
+        </>
+      )}
 
       <WhatsAppComposer
         key={activeThread.id}

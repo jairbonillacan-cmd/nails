@@ -450,10 +450,13 @@ describe('fetchAvailabilityWindow', () => {
 
   it('builds canonical sorted query parameters, forwards offer and AbortSignal, and handles abort cleanly', async () => {
     const days = makeDays('2026-11-26', 2);
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ days }),
-    }));
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ days }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const controller = new AbortController();
@@ -472,9 +475,13 @@ describe('fetchAvailabilityWindow', () => {
       '/api/availability?serviceId=srv-rubber&addonIds=addon-a%2Caddon-b&startDate=2026-11-26&days=35&extraServiceIds=srv-pedi%2Csrv-retiro&staffId=staff-karla&offer=wl-offer-123',
       expect.objectContaining({
         cache: 'no-store',
-        signal: controller.signal,
+        signal: expect.any(AbortSignal),
       }),
     );
+    const passedInit = fetchMock.mock.calls[0]?.[1];
+    expect(passedInit?.signal?.aborted).toBe(false);
+    controller.abort();
+    expect(passedInit?.signal?.aborted).toBe(true);
 
     const abortedController = new AbortController();
     abortedController.abort();

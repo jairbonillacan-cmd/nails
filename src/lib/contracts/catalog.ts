@@ -19,7 +19,7 @@ const ServiceInputSchema = z.object({
   isActive: z.boolean().optional(),
   isFeatured: z.boolean().optional(),
   isPrivate: z.boolean().optional(),
-  displayOrder: z.number().int().min(0).optional(),
+  displayOrder: z.number().int().min(0).max(10_000).optional(),
   imageUrl: z.string().max(2_500_000).nullable().optional(),
 });
 
@@ -30,15 +30,15 @@ const AddonInputSchema = z.object({
   extraMinutes: z.number().int().min(0).max(240),
   extraPriceCents: CentsNonNegativeSchema.max(10_000_000),
   appliesToAll: z.boolean().optional(),
-  serviceIds: z.array(NonEmptyIdSchema).optional(),
+  serviceIds: z.array(NonEmptyIdSchema).max(100).optional(),
   isActive: z.boolean().optional(),
-  displayOrder: z.number().int().min(0).optional(),
+  displayOrder: z.number().int().min(0).max(10_000).optional(),
 });
 
 const CategoryInputSchema = z.object({
   id: NonEmptyIdSchema.optional(),
   name: z.string().trim().min(2, 'Escribe el nombre de la categoría').max(60),
-  displayOrder: z.number().int().min(0).optional(),
+  displayOrder: z.number().int().min(0).max(10_000).optional(),
 });
 
 export const CatalogMutationSchema = z.discriminatedUnion('kind', [

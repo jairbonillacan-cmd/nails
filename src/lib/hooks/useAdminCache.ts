@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useSyncExternalStore, type RefObject } from 'react';
 import { getDateKeyInTimezone } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { BookingStatus, BookingWithRelations } from '@/lib/types';
 import type { AdminOverviewPayload } from '@/components/admin/AdminProvider';
 
@@ -41,19 +42,19 @@ export class AdminFetchError extends Error {
 }
 
 export async function fetchAdminJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(url, { cache: 'no-store', signal });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as {
-      error?: string;
-      code?: string;
-    } | null;
-    throw new AdminFetchError(
-      body?.error || `Error HTTP ${res.status}`,
-      res.status,
-      body?.code ?? null,
-    );
+  const res = await fetchJsonWithTimeout<T>(url, { cache: 'no-store', signal });
+  if (res.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
   }
-  return (await res.json()) as T;
+  if (!res.ok) {
+    const rawCode =
+      res.data && typeof res.data === 'object' && 'code' in res.data
+        ? (res.data as { code?: unknown }).code
+        : null;
+    const code = typeof rawCode === 'string' && rawCode.trim() ? rawCode.trim() : null;
+    throw new AdminFetchError(res.error || `Error HTTP ${res.status}`, res.status, code);
+  }
+  return res.data;
 }
 
 interface CacheEntry<T> {

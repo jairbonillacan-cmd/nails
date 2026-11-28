@@ -195,12 +195,13 @@ export default function AdminReportsPage() {
         <Banner
           status="error"
           role="alert"
+          collapsible={false}
           title={errorMsg}
           endContent={
             <Button
               label="Reintentar"
               variant="secondary"
-              size="sm"
+              size="md"
               icon={<RefreshCw size={14} aria-hidden="true" />}
               onClick={() => setReloadTick((prev) => prev + 1)}
             />

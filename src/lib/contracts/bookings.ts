@@ -141,10 +141,10 @@ export const AdminPatchBookingStatusSchema = z.object({
   action: z.literal('update_status').optional(),
   bookingId: NonEmptyIdSchema,
   status: BookingStatusSchema,
-  cancellationReason: z.string().optional(),
-  internalNotes: z.string().optional(),
+  cancellationReason: z.string().max(400).optional(),
+  internalNotes: z.string().max(1000).optional(),
   paymentMethod: PaymentMethodSchema.optional(),
-  tipCents: CentsNonNegativeSchema.optional(),
+  tipCents: CentsNonNegativeSchema.max(10_000_000).optional(),
   ownerPin: z.string().max(12).optional(),
 });
 

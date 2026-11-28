@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth/admin-session';
-import { diagnoseDateSlots } from '@/lib/availability/engine';
 import {
   PostOverrideRangeSchema,
   PostOverrideSchema,
@@ -10,7 +9,8 @@ import {
   PutScheduleSchema,
   ToggleRecurringBlockSchema,
 } from '@/lib/contracts';
-import { getDateKeyInTimezone } from '@/lib/format';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
 import {
   addDateOverride,
   addDateOverrideRange,
@@ -29,121 +29,114 @@ import type { AvailabilityRule } from '@/lib/types';
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get('mode');
-  const db = await getRepository().getSnapshot();
   const requestedStaffId = searchParams.get('staffId')?.trim() || '';
-
-  const allBlocks = db.recurringBlocks ?? [];
-  const scopedBlocks =
-    session.user.role === 'specialist'
-      ? session.user.staffMemberId
-        ? allBlocks.filter((b) => b.staffId === session.user.staffMemberId)
-        : []
-      : requestedStaffId
-        ? allBlocks.filter((b) => b.staffId === requestedStaffId)
-        : allBlocks;
+  const repo = getRepository();
 
   if (!mode || mode === 'blocks') {
-    return NextResponse.json({ recurringBlocks: scopedBlocks });
+    if (session.user.role === 'specialist' && !session.user.staffMemberId) {
+      return NextResponse.json(
+        { recurringBlocks: [] },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
+    }
+    const blockStaffId =
+      session.user.role === 'specialist'
+        ? session.user.staffMemberId
+        : requestedStaffId || null;
+    const recurringBlocks = await repo.listRecurringBlocks(blockStaffId);
+    return NextResponse.json({ recurringBlocks }, { headers: ADMIN_PRIVATE_HEADERS });
   }
 
   if (mode !== 'diagnose') {
-    return NextResponse.json({ error: 'Modo no soportado' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Modo no soportado' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
-  const date =
-    searchParams.get('date')?.trim() ||
-    getDateKeyInTimezone(new Date(), db.settings.timezone);
-  const serviceId = searchParams.get('serviceId')?.trim() || db.services[0]?.id;
-
-  let targetStaffId: string;
   if (session.user.role === 'specialist') {
     if (!session.user.staffMemberId) {
       return NextResponse.json(
         { error: 'Tu usuario no tiene profesional vinculada.' },
-        { status: 403 },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     if (requestedStaffId && requestedStaffId !== session.user.staffMemberId) {
       return NextResponse.json(
         { error: 'Solo puedes diagnosticar tu propia disponibilidad.' },
-        { status: 403 },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    targetStaffId = session.user.staffMemberId;
-  } else {
-    targetStaffId = requestedStaffId || db.staff[0]?.id || '';
-  }
-
-  const service = db.services.find((s) => s.id === serviceId);
-  if (!targetStaffId || !service) {
-    return NextResponse.json({
-      date,
-      diagnosis: [],
-      diagnostics: [],
-      recurringBlocks: scopedBlocks,
-    });
   }
 
   const addonIdsParam = searchParams.get('addonIds') || '';
   const addonIds = addonIdsParam ? addonIdsParam.split(',').filter(Boolean) : [];
-  const addons = db.addons.filter((a) => addonIds.includes(a.id) && a.isActive);
-
   const extraServiceIdsParam = searchParams.get('extraServiceIds') || '';
-  const extraServiceIds = Array.from(
-    new Set(
-      extraServiceIdsParam
+  const extraServiceIds = extraServiceIdsParam
+    ? extraServiceIdsParam
         .split(',')
         .map((id) => id.trim())
-        .filter((id) => id.length > 0 && id !== service.id),
-    ),
-  );
-  const extraServices = db.services.filter(
-    (s) => extraServiceIds.includes(s.id) && s.isActive,
-  );
+        .filter(Boolean)
+    : [];
 
-  const diagnosis = diagnoseDateSlots(
-    {
-      settings: db.settings,
-      service,
-      extraServices,
-      addons,
-      staffMembers: db.staff,
-      schedules: db.schedules,
-      dateOverrides: db.dateOverrides,
-      recurringBlocks: db.recurringBlocks ?? [],
-      bookings: db.bookings,
-      slotHolds: db.slotHolds,
-      calendarConnections: db.calendarConnections,
-    },
-    date,
-    targetStaffId,
-  );
-
-  return NextResponse.json({
-    date,
-    diagnosis,
-    diagnostics: diagnosis,
-    recurringBlocks: scopedBlocks,
+  const result = await repo.diagnoseAvailability({
+    date: searchParams.get('date')?.trim() || undefined,
+    serviceId: searchParams.get('serviceId')?.trim() || undefined,
+    staffId: requestedStaffId || null,
+    addonIds,
+    extraServiceIds,
+    role: session.user.role,
+    staffMemberId: session.user.staffMemberId,
   });
+
+  return NextResponse.json(
+    {
+      date: result.date,
+      diagnosis: result.diagnosis,
+      diagnostics: result.diagnosis,
+      recurringBlocks: result.recurringBlocks,
+    },
+    { headers: ADMIN_PRIVATE_HEADERS },
+  );
 }
 
 export async function PUT(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   try {
-    const parsed = PutScheduleSchema.parse(await request.json());
+    const parsed = PutScheduleSchema.parse(rawBody);
     if (
       session.user.role === 'specialist' &&
       (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
     ) {
       return NextResponse.json(
         { error: 'Solo puedes modificar tu propia disponibilidad.' },
-        { status: 403 },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
 
@@ -160,24 +153,47 @@ export async function PUT(request: NextRequest) {
     }));
 
     await saveStaffSchedule(parsed.staffId, normalizedRules);
-    return NextResponse.json({ ok: true, rules: normalizedRules });
+    return NextResponse.json(
+      { ok: true, rules: normalizedRules },
+      { headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Reglas de horario inválidas.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'No se pudo guardar el horario.' }, { status: 400 });
+    logError('admin_availability_put_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'No se pudo guardar el horario.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   try {
-    const raw = (await request.json()) as unknown;
     const rawKind =
       typeof raw === 'object' && raw !== null && 'kind' in raw
         ? (raw as { kind?: unknown }).kind
@@ -187,12 +203,18 @@ export async function POST(request: NextRequest) {
       const parsed = PostRecurringBlockSchema.parse(raw);
       if (session.user.role === 'specialist') {
         if (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId) {
-          return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+          return NextResponse.json(
+            { error: 'Permisos insuficientes' },
+            { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+          );
         }
         if (parsed.id) {
           const ownerStaffId = await getRecurringBlockStaffOwnerAsync(parsed.id);
           if (!ownerStaffId || ownerStaffId !== session.user.staffMemberId) {
-            return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+            return NextResponse.json(
+              { error: 'Permisos insuficientes' },
+              { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+            );
           }
         }
       }
@@ -208,7 +230,10 @@ export async function POST(request: NextRequest) {
         untilDate: parsed.untilDate,
         isActive: parsed.isActive,
       });
-      return NextResponse.json({ block }, { status: 201 });
+      return NextResponse.json(
+        { block },
+        { status: 201, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (rawKind === 'recurring_block_toggle') {
@@ -220,11 +245,14 @@ export async function POST(request: NextRequest) {
           !ownerStaffId ||
           ownerStaffId !== session.user.staffMemberId
         ) {
-          return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+          return NextResponse.json(
+            { error: 'Permisos insuficientes' },
+            { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+          );
         }
       }
       const block = await toggleRecurringBlock(parsed.id, parsed.isActive);
-      return NextResponse.json({ block });
+      return NextResponse.json({ block }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (rawKind === 'override_range') {
@@ -233,7 +261,10 @@ export async function POST(request: NextRequest) {
         session.user.role === 'specialist' &&
         (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
       ) {
-        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        return NextResponse.json(
+          { error: 'Permisos insuficientes' },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+        );
       }
       const isClosed = parsed.isClosed ?? parsed.isUnavailable ?? true;
       const overrides = await addDateOverrideRange({
@@ -247,7 +278,10 @@ export async function POST(request: NextRequest) {
         publicNote: parsed.publicNote,
         redirectStaffId: parsed.redirectStaffId ?? null,
       });
-      return NextResponse.json({ overrides }, { status: 201 });
+      return NextResponse.json(
+        { overrides },
+        { status: 201, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (rawKind === 'preload_mx_holidays') {
@@ -256,7 +290,10 @@ export async function POST(request: NextRequest) {
         session.user.role === 'specialist' &&
         (!session.user.staffMemberId || parsed.staffId !== session.user.staffMemberId)
       ) {
-        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        return NextResponse.json(
+          { error: 'Permisos insuficientes' },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+        );
       }
       const result = await preloadMexicoHolidays({
         year: parsed.year,
@@ -264,7 +301,7 @@ export async function POST(request: NextRequest) {
         publicNote: parsed.publicNote,
         redirectStaffId: parsed.redirectStaffId ?? null,
       });
-      return NextResponse.json(result, { status: 201 });
+      return NextResponse.json(result, { status: 201, headers: ADMIN_PRIVATE_HEADERS });
     }
 
     const body = PostOverrideSchema.parse(raw);
@@ -272,7 +309,10 @@ export async function POST(request: NextRequest) {
       session.user.role === 'specialist' &&
       (!session.user.staffMemberId || body.staffId !== session.user.staffMemberId)
     ) {
-      return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Permisos insuficientes' },
+        { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     const override = await addDateOverride({
       staffId: body.staffId,
@@ -286,25 +326,39 @@ export async function POST(request: NextRequest) {
         ? { redirectStaffId: body.redirectStaffId }
         : {}),
     });
-    return NextResponse.json({ override });
+    return NextResponse.json({ override }, { headers: ADMIN_PRIVATE_HEADERS });
   } catch (err) {
     if (err instanceof PolicyError) {
       const status = err.code === 'BLOCK_NOT_FOUND' ? 404 : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos de bloqueo inválidos.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'No se pudo guardar el bloqueo.' }, { status: 400 });
+    logError('admin_availability_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'No se pudo guardar el bloqueo.' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
 export async function DELETE(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   const { searchParams } = new URL(request.url);
   const blockId = searchParams.get('blockId')?.trim();
@@ -316,11 +370,14 @@ export async function DELETE(request: NextRequest) {
         !ownerStaffId ||
         ownerStaffId !== session.user.staffMemberId
       ) {
-        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        return NextResponse.json(
+          { error: 'Permisos insuficientes' },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+        );
       }
     }
     await deleteRecurringBlock(blockId);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });
   }
 
   const id = searchParams.get('id');
@@ -332,10 +389,13 @@ export async function DELETE(request: NextRequest) {
         !ownerStaffId ||
         ownerStaffId !== session.user.staffMemberId
       ) {
-        return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+        return NextResponse.json(
+          { error: 'Permisos insuficientes' },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+        );
       }
     }
     await deleteDateOverride(id);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });
 }

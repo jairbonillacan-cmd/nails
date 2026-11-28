@@ -1,14 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   BookingWithRelations,
   CashRegisterEntry,
   PaymentSplit,
 } from '@/lib/types';
+import { AdminFetchError, fetchAdminJson } from './useAdminCache';
 import {
   buildAgendaBookingsRangeUrl,
   computeAgendaFetchWindow,
   mergeAgendaRangeData,
 } from './useAgendaRangeBookings';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function makeBookingStub(id: string, status: BookingWithRelations['status']): BookingWithRelations {
   return {
@@ -177,5 +182,44 @@ describe('useAgendaRangeBookings helpers', () => {
     ]);
     expect(merged.paymentSplits).toEqual([rangeSplit]);
     expect(merged.cashEntries).toEqual([rangeCash]);
+  });
+
+  it('surfaces AdminFetchError on 500 JSON, 524 HTML, and timeout via fetchAdminJson', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ code: 'DB_ERROR', error: 'Error simulado 500' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await expect(
+      fetchAdminJson('/api/admin/bookings?from=2026-11-24&to=2026-11-30'),
+    ).rejects.toMatchObject({
+      name: 'AdminFetchError',
+      status: 500,
+      code: 'DB_ERROR',
+      message: 'Error simulado 500',
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<html><body>524 Timeout</body></html>', {
+          status: 524,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+      ),
+    );
+    await expect(
+      fetchAdminJson('/api/admin/bookings?from=2026-11-24&to=2026-11-30'),
+    ).rejects.toBeInstanceOf(AdminFetchError);
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      fetchAdminJson('/api/admin/bookings?from=2026-11-24&to=2026-11-30', controller.signal),
+    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

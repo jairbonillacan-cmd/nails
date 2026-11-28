@@ -124,6 +124,7 @@ export function useCajaData(
   const data = overviewQuery.data ?? providerData;
   const packagesCatalog = packagesQuery.data?.servicePackages ?? [];
   const packagesLoading = packagesQuery.isLoading;
+  const packagesError = packagesQuery.error ? packagesQuery.error.message : null;
 
   const cajaConfig = useMemo(
     () => resolveCajaConfig(data?.settings.landingContent),
@@ -343,6 +344,7 @@ export function useCajaData(
     resetSalesFilters,
     packagesCatalog,
     packagesLoading,
+    packagesError,
     reloadPackages,
     pendingDeposits,
     uncollectedBookings,

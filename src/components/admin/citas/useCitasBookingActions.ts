@@ -19,14 +19,11 @@ import {
 import { invalidateAgendaRangeCache } from '@/lib/hooks/useAgendaRangeBookings';
 import { useCopyToClipboard } from '@/lib/hooks/useCopyToClipboard';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { BookingStatus, BookingWithRelations } from '@/lib/types';
 import { BOOKING_STATUS_BADGE } from './BookingCard';
 
 const ADMIN_MUTATION_TIMEOUT_MS = 20_000;
-
-function isTimeoutOrAbortError(err: unknown): boolean {
-  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-}
 
 export interface CitasFeedbackState {
   status: 'success' | 'error';
@@ -110,16 +107,19 @@ export function useCitasBookingActions({
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (ownerPin) headers['x-owner-pin'] = ownerPin;
-      const res = await fetch('/api/admin/bookings', {
-        method: 'PATCH',
-        headers,
-        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
-        body: JSON.stringify({
-          bookingId,
-          status,
-          ...(ownerPin ? { ownerPin } : {}),
-        }),
-      });
+      const res = await fetchJsonWithTimeout<{ error?: string; code?: string }>(
+        '/api/admin/bookings',
+        {
+          method: 'PATCH',
+          headers,
+          timeoutMs: ADMIN_MUTATION_TIMEOUT_MS,
+          body: JSON.stringify({
+            bookingId,
+            status,
+            ...(ownerPin ? { ownerPin } : {}),
+          }),
+        },
+      );
       if (res.ok) {
         mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, (current) =>
           applyOptimisticBookingStatus(current ?? prevOverview, bookingId, status),
@@ -153,10 +153,22 @@ export function useCitasBookingActions({
         return true;
       }
 
-      const json = (await res.json().catch(() => null)) as {
-        error?: string;
-        code?: string;
-      } | null;
+      if (res.reason === 'timeout') {
+        setFeedback({
+          status: 'error',
+          title: 'La actualización tardó demasiado. Intenta de nuevo en unos segundos.',
+        });
+        return false;
+      }
+      if (res.reason === 'network') {
+        setFeedback({
+          status: 'error',
+          title: 'Error de conexión al actualizar la cita.',
+        });
+        return false;
+      }
+
+      const json = res.data;
       if (
         res.status === 403 &&
         (json?.code === 'OWNER_PIN_REQUIRED' || json?.code === 'OWNER_PIN_INVALID')
@@ -175,15 +187,7 @@ export function useCitasBookingActions({
           res.status === 403 && json?.code === 'PAST_BOOKING_LOCKED'
             ? json.error ||
               'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.'
-            : json?.error || 'No se pudo actualizar el estado de la cita.',
-      });
-      return false;
-    } catch (err) {
-      setFeedback({
-        status: 'error',
-        title: isTimeoutOrAbortError(err)
-          ? 'La actualización tardó demasiado. Intenta de nuevo en unos segundos.'
-          : 'Error de conexión al actualizar la cita.',
+            : res.error || 'No se pudo actualizar el estado de la cita.',
       });
       return false;
     } finally {
@@ -197,42 +201,39 @@ export function useCitasBookingActions({
     setRemindingId(bookingId);
     setFeedback(null);
     try {
-      const res = await fetch('/api/admin/bookings', {
+      const res = await fetchJsonWithTimeout<{
+        error?: string;
+        waMeUrl?: string;
+        messagePreview?: string;
+      }>('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
+        timeoutMs: ADMIN_MUTATION_TIMEOUT_MS,
         body: JSON.stringify({
           action: 'send_reminder',
           bookingId,
           channel: 'whatsapp',
         }),
       });
-      const json = (await res.json().catch(() => null)) as {
-        error?: string;
-        waMeUrl?: string;
-        messagePreview?: string;
-      } | null;
       if (res.ok) {
         setFeedback({
           status: 'success',
           title: 'Recordatorio listo para enviar por WhatsApp.',
-          description: json?.messagePreview,
-          waMeUrl: json?.waMeUrl,
+          description: res.data.messagePreview,
+          waMeUrl: res.data.waMeUrl,
         });
         void refresh();
       } else {
         setFeedback({
           status: 'error',
-          title: json?.error || 'No se pudo enviar el recordatorio.',
+          title:
+            res.reason === 'timeout'
+              ? 'El recordatorio tardó demasiado. Intenta de nuevo.'
+              : res.reason === 'network'
+                ? 'Error de conexión al enviar el recordatorio.'
+                : res.error || 'No se pudo enviar el recordatorio.',
         });
       }
-    } catch (err) {
-      setFeedback({
-        status: 'error',
-        title: isTimeoutOrAbortError(err)
-          ? 'El recordatorio tardó demasiado. Intenta de nuevo.'
-          : 'Error de conexión al enviar el recordatorio.',
-      });
     } finally {
       setRemindingId(null);
     }
@@ -243,48 +244,44 @@ export function useCitasBookingActions({
     setRequestingRescheduleId(bookingId);
     setFeedback(null);
     try {
-      const res = await fetch('/api/admin/bookings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
-        body: JSON.stringify({
-          action: 'request_reschedule',
-          bookingId,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as {
+      const res = await fetchJsonWithTimeout<{
         error?: string;
         code?: string;
         waMeUrl?: string;
         rescheduleUrl?: string;
         messagePreview?: string;
-      } | null;
+      }>('/api/admin/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        timeoutMs: ADMIN_MUTATION_TIMEOUT_MS,
+        body: JSON.stringify({
+          action: 'request_reschedule',
+          bookingId,
+        }),
+      });
       if (res.ok) {
         setFeedback({
           status: 'success',
           title: 'Enlace para reagendar listo para enviar a la clienta.',
-          description: json?.messagePreview,
-          waMeUrl: json?.waMeUrl,
-          rescheduleUrl: json?.rescheduleUrl,
+          description: res.data.messagePreview,
+          waMeUrl: res.data.waMeUrl,
+          rescheduleUrl: res.data.rescheduleUrl,
         });
         void refresh();
       } else {
         setFeedback({
           status: 'error',
           title:
-            res.status === 403 && json?.code === 'PAST_BOOKING_LOCKED'
-              ? json.error ||
-                'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.'
-              : json?.error || 'No se pudo generar el enlace para reagendar.',
+            res.reason === 'timeout'
+              ? 'La solicitud tardó demasiado. Intenta de nuevo.'
+              : res.reason === 'network'
+                ? 'Error de conexión al generar el enlace para reagendar.'
+                : res.status === 403 && res.data?.code === 'PAST_BOOKING_LOCKED'
+                  ? res.data.error ||
+                    'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.'
+                  : res.error || 'No se pudo generar el enlace para reagendar.',
         });
       }
-    } catch (err) {
-      setFeedback({
-        status: 'error',
-        title: isTimeoutOrAbortError(err)
-          ? 'La solicitud tardó demasiado. Intenta de nuevo.'
-          : 'Error de conexión al generar el enlace para reagendar.',
-      });
     } finally {
       setRequestingRescheduleId(null);
     }
@@ -303,21 +300,25 @@ export function useCitasBookingActions({
     setFeedback(null);
     try {
       const cleanReason = reason?.trim();
-      const res = await fetch('/api/admin/bookings', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
+        timeoutMs: ADMIN_MUTATION_TIMEOUT_MS,
         body: JSON.stringify({
           action: 'reject_deposit',
           bookingId,
           ...(cleanReason ? { reason: cleanReason } : {}),
         }),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) {
         setFeedback({
           status: 'error',
-          title: json?.error || 'No se pudo rechazar el comprobante.',
+          title:
+            res.reason === 'timeout'
+              ? 'El rechazo del comprobante tardó demasiado. Intenta de nuevo.'
+              : res.reason === 'network'
+                ? 'Sin conexión. No se pudo rechazar el comprobante.'
+                : res.error || 'No se pudo rechazar el comprobante.',
         });
         return false;
       }
@@ -325,14 +326,6 @@ export function useCitasBookingActions({
       inlineNotice.show(`Comprobante ${bookingCode} rechazado`);
       void refresh();
       return true;
-    } catch (err) {
-      setFeedback({
-        status: 'error',
-        title: isTimeoutOrAbortError(err)
-          ? 'El rechazo del comprobante tardó demasiado. Intenta de nuevo.'
-          : 'Sin conexión. No se pudo rechazar el comprobante.',
-      });
-      return false;
     } finally {
       setRejectingDepositId(null);
     }
@@ -393,18 +386,21 @@ export function useCitasBookingActions({
     };
 
     try {
-      const res = await fetch('/api/admin/bookings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
-        body: JSON.stringify({
-          action: 'reschedule_admin',
-          bookingId: params.bookingId,
-          startAt: params.startAt,
-          staffId: params.staffId,
-          durationMinutes: params.durationMinutes,
-        }),
-      });
+      const res = await fetchJsonWithTimeout<{ error?: string; code?: string }>(
+        '/api/admin/bookings',
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          timeoutMs: ADMIN_MUTATION_TIMEOUT_MS,
+          body: JSON.stringify({
+            action: 'reschedule_admin',
+            bookingId: params.bookingId,
+            startAt: params.startAt,
+            staffId: params.staffId,
+            durationMinutes: params.durationMinutes,
+          }),
+        },
+      );
       if (res.ok) {
         invalidateAdminCache('/api/admin/reports');
         invalidateAgendaRangeCache();
@@ -424,22 +420,14 @@ export function useCitasBookingActions({
         return true;
       }
       rollback();
-      const json = (await res.json().catch(() => null)) as {
-        error?: string;
-        code?: string;
-      } | null;
       setFeedback({
         status: 'error',
-        title: json?.error || 'No se pudo mover o ajustar la cita.',
-      });
-      return false;
-    } catch (err) {
-      rollback();
-      setFeedback({
-        status: 'error',
-        title: isTimeoutOrAbortError(err)
-          ? 'El cambio de horario tardó demasiado. Intenta de nuevo.'
-          : 'Error de conexión al mover la cita.',
+        title:
+          res.reason === 'timeout'
+            ? 'El cambio de horario tardó demasiado. Intenta de nuevo.'
+            : res.reason === 'network'
+              ? 'Error de conexión al mover la cita.'
+              : res.error || 'No se pudo mover o ajustar la cita.',
       });
       return false;
     } finally {
@@ -452,31 +440,27 @@ export function useCitasBookingActions({
     setCheckingInId(bookingId);
     setFeedback(null);
     try {
-      const res = await fetch('/api/admin/bookings', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(ADMIN_MUTATION_TIMEOUT_MS),
+        timeoutMs: ADMIN_MUTATION_TIMEOUT_MS,
         body: JSON.stringify({ action: 'check_in', bookingId }),
       });
       if (!res.ok) {
-        const json = (await res.json().catch(() => null)) as { error?: string } | null;
         setFeedback({
           status: 'error',
-          title: json?.error || 'No se pudo registrar la llegada.',
+          title:
+            res.reason === 'timeout'
+              ? 'El registro de llegada tardó demasiado. Intenta de nuevo.'
+              : res.reason === 'network'
+                ? 'Error de conexión al registrar la llegada.'
+                : res.error || 'No se pudo registrar la llegada.',
         });
         return false;
       }
       inlineNotice.show('Llegada registrada');
       void refresh();
       return true;
-    } catch (err) {
-      setFeedback({
-        status: 'error',
-        title: isTimeoutOrAbortError(err)
-          ? 'El registro de llegada tardó demasiado. Intenta de nuevo.'
-          : 'Error de conexión al registrar la llegada.',
-      });
-      return false;
     } finally {
       setCheckingInId(null);
     }
@@ -486,10 +470,10 @@ export function useCitasBookingActions({
     if (notifyingWaitlistId === waitlistId) return false;
     setNotifyingWaitlistId(waitlistId);
     try {
-      const res = await fetch('/api/admin/operations', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
+        timeoutMs: 15_000,
         body: JSON.stringify({ kind: 'waitlist', id: waitlistId, status: 'notified' }),
       });
       if (res.ok) {
@@ -498,8 +482,6 @@ export function useCitasBookingActions({
         void refresh();
         return true;
       }
-      return false;
-    } catch {
       return false;
     } finally {
       setNotifyingWaitlistId(null);

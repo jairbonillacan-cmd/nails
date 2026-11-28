@@ -2,7 +2,7 @@ import { ajustesHref } from '@/lib/admin-links';
 import type { AdminSession } from '@/lib/auth/admin-session';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { getDateKeyInTimezone } from '@/lib/format';
-import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
+import { computeClientLoyaltySummary } from '@/lib/loyalty/stamps';
 import {
   computeCashPeriodSummary,
   selectPendingDeposits,
@@ -10,70 +10,40 @@ import {
   selectUncollectedBookings,
 } from '@/lib/metrics';
 import {
+  PublicLoyaltySummarySchema,
   toAdminCalendarConnectionDTO,
   toAdminSettingsDTO,
 } from '@/lib/public-dto';
-import {
-  getNearRewardClientsAsync,
-  getRepository,
-  getWhatsAppMonthlyUsage,
-  getWhatsAppTemplates,
-  getWhatsAppUnreadSummary,
-  hydrateBookingsWithRelationsFromDb,
-} from '@/lib/repositories/db';
+import { getRepository } from '@/lib/repositories/db';
 import type { ClientProfile } from '@/lib/types';
 import type { AdminOverviewPayload } from './overview-types';
-
-function scopeByStaff<T extends { staffId: string | null }>(
-  items: readonly T[],
-  isSpecialist: boolean,
-  ownStaffId: string | null,
-): T[] {
-  if (!isSpecialist) return [...items];
-  return ownStaffId ? items.filter((item) => item.staffId === ownStaffId) : [];
-}
 
 export async function buildAdminOverviewPayload(
   session: AdminSession,
 ): Promise<AdminOverviewPayload> {
-  const repo = getRepository();
-  const db = await repo.getSnapshot();
-  const integration = getRuntimeIntegrationStatus();
-  const isSpecialist = session.user.role === 'specialist';
-  const ownStaffId = isSpecialist ? session.user.staffMemberId : null;
-  const bookings =
-    isSpecialist && !ownStaffId
-      ? []
-      : hydrateBookingsWithRelationsFromDb(
-          db,
-          session.user.role,
-          session.user.staffMemberId,
-        );
-
   const now = new Date();
   const nowMs = now.getTime();
-  const tz = db.settings.timezone || 'America/Mexico_City';
+  const repo = getRepository();
+  const data = await repo.getAdminOverviewData({
+    role: session.user.role,
+    staffMemberId: session.user.staffMemberId,
+    nowMs,
+  });
+  const integration = getRuntimeIntegrationStatus();
+  const isSpecialist = session.user.role === 'specialist';
+  const tz = data.settings.timezone || 'America/Mexico_City';
   const todayKey = getDateKeyInTimezone(now, tz);
+
+  const bookings = data.bookings;
+  const cashEntries = data.cashEntries;
+  const paymentSplits = data.paymentSplits;
 
   let completedCount = 0;
   let noShowCount = 0;
-  const visibleBookingIds = new Set<string>();
-  const visibleClientIds = new Set<string>();
   const clientVisitStats = new Map<
     string,
     { totalVisits: number; lastPastVisitMs: number | null; hasUpcoming: boolean }
   >();
-
-  const cashEntries = scopeByStaff(db.cashEntries, isSpecialist, ownStaffId);
-
-  for (const booking of bookings) {
-    visibleBookingIds.add(booking.id);
-    visibleClientIds.add(booking.clientId);
-  }
-
-  const paymentSplits = (db.paymentSplits ?? []).filter((s) =>
-    visibleBookingIds.has(s.bookingId),
-  );
 
   const pendingDeposits = selectPendingDeposits(bookings);
   const uncollectedBookings = selectUncollectedBookings({
@@ -131,45 +101,25 @@ export async function buildAdminOverviewPayload(
   const totalTipsCents = cashSummary.tipsCents;
   const totalExpensesCents = cashSummary.expensesCents;
 
-  const scopedStaff = isSpecialist
-    ? ownStaffId
-      ? db.staff.filter((s) => s.id === ownStaffId)
-      : []
-    : db.staff;
-  const scopedSchedules = scopeByStaff(db.schedules, isSpecialist, ownStaffId);
-  const scopedDateOverrides = scopeByStaff(db.dateOverrides, isSpecialist, ownStaffId);
-  const scopedCalendarConnections = scopeByStaff(
-    db.calendarConnections,
-    isSpecialist,
-    ownStaffId,
-  ).map(toAdminCalendarConnectionDTO);
-  const scopedClients = isSpecialist
-    ? db.clients.filter((c) => visibleClientIds.has(c.id))
-    : db.clients;
+  const scopedStaff = data.staff;
+  const scopedSchedules = data.schedules;
+  const scopedDateOverrides = data.dateOverrides;
+  const scopedCalendarConnections = data.calendarConnections.map(
+    toAdminCalendarConnectionDTO,
+  );
+  const scopedClients = data.clients;
   const scopedClientsById = new Map<string, ClientProfile>();
   for (const client of scopedClients) {
     scopedClientsById.set(client.id, client);
   }
-  const scopedReviews = isSpecialist
-    ? db.reviews.filter(
-        (r) =>
-          (ownStaffId !== null && r.staffId === ownStaffId) ||
-          (r.staffId === null && visibleBookingIds.has(r.bookingId)),
-      )
-    : db.reviews;
-  const scopedInventory = isSpecialist ? [] : db.inventory;
-  const scopedInventoryMovements = isSpecialist
-    ? []
-    : db.inventoryMovements.slice(0, 30);
-  const scopedWaitlist = isSpecialist ? [] : db.waitlist;
-  const scopedCoupons = isSpecialist ? [] : db.coupons;
-  const scopedWorkflows = isSpecialist ? [] : db.workflows;
-  const scopedAdminUsers = isSpecialist ? [] : db.adminUsers;
-  const scopedNotifications = (
-    isSpecialist
-      ? db.notifications.filter((n) => n.bookingId !== null && visibleBookingIds.has(n.bookingId))
-      : db.notifications
-  ).slice(0, 30);
+  const scopedReviews = data.reviews;
+  const scopedInventory = data.inventory;
+  const scopedInventoryMovements = data.inventoryMovements;
+  const scopedWaitlist = data.waitlist;
+  const scopedCoupons = data.coupons;
+  const scopedWorkflows = data.workflows;
+  const scopedAdminUsers = data.adminUsers;
+  const scopedNotifications = data.notifications;
 
   const lowStockItems = scopedInventory.filter(
     (i) => i.isActive && i.stockQuantity <= i.minStockAlert,
@@ -188,13 +138,15 @@ export async function buildAdminOverviewPayload(
       id: 'salon-profile',
       label: 'Completa el asistente inicial del estudio',
       href: '/admin/onboarding',
-      done: Boolean(db.settings.onboardingCompleted && db.settings.name.trim().length >= 2),
+      done: Boolean(
+        data.settings.onboardingCompleted && data.settings.name.trim().length >= 2,
+      ),
     },
     {
       id: 'services-catalog',
       label: 'Configura tus servicios, precios base y duración',
       href: '/admin/servicios',
-      done: db.services.some((s) => s.isActive),
+      done: data.services.some((s) => s.isActive),
     },
     {
       id: 'staff-schedules',
@@ -206,13 +158,15 @@ export async function buildAdminOverviewPayload(
       id: 'deposit-bank',
       label: 'Configura banco y CLABE para anticipo SPEI',
       href: ajustesHref({ tab: 'cobro', focus: 'clabe' }),
-      done: Boolean(db.settings.depositClabe.trim() && db.settings.depositBankName.trim()),
+      done: Boolean(
+        data.settings.depositClabe.trim() && data.settings.depositBankName.trim(),
+      ),
     },
     {
       id: 'instagram-brand',
       label: 'Vincula el Instagram y estilo de tu marca',
       href: '/admin/marca',
-      done: Boolean(db.settings.instagramHandle.trim()),
+      done: Boolean(data.settings.instagramHandle.trim()),
     },
     {
       id: 'first-booking',
@@ -258,38 +212,43 @@ export async function buildAdminOverviewPayload(
     ),
   };
 
-  const recurringBlocks = scopeByStaff(db.recurringBlocks ?? [], isSpecialist, ownStaffId);
+  const activeLoyaltyProgram = data.loyaltyPrograms.find((p) => p.isActive) ?? null;
+  const loyaltyProgram = activeLoyaltyProgram ?? data.loyaltyPrograms[0] ?? null;
+  const loyaltyStamps = data.loyaltyStamps;
 
-  const loyaltyPrograms = db.loyaltyPrograms ?? [];
-  const loyaltyProgram =
-    loyaltyPrograms.find((p) => p.isActive) ?? loyaltyPrograms[0] ?? null;
-  const allLoyaltyStamps = db.loyaltyStamps ?? [];
-  const loyaltyStamps = isSpecialist
-    ? allLoyaltyStamps.filter((st) => visibleClientIds.has(st.clientId))
-    : allLoyaltyStamps;
+  let nearRewardClients: AdminOverviewPayload['nearRewardClients'] = [];
+  if (activeLoyaltyProgram) {
+    const rewardServiceName = activeLoyaltyProgram.rewardServiceId
+      ? data.services.find((s) => s.id === activeLoyaltyProgram.rewardServiceId)?.name ??
+        null
+      : null;
+    const collected: AdminOverviewPayload['nearRewardClients'] = [];
+    for (const client of scopedClients) {
+      const summary = PublicLoyaltySummarySchema.parse(
+        computeClientLoyaltySummary(
+          activeLoyaltyProgram,
+          loyaltyStamps,
+          client.id,
+          rewardServiceName,
+        ),
+      );
+      if (summary.isNearReward || summary.isRewardReady) {
+        collected.push({
+          clientId: client.id,
+          fullName: client.fullName,
+          phoneE164: client.phoneE164,
+          instagramHandle: client.instagramHandle ?? null,
+          summary,
+        });
+      }
+    }
+    nearRewardClients = collected.toSorted((a, b) => {
+      const diff = a.summary.remainingForReward - b.summary.remainingForReward;
+      return diff !== 0 ? diff : b.summary.currentStamps - a.summary.currentStamps;
+    });
+  }
 
-  const allNearRewardClients = await getNearRewardClientsAsync(db);
-  const nearRewardClients = isSpecialist
-    ? allNearRewardClients.filter((c) => visibleClientIds.has(c.clientId))
-    : allNearRewardClients;
-
-  const recentAuditLogs =
-    session.user.role === 'owner' ? (db.auditLogs ?? []).slice(0, 40) : [];
-
-  const whatsappMonthKey = getWhatsAppMonthKey(now, tz);
-  const [whatsappUsage, whatsappTemplates, whatsappInboxSummary] = await Promise.all([
-    getWhatsAppMonthlyUsage(whatsappMonthKey),
-    isSpecialist ? Promise.resolve([]) : getWhatsAppTemplates(),
-    isSpecialist
-      ? Promise.resolve(undefined)
-      : getWhatsAppUnreadSummary({
-          role: session.user.role,
-          staffMemberId: session.user.staffMemberId,
-          nowMs,
-        }),
-  ]);
-
-  const baseSettings = toAdminSettingsDTO(db.settings);
+  const baseSettings = toAdminSettingsDTO(data.settings);
   const safeSettings = isSpecialist
     ? {
         ...baseSettings,
@@ -325,14 +284,14 @@ export async function buildAdminOverviewPayload(
     uncollectedBookings,
     nearRewardClients,
     paymentSplits,
-    recurringBlocks,
+    recurringBlocks: data.recurringBlocks,
     loyaltyProgram,
     loyaltyStamps,
-    recentAuditLogs,
+    recentAuditLogs: data.recentAuditLogs,
     bookings,
-    services: db.services,
-    categories: db.categories,
-    addons: db.addons,
+    services: data.services,
+    categories: data.categories,
+    addons: data.addons,
     staff: scopedStaff,
     adminUsers: scopedAdminUsers,
     schedules: scopedSchedules,
@@ -341,15 +300,17 @@ export async function buildAdminOverviewPayload(
     clients: scopedClients,
     workflows: scopedWorkflows,
     notifications: scopedNotifications,
-    gallery: db.gallery,
+    gallery: data.gallery,
     coupons: scopedCoupons,
     waitlist: scopedWaitlist,
     reviews: scopedReviews,
     inventory: scopedInventory,
     inventoryMovements: scopedInventoryMovements,
     cashEntries,
-    whatsappUsage,
-    whatsappTemplates,
-    ...(whatsappInboxSummary ? { whatsappInboxSummary } : {}),
+    whatsappUsage: data.whatsappUsage,
+    whatsappTemplates: data.whatsappTemplates,
+    ...(data.whatsappInboxSummary
+      ? { whatsappInboxSummary: data.whatsappInboxSummary }
+      : {}),
   };
 }

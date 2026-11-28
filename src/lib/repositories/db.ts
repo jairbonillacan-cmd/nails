@@ -8,6 +8,7 @@ import {
 import {
   assertSlotBookable,
   computeServiceTotals,
+  diagnoseDateSlots,
   findEarliestAvailableSlots,
   findNearestAvailableSlots,
   getAvailabilityForRange,
@@ -104,6 +105,7 @@ import {
 } from '../integrations/notifications';
 import {
   getOfficialWhatsAppTemplateSpec,
+  getWhatsAppMonthKey,
   sanitizeWhatsAppTemplateName,
 } from '../integrations/whatsapp-templates';
 import { buildWaitlistOfferTemplatePayload } from '../integrations/resend-templates';
@@ -160,12 +162,17 @@ import {
   PolicyError,
   SlotConflictError,
   type AdminBookingsRangeData,
+  type AdminOverviewData,
+  type AdminOverviewDataParams,
   type BookingsRangeFilter,
+  type CampaignAudienceData,
   type CleanupExpiredSlotHoldsResult,
   type ClientArcoExport,
   type ClientPortalRecordData,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
+  type DiagnoseAvailabilityInput,
+  type DiagnoseAvailabilityOutput,
   type ExecutiveReportData,
   type GetWhatsAppThreadDetailParams,
   type InactiveClientRecord,
@@ -178,6 +185,7 @@ import {
   type PublicServiceReviewsData,
   type QueryAvailabilityInput,
   type QuickSearchAvailabilityInput,
+  type WhatsAppRemindersSnapshotData,
   type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
   type ResolveRetriedWhatsAppMessageInput,
@@ -477,7 +485,7 @@ function hydrateBooking(db: Readonly<DemoDatabase>, booking: Booking): BookingWi
   return { ...booking, service, staff, client, review };
 }
 
-export function hydrateBookingsWithRelationsFromDb(
+function hydrateBookingsWithRelationsFromDb(
   db: Readonly<DemoDatabase>,
   role?: AdminRole,
   staffMemberId?: string | null,
@@ -4714,8 +4722,10 @@ export function listServicePackages(): ServicePackage[] {
 }
 
 export async function listServicePackagesAsync(): Promise<ServicePackage[]> {
-  const db = await getRepository().getSnapshot();
-  return [...(db.servicePackages ?? [])];
+  if (isSupabaseEnabled()) {
+    return [];
+  }
+  return [...(getSnapshot().servicePackages ?? [])];
 }
 
 export async function upsertServicePackage(input: {
@@ -4836,8 +4846,10 @@ export async function listClientPackagesAsync(clientId?: string): Promise<
     }
   >
 > {
-  const db = await getRepository().getSnapshot();
-  return listClientPackagesFromDb(db, clientId);
+  if (isSupabaseEnabled()) {
+    return [];
+  }
+  return listClientPackagesFromDb(getSnapshot(), clientId);
 }
 
 export async function assignClientPackage(params: {
@@ -4958,8 +4970,10 @@ export async function logCampaignDispatch(
 }
 
 export async function listCampaignDispatches(limit = 50): Promise<CampaignDispatchLog[]> {
-  const db = await getRepository().getSnapshot();
-  return (db.campaignDispatches ?? []).slice(0, Math.max(1, Math.min(limit, 200)));
+  if (isSupabaseEnabled()) {
+    return [];
+  }
+  return (getSnapshot().campaignDispatches ?? []).slice(0, Math.max(1, Math.min(limit, 200)));
 }
 
 export async function saveOnboardingSetup(params: {
@@ -5361,18 +5375,19 @@ export async function preloadMexicoHolidays(params: {
 
   if (isSupabaseEnabled()) {
     const repo = createSupabaseRepository();
-    const snapshot = await repo.getSnapshot();
-    const tz = snapshot.settings.timezone || 'America/Mexico_City';
+    const [settings, existingDates] = await Promise.all([
+      repo.getSalonSettings(),
+      repo.listStaffOverrideDates(params.staffId),
+    ]);
+    const existingDateSet = new Set(existingDates);
+    const tz = settings.timezone || 'America/Mexico_City';
     const todayKey = getDateKeyInTimezone(new Date(), tz);
     const created: DateOverride[] = [];
     const skippedDates: string[] = [];
 
     for (const holiday of holidays) {
       if (holiday.date < todayKey) continue;
-      const alreadyExists = snapshot.dateOverrides.some(
-        (o) => o.staffId === params.staffId && o.overrideDate === holiday.date,
-      );
-      if (alreadyExists) {
+      if (existingDateSet.has(holiday.date)) {
         skippedDates.push(holiday.date);
         continue;
       }
@@ -5492,13 +5507,7 @@ export async function toggleRecurringBlock(
   isActive: boolean,
 ): Promise<RecurringBlock> {
   if (isSupabaseEnabled()) {
-    const repo = createSupabaseRepository();
-    const snapshot = await repo.getSnapshot();
-    const block = (snapshot.recurringBlocks ?? []).find((b) => b.id === id);
-    if (!block) {
-      throw new PolicyError('BLOCK_NOT_FOUND', 'Bloqueo recurrente no encontrado.');
-    }
-    return repo.upsertRecurringBlock({ ...block, isActive });
+    return createSupabaseRepository().toggleRecurringBlock(id, isActive);
   }
   return withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
@@ -8099,6 +8108,333 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     },
     async getSnapshot() {
       return getSnapshot();
+    },
+    async getAdminOverviewData(
+      params: AdminOverviewDataParams,
+    ): Promise<AdminOverviewData> {
+      const db = getSnapshot();
+      const isSpecialist = params.role === 'specialist';
+      const isOwner = params.role === 'owner';
+      const ownStaffId = isSpecialist ? params.staffMemberId : null;
+      const scopeList = <T extends { staffId: string | null }>(items: readonly T[]): T[] =>
+        !isSpecialist
+          ? [...items]
+          : ownStaffId
+            ? items.filter((item) => item.staffId === ownStaffId)
+            : [];
+
+      const bookings =
+        isSpecialist && !ownStaffId
+          ? []
+          : hydrateBookingsWithRelationsFromDb(db, params.role, params.staffMemberId);
+      const visibleBookingIds = new Set(bookings.map((b) => b.id));
+      const visibleClientIds = new Set(bookings.map((b) => b.clientId));
+
+      const scopedStaff = isSpecialist
+        ? ownStaffId
+          ? db.staff.filter((s) => s.id === ownStaffId)
+          : []
+        : [...db.staff];
+      const scopedClients = isSpecialist
+        ? db.clients.filter((c) => visibleClientIds.has(c.id))
+        : [...db.clients];
+      const scopedReviews = isSpecialist
+        ? db.reviews.filter(
+            (r) =>
+              (ownStaffId !== null && r.staffId === ownStaffId) ||
+              (r.staffId === null && visibleBookingIds.has(r.bookingId)),
+          )
+        : [...db.reviews];
+      const scopedNotifications = (
+        isSpecialist
+          ? db.notifications.filter(
+              (n) => n.bookingId !== null && visibleBookingIds.has(n.bookingId),
+            )
+          : db.notifications
+      ).slice(0, 30);
+
+      const tz = db.settings.timezone || 'America/Mexico_City';
+      const monthKey =
+        params.whatsappMonthKey?.trim() ||
+        getWhatsAppMonthKey(new Date(params.nowMs), tz);
+      const [whatsappUsage, whatsappTemplates, whatsappInboxSummary] = await Promise.all([
+        getWhatsAppMonthlyUsage(monthKey),
+        isSpecialist ? Promise.resolve([]) : getWhatsAppTemplates(),
+        isSpecialist
+          ? Promise.resolve(undefined)
+          : getWhatsAppUnreadSummary({
+              role: params.role,
+              staffMemberId: params.staffMemberId,
+              nowMs: params.nowMs,
+            }),
+      ]);
+
+      return {
+        settings: db.settings,
+        bookings,
+        services: [...db.services],
+        categories: [...db.categories],
+        addons: [...db.addons],
+        staff: scopedStaff,
+        adminUsers: isSpecialist ? [] : [...db.adminUsers],
+        schedules: scopeList(db.schedules),
+        dateOverrides: scopeList(db.dateOverrides),
+        calendarConnections: scopeList(db.calendarConnections),
+        clients: scopedClients,
+        workflows: isSpecialist ? [] : [...db.workflows],
+        notifications: scopedNotifications,
+        gallery: [...db.gallery],
+        coupons: isSpecialist ? [] : [...db.coupons],
+        waitlist: isSpecialist ? [] : [...db.waitlist],
+        reviews: scopedReviews,
+        inventory: isSpecialist ? [] : [...db.inventory],
+        inventoryMovements: isSpecialist ? [] : db.inventoryMovements.slice(0, 30),
+        cashEntries: scopeList(db.cashEntries),
+        paymentSplits: (db.paymentSplits ?? []).filter((s) =>
+          visibleBookingIds.has(s.bookingId),
+        ),
+        recurringBlocks: scopeList(db.recurringBlocks ?? []),
+        loyaltyPrograms: [...(db.loyaltyPrograms ?? [])],
+        loyaltyStamps: isSpecialist
+          ? (db.loyaltyStamps ?? []).filter((st) => visibleClientIds.has(st.clientId))
+          : [...(db.loyaltyStamps ?? [])],
+        recentAuditLogs: isOwner ? (db.auditLogs ?? []).slice(0, 40) : [],
+        whatsappUsage,
+        whatsappTemplates,
+        ...(whatsappInboxSummary ? { whatsappInboxSummary } : {}),
+      };
+    },
+    async getCampaignAudienceData(): Promise<CampaignAudienceData> {
+      const db = getSnapshot();
+      return {
+        settings: {
+          name: db.settings.name,
+          timezone: db.settings.timezone,
+        },
+        clients: [...db.clients],
+        bookings: [...db.bookings],
+        services: db.services.map((s) => ({ id: s.id, name: s.name })),
+      };
+    },
+    async getWhatsAppRemindersSnapshot(params?: {
+      role?: AdminRole;
+      staffMemberId?: string | null;
+      nowMs?: number;
+    }): Promise<WhatsAppRemindersSnapshotData> {
+      const db = getSnapshot();
+      const nowMs = params?.nowMs ?? clock.nowMs();
+      const [queue, allItems, outboxSummary] = await Promise.all([
+        listScheduledNotifications({
+          status: 'pending',
+          limit: 100,
+          role: params?.role,
+          staffMemberId: params?.staffMemberId,
+        }),
+        listScheduledNotifications({
+          limit: 180,
+          role: params?.role,
+          staffMemberId: params?.staffMemberId,
+        }),
+        getOutboxSummary(),
+      ]);
+      const history = allItems.filter((item) => item.status !== 'pending');
+      const workflowById = new Map(db.workflows.map((w) => [w.id, w]));
+
+      let pendingCount = 0;
+      let sentCount = 0;
+      let deliveredCount = 0;
+      let readCount = 0;
+      let failedCount = 0;
+      let canceledCount = 0;
+      let skippedCascadeCount = 0;
+      const coveredBookingIds = new Set<string>();
+
+      for (const n of db.notifications) {
+        if (n.status === 'pending') pendingCount += 1;
+        else if (n.status === 'sent') {
+          sentCount += 1;
+          if (n.deliveryStatus === 'delivered' || n.deliveryStatus === 'read') {
+            deliveredCount += 1;
+          }
+          if (n.deliveryStatus === 'read') {
+            readCount += 1;
+          }
+        } else if (n.status === 'failed') failedCount += 1;
+        else if (n.status === 'canceled') {
+          canceledCount += 1;
+          if (n.errorMessage === 'skipped_cascade') {
+            skippedCascadeCount += 1;
+          }
+        }
+        if (n.bookingId && (n.status === 'pending' || n.status === 'sent')) {
+          const wf = n.workflowId ? workflowById.get(n.workflowId) : undefined;
+          if (
+            wf?.triggerEvent === 'before_booking' ||
+            n.triggerKey === 'reminder_24h' ||
+            n.triggerKey === 'reminder_2h'
+          ) {
+            coveredBookingIds.add(n.bookingId);
+          }
+        }
+      }
+
+      const bookingsWithoutRemindersCount = db.bookings.filter(
+        (b) =>
+          isActiveBookingStatus(b.status) &&
+          Date.parse(b.startAt) > nowMs &&
+          !coveredBookingIds.has(b.id),
+      ).length;
+
+      return {
+        workflows: [...db.workflows],
+        queue,
+        history,
+        metrics: {
+          pendingCount,
+          sentCount,
+          deliveredCount,
+          readCount,
+          failedCount,
+          canceledCount,
+          skippedCascadeCount,
+          bookingsWithoutRemindersCount,
+        },
+        outboxSummary,
+      };
+    },
+    async getClientById(clientId: string): Promise<ClientProfile | null> {
+      const cleanId = clientId.trim();
+      if (!cleanId) return null;
+      const found = getSnapshot().clients.find((c) => c.id === cleanId);
+      return found ? { ...found } : null;
+    },
+    async getBookingById(bookingId: string): Promise<BookingWithRelations | null> {
+      const cleanId = bookingId.trim();
+      if (!cleanId) return null;
+      const db = getSnapshot();
+      const raw = db.bookings.find((b) => b.id === cleanId);
+      return raw ? hydrateBooking(db, raw) : null;
+    },
+    async listActiveAdminUsers(): Promise<AdminUser[]> {
+      return getSnapshot().adminUsers.filter((u) => u.isActive);
+    },
+    async listActiveServices(limit?: number): Promise<Service[]> {
+      const active = getSnapshot()
+        .services.filter((s) => s.isActive)
+        .toSorted((a, b) => a.displayOrder - b.displayOrder);
+      return limit !== undefined && limit > 0
+        ? active.slice(0, Math.floor(limit))
+        : active;
+    },
+    async listCashEntries(): Promise<CashRegisterEntry[]> {
+      return [...getSnapshot().cashEntries];
+    },
+    async listRecurringBlocks(staffId?: string | null): Promise<RecurringBlock[]> {
+      const cleanStaffId = staffId?.trim() || null;
+      const all = getSnapshot().recurringBlocks ?? [];
+      return cleanStaffId ? all.filter((b) => b.staffId === cleanStaffId) : [...all];
+    },
+    async toggleRecurringBlock(id: string, isActive: boolean): Promise<RecurringBlock> {
+      return withWriteLock((db) => {
+        const cols = ensurePhase3Collections(db);
+        const block = cols.recurringBlocks.find((b) => b.id === id);
+        if (!block) {
+          throw new PolicyError('BLOCK_NOT_FOUND', 'Bloqueo recurrente no encontrado.');
+        }
+        block.isActive = isActive;
+        publishRealtimeEvent('availability_updated', { staffId: block.staffId });
+        return block;
+      });
+    },
+    async listStaffOverrideDates(staffId: string): Promise<string[]> {
+      const cleanStaffId = staffId.trim();
+      if (!cleanStaffId) return [];
+      return getSnapshot()
+        .dateOverrides.filter((o) => o.staffId === cleanStaffId)
+        .map((o) => o.overrideDate);
+    },
+    async listStaffClientIds(staffId: string): Promise<string[]> {
+      const cleanStaffId = staffId.trim();
+      if (!cleanStaffId) return [];
+      return Array.from(
+        new Set(
+          getSnapshot()
+            .bookings.filter((b) => b.staffId === cleanStaffId)
+            .map((b) => b.clientId),
+        ),
+      );
+    },
+    async diagnoseAvailability(
+      params: DiagnoseAvailabilityInput,
+    ): Promise<DiagnoseAvailabilityOutput> {
+      const db = getSnapshot();
+      const tz = db.settings.timezone || 'America/Mexico_City';
+      const date = params.date?.trim() || getDateKeyInTimezone(clock.now(), tz);
+      const isSpecialist = params.role === 'specialist';
+      const requestedStaffId = params.staffId?.trim() || '';
+      const allBlocks = db.recurringBlocks ?? [];
+      const scopedBlocks = isSpecialist
+        ? params.staffMemberId
+          ? allBlocks.filter((b) => b.staffId === params.staffMemberId)
+          : []
+        : requestedStaffId
+          ? allBlocks.filter((b) => b.staffId === requestedStaffId)
+          : [...allBlocks];
+
+      const targetStaffId = isSpecialist
+        ? (params.staffMemberId ?? '')
+        : requestedStaffId || db.staff[0]?.id || '';
+      const targetServiceId = params.serviceId?.trim() || db.services[0]?.id || '';
+      const service = db.services.find((s) => s.id === targetServiceId);
+      if (!targetStaffId || !service) {
+        return {
+          date,
+          diagnosis: [],
+          recurringBlocks: scopedBlocks,
+        };
+      }
+
+      const cleanAddonIds = Array.from(
+        new Set((params.addonIds ?? []).map((id) => id.trim()).filter(Boolean)),
+      );
+      const addons = db.addons.filter(
+        (a) => cleanAddonIds.includes(a.id) && a.isActive,
+      );
+      const cleanExtraServiceIds = Array.from(
+        new Set(
+          (params.extraServiceIds ?? [])
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0 && id !== service.id),
+        ),
+      );
+      const extraServices = db.services.filter(
+        (s) => cleanExtraServiceIds.includes(s.id) && s.isActive,
+      );
+
+      const diagnosis = diagnoseDateSlots(
+        {
+          settings: db.settings,
+          service,
+          extraServices,
+          addons,
+          staffMembers: db.staff,
+          schedules: db.schedules,
+          dateOverrides: db.dateOverrides,
+          recurringBlocks: allBlocks,
+          bookings: db.bookings,
+          slotHolds: db.slotHolds,
+          calendarConnections: db.calendarConnections,
+          now: clock.now(),
+        },
+        date,
+        targetStaffId,
+      );
+
+      return {
+        date,
+        diagnosis,
+        recurringBlocks: scopedBlocks,
+      };
     },
     async getPublicBootstrap(): Promise<PublicBootstrapData> {
       const db = getSnapshot();

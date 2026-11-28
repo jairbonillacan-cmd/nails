@@ -21,6 +21,7 @@ import {
   type StatusTagTone,
 } from '@/components/ui';
 import { formatDateShortInTimezone, formatTimeInTimezone } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { AdminRole, AuditAction, AuditLogEntry } from '@/lib/types';
 
 const ROLE_LABELS: Record<AdminRole, string> = {
@@ -170,15 +171,13 @@ export function OwnerPinCard({
     }
     setPinSaving(true);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ ownerPin: newPin, ownerPinEnabled: true }),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        setPinErrorMsg(json?.error || 'No se pudo guardar el PIN de dueña.');
+      if (!result.ok) {
+        setPinErrorMsg(result.error || 'No se pudo guardar el PIN de dueña.');
         return;
       }
       await onRefresh();
@@ -189,8 +188,6 @@ export function OwnerPinCard({
         hasOwnerPin ? 'PIN de dueña actualizado y activado.' : 'PIN de dueña creado y activado.',
       );
       onNotify('PIN guardado');
-    } catch {
-      setPinErrorMsg('Error de conexión al guardar el PIN.');
     } finally {
       setPinSaving(false);
     }
@@ -202,15 +199,13 @@ export function OwnerPinCard({
     setPinSuccessMsg(null);
     setPinSaving(true);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ clearOwnerPin: true, ownerPinEnabled: false }),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        setPinErrorMsg(json?.error || 'No se pudo borrar el PIN.');
+      if (!result.ok) {
+        setPinErrorMsg(result.error || 'No se pudo borrar el PIN.');
         return;
       }
       await onRefresh();
@@ -219,8 +214,6 @@ export function OwnerPinCard({
       onSyncOwnerPinEnabled(false);
       setPinSuccessMsg('PIN de dueña borrado y desactivado.');
       onNotify('PIN borrado');
-    } catch {
-      setPinErrorMsg('Error de conexión al borrar el PIN.');
     } finally {
       setPinSaving(false);
     }

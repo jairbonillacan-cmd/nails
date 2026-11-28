@@ -37,6 +37,7 @@ import {
   useAdminCachedQuery,
 } from '@/lib/hooks/useAdminCache';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { roleCanAccess } from '@/lib/rbac';
 import type { BookingWithRelations } from '@/lib/types';
 
@@ -120,12 +121,14 @@ export default function AdminOverviewPage() {
     }
 
     try {
-      const res = await fetch('/api/admin/bookings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
-        body: JSON.stringify({ bookingId, status: 'confirmed' }),
-      });
+      const res = await fetchJsonWithTimeout<{ error?: string; code?: string }>(
+        '/api/admin/bookings',
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookingId, status: 'confirmed' }),
+        },
+      );
       if (!res.ok) {
         mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
         if (prevBookings) {
@@ -134,15 +137,11 @@ export default function AdminOverviewPage() {
             prevBookings,
           );
         }
-        const body = (await res.json().catch(() => null)) as {
-          error?: string;
-          code?: string;
-        } | null;
         setErrorMessage(
-          res.status === 403 && body?.code === 'PAST_BOOKING_LOCKED'
-            ? body.error ||
+          res.status === 403 && res.data?.code === 'PAST_BOOKING_LOCKED'
+            ? res.data.error ||
                 'Las citas pasadas están bloqueadas; solo la Dueña puede modificarlas.'
-            : body?.error ?? 'No se pudo confirmar la cita. Intenta de nuevo.',
+            : res.error || 'No se pudo confirmar la cita. Intenta de nuevo.',
         );
         return false;
       }
@@ -150,16 +149,6 @@ export default function AdminOverviewPage() {
       savedNotice.show(`Cita de ${clientName} confirmada`);
       void refresh();
       return true;
-    } catch {
-      mutateAdminCache<AdminOverviewPayload>(ADMIN_CACHE_KEYS.overview, prevOverview);
-      if (prevBookings) {
-        mutateAdminCache<{ bookings: BookingWithRelations[] }>(
-          ADMIN_CACHE_KEYS.bookings,
-          prevBookings,
-        );
-      }
-      setErrorMessage('Error de conexión al confirmar la cita.');
-      return false;
     } finally {
       setConfirmingBookingId(null);
     }
@@ -175,10 +164,9 @@ export default function AdminOverviewPage() {
     setErrorMessage(null);
 
     try {
-      const res = await fetch('/api/admin/bookings', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           action: 'reject_deposit',
           bookingId,
@@ -186,16 +174,12 @@ export default function AdminOverviewPage() {
         }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setErrorMessage(body?.error ?? 'No se pudo rechazar el comprobante.');
+        setErrorMessage(res.error || 'No se pudo rechazar el comprobante.');
         return false;
       }
       savedNotice.show(`Comprobante rechazado · Avisamos a ${clientName}`);
       void refresh();
       return true;
-    } catch {
-      setErrorMessage('Error de conexión al rechazar el comprobante.');
-      return false;
     } finally {
       setRejectingBookingId(null);
     }

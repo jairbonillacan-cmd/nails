@@ -41,6 +41,7 @@ import {
   type AjustesTabParam,
 } from '@/lib/admin-links';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { SalonSettings } from '@/lib/types';
 
 function resolveInitialAjustesTab(params: AjustesLinkParams): AjustesTabParam {
@@ -90,7 +91,7 @@ export default function AdminSettingsPage() {
   const baseLoyalty = data.loyaltyProgram ?? DEFAULT_LOYALTY_PROGRAM;
   const draft = draftOverride ?? baseSettings;
   const tz = draft.timezone || 'America/Mexico_City';
-  const depositAmountCents = draft.depositAmountCents ?? 20000;
+  const depositAmountCents = draft.depositAmountCents ?? 0;
   const depositBeneficiary = draft.depositBeneficiary ?? draft.depositAccountHolder;
   const isDepositEnabled = draft.paymentMode !== 'none';
   const noShowDepositThreshold = draft.noShowDepositThreshold ?? 2;
@@ -116,10 +117,9 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(
           buildBrandPatchPayload({
             draft,
@@ -129,16 +129,13 @@ export default function AdminSettingsPage() {
           }),
         ),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        setErrorMsg(json?.error || 'No se pudieron guardar los ajustes.');
+      if (!result.ok) {
+        setErrorMsg(result.error || 'No se pudieron guardar los ajustes.');
         return;
       }
       await refresh();
       setDraftOverride(null);
       saveNotice.show('Ajustes guardados');
-    } catch {
-      setErrorMsg('Error de conexión al guardar los ajustes del salón.');
     } finally {
       setSaving(false);
     }

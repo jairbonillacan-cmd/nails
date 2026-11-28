@@ -12,6 +12,7 @@ import {
   StatusTag,
   SurfaceCard,
 } from '@/components/ui';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { RecurringBlock, StaffMember } from '@/lib/types';
 import { BlockTimeForm } from './BlockTimeForm';
 import { formatRecurringSummary } from './scheduleConstants';
@@ -50,28 +51,24 @@ export function RecurringBlocksSection({
     setOptimisticActiveById((prev) => ({ ...prev, [block.id]: nextIsActive }));
     onMessage(null);
     try {
-      const res = await fetch('/api/admin/availability', {
+      const result = await fetchJsonWithTimeout('/api/admin/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           kind: 'recurring_block_toggle',
           id: block.id,
           isActive: nextIsActive,
         }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await onRefresh();
         onSavedNotice(block.isActive ? 'Descanso pausado' : 'Descanso reactivado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         onMessage({
           status: 'error',
-          text: errJson?.error || 'No se pudo actualizar este descanso.',
+          text: result.error || 'No se pudo actualizar este descanso.',
         });
       }
-    } catch {
-      onMessage({ status: 'error', text: 'Sin conexión. No se pudo actualizar este descanso.' });
     } finally {
       setBusyBlockId(null);
       setOptimisticActiveById((prev) =>
@@ -86,25 +83,21 @@ export function RecurringBlocksSection({
     setBusyBlockId(target.id);
     onMessage(null);
     try {
-      const res = await fetch(
+      const result = await fetchJsonWithTimeout(
         `/api/admin/availability?blockId=${encodeURIComponent(target.id)}`,
         {
           method: 'DELETE',
-          signal: AbortSignal.timeout(15_000),
         },
       );
-      if (res.ok) {
+      if (result.ok) {
         await onRefresh();
         onSavedNotice('Descanso eliminado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         onMessage({
           status: 'error',
-          text: errJson?.error || 'No se pudo eliminar este descanso.',
+          text: result.error || 'No se pudo eliminar este descanso.',
         });
       }
-    } catch {
-      onMessage({ status: 'error', text: 'Sin conexión. No se pudo eliminar este descanso.' });
     } finally {
       setPendingDelete(null);
       setBusyBlockId(null);

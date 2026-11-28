@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAdminSession, requireAdmin } from '@/lib/auth/admin-session';
-import { isActiveBookingStatus } from '@/lib/booking/state-machine';
 import {
   WhatsAppRemindersActionSchema,
   type WhatsAppRemindersResponseDTO,
 } from '@/lib/contracts';
 import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { normalizePhoneE164 } from '@/lib/format';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import {
   buildBookingTemplateParameters,
   dispatchEmailNotification,
@@ -15,6 +15,7 @@ import {
   dispatchWhatsAppNotification,
 } from '@/lib/integrations/notifications';
 import type { EmailTemplateSituation } from '@/lib/integrations/resend-templates';
+import { logError } from '@/lib/logger';
 import {
   canonicalizeWhatsAppPhoneE164,
   getWhatsAppTemplateCatalogItem,
@@ -24,7 +25,7 @@ import {
 import {
   drainStaleOutboxEvents,
   getRepository,
-  hydrateBookingsWithRelationsFromDb,
+  PolicyError,
   processDueScheduledNotifications,
 } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
@@ -38,7 +39,7 @@ import type {
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 function resolveSituationForReminder(
   triggerKey: WhatsAppTemplateTriggerKey | null,
@@ -161,86 +162,18 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const nowMs = now.getTime();
   const repo = getRepository();
-  const [snapshot, queue, allItems, outboxSummary] = await Promise.all([
-    repo.getSnapshot(),
-    repo.listScheduledNotifications({
-      status: 'pending',
-      limit: 100,
-      role: session.user.role,
-      staffMemberId: session.user.staffMemberId,
-    }),
-    repo.listScheduledNotifications({
-      limit: 180,
-      role: session.user.role,
-      staffMemberId: session.user.staffMemberId,
-    }),
-    repo.getOutboxSummary(),
-  ]);
-
-  const history = allItems.filter((item) => item.status !== 'pending');
-  const workflowById = new Map(snapshot.workflows.map((w) => [w.id, w]));
-
-  let pendingCount = 0;
-  let sentCount = 0;
-  let deliveredCount = 0;
-  let readCount = 0;
-  let failedCount = 0;
-  let canceledCount = 0;
-  let skippedCascadeCount = 0;
-
-  const coveredBookingIds = new Set<string>();
-  for (const n of snapshot.notifications) {
-    if (n.status === 'pending') pendingCount += 1;
-    else if (n.status === 'sent') {
-      sentCount += 1;
-      if (n.deliveryStatus === 'delivered' || n.deliveryStatus === 'read') {
-        deliveredCount += 1;
-      }
-      if (n.deliveryStatus === 'read') {
-        readCount += 1;
-      }
-    } else if (n.status === 'failed') failedCount += 1;
-    else if (n.status === 'canceled') {
-      canceledCount += 1;
-      if (n.errorMessage === 'skipped_cascade') {
-        skippedCascadeCount += 1;
-      }
-    }
-
-    if (n.bookingId && (n.status === 'pending' || n.status === 'sent')) {
-      const wf = n.workflowId ? workflowById.get(n.workflowId) : undefined;
-      if (
-        wf?.triggerEvent === 'before_booking' ||
-        n.triggerKey === 'reminder_24h' ||
-        n.triggerKey === 'reminder_2h'
-      ) {
-        coveredBookingIds.add(n.bookingId);
-      }
-    }
-  }
-
-  const bookingsWithoutRemindersCount = snapshot.bookings.filter(
-    (b) =>
-      isActiveBookingStatus(b.status) &&
-      Date.parse(b.startAt) > nowMs &&
-      !coveredBookingIds.has(b.id),
-  ).length;
+  const snapshot = await repo.getWhatsAppRemindersSnapshot({
+    role: session.user.role,
+    staffMemberId: session.user.staffMemberId,
+    nowMs,
+  });
 
   const payload: WhatsAppRemindersResponseDTO = {
     workflows: snapshot.workflows,
-    queue,
-    history,
-    metrics: {
-      pendingCount,
-      sentCount,
-      deliveredCount,
-      readCount,
-      failedCount,
-      canceledCount,
-      skippedCascadeCount,
-      bookingsWithoutRemindersCount,
-    },
-    outboxSummary,
+    queue: snapshot.queue,
+    history: snapshot.history,
+    metrics: snapshot.metrics,
+    outboxSummary: snapshot.outboxSummary,
     serverNowIso: now.toISOString(),
   };
 
@@ -402,15 +335,15 @@ export async function POST(request: NextRequest) {
           { status: 404, headers: PRIVATE_NO_STORE },
         );
       }
-      const snapshot = await repo.getSnapshot();
-      const hydratedList = hydrateBookingsWithRelationsFromDb(
-        snapshot,
-        session.user.role,
-        session.user.staffMemberId,
-      );
-      const booking = notification.bookingId
-        ? hydratedList.find((b) => b.id === notification.bookingId)
-        : undefined;
+      const [settings, workflows, booking] = await Promise.all([
+        repo.getSalonSettings(),
+        notification.workflowId
+          ? repo.getNotificationWorkflows()
+          : Promise.resolve([]),
+        notification.bookingId
+          ? repo.getBookingById(notification.bookingId)
+          : Promise.resolve(null),
+      ]);
       if (!booking) {
         return NextResponse.json(
           { error: 'No se encontró la cita vinculada a este recordatorio.' },
@@ -418,13 +351,13 @@ export async function POST(request: NextRequest) {
         );
       }
       const workflow = notification.workflowId
-        ? snapshot.workflows.find((w) => w.id === notification.workflowId) ?? null
+        ? workflows.find((w) => w.id === notification.workflowId) ?? null
         : null;
 
       const res = await dispatchSingleReminder({
         notification,
         booking,
-        settings: snapshot.settings,
+        settings,
         workflow,
         appUrl: env.appUrl,
       });
@@ -473,8 +406,8 @@ export async function POST(request: NextRequest) {
         );
       }
       const nowMs = Date.now();
-      const snapshot = await repo.getSnapshot();
-      const workflowById = new Map(snapshot.workflows.map((w) => [w.id, w]));
+      const workflows = await repo.getNotificationWorkflows();
+      const workflowById = new Map(workflows.map((w) => [w.id, w]));
       const pendingWhatsAppRecords: Array<{
         phoneE164: string;
         contactName: string;
@@ -591,9 +524,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const snapshot = await repo.getSnapshot();
+    const [settings, workflows, bookingForContext] = await Promise.all([
+      repo.getSalonSettings(),
+      input.workflowId ? repo.getNotificationWorkflows() : Promise.resolve([]),
+      input.bookingId ? repo.getBookingById(input.bookingId) : Promise.resolve(null),
+    ]);
     const workflow = input.workflowId
-      ? snapshot.workflows.find((w) => w.id === input.workflowId) ?? null
+      ? workflows.find((w) => w.id === input.workflowId) ?? null
       : null;
     const triggerKey: WhatsAppTemplateTriggerKey =
       input.triggerKey ??
@@ -607,23 +544,13 @@ export async function POST(request: NextRequest) {
     const catalogSpec = getWhatsAppTemplateCatalogItem(triggerKey);
 
     let paramsForTemplate = [...catalogSpec.exampleParameters];
-    let bookingForContext: BookingWithRelations | null = null;
-    if (input.bookingId) {
-      const hydratedList = hydrateBookingsWithRelationsFromDb(
-        snapshot,
-        session.user.role,
-        session.user.staffMemberId,
-      );
-      bookingForContext =
-        hydratedList.find((b) => b.id === input.bookingId) ?? null;
-      if (bookingForContext) {
-        paramsForTemplate = buildBookingTemplateParameters({
-          triggerKey,
-          booking: bookingForContext,
-          settings: snapshot.settings,
-          appUrl: env.appUrl,
-        });
-      }
+    if (bookingForContext) {
+      paramsForTemplate = buildBookingTemplateParameters({
+        triggerKey,
+        booking: bookingForContext,
+        settings,
+        appUrl: env.appUrl,
+      });
     }
 
     const previewText =
@@ -636,7 +563,7 @@ export async function POST(request: NextRequest) {
       triggerKey,
       templateParameters: paramsForTemplate,
       withinServiceWindow: false,
-      settingsTimezone: snapshot.settings.timezone,
+      settingsTimezone: settings.timezone,
       threadContext: {
         clientId: bookingForContext?.clientId ?? null,
         bookingId: bookingForContext?.id ?? null,
@@ -658,20 +585,30 @@ export async function POST(request: NextRequest) {
       { status: dispatchRes.status === 'sent' ? 200 : 502, headers: PRIVATE_NO_STORE },
     );
   } catch (err) {
+    if (err instanceof PolicyError) {
+      const status =
+        err.code === 'NOTIFICATION_NOT_FOUND' || err.code === 'WORKFLOW_NOT_FOUND'
+          ? 404
+          : 400;
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: PRIVATE_NO_STORE },
+      );
+    }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Datos inválidos.' },
         { status: 400, headers: PRIVATE_NO_STORE },
       );
     }
+    logError('admin_whatsapp_reminders_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       {
-        error:
-          err instanceof Error
-            ? err.message
-            : 'No se pudo ejecutar la acción de recordatorios.',
+        error: 'No se pudo ejecutar la acción de recordatorios.',
       },
-      { status: 400, headers: PRIVATE_NO_STORE },
+      { status: 500, headers: PRIVATE_NO_STORE },
     );
   }
 }

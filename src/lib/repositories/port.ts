@@ -1,4 +1,8 @@
-import type { AvailableSlot, DayAvailabilitySummary } from '../availability/engine';
+import type {
+  AvailableSlot,
+  DayAvailabilitySummary,
+  SlotDiagnosis,
+} from '../availability/engine';
 import type {
   WhatsAppInboxSummaryDTO,
   WhatsAppReminderItemDTO,
@@ -36,6 +40,7 @@ import type {
   FunnelEventRecord,
   GalleryItem,
   InventoryItem,
+  InventoryMovement,
   LoyaltyProgram,
   LoyaltyStamp,
   MediaAccessOwner,
@@ -551,9 +556,106 @@ export interface ExecutiveReportData {
   funnelEvents: FunnelEventRecord[];
 }
 
+export interface AdminOverviewDataParams {
+  role: AdminRole;
+  staffMemberId: string | null;
+  whatsappMonthKey?: string;
+  nowMs: number;
+}
+
+export interface AdminOverviewData {
+  settings: SalonSettings;
+  bookings: BookingWithRelations[];
+  services: Service[];
+  categories: ServiceCategory[];
+  addons: ServiceAddon[];
+  staff: StaffMember[];
+  adminUsers: AdminUser[];
+  schedules: AvailabilitySchedule[];
+  dateOverrides: DateOverride[];
+  calendarConnections: CalendarConnection[];
+  clients: ClientProfile[];
+  workflows: NotificationWorkflow[];
+  notifications: ScheduledNotification[];
+  gallery: GalleryItem[];
+  coupons: Coupon[];
+  waitlist: WaitlistEntry[];
+  reviews: BookingReview[];
+  inventory: InventoryItem[];
+  inventoryMovements: InventoryMovement[];
+  cashEntries: CashRegisterEntry[];
+  paymentSplits: PaymentSplit[];
+  recurringBlocks: RecurringBlock[];
+  loyaltyPrograms: LoyaltyProgram[];
+  loyaltyStamps: LoyaltyStamp[];
+  recentAuditLogs: AuditLogEntry[];
+  whatsappUsage: WhatsAppMonthlyUsageSummary;
+  whatsappTemplates: WhatsAppTemplateConfig[];
+  whatsappInboxSummary?: WhatsAppInboxSummaryDTO;
+}
+
+export interface CampaignAudienceData {
+  settings: Pick<SalonSettings, 'name' | 'timezone'>;
+  clients: ClientProfile[];
+  bookings: Booking[];
+  services: Array<Pick<Service, 'id' | 'name'>>;
+}
+
+export interface WhatsAppRemindersSnapshotData {
+  workflows: NotificationWorkflow[];
+  queue: WhatsAppReminderItemDTO[];
+  history: WhatsAppReminderItemDTO[];
+  metrics: {
+    pendingCount: number;
+    sentCount: number;
+    deliveredCount: number;
+    readCount: number;
+    failedCount: number;
+    canceledCount: number;
+    skippedCascadeCount: number;
+    bookingsWithoutRemindersCount: number;
+  };
+  outboxSummary: OutboxSummary;
+}
+
+export interface DiagnoseAvailabilityInput {
+  date?: string;
+  serviceId?: string;
+  staffId?: string | null;
+  addonIds?: string[];
+  extraServiceIds?: string[];
+  role: AdminRole;
+  staffMemberId: string | null;
+}
+
+export interface DiagnoseAvailabilityOutput {
+  date: string;
+  diagnosis: SlotDiagnosis[];
+  recurringBlocks: RecurringBlock[];
+}
+
 export interface SalonRepository {
   getSalonSettings(): Promise<SalonSettings>;
   getSnapshot(): Promise<Readonly<DemoDatabase>>;
+  getAdminOverviewData(params: AdminOverviewDataParams): Promise<AdminOverviewData>;
+  getCampaignAudienceData(): Promise<CampaignAudienceData>;
+  getWhatsAppRemindersSnapshot(params?: {
+    role?: AdminRole;
+    staffMemberId?: string | null;
+    nowMs?: number;
+  }): Promise<WhatsAppRemindersSnapshotData>;
+  getClientById(clientId: string): Promise<ClientProfile | null>;
+  getBookingById(bookingId: string): Promise<BookingWithRelations | null>;
+  listActiveAdminUsers(): Promise<AdminUser[]>;
+  listActiveServices(limit?: number): Promise<Service[]>;
+  listCashEntries(): Promise<CashRegisterEntry[]>;
+  listRecurringBlocks(staffId?: string | null): Promise<RecurringBlock[]>;
+  toggleRecurringBlock(id: string, isActive: boolean): Promise<RecurringBlock>;
+  listStaffOverrideDates(staffId: string): Promise<string[]>;
+  listStaffClientIds(staffId: string): Promise<string[]>;
+  diagnoseAvailability(
+    params: DiagnoseAvailabilityInput,
+  ): Promise<DiagnoseAvailabilityOutput>;
   getPublicBootstrap(): Promise<PublicBootstrapData>;
   getPublicServiceBySlug(slug: string): Promise<PublicServiceDTO | null>;
   getPublicReviewsForService(

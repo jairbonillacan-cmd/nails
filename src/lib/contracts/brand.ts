@@ -66,11 +66,11 @@ export const CajaConfigSchema = z
 
 
 export const LandingContentSchema = z.object({
-  heroEyebrow: z.string(),
-  heroTitle: z.string(),
-  heroSubtitle: z.string(),
-  aboutTitle: z.string(),
-  aboutBody: z.string(),
+  heroEyebrow: z.string().max(180),
+  heroTitle: z.string().max(220),
+  heroSubtitle: z.string().max(500),
+  aboutTitle: z.string().max(220),
+  aboutBody: z.string().max(1200),
   heroPrimaryCta: z.string().max(80).optional(),
   heroSecondaryCta: z.string().max(80).optional(),
   heroImageDesktopUrl: z.string().max(3_600_000).nullable().optional(),
@@ -162,7 +162,7 @@ export const BrandPatchSchema = z
     instagramUrl: z.string().max(500),
     sisterStudioHandle: z.string().max(120),
     whatsappNumber: z.string().max(32),
-    contactEmail: z.string().email().or(z.literal('')),
+    contactEmail: z.string().max(320).email().or(z.literal('')),
     timezone: z.string().min(1).max(80),
 
     brandAccentLight: z.string().max(32),
@@ -172,7 +172,7 @@ export const BrandPatchSchema = z
     cornerStyle: CornerStyleSchema,
     publicPalette: PublicPaletteSchema,
     defaultBookingLayout: BookingLayoutViewSchema,
-    enabledBookingLayouts: z.array(BookingLayoutViewSchema).min(1),
+    enabledBookingLayouts: z.array(BookingLayoutViewSchema).min(1).max(4),
     lockTimezone: z.boolean(),
     slotIntervalMinutes: SlotIntervalMinutesSchema,
     optimizeContinuousSlots: z.boolean(),

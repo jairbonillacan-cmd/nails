@@ -1,3 +1,4 @@
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { NewInventoryItemInput } from './InventoryItemForm';
 
 export function applyDeltaMap(
@@ -31,45 +32,33 @@ export async function adjustInventoryRequest(
   reason: 'restock' | 'service_usage',
   notes: string,
 ): Promise<{ status: 'success' | 'error'; text: string }> {
-  try {
-    const res = await fetch('/api/admin/operations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({ kind: 'inventory', data: { itemId, delta, reason, notes } }),
-    });
-    if (res.ok) {
-      return {
-        status: 'success',
-        text:
-          reason === 'restock'
-            ? `Entrada (+${Math.abs(delta)}) sumada al inventario.`
-            : `Consumo (−${Math.abs(delta)}) descontado del inventario.`,
-      };
-    }
-    const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-    return { status: 'error', text: errJson?.error || 'No se pudo actualizar el inventario.' };
-  } catch {
-    return { status: 'error', text: 'No se pudo conectar para actualizar las existencias.' };
+  const result = await fetchJsonWithTimeout('/api/admin/operations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'inventory', data: { itemId, delta, reason, notes } }),
+  });
+  if (result.ok) {
+    return {
+      status: 'success',
+      text:
+        reason === 'restock'
+          ? `Entrada (+${Math.abs(delta)}) sumada al inventario.`
+          : `Consumo (−${Math.abs(delta)}) descontado del inventario.`,
+    };
   }
+  return { status: 'error', text: result.error || 'No se pudo actualizar el inventario.' };
 }
 
 export async function createInventoryItemRequest(
   newItem: NewInventoryItemInput,
 ): Promise<{ status: 'success' | 'error'; text: string }> {
-  try {
-    const res = await fetch('/api/admin/operations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({ kind: 'inventory', data: { newItem } }),
-    });
-    if (res.ok) {
-      return { status: 'success', text: 'Producto agregado a tu inventario.' };
-    }
-    const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-    return { status: 'error', text: errJson?.error || 'No se pudo guardar el producto.' };
-  } catch {
-    return { status: 'error', text: 'No se pudo conectar para guardar el producto.' };
+  const result = await fetchJsonWithTimeout('/api/admin/operations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'inventory', data: { newItem } }),
+  });
+  if (result.ok) {
+    return { status: 'success', text: 'Producto agregado a tu inventario.' };
   }
+  return { status: 'error', text: result.error || 'No se pudo guardar el producto.' };
 }

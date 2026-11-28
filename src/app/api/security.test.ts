@@ -77,6 +77,18 @@ import {
   GET as getAdminPackages,
   POST as postAdminPackages,
 } from '@/app/api/admin/packages/route';
+import {
+  GET as getAdminCampaigns,
+  POST as postAdminCampaigns,
+} from '@/app/api/admin/campaigns/route';
+import { DELETE as deleteAdminClients } from '@/app/api/admin/clients/route';
+import { GET as getAdminReports } from '@/app/api/admin/reports/route';
+import {
+  GET as getAdminWhatsAppReminders,
+  POST as postAdminWhatsAppReminders,
+} from '@/app/api/admin/whatsapp/reminders/route';
+import { GET as getAdminWhatsAppThread } from '@/app/api/admin/whatsapp/threads/[threadId]/route';
+import { POST as retryAdminWhatsAppMessage } from '@/app/api/admin/whatsapp/messages/[messageId]/retry/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
 import { POST as postSlotHold } from '@/app/api/slot-holds/route';
 import { POST as postWaitlist } from '@/app/api/waitlist/route';
@@ -1020,8 +1032,46 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       expect(publicDiagRes.status).toBe(403);
 
       const db = getSnapshot();
-      const sofiaBooking = db.bookings.find((b) => b.id === 'bk-1001');
-      if (!sofiaBooking) throw new Error('Expected bk-1001');
+      const todayKey = getDateKeyInTimezone(new Date(), db.settings.timezone);
+      const openAvail = queryAvailability({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: todayKey,
+        days: 14,
+      });
+      const openSlot = openAvail.days.flatMap((d) => d.slots)[0];
+      if (!openSlot) throw new Error('Expected open slot for S4');
+
+      const seededBookingRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'Idempotency-Key': `sec-w2-s4-${Date.now()}`,
+          },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Clienta S4',
+            clientPhone: '+522224441122',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(seededBookingRes.status).toBe(201);
+      const seededPayload = (await seededBookingRes.json()) as {
+        booking: {
+          id: string;
+          serviceId: string;
+          staffId: string;
+          startAt: string;
+          manageToken: string;
+        };
+      };
+      const sofiaBooking = seededPayload.booking;
       const sofiaDate = getDateKeyInTimezone(
         new Date(sofiaBooking.startAt),
         db.settings.timezone,
@@ -4614,6 +4664,307 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       );
       expect(gcalInitRes.status).toBe(200);
       expect(gcalInitRes.headers.get('cache-control')).toBe('private, no-store');
+    });
+  });
+
+  describe('Admin API Security, Headers, Rate Limits, RBAC & Contract Hardening (A2–A6)', () => {
+    it('A2: sets Cache-Control: private, no-store and Vary: Cookie on Admin APIs and no-store on /api/public/bootstrap', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-a2');
+      const ownerCookie = getOwnerCookieHeader();
+
+      const adminGets = [
+        getAdminOverview(
+          makeRequest('http://localhost:3000/api/admin/overview', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminBookings(
+          makeRequest('http://localhost:3000/api/admin/bookings', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminOnboarding(
+          makeRequest('http://localhost:3000/api/admin/onboarding', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminReports(
+          makeRequest('http://localhost:3000/api/admin/reports?period=7d', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminPackages(
+          makeRequest('http://localhost:3000/api/admin/packages', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminCampaigns(
+          makeRequest('http://localhost:3000/api/admin/campaigns', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminAvailability(
+          makeRequest('http://localhost:3000/api/admin/availability?mode=blocks', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminWhatsAppReminders(
+          makeRequest('http://localhost:3000/api/admin/whatsapp/reminders', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        getAdminSessionRoute(
+          makeRequest('http://localhost:3000/api/admin/session', {
+            headers: { cookie: ownerCookie },
+          }),
+        ),
+        postAdminSession(
+          makeRequest('http://localhost:3000/api/admin/session', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: 'duena@nails.studio' }),
+          }),
+        ),
+        deleteAdminSession(),
+      ];
+
+      const responses = await Promise.all(adminGets);
+      for (const res of responses) {
+        expect(res.headers.get('cache-control')).toBe('private, no-store');
+        expect(res.headers.get('vary')).toContain('Cookie');
+      }
+
+      const bootstrapRes = await getPublicBootstrap(
+        makeRequest('http://localhost:3000/api/public/bootstrap'),
+      );
+      expect(bootstrapRes.status).toBe(200);
+      expect(bootstrapRes.headers.get('cache-control')).toBe('no-store');
+    });
+
+    it('A3: whatsapp/reminders never leaks raw internal errors and returns 500 on unexpected failure', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-a3');
+      const ownerCookie = getOwnerCookieHeader();
+      const missingRes = await postAdminWhatsAppReminders(
+        makeRequest('http://localhost:3000/api/admin/whatsapp/reminders', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: ownerCookie,
+          },
+          body: JSON.stringify({
+            action: 'retry_notification',
+            notificationId: 'ntf-does-not-exist',
+          }),
+        }),
+      );
+      expect(missingRes.status).toBe(404);
+      expect(missingRes.headers.get('cache-control')).toBe('private, no-store');
+    });
+
+    it('A4: enforces per-actor rate limits on PIN changes, campaigns, ARCO export, client deletion, admin users, and manual reminders', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-a4');
+      const ownerCookie = getOwnerCookieHeader();
+      const db = getSnapshot();
+      const clientId = db.clients[0]?.id;
+      const bookingId = db.bookings[0]?.id;
+      if (!clientId || !bookingId) throw new Error('Missing seed client/booking');
+
+      let lastPinStatus = 200;
+      for (let i = 0; i < 11; i += 1) {
+        const res = await patchAdminBrand(
+          makeRequest('http://localhost:3000/api/admin/brand', {
+            method: 'PATCH',
+            headers: {
+              'content-type': 'application/json',
+              cookie: ownerCookie,
+              'x-forwarded-for': '198.51.100.11',
+            },
+            body: JSON.stringify({ clearOwnerPin: true }),
+          }),
+        );
+        lastPinStatus = res.status;
+        expect(res.headers.get('cache-control')).toBe('private, no-store');
+      }
+      expect(lastPinStatus).toBe(429);
+
+      let lastCampaignStatus = 201;
+      for (let i = 0; i < 31; i += 1) {
+        const res = await postAdminCampaigns(
+          makeRequest('http://localhost:3000/api/admin/campaigns', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              cookie: ownerCookie,
+              'x-forwarded-for': '198.51.100.12',
+            },
+            body: JSON.stringify({
+              kind: 'reactivation',
+              clientId,
+            }),
+          }),
+        );
+        lastCampaignStatus = res.status;
+      }
+      expect(lastCampaignStatus).toBe(429);
+
+      let lastArcoStatus = 200;
+      for (let i = 0; i < 16; i += 1) {
+        const res = await getAdminClients(
+          makeRequest(
+            `http://localhost:3000/api/admin/clients?exportClientId=${encodeURIComponent(clientId)}`,
+            {
+              headers: {
+                cookie: ownerCookie,
+                'x-forwarded-for': '198.51.100.13',
+              },
+            },
+          ),
+        );
+        lastArcoStatus = res.status;
+        expect(res.headers.get('cache-control')).toBe('private, no-store');
+      }
+      expect(lastArcoStatus).toBe(429);
+
+      let lastDeleteStatus = 404;
+      for (let i = 0; i < 21; i += 1) {
+        const res = await deleteAdminClients(
+          makeRequest('http://localhost:3000/api/admin/clients?id=cli-missing-rate', {
+            method: 'DELETE',
+            headers: {
+              cookie: ownerCookie,
+              'x-forwarded-for': '198.51.100.14',
+            },
+          }),
+        );
+        lastDeleteStatus = res.status;
+      }
+      expect(lastDeleteStatus).toBe(429);
+
+      let lastTeamStatus = 200;
+      for (let i = 0; i < 16; i += 1) {
+        const res = await postAdminTeam(
+          makeRequest('http://localhost:3000/api/admin/team', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              cookie: ownerCookie,
+              'x-forwarded-for': '198.51.100.15',
+            },
+            body: JSON.stringify({
+              kind: 'admin_user',
+              data: {
+                email: `rate${i}@nails.studio`,
+                fullName: `Staff Rate ${i}`,
+                role: 'admin',
+                staffMemberId: null,
+                isActive: true,
+              },
+            }),
+          }),
+        );
+        lastTeamStatus = res.status;
+      }
+      expect(lastTeamStatus).toBe(429);
+
+      let lastReminderStatus = 200;
+      for (let i = 0; i < 26; i += 1) {
+        const res = await patchAdminBookings(
+          makeRequest('http://localhost:3000/api/admin/bookings', {
+            method: 'PATCH',
+            headers: {
+              'content-type': 'application/json',
+              cookie: ownerCookie,
+              'x-forwarded-for': '198.51.100.16',
+            },
+            body: JSON.stringify({
+              action: 'send_reminder',
+              bookingId,
+              channel: 'whatsapp',
+            }),
+          }),
+        );
+        lastReminderStatus = res.status;
+      }
+      expect(lastReminderStatus).toBe(429);
+    });
+
+    it('A5 & A6: blocks cross-staff tipStaffId for specialist checkout_split and rejects oversized inputs/params', async () => {
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-a56');
+      const db = getSnapshot();
+      const specialist = db.adminUsers.find(
+        (u) => u.role === 'specialist' && u.isActive && u.staffMemberId,
+      );
+      if (!specialist?.staffMemberId) throw new Error('Missing linked specialist');
+      const ownBooking = db.bookings.find(
+        (b) => b.staffId === specialist.staffMemberId && b.status === 'confirmed',
+      );
+      const otherStaff = db.staff.find((s) => s.id !== specialist.staffMemberId);
+      if (!ownBooking || !otherStaff) throw new Error('Missing seed booking/other staff');
+
+      const foreignTipRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: getSpecialistCookieHeader(),
+          },
+          body: JSON.stringify({
+            action: 'checkout_split',
+            bookingId: ownBooking.id,
+            splits: [
+              {
+                method: 'cash',
+                amountCents: ownBooking.totalPriceCents,
+                tipCents: 5000,
+                tipStaffId: otherStaff.id,
+              },
+            ],
+            markCompleted: false,
+          }),
+        }),
+      );
+      expect(foreignTipRes.status).toBe(403);
+      expect(foreignTipRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const ownerCookie = getOwnerCookieHeader();
+      const oversizedNotesRes = await patchAdminBookings(
+        makeRequest('http://localhost:3000/api/admin/bookings', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            cookie: ownerCookie,
+          },
+          body: JSON.stringify({
+            bookingId: ownBooking.id,
+            status: 'confirmed',
+            internalNotes: 'N'.repeat(1200),
+          }),
+        }),
+      );
+      expect(oversizedNotesRes.status).toBe(400);
+
+      const longId = 'a'.repeat(140);
+      const oversizedThreadRes = await getAdminWhatsAppThread(
+        makeRequest(`http://localhost:3000/api/admin/whatsapp/threads/${longId}`, {
+          headers: { cookie: ownerCookie },
+        }),
+        { params: Promise.resolve({ threadId: longId }) },
+      );
+      expect(oversizedThreadRes.status).toBe(400);
+      expect(oversizedThreadRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const oversizedRetryRes = await retryAdminWhatsAppMessage(
+        makeRequest(
+          `http://localhost:3000/api/admin/whatsapp/messages/${longId}/retry`,
+          {
+            method: 'POST',
+            headers: { cookie: ownerCookie },
+          },
+        ),
+        { params: Promise.resolve({ messageId: longId }) },
+      );
+      expect(oversizedRetryRes.status).toBe(400);
+      expect(oversizedRetryRes.headers.get('cache-control')).toBe('private, no-store');
     });
   });
 });

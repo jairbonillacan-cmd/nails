@@ -31,6 +31,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
+import { extractMxPhoneDigits } from '@/components/booking/bookingHelpers';
 import { agendaHref, whatsappHref } from '@/lib/admin-links';
 import {
   buildWhatsAppLink,
@@ -262,8 +263,8 @@ export function ClientProfileDialog({
       setEditError('Escribe el nombre completo de la clienta.');
       return;
     }
-    if (!trimmedPhone) {
-      setEditError('Escribe un número de WhatsApp válido.');
+    if (extractMxPhoneDigits(trimmedPhone).length !== 10) {
+      setEditError('Escribe un número de WhatsApp válido de 10 dígitos.');
       return;
     }
 
@@ -433,14 +434,14 @@ export function ClientProfileDialog({
                       <Button
                         label="Abrir chat"
                         variant="primary"
-                        size="sm"
+                        size="md"
                         icon={<MessageCircle size={14} aria-hidden="true" />}
                         href={whatsappHref({ phone: client.phoneE164 })}
                       />
                       <Button
                         label="wa.me"
                         variant="ghost"
-                        size="sm"
+                        size="md"
                         icon={<ExternalLink size={13} aria-hidden="true" />}
                         href={buildWhatsAppLink(
                           client.phoneE164,
@@ -672,7 +673,7 @@ export function ClientProfileDialog({
                     </SurfaceCard>
                   ) : null}
 
-                  <form id="client-profile-form" onSubmit={(e) => void handleSave(e)}>
+                  <form id="client-profile-form" noValidate onSubmit={(e) => void handleSave(e)}>
                     <VStack gap={3}>
                       <Grid columns={{ minWidth: 160, max: 2 }} gap={3}>
                         <TextInput
@@ -934,7 +935,7 @@ export function ClientProfileDialog({
                   <Button
                     label="Agendar cita"
                     variant="secondary"
-                    size="sm"
+                    size="md"
                     icon={<CalendarPlus size={14} aria-hidden="true" />}
                     href={newBookingUrl}
                   />
@@ -943,7 +944,7 @@ export function ClientProfileDialog({
                       type="button"
                       label="Cerrar"
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       isDisabled={savingEdit || deletingClient}
                       onClick={onClose}
                     />
@@ -953,7 +954,7 @@ export function ClientProfileDialog({
                         form="client-profile-form"
                         label="Guardar ficha"
                         variant="primary"
-                        size="sm"
+                        size="md"
                         isLoading={savingEdit}
                         isDisabled={
                           savingEdit ||
@@ -1031,7 +1032,7 @@ export function ClientProfileDialog({
                   <Button
                     label="Abrir imagen"
                     variant="secondary"
-                    size="sm"
+                    size="md"
                     icon={<ExternalLink size={14} aria-hidden="true" />}
                     href={previewInspo.url}
                     target="_blank"
@@ -1041,7 +1042,7 @@ export function ClientProfileDialog({
                     type="button"
                     label="Cerrar"
                     variant="primary"
-                    size="sm"
+                    size="md"
                     onClick={() => setPreviewInspo(null)}
                   />
                 </HStack>

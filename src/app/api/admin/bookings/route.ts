@@ -11,6 +11,11 @@ import {
   RequestRescheduleSchema,
   SendReminderSchema,
 } from '@/lib/contracts';
+import {
+  ADMIN_PRIVATE_HEADERS,
+  withAdminPrivateHeaders,
+} from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
 import { diffMetricCalendarDaysInclusive } from '@/lib/metrics';
 import { roleCanAccess } from '@/lib/rbac';
 import {
@@ -65,9 +70,17 @@ const BookingsRangeQuerySchema = z.object({
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
   if (!roleCanAccess(session.user.role, 'bookings')) {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
+    return NextResponse.json(
+      { error: 'Permisos insuficientes' },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 
   const { searchParams } = new URL(request.url);
@@ -83,7 +96,7 @@ export async function GET(request: NextRequest) {
   if (!parsedQuery.success) {
     return NextResponse.json(
       { error: parsedQuery.error.issues[0]?.message || 'Parámetros de rango inválidos.' },
-      { status: 400 },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -93,13 +106,13 @@ export async function GET(request: NextRequest) {
     if (from > to) {
       return NextResponse.json(
         { error: 'La fecha inicial no puede ser posterior a la fecha final.' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     if (diffMetricCalendarDaysInclusive(from, to) > MAX_BOOKINGS_RANGE_DAYS) {
       return NextResponse.json(
         { error: `El rango máximo permitido es de ${MAX_BOOKINGS_RANGE_DAYS} días.` },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
   }
@@ -120,7 +133,7 @@ export async function GET(request: NextRequest) {
         range: { from: from ?? null, to: to ?? null, staffId: null },
         timezone: settings.timezone || 'America/Mexico_City',
       },
-      { headers: { 'Cache-Control': 'no-store' } },
+      { headers: ADMIN_PRIVATE_HEADERS },
     );
   }
 
@@ -148,7 +161,7 @@ export async function GET(request: NextRequest) {
       },
       timezone: result.timezone,
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: ADMIN_PRIVATE_HEADERS },
   );
 }
 
@@ -178,10 +191,10 @@ async function checkOwnerPinGate(
         },
         {
           status: 429,
-          headers: {
+          headers: withAdminPrivateHeaders({
             'Retry-After': String(pinRate.retryAfterSeconds),
             'X-RateLimit-Remaining': '0',
-          },
+          }),
         },
       );
     }
@@ -197,7 +210,7 @@ async function checkOwnerPinGate(
         ? 'El PIN de autorización de dueña es incorrecto.'
         : 'Esta acción requiere el PIN de autorización de dueña.',
     },
-    { status: 403 },
+    { status: 403, headers: ADMIN_PRIVATE_HEADERS },
   );
 }
 
@@ -208,34 +221,55 @@ async function assertSpecialistOwnsBooking(
 ): Promise<NextResponse | null> {
   if (session.user.role !== 'specialist') return null;
   if (!session.user.staffMemberId) {
-    return NextResponse.json({ error: forbiddenMessage }, { status: 403 });
+    return NextResponse.json(
+      { error: forbiddenMessage },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   const ownerStaffId = await getBookingStaffOwnerAsync(bookingId);
   if (!ownerStaffId || ownerStaffId !== session.user.staffMemberId) {
-    return NextResponse.json({ error: forbiddenMessage }, { status: 403 });
+    return NextResponse.json(
+      { error: forbiddenMessage },
+      { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
   return null;
 }
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin', 'specialist'], request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   try {
-    const parsed = AdminCreateBookingSchema.parse(await request.json());
+    const parsed = AdminCreateBookingSchema.parse(rawBody);
 
     let effectiveStaffId: string | null = parsed.staffId ?? null;
     if (session.user.role === 'specialist') {
       if (!session.user.staffMemberId) {
         return NextResponse.json(
           { error: 'Tu usuario no tiene profesional vinculada.' },
-          { status: 403 },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
         );
       }
       if (parsed.staffId && parsed.staffId !== session.user.staffMemberId) {
         return NextResponse.json(
           { error: 'No tienes permiso para crear citas en la agenda de otra profesional.' },
-          { status: 403 },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
         );
       }
       effectiveStaffId = session.user.staffMemberId;
@@ -290,13 +324,16 @@ export async function POST(request: NextRequest) {
           seriesId: series.seriesId,
           skippedConflicts: series.skippedConflicts,
         },
-        { status: 201 },
+        { status: 201, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
 
     const booking = await createBookingAtomic(basePayload);
 
-    return NextResponse.json({ booking }, { status: 201 });
+    return NextResponse.json(
+      { booking },
+      { status: 201, headers: ADMIN_PRIVATE_HEADERS },
+    );
   } catch (err) {
     if (err instanceof SlotConflictError) {
       return NextResponse.json(
@@ -305,7 +342,7 @@ export async function POST(request: NextRequest) {
           error: err.message,
           suggestedSlots: err.suggestedSlots,
         },
-        { status: 409 },
+        { status: 409, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     if (err instanceof PolicyError) {
@@ -315,22 +352,33 @@ export async function POST(request: NextRequest) {
           error: err.message,
           ...(err.suggestedSlots ? { suggestedSlots: err.suggestedSlots } : {}),
         },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos ingresados' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'No se pudo registrar la cita' }, { status: 500 });
+    logError('admin_bookings_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'No se pudo registrar la cita' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }
 
 export async function PATCH(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
 
   const actor = {
     id: session.user.id,
@@ -339,8 +387,17 @@ export async function PATCH(request: NextRequest) {
     fullName: session.user.fullName,
   };
 
+  let raw: unknown;
   try {
-    const raw = (await request.json()) as unknown;
+    raw = (await request.json()) as unknown;
+  } catch {
+    return NextResponse.json(
+      { error: 'Solicitud JSON inválida.' },
+      { status: 400, headers: ADMIN_PRIVATE_HEADERS },
+    );
+  }
+
+  try {
     const rawAction =
       typeof raw === 'object' && raw !== null && 'action' in raw
         ? (raw as { action?: unknown }).action
@@ -359,7 +416,7 @@ export async function PATCH(request: NextRequest) {
         bookingId: checkInReq.bookingId,
         actor,
       });
-      return NextResponse.json({ booking });
+      return NextResponse.json({ booking }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (rawAction === 'send_reminder') {
@@ -371,17 +428,42 @@ export async function PATCH(request: NextRequest) {
       );
       if (denied) return denied;
 
+      const rate = checkRateLimit({
+        bucket: 'admin:bookings-notify',
+        key: `${session.user.id}:${getRequestIp(request)}`,
+        limit: 25,
+        windowMs: 60_000,
+      });
+      if (!rate.allowed) {
+        return NextResponse.json(
+          {
+            code: 'RATE_LIMITED',
+            error: 'Demasiados envíos de recordatorios. Espera unos segundos e intenta de nuevo.',
+          },
+          {
+            status: 429,
+            headers: withAdminPrivateHeaders({
+              'Retry-After': String(rate.retryAfterSeconds),
+              'X-RateLimit-Remaining': '0',
+            }),
+          },
+        );
+      }
+
       const reminder = await sendManualBookingReminder({
         bookingId: reminderReq.bookingId,
         channel: reminderReq.channel,
       });
-      return NextResponse.json({
-        ok: reminder.ok,
-        bookingId: reminder.bookingId,
-        channel: reminder.channel,
-        waMeUrl: reminder.waMeUrl,
-        messagePreview: reminder.messagePreview,
-      });
+      return NextResponse.json(
+        {
+          ok: reminder.ok,
+          bookingId: reminder.bookingId,
+          channel: reminder.channel,
+          waMeUrl: reminder.waMeUrl,
+          messagePreview: reminder.messagePreview,
+        },
+        { headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
 
     if (rawAction === 'request_reschedule') {
@@ -393,12 +475,34 @@ export async function PATCH(request: NextRequest) {
       );
       if (denied) return denied;
 
+      const rate = checkRateLimit({
+        bucket: 'admin:bookings-notify',
+        key: `${session.user.id}:${getRequestIp(request)}`,
+        limit: 25,
+        windowMs: 60_000,
+      });
+      if (!rate.allowed) {
+        return NextResponse.json(
+          {
+            code: 'RATE_LIMITED',
+            error: 'Demasiadas solicitudes de reprogramación. Espera unos segundos e intenta de nuevo.',
+          },
+          {
+            status: 429,
+            headers: withAdminPrivateHeaders({
+              'Retry-After': String(rate.retryAfterSeconds),
+              'X-RateLimit-Remaining': '0',
+            }),
+          },
+        );
+      }
+
       const result = await requestBookingReschedule({
         bookingId: rescheduleReq.bookingId,
         note: rescheduleReq.note,
         actor,
       });
-      return NextResponse.json(result);
+      return NextResponse.json(result, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (rawAction === 'reschedule_admin') {
@@ -416,7 +520,7 @@ export async function PATCH(request: NextRequest) {
       ) {
         return NextResponse.json(
           { error: 'No tienes permiso para mover citas de otra profesional.' },
-          { status: 403 },
+          { status: 403, headers: ADMIN_PRIVATE_HEADERS },
         );
       }
 
@@ -428,7 +532,7 @@ export async function PATCH(request: NextRequest) {
         reason: rescheduleReq.reason,
         actor,
       });
-      return NextResponse.json({ booking });
+      return NextResponse.json({ booking }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (rawAction === 'reject_deposit') {
@@ -445,7 +549,7 @@ export async function PATCH(request: NextRequest) {
         reason: rejectReq.reason,
         actor,
       });
-      return NextResponse.json({ booking });
+      return NextResponse.json({ booking }, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     if (rawAction === 'checkout_split') {
@@ -457,6 +561,23 @@ export async function PATCH(request: NextRequest) {
       );
       if (denied) return denied;
 
+      if (session.user.role === 'specialist') {
+        const hasForeignTipStaff = checkoutReq.splits.some(
+          (split) =>
+            Boolean(split.tipStaffId) &&
+            split.tipStaffId !== session.user.staffMemberId,
+        );
+        if (hasForeignTipStaff) {
+          return NextResponse.json(
+            {
+              error:
+                'No tienes permiso para asignar propinas a otra profesional en este cobro.',
+            },
+            { status: 403, headers: ADMIN_PRIVATE_HEADERS },
+          );
+        }
+      }
+
       const result = await recordBookingCheckoutAtomic({
         bookingId: checkoutReq.bookingId,
         splits: checkoutReq.splits,
@@ -466,7 +587,7 @@ export async function PATCH(request: NextRequest) {
         redeemClientPackageId: checkoutReq.redeemClientPackageId ?? null,
         actor,
       });
-      return NextResponse.json(result);
+      return NextResponse.json(result, { headers: ADMIN_PRIVATE_HEADERS });
     }
 
     const body = AdminPatchBookingStatusSchema.parse(raw);
@@ -492,7 +613,7 @@ export async function PATCH(request: NextRequest) {
       recordedBy: session.user.fullName,
       actor,
     });
-    return NextResponse.json({ booking });
+    return NextResponse.json({ booking }, { headers: ADMIN_PRIVATE_HEADERS });
   } catch (err) {
     if (err instanceof SlotConflictError) {
       return NextResponse.json(
@@ -501,7 +622,7 @@ export async function PATCH(request: NextRequest) {
           error: err.message,
           suggestedSlots: err.suggestedSlots,
         },
-        { status: 409 },
+        { status: 409, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
     if (err instanceof PolicyError) {
@@ -513,14 +634,23 @@ export async function PATCH(request: NextRequest) {
             : err.code === 'BOOKING_NOT_FOUND'
               ? 404
               : 400;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status, headers: ADMIN_PRIVATE_HEADERS },
+      );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos enviados' },
-        { status: 400 },
+        { status: 400, headers: ADMIN_PRIVATE_HEADERS },
       );
     }
-    return NextResponse.json({ error: 'Error actualizando cita' }, { status: 400 });
+    logError('admin_bookings_patch_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: 'Error actualizando cita' },
+      { status: 500, headers: ADMIN_PRIVATE_HEADERS },
+    );
   }
 }

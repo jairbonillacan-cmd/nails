@@ -2,6 +2,7 @@ import type {
   OnboardingProfileState,
   OnboardingServiceState,
 } from '@/components/admin/onboarding/OnboardingStepFormCard';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { PaymentMode } from '@/lib/types';
 
 export async function postOnboardingJson(
@@ -10,20 +11,15 @@ export async function postOnboardingJson(
   body: Record<string, unknown>,
   fallbackError: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      return { ok: false, error: json.error || fallbackError };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, error: 'Error de conexión al guardar.' };
+  const result = await fetchJsonWithTimeout(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error || fallbackError };
   }
+  return { ok: true };
 }
 
 export async function submitOnboardingStep(params: {

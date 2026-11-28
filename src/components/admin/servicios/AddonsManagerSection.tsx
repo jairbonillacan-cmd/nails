@@ -18,6 +18,7 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import { formatCurrency } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { ServiceAddon } from '@/lib/types';
 
 interface AddonsManagerSectionProps {
@@ -68,7 +69,7 @@ export function AddonsManagerSection({
       const existingAddon = editingAddonId
         ? addons.find((item) => item.id === editingAddonId)
         : null;
-      const res = await fetch('/api/admin/services', {
+      const result = await fetchJsonWithTimeout('/api/admin/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -89,17 +90,14 @@ export function AddonsManagerSection({
           },
         }),
       });
-      if (res.ok) {
+      if (result.ok) {
         const wasEditing = Boolean(editingAddonId);
         await onRefresh();
         resetAddonForm();
         onNotice(wasEditing ? 'Extra guardado' : 'Extra agregado');
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        onError(errJson?.error || 'No se pudo guardar el extra.');
+        onError(result.error || 'No se pudo guardar el extra.');
       }
-    } catch {
-      onError('Sin conexión. No se pudo guardar el extra.');
     } finally {
       setSavingAddon(false);
     }
@@ -110,20 +108,17 @@ export function AddonsManagerSection({
     setTogglingId(addon.id);
     setOptimisticActiveById((prev) => ({ ...prev, [addon.id]: checked }));
     try {
-      const res = await fetch('/api/admin/services', {
+      const result = await fetchJsonWithTimeout('/api/admin/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: 'addon', data: { ...addon, isActive: checked } }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await onRefresh();
         onNotice(checked ? `${addon.name} activado` : `${addon.name} pausado`);
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        onError(errJson?.error || 'No se pudo actualizar el estado del extra.');
+        onError(result.error || 'No se pudo actualizar el estado del extra.');
       }
-    } catch {
-      onError('Sin conexión. No se pudo actualizar el extra.');
     } finally {
       setTogglingId(null);
       setOptimisticActiveById((prev) =>

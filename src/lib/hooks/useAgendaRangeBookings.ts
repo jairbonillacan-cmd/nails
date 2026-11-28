@@ -15,8 +15,6 @@ import {
   useAdminCachedQuery,
 } from './useAdminCache';
 
-const RANGE_REQUEST_TIMEOUT_MS = 15_000;
-
 interface AdminBookingsRangeResponse {
   bookings: BookingWithRelations[];
   paymentSplits: PaymentSplit[];
@@ -167,17 +165,11 @@ export function useAgendaRangeBookings({
   );
 
   const fetcher = useCallback(
-    (signal: AbortSignal) => {
-      const timeoutSignal = AbortSignal.timeout(RANGE_REQUEST_TIMEOUT_MS);
-      const combinedSignal =
-        typeof AbortSignal.any === 'function'
-          ? AbortSignal.any([signal, timeoutSignal])
-          : signal;
-      return fetchAdminJson<AdminBookingsRangeResponse>(
+    (signal: AbortSignal) =>
+      fetchAdminJson<AdminBookingsRangeResponse>(
         requestUrl ?? ADMIN_CACHE_KEYS.bookings,
-        combinedSignal,
-      );
-    },
+        signal,
+      ),
     [requestUrl],
   );
 
@@ -201,11 +193,17 @@ export function useAgendaRangeBookings({
     [overviewBookings, overviewSplits, overviewCashEntries, query.data],
   );
 
+  const retry = useCallback(() => {
+    void query.revalidate();
+  }, [query]);
+
   return {
     bookings: merged.bookings,
     paymentSplits: merged.paymentSplits,
     cashEntries: merged.cashEntries,
     isValidating: query.isValidating,
+    error: query.error ? query.error.message : null,
     revalidate: query.revalidate,
+    retry,
   };
 }

@@ -2,9 +2,10 @@ import { formatTimeHHMM12h } from '@/lib/format';
 import {
   FORM_SUBMIT_OK,
   formSubmitError,
-  formSubmitResultFromResponse,
+  formSubmitResultFromFetch,
   type FormSubmitResult,
 } from '@/lib/forms/form-submit';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import {
   formatMinutesHHMM,
   getDayOfWeekFromDateKey,
@@ -258,19 +259,14 @@ export async function submitBlockTimeRequest(
   if (!built.ok) {
     return formSubmitError(built.error);
   }
-  try {
-    const res = await fetch('/api/admin/availability', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(built.payload),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) {
-      return formSubmitResultFromResponse(res, 'No se pudo guardar el bloqueo.');
-    }
-    await onSaved(built.notice);
-    return FORM_SUBMIT_OK;
-  } catch {
-    return formSubmitError('Sin conexión o tiempo de espera agotado. Intenta de nuevo.');
+  const result = await fetchJsonWithTimeout('/api/admin/availability', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(built.payload),
+  });
+  if (!result.ok) {
+    return formSubmitResultFromFetch(result, 'No se pudo guardar el bloqueo.');
   }
+  await onSaved(built.notice);
+  return FORM_SUBMIT_OK;
 }

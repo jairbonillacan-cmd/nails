@@ -35,6 +35,8 @@ export interface WhatsAppInboxTabProps {
   searchQuery: string;
   isLoadingThreads: boolean;
   isLoadingDetail: boolean;
+  threadsError?: string | null;
+  detailError?: string | null;
   isSending: boolean;
   retryingMessageId: string | null;
   quotaPercent: number;
@@ -71,6 +73,8 @@ export function WhatsAppInboxTab({
   searchQuery,
   isLoadingThreads,
   isLoadingDetail,
+  threadsError = null,
+  detailError = null,
   isSending,
   retryingMessageId,
   quotaPercent,
@@ -161,6 +165,7 @@ export function WhatsAppInboxTab({
           filter={filter}
           searchQuery={searchQuery}
           isLoading={isLoadingThreads}
+          errorMessage={threadsError}
           nowMs={effectiveNowMs}
           timezone={timezone}
           onFilterChange={onFilterChange}
@@ -176,6 +181,7 @@ export function WhatsAppInboxTab({
           contextBookingId={contextBookingId}
           overviewBookings={overviewBookings}
           isLoadingDetail={isLoadingDetail}
+          detailError={detailError}
           isSending={isSending}
           retryingMessageId={retryingMessageId}
           quotaPercent={quotaPercent}
@@ -190,6 +196,7 @@ export function WhatsAppInboxTab({
           timelineContainerRef={timelineContainerRef}
           onBack={handleBackToList}
           onOpenNewChat={() => setDialogOpen(true)}
+          onRetryDetail={onRefresh}
           onSendMessage={onSendMessage}
           onRetryMessage={onRetryMessage}
         />

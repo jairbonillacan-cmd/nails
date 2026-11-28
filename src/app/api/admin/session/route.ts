@@ -8,6 +8,10 @@ import {
   isLocalDemoAuthEnabled,
 } from '@/lib/auth/admin-session';
 import { DemoLoginSchema, SupabaseLoginSchema } from '@/lib/contracts';
+import {
+  ADMIN_PRIVATE_HEADERS,
+  withAdminPrivateHeaders,
+} from '@/lib/http/admin-headers';
 import { getRepository } from '@/lib/repositories/db';
 import {
   createSupabaseServerClient,
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest) {
       ? 'demo'
       : 'disabled';
   const availableDemoUsers = demoEnabled
-    ? (await getRepository().getSnapshot()).adminUsers.filter((u) => u.isActive)
+    ? await getRepository().listActiveAdminUsers()
     : [];
 
   return NextResponse.json(
@@ -48,7 +52,7 @@ export async function GET(request: NextRequest) {
       availableDemoUsers,
       authMode,
     },
-    { headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie' } },
+    { headers: ADMIN_PRIVATE_HEADERS },
   );
 }
 
@@ -67,13 +71,17 @@ export async function POST(request: NextRequest) {
       },
       {
         status: 429,
-        headers: {
+        headers: withAdminPrivateHeaders({
           'Retry-After': String(rate.retryAfterSeconds),
           'X-RateLimit-Remaining': '0',
-        },
+        }),
       },
     );
   }
+
+  const rateHeaders = withAdminPrivateHeaders({
+    'X-RateLimit-Remaining': String(rate.remaining),
+  });
 
   let body: unknown;
   try {
@@ -81,7 +89,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json(
       { error: 'Solicitud inválida.' },
-      { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 400, headers: rateHeaders },
     );
   }
 
@@ -90,7 +98,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json(
         { error: 'Correo y contraseña válidos son requeridos.' },
-        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 400, headers: rateHeaders },
       );
     }
 
@@ -114,7 +122,7 @@ export async function POST(request: NextRequest) {
       if (error || !data.user) {
         return NextResponse.json(
           { error: 'Credenciales inválidas.' },
-          { status: 401, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+          { status: 401, headers: rateHeaders },
         );
       }
 
@@ -125,18 +133,18 @@ export async function POST(request: NextRequest) {
         } catch {
           return NextResponse.json(
             { error: 'Usuario sin permisos de administrador activo.' },
-            { status: 401, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+            { status: 401, headers: rateHeaders },
           );
         }
         return NextResponse.json(
           { error: 'Usuario sin permisos de administrador activo.' },
-          { status: 401, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+          { status: 401, headers: rateHeaders },
         );
       }
 
       const response = NextResponse.json(
         { session: { user: adminUser, isDemo: false } },
-        { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { headers: rateHeaders },
       );
       applyRecordedSupabaseCookies(response, recordedCookies, recordedHeaders);
       response.cookies.set(ADMIN_SESSION_COOKIE, '', {
@@ -147,7 +155,7 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json(
         { error: 'No se pudo autenticar con Supabase.' },
-        { status: 401, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 401, headers: rateHeaders },
       );
     }
   }
@@ -155,7 +163,7 @@ export async function POST(request: NextRequest) {
   if (!isLocalDemoAuthEnabled()) {
     return NextResponse.json(
       { error: 'El inicio de sesión demo sin contraseña está deshabilitado en este entorno.' },
-      { status: 503, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 503, headers: rateHeaders },
     );
   }
 
@@ -163,19 +171,17 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Correo electrónico inválido.' },
-      { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 400, headers: rateHeaders },
     );
   }
 
   const email = parsed.data.email.toLowerCase();
-  const db = await getRepository().getSnapshot();
-  const user = db.adminUsers.find(
-    (u) => u.email.toLowerCase() === email && u.isActive,
-  );
+  const activeAdmins = await getRepository().listActiveAdminUsers();
+  const user = activeAdmins.find((u) => u.email.toLowerCase() === email && u.isActive);
   if (!user) {
     return NextResponse.json(
       { error: 'Correo no registrado como administrador activo.' },
-      { status: 401, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 401, headers: rateHeaders },
     );
   }
 
@@ -183,20 +189,20 @@ export async function POST(request: NextRequest) {
   if (!token) {
     return NextResponse.json(
       { error: 'Secreto de sesión no configurado.' },
-      { status: 503, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 503, headers: rateHeaders },
     );
   }
 
   const response = NextResponse.json(
     { session: { user, isDemo: true } },
-    { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+    { headers: rateHeaders },
   );
   response.cookies.set(ADMIN_SESSION_COOKIE, token, getAdminCookieOptions());
   return response;
 }
 
 export async function DELETE(request?: NextRequest) {
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true }, { headers: ADMIN_PRIVATE_HEADERS });
 
   if (isSupabaseEnabled()) {
     const recordedCookies: RecordedSupabaseCookie[] = [];

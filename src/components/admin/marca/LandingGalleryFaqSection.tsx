@@ -28,9 +28,10 @@ import {
 import { UploadDropzone } from '@/components/ui/UploadDropzone';
 import {
   formatFileSize,
+  prepareClientImageFile,
   readFileAsDataUrl,
-  validateClientImageFile,
 } from '@/components/booking/bookingHelpers';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { resolveLandingContent } from '@/lib/landing-config';
 import { buildSalonFaqs } from '@/lib/seo/structured-data';
 import type {
@@ -91,15 +92,15 @@ export function LandingGalleryFaqSection({
   const handleGalleryFile = async (file: File | null) => {
     if (!file) return;
     setUploadError(null);
-    const err = await validateClientImageFile(file);
-    if (err) {
-      setUploadError(err);
+    const prepared = await prepareClientImageFile(file);
+    if (prepared.error) {
+      setUploadError(prepared.error);
       return;
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await readFileAsDataUrl(prepared.file);
       setPreviewDataUrl(dataUrl);
-      setFileMeta({ name: file.name, size: formatFileSize(file.size) });
+      setFileMeta({ name: prepared.file.name, size: formatFileSize(prepared.file.size) });
     } catch {
       setUploadError('No se pudo leer esa foto. Intenta de nuevo.');
     }
@@ -118,7 +119,7 @@ export function LandingGalleryFaqSection({
     setUploading(true);
     setUploadError(null);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -130,9 +131,8 @@ export function LandingGalleryFaqSection({
           isFeatured: true,
         }),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        setUploadError(json?.error || 'No se pudo subir la foto.');
+      if (!result.ok) {
+        setUploadError(result.error || 'No se pudo subir la foto.');
         return;
       }
       setTitle('');
@@ -142,8 +142,6 @@ export function LandingGalleryFaqSection({
       setFileMeta(null);
       await onRefresh();
       onNotify('Foto agregada a tu galería');
-    } catch {
-      setUploadError('Error de conexión al subir la foto.');
     } finally {
       setUploading(false);
     }
@@ -153,17 +151,15 @@ export function LandingGalleryFaqSection({
     setDeletingId(id);
     setUploadError(null);
     try {
-      const res = await fetch(`/api/admin/brand?id=${encodeURIComponent(id)}`, {
+      const result = await fetchJsonWithTimeout(`/api/admin/brand?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-      if (!res.ok) {
-        setUploadError('No se pudo eliminar esa foto.');
+      if (!result.ok) {
+        setUploadError(result.error || 'No se pudo eliminar esa foto.');
         return;
       }
       await onRefresh();
       onNotify('Foto eliminada');
-    } catch {
-      setUploadError('Error de conexión al eliminar la foto.');
     } finally {
       setDeletingId(null);
     }

@@ -5,13 +5,14 @@ import { getRuntimeIntegrationStatus } from '@/lib/env';
 import { buildWhatsAppLink } from '@/lib/format';
 import { dispatchWhatsAppNotification } from '@/lib/integrations/notifications';
 import { getWhatsAppMonthKey } from '@/lib/integrations/whatsapp-templates';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
 import { getRepository } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 import type { WhatsAppMessageDeliveryMode } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 export async function POST(
   request: NextRequest,
@@ -51,7 +52,7 @@ export async function POST(
 
   const { messageId } = await context.params;
   const cleanMessageId = messageId?.trim();
-  if (!cleanMessageId) {
+  if (!cleanMessageId || cleanMessageId.length > 128) {
     return NextResponse.json(
       { error: 'Mensaje inválido.' },
       { status: 400, headers: PRIVATE_NO_STORE },

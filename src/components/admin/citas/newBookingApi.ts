@@ -1,5 +1,6 @@
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatDateShortInTimezone } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { QuickSlotOption } from './NewBookingSlotStep';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -49,29 +50,22 @@ export async function fetchNewBookingRangeSlots(
   if (params.addonIds.length > 0) qs.set('addonIds', params.addonIds.join(','));
   if (params.staffId && params.staffId !== 'any') qs.set('staffId', params.staffId);
 
-  const timeoutSignal = AbortSignal.timeout(15_000);
-  const fetchSignal =
-    typeof AbortSignal.any === 'function'
-      ? AbortSignal.any([signal, timeoutSignal])
-      : signal;
-
-  const res = await fetch(`/api/availability?${qs.toString()}`, { signal: fetchSignal });
-  if (signal.aborted) return { slots: [], error: null };
+  const res = await fetchJsonWithTimeout<{
+    days?: Array<{ date: string; slots: AvailableSlot[] }>;
+  }>(`/api/availability?${qs.toString()}`, {
+    signal,
+    timeoutMs: 15_000,
+  });
+  if (signal.aborted || res.aborted) return { slots: [], error: null };
   if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: string } | null;
     return {
       slots: [],
-      error: err?.error || 'No se pudieron consultar horarios disponibles.',
+      error: res.error || 'No se pudieron consultar horarios disponibles.',
     };
   }
 
-  const json = (await res.json()) as {
-    days?: Array<{ date: string; slots: AvailableSlot[] }>;
-  };
-  if (signal.aborted) return { slots: [], error: null };
-
   const flattened: QuickSlotOption[] = [];
-  for (const day of json.days ?? []) {
+  for (const day of res.data.days ?? []) {
     for (const slot of day.slots) {
       flattened.push({ ...slot, date: day.date });
       if (flattened.length >= limit) {
@@ -113,55 +107,58 @@ export async function submitAdminBookingRequest(params: {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (params.ownerPin) headers['x-owner-pin'] = params.ownerPin;
 
-  let res: Response;
-  try {
-    res = await fetch('/api/admin/bookings', {
-      method: 'POST',
-      headers,
-      signal: AbortSignal.timeout(20_000),
-      body: JSON.stringify({
-        serviceId: params.serviceId,
-        extraServiceIds: params.extraServiceIds,
-        addonIds: params.addonIds,
-        staffId: params.staffId,
-        startAt: params.startAt,
-        clientName: params.clientName,
-        clientPhone: params.clientPhone,
-        clientInstagram: params.clientInstagram,
-        internalNotes: params.internalNotes,
-        ...(params.useCustomOverride
-          ? {
-              customDurationMinutes: Math.max(15, Math.min(480, Math.round(params.customDuration))),
-              customPriceCents: params.customPriceCents,
-            }
-          : {}),
-        ...(params.isRecurring
-          ? { recurrence: { intervalWeeks: params.recurrenceIntervalWeeks, count: clampedCount } }
-          : {}),
-        ...(params.ownerPin ? { ownerPin: params.ownerPin } : {}),
-        notifyEmail: params.notifyEmail,
-        notifyWhatsapp: params.notifyWhatsapp,
-        source: params.source,
-        forceConfirmed: true,
-      }),
-    });
-  } catch (err) {
-    const isTimeout =
-      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return {
-      ok: false,
-      pinRequired: false,
-      error: isTimeout
-        ? 'El registro de la cita tardó demasiado. Intenta de nuevo en unos segundos.'
-        : 'Sin conexión. No se pudo guardar la cita.',
-    };
-  }
+  const res = await fetchJsonWithTimeout<{
+    error?: string;
+    code?: string;
+    bookings?: Array<{ bookingCode?: string; startAt?: string }>;
+    skippedConflicts?: Array<{ startAt?: string; dateKey?: string; reason?: string }>;
+  }>('/api/admin/bookings', {
+    method: 'POST',
+    headers,
+    timeoutMs: 20_000,
+    body: JSON.stringify({
+      serviceId: params.serviceId,
+      extraServiceIds: params.extraServiceIds,
+      addonIds: params.addonIds,
+      staffId: params.staffId,
+      startAt: params.startAt,
+      clientName: params.clientName,
+      clientPhone: params.clientPhone,
+      clientInstagram: params.clientInstagram,
+      internalNotes: params.internalNotes,
+      ...(params.useCustomOverride
+        ? {
+            customDurationMinutes: Math.max(15, Math.min(480, Math.round(params.customDuration))),
+            customPriceCents: params.customPriceCents,
+          }
+        : {}),
+      ...(params.isRecurring
+        ? { recurrence: { intervalWeeks: params.recurrenceIntervalWeeks, count: clampedCount } }
+        : {}),
+      ...(params.ownerPin ? { ownerPin: params.ownerPin } : {}),
+      notifyEmail: params.notifyEmail,
+      notifyWhatsapp: params.notifyWhatsapp,
+      source: params.source,
+      forceConfirmed: true,
+    }),
+  });
 
   if (!res.ok) {
-    const errJson = (await res.json().catch(() => null)) as {
-      error?: string;
-      code?: string;
-    } | null;
+    if (res.reason === 'timeout') {
+      return {
+        ok: false,
+        pinRequired: false,
+        error: 'El registro de la cita tardó demasiado. Intenta de nuevo en unos segundos.',
+      };
+    }
+    if (res.reason === 'network') {
+      return {
+        ok: false,
+        pinRequired: false,
+        error: 'Sin conexión. No se pudo guardar la cita.',
+      };
+    }
+    const errJson = res.data;
     if (
       res.status === 403 &&
       (errJson?.code === 'OWNER_PIN_REQUIRED' || errJson?.code === 'OWNER_PIN_INVALID')
@@ -178,21 +175,18 @@ export async function submitAdminBookingRequest(params: {
     return {
       ok: false,
       pinRequired: false,
-      error: errJson?.error || 'No se pudo guardar la cita.',
+      error: res.error || 'No se pudo guardar la cita.',
     };
   }
 
-  const okJson = (await res.json().catch(() => null)) as {
-    bookings?: Array<{ bookingCode?: string; startAt?: string }>;
-    skippedConflicts?: Array<{ startAt?: string; dateKey?: string; reason?: string }>;
-  } | null;
+  const okJson = res.data;
 
   if (!params.isRecurring) {
     return { ok: true, message: 'Cita agendada correctamente.' };
   }
 
-  const createdCount = okJson?.bookings?.length ?? 1;
-  const skipped = okJson?.skippedConflicts ?? [];
+  const createdCount = okJson.bookings?.length ?? 1;
+  const skipped = okJson.skippedConflicts ?? [];
   if (skipped.length > 0) {
     const skippedDates = skipped
       .map((item) =>

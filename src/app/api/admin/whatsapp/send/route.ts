@@ -16,13 +16,15 @@ import {
   canonicalizeWhatsAppPhoneE164,
   renderWhatsAppTemplatePreview,
 } from '@/lib/notifications/whatsapp-inbox';
+import { ADMIN_PRIVATE_HEADERS } from '@/lib/http/admin-headers';
+import { logError } from '@/lib/logger';
 import { getRepository } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 import type { WhatsAppMessageDeliveryMode } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const PRIVATE_NO_STORE = ADMIN_PRIVATE_HEADERS;
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin(['owner', 'admin'], request);
@@ -113,8 +115,7 @@ export async function POST(request: NextRequest) {
       null;
 
     if (!resolvedPhone && resolvedClientId) {
-      const snapshot = await repo.getSnapshot();
-      const matchedClient = snapshot.clients.find((c) => c.id === resolvedClientId);
+      const matchedClient = await repo.getClientById(resolvedClientId);
       if (matchedClient) {
         resolvedPhone =
           canonicalizeWhatsAppPhoneE164(matchedClient.phoneE164) ||
@@ -408,6 +409,9 @@ export async function POST(request: NextRequest) {
         { status: 400, headers: PRIVATE_NO_STORE },
       );
     }
+    logError('admin_whatsapp_send_post_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       { error: 'No se pudo enviar el mensaje de WhatsApp.' },
       { status: 500, headers: PRIVATE_NO_STORE },

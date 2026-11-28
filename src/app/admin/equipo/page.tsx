@@ -20,6 +20,7 @@ import {
 } from '@/components/admin/equipo/AdminAccessSection';
 import { equipoHref, parseEquipoParams } from '@/lib/admin-links';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { AdminUser, StaffMember } from '@/lib/types';
 
 type PendingDeactivateTarget =
@@ -77,20 +78,17 @@ export default function AdminTeamPage() {
     setOptimisticStaffActive((prev) => ({ ...prev, [st.id]: checked }));
     setMsg(null);
     try {
-      const res = await fetch('/api/admin/team', {
+      const result = await fetchJsonWithTimeout('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: 'staff', data: { ...st, isActive: checked } }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await refresh();
         saveNotice.show(checked ? `${st.name} activada` : `${st.name} pausada`);
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        setMsg({ status: 'error', text: errJson?.error || 'No se pudo actualizar el estado.' });
+        setMsg({ status: 'error', text: result.error || 'No se pudo actualizar el estado.' });
       }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el estado.' });
     } finally {
       setBusyId(null);
       setOptimisticStaffActive((prev) =>
@@ -105,7 +103,7 @@ export default function AdminTeamPage() {
     setOptimisticAccessActive((prev) => ({ ...prev, [user.id]: checked }));
     setMsg(null);
     try {
-      const res = await fetch('/api/admin/team', {
+      const result = await fetchJsonWithTimeout('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,18 +118,15 @@ export default function AdminTeamPage() {
           },
         }),
       });
-      if (res.ok) {
+      if (result.ok) {
         await refresh();
         const displayName = cleanAccessDisplayName(user.fullName);
         saveNotice.show(
           checked ? `Acceso reactivado · ${displayName}` : `Acceso pausado · ${displayName}`,
         );
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        setMsg({ status: 'error', text: errJson?.error || 'No se pudo actualizar el acceso.' });
+        setMsg({ status: 'error', text: result.error || 'No se pudo actualizar el acceso.' });
       }
-    } catch {
-      setMsg({ status: 'error', text: 'Sin conexión. No se pudo actualizar el acceso.' });
     } finally {
       setBusyId(null);
       setOptimisticAccessActive((prev) =>

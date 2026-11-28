@@ -3677,6 +3677,54 @@ input.ad-pin-input,
   .ad-shell dialog footer {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
+
+  dialog.astryx-dialog button:not([role='switch']):not([role='checkbox']):not([role='gridcell'] button):not(.astryx-number-input-stepper),
+  dialog.astryx-dialog a[href] {
+    min-block-size: 2.75rem;
+    min-inline-size: 2.75rem;
+    height: auto;
+  }
+
+  .ad-troubleshooter-picker {
+    padding-inline: 0.625rem !important;
+  }
+
+  .ad-troubleshooter-cal .astryx-calendar {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.5rem 0.25rem;
+    box-sizing: border-box;
+  }
+
+  .ad-troubleshooter-cal .astryx-calendar > div:last-child,
+  .ad-troubleshooter-cal .astryx-calendar > div:last-child > div {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .ad-troubleshooter-cal [role='grid'] {
+    width: 100%;
+    grid-template-columns: repeat(7, minmax(2.75rem, 1fr));
+    column-gap: 0.125rem;
+    row-gap: 0.25rem;
+  }
+
+  .ad-troubleshooter-cal [role='gridcell'],
+  .ad-troubleshooter-cal [role='columnheader'] {
+    width: auto;
+    height: auto;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+  }
+
+  .ad-troubleshooter-cal .astryx-calendar-day {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+  }
 }
 
 @media (max-width: 47.9375rem) {

@@ -47,6 +47,7 @@ import {
 import { checkThemeAccentContrast } from '@/lib/contrast';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { roleCanAccess } from '@/lib/rbac';
 import type { SalonSettings } from '@/lib/types';
 
@@ -192,7 +193,7 @@ export default function AdminBrandPage() {
   const baseSettings = data.settings;
   const baseLoyalty = data.loyaltyProgram ?? DEFAULT_LOYALTY_PROGRAM;
   const draft = draftOverride ?? baseSettings;
-  const depositAmountCents = draft.depositAmountCents ?? 20000;
+  const depositAmountCents = draft.depositAmountCents ?? 0;
   const depositBeneficiary = draft.depositBeneficiary ?? draft.depositAccountHolder;
   const activeServiceMode: ActiveServiceMode = draft.serviceMode ?? 'studio';
   const soundAlertsEnabled = draft.soundAlertsEnabled ?? true;
@@ -227,10 +228,9 @@ export default function AdminBrandPage() {
     setSaving(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/admin/brand', {
+      const result = await fetchJsonWithTimeout('/api/admin/brand', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify(
           buildBrandPatchPayload({
             draft,
@@ -240,16 +240,13 @@ export default function AdminBrandPage() {
           }),
         ),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        setErrorMsg(json?.error || 'No se pudieron guardar los cambios.');
+      if (!result.ok) {
+        setErrorMsg(result.error || 'No se pudieron guardar los cambios.');
         return;
       }
       await refresh();
       setDraftOverride(null);
       saveNotice.show('Cambios guardados');
-    } catch {
-      setErrorMsg('Error de conexión al guardar tus cambios.');
     } finally {
       setSaving(false);
     }

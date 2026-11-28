@@ -25,6 +25,7 @@ import {
   Sparkles,
   Star,
 } from 'lucide-react';
+import { useAdminData } from '@/components/admin/AdminProvider';
 import {
   EmptyStateCard,
   StatusTag,
@@ -65,7 +66,8 @@ interface WorkflowPresentation {
   icon: ReactNode;
 }
 
-const DEFAULT_SAMPLE_ADDRESS = 'Calle 25 Sur 1904, Col. Volcanes, Puebla, Pue.';
+const WORKFLOW_EDIT_FORM_ID = 'wa-workflow-edit-form';
+const WORKFLOW_TEST_FORM_ID = 'wa-workflow-test-form';
 
 function formatOffsetBadge(minutes: number, direction: 'before' | 'after'): string {
   const abs = Math.max(1, Math.abs(minutes));
@@ -199,6 +201,10 @@ export function WhatsAppAutomationCards({
   isSubmitting,
   onRunAction,
 }: WhatsAppAutomationCardsProps) {
+  const { data: adminData } = useAdminData();
+  const studioAddress = adminData?.settings.address?.trim() || 'Tu dirección del estudio';
+  const defaultTestPhone = adminData?.settings.whatsappNumber?.trim() || '';
+
   const [busyWorkflowId, setBusyWorkflowId] = useState<string | null>(null);
   const [editingWorkflow, setEditingWorkflow] = useState<NotificationWorkflow | null>(null);
   const [subjectDraft, setSubjectDraft] = useState('');
@@ -267,7 +273,7 @@ export function WhatsAppAutomationCards({
 
   const openTestDialog = (wf: NotificationWorkflow) => {
     setTestingWorkflow(wf);
-    setTestPhoneDraft('+522224123987');
+    setTestPhoneDraft(defaultTestPhone);
   };
 
   const toggleDraftChannel = (channel: NotificationChannel, checked: boolean) => {
@@ -282,7 +288,7 @@ export function WhatsAppAutomationCards({
   const testingPreviewSegments = testingWorkflow
     ? buildTemplatePreview(testingWorkflow.messageTemplate, {
         salonName: studioName,
-        address: DEFAULT_SAMPLE_ADDRESS,
+        address: studioAddress,
       })
     : [];
 
@@ -326,7 +332,7 @@ export function WhatsAppAutomationCards({
               const templateSpec = triggerKey ? getWhatsAppTemplateCatalogItem(triggerKey) : null;
               const previewSegments = buildTemplatePreview(wf.messageTemplate, {
                 salonName: studioName,
-                address: DEFAULT_SAMPLE_ADDRESS,
+                address: studioAddress,
               });
 
               return (
@@ -468,9 +474,16 @@ export function WhatsAppAutomationCards({
         }
         subtitle="Personaliza cuándo se envía, los canales activos y el texto que verán tus clientas."
         width="min(34rem, 96vw)"
+        submitFooter={{
+          formId: WORKFLOW_EDIT_FORM_ID,
+          submitLabel: 'Guardar cambios',
+          submitIcon: <Save size={14} aria-hidden="true" />,
+          isSubmitDisabled: !messageDraft.trim(),
+        }}
       >
         {(controls) => (
           <form
+            id={WORKFLOW_EDIT_FORM_ID}
             onSubmit={(event) => {
               event.preventDefault();
               if (!editingWorkflow) return;
@@ -570,28 +583,10 @@ export function WhatsAppAutomationCards({
                 {renderPreviewSegments(
                   buildTemplatePreview(messageDraft, {
                     salonName: studioName,
-                    address: DEFAULT_SAMPLE_ADDRESS,
+                    address: studioAddress,
                   }),
                 )}
               </VStack>
-
-              <HStack gap={2} justify="end" wrap="wrap">
-                <Button
-                  type="button"
-                  label="Cancelar"
-                  variant="secondary"
-                  isDisabled={controls.isSubmitting}
-                  onClick={controls.close}
-                />
-                <Button
-                  type="submit"
-                  label={controls.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
-                  variant="primary"
-                  icon={<Save size={14} aria-hidden="true" />}
-                  isLoading={controls.isSubmitting}
-                  isDisabled={controls.isSubmitting || !messageDraft.trim()}
-                />
-              </HStack>
             </VStack>
           </form>
         )}
@@ -609,9 +604,16 @@ export function WhatsAppAutomationCards({
         }
         subtitle="Envía un recordatorio de prueba a tu número o a un teléfono de prueba."
         width="min(31rem, 96vw)"
+        submitFooter={{
+          formId: WORKFLOW_TEST_FORM_ID,
+          submitLabel: 'Enviar prueba',
+          submitIcon: <Send size={14} aria-hidden="true" />,
+          isSubmitDisabled: testPhoneDraft.replace(/\D/g, '').length < 8,
+        }}
       >
         {(controls) => (
           <form
+            id={WORKFLOW_TEST_FORM_ID}
             onSubmit={(event) => {
               event.preventDefault();
               if (!testingWorkflow) return;
@@ -643,7 +645,7 @@ export function WhatsAppAutomationCards({
             <VStack gap={3}>
               <TextInput
                 label="WhatsApp de destino"
-                placeholder="+52 222 412 3987"
+                placeholder="+52 222 000 0000"
                 description="En modo demo se registrará de inmediato en Mensajes y en el historial."
                 value={testPhoneDraft}
                 onChange={setTestPhoneDraft}
@@ -655,23 +657,6 @@ export function WhatsAppAutomationCards({
                 </Text>
                 {renderPreviewSegments(testingPreviewSegments)}
               </VStack>
-              <HStack gap={2} justify="end" wrap="wrap">
-                <Button
-                  type="button"
-                  label="Cancelar"
-                  variant="secondary"
-                  isDisabled={controls.isSubmitting}
-                  onClick={controls.close}
-                />
-                <Button
-                  type="submit"
-                  label={controls.isSubmitting ? 'Enviando prueba…' : 'Enviar prueba'}
-                  variant="primary"
-                  icon={<Send size={14} aria-hidden="true" />}
-                  isLoading={controls.isSubmitting}
-                  isDisabled={controls.isSubmitting || testPhoneDraft.replace(/\D/g, '').length < 8}
-                />
-              </HStack>
             </VStack>
           </form>
         )}

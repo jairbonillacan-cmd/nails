@@ -15,6 +15,7 @@ import {
   SurfaceCard,
 } from '@/components/ui';
 import { formatTimeHHMM12h } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { DateOverride, StaffMember } from '@/lib/types';
 import { BlockTimeForm } from './BlockTimeForm';
 
@@ -68,19 +69,18 @@ export function DateOverridesSection({
     setBusyOverrideId(target.id);
     onMessage(null);
     try {
-      const res = await fetch(`/api/admin/availability?id=${encodeURIComponent(target.id)}`, {
-        method: 'DELETE',
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (res.ok) {
+      const result = await fetchJsonWithTimeout(
+        `/api/admin/availability?id=${encodeURIComponent(target.id)}`,
+        {
+          method: 'DELETE',
+        },
+      );
+      if (result.ok) {
         await onRefresh();
         onSavedNotice(`Fecha ${target.overrideDate} eliminada`);
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
-        onMessage({ status: 'error', text: errJson?.error || 'No se pudo eliminar esa fecha.' });
+        onMessage({ status: 'error', text: result.error || 'No se pudo eliminar esa fecha.' });
       }
-    } catch {
-      onMessage({ status: 'error', text: 'Sin conexión. No se pudo eliminar esa fecha.' });
     } finally {
       setPendingDelete(null);
       setBusyOverrideId(null);
@@ -92,10 +92,13 @@ export function DateOverridesSection({
     setPreloadingHolidays(true);
     onMessage(null);
     try {
-      const res = await fetch('/api/admin/availability', {
+      const result = await fetchJsonWithTimeout<{
+        created?: DateOverride[];
+        skippedDates?: string[];
+        year?: number;
+      }>('/api/admin/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           kind: 'preload_mx_holidays',
           year: Number(holidayYear) || 2026,
@@ -103,29 +106,21 @@ export function DateOverridesSection({
           publicNote: 'Cerrado por día festivo en México',
         }),
       });
-      if (res.ok) {
-        const json = (await res.json()) as {
-          created?: DateOverride[];
-          skippedDates?: string[];
-          year?: number;
-        };
-        const createdCount = json.created?.length ?? 0;
-        const skippedCount = json.skippedDates?.length ?? 0;
+      if (result.ok) {
+        const createdCount = result.data.created?.length ?? 0;
+        const skippedCount = result.data.skippedDates?.length ?? 0;
         await onRefresh();
         onMessage({
           status: 'success',
-          text: `Festivos de México ${json.year ?? holidayYear}: ${createdCount} día(s) marcados como cerrados${skippedCount > 0 ? ` (${skippedCount} ya estaban marcados)` : ''}.`,
+          text: `Festivos de México ${result.data.year ?? holidayYear}: ${createdCount} día(s) marcados como cerrados${skippedCount > 0 ? ` (${skippedCount} ya estaban marcados)` : ''}.`,
         });
-        onSavedNotice(`Festivos ${json.year ?? holidayYear} marcados`);
+        onSavedNotice(`Festivos ${result.data.year ?? holidayYear} marcados`);
       } else {
-        const errJson = (await res.json().catch(() => null)) as { error?: string } | null;
         onMessage({
           status: 'error',
-          text: errJson?.error || 'No se pudieron marcar los días festivos.',
+          text: result.error || 'No se pudieron marcar los días festivos.',
         });
       }
-    } catch {
-      onMessage({ status: 'error', text: 'Sin conexión. No se pudieron marcar los días festivos.' });
     } finally {
       setPreloadingHolidays(false);
     }

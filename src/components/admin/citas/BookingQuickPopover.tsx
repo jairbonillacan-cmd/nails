@@ -165,15 +165,10 @@ export function BookingQuickPopover({
       return;
     }
     try {
-      const timeoutSignal = AbortSignal.timeout(10_000);
-      const effectiveSignal =
-        typeof AbortSignal.any === 'function'
-          ? AbortSignal.any([signal, timeoutSignal])
-          : signal;
       const active = await fetchActiveClientPackages(
         booking.clientId,
         booking.serviceId,
-        effectiveSignal,
+        signal,
       );
       if (!signal.aborted) setClientPackages(active);
     } catch {
@@ -196,11 +191,7 @@ export function BookingQuickPopover({
   }, [allBookings, adminData?.bookings, booking]);
 
   if (!booking) {
-    return (
-      <Dialog isOpen={false} onOpenChange={() => onClose()} width={520} padding={5}>
-        <VStack gap={2} />
-      </Dialog>
-    );
+    return null;
   }
 
   const resolvedClients = clients.length > 0 ? clients : (adminData?.clients ?? []);
@@ -390,7 +381,7 @@ export function BookingQuickPopover({
         isOpen={Boolean(booking)}
         onOpenChange={handleDialogOpenChange}
         purpose="info"
-        width={520}
+        width="min(32.5rem, 94vw)"
         maxHeight="min(90dvh, calc(100dvh - 2rem))"
         padding={5}
       >
