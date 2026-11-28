@@ -28,6 +28,12 @@ export interface BookingConflictState {
   suggestions: AvailableSlot[];
 }
 
+export interface BookingHoldErrorState {
+  kind: 'rate_limited' | 'policy' | 'unavailable';
+  message: string;
+  retryAfterSeconds?: number;
+}
+
 export interface BookingFlowState {
   phase: BookingPhase;
   step: BookingStep;
@@ -36,6 +42,7 @@ export interface BookingFlowState {
   holdExpiresAt: number | null;
   holdExpired: boolean;
   holdExpiredMessage: string | null;
+  holdError: BookingHoldErrorState | null;
   conflict: BookingConflictState | null;
   formError: string | null;
   formErrorCode: string | null;
@@ -111,6 +118,13 @@ export type BookingFlowAction =
       type: 'SELECTION_CHANGED';
     }
   | {
+      type: 'HOLD_ERROR';
+      error: BookingHoldErrorState;
+    }
+  | {
+      type: 'DISMISS_HOLD_ERROR';
+    }
+  | {
       type: 'DISMISS_CONFLICT';
     };
 
@@ -123,6 +137,7 @@ export function createInitialBookingFlowState(): BookingFlowState {
     holdExpiresAt: null,
     holdExpired: false,
     holdExpiredMessage: null,
+    holdError: null,
     conflict: null,
     formError: null,
     formErrorCode: null,
@@ -149,6 +164,7 @@ export function bookingReducer(
         holdExpiresAt: action.holdExpiresAt,
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
@@ -165,6 +181,7 @@ export function bookingReducer(
         holdExpiresAt: action.holdExpiresAt ?? state.holdExpiresAt,
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: null,
       };
 
@@ -172,6 +189,7 @@ export function bookingReducer(
       return {
         ...state,
         step: action.step,
+        holdError: null,
       };
 
     case 'HOLD_EXTENDED':
@@ -182,6 +200,7 @@ export function bookingReducer(
         ...state,
         holdId: action.holdId ?? state.holdId,
         holdExpiresAt: action.holdExpiresAt ?? state.holdExpiresAt,
+        holdError: null,
       };
 
     case 'SLOT_CONFLICT':
@@ -194,6 +213,7 @@ export function bookingReducer(
         holdExpiresAt: null,
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: {
           kind: 'taken',
           message: action.message,
@@ -270,6 +290,7 @@ export function bookingReducer(
       return {
         ...state,
         phase: 'submitting',
+        holdError: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
@@ -296,6 +317,7 @@ export function bookingReducer(
         phase: 'confirmed',
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
@@ -314,6 +336,7 @@ export function bookingReducer(
         holdExpiresAt: null,
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
@@ -330,11 +353,25 @@ export function bookingReducer(
         holdExpiresAt: null,
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: null,
         formError: null,
         formErrorCode: null,
         activeBookings: [],
         privacyConsentError: null,
+      };
+
+    case 'HOLD_ERROR':
+      return {
+        ...state,
+        holdError: action.error,
+        conflict: null,
+      };
+
+    case 'DISMISS_HOLD_ERROR':
+      return {
+        ...state,
+        holdError: null,
       };
 
     case 'DISMISS_CONFLICT':

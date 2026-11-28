@@ -1,5 +1,4 @@
 import type { MetadataRoute } from 'next';
-import { toPublicServiceDTO } from '@/lib/public-dto';
 import { getRepository } from '@/lib/repositories/db';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 
@@ -12,8 +11,8 @@ function resolveLastModified(value: string): Date {
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = getSiteOrigin();
-  const db = await getRepository().getSnapshot();
-  const lastModified = resolveLastModified(db.settings.updatedAt);
+  const bootstrap = await getRepository().getPublicBootstrap();
+  const lastModified = resolveLastModified(bootstrap.settings.updatedAt);
 
   const staticEntries: MetadataRoute.Sitemap = [
     {
@@ -42,16 +41,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  const serviceEntries: MetadataRoute.Sitemap = db.services
-    .filter((service) => service.isActive && !service.isPrivate)
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .map(toPublicServiceDTO)
-    .map((service) => ({
-      url: `${origin}/reservar/${encodeURIComponent(service.slug)}`,
-      lastModified,
-      changeFrequency: 'weekly',
-      priority: 0.8,
-    }));
+  const serviceEntries: MetadataRoute.Sitemap = bootstrap.services.map((service) => ({
+    url: `${origin}/reservar/${encodeURIComponent(service.slug)}`,
+    lastModified,
+    changeFrequency: 'weekly',
+    priority: 0.8,
+  }));
 
   return [...staticEntries, ...serviceEntries];
 }

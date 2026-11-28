@@ -233,7 +233,30 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
 
     expect(bookingApiRoute).not.toContain('getSnapshot(');
     expect(bookingApiRoute).not.toContain('getPublicBootstrap(');
+    expect(bookingApiRoute).not.toContain('persistBookingMediaField(');
+    expect(bookingApiRoute).not.toContain('?? 20_000');
+    expect(bookingApiRoute).not.toContain('|| 20000');
     expect(citaPageSource).not.toContain('getSnapshot(');
     expect(citaPageSource).toContain('cache(');
+
+    const publicNoSnapshotFiles = [
+      'src/app/reservar/page.tsx',
+      'src/app/reservar/[slug]/page.tsx',
+      'src/app/reservar/[slug]/opengraph-image.tsx',
+      'src/app/links/page.tsx',
+      'src/app/sitemap.ts',
+      'src/lib/auth/client-portal-profile.ts',
+    ];
+    for (const rel of publicNoSnapshotFiles) {
+      const source = readText(rel);
+      expect(source, `${rel} must not call getSnapshot()`).not.toContain('getSnapshot(');
+    }
+
+    const cachedBootstrapHelper = readText('src/lib/public/bootstrap.ts');
+    const reservarSlugPage = readText('src/app/reservar/[slug]/page.tsx');
+    const linksPage = readText('src/app/links/page.tsx');
+    expect(cachedBootstrapHelper).toContain('cache(');
+    expect(reservarSlugPage).toContain('getCachedPublicBootstrap(');
+    expect(linksPage).toContain('getCachedPublicBootstrap(');
   });
 });

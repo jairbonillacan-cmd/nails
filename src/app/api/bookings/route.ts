@@ -12,7 +12,6 @@ import {
   getRepository,
   getServicesByIdsAsync,
   MaxActiveBookingsError,
-  persistBookingMediaField,
   PolicyError,
   SlotConflictError,
 } from '@/lib/repositories/db';
@@ -55,26 +54,21 @@ export async function POST(request: NextRequest) {
     }
 
     const idempotencyKey = request.headers.get('Idempotency-Key');
-    const cookieSessionToken = await readClientSessionToken(request);
-    const effectiveSessionToken = cookieSessionToken ?? parsed.sessionToken ?? null;
+    const effectiveSessionToken = await readClientSessionToken(request);
 
-    const inspoPhotoUrl = await persistBookingMediaField(parsed.inspoPhotoUrl, 'inspo');
-    const paymentProofUrl = await persistBookingMediaField(
-      parsed.paymentProofUrl,
-      'proofs',
-    );
+    const rawProof = parsed.paymentProofUrl?.trim() || null;
     const proofDeliveryMethod =
       parsed.proofDeliveryMethod ??
-      (paymentProofUrl
-        ? paymentProofUrl.startsWith('https://')
+      (rawProof
+        ? rawProof.startsWith('https://')
           ? 'web_link'
           : 'web_upload'
         : 'none');
 
     const booking = await createBookingWithExtras({
       ...parsed,
-      inspoPhotoUrl,
-      paymentProofUrl,
+      inspoPhotoUrl: parsed.inspoPhotoUrl ?? null,
+      paymentProofUrl: parsed.paymentProofUrl ?? null,
       proofDeliveryMethod,
       clientEmail: parsed.clientEmail || null,
       sessionToken: effectiveSessionToken,
@@ -111,7 +105,7 @@ export async function POST(request: NextRequest) {
       noShowCount: booking.client.noShowCount,
       threshold: settings.noShowDepositThreshold,
       baseDepositAmountCents:
-        booking.depositAmountCents || (settings.depositAmountCents ?? 20_000),
+        booking.depositAmountCents || (settings.depositAmountCents ?? 0),
     });
 
     return NextResponse.json(

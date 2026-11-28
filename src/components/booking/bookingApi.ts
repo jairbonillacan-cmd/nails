@@ -25,6 +25,38 @@ export interface AvailabilityWindowQuery {
   staffId: string;
   startDate: string;
   days?: number;
+  offer?: string | null;
+}
+
+export type SlotHoldResult =
+  | { kind: 'held'; holdId: string | null; holdExpiresAt: number | null }
+  | { kind: 'conflict'; error: string; suggestedSlots: AvailableSlot[] }
+  | { kind: 'rate_limited'; error: string; retryAfterSeconds?: number }
+  | { kind: 'policy'; error: string; code?: string }
+  | { kind: 'unavailable'; error: string; status?: number };
+
+const SLOT_HOLD_TIMEOUT_MS = 15_000;
+const BOOKING_SUBMIT_TIMEOUT_MS = 25_000;
+
+function createTimeoutAbortSignal(timeoutMs: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  return undefined;
+}
+
+function isAbortOrTimeoutError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return err.name === 'AbortError' || err.name === 'TimeoutError';
+  }
+  return false;
+}
+
+function parseRetryAfterSeconds(headerValue: string | null): number | undefined {
+  if (!headerValue) return undefined;
+  const parsed = Number.parseInt(headerValue.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
 }
 
 export async function fetchAvailabilityWindow(
@@ -48,6 +80,10 @@ export async function fetchAvailabilityWindow(
   if (input.staffId && input.staffId !== 'any') {
     qs.set('staffId', input.staffId);
   }
+  const cleanOffer = input.offer?.trim();
+  if (cleanOffer) {
+    qs.set('offer', cleanOffer);
+  }
   const res = await fetch(`/api/availability?${qs.toString()}`, {
     cache: 'no-store',
     signal: input.signal,
@@ -58,38 +94,115 @@ export async function fetchAvailabilityWindow(
   return Array.isArray(json.days) ? json.days : null;
 }
 
+interface SlotHoldApiResponse {
+  code?: string;
+  error?: string;
+  disabled?: boolean;
+  suggestedSlots?: AvailableSlot[];
+  holdId?: string;
+  hold?: { id?: string; holdId?: string; expiresAt?: string };
+}
+
 export async function requestSlotHold(input: {
   serviceId: string;
   extraServiceIds: string[];
   addonIds: string[];
   staffId: string;
   startAt: string;
-  sessionToken: string;
-}): Promise<
-  | { ok: true; holdId: string | null; holdExpiresAt: number | null }
-  | { ok: false; status: number; error: string; suggestedSlots: AvailableSlot[] }
-> {
-  const res = await fetch('/api/slot-holds', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  const data = (await res.json()) as {
-    error?: string;
-    suggestedSlots?: AvailableSlot[];
-    holdId?: string;
-    hold?: { id?: string; holdId?: string; expiresAt?: string };
+  waitlistOfferToken?: string | null;
+}): Promise<SlotHoldResult> {
+  const cleanOffer = input.waitlistOfferToken?.trim();
+  const payload = {
+    serviceId: input.serviceId,
+    extraServiceIds: input.extraServiceIds,
+    addonIds: input.addonIds,
+    staffId: input.staffId,
+    startAt: input.startAt,
+    ...(cleanOffer ? { waitlistOfferToken: cleanOffer } : {}),
   };
-  if (res.status === 409) {
+  let res: Response;
+  try {
+    res = await fetch('/api/slot-holds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: createTimeoutAbortSignal(SLOT_HOLD_TIMEOUT_MS),
+    });
+  } catch (err) {
     return {
-      ok: false,
-      status: 409,
-      error:
-        data.error ||
-        'Ese horario acaba de ser tomado por otra clienta. Elige uno de los horarios disponibles más cercanos:',
-      suggestedSlots: data.suggestedSlots ?? [],
+      kind: 'unavailable',
+      error: isAbortOrTimeoutError(err)
+        ? 'El apartado de horario tardó demasiado en responder. Intenta de nuevo.'
+        : 'No pudimos apartar tu horario por un problema de conexión. Revisa tu internet e intenta de nuevo.',
     };
   }
+
+  let data: SlotHoldApiResponse | null = null;
+  try {
+    const parsed = (await res.json()) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      data = parsed as SlotHoldApiResponse;
+    }
+  } catch {
+    data = null;
+  }
+
+  if (res.status === 409) {
+    return {
+      kind: 'conflict',
+      error:
+        data?.error ||
+        'Ese horario acaba de ser tomado por otra clienta. Elige uno de los horarios disponibles más cercanos:',
+      suggestedSlots: Array.isArray(data?.suggestedSlots) ? data.suggestedSlots : [],
+    };
+  }
+
+  if (res.status === 429) {
+    const retryAfterSeconds = parseRetryAfterSeconds(res.headers.get('Retry-After'));
+    return {
+      kind: 'rate_limited',
+      error:
+        data?.error ||
+        (retryAfterSeconds
+          ? `Demasiados intentos seguidos. Espera ${retryAfterSeconds} segundos e intenta de nuevo.`
+          : 'Demasiados intentos seguidos. Espera unos segundos e intenta de nuevo.'),
+      ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+    };
+  }
+
+  if (res.status === 400 || res.status === 422) {
+    return {
+      kind: 'policy',
+      error:
+        data?.error ||
+        'No se pudo apartar ese horario con las opciones seleccionadas. Elige otro horario o intenta de nuevo.',
+      ...(typeof data?.code === 'string' ? { code: data.code } : {}),
+    };
+  }
+
+  if (!res.ok) {
+    return {
+      kind: 'unavailable',
+      status: res.status,
+      error:
+        data?.error ||
+        'No pudimos apartar tu horario en este momento. Intenta de nuevo en unos segundos.',
+    };
+  }
+
+  if (!data) {
+    return {
+      kind: 'unavailable',
+      status: res.status,
+      error:
+        'El servidor devolvió una respuesta inesperada al apartar tu horario. Intenta de nuevo.',
+    };
+  }
+
+  if (data.disabled === true) {
+    return { kind: 'held', holdId: null, holdExpiresAt: null };
+  }
+
   const holdId =
     typeof data.hold?.id === 'string'
       ? data.hold.id
@@ -98,10 +211,20 @@ export async function requestSlotHold(input: {
         : typeof data.hold?.holdId === 'string'
           ? data.hold.holdId
           : null;
-  const holdExpiresAt = data.hold?.expiresAt
-    ? new Date(data.hold.expiresAt).getTime()
-    : null;
-  return { ok: true, holdId, holdExpiresAt };
+  const rawExpiresMs =
+    typeof data.hold?.expiresAt === 'string' ? Date.parse(data.hold.expiresAt) : Number.NaN;
+  const holdExpiresAt = Number.isFinite(rawExpiresMs) ? rawExpiresMs : null;
+
+  if (!holdId || holdExpiresAt === null) {
+    return {
+      kind: 'unavailable',
+      status: res.status,
+      error:
+        'No recibimos confirmación del apartado de horario. Intenta de nuevo en unos segundos.',
+    };
+  }
+
+  return { kind: 'held', holdId, holdExpiresAt };
 }
 
 export async function validateCouponCode(
@@ -158,22 +281,6 @@ function parseActiveBookings(raw: unknown): ActiveBookingSummary[] {
   return items;
 }
 
-const BOOKING_SUBMIT_TIMEOUT_MS = 25_000;
-
-function createSubmitAbortSignal(): AbortSignal | undefined {
-  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    return AbortSignal.timeout(BOOKING_SUBMIT_TIMEOUT_MS);
-  }
-  return undefined;
-}
-
-function isAbortOrTimeoutError(err: unknown): boolean {
-  if (err instanceof Error) {
-    return err.name === 'AbortError' || err.name === 'TimeoutError';
-  }
-  return false;
-}
-
 function isValidManageUrl(url: string): boolean {
   const trimmed = url.trim();
   return trimmed.startsWith('/cita/') && trimmed.length > '/cita/'.length;
@@ -198,7 +305,6 @@ export async function submitBookingRequest(
     proofDeliveryMethod: ProofDeliveryMethod;
     couponCode: string | null;
     holdId?: string;
-    sessionToken: string;
     privacyConsentAccepted: boolean;
     marketingOptIn: boolean;
     waitlistOfferToken?: string;
@@ -222,7 +328,7 @@ export async function submitBookingRequest(
         'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(payload),
-      signal: createSubmitAbortSignal(),
+      signal: createTimeoutAbortSignal(BOOKING_SUBMIT_TIMEOUT_MS),
     });
   } catch (err) {
     if (isAbortOrTimeoutError(err)) {

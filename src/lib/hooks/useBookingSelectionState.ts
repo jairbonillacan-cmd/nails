@@ -106,7 +106,7 @@ export function useBookingSelectionState({
   );
   const [inspoFile, setInspoFile] = useState<File | null>(null);
   const [inspoDataUrl, setInspoDataUrl] = useState<string | null>(null);
-  const [proofDeliveryMethod, setProofDeliveryMethod] = useState<ProofDeliveryMethod>('web_upload');
+  const [proofDeliveryMethod, setProofDeliveryMethod] = useState<ProofDeliveryMethod>('none');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
 

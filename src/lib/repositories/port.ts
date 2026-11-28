@@ -8,6 +8,7 @@ import type {
 } from '../contracts/whatsapp';
 import type {
   PublicLoyaltySummaryDTO,
+  PublicReviewDTO,
   PublicServiceDTO,
   PublicSettingsDTO,
   PublicStaffDTO,
@@ -117,6 +118,19 @@ export interface PublicBootstrapData {
   };
 }
 
+export interface PublicServiceReviewsData {
+  studioReviews: PublicReviewDTO[];
+  serviceReviews: PublicReviewDTO[];
+}
+
+export interface ClientPortalRecordData {
+  client: ClientProfile | null;
+  latestBooking: Pick<
+    Booking,
+    'clientId' | 'serviceId' | 'staffId' | 'status' | 'startAt'
+  > | null;
+}
+
 export interface QueryAvailabilityInput {
   serviceId: string;
   extraServiceIds?: string[];
@@ -126,6 +140,7 @@ export interface QueryAvailabilityInput {
   days: number;
   sessionToken?: string | null;
   ignoreBookingId?: string | null;
+  waitlistOfferToken?: string | null;
 }
 
 export interface QueryAvailabilityOutput {
@@ -154,6 +169,7 @@ export interface CreateSlotHoldInput {
   staffId: string;
   startAt: string;
   sessionToken: string;
+  waitlistOfferToken?: string | null;
 }
 
 export interface SlotHoldResult extends SlotHold {
@@ -500,6 +516,11 @@ export interface SalonRepository {
   getSalonSettings(): Promise<SalonSettings>;
   getSnapshot(): Promise<Readonly<DemoDatabase>>;
   getPublicBootstrap(): Promise<PublicBootstrapData>;
+  getPublicServiceBySlug(slug: string): Promise<PublicServiceDTO | null>;
+  getPublicReviewsForService(
+    serviceId: string | null,
+  ): Promise<PublicServiceReviewsData>;
+  getClientPortalRecordByPhone(phoneE164: string): Promise<ClientPortalRecordData>;
   getBookingsWithRelations(
     filter?: BookingsRangeFilter,
   ): Promise<BookingWithRelations[]>;

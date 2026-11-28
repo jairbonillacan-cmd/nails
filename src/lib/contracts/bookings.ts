@@ -155,6 +155,7 @@ export const CreateSlotHoldSchema = z.object({
   staffId: NonEmptyIdSchema,
   startAt: NonEmptyIdSchema,
   sessionToken: z.string().min(4).optional(),
+  waitlistOfferToken: z.string().trim().max(120).optional().nullable(),
 });
 
 export const CreateWaitlistSchema = z.object({

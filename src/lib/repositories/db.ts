@@ -111,12 +111,14 @@ import {
   ClientPortalSnapshotDTOSchema,
   PublicLoyaltySummarySchema,
   toPublicClientPackageDTO,
+  toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
   type ClientPortalBookingDTO,
   type ClientPortalSnapshotDTO,
   type PublicLoyaltySummaryDTO,
+  type PublicReviewDTO,
 } from '../public-dto';
 import { publishRealtimeEvent } from '../realtime';
 import {
@@ -124,7 +126,12 @@ import {
   isSafeInternalBookingMediaPath,
 } from '../contracts';
 import { isSafeBrandMediaPath } from '../landing-config';
-import { MediaValidationError, storeMediaUpload } from '../storage/media';
+import {
+  deleteStoredMedia,
+  MediaValidationError,
+  storeMediaUpload,
+  validateMediaDataUrl,
+} from '../storage/media';
 import { dispatchOutboxEvent, type OutboxEventInput } from '../use-cases/outbox';
 import { parseDemoDatabase } from './schema';
 import { createSupabaseAdminClient, isSupabaseEnabled } from './supabase-client';
@@ -153,6 +160,7 @@ import {
   type BookingsRangeFilter,
   type CleanupExpiredSlotHoldsResult,
   type ClientArcoExport,
+  type ClientPortalRecordData,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
   type ExecutiveReportData,
@@ -164,6 +172,7 @@ import {
   type OutboxEventRecord,
   type OutboxSummary,
   type PublicBootstrapData,
+  type PublicServiceReviewsData,
   type QueryAvailabilityInput,
   type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
@@ -1217,6 +1226,46 @@ interface ExtendedCreateBookingAtomicInput extends CreateBookingAtomicInput {
   actor?: AuditActor;
 }
 
+function buildWaitlistOfferSlotHolds(
+  waitlist: readonly WaitlistEntry[],
+  services: readonly Service[],
+  nowMs: number,
+  callerOfferToken?: string | null,
+): SlotHold[] {
+  const trimmedToken = callerOfferToken?.trim() || null;
+  const holds: SlotHold[] = [];
+  for (const entry of waitlist) {
+    if (entry.status !== 'notified') continue;
+    const offerToken = entry.priorityOfferToken?.trim();
+    const slotStartAt = entry.priorityOfferSlotStartAt;
+    const staffId = entry.priorityOfferStaffId;
+    const expiresAt = entry.priorityOfferExpiresAt;
+    if (!offerToken || !slotStartAt || !staffId || !expiresAt) continue;
+    const expiresMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresMs) || expiresMs <= nowMs) continue;
+    if (trimmedToken && offerToken === trimmedToken) continue;
+    const startMs = Date.parse(slotStartAt);
+    if (!Number.isFinite(startMs)) continue;
+    const matchedService = services.find((srv) => srv.id === entry.serviceId);
+    const durationMinutes = matchedService?.durationMinutes ?? 60;
+    const bufferBeforeMinutes = matchedService?.bufferBeforeMinutes ?? 0;
+    const bufferAfterMinutes = matchedService?.bufferAfterMinutes ?? 0;
+    holds.push({
+      id: `wlo-hold-${entry.id}`,
+      staffId,
+      serviceId: entry.serviceId,
+      sessionToken: `waitlist-offer:${entry.id}`,
+      startAt: new Date(startMs - bufferBeforeMinutes * 60_000).toISOString(),
+      endAt: new Date(
+        startMs + (durationMinutes + bufferAfterMinutes) * 60_000,
+      ).toISOString(),
+      expiresAt,
+      createdAt: entry.notifiedAt ?? entry.createdAt,
+    });
+  }
+  return holds;
+}
+
 export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
   const db = getSnapshot();
   const service = db.services.find((s) => s.id === params.serviceId);
@@ -1229,6 +1278,15 @@ export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
   const eligibleStaff = db.staff.filter((st) =>
     isStaffEligibleForAllServices(st, requiredServiceIds),
   );
+  const effectiveSlotHolds = [
+    ...db.slotHolds,
+    ...buildWaitlistOfferSlotHolds(
+      db.waitlist,
+      db.services,
+      Date.now(),
+      params.waitlistOfferToken,
+    ),
+  ];
 
   const summary = getAvailabilityForRange(
     {
@@ -1241,7 +1299,7 @@ export function queryAvailability(params: ExtendedQueryAvailabilityInput) {
       dateOverrides: db.dateOverrides,
       recurringBlocks: db.recurringBlocks ?? [],
       bookings: db.bookings,
-      slotHolds: db.slotHolds,
+      slotHolds: effectiveSlotHolds,
       calendarConnections: db.calendarConnections,
       callerSessionToken: params.sessionToken,
       ignoreBookingId: params.ignoreBookingId,
@@ -1273,6 +1331,7 @@ function computeQuickSearchAvailability(
     days: number;
     limit?: number;
     sessionToken?: string | null;
+    waitlistOfferToken?: string | null;
   },
 ) {
   const service = db.services.find((s) => s.id === params.serviceId && s.isActive);
@@ -1285,6 +1344,15 @@ function computeQuickSearchAvailability(
   const eligibleStaff = db.staff.filter((st) =>
     isStaffEligibleForAllServices(st, requiredServiceIds),
   );
+  const effectiveSlotHolds = [
+    ...db.slotHolds,
+    ...buildWaitlistOfferSlotHolds(
+      db.waitlist,
+      db.services,
+      Date.now(),
+      params.waitlistOfferToken,
+    ),
+  ];
 
   const slots = findEarliestAvailableSlots(
     {
@@ -1297,7 +1365,7 @@ function computeQuickSearchAvailability(
       dateOverrides: db.dateOverrides,
       recurringBlocks: db.recurringBlocks ?? [],
       bookings: db.bookings,
-      slotHolds: db.slotHolds,
+      slotHolds: effectiveSlotHolds,
       calendarConnections: db.calendarConnections,
       callerSessionToken: params.sessionToken,
     },
@@ -1326,6 +1394,7 @@ export function quickSearchAvailability(params: {
   days: number;
   limit?: number;
   sessionToken?: string | null;
+  waitlistOfferToken?: string | null;
 }) {
   return computeQuickSearchAvailability(getSnapshot(), params);
 }
@@ -1339,6 +1408,7 @@ export async function quickSearchAvailabilityAsync(params: {
   days: number;
   limit?: number;
   sessionToken?: string | null;
+  waitlistOfferToken?: string | null;
 }) {
   const db = await getRepository().getSnapshot();
   return computeQuickSearchAvailability(db, params);
@@ -1427,8 +1497,10 @@ function buildAvailabilityContext(
     now?: Date;
     callerSessionToken?: string | null;
     ignoreBookingId?: string | null;
+    waitlistOfferToken?: string | null;
   },
 ): AvailabilityContext {
+  const nowMs = (options?.now ?? new Date()).getTime();
   return {
     settings: db.settings,
     service,
@@ -1439,7 +1511,15 @@ function buildAvailabilityContext(
     dateOverrides: db.dateOverrides,
     recurringBlocks: db.recurringBlocks ?? [],
     bookings: db.bookings,
-    slotHolds: db.slotHolds,
+    slotHolds: [
+      ...db.slotHolds,
+      ...buildWaitlistOfferSlotHolds(
+        db.waitlist,
+        db.services,
+        nowMs,
+        options?.waitlistOfferToken,
+      ),
+    ],
     calendarConnections: db.calendarConnections,
     now: options?.now,
     callerSessionToken: options?.callerSessionToken,
@@ -1475,6 +1555,7 @@ function resolveBookableSlotOrThrow(params: {
   now: Date;
   ignoreBookingId?: string;
   ignoreHoldSessionToken?: string;
+  waitlistOfferToken?: string | null;
   conflictMessage: string;
 }): { slot: AvailableSlot; staff: StaffMember } {
   const requiredServiceIds = params.requiredServiceIds ?? [
@@ -1486,6 +1567,7 @@ function resolveBookableSlotOrThrow(params: {
     now: params.now,
     callerSessionToken: params.ignoreHoldSessionToken ?? null,
     ignoreBookingId: params.ignoreBookingId ?? null,
+    waitlistOfferToken: params.waitlistOfferToken ?? null,
   });
 
   if (params.staffId) {
@@ -1732,6 +1814,45 @@ async function dispatchPostCommitOutbox(
   }
 }
 
+type ValidatedBookingMediaField =
+  | { kind: 'none' }
+  | { kind: 'url'; url: string }
+  | { kind: 'data_url'; dataUrl: string };
+
+function validateBookingMediaField(
+  value: string | null | undefined,
+  folder: 'inspo' | 'proofs',
+): ValidatedBookingMediaField {
+  const trimmed = value?.trim();
+  if (!trimmed) return { kind: 'none' };
+  if (trimmed.toLowerCase().startsWith('data:')) {
+    try {
+      validateMediaDataUrl(trimmed);
+      return { kind: 'data_url', dataUrl: trimmed };
+    } catch (err) {
+      if (err instanceof MediaValidationError) {
+        throw new PolicyError(err.code, err.message);
+      }
+      throw err;
+    }
+  }
+  if (folder === 'proofs' && isSafeExternalProofUrl(trimmed)) {
+    return { kind: 'url', url: trimmed };
+  }
+  if (isSafeInternalBookingMediaPath(trimmed, folder)) {
+    return {
+      kind: 'url',
+      url: trimmed.startsWith('/api/media/') ? trimmed : `/api/media/${trimmed}`,
+    };
+  }
+  throw new PolicyError(
+    'INVALID_MEDIA_URL',
+    folder === 'proofs'
+      ? 'Sube una imagen PNG, JPEG o WEBP, o pega un enlace HTTPS válido de tu comprobante.'
+      : 'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+  );
+}
+
 export async function persistBookingMediaField(
   value: string | null | undefined,
   folder: 'inspo' | 'proofs',
@@ -1827,6 +1948,7 @@ export async function createOrRefreshSlotHold(
       staffId: params.staffId,
       now,
       ignoreHoldSessionToken: params.sessionToken,
+      waitlistOfferToken: params.waitlistOfferToken ?? null,
       conflictMessage: 'Ese horario acaba de ser apartado hace unos segundos.',
     });
 
@@ -1889,14 +2011,21 @@ export async function createBookingAtomic(
     return createSupabaseRepository().createBookingAtomic(params);
   }
   const normalizedInstagram = normalizeInstagramHandle(params.clientInstagram);
-  const storedInspoPhotoUrl = await persistBookingMediaField(
-    params.inspoPhotoUrl,
-    'inspo',
-  );
-  const storedPaymentProofUrl = await persistBookingMediaField(
-    params.paymentProofUrl,
-    'proofs',
-  );
+  const validatedInspo = validateBookingMediaField(params.inspoPhotoUrl, 'inspo');
+  const validatedProof = validateBookingMediaField(params.paymentProofUrl, 'proofs');
+  const initialInspoPhotoUrl =
+    validatedInspo.kind === 'url' ? validatedInspo.url : null;
+  const initialPaymentProofUrl =
+    validatedProof.kind === 'url' ? validatedProof.url : null;
+  const resolvedProofDeliveryMethod =
+    params.proofDeliveryMethod ??
+    (validatedProof.kind === 'data_url'
+      ? 'web_upload'
+      : validatedProof.kind === 'url'
+        ? validatedProof.url.startsWith('https://')
+          ? 'web_link'
+          : 'web_upload'
+        : 'none');
 
   const committed = await withWriteLock((db) => {
     const cols = ensurePhase3Collections(db);
@@ -1909,6 +2038,9 @@ export async function createBookingAtomic(
         return {
           hydrated: hydrateBooking(db, existing),
           outboxEvents: [] as OutboxEventInput[],
+          isReplay: true,
+          bookingId: existing.id,
+          clientId: existing.clientId,
         };
       }
     }
@@ -1988,6 +2120,7 @@ export async function createBookingAtomic(
       staffId: params.staffId,
       now,
       ignoreHoldSessionToken: params.sessionToken ?? undefined,
+      waitlistOfferToken: params.waitlistOfferToken ?? null,
       conflictMessage:
         'Ese horario acaba de ser reservado hace unos segundos. Elige uno de los horarios más cercanos sin perder tus datos.',
     });
@@ -2009,6 +2142,7 @@ export async function createBookingAtomic(
           extraServices: extraServicesForSlot,
           now,
           callerSessionToken: params.sessionToken ?? null,
+          waitlistOfferToken: params.waitlistOfferToken ?? null,
         });
         const suggestions = findNearestAvailableSlots(
           ctx,
@@ -2145,15 +2279,9 @@ export async function createBookingAtomic(
       source: params.source ?? 'web',
       clientNotes: params.clientNotes?.trim() || '',
       internalNotes: params.internalNotes?.trim() || '',
-      inspoPhotoUrl: storedInspoPhotoUrl,
-      paymentProofUrl: storedPaymentProofUrl,
-      proofDeliveryMethod:
-        params.proofDeliveryMethod ??
-        (storedPaymentProofUrl
-          ? storedPaymentProofUrl.startsWith('https://')
-            ? 'web_link'
-            : 'web_upload'
-          : 'none'),
+      inspoPhotoUrl: initialInspoPhotoUrl,
+      paymentProofUrl: initialPaymentProofUrl,
+      proofDeliveryMethod: resolvedProofDeliveryMethod,
       attendanceStatus: 'pending',
       googleEventId: null,
       cancellationReason: null,
@@ -2182,7 +2310,7 @@ export async function createBookingAtomic(
 
     linkMediaAssetToBookingInLock(
       db,
-      storedInspoPhotoUrl,
+      initialInspoPhotoUrl,
       'inspo',
       booking.id,
       client.id,
@@ -2190,7 +2318,7 @@ export async function createBookingAtomic(
     );
     linkMediaAssetToBookingInLock(
       db,
-      storedPaymentProofUrl,
+      initialPaymentProofUrl,
       'proofs',
       booking.id,
       client.id,
@@ -2311,8 +2439,61 @@ export async function createBookingAtomic(
       },
     ];
 
-    return { hydrated, outboxEvents };
+    return {
+      hydrated,
+      outboxEvents,
+      isReplay: false,
+      bookingId: booking.id,
+      clientId: client.id,
+    };
   });
+
+  if (
+    !committed.isReplay &&
+    (validatedInspo.kind === 'data_url' || validatedProof.kind === 'data_url')
+  ) {
+    const uploadedPaths: string[] = [];
+    let uploadedInspoUrl: string | null = null;
+    let uploadedProofUrl: string | null = null;
+    try {
+      if (validatedInspo.kind === 'data_url') {
+        uploadedInspoUrl = await persistBookingMediaField(
+          validatedInspo.dataUrl,
+          'inspo',
+          { bookingId: committed.bookingId, clientId: committed.clientId },
+        );
+        const storagePath = uploadedInspoUrl
+          ? normalizeMediaStoragePath(uploadedInspoUrl)
+          : null;
+        if (storagePath) uploadedPaths.push(storagePath);
+      }
+      if (validatedProof.kind === 'data_url') {
+        uploadedProofUrl = await persistBookingMediaField(
+          validatedProof.dataUrl,
+          'proofs',
+          { bookingId: committed.bookingId, clientId: committed.clientId },
+        );
+        const storagePath = uploadedProofUrl
+          ? normalizeMediaStoragePath(uploadedProofUrl)
+          : null;
+        if (storagePath) uploadedPaths.push(storagePath);
+      }
+    } catch (err) {
+      for (const storagePath of uploadedPaths) {
+        await deleteStoredMedia(storagePath).catch(() => {});
+      }
+      throw err;
+    }
+
+    await withWriteLock((liveDb) => {
+      const target = liveDb.bookings.find((b) => b.id === committed.bookingId);
+      if (!target) return;
+      if (uploadedInspoUrl) target.inspoPhotoUrl = uploadedInspoUrl;
+      if (uploadedProofUrl) target.paymentProofUrl = uploadedProofUrl;
+    });
+    if (uploadedInspoUrl) committed.hydrated.inspoPhotoUrl = uploadedInspoUrl;
+    if (uploadedProofUrl) committed.hydrated.paymentProofUrl = uploadedProofUrl;
+  }
 
   await dispatchPostCommitOutbox(committed.outboxEvents);
   return committed.hydrated;
@@ -7933,6 +8114,97 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
         gallery: db.gallery.toSorted((a, b) => a.displayOrder - b.displayOrder),
         reviewsSummary: { count: reviewsCount, average },
       };
+    },
+    async getPublicServiceBySlug(slug: string) {
+      const trimmed = slug.trim();
+      if (!trimmed) return null;
+      const found = getSnapshot().services.find(
+        (s) => s.isActive && s.slug === trimmed,
+      );
+      return found ? toPublicServiceDTO(found) : null;
+    },
+    async getPublicReviewsForService(
+      serviceId: string | null,
+    ): Promise<PublicServiceReviewsData> {
+      const db = getSnapshot();
+      const bookingById = new Map(db.bookings.map((b) => [b.id, b]));
+      const clientById = new Map(db.clients.map((c) => [c.id, c]));
+
+      const studioReviews: PublicReviewDTO[] = db.reviews
+        .flatMap((review) => {
+          const booking = bookingById.get(review.bookingId);
+          if (!booking || booking.status !== 'completed') {
+            return [];
+          }
+          const client = clientById.get(review.clientId ?? booking.clientId);
+          return [
+            toPublicReviewDTO(review, {
+              serviceId: booking.serviceId,
+              clientFullName: client?.fullName ?? null,
+            }),
+          ];
+        })
+        .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      const serviceReviews: PublicReviewDTO[] = serviceId
+        ? db.reviews
+            .flatMap((review) => {
+              const booking = bookingById.get(review.bookingId);
+              if (!booking || booking.status !== 'completed') {
+                return [];
+              }
+              const matchesService =
+                booking.serviceId === serviceId ||
+                Boolean(booking.extraServiceIds?.includes(serviceId));
+              if (!matchesService) {
+                return [];
+              }
+              const client = clientById.get(review.clientId ?? booking.clientId);
+              return [
+                toPublicReviewDTO(review, {
+                  serviceId,
+                  clientFullName: client?.fullName ?? null,
+                }),
+              ];
+            })
+            .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+        : [];
+
+      return { studioReviews, serviceReviews };
+    },
+    async getClientPortalRecordByPhone(
+      phoneE164: string,
+    ): Promise<ClientPortalRecordData> {
+      const normalized = normalizePhoneE164(phoneE164);
+      if (!normalized) {
+        return { client: null, latestBooking: null };
+      }
+      const db = getSnapshot();
+      const client =
+        db.clients.find((entry) => phonesMatchE164(entry.phoneE164, normalized)) ??
+        null;
+      if (!client) {
+        return { client: null, latestBooking: null };
+      }
+      let latestBooking: ClientPortalRecordData['latestBooking'] = null;
+      let latestStartMs = -Infinity;
+      for (const booking of db.bookings) {
+        if (booking.clientId !== client.id) continue;
+        if (booking.status === 'canceled') continue;
+        const startMs = Date.parse(booking.startAt);
+        const score = Number.isFinite(startMs) ? startMs : 0;
+        if (!latestBooking || score > latestStartMs) {
+          latestBooking = {
+            clientId: booking.clientId,
+            serviceId: booking.serviceId,
+            staffId: booking.staffId,
+            status: booking.status,
+            startAt: booking.startAt,
+          };
+          latestStartMs = score;
+        }
+      }
+      return { client: { ...client }, latestBooking };
     },
     async getBookingsWithRelations(filter) {
       return getBookingsWithRelations(filter);

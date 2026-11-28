@@ -1,6 +1,5 @@
 import { formatCurrency, formatDuration } from '@/lib/format';
-import { toPublicServiceDTO, toPublicSettingsDTO } from '@/lib/public-dto';
-import { getRepository } from '@/lib/repositories/db';
+import { getCachedPublicBootstrap } from '@/lib/public/bootstrap';
 import { OG_SIZE, renderOgCard } from '@/lib/seo/og-card';
 
 export const dynamic = 'force-dynamic';
@@ -13,16 +12,15 @@ export const contentType = 'image/png';
 
 export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const bootstrap = await getCachedPublicBootstrap();
+  const { settings } = bootstrap;
   const base = {
     palette: settings.publicPalette,
     studioName: settings.name || 'LAIKONA NAILS',
-    location: db.settings.city || 'Puebla',
+    location: settings.city || 'Puebla',
     cta: 'Reserva tu cita',
   };
-  const matched = db.services.find((entry) => entry.isActive && entry.slug === slug);
-  const service = matched ? toPublicServiceDTO(matched) : null;
+  const service = bootstrap.services.find((entry) => entry.slug === slug) ?? null;
 
   if (!service || service.isPrivate === true) {
     return renderOgCard({
@@ -36,7 +34,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
   return renderOgCard({
     ...base,
     title: service.name,
-    subtitle: db.categories.find((cat) => cat.id === service.categoryId)?.name,
+    subtitle: bootstrap.categories.find((cat) => cat.id === service.categoryId)?.name,
     facts: [
       { label: 'Precio', value: service.isStartingPrice ? `Desde ${price}` : price },
       { label: 'Duración', value: formatDuration(service.durationMinutes) },

@@ -5,7 +5,6 @@ import { useRef, useState } from 'react';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { isSafeExternalProofUrl } from '@/lib/contracts';
 import { normalizePhoneE164 } from '@/lib/format';
-import { getOrCreateBrowserSessionToken } from '@/lib/hooks/useSessionToken';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { ServiceAddon } from '@/lib/types';
 import {
@@ -13,6 +12,7 @@ import {
   submitBookingRequest,
   validateCouponCode,
   type AppliedCouponState,
+  type SlotHoldResult,
 } from '@/components/booking/bookingApi';
 import {
   birthdayInputToIso,
@@ -25,12 +25,34 @@ import {
 import type {
   BookingFlowAction,
   BookingFlowState,
+  BookingHoldErrorState,
   BookingStep,
 } from '@/components/booking/bookingMachine';
 import { buildIdempotencyKey } from '@/components/booking/bookingViewHelpers';
 import { isPhoneMatchingSession } from '@/components/booking/clientAccountHelpers';
 
 const EMPTY_FIELD_ERRORS: ClientFieldErrors = { name: null, phone: null, email: null, birthday: null };
+
+type PendingHoldRetryTarget =
+  | { kind: 'slot'; slot: AvailableSlot; stayOnDetails: boolean }
+  | { kind: 'extend' }
+  | { kind: 'staff'; staffId: string };
+
+function toHoldErrorState(
+  result: Extract<SlotHoldResult, { kind: 'rate_limited' | 'policy' | 'unavailable' }>,
+): BookingHoldErrorState {
+  if (result.kind === 'rate_limited') {
+    return {
+      kind: 'rate_limited',
+      message: result.error,
+      ...(result.retryAfterSeconds ? { retryAfterSeconds: result.retryAfterSeconds } : {}),
+    };
+  }
+  return {
+    kind: result.kind,
+    message: result.error,
+  };
+}
 
 interface ClientFormValues {
   clientName: string;
@@ -110,6 +132,7 @@ export function useBookingFlowActions({
   const idempotencyKeyRef = useRef('');
   const busyLockRef = useRef(false);
   const submitLockRef = useRef(false);
+  const lastFailedHoldRef = useRef<PendingHoldRetryTarget | null>(null);
 
   const revealPanel = () => {
     if (typeof window !== 'undefined' && window.scrollY > 0) {
@@ -127,27 +150,24 @@ export function useBookingFlowActions({
 
   const resetSelection = () => {
     if (flow.holdId) void fetch('/api/slot-holds', { method: 'DELETE' });
+    lastFailedHoldRef.current = null;
     setAppliedCoupon(null);
     setCouponError(null);
     dispatch({ type: 'SELECTION_CHANGED' });
   };
 
-  const holdSlot = async (slot: AvailableSlot, staffId: string) => {
+  const holdSlot = async (slot: AvailableSlot, staffId: string): Promise<SlotHoldResult> => {
     if (!selectedService || !settings.enableSlotHold) {
-      return { ok: true as const, holdId: null, holdExpiresAt: null };
+      return { kind: 'held', holdId: null, holdExpiresAt: null };
     }
-    try {
-      return await requestSlotHold({
-        serviceId: selectedService.id,
-        extraServiceIds: selectedExtraServices.map((srv) => srv.id),
-        addonIds: activeSelectedAddons.map((a) => a.id),
-        staffId,
-        startAt: slot.startAt,
-        sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
-      });
-    } catch {
-      return { ok: true as const, holdId: null, holdExpiresAt: null };
-    }
+    return requestSlotHold({
+      serviceId: selectedService.id,
+      extraServiceIds: selectedExtraServices.map((srv) => srv.id),
+      addonIds: activeSelectedAddons.map((a) => a.id),
+      staffId,
+      startAt: slot.startAt,
+      waitlistOfferToken: waitlistOfferToken?.trim() || undefined,
+    });
   };
 
   const handleSelectSlot = async (
@@ -161,12 +181,24 @@ export function useBookingFlowActions({
     setPendingSlotKey(slotKey);
     try {
       const result = await holdSlot(slot, slot.staffId);
-      if (!result.ok) {
+      if (result.kind === 'conflict') {
+        lastFailedHoldRef.current = null;
         dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
         revealPanel();
         revalidateActive();
         return;
       }
+      if (result.kind !== 'held') {
+        lastFailedHoldRef.current = {
+          kind: 'slot',
+          slot,
+          stayOnDetails: Boolean(options?.stayOnDetails),
+        };
+        dispatch({ type: 'HOLD_ERROR', error: toHoldErrorState(result) });
+        revealPanel();
+        return;
+      }
+      lastFailedHoldRef.current = null;
       idempotencyKeyRef.current = buildIdempotencyKey(slot.staffId);
       const stayOnDetails = Boolean(options?.stayOnDetails);
       const hasStaffChoice = !stayOnDetails && !skipsStaffStep && slot.availableStaffIds.length > 1;
@@ -213,11 +245,19 @@ export function useBookingFlowActions({
     setIsExtendingHold(true);
     try {
       const result = await holdSlot(slot, slot.staffId);
-      if (!result.ok) {
+      if (result.kind === 'conflict') {
+        lastFailedHoldRef.current = null;
         dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
         revalidateActive();
         return false;
       }
+      if (result.kind !== 'held') {
+        lastFailedHoldRef.current = { kind: 'extend' };
+        dispatch({ type: 'HOLD_ERROR', error: toHoldErrorState(result) });
+        revealPanel();
+        return false;
+      }
+      lastFailedHoldRef.current = null;
       dispatch({ type: 'HOLD_EXTENDED', holdId: result.holdId, holdExpiresAt: result.holdExpiresAt });
       return true;
     } finally {
@@ -231,6 +271,7 @@ export function useBookingFlowActions({
     setStaffError(null);
     const member = staff.find((item) => item.id === staffId);
     if (staffId === 'any' || !member || staffId === slot.staffId) {
+      lastFailedHoldRef.current = null;
       setChosenStaffId(staffId);
       dispatch({ type: 'STAFF_ASSIGNED', slot, holdId: null, holdExpiresAt: null });
       return;
@@ -240,11 +281,19 @@ export function useBookingFlowActions({
     setPendingStaffId(staffId);
     try {
       const result = await holdSlot(slot, staffId);
-      if (!result.ok) {
+      if (result.kind === 'conflict') {
+        lastFailedHoldRef.current = null;
         setTakenStaffIds((prev) => new Set([...prev, staffId]));
         setStaffError(`${member.name} acaba de ocupar esa hora. Tu horario sigue apartado: elige otra opción.`);
         return;
       }
+      if (result.kind !== 'held') {
+        lastFailedHoldRef.current = { kind: 'staff', staffId };
+        dispatch({ type: 'HOLD_ERROR', error: toHoldErrorState(result) });
+        revealPanel();
+        return;
+      }
+      lastFailedHoldRef.current = null;
       setChosenStaffId(staffId);
       dispatch({
         type: 'STAFF_ASSIGNED',
@@ -257,6 +306,23 @@ export function useBookingFlowActions({
       setIsBusy(false);
       setPendingStaffId(null);
     }
+  };
+
+  const handleRetryHold = async () => {
+    const target = lastFailedHoldRef.current;
+    if (!target) {
+      dispatch({ type: 'DISMISS_HOLD_ERROR' });
+      return;
+    }
+    if (target.kind === 'slot') {
+      await handleSelectSlot(target.slot, { stayOnDetails: target.stayOnDetails });
+      return;
+    }
+    if (target.kind === 'extend') {
+      await handleExtendHold();
+      return;
+    }
+    await handlePickStaff(target.staffId);
   };
 
   const handleApplyCoupon = async () => {
@@ -375,7 +441,6 @@ export function useBookingFlowActions({
         proofDeliveryMethod: effectiveProofMethod,
         couponCode: appliedCoupon?.code || null,
         holdId: flow.holdId ?? undefined,
-        sessionToken: getOrCreateBrowserSessionToken('nails_session_tok'),
         privacyConsentAccepted: true,
         marketingOptIn: flow.marketingOptIn,
         waitlistOfferToken: waitlistOfferToken?.trim() || undefined,
@@ -437,6 +502,7 @@ export function useBookingFlowActions({
     handleReholdExpiredSlot,
     handleExtendHold,
     handlePickStaff,
+    handleRetryHold,
     handleApplyCoupon,
     handleRemoveCoupon,
     handleDetailsContinue,

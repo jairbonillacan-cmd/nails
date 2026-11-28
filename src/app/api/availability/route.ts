@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
       addonIds,
       extraServiceIds,
       manageToken: searchParams.get('manageToken')?.trim() || undefined,
+      offer: searchParams.get('offer')?.trim() || undefined,
     });
     if (!queryResult.success) {
       const modeIssue = queryResult.error.issues.some((i) => i.path.includes('mode'));
@@ -135,8 +136,8 @@ export async function GET(request: NextRequest) {
         new Date(),
         bootstrap?.settings.timezone || 'America/Mexico_City',
       );
-    const cookieSessionToken = await readClientSessionToken(request);
-    const sessionToken = cookieSessionToken ?? searchParams.get('sessionToken');
+    const sessionToken = await readClientSessionToken(request);
+    const waitlistOfferToken = query.offer ?? null;
 
     if (query.mode === 'quick_search') {
       const days = Math.min(query.days ?? 14, 45);
@@ -150,6 +151,7 @@ export async function GET(request: NextRequest) {
         days,
         limit,
         sessionToken,
+        waitlistOfferToken,
       });
       return NextResponse.json(quickResult, { headers: rateHeaders });
     }
@@ -168,6 +170,7 @@ export async function GET(request: NextRequest) {
       days,
       sessionToken,
       ignoreBookingId: resolvedBooking?.id ?? null,
+      waitlistOfferToken,
     });
 
     return NextResponse.json(data, { headers: rateHeaders });

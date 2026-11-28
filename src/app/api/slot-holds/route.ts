@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
       staffId: body.staffId,
       startAt: body.startAt,
       sessionToken: clientSession.token,
+      waitlistOfferToken: body.waitlistOfferToken ?? null,
     });
     const publicHold = {
       id: hold.id,
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Datos inválidos para apartar horario' },
+        { code: 'INVALID_INPUT', error: 'Datos inválidos para apartar horario' },
         { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
       );
     }

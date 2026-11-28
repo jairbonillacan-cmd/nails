@@ -2,13 +2,8 @@ import type { Metadata } from 'next';
 import '../booking.css';
 import { ViewTransition } from 'react';
 import { readSignedInClientProfile } from '@/lib/auth/client-portal-profile';
-import { getRepository } from '@/lib/repositories/db';
 import { getDateKeyInTimezone } from '@/lib/format';
-import {
-  toPublicServiceDTO,
-  toPublicSettingsDTO,
-  toPublicStaffDTO,
-} from '@/lib/public-dto';
+import { getCachedPublicBootstrap } from '@/lib/public/bootstrap';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 import type { BookingLayoutView } from '@/lib/types';
 import { BookingWidget } from '@/components/BookingWidget';
@@ -92,55 +87,46 @@ export default async function ReservarPage({
   searchParams: Promise<ReservarSearchParams>;
 }) {
   const params = await searchParams;
-  const db = await getRepository().getSnapshot();
+  const bootstrap = await getCachedPublicBootstrap();
   const siteOrigin = getSiteOrigin();
   const initialTodayKey = getDateKeyInTimezone(
     new Date(),
-    db.settings.timezone || 'America/Mexico_City',
+    bootstrap.settings.timezone || 'America/Mexico_City',
   );
-
-  const publicServices = db.services
-    .filter((s) => s.isActive && !s.isPrivate)
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .map(toPublicServiceDTO);
 
   const requestedServiceSlug = params.servicio?.trim();
   const initialServiceSlug =
     requestedServiceSlug &&
-    publicServices.some((service) => service.slug === requestedServiceSlug)
+    bootstrap.services.some((service) => service.slug === requestedServiceSlug)
       ? requestedServiceSlug
       : undefined;
 
+  const initialClientProfile = await readSignedInClientProfile({
+    services: bootstrap.services,
+    staff: bootstrap.staff,
+  });
+
   return (
     <ViewTransition enter="lk-fade-in" exit="lk-page-out" default="none">
-    <BookingWidget
-      settings={toPublicSettingsDTO(db.settings)}
-      categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
-      services={publicServices}
-      addons={db.addons
-        .filter((a) => a.isActive)
-        .toSorted((a, b) => a.displayOrder - b.displayOrder)}
-      staff={db.staff
-        .filter((s) => s.isActive)
-        .toSorted((a, b) => a.displayOrder - b.displayOrder)
-        .map(toPublicStaffDTO)}
-      initialTodayKey={initialTodayKey}
-      initialServiceSlug={initialServiceSlug}
-      initialExtraServiceSlugs={parseCsvParam(params.extras)}
-      initialAddonIds={parseCsvParam(params.addons)}
-      initialStaffSlug={params.staff?.trim() || undefined}
-      initialDate={parsePlainDateParam(params.date)}
-      initialLayout={parseLayoutParam(params.layout)}
-      initialSlot={params.slot?.trim() || undefined}
-      initialInspoNote={params.inspo?.trim() || undefined}
-      siteOrigin={siteOrigin}
-      emitBookingBreadcrumb
-      initialClientProfile={await readSignedInClientProfile(db.clients, {
-        bookings: db.bookings,
-        services: db.services,
-        staff: db.staff,
-      })}
-    />
+      <BookingWidget
+        settings={bootstrap.settings}
+        categories={bootstrap.categories}
+        services={bootstrap.services}
+        addons={bootstrap.addons}
+        staff={bootstrap.staff}
+        initialTodayKey={initialTodayKey}
+        initialServiceSlug={initialServiceSlug}
+        initialExtraServiceSlugs={parseCsvParam(params.extras)}
+        initialAddonIds={parseCsvParam(params.addons)}
+        initialStaffSlug={params.staff?.trim() || undefined}
+        initialDate={parsePlainDateParam(params.date)}
+        initialLayout={parseLayoutParam(params.layout)}
+        initialSlot={params.slot?.trim() || undefined}
+        initialInspoNote={params.inspo?.trim() || undefined}
+        siteOrigin={siteOrigin}
+        emitBookingBreadcrumb
+        initialClientProfile={initialClientProfile}
+      />
     </ViewTransition>
   );
 }

@@ -238,7 +238,7 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
               ? 'Ingresa los datos de la persona que asistirá a la cita.'
               : showDepositCard
                 ? 'El anticipo se descuenta del total el día de tu cita.'
-                : 'Si tienes un cupón, ingrésalo aquí. Después acepta el aviso de privacidad para confirmar.'}
+                : 'Acepta el aviso de privacidad y, si tienes un cupón, ingrésalo antes de confirmar.'}
           </Text>
         </VStack>
 
@@ -525,6 +525,31 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
         </>
         ) : (
         <>
+        <VStack gap={2} id="rb-privacy-consent">
+          <CheckboxInput
+            ref={privacyCheckboxRef}
+            htmlName="privacyConsentAccepted"
+            label="Acepto el Aviso de Privacidad"
+            description="Usamos tus datos solo para tu cita, tus recordatorios y tu anticipo."
+            value={props.privacyConsentAccepted}
+            onChange={props.onChangePrivacyConsent}
+            isDisabled={props.isSubmitting}
+            isRequired
+            status={props.privacyConsentError ? { type: 'error', message: props.privacyConsentError } : undefined}
+          />
+          <Link href="/aviso-de-privacidad" target="_blank" rel="noopener noreferrer" isExternalLink type="supporting">
+            Leer el Aviso de Privacidad
+          </Link>
+          <CheckboxInput
+            htmlName="marketingOptIn"
+            label="Avísame de mi retoque y en mi cumpleaños"
+            value={props.marketingOptIn}
+            onChange={props.onChangeMarketingOptIn}
+            isDisabled={props.isSubmitting}
+            isOptional
+          />
+        </VStack>
+
         {showDepositCard ? (
           <DepositCard
             settings={props.settings}
@@ -551,31 +576,6 @@ export function ClientConfirmStep(props: ClientConfirmStepProps) {
           onApplyCoupon={props.onApplyCoupon}
           onRemoveCoupon={props.onRemoveCoupon}
         />
-
-        <VStack gap={2}>
-          <CheckboxInput
-            ref={privacyCheckboxRef}
-            htmlName="privacyConsentAccepted"
-            label="Acepto el Aviso de Privacidad"
-            description="Usamos tus datos solo para tu cita, tus recordatorios y tu anticipo."
-            value={props.privacyConsentAccepted}
-            onChange={props.onChangePrivacyConsent}
-            isDisabled={props.isSubmitting}
-            isRequired
-            status={props.privacyConsentError ? { type: 'error', message: props.privacyConsentError } : undefined}
-          />
-          <Link href="/aviso-de-privacidad" target="_blank" rel="noopener noreferrer" isExternalLink type="supporting">
-            Leer el Aviso de Privacidad
-          </Link>
-          <CheckboxInput
-            htmlName="marketingOptIn"
-            label="Avísame de mi retoque y en mi cumpleaños"
-            value={props.marketingOptIn}
-            onChange={props.onChangeMarketingOptIn}
-            isDisabled={props.isSubmitting}
-            isOptional
-          />
-        </VStack>
 
         <Text type="supporting" color="secondary">
           {props.settings.cancellationPolicyText}

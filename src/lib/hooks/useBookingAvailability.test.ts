@@ -413,6 +413,34 @@ describe('createBookingAvailabilityStore', () => {
     expect(store.getFresh(SOFTGEL_NOV)).toEqual(softgelDays);
     controller.dispose();
   });
+
+  it('isolates cache entries by waitlist offer token and forwards offer to the fetcher', async () => {
+    const publicDays = makeDays('2026-11-26', 1);
+    const offerDays = makeDays('2026-11-26', 3);
+    const fetcher = vi.fn<AvailabilityWindowFetcher>(async (input) =>
+      input.offer === 'offer-priority-1' ? offerDays : publicDays,
+    );
+
+    const store = createBookingAvailabilityStore({ fetcher });
+    const withOffer: BookingAvailabilityQuery = {
+      ...RUBBER_NOV,
+      offer: '  offer-priority-1  ',
+    };
+
+    const [plainResult, offerResult] = await Promise.all([
+      store.load(RUBBER_NOV),
+      store.load(withOffer),
+    ]);
+
+    expect(plainResult).toEqual(publicDays);
+    expect(offerResult).toEqual(offerDays);
+    expect(store.size()).toBe(2);
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceId: 'srv-rubber', offer: 'offer-priority-1' }),
+    );
+    const firstCallArg = fetcher.mock.calls[0]?.[0];
+    expect(firstCallArg).not.toHaveProperty('offer');
+  });
 });
 
 describe('fetchAvailabilityWindow', () => {
@@ -420,7 +448,7 @@ describe('fetchAvailabilityWindow', () => {
     vi.unstubAllGlobals();
   });
 
-  it('builds canonical sorted query parameters, forwards AbortSignal, and handles abort cleanly', async () => {
+  it('builds canonical sorted query parameters, forwards offer and AbortSignal, and handles abort cleanly', async () => {
     const days = makeDays('2026-11-26', 2);
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -435,12 +463,13 @@ describe('fetchAvailabilityWindow', () => {
       addonIds: ['addon-b', 'addon-a'],
       staffId: 'staff-karla',
       startDate: '2026-11-26',
+      offer: '  wl-offer-123  ',
       signal: controller.signal,
     });
 
     expect(result).toEqual(days);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/availability?serviceId=srv-rubber&addonIds=addon-a%2Caddon-b&startDate=2026-11-26&days=35&extraServiceIds=srv-pedi%2Csrv-retiro&staffId=staff-karla',
+      '/api/availability?serviceId=srv-rubber&addonIds=addon-a%2Caddon-b&startDate=2026-11-26&days=35&extraServiceIds=srv-pedi%2Csrv-retiro&staffId=staff-karla&offer=wl-offer-123',
       expect.objectContaining({
         cache: 'no-store',
         signal: controller.signal,

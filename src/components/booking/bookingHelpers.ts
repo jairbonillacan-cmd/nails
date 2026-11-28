@@ -27,6 +27,7 @@ export interface AvailabilityCacheKeyInput {
   addonIds: readonly string[];
   staffId: string;
   windowStartDate: string;
+  offer?: string | null;
 }
 
 export interface ClientFieldErrors {
@@ -73,7 +74,9 @@ export function buildAvailabilityCacheKey(
   const addonKey = normalizeUniqueSortedIds(input.addonIds).join(',');
   const staffId = input.staffId.trim() || 'any';
   const windowStartDate = input.windowStartDate.trim();
-  return `${serviceId}|${extraKey}|${addonKey}|${staffId}|${windowStartDate}`;
+  const offer = input.offer?.trim() ?? '';
+  const base = `${serviceId}|${extraKey}|${addonKey}|${staffId}|${windowStartDate}`;
+  return offer ? `${base}|offer:${offer}` : base;
 }
 
 function stripMxCountryPrefix(digits: string): string {
@@ -296,13 +299,17 @@ export function buildInstagramDmSummary(input: {
       ? input.slot.localTime24
       : input.slot.localTime12
     : '';
-  const depositLabel =
+  const effectiveDepositCents =
     input.depositAmountCents > 0
-      ? formatCurrency(input.depositAmountCents, input.settings.currency)
-      : formatCurrency(20000, input.settings.currency);
+      ? input.depositAmountCents
+      : (input.settings.depositAmountCents ?? 0);
+  const depositSuffix =
+    effectiveDepositCents > 0
+      ? ` (${formatCurrency(effectiveDepositCents, input.settings.currency)})`
+      : '';
 
   const lines = [
-    `Hola ${handle}, envío mi comprobante de anticipo (${depositLabel}) para confirmar mi cita en ${input.settings.name}:`,
+    `Hola ${handle}, envío mi comprobante de anticipo${depositSuffix} para confirmar mi cita en ${input.settings.name}:`,
     `- Servicios: ${serviceNames.join(' + ') || 'Cita de uñas'}`,
     ...(addonNames.length > 0 ? [`- Extras: ${addonNames.join(', ')}`] : []),
     `- Fecha y hora: ${dateText}${timeText ? ` · ${timeText}` : ''} (aprox. ${formatDuration(input.totalDurationMinutes)})`,

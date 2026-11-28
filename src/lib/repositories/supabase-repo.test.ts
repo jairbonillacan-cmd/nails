@@ -373,6 +373,8 @@ function buildMockSupabase(options: {
         return jsonResponse(wantsSingleObject ? created : [created], 201);
       }
       const idFilter = url.searchParams.get('id');
+      const slugFilter = url.searchParams.get('slug');
+      const activeFilter = url.searchParams.get('is_active');
       if (idFilter?.startsWith('eq.')) {
         const targetId = idFilter.slice(3);
         const matched = allServicesRows.filter((s) => s.id === targetId);
@@ -381,6 +383,14 @@ function buildMockSupabase(options: {
       if (idFilter?.startsWith('in.(') && idFilter.endsWith(')')) {
         const ids = new Set(idFilter.slice(4, -1).split(','));
         return jsonResponse(allServicesRows.filter((s) => ids.has(s.id)));
+      }
+      if (slugFilter?.startsWith('eq.')) {
+        const targetSlug = slugFilter.slice(3);
+        let matched = allServicesRows.filter((s) => s.slug === targetSlug);
+        if (activeFilter === 'eq.true') {
+          matched = matched.filter((s) => s.is_active);
+        }
+        return jsonResponse(wantsSingleObject ? matched[0] ?? null : matched);
       }
       return jsonResponse(wantsSingleObject ? serviceRow : allServicesRows);
     }
@@ -431,7 +441,22 @@ function buildMockSupabase(options: {
       return jsonResponse(publicBusyOverridesRows);
     }
     if (table === 'waitlist_entries') {
-      return jsonResponse(waitlistRows);
+      let filtered = [...waitlistRows];
+      const statusFilter = url.searchParams.get('status');
+      if (statusFilter?.startsWith('eq.')) {
+        const target = statusFilter.slice(3);
+        filtered = filtered.filter((w) => w.status === target);
+      }
+      const expFilter = url.searchParams.get('priority_offer_expires_at');
+      if (expFilter?.startsWith('gt.')) {
+        const gtIso = expFilter.slice(3);
+        filtered = filtered.filter(
+          (w) =>
+            typeof w.priority_offer_expires_at === 'string' &&
+            w.priority_offer_expires_at > gtIso,
+        );
+      }
+      return jsonResponse(filtered);
     }
     if (table === 'booking_payments') {
       return jsonResponse(bookingPaymentsRows);
@@ -550,14 +575,30 @@ function buildMockSupabase(options: {
       if (url.search.includes('idempotency_key=')) {
         return jsonResponse(null);
       }
+      const idParam = url.searchParams.get('id');
       const clientIdFilter = url.searchParams.get('client_id')?.replace(/^eq\./, '');
       const staffIdFilter = url.searchParams.get('staff_id')?.replace(/^eq\./, '');
+      const statusParam = url.searchParams.get('status');
       const startFilters = url.searchParams.getAll('start_at');
       const gteStart = startFilters.find((v) => v.startsWith('gte.'))?.slice(4);
       const lteStart = startFilters.find((v) => v.startsWith('lte.'))?.slice(4);
       let filtered = [...bookingsRows];
+      if (idParam?.startsWith('eq.')) {
+        const targetId = idParam.slice(3);
+        filtered = filtered.filter((b) => b.id === targetId);
+      } else if (idParam?.startsWith('in.(') && idParam.endsWith(')')) {
+        const ids = new Set(idParam.slice(4, -1).split(','));
+        filtered = filtered.filter((b) => ids.has(b.id));
+      }
       if (clientIdFilter) filtered = filtered.filter((b) => b.client_id === clientIdFilter);
       if (staffIdFilter) filtered = filtered.filter((b) => b.staff_id === staffIdFilter);
+      if (statusParam?.startsWith('eq.')) {
+        const targetStatus = statusParam.slice(3);
+        filtered = filtered.filter((b) => b.status === targetStatus);
+      } else if (statusParam?.startsWith('neq.')) {
+        const excludedStatus = statusParam.slice(4);
+        filtered = filtered.filter((b) => b.status !== excludedStatus);
+      }
       if (gteStart) filtered = filtered.filter((b) => b.start_at >= gteStart);
       if (lteStart) filtered = filtered.filter((b) => b.start_at <= lteStart);
       return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
@@ -3445,5 +3486,204 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     });
     expect(mock.requests.slice(beforeSpec).length).toBeLessThanOrEqual(6);
     expect(specBookings.map((b) => b.id)).toEqual([lateLocalBookingId]);
+  });
+
+  it('Wave 1: keeps public bootstrap, private slug lookup, reviews, and client profile targeted with zero full scans, enforces waitlist offer visibility, and prevents orphan media on RPC conflict', async () => {
+    const privateVipRow: Database['public']['Tables']['services']['Row'] = {
+      id: EXTRA_SERVICE_ID,
+      category_id: null,
+      name: 'Set Novia VIP',
+      slug: 'set-novia-vip',
+      description: 'Solo enlace privado',
+      duration_minutes: 90,
+      price_cents: 85000,
+      is_starting_price: false,
+      buffer_before_minutes: 0,
+      buffer_after_minutes: 0,
+      requires_confirmation: true,
+      deposit_required: true,
+      deposit_amount_cents: 20000,
+      allow_inspo_photo: true,
+      is_active: true,
+      is_featured: false,
+      is_private: true,
+      display_order: 2,
+      image_url: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+    const completedBookingId = '44444444-4444-4444-8444-444444444491';
+    const canceledBookingId = '44444444-4444-4444-8444-444444444492';
+    const offerStartAt = zonedDateTimeToUtc('2026-12-02', '10:00', TZ).toISOString();
+
+    const completedBooking: Database['public']['Tables']['bookings']['Row'] = {
+      id: completedBookingId,
+      booking_code: 'NL-REV01',
+      manage_token: 'tok-rev-1',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: '2026-11-28T16:00:00.000Z',
+      end_at: '2026-11-28T17:00:00.000Z',
+      occupied_start_at: '2026-11-28T16:00:00.000Z',
+      occupied_end_at: '2026-11-28T17:15:00.000Z',
+      occupied_range: '[2026-11-28T16:00:00.000Z,2026-11-28T17:15:00.000Z)',
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 0,
+      coupon_code: null,
+      status: 'completed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-11-28T10:00:00.000Z',
+      updated_at: '2026-11-28T17:00:00.000Z',
+    };
+    const newerCanceledBooking: Database['public']['Tables']['bookings']['Row'] = {
+      ...completedBooking,
+      id: canceledBookingId,
+      booking_code: 'NL-CAN01',
+      manage_token: 'tok-can-1',
+      start_at: '2026-12-03T16:00:00.000Z',
+      end_at: '2026-12-03T17:00:00.000Z',
+      status: 'canceled',
+    };
+
+    const mock = buildMockSupabase({
+      extraServicesRows: [privateVipRow],
+      bookingsRows: [completedBooking, newerCanceledBooking],
+      reviewsRows: [
+        {
+          id: 'rev-w1-1',
+          booking_id: completedBookingId,
+          client_id: CLIENT_ID,
+          staff_id: STAFF_ID,
+          rating: 5,
+          comment: 'Súper duración y detalle',
+          clicked_google_review: false,
+          created_at: '2026-11-29T12:00:00.000Z',
+        },
+        {
+          id: 'rev-w1-2',
+          booking_id: canceledBookingId,
+          client_id: CLIENT_ID,
+          staff_id: STAFF_ID,
+          rating: 1,
+          comment: 'No debe mostrarse porque es cancelada',
+          clicked_google_review: false,
+          created_at: '2026-11-30T12:00:00.000Z',
+        },
+      ],
+      waitlistRows: [
+        {
+          id: 'wl-offer-active',
+          service_id: SERVICE_ID,
+          preferred_staff_id: STAFF_ID,
+          desired_date: '2026-12-02',
+          preferred_window: 'morning',
+          client_name: 'Clienta Prioridad',
+          client_phone_e164: '+522227770099',
+          client_email: null,
+          notes: '',
+          status: 'notified',
+          notified_at: '2026-12-01T12:55:00.000Z',
+          priority_offer_token: 'wlo-valid-token-01',
+          priority_offer_expires_at: '2026-12-01T13:25:00.000Z',
+          priority_offer_slot_start_at: offerStartAt,
+          priority_offer_staff_id: STAFF_ID,
+          created_at: '2026-12-01T10:00:00.000Z',
+        },
+      ],
+      rpcHandlers: {
+        create_booking_atomic: () => ({
+          status: 409,
+          data: { code: '23P01', message: 'bookings_no_overlap_per_staff' },
+        }),
+      },
+    });
+    const repo = createSupabaseRepository(
+      createFixedClock('2026-12-01T13:00:00.000Z', 'wave1-supabase'),
+      mock.client,
+    );
+
+    const bootstrap = await repo.getPublicBootstrap();
+    expect(mock.requests.length).toBeLessThanOrEqual(8);
+    expect(bootstrap.staff).toHaveLength(1);
+    expect('commissionPercent' in (bootstrap.staff[0] ?? {})).toBe(false);
+    expect(bootstrap.services.some((s) => s.slug === 'set-novia-vip')).toBe(false);
+    for (const forbidden of ['/rest/v1/clients', '/rest/v1/bookings', '/rest/v1/audit_logs']) {
+      expect(mock.requests.some((r) => r.path === forbidden)).toBe(false);
+    }
+
+    const beforeSlug = mock.requests.length;
+    const privateSvc = await repo.getPublicServiceBySlug('set-novia-vip');
+    expect(privateSvc?.slug).toBe('set-novia-vip');
+    expect(privateSvc?.isPrivate).toBe(true);
+    expect(mock.requests.slice(beforeSlug).length).toBe(1);
+
+    const beforeReviews = mock.requests.length;
+    const reviewsData = await repo.getPublicReviewsForService(SERVICE_ID);
+    expect(mock.requests.slice(beforeReviews).length).toBeLessThanOrEqual(3);
+    expect(reviewsData.studioReviews).toHaveLength(1);
+    expect(reviewsData.serviceReviews).toHaveLength(1);
+    expect(reviewsData.serviceReviews[0]?.clientFirstName).toBe('Sofía');
+
+    const beforeProfile = mock.requests.length;
+    const portalRec = await repo.getClientPortalRecordByPhone('+525511223344');
+    expect(mock.requests.slice(beforeProfile).length).toBeLessThanOrEqual(2);
+    expect(portalRec.client?.id).toBe(CLIENT_ID);
+    expect(portalRec.latestBooking?.serviceId).toBe(SERVICE_ID);
+    expect(portalRec.latestBooking?.status).toBe('completed');
+
+    const availWithoutOffer = await repo.queryAvailability({
+      serviceId: SERVICE_ID,
+      addonIds: [],
+      staffId: STAFF_ID,
+      startDate: '2026-12-02',
+      days: 1,
+    });
+    expect(
+      availWithoutOffer.days[0]?.slots.some((s) => s.startAt === offerStartAt),
+    ).toBe(false);
+
+    const availWithOffer = await repo.queryAvailability({
+      serviceId: SERVICE_ID,
+      addonIds: [],
+      staffId: STAFF_ID,
+      startDate: '2026-12-02',
+      days: 1,
+      waitlistOfferToken: 'wlo-valid-token-01',
+    });
+    expect(
+      availWithOffer.days[0]?.slots.some((s) => s.startAt === offerStartAt),
+    ).toBe(true);
+
+    const onePixelPng =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2d8AAAAASUVORK5CYII=';
+    const beforeConflict = mock.requests.length;
+    await expect(
+      repo.createBookingAtomic({
+        serviceId: SERVICE_ID,
+        addonIds: [],
+        staffId: STAFF_ID,
+        startAt: offerStartAt,
+        clientName: 'Clienta Choque',
+        clientPhone: '+525511223344',
+        inspoPhotoUrl: onePixelPng,
+        paymentProofUrl: onePixelPng,
+        waitlistOfferToken: 'wlo-valid-token-01',
+        privacyConsentAccepted: true,
+      }),
+    ).rejects.toThrow(SlotConflictError);
+    const conflictReqs = mock.requests.slice(beforeConflict);
+    expect(conflictReqs.some((r) => r.path === '/rest/v1/media_assets')).toBe(false);
   });
 });

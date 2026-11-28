@@ -48,17 +48,17 @@ export function DepositCard({
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const displayAmount = formatCurrency(
-    depositAmountCents > 0 ? depositAmountCents : 20000,
+    Math.max(0, depositAmountCents),
     settings.currency,
   );
   const beneficiary = settings.depositBeneficiary || settings.depositAccountHolder;
   const cleanClabe = settings.depositClabe.replace(/\s+/g, '');
   const activeMethod: 'web_upload' | 'web_link' | 'none' =
-    proofDeliveryMethod === 'none'
-      ? 'none'
+    proofDeliveryMethod === 'web_upload'
+      ? 'web_upload'
       : proofDeliveryMethod === 'web_link'
         ? 'web_link'
-        : 'web_upload';
+        : 'none';
   const linkDraft = activeMethod === 'web_link' ? (proofDataUrl ?? '') : '';
 
   const processProofFile = async (file: File | null) => {
@@ -149,19 +149,19 @@ export function DepositCard({
           }}
         >
           <RadioListItem
+            value="none"
+            label="La hago después"
+            description="Apartas ya y subes tu comprobante desde el link de tu cita."
+          />
+          <RadioListItem
             value="web_upload"
-            label="Sí, subo captura"
+            label="Sí, subo captura ahora"
             description="Se ajusta sola desde tu teléfono."
           />
           <RadioListItem
             value="web_link"
             label="Sí, pego el enlace del recibo"
             description="El link que te da tu banco o Mercado Pago al pagar."
-          />
-          <RadioListItem
-            value="none"
-            label="La hago después"
-            description="Apartas ya y lo subes desde el link de tu cita."
           />
         </RadioList>
 

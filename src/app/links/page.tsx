@@ -21,12 +21,7 @@ import {
 } from 'lucide-react';
 import { buildWhatsAppLink, formatCurrency, formatDuration } from '@/lib/format';
 import { resolveLandingContent } from '@/lib/landing-config';
-import {
-  toPublicServiceDTO,
-  toPublicSettingsDTO,
-  toPublicStaffDTO,
-} from '@/lib/public-dto';
-import { getRepository } from '@/lib/repositories/db';
+import { getCachedPublicBootstrap } from '@/lib/public/bootstrap';
 import { PublicShell } from '@/components/PublicShell';
 import { LANDING_ASSETS, servicePhoto } from '@/components/landing/landingContent';
 import {
@@ -59,7 +54,7 @@ function resolveSafeExternalUrl(value: string | null | undefined, fallback: stri
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const settings = toPublicSettingsDTO(await getRepository().getSalonSettings());
+  const { settings } = await getCachedPublicBootstrap();
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const title = 'Enlaces rápidos y citas';
@@ -96,18 +91,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function LinksPage() {
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const bootstrap = await getCachedPublicBootstrap();
+  const { settings, staff: activeStaff } = bootstrap;
   const landing = resolveLandingContent(settings);
-  const activeStaff = db.staff
-    .filter((member) => member.isActive)
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .map(toPublicStaffDTO);
-  const featuredServices = db.services
-    .filter((service) => service.isActive && !service.isPrivate && service.isFeatured)
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .slice(0, 4)
-    .map(toPublicServiceDTO);
+  const featuredServices = bootstrap.services
+    .filter((service) => service.isFeatured)
+    .slice(0, 4);
 
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const instagramUrl = resolveInstagramUrl(settings);

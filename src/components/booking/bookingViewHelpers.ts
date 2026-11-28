@@ -49,6 +49,7 @@ export function buildLiveAnnouncement(input: {
 }): string {
   const { flow, holdRemainingSec, holdTotalSec, slotHoldMinutes, realtimeMessage, loadingAvail, selectedDaySummary, timezone } = input;
   if (flow.holdExpired && flow.holdExpiredMessage) return flow.holdExpiredMessage;
+  if (flow.holdError?.message) return flow.holdError.message;
   if (flow.conflict?.message) {
     return flow.conflict.kind === 'expired'
       ? flow.conflict.message
@@ -140,7 +141,6 @@ export function computeStepNavigation(input: {
   totalDurationMinutes: number;
   extrasSelectedCount: number;
   chosenStaffId: string;
-  isSubmittingBooking: boolean;
   showsDeposit: boolean;
   proofDataUrl: string | null;
   proofDeliveryMethod: ProofDeliveryMethod;
@@ -200,13 +200,15 @@ export function computeStepNavigation(input: {
             ? ''
             : flow.holdExpired
               ? 'Reverifica tu horario arriba'
-              : input.isSubmittingBooking
-                ? 'Guardando tu reserva…'
-                : input.showsDeposit && input.proofDataUrl && input.proofDeliveryMethod !== 'none'
-                  ? 'Comprobante listo para enviar'
-                  : input.showsDeposit
-                    ? 'Subes tu comprobante desde tu link'
-                    : '';
+              : flow.phase === 'confirmed'
+                ? ''
+                : flow.phase === 'submitting'
+                  ? 'Guardando tu reserva…'
+                  : input.showsDeposit && input.proofDataUrl && input.proofDeliveryMethod !== 'none'
+                    ? 'Comprobante listo para enviar'
+                    : input.showsDeposit
+                      ? 'Subes tu comprobante desde tu link'
+                      : '';
 
   return { completedSteps, backTarget, canContinue, nextLabel, nextHint };
 }

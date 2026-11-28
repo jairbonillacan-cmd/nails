@@ -15,6 +15,7 @@ import type { AvailableSlot } from '@/lib/availability/engine';
 import { formatDateLongInTimezone } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import { staffAvatar } from '../landing/landingContent';
+import { formatHoldClock } from './BookingChrome';
 import {
   getStaffScheduleLabel,
   isOptimizableLocalRasterImage,
@@ -31,6 +32,7 @@ interface StaffStepProps {
   currency: PublicSettingsDTO['currency'];
   services: PublicServiceDTO[];
   slot: AvailableSlot;
+  holdRemainingSec?: number;
   eligibleStaff: PublicStaffDTO[];
   allStaff: PublicStaffDTO[];
   chosenStaffId: string;
@@ -55,6 +57,7 @@ export function StaffStep({
   currency,
   services,
   slot,
+  holdRemainingSec = 0,
   eligibleStaff,
   allStaff,
   chosenStaffId,
@@ -88,8 +91,11 @@ export function StaffStep({
         <Heading level={2} className="lk-serif rb-h2">
           Profesional
         </Heading>
-        <Text color="secondary">
-          Horario reservado: {formatDateLongInTimezone(slot.startAt, timezone)},{' '}
+        <Text color="secondary" hasTabularNumbers>
+          {holdRemainingSec > 0
+            ? `Horario apartado · ${formatHoldClock(holdRemainingSec)} · `
+            : 'Horario apartado: '}
+          {formatDateLongInTimezone(slot.startAt, timezone)},{' '}
           <Text color="inherit" weight="semibold" hasTabularNumbers>
             {time}
           </Text>

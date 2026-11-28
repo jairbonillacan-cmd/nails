@@ -104,7 +104,7 @@ function sanitizeIdList(value: unknown, maxItems: number, excludeId?: string): s
 function sanitizeProofMethod(value: unknown): ProofDeliveryMethod {
   return value === 'instagram_dm' || value === 'none' || value === 'web_upload'
     ? value
-    : 'web_upload';
+    : 'none';
 }
 
 export function sanitizeBookingDraftFields(
@@ -136,7 +136,7 @@ export function hasMeaningfulBookingDraft(
     fields.clientEmail.trim().length > 0 ||
     fields.clientBirthday.trim().length > 0 ||
     fields.clientNotes.trim().length > 0 ||
-    fields.proofDeliveryMethod !== 'web_upload' ||
+    fields.proofDeliveryMethod !== 'none' ||
     fields.extraServiceIds.length > 0 ||
     fields.addonIds.length > 0 ||
     Boolean(fields.serviceId && fields.serviceId !== defaultServiceId)
@@ -264,7 +264,7 @@ export function resolveBookingDraftHydration(
       hasChanges = true;
     }
   }
-  if (draft.proofDeliveryMethod !== 'web_upload') {
+  if (draft.proofDeliveryMethod !== 'none') {
     patch.proofDeliveryMethod = draft.proofDeliveryMethod;
     hasChanges = true;
   }
@@ -376,7 +376,7 @@ export function useBookingDraft({
     current.clientForm.onChangeClientEmail('');
     current.clientForm.onChangeClientBirthday('');
     current.clientForm.onChangeClientNotes('');
-    current.clientForm.onChangeProofMethod('web_upload');
+    current.clientForm.onChangeProofMethod('none');
     current.clientForm.onChangeInspoFile(null, null);
     current.clientForm.onChangeProofFile(null, null);
   }, [defaultServiceId]);

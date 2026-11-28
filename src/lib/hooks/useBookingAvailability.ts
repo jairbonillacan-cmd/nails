@@ -118,18 +118,21 @@ function shiftDateKey(dateKey: string, deltaDays: number): string {
 
 function normalizeQuery(query: BookingAvailabilityQuery): BookingAvailabilityQuery {
   const serviceId = query.serviceId.trim();
+  const offer = query.offer?.trim() || null;
   return {
     serviceId,
     extraServiceIds: normalizeUniqueSortedIds(query.extraServiceIds, serviceId),
     addonIds: normalizeUniqueSortedIds(query.addonIds),
     staffId: query.staffId.trim() || 'any',
     windowStartDate: query.windowStartDate.trim(),
+    ...(offer ? { offer } : {}),
   };
 }
 
 function getSelectionPrefix(query: BookingAvailabilityQuery): string {
   const normalized = normalizeQuery(query);
-  return `${normalized.serviceId}|${normalized.extraServiceIds.join(',')}|${normalized.addonIds.join(',')}|${normalized.staffId}`;
+  const base = `${normalized.serviceId}|${normalized.extraServiceIds.join(',')}|${normalized.addonIds.join(',')}|${normalized.staffId}`;
+  return normalized.offer ? `${base}|offer:${normalized.offer}` : base;
 }
 
 export function isAvailabilityRealtimeEvent(type: RealtimeEvent['type']): boolean {
@@ -304,6 +307,7 @@ export function createBookingAvailabilityStore(options?: {
           staffId: query.staffId,
           startDate: query.windowStartDate,
           days: DEFAULT_WINDOW_DAYS,
+          ...(query.offer ? { offer: query.offer } : {}),
           signal: controller.signal,
         });
         if (controller.signal.aborted || record.invalidated || days === null) {
@@ -689,6 +693,7 @@ interface UseBookingAvailabilityParams {
   staffId: string;
   windowStartDate: string;
   nextWindowStartDate?: string | null;
+  offer?: string | null;
 }
 
 interface UseBookingAvailabilityResult {
@@ -711,6 +716,7 @@ export function useBookingAvailability(
   const staffId = params.staffId.trim() || 'any';
   const windowStartDate = params.windowStartDate.trim();
   const nextWindowStartDate = params.nextWindowStartDate?.trim() || null;
+  const offer = params.offer?.trim() || null;
 
   const query = useMemo<BookingAvailabilityQuery | null>(() => {
     if (!serviceId || !windowStartDate) return null;
@@ -720,8 +726,9 @@ export function useBookingAvailability(
       addonIds: sortedAddonKey ? sortedAddonKey.split(',') : [],
       staffId,
       windowStartDate,
+      ...(offer ? { offer } : {}),
     };
-  }, [serviceId, sortedExtraKey, sortedAddonKey, staffId, windowStartDate]);
+  }, [serviceId, sortedExtraKey, sortedAddonKey, staffId, windowStartDate, offer]);
 
   const queryKey = query ? buildAvailabilityCacheKey(query) : '';
 

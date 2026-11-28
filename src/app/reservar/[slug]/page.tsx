@@ -1,15 +1,13 @@
 import type { Metadata } from 'next';
 import '../../booking.css';
 import { VStack } from '@astryxdesign/core/VStack';
+import { readSignedInClientProfile } from '@/lib/auth/client-portal-profile';
 import { formatDuration, getDateKeyInTimezone } from '@/lib/format';
 import {
-  toPublicReviewDTO,
-  toPublicServiceDTO,
-  toPublicSettingsDTO,
-  toPublicStaffDTO,
-  type PublicReviewDTO,
-} from '@/lib/public-dto';
-import { readSignedInClientProfile } from '@/lib/auth/client-portal-profile';
+  getCachedPublicBootstrap,
+  getCachedPublicServiceBySlug,
+} from '@/lib/public/bootstrap';
+import type { PublicReviewDTO } from '@/lib/public-dto';
 import { getRepository } from '@/lib/repositories/db';
 import { getSiteOrigin } from '@/lib/seo/site-url';
 import type { BookingLayoutView } from '@/lib/types';
@@ -57,12 +55,12 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const bootstrap = await getCachedPublicBootstrap();
+  const { settings } = bootstrap;
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
-  const service = db.services.find(
-    (entry) => entry.isActive && entry.slug === slug,
-  );
+  const service =
+    bootstrap.services.find((entry) => entry.slug === slug) ??
+    (await getCachedPublicServiceBySlug(slug));
 
   if (!service) {
     return {
@@ -80,17 +78,16 @@ export async function generateMetadata({
     };
   }
 
-  const publicService = toPublicServiceDTO(service);
-  const durationLabel = formatDuration(publicService.durationMinutes);
+  const durationLabel = formatDuration(service.durationMinutes);
   const priceLabel = formatServicePrice(
-    publicService.priceCents,
-    publicService.isStartingPrice,
+    service.priceCents,
+    service.isStartingPrice,
     settings.currency,
   );
-  const canonicalPath = `/reservar/${encodeURIComponent(publicService.slug)}`;
-  const title = `Reservar ${publicService.name} en ${cityShort}`;
-  const serviceDescription = publicService.description.trim().replace(/\.+$/, '');
-  const summaryPrefix = `${publicService.name} (${durationLabel}, ${priceLabel} ${settings.currency}) en ${settings.name}, ${cityShort}.`;
+  const canonicalPath = `/reservar/${encodeURIComponent(service.slug)}`;
+  const title = `Reservar ${service.name} en ${cityShort}`;
+  const serviceDescription = service.description.trim().replace(/\.+$/, '');
+  const summaryPrefix = `${service.name} (${durationLabel}, ${priceLabel} ${settings.currency}) en ${settings.name}, ${cityShort}.`;
   const description = serviceDescription
     ? `${summaryPrefix} ${serviceDescription}. Agenda en línea con horarios en vivo.`
     : `${summaryPrefix} Consulta horarios en vivo y agenda tu cita en línea.`;
@@ -134,15 +131,20 @@ export default async function ReservarServicioPage({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  const db = await getRepository().getSnapshot();
-  const settings = toPublicSettingsDTO(db.settings);
+  const bootstrap = await getCachedPublicBootstrap();
+  const { settings } = bootstrap;
   const timezone = settings.timezone || 'America/Mexico_City';
   const initialTodayKey = getDateKeyInTimezone(new Date(), timezone);
 
-  const activeServices = db.services
-    .filter((s) => s.isActive && (!s.isPrivate || s.slug === slug))
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .map(toPublicServiceDTO);
+  const matchedPublicService = bootstrap.services.find((entry) => entry.slug === slug);
+  const privateMatchedService = matchedPublicService
+    ? null
+    : await getCachedPublicServiceBySlug(slug);
+  const activeServices = privateMatchedService
+    ? [...bootstrap.services, privateMatchedService].toSorted(
+        (a, b) => a.displayOrder - b.displayOrder,
+      )
+    : bootstrap.services;
 
   const requestedOverride = query.servicio?.trim();
   const resolvedSlug =
@@ -156,68 +158,27 @@ export default async function ReservarServicioPage({
     activeServices[0] ??
     null;
   const selectedCategoryName = selectedService
-    ? db.categories.find((cat) => cat.id === selectedService.categoryId)?.name
+    ? bootstrap.categories.find((cat) => cat.id === selectedService.categoryId)?.name
     : undefined;
   const siteOrigin = getSiteOrigin();
 
-  const bookingById = new Map(
-    db.bookings.map((booking) => [booking.id, booking]),
-  );
-  const clientById = new Map(db.clients.map((client) => [client.id, client]));
-
-  const studioReviews: PublicReviewDTO[] = db.reviews
-    .flatMap((review) => {
-      const booking = bookingById.get(review.bookingId);
-      if (!booking || booking.status !== 'completed') {
-        return [];
-      }
-      const client = clientById.get(review.clientId ?? booking.clientId);
-      return [
-        toPublicReviewDTO(review, {
-          serviceId: booking.serviceId,
-          clientFullName: client?.fullName ?? null,
-        }),
-      ];
-    })
-    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-  const serviceReviews: PublicReviewDTO[] = selectedService
-    ? db.reviews
-        .flatMap((review) => {
-          const booking = bookingById.get(review.bookingId);
-          if (!booking || booking.status !== 'completed') {
-            return [];
-          }
-          const matchesService =
-            booking.serviceId === selectedService.id ||
-            Boolean(booking.extraServiceIds?.includes(selectedService.id));
-          if (!matchesService) {
-            return [];
-          }
-          const client = clientById.get(review.clientId ?? booking.clientId);
-          return [
-            toPublicReviewDTO(review, {
-              serviceId: selectedService.id,
-              clientFullName: client?.fullName ?? null,
-            }),
-          ];
-        })
-        .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
-    : [];
+  const [initialClientProfile, reviewsData] = await Promise.all([
+    readSignedInClientProfile({
+      services: activeServices,
+      staff: bootstrap.staff,
+    }),
+    getRepository().getPublicReviewsForService(selectedService?.id ?? null),
+  ]);
+  const { studioReviews, serviceReviews } = reviewsData;
 
   return (
     <VStack gap={0} width="100%">
       <BookingWidget
         settings={settings}
-        categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
+        categories={bootstrap.categories}
         services={activeServices}
-        addons={db.addons
-          .filter((a) => a.isActive)
-          .toSorted((a, b) => a.displayOrder - b.displayOrder)}
-        staff={db.staff
-          .filter((s) => s.isActive)
-          .toSorted((a, b) => a.displayOrder - b.displayOrder)
-          .map(toPublicStaffDTO)}
+        addons={bootstrap.addons}
+        staff={bootstrap.staff}
         initialTodayKey={initialTodayKey}
         initialServiceSlug={resolvedSlug}
         initialExtraServiceSlugs={parseCsvParam(query.extras)}
@@ -227,11 +188,7 @@ export default async function ReservarServicioPage({
         initialLayout={parseLayoutParam(query.layout)}
         initialSlot={query.slot?.trim() || undefined}
         initialInspoNote={query.inspo?.trim() || undefined}
-        initialClientProfile={await readSignedInClientProfile(db.clients, {
-          bookings: db.bookings,
-          services: db.services,
-          staff: db.staff,
-        })}
+        initialClientProfile={initialClientProfile}
       />
       {selectedService ? (
         <ServiceReviewsSection

@@ -15,7 +15,7 @@ import {
   bookingReducer,
   createInitialBookingFlowState,
 } from './bookingMachine';
-import { computeStepNavigation } from './bookingViewHelpers';
+import { buildLiveAnnouncement, computeStepNavigation } from './bookingViewHelpers';
 
 const SAMPLE_SLOT: AvailableSlot = {
   startAt: '2026-12-01T16:00:00.000Z',
@@ -270,6 +270,70 @@ describe('bookingMachine reducer', () => {
     expect(back.formErrorCode).toBeNull();
     expect(back.activeBookings).toEqual([]);
   });
+
+  it('records and clears retryable holdError without advancing step or dropping active hold', () => {
+    const onSchedule = bookingReducer(createInitialBookingFlowState(), {
+      type: 'GO_TO_STEP',
+      step: 'schedule',
+    });
+    const errored = bookingReducer(onSchedule, {
+      type: 'HOLD_ERROR',
+      error: {
+        kind: 'rate_limited',
+        message: 'Demasiados intentos seguidos.',
+        retryAfterSeconds: 30,
+      },
+    });
+    expect(errored.step).toBe('schedule');
+    expect(errored.phase).toBe('browsing');
+    expect(errored.selectedSlot).toBeNull();
+    expect(errored.holdId).toBeNull();
+    expect(errored.holdError).toEqual({
+      kind: 'rate_limited',
+      message: 'Demasiados intentos seguidos.',
+      retryAfterSeconds: 30,
+    });
+    expect(
+      buildLiveAnnouncement({
+        flow: errored,
+        holdRemainingSec: 0,
+        holdTotalSec: 300,
+        slotHoldMinutes: 5,
+        realtimeMessage: null,
+        loadingAvail: false,
+        selectedDaySummary: null,
+        timezone: 'America/Mexico_City',
+      }),
+    ).toBe('Demasiados intentos seguidos.');
+
+    const dismissed = bookingReducer(errored, { type: 'DISMISS_HOLD_ERROR' });
+    expect(dismissed.holdError).toBeNull();
+
+    const held = bookingReducer(errored, {
+      type: 'SELECT_SLOT_HOLD_ACQUIRED',
+      slot: SAMPLE_SLOT,
+      holdId: 'hold-ok',
+      holdExpiresAt: 1_900_000_000_000,
+      nextStep: 'schedule',
+    });
+    expect(held.holdError).toBeNull();
+    expect(held.holdId).toBe('hold-ok');
+
+    const extendFailed = bookingReducer(held, {
+      type: 'HOLD_ERROR',
+      error: {
+        kind: 'unavailable',
+        message: 'Sin conexión para extender el apartado.',
+      },
+    });
+    expect(extendFailed.holdId).toBe('hold-ok');
+    expect(extendFailed.selectedSlot).toEqual(SAMPLE_SLOT);
+    expect(extendFailed.holdError?.kind).toBe('unavailable');
+
+    const navigated = bookingReducer(extendFailed, { type: 'GO_TO_STEP', step: 'staff' });
+    expect(navigated.holdError).toBeNull();
+  });
+
   it('computes backTarget, nextLabel, and nextHint accurately across all 5 streamlined steps', () => {
     const baseInput = {
       hasSelectedService: true,
@@ -277,10 +341,9 @@ describe('bookingMachine reducer', () => {
       totalDurationMinutes: 90,
       extrasSelectedCount: 0,
       chosenStaffId: 'any',
-      isSubmittingBooking: false,
       showsDeposit: true,
       proofDataUrl: null,
-      proofDeliveryMethod: 'web_upload' as const,
+      proofDeliveryMethod: 'none' as const,
     };
 
     const onService = computeStepNavigation({
@@ -341,7 +404,28 @@ describe('bookingMachine reducer', () => {
     });
     expect(onPayment.backTarget).toBe('details');
     expect(onPayment.nextLabel).toBe('Apartar mi cita');
+    expect(onPayment.nextHint).toBe('Subes tu comprobante desde tu link');
     expect(onPayment.completedSteps.has('details')).toBe(true);
+
+    const onPaymentSubmitting = computeStepNavigation({
+      ...baseInput,
+      flow: { ...createInitialBookingFlowState(), step: 'payment', phase: 'submitting', selectedSlot: SAMPLE_SLOT },
+    });
+    expect(onPaymentSubmitting.nextLabel).toBe('Apartando tu cita...');
+    expect(onPaymentSubmitting.nextHint).toBe('Guardando tu reserva…');
+
+    const onPaymentConfirmed = computeStepNavigation({
+      ...baseInput,
+      flow: {
+        ...createInitialBookingFlowState(),
+        step: 'payment',
+        phase: 'confirmed',
+        selectedSlot: SAMPLE_SLOT,
+        confirmedManageUrl: '/cita/token-abc',
+      },
+    });
+    expect(onPaymentConfirmed.nextLabel).toBe('Abriendo tu cita…');
+    expect(onPaymentConfirmed.nextHint).toBe('');
   });
 });
 
@@ -424,6 +508,20 @@ describe('bookingHelpers', () => {
     expect(summary).toContain(extra.name);
     expect(summary).toContain('Karla');
     expect(summary).toContain('@sofia.mx');
+
+    const zeroDepositSummary = buildInstagramDmSummary({
+      settings: { ...settings, depositAmountCents: 0 },
+      primaryService: primary,
+      extraServices: [],
+      addons: [],
+      slot: SAMPLE_SLOT,
+      timeFormat: '12h',
+      totalDurationMinutes: primary.durationMinutes,
+      depositAmountCents: 0,
+      clientName: 'Sofía Ramírez',
+      clientInstagram: '',
+    });
+    expect(zeroDepositSummary).not.toContain('200');
   });
 
   it('formats file sizes and validates image MIME, size, and binary signatures before submit', async () => {

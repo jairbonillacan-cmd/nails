@@ -112,4 +112,5 @@ export const PublicAvailabilityQuerySchema = z.object({
   addonIds: z.array(NonEmptyIdSchema).max(20).default([]),
   extraServiceIds: z.array(NonEmptyIdSchema).max(8).default([]),
   manageToken: z.string().trim().optional(),
+  offer: z.string().trim().max(120).optional(),
 });

@@ -56,13 +56,21 @@ import type {
 } from '../contracts/whatsapp';
 import {
   PublicLoyaltySummarySchema,
+  toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
   type PublicLoyaltySummaryDTO,
+  type PublicReviewDTO,
+  type PublicServiceDTO,
 } from '../public-dto';
 import { dispatchOutboxEvent } from '../use-cases/outbox';
-import { MediaValidationError, storeMediaUpload } from '../storage/media';
+import {
+  deleteStoredMedia,
+  MediaValidationError,
+  storeMediaUpload,
+  validateMediaDataUrl,
+} from '../storage/media';
 import type {
   AdminRole,
   AdminUser,
@@ -122,6 +130,7 @@ import {
   type BookingsRangeFilter,
   type CleanupExpiredSlotHoldsResult,
   type ClientArcoExport,
+  type ClientPortalRecordData,
   type CreateBookingAtomicInput,
   type CreateSlotHoldInput,
   type ExecutiveReportData,
@@ -136,6 +145,7 @@ import {
   type OutboxSummary,
   type ProcessDueNotificationsResult,
   type PublicBootstrapData,
+  type PublicServiceReviewsData,
   type QueryAvailabilityInput,
   type QueryAvailabilityOutput,
   type RecordConsentInput,
@@ -1510,6 +1520,85 @@ function resolveBookableSlotOrThrow(params: {
   );
 }
 
+type ValidatedBookingMediaField =
+  | { kind: 'none' }
+  | { kind: 'url'; url: string }
+  | { kind: 'data_url'; dataUrl: string };
+
+function validateBookingMediaField(
+  value: string | null | undefined,
+  folder: 'inspo' | 'proofs',
+): ValidatedBookingMediaField {
+  const trimmed = value?.trim();
+  if (!trimmed) return { kind: 'none' };
+  if (trimmed.toLowerCase().startsWith('data:')) {
+    try {
+      validateMediaDataUrl(trimmed);
+      return { kind: 'data_url', dataUrl: trimmed };
+    } catch (err) {
+      if (err instanceof MediaValidationError) {
+        throw new PolicyError(err.code, err.message);
+      }
+      throw err;
+    }
+  }
+  if (folder === 'proofs' && isSafeExternalProofUrl(trimmed)) {
+    return { kind: 'url', url: trimmed };
+  }
+  if (isSafeInternalBookingMediaPath(trimmed, folder)) {
+    return {
+      kind: 'url',
+      url: trimmed.startsWith('/api/media/') ? trimmed : `/api/media/${trimmed}`,
+    };
+  }
+  throw new PolicyError(
+    'INVALID_MEDIA_URL',
+    folder === 'proofs'
+      ? 'Sube una imagen PNG, JPEG o WEBP, o pega un enlace HTTPS válido de tu comprobante.'
+      : 'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
+  );
+}
+
+function buildWaitlistOfferSlotHolds(
+  waitlist: readonly WaitlistEntry[],
+  servicesById: ReadonlyMap<string, Service>,
+  nowMs: number,
+  callerOfferToken?: string | null,
+): SlotHold[] {
+  const trimmedToken = callerOfferToken?.trim() || null;
+  const holds: SlotHold[] = [];
+  for (const entry of waitlist) {
+    if (entry.status !== 'notified') continue;
+    const offerToken = entry.priorityOfferToken?.trim();
+    const slotStartAt = entry.priorityOfferSlotStartAt;
+    const staffId = entry.priorityOfferStaffId;
+    const expiresAt = entry.priorityOfferExpiresAt;
+    if (!offerToken || !slotStartAt || !staffId || !expiresAt) continue;
+    const expiresMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresMs) || expiresMs <= nowMs) continue;
+    if (trimmedToken && offerToken === trimmedToken) continue;
+    const startMs = Date.parse(slotStartAt);
+    if (!Number.isFinite(startMs)) continue;
+    const matchedService = servicesById.get(entry.serviceId);
+    const durationMinutes = matchedService?.durationMinutes ?? 60;
+    const bufferBeforeMinutes = matchedService?.bufferBeforeMinutes ?? 0;
+    const bufferAfterMinutes = matchedService?.bufferAfterMinutes ?? 0;
+    holds.push({
+      id: `wlo-hold-${entry.id}`,
+      staffId,
+      serviceId: entry.serviceId,
+      sessionToken: `waitlist-offer:${entry.id}`,
+      startAt: new Date(startMs - bufferBeforeMinutes * 60_000).toISOString(),
+      endAt: new Date(
+        startMs + (durationMinutes + bufferAfterMinutes) * 60_000,
+      ).toISOString(),
+      expiresAt,
+      createdAt: entry.notifiedAt ?? entry.createdAt,
+    });
+  }
+  return holds;
+}
+
 export function createSupabaseRepository(
   clock: Clock = systemClock,
   clientOverride?: SupabaseClient<Database>,
@@ -1523,6 +1612,7 @@ export function createSupabaseRepository(
     addonIds: string[];
     sessionToken?: string | null;
     ignoreBookingId?: string | null;
+    waitlistOfferToken?: string | null;
   }): Promise<{
     settings: SalonSettings;
     service: Service;
@@ -1560,12 +1650,17 @@ export function createSupabaseRepository(
         supabase.from('public_busy_overrides').select('*'),
       ]);
 
-    const [recurringBlocksRes, busyIntervalsRes, holdsRes, calRes] =
+    const [recurringBlocksRes, busyIntervalsRes, holdsRes, calRes, waitlistOffersRes] =
       await Promise.all([
         supabase.from('recurring_blocks').select('*').eq('is_active', true),
         supabase.from('public_busy_intervals').select('*'),
         supabase.from('slot_holds').select('*').gt('expires_at', nowIso),
         supabase.from('calendar_connections').select('*').eq('is_connected', true),
+        supabase
+          .from('waitlist_entries')
+          .select('*')
+          .eq('status', 'notified')
+          .gt('priority_offer_expires_at', nowIso),
       ]);
 
     if (!settingsRes.data) {
@@ -1604,7 +1699,45 @@ export function createSupabaseRepository(
     );
     const dateOverrides = (publicOverridesRes.data ?? []).map(mapPublicOverrideRow);
     const recurringBlocks = (recurringBlocksRes.data ?? []).map(mapRecurringBlockRow);
-    const slotHolds = (holdsRes.data ?? []).map(mapSlotHoldRow);
+    const baseSlotHolds = (holdsRes.data ?? []).map(mapSlotHoldRow);
+    const activeWaitlistOffers = (waitlistOffersRes.data ?? []).map(mapWaitlistRow);
+    const servicesById = new Map<string, Service>([
+      [service.id, service],
+      ...extraServices.map((srv): [string, Service] => [srv.id, srv]),
+    ]);
+    const missingOfferServiceIds = Array.from(
+      new Set(
+        activeWaitlistOffers
+          .filter(
+            (entry) =>
+              entry.status === 'notified' &&
+              Boolean(entry.priorityOfferToken?.trim()) &&
+              Boolean(entry.priorityOfferSlotStartAt) &&
+              Boolean(entry.priorityOfferStaffId) &&
+              Boolean(entry.priorityOfferExpiresAt) &&
+              Date.parse(entry.priorityOfferExpiresAt ?? '') > clock.nowMs() &&
+              !servicesById.has(entry.serviceId),
+          )
+          .map((entry) => entry.serviceId),
+      ),
+    );
+    if (missingOfferServiceIds.length > 0) {
+      const extraOfferServicesRes = await supabase
+        .from('services')
+        .select('*')
+        .in('id', missingOfferServiceIds);
+      for (const row of extraOfferServicesRes.data ?? []) {
+        const mapped = mapServiceRow(row);
+        servicesById.set(mapped.id, mapped);
+      }
+    }
+    const waitlistOfferHolds = buildWaitlistOfferSlotHolds(
+      activeWaitlistOffers,
+      servicesById,
+      clock.nowMs(),
+      params.waitlistOfferToken,
+    );
+    const slotHolds = [...baseSlotHolds, ...waitlistOfferHolds];
     const calendarConnections = (calRes.data ?? []).map(mapCalendarConnectionRow);
 
     const busyBookings: Booking[] = [];
@@ -2270,6 +2403,149 @@ export function createSupabaseRepository(
       };
     },
 
+    async getPublicServiceBySlug(slug: string): Promise<PublicServiceDTO | null> {
+      const trimmed = slug.trim();
+      if (!trimmed) return null;
+      const supabase = getClient();
+      const res = await supabase
+        .from('services')
+        .select('*')
+        .eq('slug', trimmed)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (!res.data || !res.data.is_active || res.data.slug !== trimmed) {
+        return null;
+      }
+      return toPublicServiceDTO(mapServiceRow(res.data));
+    },
+
+    async getPublicReviewsForService(
+      serviceId: string | null,
+    ): Promise<PublicServiceReviewsData> {
+      const supabase = getClient();
+      const reviewsRes = await supabase.from('booking_reviews').select('*');
+      const reviews = (reviewsRes.data ?? []).map(mapReviewRow);
+      if (reviews.length === 0) {
+        return { studioReviews: [], serviceReviews: [] };
+      }
+
+      const bookingIds = Array.from(new Set(reviews.map((review) => review.bookingId)));
+      const bookingsRes = await supabase
+        .from('bookings')
+        .select('*')
+        .in('id', bookingIds)
+        .eq('status', 'completed');
+      const completedBookings = (bookingsRes.data ?? [])
+        .map((row) => mapBookingRow(row, []))
+        .filter((booking) => booking.status === 'completed');
+      if (completedBookings.length === 0) {
+        return { studioReviews: [], serviceReviews: [] };
+      }
+
+      const bookingById = new Map(
+        completedBookings.map((booking) => [booking.id, booking]),
+      );
+      const clientIds = Array.from(
+        new Set(
+          reviews.flatMap((review) => {
+            const booking = bookingById.get(review.bookingId);
+            if (!booking) return [];
+            const targetId = review.clientId ?? booking.clientId;
+            return targetId ? [targetId] : [];
+          }),
+        ),
+      );
+      const clientsRes =
+        clientIds.length > 0
+          ? await supabase.from('clients').select('*').in('id', clientIds)
+          : { data: [] as Tables['clients']['Row'][] };
+      const clientById = new Map(
+        (clientsRes.data ?? []).map((row) => [row.id, mapClientRow(row)]),
+      );
+
+      const studioReviews: PublicReviewDTO[] = reviews
+        .flatMap((review) => {
+          const booking = bookingById.get(review.bookingId);
+          if (!booking) return [];
+          const client = clientById.get(review.clientId ?? booking.clientId);
+          return [
+            toPublicReviewDTO(review, {
+              serviceId: booking.serviceId,
+              clientFullName: client?.fullName ?? null,
+            }),
+          ];
+        })
+        .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      const serviceReviews: PublicReviewDTO[] = serviceId
+        ? reviews
+            .flatMap((review) => {
+              const booking = bookingById.get(review.bookingId);
+              if (!booking) return [];
+              const matchesService =
+                booking.serviceId === serviceId ||
+                Boolean(booking.extraServiceIds?.includes(serviceId));
+              if (!matchesService) return [];
+              const client = clientById.get(review.clientId ?? booking.clientId);
+              return [
+                toPublicReviewDTO(review, {
+                  serviceId,
+                  clientFullName: client?.fullName ?? null,
+                }),
+              ];
+            })
+            .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+        : [];
+
+      return { studioReviews, serviceReviews };
+    },
+
+    async getClientPortalRecordByPhone(
+      phoneE164: string,
+    ): Promise<ClientPortalRecordData> {
+      const normalized = normalizePhoneE164(phoneE164);
+      if (!normalized) {
+        return { client: null, latestBooking: null };
+      }
+      const supabase = getClient();
+      const clientsRes = await supabase
+        .from('clients')
+        .select('*')
+        .in('phone_e164', phoneLookupVariants(normalized));
+      const matchedRow = (clientsRes.data ?? []).find((row) =>
+        phonesMatchE164(row.phone_e164, normalized),
+      );
+      if (!matchedRow) {
+        return { client: null, latestBooking: null };
+      }
+      const client = mapClientRow(matchedRow);
+      const bookingsRes = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('client_id', client.id)
+        .neq('status', 'canceled')
+        .order('start_at', { ascending: false })
+        .limit(1);
+      let latestBooking: ClientPortalRecordData['latestBooking'] = null;
+      let latestStartMs = -Infinity;
+      for (const row of bookingsRes.data ?? []) {
+        if (row.client_id !== client.id || row.status === 'canceled') continue;
+        const startMs = Date.parse(row.start_at);
+        const score = Number.isFinite(startMs) ? startMs : 0;
+        if (!latestBooking || score > latestStartMs) {
+          latestBooking = {
+            clientId: row.client_id,
+            serviceId: row.service_id,
+            staffId: row.staff_id,
+            status: row.status,
+            startAt: row.start_at,
+          };
+          latestStartMs = score;
+        }
+      }
+      return { client, latestBooking };
+    },
+
     async getBookingsWithRelations(
       filter?: BookingsRangeFilter,
     ): Promise<BookingWithRelations[]> {
@@ -2408,6 +2684,7 @@ export function createSupabaseRepository(
           addonIds: params.addonIds,
           sessionToken: params.sessionToken,
           ignoreBookingId: params.ignoreBookingId,
+          waitlistOfferToken: params.waitlistOfferToken,
         });
 
       const days = getAvailabilityForRange(
@@ -2461,6 +2738,7 @@ export function createSupabaseRepository(
         extraServiceIds: params.extraServiceIds,
         addonIds: params.addonIds,
         sessionToken: params.sessionToken,
+        waitlistOfferToken: params.waitlistOfferToken,
       });
 
       const slot = resolveBookableSlotOrThrow({
@@ -2549,12 +2827,16 @@ export function createSupabaseRepository(
         }
       }
 
+      const validatedInspo = validateBookingMediaField(params.inspoPhotoUrl, 'inspo');
+      const validatedProof = validateBookingMediaField(params.paymentProofUrl, 'proofs');
+
       const { settings, service, extraServices, addons, ctx } =
         await loadPublicAvailabilityContext({
           serviceId: params.serviceId,
           extraServiceIds: params.extraServiceIds,
           addonIds: params.addonIds,
           sessionToken: params.sessionToken,
+          waitlistOfferToken: params.waitlistOfferToken,
         });
 
       if (!service.isActive) {
@@ -2684,79 +2966,10 @@ export function createSupabaseRepository(
       const totalPriceCents = Math.max(0, subtotalCents - discountCents);
       const depositAmountCents = service.depositRequired ? service.depositAmountCents : 0;
 
-      const uploadedMedia: Array<{
-        storagePath: string;
-        folder: 'inspo' | 'proofs';
-        contentType: string;
-        sizeBytes: number;
-      }> = [];
-
-      let persistedInspoPhotoUrl = params.inspoPhotoUrl?.trim() || null;
-      if (persistedInspoPhotoUrl?.toLowerCase().startsWith('data:')) {
-        try {
-          const stored = await storeMediaUpload({
-            dataUrl: persistedInspoPhotoUrl,
-            folder: 'inspo',
-          });
-          persistedInspoPhotoUrl = `/api/media/${stored.storagePath}`;
-          uploadedMedia.push({
-            storagePath: stored.storagePath,
-            folder: 'inspo',
-            contentType: stored.contentType,
-            sizeBytes: stored.sizeBytes,
-          });
-        } catch (err) {
-          if (err instanceof MediaValidationError) {
-            throw new PolicyError(err.code, err.message);
-          }
-          throw err;
-        }
-      } else if (persistedInspoPhotoUrl) {
-        if (!isSafeInternalBookingMediaPath(persistedInspoPhotoUrl, 'inspo')) {
-          throw new PolicyError(
-            'INVALID_MEDIA_URL',
-            'Solo se permiten imágenes subidas directamente (PNG, JPEG o WEBP). No se aceptan URLs externas.',
-          );
-        }
-        persistedInspoPhotoUrl = persistedInspoPhotoUrl.startsWith('/api/media/')
-          ? persistedInspoPhotoUrl
-          : `/api/media/${persistedInspoPhotoUrl}`;
-      }
-
-      let persistedPaymentProofUrl = params.paymentProofUrl?.trim() || null;
-      if (persistedPaymentProofUrl?.toLowerCase().startsWith('data:')) {
-        try {
-          const stored = await storeMediaUpload({
-            dataUrl: persistedPaymentProofUrl,
-            folder: 'proofs',
-          });
-          persistedPaymentProofUrl = `/api/media/${stored.storagePath}`;
-          uploadedMedia.push({
-            storagePath: stored.storagePath,
-            folder: 'proofs',
-            contentType: stored.contentType,
-            sizeBytes: stored.sizeBytes,
-          });
-        } catch (err) {
-          if (err instanceof MediaValidationError) {
-            throw new PolicyError(err.code, err.message);
-          }
-          throw err;
-        }
-      } else if (persistedPaymentProofUrl) {
-        if (isSafeExternalProofUrl(persistedPaymentProofUrl)) {
-          persistedPaymentProofUrl = persistedPaymentProofUrl.trim();
-        } else if (isSafeInternalBookingMediaPath(persistedPaymentProofUrl, 'proofs')) {
-          persistedPaymentProofUrl = persistedPaymentProofUrl.startsWith('/api/media/')
-            ? persistedPaymentProofUrl
-            : `/api/media/${persistedPaymentProofUrl}`;
-        } else {
-          throw new PolicyError(
-            'INVALID_MEDIA_URL',
-            'Sube una imagen PNG, JPEG o WEBP, o pega un enlace HTTPS válido de tu comprobante.',
-          );
-        }
-      }
+      const initialInspoPhotoUrl =
+        validatedInspo.kind === 'url' ? validatedInspo.url : null;
+      const initialPaymentProofUrl =
+        validatedProof.kind === 'url' ? validatedProof.url : null;
 
       const { data: createdBookingId, error: rpcError } = await supabase.rpc(
         'create_booking_atomic',
@@ -2781,8 +2994,8 @@ export function createSupabaseRepository(
           p_status: status,
           p_source: params.source ?? 'web',
           p_client_notes: params.clientNotes?.trim() || '',
-          p_inspo_photo_url: persistedInspoPhotoUrl,
-          p_payment_proof_url: persistedPaymentProofUrl,
+          p_inspo_photo_url: initialInspoPhotoUrl,
+          p_payment_proof_url: initialPaymentProofUrl,
           p_hold_id: params.holdId ?? null,
           p_session_token: params.sessionToken ?? null,
           p_addons: addons.map((addon) => ({
@@ -2804,6 +3017,52 @@ export function createSupabaseRepository(
         }
         const pgErr = extractPgErrorCode(rpcError);
         throw new PolicyError(pgErr.code || 'BOOKING_FAILED', pgErr.message);
+      }
+
+      const uploadedMedia: Array<{
+        storagePath: string;
+        folder: 'inspo' | 'proofs';
+        contentType: string;
+        sizeBytes: number;
+      }> = [];
+      let persistedInspoPhotoUrl = initialInspoPhotoUrl;
+      let persistedPaymentProofUrl = initialPaymentProofUrl;
+
+      try {
+        if (validatedInspo.kind === 'data_url') {
+          const stored = await storeMediaUpload({
+            dataUrl: validatedInspo.dataUrl,
+            folder: 'inspo',
+          });
+          persistedInspoPhotoUrl = `/api/media/${stored.storagePath}`;
+          uploadedMedia.push({
+            storagePath: stored.storagePath,
+            folder: 'inspo',
+            contentType: stored.contentType,
+            sizeBytes: stored.sizeBytes,
+          });
+        }
+        if (validatedProof.kind === 'data_url') {
+          const stored = await storeMediaUpload({
+            dataUrl: validatedProof.dataUrl,
+            folder: 'proofs',
+          });
+          persistedPaymentProofUrl = `/api/media/${stored.storagePath}`;
+          uploadedMedia.push({
+            storagePath: stored.storagePath,
+            folder: 'proofs',
+            contentType: stored.contentType,
+            sizeBytes: stored.sizeBytes,
+          });
+        }
+      } catch (err) {
+        for (const item of uploadedMedia) {
+          await deleteStoredMedia(item.storagePath).catch(() => {});
+        }
+        if (err instanceof MediaValidationError) {
+          throw new PolicyError(err.code, err.message);
+        }
+        throw err;
       }
 
       const mediaToLink: Array<{
@@ -2836,6 +3095,12 @@ export function createSupabaseRepository(
       }
 
       const extraBookingPatch: Tables['bookings']['Update'] = {};
+      if (validatedInspo.kind === 'data_url' && persistedInspoPhotoUrl) {
+        extraBookingPatch.inspo_photo_url = persistedInspoPhotoUrl;
+      }
+      if (validatedProof.kind === 'data_url' && persistedPaymentProofUrl) {
+        extraBookingPatch.payment_proof_url = persistedPaymentProofUrl;
+      }
       if (extraServices.length > 0) {
         extraBookingPatch.extra_service_ids = extraServices.map((s) => s.id);
       }

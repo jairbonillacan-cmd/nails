@@ -23,6 +23,7 @@ import { useCountdownTimer } from '@/lib/hooks/useCountdownTimer';
 import { useEphemeralMessage } from '@/lib/hooks/useEphemeralMessage';
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription';
 import { usePendingNavigationFallback } from '@/lib/hooks/useRouteProgress';
+import { WAITLIST_OFFER_TTL_MINUTES } from '@/lib/notifications/cascade';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import { buildBookingBreadcrumbStructuredData } from '@/lib/seo/structured-data';
 import type { BookingLayoutView, ServiceAddon, ServiceCategory } from '@/lib/types';
@@ -191,6 +192,7 @@ export function BookingWidget(props: BookingWidgetProps) {
     staffId: selection.pinnedStaffId,
     windowStartDate: selection.windowStartDate,
     nextWindowStartDate: flow.step === 'schedule' && selection.canAdvanceMonth ? selection.nextMonthStartKey : null,
+    offer: waitlistOfferToken,
   });
 
   const effectiveSelectedDate = useMemo(
@@ -363,7 +365,6 @@ export function BookingWidget(props: BookingWidgetProps) {
     totalDurationMinutes: selection.totalDurationMinutes,
     extrasSelectedCount: selection.activeSelectedAddons.length + selection.selectedExtraServices.length,
     chosenStaffId: actions.chosenStaffId,
-    isSubmittingBooking: actions.isSubmittingBooking,
     showsDeposit: selection.showsDeposit,
     proofDataUrl: selection.clientForm.proofDataUrl,
     proofDeliveryMethod: selection.clientForm.proofDeliveryMethod,
@@ -399,7 +400,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   const summaryProps = {
     currency: settings.currency, rows: summaryRows, totalPriceCents,
     hasStartingPrice: selection.hasStartingPrice, discountCents,
-    depositAmountCents: selection.showsDeposit ? selection.depositAmountCents || 20000 : 0,
+    depositAmountCents: selection.showsDeposit ? selection.depositAmountCents : 0,
     holdRemainingSec, holdTotalSec, isHoldExpired: flow.holdExpired,
   };
   const isHoldPromptOpen = shouldPromptHoldExtension({
@@ -445,7 +446,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               <Banner
                 status="info"
                 title="Tu lugar prioritario de lista de espera está activo"
-                description="Tienes 30 minutos para elegir el horario liberado y confirmar tu cita antes de que pase al siguiente lugar."
+                description={`Tienes ${WAITLIST_OFFER_TTL_MINUTES} minutos para elegir el horario liberado y confirmar tu cita antes de que pase al siguiente lugar.`}
               />
             ) : null}
 
@@ -496,11 +497,14 @@ export function BookingWidget(props: BookingWidgetProps) {
             <BookingConflictBanner
               formErrorCode={flow.formErrorCode}
               conflict={flow.conflict}
+              holdError={flow.holdError}
               timezone={timezone}
               timeFormat={selection.timeFormat}
               pendingSlotKey={actions.pendingSlotKey}
               isBusy={actions.isBusy}
               onDismissConflict={() => dispatch({ type: 'DISMISS_CONFLICT' })}
+              onDismissHoldError={() => dispatch({ type: 'DISMISS_HOLD_ERROR' })}
+              onRetryHold={() => void actions.handleRetryHold()}
               onSelectSuggestion={(alt) => void actions.handleSelectSlot(alt, { stayOnDetails: isPostHoldStep(flow.step) })}
             />
 
@@ -528,6 +532,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               dispatch={dispatch}
               selection={selection}
               actions={actions}
+              holdRemainingSec={holdRemainingSec}
               totalPriceCents={totalPriceCents}
               clientAccount={clientAccountBinding}
               schedule={{
@@ -548,6 +553,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                     addonIds: selection.activeAddonIds,
                     staffId: selection.pinnedStaffId,
                     windowStartDate: selection.windowStartDate,
+                    offer: waitlistOfferToken,
                   });
                 },
                 onSelectDate: (nextDate) =>
@@ -561,6 +567,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                     addonIds: selection.activeAddonIds,
                     staffId: selection.pinnedStaffId,
                     windowStartDate: selection.nextMonthStartKey,
+                    offer: waitlistOfferToken,
                   });
                 },
                 onReturnToToday: () => selection.returnToTodayWindow(loadingAvail),

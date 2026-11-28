@@ -105,6 +105,7 @@ interface BookingStepRouterProps {
   selection: BookingSelectionState;
   actions: BookingActions;
   schedule: ScheduleRouterState;
+  holdRemainingSec?: number;
   totalPriceCents: number;
   clientAccount: ClientAccountBinding;
 }
@@ -121,6 +122,7 @@ export function BookingStepRouter({
   selection,
   actions,
   schedule,
+  holdRemainingSec = 0,
   totalPriceCents,
   clientAccount,
 }: BookingStepRouterProps) {
@@ -222,6 +224,7 @@ export function BookingStepRouter({
         currency={settings.currency}
         services={services}
         slot={flow.selectedSlot}
+        holdRemainingSec={holdRemainingSec}
         eligibleStaff={selection.eligibleStaff}
         allStaff={staff}
         chosenStaffId={actions.chosenStaffId}

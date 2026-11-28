@@ -24,10 +24,9 @@ const NAV_BASE = {
   totalDurationMinutes: 90,
   extrasSelectedCount: 0,
   chosenStaffId: 'any',
-  isSubmittingBooking: false,
   showsDeposit: false,
   proofDataUrl: null,
-  proofDeliveryMethod: 'web_upload' as const,
+  proofDeliveryMethod: 'none' as const,
 };
 
 function heldOn(step: 'schedule' | 'staff' | 'details' | 'payment') {

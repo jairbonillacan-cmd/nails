@@ -125,15 +125,15 @@ describe('useBookingDraft storage helpers', () => {
       clientEmail: '',
       clientBirthday: '',
       clientNotes: '',
-      proofDeliveryMethod: 'web_upload',
+      proofDeliveryMethod: 'none',
     });
 
     const sanitized = sanitizeBookingDraftFields({
       clientNotes: '  DATA:image/jpeg;base64,xyz',
-      proofDeliveryMethod: 'none',
+      proofDeliveryMethod: 'web_upload',
     });
     expect(sanitized.clientNotes).toBe('');
-    expect(sanitized.proofDeliveryMethod).toBe('none');
+    expect(sanitized.proofDeliveryMethod).toBe('web_upload');
   });
 
   it('drops corrupt JSON, wrong version, and expired drafts automatically', () => {
@@ -243,7 +243,7 @@ describe('useBookingDraft storage helpers', () => {
         clientNotes: '',
         inspoFile: null,
         inspoDataUrl: null,
-        proofDeliveryMethod: 'web_upload',
+        proofDeliveryMethod: 'none',
         proofFile: null,
         proofDataUrl: null,
         onChangeClientName,
@@ -282,6 +282,9 @@ describe('useBookingDraft storage helpers', () => {
     ).toBe(true);
     expect(
       hasMeaningfulBookingDraft({ ...emptyDraft, clientName: 'Karla' }, 'srv-default'),
+    ).toBe(true);
+    expect(
+      hasMeaningfulBookingDraft({ ...emptyDraft, proofDeliveryMethod: 'web_upload' }, 'srv-default'),
     ).toBe(true);
     expect(
       resolveBookingDraftHydration(emptyDraft, {
