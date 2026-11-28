@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import type { AvailableSlot } from '@/lib/availability/engine';
 import { createInitialDemoDatabase } from '@/lib/demo-seed';
 import { toPublicServiceDTO, toPublicSettingsDTO } from '@/lib/public-dto';
@@ -13,9 +14,19 @@ import {
 import {
   BOOKING_STEPS,
   bookingReducer,
+  clampBookingStep,
   createInitialBookingFlowState,
+  isSlotRequiredStep,
+  parseBookingStepParam,
+  type BookingFlowAction,
+  type BookingStep,
 } from './bookingMachine';
-import { buildLiveAnnouncement, computeStepNavigation } from './bookingViewHelpers';
+import {
+  buildLiveAnnouncement,
+  buildSummaryRows,
+  computeStepNavigation,
+  resolveTopBookingNotice,
+} from './bookingViewHelpers';
 
 const SAMPLE_SLOT: AvailableSlot = {
   startAt: '2026-12-01T16:00:00.000Z',
@@ -426,6 +437,165 @@ describe('bookingMachine reducer', () => {
     });
     expect(onPaymentConfirmed.nextLabel).toBe('Abriendo tu cita…');
     expect(onPaymentConfirmed.nextHint).toBe('');
+
+    const onDetailsSingleStaff = computeStepNavigation({
+      ...baseInput,
+      flow: {
+        ...createInitialBookingFlowState(),
+        step: 'details',
+        phase: 'holding',
+        selectedSlot: ALT_SLOT,
+      },
+    });
+    expect(onDetailsSingleStaff.backTarget).toBe('schedule');
+    expect(onDetailsSingleStaff.skipStaff).toBe(true);
+    expect(onDetailsSingleStaff.skippedSteps.has('staff')).toBe(true);
+  });
+
+  it('enforces single top notice priority (offer > draft > repeat) and formats auto-assigned staff summary', () => {
+    expect(
+      resolveTopBookingNotice({
+        hasWaitlistOffer: true,
+        hasRestoredDraft: true,
+        canShowRepeat: true,
+      }),
+    ).toBe('offer');
+    expect(
+      resolveTopBookingNotice({
+        hasWaitlistOffer: false,
+        hasRestoredDraft: true,
+        canShowRepeat: true,
+      }),
+    ).toBe('draft');
+    expect(
+      resolveTopBookingNotice({
+        hasWaitlistOffer: false,
+        hasRestoredDraft: false,
+        canShowRepeat: true,
+      }),
+    ).toBe('repeat');
+    expect(
+      resolveTopBookingNotice({
+        hasWaitlistOffer: false,
+        hasRestoredDraft: false,
+        canShowRepeat: false,
+      }),
+    ).toBeNull();
+
+    const rows = buildSummaryRows({
+      selectedService: undefined,
+      selectedExtraServices: [],
+      activeSelectedAddons: [],
+      flow: {
+        ...createInitialBookingFlowState(),
+        step: 'details',
+        phase: 'holding',
+        selectedSlot: ALT_SLOT,
+      },
+      timeFormat: '12h',
+      timezone: 'America/Mexico_City',
+      address: 'Puebla',
+      chosenStaffId: 'staff-paty',
+      isPinned: false,
+      skipsStaffStep: false,
+      totalDurationMinutes: 90,
+    });
+    const staffRow = rows.find((row) => row.key === 'staff');
+    expect(staffRow?.value).toBe('Te atiende Paty');
+    expect(staffRow?.sub).toBe('Única profesional libre en este horario');
+  });
+
+  it('parses ?paso= slugs and clamps invalid initial or post-clear steps safely', () => {
+    expect(parseBookingStepParam('servicio')).toBe('service');
+    expect(parseBookingStepParam('horario')).toBe('schedule');
+    expect(parseBookingStepParam('profesional')).toBe('staff');
+    expect(parseBookingStepParam('datos')).toBe('details');
+    expect(parseBookingStepParam('anticipo')).toBe('payment');
+    expect(parseBookingStepParam('nope')).toBeNull();
+
+    expect(createInitialBookingFlowState('details').step).toBe('schedule');
+    expect(clampBookingStep('payment', null)).toBe('schedule');
+    expect(clampBookingStep('service', null)).toBe('service');
+    expect(clampBookingStep('details', SAMPLE_SLOT)).toBe('details');
+  });
+
+  it('invariant (fast-check): step NEVER lands on staff, details, or payment without a valid selectedSlot', () => {
+    const stepArb = fc.constantFrom<BookingStep>(...BOOKING_STEPS);
+    const slotArb = fc.constantFrom<AvailableSlot>(SAMPLE_SLOT, ALT_SLOT);
+    const holdErrorKindArb = fc.constantFrom<'rate_limited' | 'policy' | 'unavailable'>(
+      'rate_limited',
+      'policy',
+      'unavailable',
+    );
+    const actionArb: fc.Arbitrary<BookingFlowAction> = fc.oneof(
+      stepArb.map((step): BookingFlowAction => ({ type: 'GO_TO_STEP', step })),
+      fc
+        .tuple(slotArb, stepArb, fc.option(fc.constant('hold-fc'), { nil: null }))
+        .map(
+          ([slot, nextStep, holdId]): BookingFlowAction => ({
+            type: 'SELECT_SLOT_HOLD_ACQUIRED',
+            slot,
+            holdId,
+            holdExpiresAt: holdId ? 1_900_000_000_000 : null,
+            nextStep,
+          }),
+        ),
+      slotArb.map(
+        (slot): BookingFlowAction => ({
+          type: 'STAFF_ASSIGNED',
+          slot,
+          holdId: 'hold-staff',
+          holdExpiresAt: 1_900_000_120_000,
+        }),
+      ),
+      fc.constant<BookingFlowAction>({
+        type: 'HOLD_EXTENDED',
+        holdId: 'hold-ext',
+        holdExpiresAt: 1_900_000_240_000,
+      }),
+      fc.boolean().map(
+        (returnToSchedule): BookingFlowAction => ({
+          type: 'SLOT_CONFLICT',
+          message: 'Ocupado',
+          suggestions: [ALT_SLOT],
+          returnToSchedule,
+        }),
+      ),
+      fc.constant<BookingFlowAction>({ type: 'HOLD_EXPIRED', message: 'Expiró' }),
+      holdErrorKindArb.map(
+        (kind): BookingFlowAction => ({
+          type: 'HOLD_ERROR',
+          error: { kind, message: 'Error de apartado' },
+        }),
+      ),
+      fc.constant<BookingFlowAction>({ type: 'DISMISS_HOLD_ERROR' }),
+      fc.constant<BookingFlowAction>({ type: 'DISMISS_CONFLICT' }),
+      fc.boolean().map(
+        (accepted): BookingFlowAction => ({ type: 'SET_PRIVACY_CONSENT', accepted }),
+      ),
+      fc.boolean().map(
+        (optedIn): BookingFlowAction => ({ type: 'SET_MARKETING_OPT_IN', optedIn }),
+      ),
+      fc.constant<BookingFlowAction>({ type: 'START_SUBMIT' }),
+      fc.constant<BookingFlowAction>({ type: 'SUBMIT_FAILED', error: 'Error de red' }),
+      fc.constant<BookingFlowAction>({ type: 'SUBMIT_CONFIRMED', manageUrl: '/cita/fc-token' }),
+      fc.constant<BookingFlowAction>({ type: 'RESET_TO_SCHEDULE' }),
+      fc.constant<BookingFlowAction>({ type: 'SELECTION_CHANGED' }),
+    );
+
+    fc.assert(
+      fc.property(stepArb, fc.array(actionArb, { minLength: 1, maxLength: 40 }), (initialStep, actions) => {
+        let state = createInitialBookingFlowState(initialStep);
+        expect(!isSlotRequiredStep(state.step) || state.selectedSlot !== null).toBe(true);
+        for (const action of actions) {
+          state = bookingReducer(state, action);
+          if (isSlotRequiredStep(state.step)) {
+            expect(state.selectedSlot).not.toBeNull();
+          }
+        }
+      }),
+      { numRuns: 500 },
+    );
   });
 });
 

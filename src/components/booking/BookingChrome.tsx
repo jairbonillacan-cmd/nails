@@ -120,6 +120,7 @@ export function BookingHeader({
 interface BookingHeroProps {
   step: BookingStep;
   completedSteps: ReadonlySet<BookingStep>;
+  skippedSteps?: ReadonlySet<BookingStep>;
   onGoToStep: (step: BookingStep) => void;
   isCompact?: boolean;
   holdRemainingSec?: number;
@@ -128,6 +129,7 @@ interface BookingHeroProps {
 export function BookingHero({
   step,
   completedSteps,
+  skippedSteps,
   onGoToStep,
   isCompact = false,
   holdRemainingSec = 0,
@@ -194,8 +196,9 @@ export function BookingHero({
         <ol className="rb-stepper rb-d" aria-label="Pasos">
           {BOOKING_STEPS.map((item, index) => {
             const isCurrent = item === step;
+            const isSkipped = Boolean(skippedSteps?.has(item));
             const isDone = completedSteps.has(item) && !isCurrent;
-            const isReachable = index < stepIndex;
+            const isReachable = index < stepIndex && !isSkipped;
             return (
               <li key={item}>
                 <button

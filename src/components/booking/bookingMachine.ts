@@ -18,8 +18,41 @@ export const BOOKING_STEPS: readonly BookingStep[] = [
   'payment',
 ];
 
+export const BOOKING_STEP_URL_SLUGS: Readonly<Record<BookingStep, string>> = {
+  service: 'servicio',
+  schedule: 'horario',
+  staff: 'profesional',
+  details: 'datos',
+  payment: 'anticipo',
+};
+
+export function isSlotRequiredStep(step: BookingStep): boolean {
+  return step === 'staff' || step === 'details' || step === 'payment';
+}
+
 export function isPostHoldStep(step: BookingStep): boolean {
   return step === 'details' || step === 'payment';
+}
+
+export function parseBookingStepParam(raw: string | null | undefined): BookingStep | null {
+  const normalized = raw?.trim().toLowerCase() ?? '';
+  if (!normalized) return null;
+  if (normalized === 'servicio' || normalized === 'service') return 'service';
+  if (normalized === 'horario' || normalized === 'schedule') return 'schedule';
+  if (normalized === 'profesional' || normalized === 'staff') return 'staff';
+  if (normalized === 'datos' || normalized === 'details') return 'details';
+  if (normalized === 'anticipo' || normalized === 'payment') return 'payment';
+  return null;
+}
+
+export function clampBookingStep(
+  step: BookingStep,
+  selectedSlot: AvailableSlot | null,
+): BookingStep {
+  if (!selectedSlot && isSlotRequiredStep(step)) {
+    return 'schedule';
+  }
+  return step;
 }
 
 export interface BookingConflictState {
@@ -128,10 +161,12 @@ export type BookingFlowAction =
       type: 'DISMISS_CONFLICT';
     };
 
-export function createInitialBookingFlowState(): BookingFlowState {
+export function createInitialBookingFlowState(
+  initialStep: BookingStep = 'service',
+): BookingFlowState {
   return {
     phase: 'browsing',
-    step: 'service',
+    step: clampBookingStep(initialStep, null),
     selectedSlot: null,
     holdId: null,
     holdExpiresAt: null,
@@ -188,7 +223,7 @@ export function bookingReducer(
     case 'GO_TO_STEP':
       return {
         ...state,
-        step: action.step,
+        step: clampBookingStep(action.step, state.selectedSlot),
         holdError: null,
       };
 
@@ -203,12 +238,14 @@ export function bookingReducer(
         holdError: null,
       };
 
-    case 'SLOT_CONFLICT':
+    case 'SLOT_CONFLICT': {
+      const nextSlot = action.returnToSchedule ? null : state.selectedSlot;
+      const requestedStep = action.returnToSchedule ? 'schedule' : state.step;
       return {
         ...state,
         phase: 'conflict',
-        step: action.returnToSchedule ? 'schedule' : state.step,
-        selectedSlot: action.returnToSchedule ? null : state.selectedSlot,
+        step: clampBookingStep(requestedStep, nextSlot),
+        selectedSlot: nextSlot,
         holdId: null,
         holdExpiresAt: null,
         holdExpired: false,
@@ -223,6 +260,7 @@ export function bookingReducer(
         formErrorCode: null,
         activeBookings: [],
       };
+    }
 
     case 'HOLD_EXPIRED':
       if (isPostHoldStep(state.step) && state.selectedSlot) {
@@ -234,6 +272,7 @@ export function bookingReducer(
           holdExpiresAt: null,
           holdExpired: true,
           holdExpiredMessage: action.message,
+          holdError: null,
           conflict: null,
         };
       }
@@ -246,6 +285,7 @@ export function bookingReducer(
         holdExpiresAt: null,
         holdExpired: false,
         holdExpiredMessage: null,
+        holdError: null,
         conflict: {
           kind: 'expired',
           message: action.message,
@@ -284,7 +324,7 @@ export function bookingReducer(
       };
 
     case 'START_SUBMIT':
-      if (state.phase === 'submitting' || state.phase === 'confirmed') {
+      if (state.phase === 'submitting' || state.phase === 'confirmed' || !state.selectedSlot) {
         return state;
       }
       return {
@@ -348,6 +388,7 @@ export function bookingReducer(
       return {
         ...state,
         phase: 'browsing',
+        step: clampBookingStep(state.step, null),
         selectedSlot: null,
         holdId: null,
         holdExpiresAt: null,

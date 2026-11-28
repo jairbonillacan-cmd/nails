@@ -6,6 +6,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
+import { CalendarClock } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { PublicSettingsDTO } from '@/lib/public-dto';
 import { formatHoldClock } from './BookingChrome';
@@ -29,9 +30,11 @@ interface BookingSummaryCardProps {
   depositAmountCents: number;
   depositLabel?: string;
   codeBadge?: string | null;
+  autoSelectedStaffName?: string | null;
   holdRemainingSec: number;
   holdTotalSec: number;
   isHoldExpired?: boolean;
+  onChangeSchedule?: (() => void) | null;
   headingId: string;
 }
 
@@ -44,9 +47,11 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
   depositAmountCents,
   depositLabel = 'Anticipo para apartar',
   codeBadge = null,
+  autoSelectedStaffName = null,
   holdRemainingSec,
   holdTotalSec,
   isHoldExpired = false,
+  onChangeSchedule = null,
   headingId,
 }: BookingSummaryCardProps) {
   const holdPercent = holdTotalSec > 0 ? Math.min(100, (holdRemainingSec / holdTotalSec) * 100) : 0;
@@ -66,26 +71,38 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
       </HStack>
 
       <VStack as="ul" gap={3} className="rb-summary-rows">
-        {rows.map((row) => (
-          <HStack as="li" key={row.key} gap={3} align="start">
-            <Text color="inherit" weight="bold" className="rb-summary-mark" data-on={row.isDone ? 'true' : 'false'} aria-hidden="true">
-              {row.mark === 'clock' ? <BrandIcon name="horario" size={1.25} /> : row.mark}
-            </Text>
-            <VStack gap={0} className="rb-grow">
-              <Text color="inherit" type="supporting" className="rb-summary-label">
-                {row.label}
+        {rows.map((row) => {
+          const alreadyShowsAssigned =
+            row.value.toLowerCase().includes('te atiende') ||
+            (row.sub?.toLowerCase().includes('te atiende') ?? false);
+          const resolvedSub =
+            row.key === 'staff' && autoSelectedStaffName && !alreadyShowsAssigned
+              ? row.sub
+                ? `Te atiende ${autoSelectedStaffName} · ${row.sub}`
+                : `Te atiende ${autoSelectedStaffName}`
+              : row.sub;
+
+          return (
+            <HStack as="li" key={row.key} gap={3} align="start">
+              <Text color="inherit" weight="bold" className="rb-summary-mark" data-on={row.isDone ? 'true' : 'false'} aria-hidden="true">
+                {row.mark === 'clock' ? <BrandIcon name="horario" size={1.25} /> : row.mark}
               </Text>
-              <Text color="inherit" weight="semibold" className="rb-first-upper">
-                {row.value}
-              </Text>
-              {row.sub ? (
-                <Text color="inherit" type="supporting" className="rb-summary-sub">
-                  {row.sub}
+              <VStack gap={0} className="rb-grow">
+                <Text color="inherit" type="supporting" className="rb-summary-label">
+                  {row.label}
                 </Text>
-              ) : null}
-            </VStack>
-          </HStack>
-        ))}
+                <Text color="inherit" weight="semibold" className="rb-first-upper">
+                  {row.value}
+                </Text>
+                {resolvedSub ? (
+                  <Text color="inherit" type="supporting" className="rb-summary-sub">
+                    {resolvedSub}
+                  </Text>
+                ) : null}
+              </VStack>
+            </HStack>
+          );
+        })}
       </VStack>
 
       <VStack gap={1} className="rb-summary-total">
@@ -143,6 +160,20 @@ export const BookingSummaryCard = memo(function BookingSummaryCard({
             Reverifica tu horario arriba; tus datos siguen guardados.
           </Text>
         </VStack>
+      ) : null}
+
+      {onChangeSchedule ? (
+        <button
+          type="button"
+          className="rb-step fx-press"
+          style={{ justifyContent: 'center', minHeight: '2.75rem' }}
+          onClick={onChangeSchedule}
+        >
+          <CalendarClock size={16} aria-hidden="true" />
+          <Text color="inherit" weight="semibold" size="sm">
+            Cambiar horario
+          </Text>
+        </button>
       ) : null}
     </VStack>
   );

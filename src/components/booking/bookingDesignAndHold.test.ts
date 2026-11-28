@@ -18,6 +18,11 @@ const SLOT: AvailableSlot = {
   availableStaffIds: ['staff-karla'],
 };
 
+const MULTI_STAFF_SLOT: AvailableSlot = {
+  ...SLOT,
+  availableStaffIds: ['staff-karla', 'staff-paty'],
+};
+
 const NAV_BASE = {
   hasSelectedService: true,
   requiresConfirmation: false,
@@ -29,10 +34,10 @@ const NAV_BASE = {
   proofDeliveryMethod: 'none' as const,
 };
 
-function heldOn(step: 'schedule' | 'staff' | 'details' | 'payment') {
+function heldOn(step: 'schedule' | 'staff' | 'details' | 'payment', slot: AvailableSlot = SLOT) {
   return bookingReducer(createInitialBookingFlowState(), {
     type: 'SELECT_SLOT_HOLD_ACQUIRED',
-    slot: SLOT,
+    slot,
     holdId: 'hold-1',
     holdExpiresAt: 1_900_000_000_000,
     nextStep: step,
@@ -47,13 +52,25 @@ describe('details & design hold recovery', () => {
     expect(expired.holdExpired).toBe(true);
   });
 
-  it('goes back from details directly to the artist step', () => {
-    const onDetails = computeStepNavigation({ ...NAV_BASE, flow: heldOn('details') });
-    expect(onDetails.backTarget).toBe('staff');
-    expect(onDetails.canContinue).toBe(true);
-    expect(onDetails.nextLabel).toBe('Continuar');
-    expect(onDetails.completedSteps.has('schedule')).toBe(true);
-    expect(onDetails.completedSteps.has('staff')).toBe(true);
+  it('goes back from details to artist when multiple specialists are free and directly to schedule when only one is free', () => {
+    const onDetailsMulti = computeStepNavigation({
+      ...NAV_BASE,
+      flow: heldOn('details', MULTI_STAFF_SLOT),
+    });
+    expect(onDetailsMulti.backTarget).toBe('staff');
+    expect(onDetailsMulti.skipStaff).toBe(false);
+    expect(onDetailsMulti.canContinue).toBe(true);
+    expect(onDetailsMulti.nextLabel).toBe('Continuar');
+    expect(onDetailsMulti.completedSteps.has('schedule')).toBe(true);
+    expect(onDetailsMulti.completedSteps.has('staff')).toBe(true);
+
+    const onDetailsSingle = computeStepNavigation({
+      ...NAV_BASE,
+      flow: heldOn('details', SLOT),
+    });
+    expect(onDetailsSingle.backTarget).toBe('schedule');
+    expect(onDetailsSingle.skipStaff).toBe(true);
+    expect(onDetailsSingle.skippedSteps.has('staff')).toBe(true);
   });
 
   it('keeps slot and step when the hold expires on the payment step', () => {

@@ -1,8 +1,8 @@
 'use client';
 
 import type React from 'react';
-import { useRef, useState } from 'react';
-import type { AvailableSlot } from '@/lib/availability/engine';
+import { useEffect, useRef, useState } from 'react';
+import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import { isSafeExternalProofUrl } from '@/lib/contracts';
 import { normalizePhoneE164 } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
@@ -16,6 +16,8 @@ import {
 } from '@/components/booking/bookingApi';
 import {
   birthdayInputToIso,
+  findAlternativeSlotsForDate,
+  findMatchingSlotInAvailability,
   hasClientFieldErrors,
   prefersReducedMotion,
   validateClientBookingFields,
@@ -175,12 +177,21 @@ export function useBookingFlowActions({
     options?: { stayOnDetails?: boolean },
   ) => {
     if (!selectedService || isBusy || busyLockRef.current) return;
+    const skipsStaffForThisSlot = skipsStaffStep || slot.availableStaffIds.length <= 1;
+    const resolvedStaffId =
+      skipsStaffForThisSlot && !isPinned && slot.availableStaffIds.length === 1
+        ? (slot.availableStaffIds[0] ?? slot.staffId)
+        : slot.staffId;
+    const resolvedMember = staff.find((member) => member.id === resolvedStaffId);
+    const targetSlot: AvailableSlot = resolvedMember
+      ? { ...slot, staffId: resolvedMember.id, staffName: resolvedMember.name }
+      : slot;
     const slotKey = `${slot.staffId}-${slot.startAt}`;
     busyLockRef.current = true;
     setIsBusy(true);
     setPendingSlotKey(slotKey);
     try {
-      const result = await holdSlot(slot, slot.staffId);
+      const result = await holdSlot(targetSlot, targetSlot.staffId);
       if (result.kind === 'conflict') {
         lastFailedHoldRef.current = null;
         dispatch({ type: 'SLOT_CONFLICT', message: result.error, suggestions: result.suggestedSlots });
@@ -191,7 +202,7 @@ export function useBookingFlowActions({
       if (result.kind !== 'held') {
         lastFailedHoldRef.current = {
           kind: 'slot',
-          slot,
+          slot: targetSlot,
           stayOnDetails: Boolean(options?.stayOnDetails),
         };
         dispatch({ type: 'HOLD_ERROR', error: toHoldErrorState(result) });
@@ -199,28 +210,28 @@ export function useBookingFlowActions({
         return;
       }
       lastFailedHoldRef.current = null;
-      idempotencyKeyRef.current = buildIdempotencyKey(slot.staffId);
+      idempotencyKeyRef.current = buildIdempotencyKey(targetSlot.staffId);
       const stayOnDetails = Boolean(options?.stayOnDetails);
-      const hasStaffChoice = !stayOnDetails && !skipsStaffStep && slot.availableStaffIds.length > 1;
+      const hasStaffChoice = !stayOnDetails && !skipsStaffForThisSlot;
       setChosenStaffId(
         stayOnDetails
-          ? slot.staffId
+          ? targetSlot.staffId
           : isPinned
             ? pinnedStaffId
             : hasStaffChoice
               ? 'any'
-              : slot.staffId,
+              : targetSlot.staffId,
       );
       setTakenStaffIds(new Set());
       setStaffError(null);
       dispatch({
         type: 'SELECT_SLOT_HOLD_ACQUIRED',
-        slot,
+        slot: targetSlot,
         holdId: result.holdId,
         holdExpiresAt: result.holdExpiresAt,
-        nextStep: stayOnDetails ? flow.step : 'schedule',
+        nextStep: stayOnDetails ? flow.step : skipsStaffForThisSlot ? 'details' : 'staff',
       });
-      if (stayOnDetails) revealPanel();
+      revealPanel();
     } finally {
       busyLockRef.current = false;
       setIsBusy(false);
@@ -508,4 +519,82 @@ export function useBookingFlowActions({
     handleDetailsContinue,
     handleConfirmBooking,
   };
+}
+
+interface UseInitialSlotAutoHoldInput {
+  initialSlot?: string;
+  preferredDate: string;
+  pinnedStaffId: string;
+  availabilityDays: readonly DayAvailabilitySummary[];
+  loadingAvail: boolean;
+  availabilityError: string | null;
+  hasSelectedSlot: boolean;
+  isBusy: boolean;
+  waitlistOfferToken?: string | null;
+  onSelectDate: (date: string) => void;
+  onSelectSlot: (slot: AvailableSlot) => Promise<void>;
+  onSlotUnavailable: (message: string, suggestions: AvailableSlot[]) => void;
+}
+
+export function useInitialSlotAutoHold({
+  initialSlot,
+  preferredDate,
+  pinnedStaffId,
+  availabilityDays,
+  loadingAvail,
+  availabilityError,
+  hasSelectedSlot,
+  isBusy,
+  waitlistOfferToken = null,
+  onSelectDate,
+  onSelectSlot,
+  onSlotUnavailable,
+}: UseInitialSlotAutoHoldInput): void {
+  const targetSlot = initialSlot?.trim() ?? '';
+  const handledRef = useRef(!targetSlot);
+  const callbacksRef = useRef({ onSelectDate, onSelectSlot, onSlotUnavailable });
+
+  useEffect(() => {
+    callbacksRef.current = { onSelectDate, onSelectSlot, onSlotUnavailable };
+  }, [onSelectDate, onSelectSlot, onSlotUnavailable]);
+
+  useEffect(() => {
+    if (handledRef.current || !targetSlot) return;
+    if (hasSelectedSlot) {
+      handledRef.current = true;
+      return;
+    }
+    if (loadingAvail || availabilityError || availabilityDays.length === 0 || isBusy) {
+      return;
+    }
+    handledRef.current = true;
+    const matched = findMatchingSlotInAvailability({
+      days: availabilityDays,
+      targetSlot,
+      preferredDate,
+      preferredStaffId: pinnedStaffId,
+    });
+    if (matched) {
+      if (matched.date !== preferredDate) {
+        callbacksRef.current.onSelectDate(matched.date);
+      }
+      void callbacksRef.current.onSelectSlot(matched.slot);
+      return;
+    }
+    const suggestions = findAlternativeSlotsForDate(availabilityDays, preferredDate, 3);
+    const message = waitlistOfferToken
+      ? 'El horario de tu enlace prioritario ya no está disponible o venció. Elige otro horario disponible:'
+      : 'El horario del enlace ya no está disponible. Elige uno de los horarios disponibles más cercanos:';
+    callbacksRef.current.onSlotUnavailable(message, suggestions);
+  }, [
+    targetSlot,
+    preferredDate,
+    pinnedStaffId,
+    availabilityDays,
+    loadingAvail,
+    availabilityError,
+    hasSelectedSlot,
+    isBusy,
+    waitlistOfferToken,
+  ]);
 }

@@ -91,9 +91,13 @@ const ScheduleSlotItem = memo(function ScheduleSlotItem({
         className={isPending ? 'rb-time fx-press fx-tabular fx-busy' : 'rb-time fx-press fx-tabular'}
         aria-pressed={isOn || isPending}
         aria-busy={isPending ? 'true' : undefined}
+        data-pending={isPending ? 'true' : undefined}
         disabled={isBusy}
         aria-label={isPending ? `Apartando ${time}` : `${time}${who ? `, ${who} ${freeSuffix}` : ''}`}
-        onClick={() => onSelectSlot(slot)}
+        onClick={() => {
+          if (isBusy) return;
+          onSelectSlot(slot);
+        }}
       >
         <Text color="inherit" className="rb-time-dot" aria-hidden="true">{'​'}</Text>
         <Text color="inherit" weight="semibold" hasTabularNumbers>
@@ -282,7 +286,11 @@ export function ScheduleStep({
               onChange={(value) => onChangeTimeFormat(value === '24h' ? '24h' : '12h')}
             />
           </HStack>
-          {isRevalidating && !loadingAvail ? (
+          {pendingSlotKey ? (
+            <Text type="supporting" className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
+              Apartando tu horario…
+            </Text>
+          ) : isRevalidating && !loadingAvail ? (
             <Text type="supporting" className="fx-save-pill" data-state="saving" role="status" aria-live="polite">
               Actualizando horarios…
             </Text>

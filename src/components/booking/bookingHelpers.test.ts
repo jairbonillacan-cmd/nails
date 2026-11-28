@@ -7,6 +7,8 @@ import {
   birthdayInputToIso,
   buildAvailabilityCacheKey,
   extractMxPhoneDigits,
+  findAlternativeSlotsForDate,
+  findMatchingSlotInAvailability,
   fitWithinEdge,
   formatBirthdayInput,
   formatMxPhoneDisplay,
@@ -160,6 +162,83 @@ describe('buildAvailabilityCacheKey and media/date helpers', () => {
     expect(resolveEffectiveSelectedDate('2026-12-02', days)).toBe('2026-12-02');
     expect(resolveEffectiveSelectedDate('2026-12-03', days)).toBe('2026-12-03');
     expect(resolveEffectiveSelectedDate('2026-11-26', [])).toBe('2026-11-26');
+  });
+
+  it('matches initial ?slot= across ISO instant, composite key, and local HH:MM, and collects nearby alternatives', () => {
+    const slotA = {
+      startAt: '2026-12-14T16:00:00.000Z',
+      endAt: '2026-12-14T18:00:00.000Z',
+      occupiedStartAt: '2026-12-14T16:00:00.000Z',
+      occupiedEndAt: '2026-12-14T18:00:00.000Z',
+      staffId: 'staff-karla',
+      staffName: 'Karla',
+      localTime24: '10:00',
+      localTime12: '10:00 a.m.',
+      period: 'morning' as const,
+      availableStaffIds: ['staff-karla', 'staff-paty'],
+    };
+    const slotB = {
+      startAt: '2026-12-14T19:30:00.000Z',
+      endAt: '2026-12-14T21:30:00.000Z',
+      occupiedStartAt: '2026-12-14T19:30:00.000Z',
+      occupiedEndAt: '2026-12-14T21:30:00.000Z',
+      staffId: 'staff-paty',
+      staffName: 'Paty',
+      localTime24: '13:30',
+      localTime12: '1:30 p.m.',
+      period: 'afternoon' as const,
+      availableStaffIds: ['staff-paty'],
+    };
+    const slotC = {
+      startAt: '2026-12-15T16:00:00.000Z',
+      endAt: '2026-12-15T18:00:00.000Z',
+      occupiedStartAt: '2026-12-15T16:00:00.000Z',
+      occupiedEndAt: '2026-12-15T18:00:00.000Z',
+      staffId: 'staff-tere',
+      staffName: 'Tere',
+      localTime24: '10:00',
+      localTime12: '10:00 a.m.',
+      period: 'morning' as const,
+      availableStaffIds: ['staff-tere'],
+    };
+    const days: DayAvailabilitySummary[] = [
+      { date: '2026-12-14', hasSlots: true, slotCount: 2, slots: [slotA, slotB] },
+      { date: '2026-12-15', hasSlots: true, slotCount: 1, slots: [slotC] },
+    ];
+
+    expect(
+      findMatchingSlotInAvailability({
+        days,
+        targetSlot: '2026-12-14T16:00:00Z',
+        preferredDate: '2026-12-14',
+      }),
+    ).toEqual({ slot: slotA, date: '2026-12-14' });
+
+    expect(
+      findMatchingSlotInAvailability({
+        days,
+        targetSlot: 'staff-paty-2026-12-14T19:30:00.000Z',
+      }),
+    ).toEqual({ slot: slotB, date: '2026-12-14' });
+
+    expect(
+      findMatchingSlotInAvailability({
+        days,
+        targetSlot: '13:30',
+        preferredDate: '2026-12-14',
+      }),
+    ).toEqual({ slot: slotB, date: '2026-12-14' });
+
+    expect(
+      findMatchingSlotInAvailability({
+        days,
+        targetSlot: '2026-12-14T22:00:00.000Z',
+        preferredDate: '2026-12-14',
+      }),
+    ).toBeNull();
+
+    expect(findAlternativeSlotsForDate(days, '2026-12-14', 3)).toEqual([slotA, slotB, slotC]);
+    expect(findAlternativeSlotsForDate(days, '2026-12-15', 2)).toEqual([slotC, slotA]);
   });
 });
 

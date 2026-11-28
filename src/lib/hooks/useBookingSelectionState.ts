@@ -33,6 +33,7 @@ interface UseBookingSelectionStateInput {
   initialAddonIds?: string[];
   initialStaffSlug?: string;
   initialDate?: string;
+  initialSlot?: string;
   initialLayout?: BookingLayoutView;
   initialInspoNote?: string;
   initialClientProfile?: ClientPortalProfile | null;
@@ -50,6 +51,7 @@ export function useBookingSelectionState({
   initialAddonIds,
   initialStaffSlug,
   initialDate,
+  initialSlot,
   initialLayout,
   initialInspoNote,
   initialClientProfile,
@@ -67,6 +69,7 @@ export function useBookingSelectionState({
         initialAddonIds,
         initialStaffSlug,
         initialDate,
+        initialSlot,
         initialLayout,
       }),
     [
@@ -76,6 +79,7 @@ export function useBookingSelectionState({
       initialExtraServiceSlugs,
       initialLayout,
       initialServiceSlug,
+      initialSlot,
       initialStaffSlug,
       initialTodayKey,
       services,

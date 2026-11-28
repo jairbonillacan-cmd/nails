@@ -1,8 +1,9 @@
-import type { DayAvailabilitySummary } from '@/lib/availability/engine';
+import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
 import {
   formatDateLongInTimezone,
   formatDateShortInTimezone,
   formatDuration,
+  getDateKeyInTimezone,
 } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO, PublicStaffDTO } from '@/lib/public-dto';
 import type { BookingLayoutView, ServiceAddon } from '@/lib/types';
@@ -10,6 +11,28 @@ import type { SummaryRow } from './BookingSummaryCard';
 import type { ScheduleLayout } from './ScheduleCalendarView';
 import type { ProofDeliveryMethod } from './bookingHelpers';
 import { isPostHoldStep, type BookingFlowState, type BookingStep } from './bookingMachine';
+
+export type BookingTopNoticeKind = 'offer' | 'draft' | 'repeat' | null;
+
+export function resolveTopBookingNotice(input: {
+  hasWaitlistOffer: boolean;
+  hasRestoredDraft: boolean;
+  canShowRepeat: boolean;
+}): BookingTopNoticeKind {
+  if (input.hasWaitlistOffer) return 'offer';
+  if (input.hasRestoredDraft) return 'draft';
+  if (input.canShowRepeat) return 'repeat';
+  return null;
+}
+
+function shouldSkipStaffStepForSlot(input: {
+  skipsStaffStep: boolean;
+  slot: AvailableSlot | null;
+}): boolean {
+  if (input.skipsStaffStep) return true;
+  if (!input.slot) return false;
+  return input.slot.availableStaffIds.length <= 1;
+}
 
 export function shiftPlainDateKey(dateKey: string, deltaDays: number): string {
   const parts = dateKey.split('-').map(Number);
@@ -84,11 +107,18 @@ export function buildSummaryRows(input: {
   address: string;
   chosenStaffId: string;
   isPinned: boolean;
+  skipsStaffStep?: boolean;
   totalDurationMinutes: number;
 }): SummaryRow[] {
   const slot = input.flow.selectedSlot;
   const slotTime = slot ? (input.timeFormat === '24h' ? slot.localTime24 : slot.localTime12) : '';
   const staffDecided = Boolean(slot) && (input.flow.step === 'staff' || isPostHoldStep(input.flow.step));
+  const autoAssignedStaff =
+    Boolean(slot) &&
+    shouldSkipStaffStepForSlot({
+      skipsStaffStep: Boolean(input.skipsStaffStep),
+      slot,
+    });
   return [
     {
       key: 'service',
@@ -113,13 +143,17 @@ export function buildSummaryRows(input: {
       label: 'Profesional',
       value: !staffDecided
         ? 'Por elegir'
-        : input.chosenStaffId === 'any' && !input.isPinned
+        : input.chosenStaffId === 'any' && !input.isPinned && !autoAssignedStaff
           ? 'Cualquier profesional'
-          : (slot?.staffName ?? 'Por elegir'),
+          : autoAssignedStaff && slot
+            ? `Te atiende ${slot.staffName}`
+            : (slot?.staffName ?? 'Por elegir'),
       sub:
-        staffDecided && input.chosenStaffId === 'any' && !input.isPinned && slot
+        staffDecided && input.chosenStaffId === 'any' && !input.isPinned && !autoAssignedStaff && slot
           ? `Te atiende ${slot.staffName}`
-          : null,
+          : staffDecided && autoAssignedStaff && !input.isPinned && slot
+            ? 'Única profesional libre en este horario'
+            : null,
       mark: '3',
       isDone: staffDecided,
     },
@@ -141,6 +175,7 @@ export function computeStepNavigation(input: {
   totalDurationMinutes: number;
   extrasSelectedCount: number;
   chosenStaffId: string;
+  skipsStaffStep?: boolean;
   showsDeposit: boolean;
   proofDataUrl: string | null;
   proofDeliveryMethod: ProofDeliveryMethod;
@@ -148,17 +183,26 @@ export function computeStepNavigation(input: {
   const { flow } = input;
   const step = flow.step;
   const hasSlot = Boolean(flow.selectedSlot);
+  const skipStaff = shouldSkipStaffStepForSlot({
+    skipsStaffStep: Boolean(input.skipsStaffStep),
+    slot: flow.selectedSlot,
+  });
 
   const completedSteps = new Set<BookingStep>(['service']);
   if (hasSlot) completedSteps.add('schedule');
   if (hasSlot && isPostHoldStep(step)) completedSteps.add('staff');
   if (hasSlot && step === 'payment') completedSteps.add('details');
 
+  const skippedSteps = new Set<BookingStep>();
+  if (skipStaff) skippedSteps.add('staff');
+
   const backTarget: BookingStep | null =
     step === 'payment'
       ? 'details'
       : step === 'details'
-        ? 'staff'
+        ? skipStaff
+          ? 'schedule'
+          : 'staff'
         : step === 'staff'
           ? 'schedule'
           : step === 'schedule'
@@ -210,7 +254,7 @@ export function computeStepNavigation(input: {
                       ? 'Subes tu comprobante desde tu link'
                       : '';
 
-  return { completedSteps, backTarget, canContinue, nextLabel, nextHint };
+  return { completedSteps, skippedSteps, skipStaff, backTarget, canContinue, nextLabel, nextHint };
 }
 
 export function resolveInitialBookingSelections(input: {
@@ -224,6 +268,7 @@ export function resolveInitialBookingSelections(input: {
   initialAddonIds?: string[];
   initialStaffSlug?: string;
   initialDate?: string;
+  initialSlot?: string;
   initialLayout?: BookingLayoutView;
 }) {
   const initialService =
@@ -252,10 +297,20 @@ export function resolveInitialBookingSelections(input: {
     ? Array.from(new Set(input.initialAddonIds.filter((id) => activeAddonIds.has(id))))
     : [];
 
+  const slotDerivedDate = (() => {
+    const rawSlot = input.initialSlot?.trim();
+    if (!rawSlot) return null;
+    const ms = Date.parse(rawSlot);
+    if (!Number.isFinite(ms)) return null;
+    return getDateKeyInTimezone(new Date(ms), input.settings.timezone || 'America/Mexico_City');
+  })();
+
   const initialDate =
     input.initialDate && input.initialDate >= input.initialTodayKey
       ? input.initialDate
-      : input.initialTodayKey;
+      : slotDerivedDate && slotDerivedDate >= input.initialTodayKey
+        ? slotDerivedDate
+        : input.initialTodayKey;
 
   const initialLayout = toScheduleLayout(
     input.initialLayout &&

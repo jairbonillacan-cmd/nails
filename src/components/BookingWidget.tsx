@@ -11,7 +11,7 @@ import { Text } from '@astryxdesign/core/Text';
 import { RotateCcw, X } from 'lucide-react';
 import { isAvailabilityRealtimeEvent, useBookingAvailability } from '@/lib/hooks/useBookingAvailability';
 import { useBookingDraft } from '@/lib/hooks/useBookingDraft';
-import { useBookingFlowActions } from '@/lib/hooks/useBookingFlowActions';
+import { useBookingFlowActions, useInitialSlotAutoHold } from '@/lib/hooks/useBookingFlowActions';
 import { useBookingFunnelTracker } from '@/lib/hooks/useBookingFunnelTracker';
 import { saveBookingMemory, useBookingMemory } from '@/lib/hooks/useBookingMemory';
 import { useBookingSelectionState } from '@/lib/hooks/useBookingSelectionState';
@@ -49,12 +49,14 @@ import {
   bookingReducer,
   createInitialBookingFlowState,
   isPostHoldStep,
+  parseBookingStepParam,
   type BookingStep,
 } from './booking/bookingMachine';
 import {
   buildLiveAnnouncement,
   buildSummaryRows,
   computeStepNavigation,
+  resolveTopBookingNotice,
   toScheduleLayout,
 } from './booking/bookingViewHelpers';
 
@@ -100,7 +102,10 @@ export function BookingWidget(props: BookingWidgetProps) {
   const searchParams = useSearchParams();
   const isEmbed = searchParams.get('embed') === '1';
   const waitlistOfferToken = searchParams.get('offer')?.trim() || null;
-  const [flow, dispatch] = useReducer(bookingReducer, undefined, createInitialBookingFlowState);
+  const initialStep: BookingStep =
+    parseBookingStepParam(searchParams.get('paso')) ??
+    (initialSlot?.trim() ? 'schedule' : 'service');
+  const [flow, dispatch] = useReducer(bookingReducer, initialStep, createInitialBookingFlowState);
   const timezone = settings.timezone || 'America/Mexico_City';
   const holdTotalSec = (settings.slotHoldMinutes || 5) * 60;
 
@@ -200,6 +205,10 @@ export function BookingWidget(props: BookingWidgetProps) {
     [selection.selectedDate, availabilityDays],
   );
 
+  const handlePopStateStep = useCallback((targetStep: BookingStep) => {
+    dispatch({ type: 'GO_TO_STEP', step: targetStep });
+  }, []);
+
   useBookingUrlSync({
     servicio: selection.selectedService?.slug,
     extras: selection.selectedExtraServices.map((srv) => srv.slug),
@@ -208,7 +217,12 @@ export function BookingWidget(props: BookingWidgetProps) {
     date: effectiveSelectedDate,
     layout: selection.layoutView,
     defaultLayout: toScheduleLayout(settings.defaultBookingLayout),
-    slot: flow.selectedSlot?.startAt ?? initialSlot ?? '',
+    slot:
+      flow.selectedSlot?.startAt ??
+      (flow.conflict || flow.step === 'service' ? '' : (initialSlot ?? '')),
+    step: flow.step,
+    hasSelectedSlot: Boolean(flow.selectedSlot),
+    onPopStateStep: handlePopStateStep,
   });
 
   const isSubmittingOrConfirmed =
@@ -291,6 +305,34 @@ export function BookingWidget(props: BookingWidgetProps) {
     navigateToManageUrl: (url) => router.push(url),
   });
 
+  useInitialSlotAutoHold({
+    initialSlot,
+    preferredDate: effectiveSelectedDate,
+    pinnedStaffId: selection.pinnedStaffId,
+    availabilityDays,
+    loadingAvail,
+    availabilityError,
+    hasSelectedSlot: Boolean(flow.selectedSlot),
+    isBusy: actions.isBusy,
+    waitlistOfferToken,
+    onSelectDate: (nextDate) =>
+      selection.selectDateWithinWindow(
+        nextDate,
+        availabilityDays[0]?.date,
+        availabilityDays[availabilityDays.length - 1]?.date,
+      ),
+    onSelectSlot: (slot) => actions.handleSelectSlot(slot),
+    onSlotUnavailable: (message, suggestions) => {
+      dispatch({
+        type: 'SLOT_CONFLICT',
+        message,
+        suggestions,
+        returnToSchedule: true,
+      });
+      actions.revealPanel();
+    },
+  });
+
   const repeatCandidate = useMemo(() => {
     if (initialServiceSlug || initialSlot || waitlistOfferToken) return null;
     const sourceSlug = account.profile?.lastServiceSlug ?? bookingMemory?.serviceSlug ?? null;
@@ -365,10 +407,19 @@ export function BookingWidget(props: BookingWidgetProps) {
     totalDurationMinutes: selection.totalDurationMinutes,
     extrasSelectedCount: selection.activeSelectedAddons.length + selection.selectedExtraServices.length,
     chosenStaffId: actions.chosenStaffId,
+    skipsStaffStep: selection.skipsStaffStep,
     showsDeposit: selection.showsDeposit,
     proofDataUrl: selection.clientForm.proofDataUrl,
     proofDeliveryMethod: selection.clientForm.proofDeliveryMethod,
   });
+
+  const handleGoToStep = (targetStep: BookingStep) => {
+    if (targetStep === 'staff' && nav.skipStaff) {
+      actions.goToStep('schedule');
+      return;
+    }
+    actions.goToStep(targetStep);
+  };
 
   const handleBack =
     nav.backTarget && !actions.isSubmittingBooking ? () => actions.goToStep(nav.backTarget!) : null;
@@ -376,9 +427,26 @@ export function BookingWidget(props: BookingWidgetProps) {
   const handleNext = () => {
     prefetchBookingNextStep(flow.step);
     if (flow.step === 'service') actions.goToStep('schedule');
-    else if (flow.step === 'schedule' && flow.selectedSlot) actions.goToStep('staff');
-    else if (flow.step === 'staff' && flow.selectedSlot) actions.goToStep('details');
+    else if (flow.step === 'schedule' && flow.selectedSlot) {
+      actions.goToStep(nav.skipStaff ? 'details' : 'staff');
+    } else if (flow.step === 'staff' && flow.selectedSlot) {
+      actions.goToStep('details');
+    }
   };
+
+  const handleChangeSchedule =
+    flow.selectedSlot && flow.step !== 'schedule' && !actions.isSubmittingBooking
+      ? () => actions.goToStep('schedule')
+      : null;
+
+  const autoSelectedStaffName =
+    flow.selectedSlot && nav.skipStaff ? flow.selectedSlot.staffName : null;
+
+  const topNotice = resolveTopBookingNotice({
+    hasWaitlistOffer: Boolean(waitlistOfferToken),
+    hasRestoredDraft: bookingDraft.hasRestoredDraft,
+    canShowRepeat: flow.step === 'service' && Boolean(repeatCandidate) && !isRepeatDismissed,
+  });
 
   const summaryRows = useMemo(
     () =>
@@ -392,16 +460,19 @@ export function BookingWidget(props: BookingWidgetProps) {
         address: settings.address,
         chosenStaffId: actions.chosenStaffId,
         isPinned: selection.isPinned,
+        skipsStaffStep: selection.skipsStaffStep,
         totalDurationMinutes: selection.totalDurationMinutes,
       }),
-    [selection.selectedService, selection.selectedExtraServices, selection.activeSelectedAddons, flow, selection.timeFormat, timezone, settings.address, actions.chosenStaffId, selection.isPinned, selection.totalDurationMinutes],
+    [selection.selectedService, selection.selectedExtraServices, selection.activeSelectedAddons, flow, selection.timeFormat, timezone, settings.address, actions.chosenStaffId, selection.isPinned, selection.skipsStaffStep, selection.totalDurationMinutes],
   );
 
   const summaryProps = {
     currency: settings.currency, rows: summaryRows, totalPriceCents,
     hasStartingPrice: selection.hasStartingPrice, discountCents,
     depositAmountCents: selection.showsDeposit ? selection.depositAmountCents : 0,
+    autoSelectedStaffName,
     holdRemainingSec, holdTotalSec, isHoldExpired: flow.holdExpired,
+    onChangeSchedule: handleChangeSchedule,
   };
   const isHoldPromptOpen = shouldPromptHoldExtension({
     holdRemainingSec,
@@ -431,7 +502,14 @@ export function BookingWidget(props: BookingWidgetProps) {
       {!isEmbed ? (
         <BookingHeader settings={settings} holdRemainingSec={holdRemainingSec} onBack={handleBack} />
       ) : null}
-      <BookingHero step={flow.step} completedSteps={nav.completedSteps} onGoToStep={actions.goToStep} isCompact={isEmbed} holdRemainingSec={holdRemainingSec} />
+      <BookingHero
+        step={flow.step}
+        completedSteps={nav.completedSteps}
+        skippedSteps={nav.skippedSteps}
+        onGoToStep={handleGoToStep}
+        isCompact={isEmbed}
+        holdRemainingSec={holdRemainingSec}
+      />
 
       <VStack as="main" className="rb-wrap rb-main">
         <VStack className="rb-layout">
@@ -442,15 +520,22 @@ export function BookingWidget(props: BookingWidgetProps) {
               </HStack>
             ) : null}
 
-            {waitlistOfferToken ? (
+            {topNotice === 'offer' ? (
               <Banner
                 status="info"
                 title="Tu lugar prioritario de lista de espera está activo"
                 description={`Tienes ${WAITLIST_OFFER_TTL_MINUTES} minutos para elegir el horario liberado y confirmar tu cita antes de que pase al siguiente lugar.`}
               />
-            ) : null}
-
-            {flow.step === 'service' && repeatCandidate && !isRepeatDismissed ? (
+            ) : topNotice === 'draft' ? (
+              <Banner
+                status="info"
+                title="Seguimos donde te quedaste"
+                description="Guardamos lo que llevabas para que no lo vuelvas a llenar."
+                endContent={<Button type="button" variant="secondary" size="sm" label="Empezar de nuevo" onClick={handleStartFresh} />}
+                isDismissable
+                onDismiss={bookingDraft.dismissRestoredBanner}
+              />
+            ) : topNotice === 'repeat' && repeatCandidate ? (
               <HStack gap={3} align="center" className="rb-signin-card fx-sheet-in">
                 <VStack className="rb-signin-card-icon" align="center" justify="center" aria-hidden="true">
                   <RotateCcw size={18} aria-hidden="true" />
@@ -481,17 +566,6 @@ export function BookingWidget(props: BookingWidgetProps) {
                   onClick={() => setIsRepeatDismissed(true)}
                 />
               </HStack>
-            ) : null}
-
-            {bookingDraft.hasRestoredDraft ? (
-              <Banner
-                status="info"
-                title="Seguimos donde te quedaste"
-                description="Guardamos lo que llevabas para que no lo vuelvas a llenar."
-                endContent={<Button type="button" variant="secondary" size="sm" label="Empezar de nuevo" onClick={handleStartFresh} />}
-                isDismissable
-                onDismiss={bookingDraft.dismissRestoredBanner}
-              />
             ) : null}
 
             <BookingConflictBanner
@@ -533,6 +607,8 @@ export function BookingWidget(props: BookingWidgetProps) {
               selection={selection}
               actions={actions}
               holdRemainingSec={holdRemainingSec}
+              autoSelectedStaffName={autoSelectedStaffName}
+              onChangeSchedule={handleChangeSchedule}
               totalPriceCents={totalPriceCents}
               clientAccount={clientAccountBinding}
               schedule={{

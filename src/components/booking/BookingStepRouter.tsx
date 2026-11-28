@@ -4,6 +4,9 @@ import type React from 'react';
 import dynamic from 'next/dynamic';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
+import { Button } from '@astryxdesign/core/Button';
+import { Text } from '@astryxdesign/core/Text';
+import { CalendarClock } from 'lucide-react';
 import { SkeletonBlock } from '@/components/ui/SkeletonBlock';
 import { MorphLoader } from '@/components/brand/MorphLoader';
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
@@ -106,6 +109,8 @@ interface BookingStepRouterProps {
   actions: BookingActions;
   schedule: ScheduleRouterState;
   holdRemainingSec?: number;
+  autoSelectedStaffName?: string | null;
+  onChangeSchedule?: (() => void) | null;
   totalPriceCents: number;
   clientAccount: ClientAccountBinding;
 }
@@ -123,9 +128,43 @@ export function BookingStepRouter({
   actions,
   schedule,
   holdRemainingSec = 0,
+  autoSelectedStaffName = null,
+  onChangeSchedule = null,
   totalPriceCents,
   clientAccount,
 }: BookingStepRouterProps) {
+  const renderMobileScheduleStrip = (showAutoStaff: boolean) => {
+    const showStaffLabel = showAutoStaff && Boolean(autoSelectedStaffName);
+    if (!showStaffLabel && !onChangeSchedule) return null;
+    return (
+      <HStack
+        justify={showStaffLabel ? 'between' : 'end'}
+        align="center"
+        wrap="wrap"
+        gap={2}
+        className="rb-m"
+      >
+        {showStaffLabel ? (
+          <Text type="supporting" color="accent" weight="semibold">
+            Te atiende {autoSelectedStaffName}
+          </Text>
+        ) : null}
+        {onChangeSchedule ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="md"
+            className="fx-press"
+            label="Cambiar horario"
+            icon={<CalendarClock size={15} aria-hidden="true" />}
+            style={{ minHeight: '2.75rem' }}
+            isDisabled={actions.isSubmittingBooking}
+            onClick={onChangeSchedule}
+          />
+        ) : null}
+      </HStack>
+    );
+  };
   if (flow.step === 'service') {
     return (
       <ServiceStep
@@ -195,6 +234,7 @@ export function BookingStepRouter({
           schedule.onSelectDate(nextDate);
         }}
         onSelectSlot={(next: AvailableSlot) => {
+          if (actions.isBusy) return;
           prefetchBookingNextStep('schedule');
           void actions.handleSelectSlot(next);
         }}
@@ -218,22 +258,25 @@ export function BookingStepRouter({
 
   if (flow.step === 'staff' && flow.selectedSlot) {
     return (
-      <StaffStep
-        timezone={timezone}
-        timeFormat={selection.timeFormat}
-        currency={settings.currency}
-        services={services}
-        slot={flow.selectedSlot}
-        holdRemainingSec={holdRemainingSec}
-        eligibleStaff={selection.eligibleStaff}
-        allStaff={staff}
-        chosenStaffId={actions.chosenStaffId}
-        pendingStaffId={actions.pendingStaffId}
-        takenStaffIds={actions.takenStaffIds}
-        isBusy={actions.isBusy}
-        errorMessage={actions.staffError}
-        onPickStaff={(staffId) => void actions.handlePickStaff(staffId)}
-      />
+      <VStack gap={3}>
+        {renderMobileScheduleStrip(false)}
+        <StaffStep
+          timezone={timezone}
+          timeFormat={selection.timeFormat}
+          currency={settings.currency}
+          services={services}
+          slot={flow.selectedSlot}
+          holdRemainingSec={holdRemainingSec}
+          eligibleStaff={selection.eligibleStaff}
+          allStaff={staff}
+          chosenStaffId={actions.chosenStaffId}
+          pendingStaffId={actions.pendingStaffId}
+          takenStaffIds={actions.takenStaffIds}
+          isBusy={actions.isBusy}
+          errorMessage={actions.staffError}
+          onPickStaff={(staffId) => void actions.handlePickStaff(staffId)}
+        />
+      </VStack>
     );
   }
 
@@ -243,64 +286,67 @@ export function BookingStepRouter({
       selection.selectedExtraServices.some((srv) => srv.allowInspoPhoto);
     const artistName = flow.selectedSlot?.staffName?.trim() || null;
     return (
-      <ClientConfirmStep
-        key={flow.step}
-        section={flow.step}
-        todayKey={schedule.todayKey}
-        account={clientAccount}
-        onContinueDetails={actions.handleDetailsContinue}
-        formId={formId}
-        settings={settings}
-        selectedService={selection.selectedService}
-        selectedExtraServices={selection.selectedExtraServices}
-        activeSelectedAddons={selection.activeSelectedAddons}
-        selectedSlot={flow.selectedSlot}
-        artistName={artistName}
-        allowInspo={allowInspo}
-        clientNotes={selection.clientForm.clientNotes}
-        inspoFile={selection.clientForm.inspoFile}
-        inspoDataUrl={selection.clientForm.inspoDataUrl}
-        timeFormat={selection.timeFormat}
-        totalDurationMinutes={selection.totalDurationMinutes}
-        subtotalCents={selection.subtotalCents}
-        totalPriceCents={totalPriceCents}
-        depositAmountCents={selection.depositAmountCents}
-        couponInput={actions.couponInput}
-        appliedCoupon={actions.appliedCoupon}
-        couponError={actions.couponError}
-        couponLoading={actions.couponLoading}
-        clientName={selection.clientForm.clientName}
-        clientPhone={selection.clientForm.clientPhone}
-        clientInstagram={selection.clientForm.clientInstagram}
-        clientEmail={selection.clientForm.clientEmail}
-        clientBirthday={selection.clientForm.clientBirthday}
-        proofDeliveryMethod={selection.clientForm.proofDeliveryMethod}
-        proofFile={selection.clientForm.proofFile}
-        proofDataUrl={selection.clientForm.proofDataUrl}
-        privacyConsentAccepted={flow.privacyConsentAccepted}
-        marketingOptIn={flow.marketingOptIn}
-        privacyConsentError={flow.privacyConsentError}
-        fieldErrors={actions.fieldErrors}
-        formError={flow.formError}
-        formErrorCode={flow.formErrorCode}
-        activeBookings={flow.activeBookings}
-        isSubmitting={actions.isSubmittingBooking}
-        onChangeCouponInput={actions.setCouponInput}
-        onApplyCoupon={() => void actions.handleApplyCoupon()}
-        onRemoveCoupon={actions.handleRemoveCoupon}
-        onChangeClientName={selection.clientForm.onChangeClientName}
-        onChangeClientPhone={selection.clientForm.onChangeClientPhone}
-        onChangeClientInstagram={selection.clientForm.onChangeClientInstagram}
-        onChangeClientEmail={selection.clientForm.onChangeClientEmail}
-        onChangeClientBirthday={selection.clientForm.onChangeClientBirthday}
-        onChangeClientNotes={selection.clientForm.onChangeClientNotes}
-        onChangeInspoFile={selection.clientForm.onChangeInspoFile}
-        onChangeProofMethod={selection.clientForm.onChangeProofMethod}
-        onChangeProofFile={selection.clientForm.onChangeProofFile}
-        onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}
-        onChangeMarketingOptIn={(optedIn) => dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })}
-        onSubmit={(e) => void actions.handleConfirmBooking(e)}
-      />
+      <VStack gap={3}>
+        {renderMobileScheduleStrip(true)}
+        <ClientConfirmStep
+          key={flow.step}
+          section={flow.step}
+          todayKey={schedule.todayKey}
+          account={clientAccount}
+          onContinueDetails={actions.handleDetailsContinue}
+          formId={formId}
+          settings={settings}
+          selectedService={selection.selectedService}
+          selectedExtraServices={selection.selectedExtraServices}
+          activeSelectedAddons={selection.activeSelectedAddons}
+          selectedSlot={flow.selectedSlot}
+          artistName={artistName}
+          allowInspo={allowInspo}
+          clientNotes={selection.clientForm.clientNotes}
+          inspoFile={selection.clientForm.inspoFile}
+          inspoDataUrl={selection.clientForm.inspoDataUrl}
+          timeFormat={selection.timeFormat}
+          totalDurationMinutes={selection.totalDurationMinutes}
+          subtotalCents={selection.subtotalCents}
+          totalPriceCents={totalPriceCents}
+          depositAmountCents={selection.depositAmountCents}
+          couponInput={actions.couponInput}
+          appliedCoupon={actions.appliedCoupon}
+          couponError={actions.couponError}
+          couponLoading={actions.couponLoading}
+          clientName={selection.clientForm.clientName}
+          clientPhone={selection.clientForm.clientPhone}
+          clientInstagram={selection.clientForm.clientInstagram}
+          clientEmail={selection.clientForm.clientEmail}
+          clientBirthday={selection.clientForm.clientBirthday}
+          proofDeliveryMethod={selection.clientForm.proofDeliveryMethod}
+          proofFile={selection.clientForm.proofFile}
+          proofDataUrl={selection.clientForm.proofDataUrl}
+          privacyConsentAccepted={flow.privacyConsentAccepted}
+          marketingOptIn={flow.marketingOptIn}
+          privacyConsentError={flow.privacyConsentError}
+          fieldErrors={actions.fieldErrors}
+          formError={flow.formError}
+          formErrorCode={flow.formErrorCode}
+          activeBookings={flow.activeBookings}
+          isSubmitting={actions.isSubmittingBooking}
+          onChangeCouponInput={actions.setCouponInput}
+          onApplyCoupon={() => void actions.handleApplyCoupon()}
+          onRemoveCoupon={actions.handleRemoveCoupon}
+          onChangeClientName={selection.clientForm.onChangeClientName}
+          onChangeClientPhone={selection.clientForm.onChangeClientPhone}
+          onChangeClientInstagram={selection.clientForm.onChangeClientInstagram}
+          onChangeClientEmail={selection.clientForm.onChangeClientEmail}
+          onChangeClientBirthday={selection.clientForm.onChangeClientBirthday}
+          onChangeClientNotes={selection.clientForm.onChangeClientNotes}
+          onChangeInspoFile={selection.clientForm.onChangeInspoFile}
+          onChangeProofMethod={selection.clientForm.onChangeProofMethod}
+          onChangeProofFile={selection.clientForm.onChangeProofFile}
+          onChangePrivacyConsent={(accepted) => dispatch({ type: 'SET_PRIVACY_CONSENT', accepted })}
+          onChangeMarketingOptIn={(optedIn) => dispatch({ type: 'SET_MARKETING_OPT_IN', optedIn })}
+          onSubmit={(e) => void actions.handleConfirmBooking(e)}
+        />
+      </VStack>
     );
   }
 

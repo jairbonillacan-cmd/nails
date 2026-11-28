@@ -54,7 +54,7 @@ function BookingPrimaryCta({
       size="lg"
       label={nextLabel}
       isDisabled={!canContinue || isBusy}
-      isLoading={isBusy && step === 'staff'}
+      isLoading={isBusy && (step === 'schedule' || step === 'staff')}
       onClick={onNext}
       className="rb-cta fx-press"
     />
@@ -102,9 +102,11 @@ interface BookingSummaryProps {
   hasStartingPrice: boolean;
   discountCents: number;
   depositAmountCents: number;
+  autoSelectedStaffName?: string | null;
   holdRemainingSec: number;
   holdTotalSec: number;
   isHoldExpired: boolean;
+  onChangeSchedule?: (() => void) | null;
 }
 
 interface BookingStickyBarProps extends PrimaryCtaProps {
@@ -129,6 +131,13 @@ export function BookingStickyBar({
   onSummaryOpenChange,
   ...ctaProps
 }: BookingStickyBarProps) {
+  const handleSheetChangeSchedule = summaryProps.onChangeSchedule
+    ? () => {
+        onSummaryOpenChange(false);
+        summaryProps.onChangeSchedule?.();
+      }
+    : null;
+
   return (
     <>
       <HStack justify="between" align="center" gap={3} className="rb-bottom rb-m">
@@ -155,7 +164,11 @@ export function BookingStickyBar({
 
       <BottomSheet isOpen={summaryOpen} onOpenChange={onSummaryOpenChange} label="Resumen de tu cita" padding={0} height="hug">
         <VStack className="lk-portal rb-sheet fx-sheet-in">
-          <BookingSummaryCard {...summaryProps} headingId="rb-summary-sheet" />
+          <BookingSummaryCard
+            {...summaryProps}
+            onChangeSchedule={handleSheetChangeSchedule}
+            headingId="rb-summary-sheet"
+          />
         </VStack>
       </BottomSheet>
     </>

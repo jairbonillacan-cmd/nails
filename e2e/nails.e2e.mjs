@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 const BASE_URL = (process.env.E2E_BASE_URL || 'http://127.0.0.1:1717').replace(/\/$/, '');
 const RUN_BROWSER = process.env.E2E_BROWSER === '1';
@@ -623,12 +624,465 @@ async function testAdminRbacAndSpecialistIsolation() {
   );
 }
 
+function toPueblaDateKey(iso) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+}
+
+async function fetchAvailabilityDays(serviceId = 'srv-rubber', days = 28, offsetDays = 3) {
+  const startDate = getDateKeyOffsetDays(offsetDays);
+  const res = await fetchJson(
+    `/api/availability?serviceId=${encodeURIComponent(serviceId)}&startDate=${encodeURIComponent(startDate)}&days=${days}`,
+  );
+  assert.equal(res.status, 200, `availability range falló: ${res.status} ${res.text}`);
+  return Array.isArray(res.json?.days) ? res.json.days : [];
+}
+
+async function findAvailabilityCandidate(predicate, options = {}) {
+  const days = await fetchAvailabilityDays(
+    options.serviceId ?? 'srv-rubber',
+    options.days ?? 28,
+    options.offsetDays ?? 3,
+  );
+  const minMs = Date.now() + 36 * 3_600_000;
+  for (const day of days) {
+    if (!Array.isArray(day?.slots)) continue;
+    for (const slot of day.slots) {
+      const startMs = new Date(slot.startAt).getTime();
+      if (Number.isNaN(startMs) || startMs < minMs) continue;
+      if (predicate(slot, day)) {
+        return { date: day.date, slot };
+      }
+    }
+  }
+  return null;
+}
+
+async function loadPlaywrightModule() {
+  const customPath = process.env.PLAYWRIGHT_MODULE_PATH?.trim();
+  if (customPath) {
+    return import(pathToFileURL(customPath).href);
+  }
+  const browserPkg = 'playwright';
+  return import(browserPkg);
+}
+
+async function createDemoWaitlistOfferForSlot(slot, adminAuth) {
+  const suffix = crypto.randomInt(1000, 9999);
+  const dateKey = toPueblaDateKey(slot.startAt);
+  const holderPhone = `+52222940${suffix}`;
+  const waitlistPhone = `+52222941${suffix}`;
+
+  const created = await fetchJson('/api/bookings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `e2e-wlo-orig-${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: slot.staffId,
+      startAt: slot.startAt,
+      clientName: 'Clienta Titular Oferta E2E',
+      clientPhone: holderPhone,
+      privacyConsentAccepted: true,
+    }),
+  });
+  assert.equal(created.status, 201, `Reserva titular oferta falló: ${created.status} ${created.text}`);
+  const manageToken = created.json?.booking?.manageToken;
+  assert.ok(manageToken, 'Reserva titular debe devolver manageToken');
+
+  const wlRes = await fetchJson('/api/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceId: 'srv-rubber',
+      preferredStaffId: slot.staffId,
+      desiredDate: dateKey,
+      preferredWindow: 'any',
+      clientName: 'Clienta Oferta E2E',
+      clientPhoneE164: waitlistPhone,
+    }),
+  });
+  assert.equal(wlRes.status, 201, `Lista de espera oferta falló: ${wlRes.status} ${wlRes.text}`);
+
+  const cancelRes = await fetchJson(`/api/bookings/manage/${manageToken}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'cancel', reason: 'Liberación para prueba oferta E2E' }),
+  });
+  assert.equal(cancelRes.status, 200, `Cancelación titular oferta falló: ${cancelRes.status} ${cancelRes.text}`);
+
+  let offerEntry = null;
+  if (adminAuth.isDemoEnabled && adminAuth.ownerCookie) {
+    const overview = await fetchJson('/api/admin/overview', {
+      headers: { Cookie: adminAuth.ownerCookie },
+    });
+    assert.equal(overview.status, 200);
+    const entries = Array.isArray(overview.json?.waitlist) ? overview.json.waitlist : [];
+    offerEntry =
+      entries.find(
+        (entry) =>
+          entry.clientPhoneE164 === waitlistPhone &&
+          entry.status === 'notified' &&
+          typeof entry.priorityOfferToken === 'string' &&
+          entry.priorityOfferToken.length >= 6,
+      ) ?? null;
+  }
+
+  return {
+    dateKey,
+    waitlistPhone,
+    offerEntry,
+    offerToken: offerEntry?.priorityOfferToken ?? null,
+    cleanupOffer: async () => {
+      if (offerEntry?.id && adminAuth.isDemoEnabled && adminAuth.ownerCookie) {
+        await fetchJson('/api/admin/operations', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: adminAuth.ownerCookie,
+          },
+          body: JSON.stringify({
+            kind: 'waitlist',
+            id: offerEntry.id,
+            status: 'expired',
+          }),
+        });
+      }
+    },
+  };
+}
+
+async function releaseBrowserSlotHold(page) {
+  await page
+    .evaluate(async () => {
+      await fetch('/api/slot-holds', { method: 'DELETE' });
+    })
+    .catch(() => {});
+}
+
+async function enterScheduleStep(page) {
+  const scheduleHeading = page.getByRole('heading', { name: 'Fecha y hora' });
+  if (await scheduleHeading.isVisible()) {
+    return;
+  }
+  const continueBtn = page.getByRole('button', { name: 'Continuar' }).first();
+  await continueBtn.waitFor({ state: 'visible', timeout: 10_000 });
+  await continueBtn.click();
+  await scheduleHeading.waitFor({ state: 'visible', timeout: 15_000 });
+}
+
+async function runWave2BrowserBookingAssertions(browser) {
+  const adminAuth = await resolveAdminDemoAuth();
+
+  {
+    const candidate = await findAvailabilityCandidate(() => true);
+    assert.ok(candidate, 'Se esperaba un horario futuro disponible para prueba A1 (429)');
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+
+    let holdAttempts = 0;
+    await page.route('**/api/slot-holds', async (route) => {
+      if (route.request().method() === 'POST' && holdAttempts === 0) {
+        holdAttempts += 1;
+        await route.fulfill({
+          status: 429,
+          contentType: 'application/json',
+          headers: { 'Retry-After': '15' },
+          body: JSON.stringify({
+            code: 'RATE_LIMITED',
+            error: 'Demasiados intentos seguidos',
+          }),
+        });
+        return;
+      }
+      if (route.request().method() === 'POST') {
+        holdAttempts += 1;
+      }
+      await route.continue();
+    });
+
+    try {
+      await page.goto(`${BASE_URL}/reservar/rubber?date=${encodeURIComponent(candidate.date)}`, {
+        waitUntil: 'networkidle',
+      });
+      await enterScheduleStep(page);
+      const firstSlotBtn = page.locator('button.rb-time:not([disabled])').first();
+      await firstSlotBtn.waitFor({ state: 'visible', timeout: 15_000 });
+      await firstSlotBtn.click();
+
+      const retryBtn = page.getByRole('button', { name: 'Reintentar' });
+      await retryBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      await page
+        .locator('[role="alert"]', { hasText: 'Demasiados intentos seguidos' })
+        .first()
+        .waitFor({ state: 'visible', timeout: 10_000 });
+      const pasoOn429 = new URL(page.url()).searchParams.get('paso');
+      assert.notEqual(pasoOn429, 'profesional', 'A1: 429 no debe avanzar a Profesional');
+      assert.notEqual(pasoOn429, 'datos', 'A1: 429 no debe avanzar a Tus datos');
+      assert.ok(
+        await page.getByRole('heading', { name: 'Fecha y hora' }).isVisible(),
+        'A1: 429 debe mantenerse en el paso Fecha y hora',
+      );
+
+      await retryBtn.click();
+      await page.waitForFunction(
+        () => {
+          const paso = new URL(window.location.href).searchParams.get('paso');
+          return paso === 'profesional' || paso === 'datos';
+        },
+        null,
+        { timeout: 15_000 },
+      );
+      assert.ok(holdAttempts >= 2, 'A1: Reintentar debe emitir un segundo POST /api/slot-holds');
+      assert.deepEqual(pageErrors, [], `Errores JS en A1: ${pageErrors.join('; ')}`);
+    } finally {
+      await releaseBrowserSlotHold(page);
+      await context.close();
+    }
+  }
+
+  {
+    let singleCandidate = await findAvailabilityCandidate(
+      (slot) => Array.isArray(slot.availableStaffIds) && slot.availableStaffIds.length === 1,
+    );
+    let needsSingleStaffRouteShim = false;
+    if (!singleCandidate) {
+      singleCandidate = await findAvailabilityCandidate(() => true);
+      needsSingleStaffRouteShim = true;
+    }
+    assert.ok(singleCandidate, 'Se esperaba un horario futuro disponible para prueba B1/B2/A3');
+
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+
+    if (needsSingleStaffRouteShim) {
+      const targetStartAt = singleCandidate.slot.startAt;
+      await page.route('**/api/availability**', async (route) => {
+        const res = await route.fetch();
+        const json = await res.json();
+        if (Array.isArray(json?.days)) {
+          for (const day of json.days) {
+            if (!Array.isArray(day.slots)) continue;
+            for (const item of day.slots) {
+              if (item.startAt === targetStartAt) {
+                item.availableStaffIds = [item.staffId];
+              }
+            }
+          }
+        }
+        await route.fulfill({ response: res, json });
+      });
+    }
+
+    try {
+      await page.goto(`${BASE_URL}/`, { waitUntil: 'networkidle' });
+      await page.goto(
+        `${BASE_URL}/reservar/rubber?date=${encodeURIComponent(singleCandidate.date)}`,
+        { waitUntil: 'networkidle' },
+      );
+      await enterScheduleStep(page);
+      const slotBtn = page
+        .locator('button.rb-time:not([disabled])', {
+          hasText: singleCandidate.slot.localTime12,
+        })
+        .first();
+      await slotBtn.waitFor({ state: 'visible', timeout: 15_000 });
+      await slotBtn.click();
+
+      await page.waitForFunction(
+        () => new URL(window.location.href).searchParams.get('paso') === 'datos',
+        null,
+        { timeout: 15_000 },
+      );
+      const summaryText = await page.locator('.rb-summary').first().innerText();
+      assert.ok(
+        summaryText.includes('Te atiende '),
+        `B1: Resumen debe mostrar "Te atiende <Nombre>", recibido: ${summaryText}`,
+      );
+
+      await page.goBack();
+      await page.waitForFunction(
+        () => {
+          const parsed = new URL(window.location.href);
+          const paso = parsed.searchParams.get('paso');
+          return (
+            parsed.pathname.startsWith('/reservar') &&
+            paso !== 'datos' &&
+            paso !== 'profesional'
+          );
+        },
+        null,
+        { timeout: 10_000 },
+      );
+      assert.ok(
+        new URL(page.url()).pathname.startsWith('/reservar'),
+        `A3: goBack() debe permanecer dentro de /reservar, URL actual: ${page.url()}`,
+      );
+      await page.getByRole('heading', { name: 'Fecha y hora' }).waitFor({
+        state: 'visible',
+        timeout: 10_000,
+      });
+      assert.deepEqual(pageErrors, [], `Errores JS en B1/B2/A3: ${pageErrors.join('; ')}`);
+    } finally {
+      await releaseBrowserSlotHold(page);
+      await context.close();
+    }
+  }
+
+  {
+    const multiCandidate = await findAvailabilityCandidate(
+      (slot) => Array.isArray(slot.availableStaffIds) && slot.availableStaffIds.length > 1,
+    );
+    if (multiCandidate) {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (err) => pageErrors.push(err.message));
+
+      try {
+        await page.goto(`${BASE_URL}/`, { waitUntil: 'networkidle' });
+        await page.goto(
+          `${BASE_URL}/reservar/rubber?date=${encodeURIComponent(multiCandidate.date)}`,
+          { waitUntil: 'networkidle' },
+        );
+        await enterScheduleStep(page);
+        const slotBtn = page
+          .locator('button.rb-time:not([disabled])', {
+            hasText: multiCandidate.slot.localTime12,
+          })
+          .first();
+        await slotBtn.waitFor({ state: 'visible', timeout: 15_000 });
+        await slotBtn.click();
+
+        await page.waitForFunction(
+          () => new URL(window.location.href).searchParams.get('paso') === 'profesional',
+          null,
+          { timeout: 15_000 },
+        );
+
+        await page.goBack();
+        await page.waitForFunction(
+          () => {
+            const parsed = new URL(window.location.href);
+            return (
+              parsed.pathname.startsWith('/reservar') &&
+              parsed.searchParams.get('paso') !== 'profesional'
+            );
+          },
+          null,
+          { timeout: 10_000 },
+        );
+        await page.getByRole('heading', { name: 'Fecha y hora' }).waitFor({
+          state: 'visible',
+          timeout: 10_000,
+        });
+        assert.deepEqual(
+          pageErrors,
+          [],
+          `Errores JS en A3 multi-profesional: ${pageErrors.join('; ')}`,
+        );
+      } finally {
+        await releaseBrowserSlotHold(page);
+        await context.close();
+      }
+    }
+  }
+
+  {
+    const candidate = await findAvailabilityCandidate(() => true, { offsetDays: 14 });
+    assert.ok(candidate, 'Se esperaba un horario futuro disponible para prueba A2 (?slot=&offer=)');
+
+    let offerHandle = null;
+    if (adminAuth.isDemoEnabled && adminAuth.ownerCookie) {
+      offerHandle = await createDemoWaitlistOfferForSlot(candidate.slot, adminAuth);
+    }
+
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+    const observedHoldBodies = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/slot-holds') && req.method() === 'POST') {
+        try {
+          observedHoldBodies.push(JSON.parse(req.postData() || '{}'));
+        } catch {
+          observedHoldBodies.push({});
+        }
+      }
+    });
+
+    try {
+      const qs = new URLSearchParams({
+        date: candidate.date,
+        slot: candidate.slot.startAt,
+      });
+      if (offerHandle?.offerToken) {
+        qs.set('offer', offerHandle.offerToken);
+      }
+      await page.goto(`${BASE_URL}/reservar/rubber?${qs.toString()}`, {
+        waitUntil: 'networkidle',
+      });
+
+      await page.waitForFunction(
+        () => {
+          const paso = new URL(window.location.href).searchParams.get('paso');
+          return paso === 'profesional' || paso === 'datos';
+        },
+        null,
+        { timeout: 15_000 },
+      );
+
+      assert.ok(
+        observedHoldBodies.length >= 1,
+        'A2: Debe emitir POST /api/slot-holds automáticamente al abrir ?slot=',
+      );
+      assert.equal(
+        observedHoldBodies.some((body) => 'sessionToken' in body),
+        false,
+        'C4: POST /api/slot-holds no debe enviar sessionToken en el body',
+      );
+      if (offerHandle?.offerToken) {
+        assert.ok(
+          observedHoldBodies.some(
+            (body) => body.waitlistOfferToken === offerHandle.offerToken,
+          ),
+          'A2: POST /api/slot-holds debe reenviar waitlistOfferToken desde ?offer=',
+        );
+      }
+
+      const bodyText = await page.locator('main').innerText();
+      assert.ok(
+        bodyText.includes('Te guardamos el horario') || bodyText.includes('Horario apartado'),
+        'A2: Enlace con ?slot= (y ?offer=) debe adquirir apartado automático al aterrizar',
+      );
+      assert.deepEqual(pageErrors, [], `Errores JS en A2: ${pageErrors.join('; ')}`);
+    } finally {
+      await releaseBrowserSlotHold(page);
+      await context.close();
+      if (offerHandle) {
+        await offerHandle.cleanupOffer();
+      }
+    }
+  }
+}
+
 async function testOptionalPlaywrightBrowser() {
   if (!RUN_BROWSER) return;
   let playwrightModule = null;
   try {
-    const browserPkg = 'playwright';
-    playwrightModule = await import(browserPkg);
+    playwrightModule = await loadPlaywrightModule();
   } catch {
     console.log('[e2e] Playwright no instalado; omitiendo checks de navegador.');
     return;
@@ -657,6 +1111,9 @@ async function testOptionalPlaywrightBrowser() {
     }
 
     assert.deepEqual(pageErrors, [], `Errores JS en navegador: ${pageErrors.join('; ')}`);
+    await context.close();
+
+    await runWave2BrowserBookingAssertions(browser);
   } finally {
     await browser.close();
   }
@@ -1197,6 +1654,162 @@ async function testPhase3EndToEndFlows(slots) {
   }
 }
 
+async function testWave2WaitlistOfferAndHoldApi(slots) {
+  const [holdSlot, offerSlot] = slots;
+  const holdDateKey = toPueblaDateKey(holdSlot.startAt);
+
+  const deepLinkRes = await fetchText(
+    `/reservar/rubber?date=${encodeURIComponent(holdDateKey)}&slot=${encodeURIComponent(holdSlot.startAt)}&paso=horario`,
+  );
+  assert.equal(
+    deepLinkRes.status,
+    200,
+    `SSR /reservar/rubber deep-link falló: ${deepLinkRes.status}`,
+  );
+  assert.equal(deepLinkRes.text.includes('commissionPercent'), false);
+  assert.equal(deepLinkRes.text.includes('ownerPinHash'), false);
+
+  const adminAuth = await resolveAdminDemoAuth();
+
+  const directHold = await fetchJson('/api/slot-holds', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceId: 'srv-rubber',
+      addonIds: [],
+      staffId: holdSlot.staffId,
+      startAt: holdSlot.startAt,
+    }),
+  });
+  const isProdFailClosedWithoutHoldSecret =
+    !adminAuth.isDemoEnabled && directHold.status === 500;
+
+  if (!isProdFailClosedWithoutHoldSecret) {
+    assert.equal(
+      directHold.status,
+      200,
+      `C4: POST /api/slot-holds sin sessionToken en body debe responder 200, recibido ${directHold.status}: ${directHold.text}`,
+    );
+    const holdSetCookie = directHold.headers.get('set-cookie') || '';
+    assert.ok(
+      holdSetCookie.includes('nails_client_session=') && holdSetCookie.includes('HttpOnly'),
+      'C4: POST /api/slot-holds debe emitir cookie HttpOnly nails_client_session',
+    );
+    const holdCookie = extractCookieHeader(directHold);
+    const releaseRes = await fetchJson('/api/slot-holds', {
+      method: 'DELETE',
+      headers: { Cookie: holdCookie },
+    });
+    assert.equal(releaseRes.status, 200);
+  }
+
+  const offerHandle = await createDemoWaitlistOfferForSlot(offerSlot, adminAuth);
+
+  try {
+    const baseQuery = `serviceId=srv-rubber&staffId=${encodeURIComponent(offerSlot.staffId)}&startDate=${encodeURIComponent(offerHandle.dateKey)}&days=1`;
+    const publicAvail = await fetchJson(`/api/availability?${baseQuery}`);
+    assert.equal(publicAvail.status, 200);
+    const publicSlots = publicAvail.json?.days?.[0]?.slots ?? [];
+    assert.equal(
+      publicSlots.some((item) => item.startAt === offerSlot.startAt),
+      false,
+      'A2: Horario con oferta prioritaria activa no debe exponerse sin ?offer=',
+    );
+
+    if (isProdFailClosedWithoutHoldSecret) {
+      console.log(
+        '  (modo producción fail-closed sin CLIENT_SESSION_SECRET detectado: 500 en /api/slot-holds y ocultamiento A2 en /api/availability verificados)',
+      );
+      return;
+    }
+
+    const blockedHold = await fetchJson('/api/slot-holds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: offerSlot.staffId,
+        startAt: offerSlot.startAt,
+      }),
+    });
+    assert.equal(
+      blockedHold.status,
+      409,
+      `A2: POST /api/slot-holds sin waitlistOfferToken debe responder 409, recibido ${blockedHold.status}`,
+    );
+
+    if (offerHandle.offerToken) {
+      const offerAvail = await fetchJson(
+        `/api/availability?${baseQuery}&offer=${encodeURIComponent(offerHandle.offerToken)}`,
+      );
+      assert.equal(offerAvail.status, 200);
+      const offerSlots = offerAvail.json?.days?.[0]?.slots ?? [];
+      assert.equal(
+        offerSlots.some((item) => item.startAt === offerSlot.startAt),
+        true,
+        'A2: GET /api/availability?offer=<token> debe exponer el horario a la dueña de la oferta',
+      );
+
+      const offerHold = await fetchJson('/api/slot-holds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceId: 'srv-rubber',
+          addonIds: [],
+          staffId: offerSlot.staffId,
+          startAt: offerSlot.startAt,
+          waitlistOfferToken: offerHandle.offerToken,
+        }),
+      });
+      assert.equal(
+        offerHold.status,
+        200,
+        `A2: POST /api/slot-holds con waitlistOfferToken falló: ${offerHold.status} ${offerHold.text}`,
+      );
+      const offerCookie = extractCookieHeader(offerHold);
+      const claimRes = await fetchJson('/api/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: offerCookie,
+          'Idempotency-Key': `e2e-wlo-claim-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({
+          serviceId: 'srv-rubber',
+          addonIds: [],
+          staffId: offerSlot.staffId,
+          startAt: offerSlot.startAt,
+          clientName: 'Clienta Oferta E2E',
+          clientPhone: offerHandle.waitlistPhone,
+          holdId: offerHold.json?.holdId,
+          waitlistOfferToken: offerHandle.offerToken,
+          privacyConsentAccepted: true,
+        }),
+      });
+      assert.equal(
+        claimRes.status,
+        201,
+        `A2+C4: Reclamo de oferta solo con cookie HttpOnly falló: ${claimRes.status} ${claimRes.text}`,
+      );
+      const claimedToken = claimRes.json?.booking?.manageToken;
+      if (claimedToken) {
+        const cancelClaimed = await fetchJson(`/api/bookings/manage/${claimedToken}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'cancel',
+            reason: 'Limpieza automática reclamo oferta E2E',
+          }),
+        });
+        assert.equal(cancelClaimed.status, 200);
+      }
+    }
+  } finally {
+    await offerHandle.cleanupOffer();
+  }
+}
+
 async function main() {
   const startedAt = Date.now();
   const steps = [
@@ -1216,7 +1829,7 @@ async function main() {
       },
     ],
     ['4. Admin RBAC, specialist isolation & ARCO JSON export', testAdminRbacAndSpecialistIsolation],
-    ['5. Optional Playwright browser verification', testOptionalPlaywrightBrowser],
+    ['5. Optional Playwright browser verification (routes + Wave 2 A1/A2/A3/B1/B2)', testOptionalPlaywrightBrowser],
     ['6. PWA Service Worker (/sw.js) & compact embed mode (/reservar?embed=1)', testPwaServiceWorkerAndEmbedMode],
     ['7. Client portal /mis-citas OTP flow, isolation & logout', testClientPortalOtpFlow],
     ['8. Executive reports (/api/admin/reports) RBAC & specialist scoping', testAdminReportsRbac],
@@ -1226,6 +1839,26 @@ async function main() {
       async () => {
         const slots = await findFarFutureSlots(2);
         await testPhase3EndToEndFlows(slots);
+      },
+    ],
+    [
+      '11. Booking Wave 1/2 API & SSR contracts: cookie-only holds (C4), waitlist offer exclusivity (A2) & deep-link SSR',
+      async () => {
+        const holdCandidate = await findAvailabilityCandidate(() => true, {
+          offsetDays: 8,
+        });
+        const offerCandidate = await findAvailabilityCandidate(
+          (slot) => slot.startAt !== holdCandidate?.slot?.startAt,
+          { offsetDays: 10 },
+        );
+        assert.ok(
+          holdCandidate && offerCandidate,
+          'Se esperaban 2 horarios futuros distintos para la suite Wave 1/2',
+        );
+        await testWave2WaitlistOfferAndHoldApi([
+          holdCandidate.slot,
+          offerCandidate.slot,
+        ]);
       },
     ],
   ];

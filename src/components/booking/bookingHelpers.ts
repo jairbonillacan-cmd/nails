@@ -492,3 +492,92 @@ export function readFileAsDataUrl(
     reader.readAsDataURL(file);
   });
 }
+
+const LOCAL_TIME_24_RE = /^\d{2}:\d{2}$/;
+
+export function findMatchingSlotInAvailability(input: {
+  days: readonly DayAvailabilitySummary[];
+  targetSlot: string;
+  preferredDate?: string | null;
+  preferredStaffId?: string | null;
+}): { slot: AvailableSlot; date: string } | null {
+  const cleanTarget = input.targetSlot.trim();
+  if (!cleanTarget || input.days.length === 0) return null;
+
+  const targetMs = Date.parse(cleanTarget);
+  const hasTargetMs = Number.isFinite(targetMs);
+  const isLocalTimeOnly = LOCAL_TIME_24_RE.test(cleanTarget);
+  const preferredDate = input.preferredDate?.trim() || null;
+  const preferredStaff =
+    input.preferredStaffId && input.preferredStaffId !== 'any'
+      ? input.preferredStaffId.trim()
+      : null;
+
+  const orderedDays: DayAvailabilitySummary[] = [];
+  if (preferredDate) {
+    const primaryDay = input.days.find((day) => day.date === preferredDate);
+    if (primaryDay) orderedDays.push(primaryDay);
+  }
+  for (const day of input.days) {
+    if (day.date !== preferredDate) orderedDays.push(day);
+  }
+
+  for (const day of orderedDays) {
+    const matches = day.slots.filter((slot) => {
+      if (slot.startAt === cleanTarget) return true;
+      if (`${slot.staffId}-${slot.startAt}` === cleanTarget) return true;
+      if (hasTargetMs && Date.parse(slot.startAt) === targetMs) return true;
+      if (isLocalTimeOnly && day.date === preferredDate && slot.localTime24 === cleanTarget) {
+        return true;
+      }
+      return false;
+    });
+    if (matches.length === 0) continue;
+    const preferredMatch = preferredStaff
+      ? (matches.find(
+          (slot) =>
+            slot.staffId === preferredStaff || slot.availableStaffIds.includes(preferredStaff),
+        ) ?? matches[0])
+      : matches[0];
+    if (preferredMatch) {
+      return { slot: preferredMatch, date: day.date };
+    }
+  }
+
+  return null;
+}
+
+export function findAlternativeSlotsForDate(
+  days: readonly DayAvailabilitySummary[],
+  preferredDate?: string | null,
+  limit = 3,
+): AvailableSlot[] {
+  if (days.length === 0 || limit <= 0) return [];
+  const cleanDate = preferredDate?.trim() || null;
+  const orderedDays: DayAvailabilitySummary[] = [];
+  if (cleanDate) {
+    const sameDay = days.find((day) => day.date === cleanDate);
+    if (sameDay) orderedDays.push(sameDay);
+    for (const day of days) {
+      if (day.date > cleanDate) orderedDays.push(day);
+    }
+    for (const day of days) {
+      if (day.date < cleanDate) orderedDays.push(day);
+    }
+  } else {
+    orderedDays.push(...days);
+  }
+
+  const seen = new Set<string>();
+  const collected: AvailableSlot[] = [];
+  for (const day of orderedDays) {
+    for (const slot of day.slots) {
+      const key = `${slot.staffId}-${slot.startAt}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push(slot);
+      if (collected.length >= limit) return collected;
+    }
+  }
+  return collected;
+}
