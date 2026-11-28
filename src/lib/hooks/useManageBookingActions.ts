@@ -55,6 +55,7 @@ export function useManageBookingActions({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionErrorCode, setActionErrorCode] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [conflictSlots, setConflictSlots] = useState<AvailableSlot[]>([]);
   const [submittingSlotStartAt, setSubmittingSlotStartAt] = useState<string | null>(null);
@@ -76,6 +77,7 @@ export function useManageBookingActions({
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [rescheduleDays, setRescheduleDays] = useState<DayAvailabilitySummary[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(initialAction === 'reschedule' && initialCanModify);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
 
   const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(initialBooking.review?.rating ?? 5);
   const [reviewComment, setReviewComment] = useState(initialBooking.review?.comment ?? '');
@@ -132,8 +134,9 @@ export function useManageBookingActions({
   const loadRescheduleSlots = useCallback(
     async (signal?: AbortSignal) => {
       setLoadingSlots(true);
+      setSlotsError(null);
       try {
-        const days = await fetchRescheduleAvailability({
+        const result = await fetchRescheduleAvailability({
           serviceId: booking.serviceId,
           extraServiceIdsKey,
           addonIdsKey,
@@ -142,15 +145,29 @@ export function useManageBookingActions({
           manageToken: booking.manageToken,
           signal,
         });
-        if (!signal?.aborted) setRescheduleDays(days);
-      } catch {
-        return;
+        if (signal?.aborted) return;
+        if (!result.ok) {
+          if (!result.aborted) {
+            setRescheduleDays([]);
+            setSlotsError(
+              result.error || 'No pudimos cargar los horarios disponibles. Intenta de nuevo.',
+            );
+          }
+          return;
+        }
+        setSlotsError(null);
+        setRescheduleDays(result.days);
       } finally {
         if (!signal?.aborted) setLoadingSlots(false);
       }
     },
     [addonIdsKey, booking.manageToken, booking.serviceId, booking.staffId, extraServiceIdsKey, tz],
   );
+
+  const retryLoadRescheduleSlots = useCallback(() => {
+    if (!canModify || !reschedulePolicy.allowed) return;
+    void loadRescheduleSlots();
+  }, [canModify, loadRescheduleSlots, reschedulePolicy.allowed]);
 
   const syncRescheduleSlots = useCallback(
     async (signal: AbortSignal) => {
@@ -224,6 +241,7 @@ export function useManageBookingActions({
     const freshNow = Date.now();
     setNowMs(freshNow);
     clearActionError();
+    setSlotsError(null);
     setConflictSlots([]);
     const allowedNow = checkManagePolicyWindow({
       startAtIso: booking.startAt,
@@ -245,22 +263,23 @@ export function useManageBookingActions({
     if (proofLockRef.current || uploadingProof) return false;
     proofLockRef.current = true;
     setUploadingProof(true);
-    clearActionError();
+    setUploadError(null);
     try {
       const res = await patchManageBooking(booking.manageToken, {
         action: 'upload_proof',
         paymentProofUrl: dataUrl,
       });
       if (!res.ok) {
-        setActionError(res.data.error || 'No se pudo subir el comprobante.');
+        setUploadError(res.data.error || 'No se pudo subir el comprobante. Intenta de nuevo.');
         return false;
       }
+      setUploadError(null);
       applyPayload(res.data);
       proofSavedFeedback.show('Comprobante guardado ✓');
       setActionSuccess('Recibimos tu comprobante. Te confirmamos por WhatsApp cuando lo revisemos.');
       return true;
     } catch {
-      setActionError('Error de conexión al subir el comprobante. Intenta de nuevo.');
+      setUploadError('Error de conexión al subir el comprobante. Intenta de nuevo.');
       return false;
     } finally {
       setUploadingProof(false);
@@ -368,14 +387,15 @@ export function useManageBookingActions({
   return {
     tz, booking, calendarLinks, whatsappUrl, manageUrl, loyaltySummary,
     canModify, reschedulePolicy, cancelPolicy, policyHelpWhatsappUrl, touchUpUrl,
-    actionError, actionErrorCode, actionSuccess, reviewError, conflictSlots,
+    actionError, actionErrorCode, actionSuccess, uploadError, reviewError, conflictSlots,
     submittingSlotStartAt, proofSavedMessage: proofSavedFeedback.message,
     cancelOpen, cancelReasonChoice, cancelReason, busy, uploadingProof, confirmingAttendance,
-    rescheduleOpen, rescheduleReasonChoice, rescheduleReason, rescheduleDays, loadingSlots,
+    rescheduleOpen, rescheduleReasonChoice, rescheduleReason, rescheduleDays, loadingSlots, slotsError,
     rating, reviewComment, reviewSaved, hasExistingReview,
     setRating, setReviewComment, setCancelReason, setRescheduleReason,
     openReschedule, openCancel, handleConfirmAttendance, handleUploadProof, handleConfirmReschedule,
-    handleConfirmCancel, handleSubmitReview,
+    handleConfirmCancel, handleSubmitReview, retryLoadRescheduleSlots,
+    clearUploadError: () => setUploadError(null),
     handleSelectCancelChip: (option: string) => {
       setCancelReasonChoice(option);
       setCancelReason(resolveNextReasonText(option, cancelReason, CANCELLATION_REASON_OPTIONS));
@@ -397,6 +417,7 @@ export function useManageBookingActions({
     handleRescheduleOpenChange: (open: boolean) => {
       if (!open) {
         clearActionError();
+        setSlotsError(null);
         setConflictSlots([]);
       }
       setRescheduleOpen(open);

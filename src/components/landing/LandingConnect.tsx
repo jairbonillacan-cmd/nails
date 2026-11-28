@@ -7,6 +7,7 @@ import { INSTAGRAM_PHOTOS, LANDING_ASSETS, landingPhoto } from './landingContent
 const INSTAGRAM_PHOTO_SIZES = '(max-width: 47.5rem) 46vw, 24vw';
 
 interface LandingConnectProps {
+  salonName?: string;
   title?: string;
   subtitle?: string;
   instagramUrl: string;
@@ -14,6 +15,7 @@ interface LandingConnectProps {
 }
 
 export function LandingConnect({
+  salonName = 'LAIKONA NAILS',
   title = 'Conectemos',
   subtitle = 'Sets nuevos cada semana. Guarda tu favorito y tráelo a tu cita.',
   instagramUrl,
@@ -52,7 +54,7 @@ export function LandingConnect({
             >
               <img
                 {...landingPhoto(leftTop, INSTAGRAM_PHOTO_SIZES)}
-                alt="Diseño de uñas French minimal con base Rubber hecho en LAIKONA NAILS Puebla"
+                alt={`Diseño de uñas French minimal con base Rubber hecho en ${salonName}`}
                 width={400}
                 height={500}
                 loading="lazy"
@@ -69,7 +71,7 @@ export function LandingConnect({
             >
               <img
                 {...landingPhoto(leftBottom, INSTAGRAM_PHOTO_SIZES)}
-                alt="Set de uñas Milky almendra en Softgel natural de LAIKONA NAILS en Puebla"
+                alt={`Set de uñas Milky almendra en Softgel natural de ${salonName}`}
                 width={400}
                 height={400}
                 loading="lazy"
@@ -166,7 +168,7 @@ export function LandingConnect({
             >
               <img
                 {...landingPhoto(rightTop, INSTAGRAM_PHOTO_SIZES)}
-                alt="Manicure Nude brillante con nivelación Rubber de LAIKONA NAILS en Puebla"
+                alt={`Manicure Nude brillante con nivelación Rubber de ${salonName}`}
                 width={400}
                 height={400}
                 loading="lazy"
@@ -183,7 +185,7 @@ export function LandingConnect({
             >
               <img
                 {...landingPhoto(rightBottom, INSTAGRAM_PHOTO_SIZES)}
-                alt="Uñas de acrílico escultural con acabado cristal hechas en LAIKONA NAILS Puebla"
+                alt={`Uñas de acrílico escultural con acabado cristal hechas en ${salonName}`}
                 width={400}
                 height={500}
                 loading="lazy"

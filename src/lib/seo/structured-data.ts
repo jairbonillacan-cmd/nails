@@ -1,3 +1,4 @@
+import { normalizeTouchUpDays } from '@/lib/booking/recurrence';
 import { formatCurrency } from '@/lib/format';
 import type { PublicServiceDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import type { AvailabilitySchedule } from '@/lib/types';
@@ -20,6 +21,13 @@ export interface SalonFaqItem {
   readonly answer: string;
 }
 
+interface SalonFaqLoyaltySummary {
+  readonly isActive?: boolean;
+  readonly stampsRequired?: number;
+  readonly rewardType?: 'percent_discount' | 'free_service';
+  readonly discountPercent?: number | null;
+}
+
 type SalonFaqSettings = Partial<
   Pick<
     PublicSettingsDTO,
@@ -31,9 +39,13 @@ type SalonFaqSettings = Partial<
     | 'minRescheduleHours'
     | 'instagramHandle'
     | 'paymentMode'
-    | 'landingContent'
   >
->;
+> & {
+  readonly landingContent?: Partial<
+    Pick<NonNullable<PublicSettingsDTO['landingContent']>, 'customFaqs' | 'touchUpDays'>
+  >;
+  readonly loyalty?: SalonFaqLoyaltySummary | null;
+};
 
 interface HomeStructuredDataInput {
   readonly siteOrigin?: string;
@@ -238,32 +250,47 @@ export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqIt
 
   const salonName = settings?.name?.trim() || DEFAULT_SALON_NAME;
   const currency = settings?.currency ?? 'MXN';
-  const depositCents = settings?.depositAmountCents ?? 20000;
+  const depositCents = settings?.depositAmountCents ?? 0;
   const hasDeposit = settings?.paymentMode !== 'none' && depositCents > 0;
   const depositText = formatDepositLabel(depositCents, currency);
   const cancelHours = Math.max(
     1,
     settings?.minCancelHours ?? settings?.minRescheduleHours ?? 12,
   );
+  const touchUpDays = normalizeTouchUpDays(settings?.landingContent?.touchUpDays);
   const address = settings?.address?.trim() || DEFAULT_PUEBLA_ADDRESS;
-  return [
+  const loyalty = settings?.loyalty;
+  const showLoyaltyFaq = loyalty?.isActive !== false;
+  const loyaltyAnswer = loyalty
+    ? (() => {
+        const stampsRequired = Math.max(1, Math.round(loyalty.stampsRequired ?? 8));
+        const rewardCopy =
+          loyalty.rewardType === 'free_service'
+            ? 'tu siguiente servicio es gratis'
+            : `tu siguiente servicio tiene ${Math.max(1, Math.min(100, Math.round(loyalty.discountPercent ?? 50)))}% de descuento`;
+        return `Cada visita completada suma un sello. Al juntar ${stampsRequired}, ${rewardCopy}. Puedes ver cuántos llevas en "Mis citas".`;
+      })()
+    : 'Cada visita completada suma sellos en tu tarjeta digital. Puedes ver cuántos llevas y tu recompensa vigente en "Mis citas".';
+
+  const items: SalonFaqItem[] = [
     {
       id: 'faq-anticipo',
       question: '¿Cómo aparto mi cita?',
       answer: hasDeposit
-        ? `Escoges servicio, día y hora aquí en la página y dejas un anticipo de ${depositText} por transferencia bancaria. La captura de tu transferencia la subes ahí mismo o después desde el link de tu cita, sin tener que escribirnos. Ese anticipo se descuenta de tu total.`
-        : 'Escoges servicio, día y hora aquí en la página y listo. Te llega la confirmación por WhatsApp.',
+        ? `Escoges servicio, día y hora aquí en la página y apartas con un anticipo de ${depositText} por transferencia bancaria SPEI. Al apartar recibes el link de tu cita con los datos SPEI para subir tu comprobante sin tener que escribirnos. Ese anticipo se descuenta de tu total.`
+        : 'Escoges servicio, día y hora aquí en la página y listo. Te llega la confirmación con el link de tu cita por WhatsApp.',
     },
     {
       id: 'faq-reagendar',
       question: '¿Puedo cambiar o cancelar mi cita?',
-      answer: `Sí, hasta ${cancelHours} horas antes y sin perder tu anticipo. Lo haces desde el link que te llega al confirmar o en "Mis citas".`,
+      answer: hasDeposit
+        ? `Sí, hasta ${cancelHours} horas antes y sin perder tu anticipo. Lo haces desde el link que te llega al confirmar o en "Mis citas".`
+        : `Sí, hasta ${cancelHours} horas antes sin cargo. Lo haces desde el link que te llega al confirmar o en "Mis citas".`,
     },
     {
       id: 'faq-retoque',
       question: '¿Cada cuánto me toca retoque?',
-      answer:
-        'Lo ideal es cada 21 días, sea rubber, acrílico o softgel. Así tu uña natural se mantiene sana y el set se ve bien hasta el final.',
+      answer: `Lo ideal es cada ${touchUpDays} días, sea rubber, acrílico o softgel. Así tu uña natural se mantiene sana y el set se ve bien hasta el final.`,
     },
     {
       id: 'faq-ubicacion',
@@ -276,13 +303,17 @@ export function buildSalonFaqs(settings?: SalonFaqSettings): readonly SalonFaqIt
       answer:
         'Sí. Al elegir tu servicio despliega la sección Extras y nail art para sumar nail art, chrome, cat eye, largo extra o retiro de gel. El tiempo y el precio se suman solos.',
     },
-    {
+  ];
+
+  if (showLoyaltyFaq) {
+    items.push({
       id: 'faq-sellos',
       question: '¿Cómo funciona la tarjeta de sellos?',
-      answer:
-        'Cada visita te da un sello. Al juntar 8, tu siguiente servicio tiene 50% de descuento. Puedes ver cuántos llevas en "Mis citas".',
-    },
-  ];
+      answer: loyaltyAnswer,
+    });
+  }
+
+  return items;
 }
 
 export const SALON_FAQS: readonly SalonFaqItem[] = buildSalonFaqs();

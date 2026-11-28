@@ -20,8 +20,8 @@ import {
 export const PublicCreateBookingSchema = z.object({
   serviceId: NonEmptyIdSchema,
   extraServiceIds: z.array(NonEmptyIdSchema).max(8).default([]),
-  addonIds: z.array(z.string()).default([]),
-  staffId: z.string().nullable().optional(),
+  addonIds: z.array(NonEmptyIdSchema).max(30).default([]),
+  staffId: z.string().max(128).nullable().optional(),
   startAt: NonEmptyIdSchema,
   ...ClientContactFieldsSchema.shape,
   clientNotes: z.string().max(1000).optional(),
@@ -29,7 +29,7 @@ export const PublicCreateBookingSchema = z.object({
   paymentProofUrl: createDepositProofInputSchema().optional().nullable(),
   proofDeliveryMethod: ProofDeliveryMethodSchema.optional(),
   couponCode: z.string().max(40).optional().nullable(),
-  sessionToken: z.string().optional().nullable(),
+  sessionToken: z.string().max(256).optional().nullable(),
   holdId: NonEmptyIdSchema.optional().nullable(),
   waitlistOfferToken: z.string().trim().min(6).max(120).optional().nullable(),
   privacyConsentAccepted: z.boolean(),
@@ -39,8 +39,8 @@ export const PublicCreateBookingSchema = z.object({
 export const AdminCreateBookingSchema = z.object({
   serviceId: NonEmptyIdSchema,
   extraServiceIds: z.array(NonEmptyIdSchema).max(8).default([]),
-  addonIds: z.array(z.string()).default([]),
-  staffId: z.string().nullable().optional(),
+  addonIds: z.array(NonEmptyIdSchema).max(30).default([]),
+  staffId: z.string().max(128).nullable().optional(),
   startAt: NonEmptyIdSchema,
   ...ClientContactFieldsSchema.shape,
   clientNotes: z.string().max(1000).optional(),
@@ -67,8 +67,8 @@ export const AdminCreateBookingSchema = z.object({
 export const ManageBookingPatchSchema = z.object({
   action: z.enum(['cancel', 'reschedule', 'upload_proof', 'confirm_attendance']),
   reason: z.string().max(400).optional(),
-  newStartAt: z.string().optional(),
-  newStaffId: z.string().optional(),
+  newStartAt: z.string().max(64).optional(),
+  newStaffId: z.string().max(128).optional(),
   paymentProofUrl: createDepositProofInputSchema().optional(),
 });
 
@@ -151,20 +151,20 @@ export const AdminPatchBookingStatusSchema = z.object({
 export const CreateSlotHoldSchema = z.object({
   serviceId: NonEmptyIdSchema,
   extraServiceIds: z.array(NonEmptyIdSchema).max(8).default([]),
-  addonIds: z.array(z.string()).default([]),
+  addonIds: z.array(NonEmptyIdSchema).max(30).default([]),
   staffId: NonEmptyIdSchema,
   startAt: NonEmptyIdSchema,
-  sessionToken: z.string().min(4).optional(),
+  sessionToken: z.string().min(4).max(256).optional(),
   waitlistOfferToken: z.string().trim().max(120).optional().nullable(),
 });
 
 export const CreateWaitlistSchema = z.object({
   serviceId: NonEmptyIdSchema,
-  preferredStaffId: z.string().nullable().optional(),
+  preferredStaffId: z.string().max(128).nullable().optional(),
   desiredDate: DateKeySchema,
   preferredWindow: PreferredWindowSchema.default('any'),
-  clientName: z.string().min(2),
-  clientPhoneE164: z.string().min(8),
+  clientName: z.string().min(2).max(120),
+  clientPhoneE164: z.string().min(8).max(32),
   clientEmail: OptionalEmailSchema,
   notes: z.string().max(400).default(''),
 });

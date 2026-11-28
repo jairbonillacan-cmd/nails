@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   assertSlotBookable,
   computeServiceTotals,
+  findEarliestAvailableSlots,
   findNearestAvailableSlots,
   getAvailabilityForRange,
   getAvailableSlotsForDate,
@@ -10,6 +11,10 @@ import {
   type AvailableSlot,
 } from '../availability/engine';
 import { checkManagePolicyWindow } from '../availability/policy';
+import {
+  buildTouchUpBookingUrl,
+  computeSuggestedTouchUpDateKey,
+} from '../booking/recurrence';
 import {
   isActiveBookingStatus,
   transitionBookingStatus,
@@ -55,11 +60,14 @@ import type {
   WhatsAppThreadSummaryDTO,
 } from '../contracts/whatsapp';
 import {
+  ClientPortalSnapshotDTOSchema,
   PublicLoyaltySummarySchema,
   toPublicReviewDTO,
   toPublicServiceDTO,
   toPublicSettingsDTO,
   toPublicStaffDTO,
+  type ClientPortalBookingDTO,
+  type ClientPortalSnapshotDTO,
   type PublicLoyaltySummaryDTO,
   type PublicReviewDTO,
   type PublicServiceDTO,
@@ -148,6 +156,8 @@ import {
   type PublicServiceReviewsData,
   type QueryAvailabilityInput,
   type QueryAvailabilityOutput,
+  type QuickSearchAvailabilityInput,
+  type QuickSearchAvailabilityOutput,
   type RecordConsentInput,
   type RecordPaymentSplitsInput,
   type RecordWhatsAppMessageInput,
@@ -161,7 +171,9 @@ import {
   type UpdateClientNotesInput,
   type UpdateScheduledNotificationStatusInput,
   type UpdateWhatsAppMessageStatusInput,
+  type UpsertClientPortalProfileInput,
   type ValidateCouponResult,
+  type WhatsAppContactContextData,
   type WhatsAppThreadDetailData,
   type WriteAuditLogInput,
 } from './port';
@@ -1325,25 +1337,6 @@ function buildFallbackClientForBooking(booking: Booking): ClientProfile {
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
   };
-}
-
-function hydrateBookingFromSnapshot(
-  db: DemoDatabase,
-  booking: Booking,
-): BookingWithRelations {
-  const service =
-    db.services.find((s) => s.id === booking.serviceId) ??
-    db.services[0] ??
-    buildFallbackServiceForBooking(booking);
-  const staff =
-    db.staff.find((s) => s.id === booking.staffId) ??
-    db.staff[0] ??
-    buildFallbackStaffForBooking(booking, db.settings.defaultCommissionPercent);
-  const client =
-    db.clients.find((c) => c.id === booking.clientId) ??
-    buildFallbackClientForBooking(booking);
-  const review = db.reviews.find((r) => r.bookingId === booking.id) ?? null;
-  return { ...booking, service, staff, client, review };
 }
 
 function extractPgErrorCode(error: { code?: string; message?: string } | null): {
@@ -2546,6 +2539,333 @@ export function createSupabaseRepository(
       return { client, latestBooking };
     },
 
+    async getClientPortalSnapshotByPhone(
+      phoneE164: string,
+    ): Promise<ClientPortalSnapshotDTO> {
+      const normalized = normalizePhoneE164(phoneE164);
+      if (!normalized) {
+        return ClientPortalSnapshotDTOSchema.parse({
+          phoneE164: normalized,
+          clientId: null,
+          clientName: null,
+          bookings: [],
+          loyaltySummary: null,
+          packages: [],
+        });
+      }
+
+      const supabase = getClient();
+      const clientsRes = await supabase
+        .from('clients')
+        .select('*')
+        .in('phone_e164', phoneLookupVariants(normalized));
+      const matchedRow = (clientsRes.data ?? []).find((row) =>
+        phonesMatchE164(row.phone_e164, normalized),
+      );
+      if (!matchedRow) {
+        return ClientPortalSnapshotDTOSchema.parse({
+          phoneE164: normalized,
+          clientId: null,
+          clientName: null,
+          bookings: [],
+          loyaltySummary: null,
+          packages: [],
+        });
+      }
+
+      const client = mapClientRow(matchedRow);
+      const [settings, bookingsRes, servicesRes, staffRes, programsRes, stampsRes] =
+        await Promise.all([
+          getSalonSettings(),
+          supabase
+            .from('bookings')
+            .select('*')
+            .eq('client_id', client.id)
+            .order('start_at', { ascending: false }),
+          supabase.from('services').select('*'),
+          supabase.from('staff_members').select('*'),
+          supabase.from('loyalty_programs').select('*').eq('is_active', true).limit(1),
+          supabase.from('loyalty_stamps').select('*').eq('client_id', client.id),
+        ]);
+
+      const bookingRows = bookingsRes.data ?? [];
+      const bookingIds = bookingRows.map((row) => row.id);
+      const bookingAddonsRes =
+        bookingIds.length > 0
+          ? await supabase.from('booking_addons').select('*').in('booking_id', bookingIds)
+          : { data: [] as Tables['booking_addons']['Row'][] };
+      const bookingAddonRows = bookingAddonsRes.data ?? [];
+
+      const tz = settings.timezone || 'America/Mexico_City';
+      const serviceById = new Map(
+        (servicesRes.data ?? []).map((row) => {
+          const mapped = mapServiceRow(row);
+          return [mapped.id, mapped] as const;
+        }),
+      );
+      const staffById = new Map(
+        (staffRes.data ?? []).map((row) => {
+          const mapped = mapStaffRow(row, []);
+          return [mapped.id, mapped] as const;
+        }),
+      );
+
+      const portalBookings: ClientPortalBookingDTO[] = bookingRows
+        .map((row) => mapBookingRow(row, bookingAddonRows))
+        .toSorted((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
+        .map((b) => {
+          const svc = serviceById.get(b.serviceId);
+          const st = staffById.get(b.staffId);
+          const serviceSlug = svc?.slug ?? '';
+          const staffBookingSlug = st?.bookingSlug ?? '';
+          const suggestedDateKey = computeSuggestedTouchUpDateKey({
+            startAt: b.startAt,
+            daysAhead: 21,
+            timezone: tz,
+          });
+          return {
+            id: b.id,
+            bookingCode: b.bookingCode,
+            manageToken: b.manageToken,
+            manageUrl: `/cita/${b.manageToken}`,
+            status: b.status,
+            startAt: b.startAt,
+            endAt: b.endAt,
+            totalDurationMinutes: b.totalDurationMinutes,
+            totalPriceCents: b.totalPriceCents,
+            depositAmountCents: b.depositAmountCents,
+            serviceId: b.serviceId,
+            serviceName: svc?.name ?? 'Servicio',
+            serviceSlug,
+            staffId: b.staffId,
+            staffName: st?.name ?? 'Profesional',
+            staffBookingSlug,
+            addons: b.addons.map((a) => ({
+              name: a.name,
+              extraPriceCents: a.extraPriceCents,
+            })),
+            touchUpUrl: buildTouchUpBookingUrl({
+              serviceSlug,
+              staffSlug: staffBookingSlug,
+              suggestedDateKey,
+            }),
+          };
+        });
+
+      const activeProgramRow = (programsRes.data ?? [])[0] ?? null;
+      const activeProgram = activeProgramRow ? mapLoyaltyProgramRow(activeProgramRow) : null;
+      const stamps = (stampsRes.data ?? []).map(mapLoyaltyStampRow);
+      const rewardServiceName = activeProgram?.rewardServiceId
+        ? (serviceById.get(activeProgram.rewardServiceId)?.name ?? null)
+        : null;
+      const loyaltySummary = activeProgram
+        ? PublicLoyaltySummarySchema.parse(
+            computeClientLoyaltySummary(activeProgram, stamps, client.id, rewardServiceName),
+          )
+        : null;
+
+      return ClientPortalSnapshotDTOSchema.parse({
+        phoneE164: client.phoneE164,
+        clientId: client.id,
+        clientName: client.fullName,
+        bookings: portalBookings,
+        loyaltySummary,
+        packages: [],
+      });
+    },
+
+    async upsertClientPortalProfileByPhone(
+      params: UpsertClientPortalProfileInput,
+    ): Promise<ClientPortalRecordData> {
+      const normalized = normalizePhoneE164(params.phoneE164);
+      if (!normalized) {
+        throw new PolicyError('INVALID_PHONE', 'Escribe un WhatsApp válido de 10 dígitos.');
+      }
+      const trimmedName = params.fullName.trim();
+      if (trimmedName.length < 2) {
+        throw new PolicyError('INVALID_CLIENT_NAME', 'Escribe tu nombre completo.');
+      }
+
+      const supabase = getClient();
+      const nowIso = clock.now().toISOString();
+      const cleanEmail =
+        params.email === undefined ? undefined : params.email?.trim() || null;
+      const cleanInstagram =
+        params.instagramHandle === undefined
+          ? undefined
+          : normalizeOptionalInstagram(params.instagramHandle);
+      const cleanBirthday =
+        params.birthday === undefined ? undefined : params.birthday?.trim() || null;
+
+      const existingRes = await supabase
+        .from('clients')
+        .select('*')
+        .in('phone_e164', phoneLookupVariants(normalized));
+      const matchedRow = (existingRes.data ?? []).find((row) =>
+        phonesMatchE164(row.phone_e164, normalized),
+      );
+
+      let savedRow: Tables['clients']['Row'];
+      if (matchedRow) {
+        const patch: Tables['clients']['Update'] = {
+          full_name: trimmedName,
+          updated_at: nowIso,
+        };
+        if (cleanEmail !== undefined) patch.email = cleanEmail;
+        if (cleanInstagram !== undefined) patch.instagram_handle = cleanInstagram;
+        if (cleanBirthday !== undefined) patch.birthday = cleanBirthday;
+
+        const { data, error } = await supabase
+          .from('clients')
+          .update(patch)
+          .eq('id', matchedRow.id)
+          .select('*')
+          .single();
+        if (error || !data) {
+          throw new PolicyError(
+            'CLIENT_UPDATE_FAILED',
+            error?.message ?? 'No se pudo actualizar tu perfil.',
+          );
+        }
+        savedRow = data;
+      } else {
+        const { data, error } = await supabase
+          .from('clients')
+          .insert({
+            full_name: trimmedName,
+            phone_e164: normalized,
+            email: cleanEmail ?? null,
+            instagram_handle: cleanInstagram ?? null,
+            birthday: cleanBirthday ?? null,
+            notes: '',
+            no_show_count: 0,
+          })
+          .select('*')
+          .single();
+        if (error || !data) {
+          throw new PolicyError(
+            'CLIENT_CREATE_FAILED',
+            error?.message ?? 'No se pudo guardar tu perfil.',
+          );
+        }
+        savedRow = data;
+      }
+
+      const client = mapClientRow(savedRow);
+      const bookingsRes = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('client_id', client.id)
+        .neq('status', 'canceled')
+        .order('start_at', { ascending: false })
+        .limit(1);
+      let latestBooking: ClientPortalRecordData['latestBooking'] = null;
+      let latestStartMs = -Infinity;
+      for (const row of bookingsRes.data ?? []) {
+        if (row.client_id !== client.id || row.status === 'canceled') continue;
+        const startMs = Date.parse(row.start_at);
+        const score = Number.isFinite(startMs) ? startMs : 0;
+        if (!latestBooking || score > latestStartMs) {
+          latestBooking = {
+            clientId: row.client_id,
+            serviceId: row.service_id,
+            staffId: row.staff_id,
+            status: row.status,
+            startAt: row.start_at,
+          };
+          latestStartMs = score;
+        }
+      }
+      return { client, latestBooking };
+    },
+
+    async getNotificationWorkflows(): Promise<NotificationWorkflow[]> {
+      const supabase = getClient();
+      const { data } = await supabase.from('notification_workflows').select('*');
+      return (data ?? []).map(mapWorkflowRow);
+    },
+
+    async findApprovedBookingPayment(
+      provider: 'manual_transfer' | 'stripe' | 'mercadopago',
+      providerPaymentId: string,
+    ): Promise<{ bookingId: string } | null> {
+      const trimmed = providerPaymentId.trim();
+      if (!trimmed) return null;
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('booking_payments')
+        .select('booking_id')
+        .eq('provider', provider)
+        .eq('provider_payment_id', trimmed)
+        .eq('status', 'paid')
+        .limit(1)
+        .maybeSingle();
+      return data?.booking_id ? { bookingId: data.booking_id } : null;
+    },
+
+    async getCalendarConnectionByWatchChannelId(
+      channelId: string,
+    ): Promise<CalendarConnection | null> {
+      const trimmed = channelId.trim();
+      if (!trimmed) return null;
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('calendar_connections')
+        .select('*')
+        .eq('watch_channel_id', trimmed)
+        .eq('is_connected', true)
+        .limit(1)
+        .maybeSingle();
+      return data ? mapCalendarConnectionRow(data) : null;
+    },
+
+    async staffMemberExists(staffId: string): Promise<boolean> {
+      const trimmed = staffId.trim();
+      if (!trimmed) return false;
+      const supabase = getClient();
+      const { data } = await supabase
+        .from('staff_members')
+        .select('id')
+        .eq('id', trimmed)
+        .maybeSingle();
+      return Boolean(data?.id);
+    },
+
+    async getWhatsAppContactContextByPhones(
+      phones: string[],
+    ): Promise<WhatsAppContactContextData> {
+      const normalizedPhones = Array.from(
+        new Set(phones.map((p) => normalizePhoneE164(p)).filter(Boolean)),
+      );
+      if (normalizedPhones.length === 0) {
+        return { clients: [], bookings: [] };
+      }
+      const variants = Array.from(
+        new Set(normalizedPhones.flatMap((phone) => phoneLookupVariants(phone))),
+      );
+      const supabase = getClient();
+      const clientsRes = await supabase
+        .from('clients')
+        .select('*')
+        .in('phone_e164', variants);
+      const clients = (clientsRes.data ?? [])
+        .map(mapClientRow)
+        .filter((client) =>
+          normalizedPhones.some((phone) => phonesMatchE164(client.phoneE164, phone)),
+        );
+      if (clients.length === 0) {
+        return { clients: [], bookings: [] };
+      }
+      const clientIds = clients.map((c) => c.id);
+      const bookingsRes = await supabase
+        .from('bookings')
+        .select('*')
+        .in('client_id', clientIds)
+        .in('status', ['pending_payment', 'pending_confirmation', 'confirmed']);
+      const bookings = (bookingsRes.data ?? []).map((row) => mapBookingRow(row, []));
+      return { clients, bookings };
+    },
+
     async getBookingsWithRelations(
       filter?: BookingsRangeFilter,
     ): Promise<BookingWithRelations[]> {
@@ -2703,6 +3023,36 @@ export function createSupabaseRepository(
         activeStaffCount: eligibleStaff.length,
         days,
         timezone: settings.timezone,
+      };
+    },
+
+    async quickSearchAvailability(
+      params: QuickSearchAvailabilityInput,
+    ): Promise<QuickSearchAvailabilityOutput> {
+      const { service, extraServices, addons, ctx } =
+        await loadPublicAvailabilityContext({
+          serviceId: params.serviceId,
+          extraServiceIds: params.extraServiceIds,
+          addonIds: params.addonIds,
+          sessionToken: params.sessionToken,
+          waitlistOfferToken: params.waitlistOfferToken,
+        });
+
+      const slots = findEarliestAvailableSlots(
+        ctx,
+        params.startDate,
+        Math.min(Math.max(params.days, 1), 45),
+        Math.min(Math.max(params.limit ?? 12, 1), 30),
+        params.staffId || null,
+      );
+      const totals = computeServiceTotals(service, addons, extraServices);
+
+      return {
+        service,
+        extraServices,
+        addons,
+        totals,
+        slots,
       };
     },
 
@@ -3898,9 +4248,98 @@ export function createSupabaseRepository(
       nowMs = clock.nowMs(),
     ): Promise<ProcessDueNotificationsResult> {
       const supabase = getClient();
-      const snapshot = await getSnapshot();
-      const due = snapshot.notifications.filter((n) =>
-        isSupabaseScheduledNotificationDue(n, nowMs),
+      const notificationsRes = await supabase
+        .from('scheduled_notifications')
+        .select('*')
+        .in('status', ['pending', 'failed']);
+      const due = (notificationsRes.data ?? [])
+        .map(mapNotificationRow)
+        .filter((n) => isSupabaseScheduledNotificationDue(n, nowMs));
+
+      if (due.length === 0) {
+        return {
+          processed: 0,
+          sentCount: 0,
+          failedCount: 0,
+          canceledCount: 0,
+          skippedCount: 0,
+          retriedCount: 0,
+        };
+      }
+
+      const dueBookingIds = Array.from(
+        new Set(due.map((item) => item.bookingId).filter((id): id is string => Boolean(id))),
+      );
+
+      const [settings, workflowsRes, bookingsRes, bookingAddonsRes, sentEmailsRes] =
+        await Promise.all([
+          getSalonSettings(),
+          supabase.from('notification_workflows').select('*'),
+          dueBookingIds.length > 0
+            ? supabase.from('bookings').select('*').in('id', dueBookingIds)
+            : Promise.resolve({ data: [] as Tables['bookings']['Row'][] }),
+          dueBookingIds.length > 0
+            ? supabase.from('booking_addons').select('*').in('booking_id', dueBookingIds)
+            : Promise.resolve({ data: [] as Tables['booking_addons']['Row'][] }),
+          dueBookingIds.length > 0
+            ? supabase
+                .from('scheduled_notifications')
+                .select('*')
+                .in('booking_id', dueBookingIds)
+                .eq('channel', 'email')
+                .eq('status', 'sent')
+            : Promise.resolve({ data: [] as Tables['scheduled_notifications']['Row'][] }),
+        ]);
+
+      const workflows = (workflowsRes.data ?? []).map(mapWorkflowRow);
+      const workflowById = new Map(workflows.map((w) => [w.id, w]));
+      const bookingAddonRows = bookingAddonsRes.data ?? [];
+      const bookingRows = bookingsRes.data ?? [];
+      const bookingById = new Map(
+        bookingRows.map((row) => {
+          const mapped = mapBookingRow(row, bookingAddonRows);
+          return [mapped.id, mapped] as const;
+        }),
+      );
+      const sentEmailNotifications = (sentEmailsRes.data ?? []).map(mapNotificationRow);
+
+      const serviceIds = Array.from(new Set(bookingRows.map((row) => row.service_id)));
+      const staffIds = Array.from(new Set(bookingRows.map((row) => row.staff_id)));
+      const clientIds = Array.from(new Set(bookingRows.map((row) => row.client_id)));
+
+      const [servicesRes, staffRes, staffServicesRes, clientsRes] = await Promise.all([
+        serviceIds.length > 0
+          ? supabase.from('services').select('*').in('id', serviceIds)
+          : Promise.resolve({ data: [] as Tables['services']['Row'][] }),
+        staffIds.length > 0
+          ? supabase.from('staff_members').select('*').in('id', staffIds)
+          : Promise.resolve({ data: [] as Tables['staff_members']['Row'][] }),
+        staffIds.length > 0
+          ? supabase.from('staff_services').select('*').in('staff_id', staffIds)
+          : Promise.resolve({ data: [] as Tables['staff_services']['Row'][] }),
+        clientIds.length > 0
+          ? supabase.from('clients').select('*').in('id', clientIds)
+          : Promise.resolve({ data: [] as Tables['clients']['Row'][] }),
+      ]);
+
+      const serviceById = new Map(
+        (servicesRes.data ?? []).map((row) => {
+          const mapped = mapServiceRow(row);
+          return [mapped.id, mapped] as const;
+        }),
+      );
+      const staffLinks = staffServicesRes.data ?? [];
+      const staffById = new Map(
+        (staffRes.data ?? []).map((row) => {
+          const mapped = mapStaffRow(row, staffLinks);
+          return [mapped.id, mapped] as const;
+        }),
+      );
+      const clientById = new Map(
+        (clientsRes.data ?? []).map((row) => {
+          const mapped = mapClientRow(row);
+          return [mapped.id, mapped] as const;
+        }),
       );
 
       let sentCount = 0;
@@ -3911,9 +4350,7 @@ export function createSupabaseRepository(
 
       for (const item of due) {
         const isRetry = item.status === 'failed';
-        const rawBooking = item.bookingId
-          ? snapshot.bookings.find((b) => b.id === item.bookingId)
-          : undefined;
+        const rawBooking = item.bookingId ? bookingById.get(item.bookingId) : undefined;
         if (
           !rawBooking ||
           rawBooking.status === 'canceled' ||
@@ -3927,9 +4364,7 @@ export function createSupabaseRepository(
           continue;
         }
 
-        const wf = item.workflowId
-          ? snapshot.workflows.find((w) => w.id === item.workflowId)
-          : null;
+        const wf = item.workflowId ? (workflowById.get(item.workflowId) ?? null) : null;
         const isAfterBooking = wf?.triggerEvent === 'after_booking';
 
         if (!isAfterBooking && rawBooking.status === 'completed') {
@@ -3975,13 +4410,11 @@ export function createSupabaseRepository(
           }
         }
 
-        const alreadySentEmail = snapshot.notifications.some((n) => {
+        const alreadySentEmail = sentEmailNotifications.some((n) => {
           if (n.bookingId !== rawBooking.id || n.channel !== 'email' || n.status !== 'sent') {
             return false;
           }
-          const nWf = n.workflowId
-            ? snapshot.workflows.find((w) => w.id === n.workflowId)
-            : null;
+          const nWf = n.workflowId ? (workflowById.get(n.workflowId) ?? null) : null;
           return nWf?.triggerEvent === 'before_booking';
         });
 
@@ -4020,11 +4453,23 @@ export function createSupabaseRepository(
           continue;
         }
 
-        const hydrated = hydrateBookingFromSnapshot(snapshot, rawBooking);
+        const hydrated: BookingWithRelations = {
+          ...rawBooking,
+          service:
+            serviceById.get(rawBooking.serviceId) ??
+            buildFallbackServiceForBooking(rawBooking),
+          staff:
+            staffById.get(rawBooking.staffId) ??
+            buildFallbackStaffForBooking(rawBooking, settings.defaultCommissionPercent),
+          client:
+            clientById.get(rawBooking.clientId) ??
+            buildFallbackClientForBooking(rawBooking),
+          review: null,
+        };
         const res = await dispatcher({
           notification: { ...item, bodyText: item.bodyText || item.previewText },
           booking: hydrated,
-          settings: snapshot.settings,
+          settings,
         });
 
         const attemptIso = new Date(nowMs).toISOString();
@@ -7826,4 +8271,222 @@ export async function fetchSupabaseClientLoyaltySummary(
   return PublicLoyaltySummarySchema.parse(
     computeClientLoyaltySummary(activeProgram, stamps, cleanClientId, rewardServiceName),
   );
+}
+
+export async function fetchSupabaseClientIdsByPhone(
+  phoneE164: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<string[]> {
+  const normalized = normalizePhoneE164(phoneE164);
+  if (!normalized) return [];
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const { data } = await supabase
+    .from('clients')
+    .select('id, phone_e164')
+    .in('phone_e164', phoneLookupVariants(normalized));
+  return (data ?? [])
+    .filter((row) => phonesMatchE164(row.phone_e164, normalized))
+    .map((row) => row.id);
+}
+
+export interface SupabaseOverdueWaitlistContext {
+  settings: SalonSettings;
+  overdue: WaitlistEntry[];
+  waiting: WaitlistEntry[];
+  services: Service[];
+  staff: StaffMember[];
+  activeBookings: Array<{
+    staffId: string;
+    status: Booking['status'];
+    occupiedStartAt: string;
+    occupiedEndAt: string;
+  }>;
+  clients: ClientProfile[];
+}
+
+export async function fetchSupabaseOverdueWaitlistContext(
+  nowIso: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<SupabaseOverdueWaitlistContext | null> {
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const overdueRes = await supabase
+    .from('waitlist_entries')
+    .select('*')
+    .eq('status', 'notified')
+    .lte('priority_offer_expires_at', nowIso);
+  const overdue = (overdueRes.data ?? []).map(mapWaitlistRow);
+  if (overdue.length === 0) {
+    return null;
+  }
+
+  const [settingsRes, waitingRes, servicesRes, staffRes, activeBookingsRes] =
+    await Promise.all([
+      supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+      supabase.from('waitlist_entries').select('*').eq('status', 'waiting'),
+      supabase.from('services').select('*'),
+      supabase.from('staff_members').select('*'),
+      supabase
+        .from('bookings')
+        .select('staff_id, status, occupied_start_at, occupied_end_at')
+        .in('status', ['pending_payment', 'pending_confirmation', 'confirmed'])
+        .gte('occupied_end_at', nowIso),
+    ]);
+
+  if (!settingsRes.data) {
+    throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+  }
+
+  const waiting = (waitingRes.data ?? []).map(mapWaitlistRow);
+  const waitingPhoneVariants = Array.from(
+    new Set(
+      waiting.flatMap((entry) => {
+        const normalized = normalizePhoneE164(entry.clientPhoneE164);
+        return normalized ? phoneLookupVariants(normalized) : [];
+      }),
+    ),
+  );
+  const clientsRes =
+    waitingPhoneVariants.length > 0
+      ? await supabase
+          .from('clients')
+          .select('*')
+          .in('phone_e164', waitingPhoneVariants)
+      : { data: [] as Tables['clients']['Row'][] };
+
+  return {
+    settings: mapSettingsRow(settingsRes.data),
+    overdue,
+    waiting,
+    services: (servicesRes.data ?? []).map(mapServiceRow),
+    staff: (staffRes.data ?? []).map((row) => mapStaffRow(row, [])),
+    activeBookings: (activeBookingsRes.data ?? []).map((row) => ({
+      staffId: row.staff_id,
+      status: row.status,
+      occupiedStartAt: row.occupied_start_at,
+      occupiedEndAt: row.occupied_end_at,
+    })),
+    clients: (clientsRes.data ?? []).map(mapClientRow),
+  };
+}
+
+export interface SupabaseTouchUpContext {
+  workflowId: string;
+  settings: SalonSettings;
+  candidates: BookingWithRelations[];
+  newerBookings: Array<{
+    id: string;
+    clientId: string;
+    status: Booking['status'];
+    startAt: string;
+  }>;
+}
+
+export async function fetchSupabaseTouchUpContext(
+  minEndIso: string,
+  maxEndIso: string,
+  clientOverride?: SupabaseClient<Database>,
+): Promise<SupabaseTouchUpContext | null> {
+  const supabase = clientOverride ?? createSupabaseAdminClient();
+  const workflowsRes = await supabase
+    .from('notification_workflows')
+    .select('*')
+    .eq('trigger_event', 'after_booking')
+    .eq('is_enabled', true);
+  const touchUpWorkflow = (workflowsRes.data ?? [])
+    .map(mapWorkflowRow)
+    .find((w) => w.offsetMinutes >= 1440);
+  if (!touchUpWorkflow) {
+    return null;
+  }
+
+  const candidatesRes = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('status', 'completed')
+    .is('touchup_invited_at', null)
+    .gte('end_at', minEndIso)
+    .lte('end_at', maxEndIso)
+    .order('end_at', { ascending: false });
+  const candidateRows = candidatesRes.data ?? [];
+  if (candidateRows.length === 0) {
+    return null;
+  }
+
+  const candidateBookingIds = candidateRows.map((row) => row.id);
+  const candidateClientIds = Array.from(new Set(candidateRows.map((row) => row.client_id)));
+  const candidateServiceIds = Array.from(new Set(candidateRows.map((row) => row.service_id)));
+  const candidateStaffIds = Array.from(new Set(candidateRows.map((row) => row.staff_id)));
+
+  const [
+    settingsRes,
+    newerRes,
+    addonsRes,
+    servicesRes,
+    staffRes,
+    staffServicesRes,
+    clientsRes,
+  ] = await Promise.all([
+    supabase.from('salon_settings').select('*').eq('id', 'default').maybeSingle(),
+    supabase
+      .from('bookings')
+      .select('id, client_id, status, start_at')
+      .in('client_id', candidateClientIds)
+      .gt('start_at', minEndIso),
+    supabase.from('booking_addons').select('*').in('booking_id', candidateBookingIds),
+    supabase.from('services').select('*').in('id', candidateServiceIds),
+    supabase.from('staff_members').select('*').in('id', candidateStaffIds),
+    supabase.from('staff_services').select('*').in('staff_id', candidateStaffIds),
+    supabase.from('clients').select('*').in('id', candidateClientIds),
+  ]);
+
+  if (!settingsRes.data) {
+    throw new PolicyError('SETTINGS_NOT_FOUND', 'Configuración del salón no encontrada.');
+  }
+
+  const settings = mapSettingsRow(settingsRes.data);
+  const addonRows = addonsRes.data ?? [];
+  const serviceById = new Map(
+    (servicesRes.data ?? []).map((row) => {
+      const mapped = mapServiceRow(row);
+      return [mapped.id, mapped] as const;
+    }),
+  );
+  const staffLinks = staffServicesRes.data ?? [];
+  const staffById = new Map(
+    (staffRes.data ?? []).map((row) => {
+      const mapped = mapStaffRow(row, staffLinks);
+      return [mapped.id, mapped] as const;
+    }),
+  );
+  const clientById = new Map(
+    (clientsRes.data ?? []).map((row) => {
+      const mapped = mapClientRow(row);
+      return [mapped.id, mapped] as const;
+    }),
+  );
+
+  const candidates: BookingWithRelations[] = candidateRows.map((row) => {
+    const mapped = mapBookingRow(row, addonRows);
+    return {
+      ...mapped,
+      service: serviceById.get(mapped.serviceId) ?? buildFallbackServiceForBooking(mapped),
+      staff:
+        staffById.get(mapped.staffId) ??
+        buildFallbackStaffForBooking(mapped, settings.defaultCommissionPercent),
+      client: clientById.get(mapped.clientId) ?? buildFallbackClientForBooking(mapped),
+      review: null,
+    };
+  });
+
+  return {
+    workflowId: touchUpWorkflow.id,
+    settings,
+    candidates,
+    newerBookings: (newerRes.data ?? []).map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      status: row.status,
+      startAt: row.start_at,
+    })),
+  };
 }

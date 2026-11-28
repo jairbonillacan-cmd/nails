@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { NextRequest, NextResponse } from 'next/server';
 import { constantTimeEqual } from '@/lib/auth/admin-session';
 import {
@@ -6,13 +7,37 @@ import {
 } from '@/lib/integrations/whatsapp-booking';
 import { processWhatsAppWebhookPayload } from '@/lib/integrations/whatsapp-processor';
 import { logWarn } from '@/lib/logger';
+import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
+const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
+
 export async function GET(request: NextRequest) {
+  const rate = checkRateLimit({
+    bucket: 'public:whatsapp-webhook-get',
+    key: getRequestIp(request),
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { code: 'RATE_LIMITED', error: 'Demasiadas solicitudes.' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rate.retryAfterSeconds),
+          'X-RateLimit-Remaining': '0',
+        },
+      },
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   if (searchParams.get('schema') === '1') {
-    return NextResponse.json(await buildWhatsAppFlowJsonSchema());
+    return NextResponse.json(await buildWhatsAppFlowJsonSchema(), {
+      headers: { 'X-RateLimit-Remaining': String(rate.remaining) },
+    });
   }
 
   const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
@@ -42,7 +67,23 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const contentLengthHeader = request.headers.get('content-length');
+  if (contentLengthHeader) {
+    const declaredBytes = Number(contentLengthHeader);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_WEBHOOK_BODY_BYTES) {
+      logWarn('webhook_whatsapp_payload_too_large', { declaredBytes });
+      return NextResponse.json({ error: 'Payload demasiado grande' }, { status: 413 });
+    }
+  }
+
   const rawBody = await request.text();
+  if (Buffer.byteLength(rawBody, 'utf8') > MAX_WEBHOOK_BODY_BYTES) {
+    logWarn('webhook_whatsapp_payload_too_large', {
+      actualBytes: Buffer.byteLength(rawBody, 'utf8'),
+    });
+    return NextResponse.json({ error: 'Payload demasiado grande' }, { status: 413 });
+  }
+
   const signature = request.headers.get('x-hub-signature-256');
 
   if (!(await verifyMetaWebhookSignatureAsync(rawBody, signature))) {

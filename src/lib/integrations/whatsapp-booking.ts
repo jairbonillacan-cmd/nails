@@ -85,9 +85,9 @@ export interface WhatsAppBookingActionInput {
 
 export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInput) {
   const repo = getRepository();
-  const db = await repo.getSnapshot();
+  const settings = await repo.getSalonSettings();
   const env = getRuntimeIntegrationStatus();
-  const tz = db.settings.timezone || 'America/Mexico_City';
+  const tz = settings.timezone || 'America/Mexico_City';
 
   let targetStartAt = input.startAt;
   let targetStaffId = input.staffId || null;
@@ -127,7 +127,7 @@ export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInp
 
     const manageUrl = `${env.appUrl}/cita/${booking.manageToken}`;
     const replyText = [
-      `¡Listo ${booking.client.fullName}! Tu cita en ${db.settings.name} quedó registrada (${booking.bookingCode}).`,
+      `¡Listo ${booking.client.fullName}! Tu cita en ${settings.name} quedó registrada (${booking.bookingCode}).`,
       `Servicio: ${booking.service.name}`,
       `Fecha: ${formatDateLongInTimezone(booking.startAt, tz)} · ${formatTimeInTimezone(booking.startAt, tz)}`,
       `Profesional: ${booking.staff.name}`,
@@ -161,7 +161,7 @@ export async function executeWhatsAppBookingFlow(input: WhatsAppBookingActionInp
 }
 
 export async function buildWhatsAppFlowJsonSchema() {
-  const db = await getRepository().getSnapshot();
+  const bootstrap = await getRepository().getPublicBootstrap();
   return {
     version: '6.0',
     data_api_version: '3.0',
@@ -173,14 +173,12 @@ export async function buildWhatsAppFlowJsonSchema() {
     screens: [
       {
         id: 'SELECT_SERVICE',
-        title: `Reservar en ${db.settings.name}`,
+        title: `Reservar en ${bootstrap.settings.name}`,
         data: {
-          services: db.services
-            .filter((s) => s.isActive && !s.isPrivate)
-            .map((s) => ({
-              id: s.id,
-              title: `${s.name} (${s.durationMinutes} min · $${(s.priceCents / 100).toFixed(0)})`,
-            })),
+          services: bootstrap.services.map((s) => ({
+            id: s.id,
+            title: `${s.name} (${s.durationMinutes} min · $${(s.priceCents / 100).toFixed(0)})`,
+          })),
         },
       },
       {

@@ -33,10 +33,12 @@ interface CitaRescheduleDialogProps {
   reason: string;
   days: DayAvailabilitySummary[];
   loadingSlots: boolean;
+  slotsError?: string | null;
   onOpenChange: (open: boolean) => void;
   onSelectChip: (option: string) => void;
   onChangeReason: (value: string) => void;
   onConfirmReschedule: (slot: AvailableSlot) => void;
+  onRetrySlots?: () => void;
 }
 
 export function CitaRescheduleDialog({
@@ -54,10 +56,12 @@ export function CitaRescheduleDialog({
   reason,
   days,
   loadingSlots,
+  slotsError = null,
   onOpenChange,
   onSelectChip,
   onChangeReason,
   onConfirmReschedule,
+  onRetrySlots,
 }: CitaRescheduleDialogProps) {
   const isPolicyError = errorCode === 'POLICY_WINDOW';
   const handleGuardOpenChange = (open: boolean) => {
@@ -227,6 +231,37 @@ export function CitaRescheduleDialog({
                     ))}
                   </Grid>
                 </VStack>
+              ) : slotsError ? (
+                <Banner
+                  collapsible={false}
+                  status="error"
+                  role="alert"
+                  title="No pudimos cargar los horarios disponibles"
+                  description={slotsError}
+                >
+                  <HStack gap={2} wrap="wrap" paddingBlockStart={2}>
+                    {onRetrySlots ? (
+                      <Button
+                        type="button"
+                        label="Reintentar"
+                        variant="primary"
+                        size="md"
+                        className="fx-press"
+                        onClick={onRetrySlots}
+                      />
+                    ) : null}
+                    <Button
+                      label="Escribir por WhatsApp"
+                      variant="secondary"
+                      size="md"
+                      className="fx-press"
+                      icon={<BrandIcon name="whatsapp" size={1.125} />}
+                      href={policyHelpWhatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  </HStack>
+                </Banner>
               ) : days.length === 0 ? (
                 <EmptyStateCard
                   title="Sin horarios cercanos libres"

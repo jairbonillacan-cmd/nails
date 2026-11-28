@@ -26,6 +26,7 @@ import {
 const ART_TAB = 'arte-y-acabados';
 
 interface LandingMenuProps {
+  salonName?: string;
   title?: string;
   bannerText?: string | null;
   categories: ServiceCategory[];
@@ -36,6 +37,7 @@ interface LandingMenuProps {
 }
 
 export function LandingMenu({
+  salonName = 'LAIKONA NAILS',
   title = 'El menú',
   bannerText = null,
   categories,
@@ -141,7 +143,7 @@ export function LandingMenu({
                       <img
                         className="lk-thumb"
                         {...landingPhoto(photoSrc, '(max-width: 47.5rem) 5.25rem, 7rem')}
-                        alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
+                        alt={`Ejemplo de ${service.name} en ${salonName}`}
                         width={112}
                         height={112}
                         loading="lazy"
@@ -149,7 +151,7 @@ export function LandingMenu({
                         style={{ background: 'var(--lk-tinte)' }}
                       />
                       <VStack gap={1} className="lk-service-card-body">
-                        <HStack justify="between" align="start" wrap="wrap" gap={1.5}>
+                        <HStack justify="between" align="center" wrap="wrap" gap={1.5}>
                           <Heading
                             level={3}
                             color="inherit"
@@ -230,6 +232,7 @@ export function LandingMenu({
 
       {activeService ? (
         <LandingServiceDialog
+          salonName={salonName}
           service={activeService}
           categoryName={activeServiceCategory}
           currency={currency}

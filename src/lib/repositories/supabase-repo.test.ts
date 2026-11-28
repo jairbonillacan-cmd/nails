@@ -12,7 +12,9 @@ import {
   fetchSupabaseBookingPaymentSplits,
   fetchSupabaseBookingStaffId,
   fetchSupabaseClientLoyaltySummary,
+  fetchSupabaseOverdueWaitlistContext,
   fetchSupabaseServicesByIds,
+  fetchSupabaseTouchUpContext,
 } from './supabase-repo';
 
 interface RecordedRequest {
@@ -82,6 +84,10 @@ function buildMockSupabase(options: {
   mediaAssetsRows?: Array<Database['public']['Tables']['media_assets']['Row']>;
   whatsappTemplatesRows?: Array<Database['public']['Tables']['whatsapp_templates']['Row']>;
   whatsappUsageRows?: Array<Database['public']['Tables']['whatsapp_monthly_usage']['Row']>;
+  workflowsRows?: Array<Database['public']['Tables']['notification_workflows']['Row']>;
+  scheduledNotificationsRows?: Array<
+    Database['public']['Tables']['scheduled_notifications']['Row']
+  >;
   webhookInsertStatus?: number;
 } = {}) {
   const requests: RecordedRequest[] = [];
@@ -108,6 +114,8 @@ function buildMockSupabase(options: {
   const mediaAssetsRows = options.mediaAssetsRows ?? [];
   const whatsappTemplatesRows = options.whatsappTemplatesRows ?? [];
   const whatsappUsageRows = options.whatsappUsageRows ?? [];
+  const workflowsRows = options.workflowsRows ?? [];
+  const scheduledNotificationsRows = [...(options.scheduledNotificationsRows ?? [])];
   const seenWebhookKeys = new Set<string>();
 
   const settingsRow: Database['public']['Tables']['salon_settings']['Row'] = {
@@ -455,11 +463,34 @@ function buildMockSupabase(options: {
             typeof w.priority_offer_expires_at === 'string' &&
             w.priority_offer_expires_at > gtIso,
         );
+      } else if (expFilter?.startsWith('lte.')) {
+        const lteIso = expFilter.slice(4);
+        filtered = filtered.filter(
+          (w) =>
+            typeof w.priority_offer_expires_at === 'string' &&
+            w.priority_offer_expires_at <= lteIso,
+        );
       }
       return jsonResponse(filtered);
     }
     if (table === 'booking_payments') {
-      return jsonResponse(bookingPaymentsRows);
+      let filtered = [...bookingPaymentsRows];
+      const providerFilter = url.searchParams.get('provider')?.replace(/^eq\./, '');
+      const paymentIdFilter = url.searchParams
+        .get('provider_payment_id')
+        ?.replace(/^eq\./, '');
+      const statusFilter = url.searchParams.get('status');
+      if (providerFilter) filtered = filtered.filter((p) => p.provider === providerFilter);
+      if (paymentIdFilter) {
+        filtered = filtered.filter((p) => p.provider_payment_id === paymentIdFilter);
+      }
+      if (statusFilter?.startsWith('eq.')) {
+        filtered = filtered.filter((p) => p.status === statusFilter.slice(3));
+      } else if (statusFilter?.startsWith('in.(') && statusFilter.endsWith(')')) {
+        const allowed = new Set(statusFilter.slice(4, -1).split(','));
+        filtered = filtered.filter((p) => allowed.has(p.status));
+      }
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'calendar_connections') {
       if ((method === 'POST' || method === 'PATCH') && rawBody && typeof rawBody === 'object') {
@@ -485,7 +516,16 @@ function buildMockSupabase(options: {
         const merged = { ...base, ...(rawBody as Record<string, unknown>) };
         return jsonResponse(wantsSingleObject ? merged : [merged], method === 'POST' ? 201 : 200);
       }
-      return jsonResponse(wantsSingleObject ? calendarConnectionsRows[0] ?? null : calendarConnectionsRows);
+      let filtered = [...calendarConnectionsRows];
+      const watchFilter = url.searchParams.get('watch_channel_id')?.replace(/^eq\./, '');
+      const connectedFilter = url.searchParams.get('is_connected');
+      if (watchFilter) {
+        filtered = filtered.filter((c) => c.watch_channel_id === watchFilter);
+      }
+      if (connectedFilter === 'eq.true') {
+        filtered = filtered.filter((c) => c.is_connected);
+      }
+      return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
     }
     if (table === 'clients') {
       const idParams = url.searchParams.getAll('id');
@@ -576,7 +616,7 @@ function buildMockSupabase(options: {
         return jsonResponse(null);
       }
       const idParam = url.searchParams.get('id');
-      const clientIdFilter = url.searchParams.get('client_id')?.replace(/^eq\./, '');
+      const clientIdParam = url.searchParams.get('client_id');
       const staffIdFilter = url.searchParams.get('staff_id')?.replace(/^eq\./, '');
       const statusParam = url.searchParams.get('status');
       const startFilters = url.searchParams.getAll('start_at');
@@ -590,7 +630,12 @@ function buildMockSupabase(options: {
         const ids = new Set(idParam.slice(4, -1).split(','));
         filtered = filtered.filter((b) => ids.has(b.id));
       }
-      if (clientIdFilter) filtered = filtered.filter((b) => b.client_id === clientIdFilter);
+      if (clientIdParam?.startsWith('eq.')) {
+        filtered = filtered.filter((b) => b.client_id === clientIdParam.slice(3));
+      } else if (clientIdParam?.startsWith('in.(') && clientIdParam.endsWith(')')) {
+        const ids = new Set(clientIdParam.slice(4, -1).split(','));
+        filtered = filtered.filter((b) => ids.has(b.client_id));
+      }
       if (staffIdFilter) filtered = filtered.filter((b) => b.staff_id === staffIdFilter);
       if (statusParam?.startsWith('eq.')) {
         const targetStatus = statusParam.slice(3);
@@ -598,6 +643,9 @@ function buildMockSupabase(options: {
       } else if (statusParam?.startsWith('neq.')) {
         const excludedStatus = statusParam.slice(4);
         filtered = filtered.filter((b) => b.status !== excludedStatus);
+      } else if (statusParam?.startsWith('in.(') && statusParam.endsWith(')')) {
+        const allowed = new Set(statusParam.slice(4, -1).split(','));
+        filtered = filtered.filter((b) => allowed.has(b.status));
       }
       if (gteStart) filtered = filtered.filter((b) => b.start_at >= gteStart);
       if (lteStart) filtered = filtered.filter((b) => b.start_at <= lteStart);
@@ -857,6 +905,34 @@ function buildMockSupabase(options: {
       if (idFilter) filtered = filtered.filter((r) => r.id === idFilter);
       if (purgedFilter === 'is.null') filtered = filtered.filter((r) => r.purged_at === null);
       return jsonResponse(wantsSingleObject ? filtered[0] ?? null : filtered);
+    }
+    if (table === 'notification_workflows') {
+      let filtered = [...workflowsRows];
+      const trigFilter = url.searchParams.get('trigger_event')?.replace(/^eq\./, '');
+      const enabledFilter = url.searchParams.get('is_enabled');
+      if (trigFilter) filtered = filtered.filter((w) => w.trigger_event === trigFilter);
+      if (enabledFilter === 'eq.true') filtered = filtered.filter((w) => w.is_enabled);
+      return jsonResponse(filtered);
+    }
+    if (table === 'scheduled_notifications') {
+      if (method === 'PATCH' && rawBody && typeof rawBody === 'object') {
+        const idFilter = url.searchParams.get('id')?.replace(/^eq\./, '');
+        const target = scheduledNotificationsRows.find((n) => n.id === idFilter);
+        if (target) Object.assign(target, rawBody as Record<string, unknown>);
+        return jsonResponse(target ? (wantsSingleObject ? target : [target]) : []);
+      }
+      let filtered = [...scheduledNotificationsRows];
+      const statusFilter = url.searchParams.get('status');
+      if (statusFilter?.startsWith('eq.')) {
+        const target = statusFilter.slice(3);
+        filtered = filtered.filter((n) => n.status === target);
+      } else if (statusFilter?.startsWith('in.(') && statusFilter.endsWith(')')) {
+        const allowed = new Set(statusFilter.slice(4, -1).split(','));
+        filtered = filtered.filter((n) => allowed.has(n.status));
+      }
+      const channelFilter = url.searchParams.get('channel')?.replace(/^eq\./, '');
+      if (channelFilter) filtered = filtered.filter((n) => n.channel === channelFilter);
+      return jsonResponse(filtered);
     }
     if (table === 'whatsapp_templates') {
       return jsonResponse(whatsappTemplatesRows);
@@ -3685,5 +3761,192 @@ describe('Supabase Repository Adapter & Outbox Dispatcher (C1 / A1 / A2 / A7 / M
     ).rejects.toThrow(SlotConflictError);
     const conflictReqs = mock.requests.slice(beforeConflict);
     expect(conflictReqs.some((r) => r.path === '/rest/v1/media_assets')).toBe(false);
+  });
+
+  it('Wave 4: keeps quickSearchAvailability, client portal, cron, webhook, and Google OAuth queries targeted well below 50 Workers subrequests', async () => {
+    const startAt = zonedDateTimeToUtc('2026-12-02', '10:00', TZ).toISOString();
+    const endAt = zonedDateTimeToUtc('2026-12-02', '11:00', TZ).toISOString();
+
+    const activeBooking: Database['public']['Tables']['bookings']['Row'] = {
+      id: BOOKING_ID,
+      booking_code: 'NL-W4001',
+      manage_token: 'tok-wave4-001',
+      idempotency_key: null,
+      service_id: SERVICE_ID,
+      staff_id: STAFF_ID,
+      client_id: CLIENT_ID,
+      start_at: startAt,
+      end_at: endAt,
+      occupied_start_at: startAt,
+      occupied_end_at: endAt,
+      occupied_range: `[${startAt},${endAt})`,
+      total_duration_minutes: 60,
+      subtotal_cents: 38000,
+      discount_cents: 0,
+      total_price_cents: 38000,
+      deposit_amount_cents: 20000,
+      coupon_code: null,
+      status: 'confirmed',
+      source: 'web',
+      client_notes: '',
+      internal_notes: '',
+      inspo_photo_url: null,
+      payment_proof_url: null,
+      google_event_id: null,
+      cancellation_reason: null,
+      rescheduled_from_id: null,
+      created_at: '2026-12-01T10:00:00.000Z',
+      updated_at: '2026-12-01T10:00:00.000Z',
+    };
+
+    const mock = buildMockSupabase({
+      bookingsRows: [activeBooking],
+      bookingPaymentsRows: [
+        {
+          id: 'pay-w4-1',
+          booking_id: BOOKING_ID,
+          provider: 'mercadopago',
+          amount_cents: 20000,
+          currency: 'MXN',
+          status: 'paid',
+          proof_url: null,
+          paid_at: '2026-12-01T12:00:00.000Z',
+          provider_payment_id: 'mp-999111',
+          checkout_url: null,
+          created_at: '2026-12-01T12:00:00.000Z',
+        },
+      ],
+      calendarConnectionsRows: [
+        {
+          id: 'cal-w4-1',
+          staff_id: STAFF_ID,
+          provider: 'google',
+          account_email: 'karla@laikonanails.mx',
+          access_token_encrypted: null,
+          refresh_token_encrypted: null,
+          token_expires_at: null,
+          destination_calendar_id: 'primary',
+          conflict_calendar_ids: ['primary'],
+          available_calendars: [],
+          external_busy_blocks: [],
+          watch_channel_id: 'ch-w4-active',
+          watch_resource_id: 'res-w4',
+          watch_expiration: '2026-12-10T00:00:00.000Z',
+          is_connected: true,
+          last_synced_at: '2026-12-01T12:00:00.000Z',
+          updated_at: '2026-12-01T12:00:00.000Z',
+        },
+      ],
+      workflowsRows: [
+        {
+          id: 'wf-24h',
+          name: 'Recordatorio 24h',
+          trigger_event: 'before_booking',
+          offset_minutes: 1440,
+          channels: ['whatsapp'],
+          subject_template: 'Tu cita mañana',
+          message_template: 'Hola {clientName}',
+          is_enabled: true,
+          updated_at: '2026-12-01T12:00:00.000Z',
+        },
+      ],
+    });
+    const repo = createSupabaseRepository(
+      createFixedClock('2026-12-01T13:00:00.000Z', 'wave4-supabase'),
+      mock.client,
+    );
+
+    const beforeQuick = mock.requests.length;
+    const quick = await repo.quickSearchAvailability({
+      serviceId: SERVICE_ID,
+      addonIds: [],
+      startDate: '2026-12-02',
+      days: 7,
+      limit: 6,
+    });
+    const quickReqs = mock.requests.slice(beforeQuick);
+    expect(quickReqs.length).toBeLessThanOrEqual(13);
+    expect(quick.service.id).toBe(SERVICE_ID);
+    expect(quickReqs.some((r) => r.path === '/rest/v1/clients')).toBe(false);
+    expect(quickReqs.some((r) => r.path === '/rest/v1/audit_logs')).toBe(false);
+
+    const beforePortalUnknown = mock.requests.length;
+    const unknownSnap = await repo.getClientPortalSnapshotByPhone('+522220009999');
+    expect(unknownSnap.clientId).toBeNull();
+    expect(mock.requests.slice(beforePortalUnknown).length).toBe(1);
+
+    const beforePortalKnown = mock.requests.length;
+    const knownSnap = await repo.getClientPortalSnapshotByPhone('+5215511223344');
+    expect(knownSnap.clientId).toBe(CLIENT_ID);
+    expect(knownSnap.bookings).toHaveLength(1);
+    expect(mock.requests.slice(beforePortalKnown).length).toBeLessThanOrEqual(8);
+
+    const beforeUpsert = mock.requests.length;
+    const upserted = await repo.upsertClientPortalProfileByPhone({
+      phoneE164: '+525511223344',
+      fullName: 'Sofía Actualizada',
+      email: 'sofia.w4@ejemplo.mx',
+      instagramHandle: 'sofia.w4',
+      birthday: '1997-08-15',
+    });
+    expect(upserted.client?.fullName).toBe('Sofía Actualizada');
+    expect(mock.requests.slice(beforeUpsert).length).toBeLessThanOrEqual(3);
+
+    const beforeWf = mock.requests.length;
+    expect(await repo.getNotificationWorkflows()).toHaveLength(1);
+    expect(mock.requests.slice(beforeWf).length).toBe(1);
+
+    const beforePay = mock.requests.length;
+    expect(await repo.findApprovedBookingPayment('mercadopago', 'mp-999111')).toEqual({
+      bookingId: BOOKING_ID,
+    });
+    expect(mock.requests.slice(beforePay).length).toBe(1);
+
+    const beforeCal = mock.requests.length;
+    const conn = await repo.getCalendarConnectionByWatchChannelId('ch-w4-active');
+    expect(conn?.staffId).toBe(STAFF_ID);
+    expect(mock.requests.slice(beforeCal).length).toBe(1);
+
+    const beforeStaff = mock.requests.length;
+    expect(await repo.staffMemberExists(STAFF_ID)).toBe(true);
+    expect(mock.requests.slice(beforeStaff).length).toBe(1);
+
+    const beforeWaEmpty = mock.requests.length;
+    expect(await repo.getWhatsAppContactContextByPhones([])).toEqual({
+      clients: [],
+      bookings: [],
+    });
+    expect(mock.requests.slice(beforeWaEmpty).length).toBe(0);
+
+    const beforeWaKnown = mock.requests.length;
+    const waCtx = await repo.getWhatsAppContactContextByPhones(['+525511223344']);
+    expect(waCtx.clients).toHaveLength(1);
+    expect(waCtx.bookings).toHaveLength(1);
+    expect(mock.requests.slice(beforeWaKnown).length).toBeLessThanOrEqual(2);
+
+    const beforeIdleCron = mock.requests.length;
+    const idleDue = await repo.processDueScheduledNotifications(async () => ({
+      status: 'sent',
+      providerMessageId: 'msg-1',
+      errorMessage: null,
+    }));
+    expect(idleDue.processed).toBe(0);
+    expect(mock.requests.slice(beforeIdleCron).length).toBe(1);
+
+    const beforeOverdue = mock.requests.length;
+    expect(
+      await fetchSupabaseOverdueWaitlistContext('2026-12-01T13:00:00.000Z', mock.client),
+    ).toBeNull();
+    expect(mock.requests.slice(beforeOverdue).length).toBe(1);
+
+    const beforeTouchUp = mock.requests.length;
+    expect(
+      await fetchSupabaseTouchUpContext(
+        '2026-11-06T13:00:00.000Z',
+        '2026-11-13T13:00:00.000Z',
+        mock.client,
+      ),
+    ).toBeNull();
+    expect(mock.requests.slice(beforeTouchUp).length).toBeLessThanOrEqual(2);
   });
 });

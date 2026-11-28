@@ -21,14 +21,25 @@ function buildFixture() {
 }
 
 describe('structured-data pure SEO builders', () => {
-  it('provides 6 truthful Spanish Puebla FAQs synchronized with salon settings', () => {
+  it('provides truthful Spanish Puebla FAQs synchronized with salon settings', () => {
+    const { settings } = buildFixture();
+    const seededFaqs = buildSalonFaqs(settings);
+
     expect(SALON_FAQS).toHaveLength(6);
-    expect(SALON_FAQS[0]?.answer).toContain('$200 MXN');
+    expect(SALON_FAQS[0]?.answer).not.toContain('$200');
+    expect(SALON_FAQS[0]?.answer).not.toContain('SPEI');
     expect(SALON_FAQS[1]?.answer).toContain('12 horas');
     expect(SALON_FAQS[2]?.answer).toContain('21 días');
     expect(SALON_FAQS[3]?.answer).toContain('Calle 25 Sur 1904');
     expect(SALON_FAQS[4]?.answer).toContain('Extras');
-    expect(SALON_FAQS[5]?.answer).toContain('50%');
+    expect(SALON_FAQS[5]?.answer).toContain('Mis citas');
+
+    expect(seededFaqs).toHaveLength(6);
+    expect(seededFaqs[0]?.answer).toContain('$200 MXN');
+    expect(seededFaqs[0]?.answer).toContain('link de tu cita');
+    expect(seededFaqs[0]?.answer).not.toContain('ahí mismo');
+    expect(seededFaqs[1]?.answer).toContain('12 horas');
+    expect(seededFaqs[2]?.answer).toContain('21 días');
 
     const customFaqs = buildSalonFaqs({
       name: 'LAIKONA NAILS',
@@ -37,17 +48,35 @@ describe('structured-data pure SEO builders', () => {
       minCancelHours: 24,
       address: 'Av. Juárez 2100, Col. La Paz, 72160 Puebla, Pue.',
       instagramHandle: 'laikona.puebla',
+      landingContent: { touchUpDays: 28 },
+      loyalty: {
+        isActive: true,
+        stampsRequired: 6,
+        rewardType: 'percent_discount',
+        discountPercent: 30,
+      },
     });
 
     expect(customFaqs).toHaveLength(6);
     expect(customFaqs[0]?.answer).toContain('$350 MXN');
     expect(customFaqs[0]?.answer).toContain('link de tu cita');
+    expect(customFaqs[0]?.answer).not.toContain('ahí mismo');
     expect(customFaqs[0]?.answer).not.toContain('DM');
     expect(customFaqs[1]?.answer).toContain('24 horas');
+    expect(customFaqs[2]?.answer).toContain('28 días');
     expect(customFaqs[3]?.answer).toContain('Av. Juárez 2100');
+    expect(customFaqs[5]?.answer).toContain('6');
+    expect(customFaqs[5]?.answer).toContain('30%');
 
-    const noDepositFaqs = buildSalonFaqs({ paymentMode: 'none', depositAmountCents: 0 });
+    const noDepositFaqs = buildSalonFaqs({
+      paymentMode: 'none',
+      depositAmountCents: 0,
+      loyalty: { isActive: false },
+    });
+    expect(noDepositFaqs).toHaveLength(5);
     expect(noDepositFaqs[0]?.answer).not.toContain('SPEI');
+    expect(noDepositFaqs[1]?.answer).not.toContain('anticipo');
+    expect(noDepositFaqs.some((item) => item.id === 'faq-sellos')).toBe(false);
   });
 
   it('builds complete home @graph with NailSalon, BeautySalon, WebSite, and 1:1 FAQPage', () => {

@@ -26,6 +26,7 @@ import { PublicShell } from '@/components/PublicShell';
 import { LANDING_ASSETS, servicePhoto } from '@/components/landing/landingContent';
 import {
   formatServicePrice,
+  hasConfiguredDeposit,
   normalizeInstagramHandle,
   resolveInstagramUrl,
 } from '@/components/booking/bookingHelpers';
@@ -108,8 +109,11 @@ export default async function LinksPage() {
     settings.whatsappNumber,
     `Hola ${settings.name}, vengo desde tu bio de Instagram y quiero agendar una cita.`,
   );
-  const depositCents = settings.depositAmountCents ?? 20000;
-  const depositLabel = `${formatCurrency(depositCents, settings.currency)} ${settings.currency}`;
+  const depositCents = settings.depositAmountCents ?? 0;
+  const hasDeposit = hasConfiguredDeposit(settings, depositCents) && depositCents > 0;
+  const depositLabel = hasDeposit
+    ? `${formatCurrency(depositCents, settings.currency)} ${settings.currency}`
+    : null;
   const staffSummary = formatSpanishList(activeStaff.map((member) => member.name));
 
   return (
@@ -174,11 +178,13 @@ export default async function LinksPage() {
                 size="md"
                 icon={<Clock size={14} aria-hidden="true" />}
               />
-              <Token
-                label={`Anticipo ${depositLabel}`}
-                size="md"
-                icon={<Sparkles size={14} aria-hidden="true" />}
-              />
+              {depositLabel ? (
+                <Token
+                  label={`Anticipo ${depositLabel}`}
+                  size="md"
+                  icon={<Sparkles size={14} aria-hidden="true" />}
+                />
+              ) : null}
             </HStack>
 
             <VStack gap={3} width="100%" className="fx-stagger">
@@ -267,7 +273,7 @@ export default async function LinksPage() {
           </VStack>
 
           {featuredServices.length > 0 ? (
-            <VStack gap={3} width="100%" className="ck-panel fx-fade-up">
+            <VStack gap={3} width="100%" className="ck-panel ck-links-services fx-fade-up">
               <VStack gap={0.5} align="center">
                 <Heading level={2} justify="center" className="lk-serif ck-h3">
                   Reserva directo por servicio

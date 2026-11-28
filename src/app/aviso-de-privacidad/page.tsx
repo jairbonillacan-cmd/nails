@@ -150,6 +150,9 @@ export default async function AvisoDePrivacidadPage() {
             <a className="ck-anchor-pill" href="#finalidades">
               3. Finalidades
             </a>
+            <a className="ck-anchor-pill" href="#transferencias">
+              4. Transferencias
+            </a>
             <a className="ck-anchor-pill" href="#arco">
               5. Derechos ARCO
             </a>
@@ -250,7 +253,7 @@ export default async function AvisoDePrivacidadPage() {
           </VStack>
 
           <VStack gap={2}>
-            <Heading level={2} className="lk-serif ck-h3">
+            <Heading level={2} id="transferencias" className="lk-serif ck-h3">
               4. Transferencias limitadas de datos
             </Heading>
             <Text as="p" type="body" textWrap="pretty">

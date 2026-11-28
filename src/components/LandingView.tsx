@@ -23,7 +23,11 @@ import {
 import { useRevealOnScroll } from '@/lib/hooks/useRevealOnScroll';
 import { JsonLdScript } from './seo/JsonLdScript';
 import { useSalonAppearance } from './SalonThemeProvider';
-import { normalizeInstagramHandle, resolveInstagramUrl } from './booking/bookingHelpers';
+import {
+  hasConfiguredDeposit,
+  normalizeInstagramHandle,
+  resolveInstagramUrl,
+} from './booking/bookingHelpers';
 import { LandingNav } from './landing/LandingNav';
 import { LandingMenu } from './landing/LandingMenu';
 import { LandingFooter } from './landing/LandingFooter';
@@ -88,8 +92,8 @@ export function LandingView({
   );
   const instagramHandle = normalizeInstagramHandle(settings.instagramHandle);
   const instagramUrl = resolveInstagramUrl(settings);
-  const depositCents = settings.depositAmountCents ?? 20000;
-  const hasDeposit = settings.paymentMode !== 'none' && depositCents > 0;
+  const depositCents = settings.depositAmountCents ?? 0;
+  const hasDeposit = hasConfiguredDeposit(settings, depositCents) && depositCents > 0;
   const depositLabel = hasDeposit ? formatCurrency(depositCents, settings.currency) : null;
   const rescheduleHours = settings.minRescheduleHours || 12;
   const autoMarquee = [
@@ -148,15 +152,15 @@ export function LandingView({
           />
           <VStack className="lk-hero-scrim" aria-hidden="true" />
           <VStack gap={5} className="lk-hero-content">
-            <Heading level={1} id="hero-t" color="inherit" className="lk-serif lk-h1 lk-intro">
+            <Heading level={1} id="hero-t" color="inherit" className="lk-serif lk-h1">
               {landing.heroTitle}
             </Heading>
-            <VStack className="lk-hero-sub lk-intro-2" style={{ maxWidth: '27rem' }}>
+            <VStack className="lk-hero-sub" style={{ maxWidth: '27rem' }}>
               <Text type="large" color="inherit" textWrap="pretty">
                 {landing.heroSubtitle}
               </Text>
             </VStack>
-            <HStack gap={3} wrap="wrap" className="lk-hero-actions lk-intro-3">
+            <HStack gap={3} wrap="wrap" className="lk-hero-actions">
               <Button
                 label={landing.heroPrimaryCta}
                 variant="primary"
@@ -178,7 +182,7 @@ export function LandingView({
               sections.showReviews ? (
                 <a
                   href="#resenas"
-                  className="lk-hero-sub lk-intro-3"
+                  className="lk-hero-sub"
                   style={{
                     color: 'inherit',
                     textDecoration: 'none',
@@ -197,7 +201,7 @@ export function LandingView({
                   </HStack>
                 </a>
               ) : (
-                <HStack gap={2} align="center" className="lk-hero-sub lk-intro-3">
+                <HStack gap={2} align="center" className="lk-hero-sub">
                   <Text color="inherit" className="lk-stars" aria-hidden="true">★★★★★</Text>
                   <Text color="inherit" hasTabularNumbers>
                     {ratingLabel} en Google · {reviewsSummary.count}{' '}
@@ -212,6 +216,7 @@ export function LandingView({
 
       {sections.showMenu ? (
         <LandingMenu
+          salonName={settings.name}
           title={landing.menuTitle}
           bannerText={landing.menuBannerText}
           categories={categories}
@@ -224,6 +229,7 @@ export function LandingView({
 
       {sections.showCreations ? (
         <LandingCreations
+          salonName={settings.name}
           title={landing.creationsTitle}
           subtitle={landing.creationsSubtitle}
           customGallery={gallery}
@@ -241,6 +247,7 @@ export function LandingView({
           reviews={reviews}
           summary={reviewsSummary}
           reviewUrl={reviewUrl}
+          timezone={settings.timezone || 'America/Mexico_City'}
         />
       ) : null}
 
@@ -256,6 +263,7 @@ export function LandingView({
 
       {sections.showConnect ? (
         <LandingConnect
+          salonName={settings.name}
           title={landing.connectTitle}
           subtitle={landing.connectSubtitle}
           instagramUrl={instagramUrl}

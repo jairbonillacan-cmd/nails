@@ -42,8 +42,7 @@ export async function POST(request: NextRequest) {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     const env = getRuntimeIntegrationStatus();
-    const snapshot = await getRepository().getSnapshot();
-    const settings = snapshot.settings;
+    const settings = await getRepository().getSalonSettings();
 
     const recipientEmail =
       settings.retentionNoticeEmail?.trim() ||

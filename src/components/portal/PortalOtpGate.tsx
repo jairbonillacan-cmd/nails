@@ -11,8 +11,11 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { ShieldCheck } from 'lucide-react';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { useClientOtpFlow } from '@/lib/hooks/useClientOtpFlow';
+import { formatMxPhoneDisplay } from '../booking/bookingHelpers';
 
 interface PortalOtpGateProps {
+  salonName: string;
   showDemoHint: boolean;
   infoMessage: string | null;
   onDismissInfo: () => void;
@@ -21,23 +24,27 @@ interface PortalOtpGateProps {
 }
 
 export function PortalOtpGate({
+  salonName,
   showDemoHint,
   infoMessage,
   onDismissInfo,
   onSetInfo,
   onLoadSnapshot,
 }: PortalOtpGateProps) {
-  const [authStep, setAuthStep] = useState<'phone' | 'code'>('phone');
-  const [phoneInput, setPhoneInput] = useState('');
-  const [verifiedPhoneE164, setVerifiedPhoneE164] = useState('');
-  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [otpChannel, setOtpChannel] = useState<'whatsapp' | 'sms' | 'email'>('whatsapp');
-  const [demoCode, setDemoCode] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
+  const otp = useClientOtpFlow('');
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const digitRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const otpCode = otpDigits.join('');
+
+  const busy = otp.isBusy || loadingSnapshot;
+  const errorMessage = snapshotError ?? otp.error;
+  const otpDigits = Array.from({ length: 6 }, (_, index) => otp.code[index] ?? '');
+  const formattedSentPhone = formatMxPhoneDisplay(otp.sentToPhone || otp.phone);
+
+  const clearErrors = () => {
+    setSnapshotError(null);
+    otp.clearError();
+  };
 
   const focusDigit = (index: number) => {
     const target = digitRefs.current[index];
@@ -49,19 +56,20 @@ export function PortalOtpGate({
 
   const handleDigitChange = (index: number, raw: string) => {
     const onlyDigits = raw.replace(/\D/g, '');
+    setSnapshotError(null);
     if (onlyDigits.length > 1) {
       const next = [...otpDigits];
       for (let i = 0; i < 6; i += 1) {
         const ch = onlyDigits[i];
         if (ch !== undefined) next[i] = ch;
       }
-      setOtpDigits(next);
+      otp.setCode(next.join(''));
       focusDigit(Math.min(onlyDigits.length, 5));
       return;
     }
     const next = [...otpDigits];
     next[index] = onlyDigits;
-    setOtpDigits(next);
+    otp.setCode(next.join(''));
     if (onlyDigits && index < 5) {
       focusDigit(index + 1);
     }
@@ -83,115 +91,45 @@ export function PortalOtpGate({
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
     e.preventDefault();
-    const next = ['', '', '', '', '', ''];
-    for (let i = 0; i < pasted.length; i += 1) {
-      next[i] = pasted[i] ?? '';
-    }
-    setOtpDigits(next);
+    setSnapshotError(null);
+    otp.setCode(pasted);
     focusDigit(Math.min(pasted.length, 5));
   };
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    setErrorMessage(null);
+    setSnapshotError(null);
     onSetInfo(null);
-    if (phoneInput.replace(/\D/g, '').length < 10) {
-      setErrorMessage('Escribe tu número de WhatsApp a 10 dígitos.');
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const res = await fetch('/api/client-portal/otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'request', phone: phoneInput }),
-      });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        phoneE164?: string;
-        channel?: 'whatsapp' | 'sms' | 'email';
-        demoCode?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.ok) {
-        setErrorMessage(data.error || 'No pudimos enviar tu código. Intenta de nuevo.');
-        return;
-      }
-      const nextChannel = data.channel ?? 'whatsapp';
-      setVerifiedPhoneE164(data.phoneE164 || phoneInput);
-      setOtpChannel(nextChannel);
-      setDemoCode(data.demoCode ?? null);
-      setOtpDigits(['', '', '', '', '', '']);
-      setAuthStep('code');
-      onSetInfo(
-        nextChannel === 'email'
-          ? 'Te enviamos un código de 6 dígitos al correo registrado con tu número (válido 5 minutos).'
-          : nextChannel === 'sms'
-            ? 'Te enviamos un código de 6 dígitos por SMS (válido 5 minutos).'
-            : 'Te enviamos un código de 6 dígitos por WhatsApp (válido 5 minutos).',
-      );
-    } catch {
-      setErrorMessage('Error de conexión al enviar el código. Revisa tu internet.');
-    } finally {
-      setBusy(false);
-    }
+    const result = await otp.requestCode();
+    if (!result.ok) return;
+    onSetInfo(
+      result.channel === 'email'
+        ? 'Te enviamos un código de 6 dígitos al correo registrado con tu número (válido 5 minutos).'
+        : result.channel === 'sms'
+          ? 'Te enviamos un código de 6 dígitos por SMS (válido 5 minutos).'
+          : 'Te enviamos un código de 6 dígitos por WhatsApp (válido 5 minutos).',
+    );
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    setErrorMessage(null);
+    setSnapshotError(null);
     onSetInfo(null);
-    if (otpCode.length !== 6) {
-      setErrorMessage('Ingresa los 6 dígitos de tu código de verificación.');
-      return;
-    }
-
-    setBusy(true);
+    const verified = await otp.verifyCode();
+    if (!verified) return;
+    setLoadingSnapshot(true);
     try {
-      const res = await fetch('/api/client-portal/otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'verify',
-          phone: verifiedPhoneE164 || phoneInput,
-          code: otpCode,
-        }),
-      });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        attemptsRemaining?: number;
-      };
-      if (!res.ok || !data.ok) {
-        const extra =
-          typeof data.attemptsRemaining === 'number' && data.attemptsRemaining > 0
-            ? ` Te quedan ${data.attemptsRemaining} intento(s).`
-            : '';
-        setErrorMessage(`${data.error || 'Código incorrecto.'}${extra}`);
-        return;
-      }
-
       const loaded = await onLoadSnapshot();
       if (!loaded) {
-        setErrorMessage('Sesión iniciada, pero no pudimos cargar tus citas. Recarga la página.');
+        setSnapshotError('Sesión iniciada, pero no pudimos cargar tus citas. Recarga la página.');
         return;
       }
-      setDemoCode(null);
-      setOtpDigits(['', '', '', '', '', '']);
-    } catch {
-      setErrorMessage('Error de conexión al verificar el código.');
+      otp.setCode('');
     } finally {
-      setBusy(false);
+      setLoadingSnapshot(false);
     }
-  };
-
-  const handleFillDemoCode = () => {
-    if (!demoCode || demoCode.length !== 6) return;
-    setOtpDigits(demoCode.split(''));
-    setErrorMessage(null);
   };
 
   return (
@@ -199,13 +137,13 @@ export function PortalOtpGate({
       <SurfaceCard
         id="pt-login-title"
         headingLevel={2}
-        title={authStep === 'phone' ? 'Accede con tu WhatsApp' : 'Ingresa tu código'}
+        title={otp.step === 'phone' ? 'Accede con tu WhatsApp' : 'Ingresa tu código'}
         subtitle={
-          authStep === 'phone'
+          otp.step === 'phone'
             ? 'Sin contraseñas. Te mandamos un código temporal de 6 dígitos para proteger tu historial.'
-            : otpChannel === 'email'
+            : otp.channel === 'email'
               ? 'Enviamos un código de 6 dígitos al correo asociado a tu número.'
-              : `Enviamos un código de 6 dígitos al ${verifiedPhoneE164}.`
+              : `Enviamos un código de 6 dígitos al +52 ${formattedSentPhone}.`
         }
         icon={<ShieldCheck size={20} aria-hidden="true" className="lk-cereza-text" />}
         padded
@@ -222,14 +160,14 @@ export function PortalOtpGate({
             <Text
               type="supporting"
               className="pt-step"
-              data-state={authStep === 'phone' ? 'active' : 'done'}
+              data-state={otp.step === 'phone' ? 'active' : 'done'}
             >
               01 · Tu WhatsApp
             </Text>
             <Text
               type="supporting"
               className="pt-step"
-              data-state={authStep === 'code' ? 'active' : 'pending'}
+              data-state={otp.step === 'code' ? 'active' : 'pending'}
             >
               02 · Código de 6 dígitos
             </Text>
@@ -242,7 +180,8 @@ export function PortalOtpGate({
               title="No pudimos verificar"
               description={errorMessage}
               isDismissable
-              onDismiss={() => setErrorMessage(null)}
+              dismissLabel="Cerrar aviso"
+              onDismiss={clearErrors}
             />
           ) : null}
 
@@ -252,11 +191,12 @@ export function PortalOtpGate({
               role="status"
               title={infoMessage}
               isDismissable
+              dismissLabel="Cerrar aviso"
               onDismiss={onDismissInfo}
             />
           ) : null}
 
-          {authStep === 'phone' ? (
+          {otp.step === 'phone' ? (
             <form onSubmit={(e) => void handleRequestOtp(e)} noValidate>
               <VStack gap={4}>
                 <TextInput
@@ -267,11 +207,12 @@ export function PortalOtpGate({
                   size="lg"
                   placeholder="222 412 3987"
                   startIcon={<Text weight="semibold">+52</Text>}
-                  value={phoneInput}
+                  value={otp.phone}
                   onChange={(nextValue) => {
-                    setPhoneInput(nextValue);
-                    if (errorMessage) setErrorMessage(null);
+                    setSnapshotError(null);
+                    otp.setPhone(formatMxPhoneDisplay(nextValue));
                   }}
+                  isDisabled={busy}
                   isRequired
                   description={
                     showDemoHint
@@ -297,9 +238,10 @@ export function PortalOtpGate({
                       size="md"
                       width="100%"
                       className="fx-press"
+                      isDisabled={busy}
                       onClick={() => {
-                        setPhoneInput('222 412 3987');
-                        setErrorMessage(null);
+                        setSnapshotError(null);
+                        otp.setPhone('222 412 3987');
                       }}
                     />
                   ) : null}
@@ -309,11 +251,11 @@ export function PortalOtpGate({
           ) : (
             <form onSubmit={(e) => void handleVerifyOtp(e)} noValidate>
               <VStack gap={4}>
-                {demoCode ? (
+                {otp.demoCode ? (
                   <VStack gap={2}>
                     <Banner
                       status="info"
-                      title={`Código de prueba local: ${demoCode}`}
+                      title={`Código de prueba local: ${otp.demoCode}`}
                       description="Visible solo en entorno de demostración sin WhatsApp Cloud."
                     />
                     <HStack>
@@ -323,7 +265,11 @@ export function PortalOtpGate({
                         variant="secondary"
                         size="md"
                         className="fx-press"
-                        onClick={handleFillDemoCode}
+                        isDisabled={busy}
+                        onClick={() => {
+                          setSnapshotError(null);
+                          otp.fillDemoCode();
+                        }}
                       />
                     </HStack>
                   </VStack>
@@ -345,6 +291,7 @@ export function PortalOtpGate({
                         autoComplete={index === 0 ? 'one-time-code' : 'off'}
                         maxLength={6}
                         aria-label={`Dígito ${index + 1} de 6`}
+                        disabled={busy}
                         value={digit}
                         onChange={(e) => handleDigitChange(index, e.target.value)}
                         onKeyDown={(e) => handleDigitKeyDown(index, e)}
@@ -361,7 +308,7 @@ export function PortalOtpGate({
                   size="lg"
                   width="100%"
                   isLoading={busy}
-                  isDisabled={otpCode.length !== 6}
+                  isDisabled={otp.code.length !== 6 || busy}
                   className="fx-press"
                 />
 
@@ -372,10 +319,11 @@ export function PortalOtpGate({
                     variant="ghost"
                     size="md"
                     className="fx-press"
+                    isDisabled={busy}
                     onClick={() => {
-                      setAuthStep('phone');
-                      setErrorMessage(null);
-                      setDemoCode(null);
+                      setSnapshotError(null);
+                      onSetInfo(null);
+                      otp.changePhone();
                     }}
                   />
                   <Button
@@ -397,7 +345,7 @@ export function PortalOtpGate({
       <VStack gap={2} align="center">
         <HStack justify="center" align="center" gap={2} wrap="wrap">
           <Text type="supporting" color="secondary">
-            ¿Primera vez en LAIKONA NAILS?
+            ¿Primera vez en {salonName}?
           </Text>
           <Button
             label="Agendar mi primera cita"
@@ -411,7 +359,7 @@ export function PortalOtpGate({
         <Button
           label="Tus datos están protegidos · Aviso de privacidad"
           variant="ghost"
-          size="sm"
+          size="md"
           href="/aviso-de-privacidad"
         />
       </VStack>

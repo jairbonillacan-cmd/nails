@@ -2,22 +2,37 @@
 
 import { useState } from 'react';
 import { ClientPortalOtpResponseSchema, type ClientPortalOtpResponse } from '@/lib/contracts';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 
 type OtpStep = 'phone' | 'code';
 type OtpChannel = NonNullable<ClientPortalOtpResponse['channel']>;
 
+type RequestOtpResult =
+  | { ok: true; channel: OtpChannel; phoneE164: string }
+  | { ok: false };
+
 const OTP_ENDPOINT = '/api/client-portal/otp';
 
-async function postOtp(body: Record<string, string>): Promise<{ ok: boolean; data: ClientPortalOtpResponse }> {
-  const res = await fetch(OTP_ENDPOINT, {
+async function postOtp(
+  body: Record<string, string>,
+): Promise<{ ok: boolean; status: number; data: ClientPortalOtpResponse; error?: string }> {
+  const res = await fetchJsonWithTimeout<unknown>(OTP_ENDPOINT, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const parsed = ClientPortalOtpResponseSchema.safeParse(await res.json().catch(() => ({})));
+  const parsed = ClientPortalOtpResponseSchema.safeParse(res.data ?? {});
   const data = parsed.success ? parsed.data : {};
-  return { ok: res.ok && data.ok === true, data };
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      data,
+      error: res.status === 429 ? res.error : (data.error || res.error),
+    };
+  }
+  return { ok: data.ok === true, status: res.status, data };
 }
 
 function sanitizeOtpCode(raw: string): string {
@@ -34,27 +49,28 @@ export function useClientOtpFlow(initialPhone: string) {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const requestCode = async (): Promise<void> => {
-    if (isBusy) return;
+  const requestCode = async (): Promise<RequestOtpResult> => {
+    if (isBusy) return { ok: false };
     setError(null);
     if (phone.replace(/\D/g, '').length < 10) {
       setError('Escribe tu WhatsApp a 10 dígitos.');
-      return;
+      return { ok: false };
     }
     setIsBusy(true);
     try {
-      const { ok, data } = await postOtp({ action: 'request', phone });
-      if (!ok) {
-        setError(data.error || 'No pudimos mandar tu código. Intenta de nuevo.');
-        return;
+      const res = await postOtp({ action: 'request', phone });
+      if (!res.ok) {
+        setError(res.error || res.data.error || 'No pudimos mandar tu código. Intenta de nuevo.');
+        return { ok: false };
       }
-      setSentToPhone(data.phoneE164 || phone);
-      setChannel(data.channel ?? 'whatsapp');
-      setDemoCode(data.demoCode ?? null);
+      const nextPhone = res.data.phoneE164 || phone;
+      const nextChannel = res.data.channel ?? 'whatsapp';
+      setSentToPhone(nextPhone);
+      setChannel(nextChannel);
+      setDemoCode(res.data.demoCode ?? null);
       setCode('');
       setStep('code');
-    } catch {
-      setError('Sin conexión. Revisa tu internet e intenta de nuevo.');
+      return { ok: true, channel: nextChannel, phoneE164: nextPhone };
     } finally {
       setIsBusy(false);
     }
@@ -69,20 +85,17 @@ export function useClientOtpFlow(initialPhone: string) {
     }
     setIsBusy(true);
     try {
-      const { ok, data } = await postOtp({ action: 'verify', phone: sentToPhone || phone, code });
-      if (!ok) {
+      const res = await postOtp({ action: 'verify', phone: sentToPhone || phone, code });
+      if (!res.ok) {
         const remaining =
-          typeof data.attemptsRemaining === 'number' && data.attemptsRemaining > 0
-            ? ` Te quedan ${data.attemptsRemaining} intentos.`
+          typeof res.data.attemptsRemaining === 'number' && res.data.attemptsRemaining > 0
+            ? ` Te quedan ${res.data.attemptsRemaining} intentos.`
             : '';
-        setError(`${data.error || 'Código incorrecto.'}${remaining}`);
+        setError(`${res.error || res.data.error || 'Código incorrecto.'}${remaining}`);
         return false;
       }
       setDemoCode(null);
       return true;
-    } catch {
-      setError('Sin conexión. Revisa tu internet e intenta de nuevo.');
-      return false;
     } finally {
       setIsBusy(false);
     }
@@ -105,8 +118,12 @@ export function useClientOtpFlow(initialPhone: string) {
       setCode(sanitizeOtpCode(value));
       setError(null);
     },
+    clearError: () => setError(null),
     fillDemoCode: () => {
-      if (demoCode) setCode(demoCode);
+      if (demoCode) {
+        setCode(demoCode);
+        setError(null);
+      }
     },
     changePhone: () => {
       setStep('phone');

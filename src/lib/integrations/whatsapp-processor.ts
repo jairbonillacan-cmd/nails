@@ -309,12 +309,39 @@ export async function processWhatsAppWebhookPayload(
     };
   }
 
-  const snapshot = await getRepository().getSnapshot();
-  const tz = snapshot.settings.timezone || 'America/Mexico_City';
+  const payloadPhones: string[] = [];
+  for (const entry of parsedBody.data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value;
+      if (!value) continue;
+      const echoes = [
+        ...(value.message_echoes ?? []),
+        ...(value.smb_message_echoes ?? []),
+        ...(change.field === 'smb_message_echoes' ? (value.messages ?? []) : []),
+      ];
+      for (const echo of echoes) {
+        const recipientPhone = canonicalizeMetaPhone(echo.to);
+        if (recipientPhone) payloadPhones.push(recipientPhone);
+      }
+      if (change.field !== 'smb_message_echoes') {
+        for (const msg of value.messages ?? []) {
+          const senderPhone = canonicalizeMetaPhone(msg.from);
+          if (senderPhone) payloadPhones.push(senderPhone);
+        }
+      }
+    }
+  }
+
+  const repo = getRepository();
+  const [settings, contactContext] = await Promise.all([
+    repo.getSalonSettings(),
+    repo.getWhatsAppContactContextByPhones(payloadPhones),
+  ]);
+  const tz = settings.timezone || 'America/Mexico_City';
   const monthKey = getWhatsAppMonthKey(new Date(), tz);
   const env = getRuntimeIntegrationStatus();
-  const clients = snapshot.clients ?? [];
-  const bookings = snapshot.bookings ?? [];
+  const clients = contactContext.clients;
+  const bookings = contactContext.bookings;
 
   const findMatchingClient = (phoneE164: string) =>
     clients.find((c) => phonesMatchE164(c.phoneE164, phoneE164)) ?? null;
@@ -457,7 +484,7 @@ export async function processWhatsAppWebhookPayload(
       });
       if (confirmed) {
         attendanceConfirmed += 1;
-        const replyText = `¡Perfecto ${confirmed.client.fullName}! Confirmamos tu asistencia para ${confirmed.service.name} (${confirmed.bookingCode}). Te esperamos en ${snapshot.settings.name}.`;
+        const replyText = `¡Perfecto ${confirmed.client.fullName}! Confirmamos tu asistencia para ${confirmed.service.name} (${confirmed.bookingCode}). Te esperamos en ${settings.name}.`;
         await dispatchAndRecordBotReply({
           phoneE164: params.phoneE164,
           contactName: confirmed.client.fullName,
@@ -495,7 +522,7 @@ export async function processWhatsAppWebhookPayload(
       return;
     }
 
-    const minCancelHours = snapshot.settings.minCancelHours ?? 12;
+    const minCancelHours = settings.minCancelHours ?? 12;
     const replyText = `Para cuidar tu anticipo y aplicar nuestra política de cancelación (${minCancelHours} h de anticipación), realiza la cancelación de tu cita ${targetBooking.bookingCode} directamente desde tu enlace personal: ${manageUrl}?action=cancel`;
     await dispatchAndRecordBotReply({
       phoneE164: params.phoneE164,

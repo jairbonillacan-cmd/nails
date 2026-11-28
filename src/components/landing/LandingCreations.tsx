@@ -24,6 +24,7 @@ const LandingCreationLightbox = dynamic(
 );
 
 interface LandingCreationsProps {
+  salonName?: string;
   title?: string;
   subtitle?: string;
   customGallery?: PublicGalleryItemDTO[];
@@ -34,6 +35,7 @@ interface LandingCreationsProps {
 }
 
 export function LandingCreations({
+  salonName = 'LAIKONA NAILS',
   title = 'Algunas de nuestras creaciones',
   subtitle = 'Del french minimal al 3D con charms. Toca cualquier set para apartarlo.',
   customGallery = [],
@@ -117,7 +119,7 @@ export function LandingCreations({
             const tile = galleryTileClass(index);
             const isExtra = index >= GALLERY_INITIAL_COUNT;
             const motion = isExtra ? 'fx-fade-up' : 'lk-pop';
-            const altText = `Set de uñas ${creation.title} (${creation.styleTag}) en LAIKONA NAILS Puebla`;
+            const altText = `Set de uñas ${creation.title} (${creation.styleTag}) en ${salonName}`;
             return (
               <li
                 key={`${creation.src}-${index}`}
@@ -194,6 +196,7 @@ export function LandingCreations({
 
       {selectedIndex !== null ? (
         <LandingCreationLightbox
+          salonName={salonName}
           creations={creations}
           activeIndex={selectedIndex}
           services={services}

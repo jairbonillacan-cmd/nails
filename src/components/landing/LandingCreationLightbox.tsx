@@ -13,6 +13,7 @@ import { useGalleryLightbox } from '@/lib/hooks/useGalleryLightbox';
 import { landingPhoto, type LandingCreation } from './landingContent';
 
 interface LandingCreationLightboxProps {
+  salonName?: string;
   creations: readonly LandingCreation[];
   activeIndex: number;
   services: readonly PublicServiceDTO[];
@@ -20,6 +21,7 @@ interface LandingCreationLightboxProps {
 }
 
 export function LandingCreationLightbox({
+  salonName = 'LAIKONA NAILS',
   creations,
   activeIndex,
   services,
@@ -95,7 +97,7 @@ export function LandingCreationLightbox({
             <img
               key={activeCreation.src}
               {...landingPhoto(activeCreation.src)}
-              alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en LAIKONA NAILS Puebla`}
+              alt={`Set de uñas ${activeCreation.title} (${activeCreation.styleTag}) en ${salonName}`}
               width={activeCreation.width}
               height={activeCreation.height}
               loading="eager"

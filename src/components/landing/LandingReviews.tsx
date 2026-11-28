@@ -6,11 +6,24 @@ import { Link } from '@astryxdesign/core/Link';
 import type { PublicReviewDTO } from '@/lib/public-dto';
 import { SectionHeading } from './LandingParts';
 
-const REVIEW_DATE = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' });
+const DEFAULT_TIMEZONE = 'America/Mexico_City';
 
-function formatReviewDate(iso: string): string {
+function formatReviewDate(iso: string, timeZone: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? '' : REVIEW_DATE.format(date);
+  if (Number.isNaN(date.getTime())) return '';
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      month: 'long',
+      year: 'numeric',
+      timeZone,
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('es-MX', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: DEFAULT_TIMEZONE,
+    }).format(date);
+  }
 }
 
 interface LandingReviewsProps {
@@ -19,6 +32,7 @@ interface LandingReviewsProps {
   reviews: PublicReviewDTO[];
   summary: { count: number; average: number };
   reviewUrl: string;
+  timezone?: string;
 }
 
 export function LandingReviews({
@@ -27,8 +41,10 @@ export function LandingReviews({
   reviews,
   summary,
   reviewUrl,
+  timezone = DEFAULT_TIMEZONE,
 }: LandingReviewsProps) {
   const average = summary.average.toFixed(1);
+  const safeTimezone = timezone.trim() || DEFAULT_TIMEZONE;
   return (
     <VStack as="section" id="resenas" aria-labelledby="resenas-t" className="lk-section">
       <VStack gap={6} className="lk-wrap">
@@ -83,7 +99,7 @@ export function LandingReviews({
                       <VStack gap={0} style={{ minWidth: 0 }}>
                         <Text weight="semibold">{review.clientFirstName}</Text>
                         <Text type="supporting" color="secondary" className="rb-first-upper">
-                          {formatReviewDate(review.createdAt)}
+                          {formatReviewDate(review.createdAt, safeTimezone)}
                         </Text>
                       </VStack>
                     </HStack>

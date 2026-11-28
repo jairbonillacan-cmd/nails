@@ -166,12 +166,14 @@ describe('GET /api/media/[...path] private access authorization', () => {
       { params: Promise.resolve({ path: karlaSegments }) },
     );
     expect(unauthRes.status).toBe(401);
+    expect(unauthRes.headers.get('cache-control')).toBe('private, no-store');
 
     const wrongTokenRes = await getMediaFile(
       makeRequest(`http://localhost:3000${karlaMediaUrl}?token=wrong-token-123`),
       { params: Promise.resolve({ path: karlaSegments }) },
     );
     expect(wrongTokenRes.status).toBe(403);
+    expect(wrongTokenRes.headers.get('cache-control')).toBe('private, no-store');
 
     const otherBookingTokenRes = await getMediaFile(
       makeRequest(
@@ -229,7 +231,7 @@ describe('GET /api/media/[...path] private access authorization', () => {
       { params: Promise.resolve({ path: karlaSegments }) },
     );
     expect(owningTokenRes.status).toBe(200);
-    expect(owningTokenRes.headers.get('cache-control')).toBe('private, max-age=300, no-store');
+    expect(owningTokenRes.headers.get('cache-control')).toBe('private, no-store');
     expect(owningTokenRes.headers.get('x-content-type-options')).toBe('nosniff');
     expect(owningTokenRes.headers.get('content-disposition')).toContain('inline');
     expect(Buffer.from(await owningTokenRes.arrayBuffer()).equals(VALID_PNG_BYTES)).toBe(true);

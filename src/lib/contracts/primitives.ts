@@ -14,15 +14,17 @@ export const TimeHHMMSchema = z
   .string()
   .regex(TIME_HHMM_RE, 'Hora inválida (HH:mm)');
 
-export const NonEmptyIdSchema = z.string().min(1);
+export const NonEmptyIdSchema = z.string().min(1).max(128);
 
 export const PhoneInputSchema = z
   .string()
-  .min(8, 'Escribe un WhatsApp válido de 10 dígitos');
+  .min(8, 'Escribe un WhatsApp válido de 10 dígitos')
+  .max(32, 'Número de WhatsApp demasiado largo');
 
 export const OptionalEmailSchema = z
   .string()
   .trim()
+  .max(320)
   .pipe(z.union([z.literal(''), z.string().email('Correo inválido')]))
   .optional()
   .nullable();
@@ -180,9 +182,9 @@ export function createDepositProofInputSchema() {
 }
 
 export const ClientContactFieldsSchema = z.object({
-  clientName: z.string().min(2, 'Escribe tu nombre completo'),
+  clientName: z.string().min(2, 'Escribe tu nombre completo').max(120),
   clientPhone: PhoneInputSchema,
   clientEmail: OptionalEmailSchema,
   clientInstagram: InstagramHandleSchema,
-  clientBirthday: z.string().optional().nullable(),
+  clientBirthday: z.string().max(20).optional().nullable(),
 });

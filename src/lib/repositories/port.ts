@@ -7,6 +7,7 @@ import type {
   WhatsAppThreadSummaryDTO,
 } from '../contracts/whatsapp';
 import type {
+  ClientPortalSnapshotDTO,
   PublicLoyaltySummaryDTO,
   PublicReviewDTO,
   PublicServiceDTO,
@@ -129,6 +130,44 @@ export interface ClientPortalRecordData {
     Booking,
     'clientId' | 'serviceId' | 'staffId' | 'status' | 'startAt'
   > | null;
+}
+
+export interface UpsertClientPortalProfileInput {
+  phoneE164: string;
+  fullName: string;
+  email?: string | null;
+  instagramHandle?: string | null;
+  birthday?: string | null;
+}
+
+export interface WhatsAppContactContextData {
+  clients: ClientProfile[];
+  bookings: Booking[];
+}
+
+export interface QuickSearchAvailabilityInput {
+  serviceId: string;
+  extraServiceIds?: string[];
+  addonIds: string[];
+  staffId?: string | null;
+  startDate: string;
+  days: number;
+  limit?: number;
+  sessionToken?: string | null;
+  waitlistOfferToken?: string | null;
+}
+
+export interface QuickSearchAvailabilityOutput {
+  service: Service;
+  extraServices: Service[];
+  addons: ServiceAddon[];
+  totals: {
+    totalDurationMinutes: number;
+    subtotalCents: number;
+    bufferBeforeMinutes: number;
+    bufferAfterMinutes: number;
+  };
+  slots: AvailableSlot[];
 }
 
 export interface QueryAvailabilityInput {
@@ -521,6 +560,22 @@ export interface SalonRepository {
     serviceId: string | null,
   ): Promise<PublicServiceReviewsData>;
   getClientPortalRecordByPhone(phoneE164: string): Promise<ClientPortalRecordData>;
+  getClientPortalSnapshotByPhone(phoneE164: string): Promise<ClientPortalSnapshotDTO>;
+  upsertClientPortalProfileByPhone(
+    params: UpsertClientPortalProfileInput,
+  ): Promise<ClientPortalRecordData>;
+  getNotificationWorkflows(): Promise<NotificationWorkflow[]>;
+  findApprovedBookingPayment(
+    provider: 'manual_transfer' | 'stripe' | 'mercadopago',
+    providerPaymentId: string,
+  ): Promise<{ bookingId: string } | null>;
+  getCalendarConnectionByWatchChannelId(
+    channelId: string,
+  ): Promise<CalendarConnection | null>;
+  staffMemberExists(staffId: string): Promise<boolean>;
+  getWhatsAppContactContextByPhones(
+    phones: string[],
+  ): Promise<WhatsAppContactContextData>;
   getBookingsWithRelations(
     filter?: BookingsRangeFilter,
   ): Promise<BookingWithRelations[]>;
@@ -532,6 +587,9 @@ export interface SalonRepository {
   }): Promise<ExecutiveReportData>;
   getBookingByToken(token: string): Promise<BookingWithRelations | null>;
   queryAvailability(params: QueryAvailabilityInput): Promise<QueryAvailabilityOutput>;
+  quickSearchAvailability(
+    params: QuickSearchAvailabilityInput,
+  ): Promise<QuickSearchAvailabilityOutput>;
   getNextQuickSlots(
     serviceId: string,
     staffId?: string | null,

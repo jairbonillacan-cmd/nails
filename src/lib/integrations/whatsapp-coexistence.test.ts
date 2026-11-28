@@ -107,15 +107,21 @@ vi.mock('../repositories/db', () => ({
     suggestedSlots: Array<{ startAt: string; localTime12: string }> = [];
   },
   getRepository: () => ({
-    getSnapshot: async () => ({
+    getSalonSettings: async () => ({
+      name: 'Laikona Nails by Karla',
+      timezone: 'America/Mexico_City',
+      minCancelHours: 12,
+    }),
+    getWhatsAppContactContextByPhones: async () => ({
+      clients: [],
+      bookings: [],
+    }),
+    getPublicBootstrap: async () => ({
       settings: {
         name: 'Laikona Nails by Karla',
         timezone: 'America/Mexico_City',
-        minCancelHours: 12,
       },
       services: [],
-      bookings: [],
-      clients: [],
     }),
     queryAvailability: async (...args: unknown[]) => mockQueryAvailability(...args),
   }),

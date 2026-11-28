@@ -105,12 +105,12 @@ export async function POST(request: NextRequest) {
     const nowMs = Date.now();
     const env = getRuntimeIntegrationStatus();
     const holdsCleanup = await cleanupExpiredSlotHolds(nowMs);
-    const [staleOutbox, snapshot] = await Promise.all([
+    const [staleOutbox, workflows] = await Promise.all([
       drainStaleOutboxEvents(5 * 60_000, nowMs),
-      getRepository().getSnapshot(),
+      getRepository().getNotificationWorkflows(),
     ]);
     const workflowsById = new Map<string, NotificationWorkflow>(
-      snapshot.workflows.map((w) => [w.id, w]),
+      workflows.map((w) => [w.id, w]),
     );
     const pendingWhatsAppRecords: RecordWhatsAppMessageInput[] = [];
 

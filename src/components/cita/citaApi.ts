@@ -5,6 +5,7 @@ import {
   computeSuggestedTouchUpDateKey,
 } from '@/lib/booking/recurrence';
 import { resolveTouchUpDays } from '@/lib/cita/cita-settings';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type { PublicLoyaltySummaryDTO, PublicSettingsDTO } from '@/lib/public-dto';
 import {
   buildPolicyHelpWhatsAppUrl,
@@ -22,6 +23,10 @@ export interface ManageBookingPayload {
   error?: string;
   suggestedSlots?: AvailableSlot[];
 }
+
+type RescheduleAvailabilityResult =
+  | { ok: true; days: DayAvailabilitySummary[] }
+  | { ok: false; aborted: boolean; error: string };
 
 export type ManagePatchRequest =
   | { action: 'upload_proof'; paymentProofUrl: string }
@@ -91,12 +96,15 @@ export async function fetchManageBookingSnapshot(
   manageToken: string,
   signal?: AbortSignal,
 ): Promise<ManageBookingPayload | null> {
-  const res = await fetch(`/api/bookings/manage/${encodeURIComponent(manageToken)}`, {
-    cache: 'no-store',
-    signal,
-  });
+  const res = await fetchJsonWithTimeout<ManageBookingPayload>(
+    `/api/bookings/manage/${encodeURIComponent(manageToken)}`,
+    {
+      cache: 'no-store',
+      signal,
+    },
+  );
   if (!res.ok || signal?.aborted) return null;
-  return (await res.json()) as ManageBookingPayload;
+  return res.data;
 }
 
 export async function fetchRescheduleAvailability(params: {
@@ -107,7 +115,7 @@ export async function fetchRescheduleAvailability(params: {
   startDate: string;
   manageToken: string;
   signal?: AbortSignal;
-}): Promise<DayAvailabilitySummary[]> {
+}): Promise<RescheduleAvailabilityResult> {
   const qs = new URLSearchParams({
     serviceId: params.serviceId,
     addonIds: params.addonIdsKey,
@@ -119,26 +127,54 @@ export async function fetchRescheduleAvailability(params: {
   if (params.extraServiceIdsKey) {
     qs.set('extraServiceIds', params.extraServiceIdsKey);
   }
-  const res = await fetch(`/api/availability?${qs.toString()}`, {
-    cache: 'no-store',
-    signal: params.signal,
-  });
-  if (params.signal?.aborted) return [];
-  const data = (await res.json()) as { days?: DayAvailabilitySummary[] };
-  return (data.days ?? []).filter((d) => d.hasSlots).slice(0, 6);
+  const res = await fetchJsonWithTimeout<{ days?: DayAvailabilitySummary[] }>(
+    `/api/availability?${qs.toString()}`,
+    {
+      cache: 'no-store',
+      signal: params.signal,
+    },
+  );
+  if (!res.ok) {
+    return {
+      ok: false,
+      aborted: res.aborted || Boolean(params.signal?.aborted),
+      error: res.error,
+    };
+  }
+  if (params.signal?.aborted) {
+    return { ok: false, aborted: true, error: 'Solicitud cancelada.' };
+  }
+  const days = Array.isArray(res.data.days)
+    ? res.data.days.filter((d) => d.hasSlots).slice(0, 6)
+    : [];
+  return { ok: true, days };
 }
 
 export async function patchManageBooking(
   manageToken: string,
   payload: ManagePatchRequest,
 ): Promise<{ ok: boolean; status: number; data: ManageBookingPayload }> {
-  const res = await fetch(`/api/bookings/manage/${encodeURIComponent(manageToken)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = (await res.json()) as ManageBookingPayload;
-  return { ok: res.ok, status: res.status, data };
+  const res = await fetchJsonWithTimeout<ManageBookingPayload>(
+    `/api/bookings/manage/${encodeURIComponent(manageToken)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (res.ok) {
+    return { ok: true, status: res.status, data: res.data };
+  }
+  const resolvedError =
+    res.status === 429 ? res.error : (res.data?.error || res.error);
+  return {
+    ok: false,
+    status: res.status,
+    data: {
+      ...(res.data ?? {}),
+      error: resolvedError,
+    },
+  };
 }
 
 export async function postManageBookingReview(
@@ -146,11 +182,17 @@ export async function postManageBookingReview(
   rating: 1 | 2 | 3 | 4 | 5,
   comment: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch(`/api/bookings/manage/${encodeURIComponent(manageToken)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rating, comment }),
-  });
-  const data = (await res.json()) as { error?: string };
-  return { ok: res.ok, error: data.error };
+  const res = await fetchJsonWithTimeout<{ error?: string }>(
+    `/api/bookings/manage/${encodeURIComponent(manageToken)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating, comment }),
+    },
+  );
+  if (res.ok) return { ok: true };
+  return {
+    ok: false,
+    error: res.status === 429 ? res.error : (res.data?.error || res.error),
+  };
 }

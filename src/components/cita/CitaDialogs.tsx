@@ -22,6 +22,7 @@ interface CitaDialogsProps {
   rescheduleReason: string;
   rescheduleDays: DayAvailabilitySummary[];
   loadingSlots: boolean;
+  slotsError?: string | null;
   cancelOpen: boolean;
   cancelReasonChoice: string | null;
   cancelReason: string;
@@ -29,6 +30,7 @@ interface CitaDialogsProps {
   onSelectRescheduleChip: (option: string) => void;
   onChangeRescheduleReason: (value: string) => void;
   onConfirmReschedule: (slot: AvailableSlot) => void;
+  onRetrySlots?: () => void;
   onCancelOpenChange: (open: boolean) => void;
   onSelectCancelChip: (option: string) => void;
   onChangeCancelReason: (value: string) => void;
@@ -53,6 +55,7 @@ export function CitaDialogs({
   rescheduleReason,
   rescheduleDays,
   loadingSlots,
+  slotsError = null,
   cancelOpen,
   cancelReasonChoice,
   cancelReason,
@@ -60,6 +63,7 @@ export function CitaDialogs({
   onSelectRescheduleChip,
   onChangeRescheduleReason,
   onConfirmReschedule,
+  onRetrySlots,
   onCancelOpenChange,
   onSelectCancelChip,
   onChangeCancelReason,
@@ -82,10 +86,12 @@ export function CitaDialogs({
         reason={rescheduleReason}
         days={rescheduleDays}
         loadingSlots={loadingSlots}
+        slotsError={slotsError}
         onOpenChange={onRescheduleOpenChange}
         onSelectChip={onSelectRescheduleChip}
         onChangeReason={onChangeRescheduleReason}
         onConfirmReschedule={onConfirmReschedule}
+        onRetrySlots={onRetrySlots}
       />
       <CitaCancelDialog
         minCancelHours={minCancelHours}

@@ -26,10 +26,11 @@ afterEach(() => {
 });
 
 describe('Mercado Pago Checkout & Webhook Signature Security', () => {
-  it('verifies valid Mercado Pago ts/v1 HMAC signatures and fails closed on missing secret or tamper', () => {
+  it('verifies valid Mercado Pago ts/v1 HMAC signatures, enforces ±5m replay window, and fails closed on missing secret, stale ts, or tamper', () => {
     const secret = 'mp-webhook-secret-prod-999';
     const dataId = '987654321';
     const requestId = 'req-mp-abc-123';
+    const nowMs = 1_732_550_000_000;
     const ts = '1732550000';
     const validHeader = signMercadoPago({ dataId, requestId, ts, secret });
 
@@ -39,6 +40,7 @@ describe('Mercado Pago Checkout & Webhook Signature Security', () => {
         signatureHeader: validHeader,
         requestId,
         dataId,
+        nowMs,
       }),
     ).toBe(false);
 
@@ -48,14 +50,73 @@ describe('Mercado Pago Checkout & Webhook Signature Security', () => {
         signatureHeader: validHeader,
         requestId,
         dataId,
+        nowMs,
       }),
     ).toBe(true);
+
+    const msHeader = signMercadoPago({
+      dataId,
+      requestId,
+      ts: String(nowMs - 120_000),
+      secret,
+    });
+    expect(
+      verifyMercadoPagoWebhookSignature({
+        signatureHeader: msHeader,
+        requestId,
+        dataId,
+        nowMs,
+      }),
+    ).toBe(true);
+
+    const expiredHeader = signMercadoPago({
+      dataId,
+      requestId,
+      ts: String(Math.floor(nowMs / 1000) - 301),
+      secret,
+    });
+    expect(
+      verifyMercadoPagoWebhookSignature({
+        signatureHeader: expiredHeader,
+        requestId,
+        dataId,
+        nowMs,
+      }),
+    ).toBe(false);
+
+    const futureHeader = signMercadoPago({
+      dataId,
+      requestId,
+      ts: String(Math.floor(nowMs / 1000) + 301),
+      secret,
+    });
+    expect(
+      verifyMercadoPagoWebhookSignature({
+        signatureHeader: futureHeader,
+        requestId,
+        dataId,
+        nowMs,
+      }),
+    ).toBe(false);
+
+    for (const badTs of ['not-a-number', '0', '-100', '12345', '1732550000.5']) {
+      const malformedHeader = signMercadoPago({ dataId, requestId, ts: badTs, secret });
+      expect(
+        verifyMercadoPagoWebhookSignature({
+          signatureHeader: malformedHeader,
+          requestId,
+          dataId,
+          nowMs,
+        }),
+      ).toBe(false);
+    }
 
     expect(
       verifyMercadoPagoWebhookSignature({
         signatureHeader: validHeader,
         requestId,
         dataId: '987654322',
+        nowMs,
       }),
     ).toBe(false);
 
@@ -64,6 +125,7 @@ describe('Mercado Pago Checkout & Webhook Signature Security', () => {
         signatureHeader: validHeader,
         requestId: 'req-tampered',
         dataId,
+        nowMs,
       }),
     ).toBe(false);
 
@@ -72,6 +134,7 @@ describe('Mercado Pago Checkout & Webhook Signature Security', () => {
         signatureHeader: `ts=${ts},v1=${'0'.repeat(64)}`,
         requestId,
         dataId,
+        nowMs,
       }),
     ).toBe(false);
 
@@ -80,6 +143,7 @@ describe('Mercado Pago Checkout & Webhook Signature Security', () => {
         signatureHeader: null,
         requestId,
         dataId,
+        nowMs,
       }),
     ).toBe(false);
   });

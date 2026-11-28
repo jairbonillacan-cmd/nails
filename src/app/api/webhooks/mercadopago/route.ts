@@ -69,12 +69,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'data.id faltante' }, { status: 400 });
   }
 
-  const snapshot = await getRepository().getSnapshot();
-  const alreadyPaid = (snapshot.bookingPayments ?? []).find(
-    (entry) =>
-      entry.provider === 'mercadopago' &&
-      entry.providerPaymentId === dataId &&
-      entry.status === 'approved',
+  const alreadyPaid = await getRepository().findApprovedBookingPayment(
+    'mercadopago',
+    dataId,
   );
   if (alreadyPaid) {
     return NextResponse.json({

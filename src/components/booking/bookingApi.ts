@@ -1,4 +1,5 @@
 import type { AvailableSlot, DayAvailabilitySummary } from '@/lib/availability/engine';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import {
   normalizeUniqueSortedIds,
   type ProofDeliveryMethod,
@@ -231,27 +232,32 @@ export async function validateCouponCode(
   code: string,
   subtotalCents: number,
 ): Promise<{ valid: true; coupon: AppliedCouponState } | { valid: false; error: string }> {
-  const res = await fetch('/api/coupons/validate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, subtotalCents }),
-  });
-  const data = (await res.json()) as {
+  const res = await fetchJsonWithTimeout<{
     valid?: boolean;
     code?: string;
     kind?: string;
     discountCents?: number;
     error?: string;
-  };
-  if (!res.ok || !data.valid || !data.code) {
-    return { valid: false, error: data.error || 'Cupón no válido' };
+  }>('/api/coupons/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, subtotalCents }),
+  });
+  if (!res.ok) {
+    return {
+      valid: false,
+      error: res.status === 429 ? res.error : (res.data?.error || res.error || 'Cupón no válido'),
+    };
+  }
+  if (!res.data.valid || !res.data.code) {
+    return { valid: false, error: res.data.error || 'Cupón no válido' };
   }
   return {
     valid: true,
     coupon: {
-      code: data.code,
-      kind: data.kind ?? 'percent',
-      discountCents: data.discountCents ?? 0,
+      code: res.data.code,
+      kind: res.data.kind ?? 'percent',
+      discountCents: res.data.discountCents ?? 0,
     },
   };
 }

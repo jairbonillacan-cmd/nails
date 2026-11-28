@@ -79,6 +79,7 @@ import {
 } from '@/app/api/admin/packages/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
 import { POST as postSlotHold } from '@/app/api/slot-holds/route';
+import { POST as postWaitlist } from '@/app/api/waitlist/route';
 import { GET as getMediaFile } from '@/app/api/media/[...path]/route';
 import { CLIENT_SESSION_COOKIE } from '@/lib/auth/client-session';
 import {
@@ -459,6 +460,36 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
         }),
       );
       expect(validWebhookRes.status).toBe(200);
+
+      const oversizedBody = JSON.stringify({ pad: 'x'.repeat(270 * 1024) });
+      const oversizedRes = await postWhatsAppWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/whatsapp', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-hub-signature-256': validSig,
+          },
+          body: oversizedBody,
+        }),
+      );
+      expect(oversizedRes.status).toBe(413);
+
+      const schemaRes = await getWhatsAppWebhook(
+        makeRequest('http://localhost:3000/api/webhooks/whatsapp?schema=1', {
+          headers: { 'x-forwarded-for': '203.0.113.44' },
+        }),
+      );
+      expect(schemaRes.status).toBe(200);
+      let schemaLastStatus = 200;
+      for (let i = 0; i < 61; i += 1) {
+        const res = await getWhatsAppWebhook(
+          makeRequest('http://localhost:3000/api/webhooks/whatsapp?schema=1', {
+            headers: { 'x-forwarded-for': '203.0.113.45' },
+          }),
+        );
+        schemaLastStatus = res.status;
+      }
+      expect(schemaLastStatus).toBe(429);
     });
 
     it('restricts /api/admin/integrations/whatsapp-simulate to owner in non-production only', async () => {
@@ -3305,9 +3336,27 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       );
       expect(badSigRes.status).toBe(401);
 
-      const ts = '1730000000';
+      const ts = String(Math.floor(Date.now() / 1000));
       const requestId = 'req-mp-777';
       const dataId = '777001';
+      const staleTs = String(Math.floor(Date.now() / 1000) - 600);
+      const staleV1 = crypto
+        .createHmac('sha256', mpSecret)
+        .update(`id:${dataId};request-id:${requestId};ts:${staleTs};`, 'utf8')
+        .digest('hex');
+      const staleRes = await postMercadoPagoWebhook(
+        makeRequest(`http://localhost:3000/api/webhooks/mercadopago?data.id=${dataId}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': requestId,
+            'x-signature': `ts=${staleTs},v1=${staleV1}`,
+          },
+          body: JSON.stringify({ type: 'payment', data: { id: dataId } }),
+        }),
+      );
+      expect(staleRes.status).toBe(401);
+
       const validV1 = crypto
         .createHmac('sha256', mpSecret)
         .update(`id:${dataId};request-id:${requestId};ts:${ts};`, 'utf8')
@@ -4428,6 +4477,143 @@ describe('Phase 0 Security Trust Boundaries (C2–C8)', () => {
       );
       expect(sessionRes.status).toBe(200);
       expect(sessionRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const shortTokenRes = await getManageBooking(
+        makeRequest('http://localhost:3000/api/bookings/manage/short'),
+        { params: Promise.resolve({ token: 'short' }) },
+      );
+      expect(shortTokenRes.status).toBe(404);
+      expect(shortTokenRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const longToken = 'a'.repeat(130);
+      const longTokenRes = await getManageBooking(
+        makeRequest(`http://localhost:3000/api/bookings/manage/${longToken}`),
+        { params: Promise.resolve({ token: longToken }) },
+      );
+      expect(longTokenRes.status).toBe(404);
+      expect(longTokenRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const db = getSnapshot();
+      const todayKey = getDateKeyInTimezone(new Date(), db.settings.timezone);
+      const waitlistRes = await postWaitlist(
+        makeRequest('http://localhost:3000/api/waitlist', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            desiredDate: todayKey,
+            preferredWindow: 'morning',
+            clientName: 'Clienta Espera Segura',
+            clientPhoneE164: '+522229876543',
+          }),
+        }),
+      );
+      expect(waitlistRes.status).toBe(201);
+      expect(waitlistRes.headers.get('cache-control')).toBe('private, no-store');
+      const waitlistJson = (await waitlistRes.json()) as {
+        entry: Record<string, unknown>;
+      };
+      expect(Object.keys(waitlistJson.entry).sort()).toEqual([
+        'createdAt',
+        'desiredDate',
+        'id',
+        'preferredWindow',
+        'serviceId',
+        'status',
+      ]);
+      expect('clientPhoneE164' in waitlistJson.entry).toBe(false);
+      expect('priorityOfferToken' in waitlistJson.entry).toBe(false);
+
+      const oversizedWaitlistRes = await postWaitlist(
+        makeRequest('http://localhost:3000/api/waitlist', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            desiredDate: todayKey,
+            clientName: 'X'.repeat(130),
+            clientPhoneE164: '+522229876543',
+          }),
+        }),
+      );
+      expect(oversizedWaitlistRes.status).toBe(400);
+      expect(oversizedWaitlistRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const avail = queryAvailability({
+        serviceId: 'srv-rubber',
+        addonIds: [],
+        staffId: 'staff-karla',
+        startDate: todayKey,
+        days: 14,
+      });
+      const openSlot = avail.days.flatMap((d) => d.slots)[0];
+      if (!openSlot) throw new Error('Expected open slot');
+
+      vi.stubEnv('CLIENT_SESSION_SECRET', 'sec-test-client-session-secret');
+      const holdRes = await postSlotHold(
+        makeRequest('http://localhost:3000/api/slot-holds', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+          }),
+        }),
+      );
+      expect(holdRes.status).toBe(200);
+      expect(holdRes.headers.get('cache-control')).toBe('private, no-store');
+      const holdCookiePair = (holdRes.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+
+      const tooManyAddonsRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: Array.from({ length: 35 }, (_, idx) => `addon-${idx}`),
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Clienta Limite',
+            clientPhone: '+522229876544',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(tooManyAddonsRes.status).toBe(400);
+      expect(tooManyAddonsRes.headers.get('cache-control')).toBe('private, no-store');
+
+      const bookingRes = await postPublicBooking(
+        makeRequest('http://localhost:3000/api/bookings', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: holdCookiePair,
+            'Idempotency-Key': `sec-cache-${Date.now()}`,
+          },
+          body: JSON.stringify({
+            serviceId: 'srv-rubber',
+            addonIds: [],
+            staffId: openSlot.staffId,
+            startAt: openSlot.startAt,
+            clientName: 'Clienta Privada',
+            clientPhone: '+522229876545',
+            privacyConsentAccepted: true,
+          }),
+        }),
+      );
+      expect(bookingRes.status).toBe(201);
+      expect(bookingRes.headers.get('cache-control')).toBe('private, no-store');
+
+      vi.stubEnv('ADMIN_SESSION_SECRET', 'test-admin-secret-cache');
+      const gcalInitRes = await getGoogleOAuth(
+        makeRequest('http://localhost:3000/api/integrations/google?staffId=staff-karla', {
+          headers: { cookie: getOwnerCookieHeader() },
+        }),
+      );
+      expect(gcalInitRes.status).toBe(200);
+      expect(gcalInitRes.headers.get('cache-control')).toBe('private, no-store');
     });
   });
 });

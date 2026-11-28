@@ -9,7 +9,8 @@ import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
-import { normalizePhoneE164 } from '@/lib/format';
+import { formatDateLongInTimezone, normalizePhoneE164 } from '@/lib/format';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import {
   formatMxPhoneDisplay,
   isValidMxPhone,
@@ -21,7 +22,15 @@ interface WaitlistDialogProps {
   serviceId: string | undefined;
   selectedStaffId: string;
   selectedDate: string;
+  timezone?: string;
   onOpenChange: (open: boolean) => void;
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function formatWaitlistDateLabel(dateKey: string, timezone: string): string {
+  if (!ISO_DATE_RE.test(dateKey.trim())) return dateKey;
+  return formatDateLongInTimezone(`${dateKey.trim()}T18:00:00Z`, timezone);
 }
 
 function focusWaitlistField(
@@ -43,6 +52,7 @@ export function WaitlistDialog({
   serviceId,
   selectedStaffId,
   selectedDate,
+  timezone = 'America/Mexico_City',
   onOpenChange,
 }: WaitlistDialogProps) {
   const [name, setName] = useState('');
@@ -55,7 +65,10 @@ export function WaitlistDialog({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
 
+  const formattedDateLabel = formatWaitlistDateLabel(selectedDate, timezone);
+
   const handleOpenChange = (next: boolean) => {
+    if (!next && submitting) return;
     if (!next) {
       setSent(false);
       setErrorMsg(null);
@@ -81,7 +94,7 @@ export function WaitlistDialog({
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/waitlist', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/waitlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -97,11 +110,8 @@ export function WaitlistDialog({
       if (res.ok) {
         setSent(true);
       } else {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setErrorMsg(data.error || 'No pudimos registrarte. Intenta nuevamente.');
+        setErrorMsg(res.error || 'No pudimos registrarte. Intenta nuevamente.');
       }
-    } catch {
-      setErrorMsg('Error de conexión. Intenta nuevamente.');
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
@@ -120,7 +130,7 @@ export function WaitlistDialog({
       <VStack className="lk-portal fx-sheet-in">
         <DialogHeader
           title="Lista de espera"
-          subtitle={`Te avisaremos por WhatsApp si se libera un espacio el ${selectedDate}.`}
+          subtitle={`Te avisaremos por WhatsApp si se libera un espacio el ${formattedDateLabel}.`}
           onOpenChange={handleOpenChange}
         />
         {sent ? (

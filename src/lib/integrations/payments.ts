@@ -20,6 +20,15 @@ export interface MercadoPagoPaymentInfo {
 }
 
 const HEX_64_RE = /^[0-9a-f]{64}$/i;
+const MP_TIMESTAMP_RE = /^\d{10,13}$/;
+const MP_WEBHOOK_REPLAY_WINDOW_SECONDS = 300;
+
+function parseMercadoPagoTimestampSeconds(ts: string): number | null {
+  if (!MP_TIMESTAMP_RE.test(ts)) return null;
+  const parsed = Number(ts);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed >= 1_000_000_000_000 ? Math.floor(parsed / 1000) : Math.floor(parsed);
+}
 
 function timingSafeHexEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a.toLowerCase(), 'utf8');
@@ -33,6 +42,7 @@ export function verifyMercadoPagoWebhookSignature(params: {
   requestId: string | null;
   dataId: string | null;
   secret?: string | null;
+  nowMs?: number;
 }): boolean {
   const effectiveSecret = (
     params.secret !== undefined
@@ -58,6 +68,13 @@ export function verifyMercadoPagoWebhookSignature(params: {
   }
 
   if (!ts || !v1 || !HEX_64_RE.test(v1)) return false;
+
+  const tsSeconds = parseMercadoPagoTimestampSeconds(ts);
+  if (tsSeconds === null) return false;
+  const nowSeconds = Math.floor((params.nowMs ?? Date.now()) / 1000);
+  if (Math.abs(nowSeconds - tsSeconds) > MP_WEBHOOK_REPLAY_WINDOW_SECONDS) {
+    return false;
+  }
 
   const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
   const expected = crypto

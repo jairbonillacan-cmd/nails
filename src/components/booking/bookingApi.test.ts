@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AvailableSlot } from '@/lib/availability/engine';
-import { requestSlotHold, submitBookingRequest } from './bookingApi';
+import { requestSlotHold, submitBookingRequest, validateCouponCode } from './bookingApi';
 
 const BASE_PAYLOAD = {
   serviceId: 'srv-rubber',
@@ -334,5 +334,66 @@ describe('submitBookingRequest resilience', () => {
     expect(init?.signal).toBeDefined();
     const sentBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
     expect(sentBody).not.toHaveProperty('sessionToken');
+  });
+});
+
+describe('validateCouponCode resilience', () => {
+  it('returns valid coupon on 200 and attaches an AbortSignal timeout', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ valid: true, code: 'BIENVENIDA', kind: 'percent', discountCents: 12000 }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await validateCouponCode('BIENVENIDA', 60000);
+    expect(result).toEqual({
+      valid: true,
+      coupon: { code: 'BIENVENIDA', kind: 'percent', discountCents: 12000 },
+    });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.signal).toBeDefined();
+  });
+
+  it('handles 429 Retry-After, 502 HTML non-JSON, and timeouts without throwing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Demasiados intentos.' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '30' },
+        }),
+      ),
+    );
+    const rateLimited = await validateCouponCode('BIENVENIDA', 60000);
+    expect(rateLimited.valid).toBe(false);
+    if (!rateLimited.valid) {
+      expect(rateLimited.error).toContain('30 s');
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<html><body>502 Bad Gateway</body></html>', {
+          status: 502,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+      ),
+    );
+    const html502 = await validateCouponCode('BIENVENIDA', 60000);
+    expect(html502.valid).toBe(false);
+    if (!html502.valid) {
+      expect(html502.error).toContain('502');
+    }
+
+    const timeoutErr = new Error('Timed out');
+    timeoutErr.name = 'TimeoutError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeoutErr));
+    const timedOut = await validateCouponCode('BIENVENIDA', 60000);
+    expect(timedOut.valid).toBe(false);
+    if (!timedOut.valid) {
+      expect(timedOut.error).toContain('tardó demasiado');
+    }
   });
 });

@@ -15,6 +15,7 @@ import { Avatar } from '@astryxdesign/core/Avatar';
 import { ArrowLeft, ArrowRight, Eye, EyeOff, MapPin, Moon, Sun } from 'lucide-react';
 import type { AdminRole, AdminUser } from '@/lib/types';
 import { useExternalSync } from '@/lib/hooks/useExternalSync';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import { LANDING_ASSETS } from '@/components/landing/landingContent';
 import { useSalonAppearance } from '@/components/SalonThemeProvider';
 import { StatusTag } from '@/components/ui/StatusTag';
@@ -67,29 +68,37 @@ export default function AdminLoginPage() {
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [demoUsers, setDemoUsers] = useState<AdminUser[]>([]);
   const [loadingSession, setLoadingSession] = useState(true);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [probeNonce, setProbeNonce] = useState(0);
 
   const isDark = mode === 'dark';
   const brandLogo = isDark ? LANDING_ASSETS.logoWhite : LANDING_ASSETS.logoBlack;
 
   useExternalSync(
-    'admin-login-session-probe',
+    `admin-login-session-probe:${probeNonce}`,
     useCallback(async (signal) => {
+      setLoadingSession(true);
+      setProbeError(null);
       try {
-        const res = await fetch('/api/admin/session', { signal });
-        if (signal.aborted || !res.ok) return;
-        const json = (await res.json()) as {
+        const res = await fetchJsonWithTimeout<{
           session?: ActiveSessionInfo | null;
           availableDemoUsers?: AdminUser[];
           authMode?: AuthMode;
-        };
-        const users = json.availableDemoUsers ?? [];
+        }>('/api/admin/session', { cache: 'no-store', signal });
+        if (res.aborted || signal.aborted) return;
+        if (!res.ok) {
+          setProbeError(
+            res.error || 'No pudimos verificar el acceso del equipo. Intenta de nuevo.',
+          );
+          return;
+        }
+        const users = res.data.availableDemoUsers ?? [];
         const resolvedMode: AuthMode =
-          json.authMode ?? (users.length > 0 ? 'demo' : 'disabled');
-        setActiveSession(json.session ?? null);
+          res.data.authMode ?? (users.length > 0 ? 'demo' : 'disabled');
+        setActiveSession(res.data.session ?? null);
         setDemoUsers(users);
         setAuthMode(resolvedMode);
-      } catch {
-        return;
+        setProbeError(null);
       } finally {
         if (!signal.aborted) {
           setLoadingSession(false);
@@ -116,20 +125,21 @@ export default function AdminLoginPage() {
         authMode === 'supabase'
           ? { email: cleanEmail, password: targetPassword ?? '' }
           : { email: cleanEmail };
-      const res = await fetch('/api/admin/session', {
+      const res = await fetchJsonWithTimeout<{ error?: string }>('/api/admin/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) {
-        setError(json?.error || 'El correo o la contraseña no coinciden.');
+        const fallback =
+          res.status === 400 || res.status === 401
+            ? 'El correo o la contraseña no coinciden.'
+            : res.error;
+        setError(res.status === 429 ? res.error : (res.data?.error || fallback));
         return;
       }
       router.push('/admin');
       router.refresh();
-    } catch {
-      setError('No hay conexión. Revisa tu internet e intenta otra vez.');
     } finally {
       setLoadingEmail(null);
     }
@@ -229,7 +239,28 @@ export default function AdminLoginPage() {
               />
             ) : null}
 
-            {!loadingSession && authMode === 'disabled' ? (
+            {!loadingSession && probeError ? (
+              <Banner
+                collapsible={false}
+                status="error"
+                role="alert"
+                title="No pudimos cargar el acceso"
+                description={probeError}
+              >
+                <HStack justify="start" paddingBlockStart={2}>
+                  <Button
+                    type="button"
+                    label="Reintentar"
+                    variant="primary"
+                    size="md"
+                    className="fx-press"
+                    onClick={() => setProbeNonce((prev) => prev + 1)}
+                  />
+                </HStack>
+              </Banner>
+            ) : null}
+
+            {!loadingSession && !probeError && authMode === 'disabled' ? (
               <Banner
                 status="info"
                 role="status"
@@ -252,6 +283,7 @@ export default function AdminLoginPage() {
                     role="alert"
                     title={error}
                     isDismissable
+                    dismissLabel="Cerrar aviso"
                     onDismiss={() => setError(null)}
                   />
                 ) : null}

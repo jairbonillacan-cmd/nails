@@ -332,6 +332,8 @@ export function ManageBookingView({
                   settings={settings}
                   isUploading={manage.uploadingProof}
                   justUploadedMessage={manage.proofSavedMessage}
+                  uploadError={manage.uploadError}
+                  onClearUploadError={manage.clearUploadError}
                   onUploadProof={manage.handleUploadProof}
                 />
                 <CitaActionsPanel
@@ -412,6 +414,7 @@ export function ManageBookingView({
           rescheduleReason={manage.rescheduleReason}
           rescheduleDays={manage.rescheduleDays}
           loadingSlots={manage.loadingSlots}
+          slotsError={manage.slotsError}
           cancelOpen={manage.cancelOpen}
           cancelReasonChoice={manage.cancelReasonChoice}
           cancelReason={manage.cancelReason}
@@ -419,6 +422,7 @@ export function ManageBookingView({
           onSelectRescheduleChip={manage.handleSelectRescheduleChip}
           onChangeRescheduleReason={manage.setRescheduleReason}
           onConfirmReschedule={(slot) => void manage.handleConfirmReschedule(slot)}
+          onRetrySlots={manage.retryLoadRescheduleSlots}
           onCancelOpenChange={manage.handleCancelOpenChange}
           onSelectCancelChip={manage.handleSelectCancelChip}
           onChangeCancelReason={manage.setCancelReason}

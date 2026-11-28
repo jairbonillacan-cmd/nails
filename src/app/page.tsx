@@ -3,13 +3,10 @@ import { ViewTransition } from 'react';
 import { cookies } from 'next/headers';
 import { preload } from 'react-dom';
 import './landing.css';
+import { getCachedPublicBootstrap } from '@/lib/public/bootstrap';
 import { getRepository } from '@/lib/repositories/db';
 import {
   toPublicGalleryItemDTO,
-  toPublicReviewDTO,
-  toPublicServiceDTO,
-  toPublicSettingsDTO,
-  toPublicStaffDTO,
   type PublicReviewDTO,
 } from '@/lib/public-dto';
 import { resolveLandingContent } from '@/lib/landing-config';
@@ -21,7 +18,7 @@ import { INTRO_COOKIE } from '@/lib/intro';
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const settings = toPublicSettingsDTO(await getRepository().getSalonSettings());
+  const { settings } = await getCachedPublicBootstrap();
   const cityShort = (settings.city || 'Puebla').split(',')[0]?.trim() || 'Puebla';
   const title = `${settings.name} — Manicure, Rubber y Nail Art en ${cityShort}`;
   const description = `Manicure, rubber, acrílico escultural, softgel y nail art en ${cityShort}. Consulta precios, horarios en vivo y agenda tu cita en línea en ${settings.name}.`;
@@ -48,9 +45,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
-  const db = await getRepository().getSnapshot();
+  const [bootstrap, reviewsData] = await Promise.all([
+    getCachedPublicBootstrap(),
+    getRepository().getPublicReviewsForService(null),
+  ]);
   const siteOrigin = getSiteOrigin();
-  const publicSettings = toPublicSettingsDTO(db.settings);
+  const publicSettings = bootstrap.settings;
   const resolvedLanding = resolveLandingContent(publicSettings);
   preload(resolvedLanding.heroImageDesktopUrl, {
     as: 'image',
@@ -62,40 +62,9 @@ export default async function HomePage() {
     fetchPriority: 'high',
     media: '(max-width: 47.5rem)',
   });
-  const publicGallery = db.gallery
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .map(toPublicGalleryItemDTO);
-  const publicServices = db.services
-    .filter((s) => s.isActive && !s.isPrivate)
-    .toSorted((a, b) => a.displayOrder - b.displayOrder)
-    .map(toPublicServiceDTO);
-  const reviewsCount = db.reviews.length;
-  const average =
-    reviewsCount > 0
-      ? Number(
-          (
-            db.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewsCount
-          ).toFixed(1),
-        )
-      : 5.0;
-
-  const bookingById = new Map(db.bookings.map((booking) => [booking.id, booking]));
-  const clientById = new Map(db.clients.map((client) => [client.id, client]));
-  const publicReviews: PublicReviewDTO[] = db.reviews
-    .flatMap((review) => {
-      const booking = bookingById.get(review.bookingId);
-      if (!booking || booking.status !== 'completed' || !review.comment.trim()) {
-        return [];
-      }
-      const client = clientById.get(review.clientId ?? booking.clientId);
-      return [
-        toPublicReviewDTO(review, {
-          serviceId: booking.serviceId,
-          clientFullName: client?.fullName ?? null,
-        }),
-      ];
-    })
-    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const publicGallery = bootstrap.gallery.map(toPublicGalleryItemDTO);
+  const publicReviews: PublicReviewDTO[] = reviewsData.studioReviews
+    .filter((review) => review.comment.trim().length > 0)
     .slice(0, 8);
 
   const showIntro = !(await cookies()).has(INTRO_COOKIE);
@@ -105,17 +74,12 @@ export default async function HomePage() {
     {showIntro ? <LandingIntro /> : null}
     <LandingView
       initialSettings={publicSettings}
-      categories={db.categories.toSorted((a, b) => a.displayOrder - b.displayOrder)}
-      services={publicServices}
-      addons={db.addons
-        .filter((a) => a.isActive)
-        .toSorted((a, b) => a.displayOrder - b.displayOrder)}
-      staff={db.staff
-        .filter((s) => s.isActive)
-        .toSorted((a, b) => a.displayOrder - b.displayOrder)
-        .map(toPublicStaffDTO)}
+      categories={bootstrap.categories}
+      services={bootstrap.services}
+      addons={bootstrap.addons}
+      staff={bootstrap.staff}
       reviews={publicReviews}
-      reviewsSummary={{ count: reviewsCount, average }}
+      reviewsSummary={bootstrap.reviewsSummary}
       gallery={publicGallery}
       siteOrigin={siteOrigin}
     />

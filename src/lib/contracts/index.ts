@@ -92,6 +92,7 @@ export {
   ClientPortalProfileSchema,
   CreateClientSchema,
   DispatchCampaignSchema,
+  PatchClientPortalProfileSchema,
   PatchClientSchema,
 } from './clients';
 

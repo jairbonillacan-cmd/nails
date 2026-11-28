@@ -47,10 +47,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const db = await getRepository().getSnapshot();
-  const connection = db.calendarConnections.find(
-    (c) => c.watchChannelId === channelId && c.isConnected,
-  );
+  const connection = await getRepository().getCalendarConnectionByWatchChannelId(channelId);
   if (!connection) {
     return NextResponse.json({ ok: true, matched: false });
   }

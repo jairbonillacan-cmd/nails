@@ -37,16 +37,16 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 ## 1. Landing Brandeada (`/`) y SEO Local
 - **Precondiciones:** Ninguna (acceso público).
 - **Elementos clave y selectores:**
-  - Landing propia sin `PublicShell` (`LandingView` + `src/components/landing/*`, estilos `lk-*` en `src/app/globals.css`, recursos en `public/landing/`). Siempre en modo claro (`color-scheme: light` en `.lk-root`).
-  - Franja de avisos animada (anticipo, reagendar 12 h, solo con cita) con `aria-label` completo.
+  - Landing propia sin `PublicShell` (`LandingView` + `src/components/landing/*`, estilos `lk-*` en `src/app/globals.css` y `src/app/landing.css`, recursos en `public/landing/`). Siempre en modo claro (`color-scheme: light` en `.lk-root`). Carga inicial sin cortina bloqueante de 3 s (`LandingIntro` emite `data-phase="done"`) para pintar `h1` y `Agendar cita` de inmediato (`LCP` rápido).
+  - Franja de avisos animada (anticipo configurado vía `hasConfiguredDeposit` sin respaldo fijo `$200`, reagendar 12 h, solo con cita) con `aria-label` completo.
   - Nav `role="navigation"` (`Principal`) integrada en el hero: `data-floating="false"` arriba; al pasar 80 px de scroll cambia a `data-floating="true"` (cápsula esmerilada con logo negro). Enlaces `#servicios`, `#galeria`, `#equipo`, `#visitanos`, `Mis citas` (`/mis-citas`) y botón `Agendar` (`/reservar`). En móvil (< 760 px) los enlaces se ocultan y `Abrir menú` abre un `Dialog` a pantalla completa en cereza.
   - Hero `#inicio`: `h1` `El arte está en tus uñas`, CTAs `Agendar cita` (`/reservar`) y `Ver creaciones` (`#galeria`), calificación de Google si hay reseñas.
-  - Menú `#servicios`: `TabList` (`Uñas & Esculturales`, `Gel & Retiro`, `Pies & PediSpa`, `Arte y acabados`). Cada servicio es un enlace a `/reservar/[slug]` con foto, precio (`Desde $...` cuando `isStartingPrice`) y duración. `Arte y acabados` lista los extras activos con icono y las formas de uña.
+  - Menú `#servicios`: `TabList` (`Uñas & Esculturales`, `Gel & Retiro`, `Pies & PediSpa`, `Arte y acabados`; botones `.astryx-tab-scroll-button` ≥ 44×44 px en móvil). Cada servicio abre detalles (`.lk-service-card-btn`) o navega directo a `/reservar/[slug]` (`.lk-service-book-link`) con foto (`alt` parametrizado con `settings.name`), precio (`Desde $...` cuando `isStartingPrice`), duración y objetivos táctiles ≥ 44 px en `375×812`. `Arte y acabados` lista los extras activos con icono y las formas de uña.
   - Creaciones `#galeria` (fondo cereza): mosaico de 11 fotos; `Ver más creaciones` (`aria-expanded`) muestra 22.
-  - Reseñas: resumen `EXCELENTE · promedio · N reseñas` + `Carousel` de reseñas verificadas (`PublicReviewDTO`, solo primer nombre, citas `completed` con comentario).
+  - Reseñas: resumen `EXCELENTE · promedio · N reseñas` + `Carousel` de reseñas verificadas (`PublicReviewDTO`, solo primer nombre, citas `completed` con comentario, fechas formateadas con `timeZone` explícito del salón para evitar diferencias SSR/cliente).
   - Equipo `#equipo` (fondo cereza): un botón por especialista (`aria-haspopup="dialog"`) abre un `Dialog` con pestañas `Perfil`, `Servicios` (botón `Reservar` → `/reservar/[slug]?staff=<slug>`) y `Portafolio`, más `Reservar con <nombre>` (`/reservar?staff=<slug>`).
   - Conectemos: tarjeta central a `@laikona.nailsss` y cuatro fotos inclinadas.
-  - Preguntas frecuentes `#preguntas` (`LandingFaq`): acordeón accesible (`CollapsibleGroup`) con 6 preguntas sincronizadas con `buildSalonFaqs(settings)` (anticipo SPEI, ventana de reagendado, retoque a 21 días, ubicación en Puebla, extras y Tarjeta de Sellos) + CTAs a `/reservar` y WhatsApp.
+  - Preguntas frecuentes `#preguntas` (`LandingFaq`): acordeón accesible (`CollapsibleGroup`) sincronizado con `buildSalonFaqs(settings)` (anticipo SPEI real sin respaldo `$200`, comprobante exclusivamente desde `/cita/[token]`, ventana de reagendado, retoque dinámico `normalizeTouchUpDays`, ubicación en Puebla, extras y Tarjeta de Sellos) + CTAs a `/reservar` y WhatsApp.
   - Visítanos `#visitanos`: dirección, horario y contacto + `iframe` de Google Maps (`sandbox`, permitido por `frame-src https://www.google.com https://maps.google.com` en la CSP).
   - Footer cereza: logo, `Agendar cita`, WhatsApp, columnas Explora/Dirección/Horario/Síguenos y enlaces a `/mis-citas`, `/aviso-de-privacidad` y `/links`.
   - **SEO Local, Social Cards e Indexación:**
@@ -59,16 +59,17 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - **Flujo de verificación:**
   1. Cambiar pestaña de categoría en Servicios -> actualiza la cantidad de tarjetas visibles (servicios VIP `isPrivate: true` nunca aparecen aquí ni en `/links` ni en `/api/public/bootstrap`).
   2. Bajar más de 80 px -> la nav pasa a `data-floating="true"`; en 375 px de ancho, `Abrir menú` abre el panel y `Cerrar menú` lo cierra.
-  3. Clic en la tarjeta `Rubber` -> navega a `/reservar/rubber`.
+  3. Clic en la tarjeta `Rubber` -> abre el diálogo de detalle; `Reservar →` navega a `/reservar/rubber`.
   4. Clic en `Karla` -> abre el diálogo; la pestaña `Servicios` lista sus servicios con `Reservar`.
 
 ---
 
 ## 2. Bio-Link de Instagram (`/links`) y Aviso de Privacidad (`/aviso-de-privacidad`)
 - **Bio-Link (`/links`):**
-  - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, dirección desde `settings.address`, chips de turnos fijos y anticipo `$200 MXN`, botones apilados a `/reservar`, `/mis-citas` (`Mis citas`), `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios públicos (excluyendo `isPrivate: true`, sin `commissionPercent`).
+  - Muestra logo LAIKONA NAILS, `@laikona.nailsss`, dirección desde `settings.address`, chips de turnos fijos y anticipo real condicionado por `hasConfiguredDeposit` (oculto cuando `paymentMode === 'none'` o anticipo en `0`), botones apilados a `/reservar`, `/mis-citas` (`Mis citas y sellos`), `/#servicios`, `/#galeria`, WhatsApp, Instagram, Google Maps y `/aviso-de-privacidad`, más lista directa de servicios públicos (`.ck-links-services`, objetivos táctiles ≥ 44 px en móvil, excluyendo `isPrivate: true`, sin `commissionPercent`). El pie de `PublicShell` incluye enlace directo a `Mis citas` (`/mis-citas`).
 - **Aviso de Privacidad LFPDPPP (`/aviso-de-privacidad`):**
-  - Detalla Responsable comercial (`LAIKONA NAILS`, sin exponer datos personales de la dueña), datos recabados, finalidades primarias vs. secundarias opcionales, tarjeta destacada de **Derechos ARCO** (acceso/descarga JSON, rectificación, cancelación, oposición, plazo 20 días hábiles) y versión vigente (`privacyPolicyVersion`, ej. `2026-11`).
+  - Chips de salto rápido secuenciales (`1. Responsable`, `2. Datos que recabamos`, `3. Finalidades`, `4. Transferencias` → `#transferencias`, `5. Derechos ARCO`).
+  - Detalla Responsable comercial (`LAIKONA NAILS`, sin exponer datos personales de la dueña), datos recabados, finalidades primarias vs. secundarias opcionales, transferencias limitadas, tarjeta destacada de **Derechos ARCO** (acceso/descarga JSON, rectificación, cancelación, oposición, plazo 20 días hábiles) y versión vigente (`privacyPolicyVersion`, ej. `2026-11`).
 
 ---
 
@@ -127,11 +128,11 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
   - Indicador inline `.pt-offline-pill` cuando el navegador pierde conexión (respaldado por `/sw.js`), aviso informativo cuando `noShowPolicyEnforced` aplica, y enlace directo a `/mis-citas`.
   - **Diseño responsivo (`47.5rem`):** En escritorio (`1280px`), dos columnas (`.ck-layout`): detalle y acciones a la izquierda y tarjeta cereza fija (`BookingSummaryCard` `Tu cita`, `sticky`) a la derecha con servicio y extras, fecha y hora, artista, duración, total, descuento y anticipo. En móvil (`375px`), una sola columna sin scroll horizontal con la tarjeta `Tu cita` visible arriba.
 - **Controles clave:**
-  - **Anticipo y comprobante (`CitaDepositSection`):** Cuando la cita está en `pending_confirmation` o `pending_payment` y falta el comprobante, muestra anticipo (`$200`), SPEI con **CLABE copiable con un toque** (`.rb-clabe`), selector `Lo subo aquí` (`FileInput` PNG/JPG/WEBP ≤ 2.5 MB -> `PATCH /api/bookings/manage/[token]` con `action: 'upload_proof'`) o `Lo mando por DM a @laikona.nailsss` (abrir Instagram + copiar resumen con código), además de botón `Pagar anticipo con Mercado Pago` cuando exista `checkoutUrl`. Si el comprobante ya fue recibido, muestra `Comprobante recibido · En revisión` y opción desplegable para reemplazarlo.
+  - **Anticipo y comprobante (`CitaDepositSection`):** Cuando la cita está en `pending_confirmation` o `pending_payment` y falta el comprobante, muestra anticipo configurado (`hasConfiguredDeposit`), SPEI con **CLABE copiable con un toque** (`.rb-clabe`), selector `Lo subo aquí` (`FileInput` PNG/JPG/WEBP ≤ 2.5 MB -> `PATCH /api/bookings/manage/[token]` con `action: 'upload_proof'`, con aviso de error inline visible junto al selector tanto en escritorio como en móvil) o `Lo mando por DM a @laikona.nailsss` (abrir Instagram + copiar resumen con código), además de botón `Pagar anticipo con Mercado Pago` cuando exista `checkoutUrl`. Si el comprobante ya fue recibido, muestra `Comprobante recibido · En revisión` y opción desplegable para reemplazarlo.
   - **Calendario, WhatsApp y Retoque (`CitaActionsPanel`):** `Google Calendar`, `Apple / iPhone (.ics)` (`/api/bookings/manage/[token]/ics`), `Outlook`, `Enviar por WhatsApp`, y botón 1 clic **`Agendar siguiente retoque (+21 días)`** prellenado con servicio, especialista y fecha sugerida (`buildTouchUpBookingUrl`).
   - **Ubicación y detalles:** Dirección tomada de `settings.address` (`Calle 25 Sur 1904, Col. Volcanes, 72410 Puebla, Pue.`), indicaciones de llegada, botón `Abrir en Google Maps`, `WhatsApp del salón`, datos de clienta, notas y foto de inspiración si existe.
   - **Código QR de la cita:** QR SVG escaneable del enlace personal `/cita/[token]` con `Copiar enlace` y `Descargar QR`.
-  - **Cambios y auto-apertura (`C6`):** `Reagendar` (valida elegibilidad de especialista para todos los servicios + `recurringBlocks`, actualiza links de calendario/WhatsApp y notifica al salón) y `Cancelar cita` (libera cupón/saldo Gift Card y notifica al salón). Abrir `/cita/[token]?action=reschedule` en una cita activa abre automáticamente el diálogo de reprogramación.
+  - **Cambios y auto-apertura (`C6`):** `Reagendar` (`CitaRescheduleDialog`: valida elegibilidad de especialista para todos los servicios + `recurringBlocks`, muestra aviso recuperable con botón **`Reintentar`** si falla `GET /api/availability`, actualiza links de calendario/WhatsApp y notifica al salón) y `Cancelar cita` (libera cupón/saldo Gift Card y notifica al salón). Abrir `/cita/[token]?action=reschedule` en una cita activa abre automáticamente el diálogo de reprogramación.
   - **Tarjeta Digital de Sellos Web/PWA (`LoyaltyStampCard`):** Visible sin descargar app; muestra nombre del programa (`Tarjeta de Sellos LAIKONA`), progreso (`6 de 8 sellos` en `/cita/demo-token-sofia-1042`), casillas numeradas, beneficio y estado. Cero `commissionPercent` en el HTML.
   - **Encuesta post-cita (`CitaReviewCard`, cuando `status === 'completed'`, ej. `/cita/demo-token-paula-1039`):** botones `1 ★`..`5 ★` + comentario -> si calificación >= 4 muestra `Dejar reseña en Google`.
 - **Verificación de política y responsive:**
@@ -145,27 +146,28 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
 - **Elementos clave y selectores (`/mis-citas` — `ClientPortalView`, estilos `pt-*`):**
   - Encabezado `h1` `Mis citas`, tarjeta de acceso (`.pt-card`) con título `Accede con tu WhatsApp`, campo `Tu WhatsApp` (`+52`), botón `Enviar código de verificación` (`POST /api/client-portal/otp` con `{ action: 'request', phone }`, protegido con rate limiting).
   - Paso de código (`Ingresa tu código`): cuadrícula accesible de 6 dígitos (`.pt-otp-grid`, `role="group"`, `Dígito 1 de 6`..`Dígito 6 de 6`, soporte de pegado completo), banner `Código de prueba local: XXXXXX` + `Rellenar código demo` solo en modo demo local, botón `Verificar y entrar` (`POST /api/client-portal/otp` con `{ action: 'verify', phone, code }` -> emite cookie `httpOnly` `nails_client_portal`, TTL 7 días, máx. 5 intentos, TTL OTP 5 min).
-  - Vista autenticada (`Hola, <nombre>`): acciones `Agendar nueva cita`, `Actualizar` y `Cerrar sesión` (`DELETE /api/client-portal/otp`), y `role="tablist"` con 3 pestañas:
+  - Vista autenticada (`Hola, <nombre>` con teléfono formateado MX `+52 XXX XXX XXXX`): acciones `Agendar nueva cita`, `Actualizar` y `Cerrar sesión` (`DELETE /api/client-portal/otp`), y `role="tablist"` con 4 pestañas:
     1. **`Próximas`:** filas `.pt-booking-row` con servicio, estado, código (`NL-1042`), fecha/hora/artista y botones `Ver mi cita` (`/cita/[token]`) y `Reagendar` (`/cita/[token]?action=reschedule`).
     2. **`Historial`:** visitas completadas/canceladas/inasistencias ordenadas de reciente a antigua.
     3. **`Sellos y paquetes`:** `LoyaltyStampCard` (`6 / 8` sellos para Sofía) y tarjetas `.ad-pkg-card` con progreso visual `.ad-pkg-pips` / `.ad-pkg-pip[data-used="true"|"false"]` (`Paquete 4 sesiones Rubber`, `1` usada / `3` disponibles).
-- **Seguridad y aislamiento (`GET /api/client-portal/bookings`):**
+    4. **`Mis datos`:** edición persistente de perfil (`fullName`, `email`, `instagramHandle`, `birthday`) respaldada por `GET`/`PATCH /api/client-portal/profile` (`PatchClientPortalProfileSchema`, `private, no-store`, rate-limited) sincronizada tras recargar.
+- **Seguridad, aislamiento y cero `getSnapshot()` (`ADR-0001` — `GET /api/client-portal/bookings`, `GET|PATCH /api/client-portal/profile`, `POST /api/client-portal/otp`):**
   - Sin cookie válida devuelve `401` (`authenticated: false`).
-  - Con cookie válida devuelve `ClientPortalSnapshotDTO` **estrictamente filtrado al teléfono autenticado** (nunca incluye citas de otras clientas ni campos `internalNotes`, `commissionPercent` u `ownerPinHash`).
+  - Con cookie válida consulta únicamente el registro de la clienta autenticada (`getClientPortalRecordByPhone` / tablas puntuales, cero `getSnapshot()`) y devuelve `ClientPortalSnapshotDTO` **estrictamente filtrado al teléfono autenticado** (nunca incluye citas de otras clientas ni campos `internalNotes`, `commissionPercent` u `ownerPinHash`).
 - **PWA Offline (`/sw.js` + `PwaOfflineBootstrap` + `useServiceWorker`):**
   - `GET /sw.js` responde `200`, `Content-Type: application/javascript; charset=utf-8`, `Cache-Control: no-cache, no-store, must-revalidate` y `Service-Worker-Allowed: /`.
   - Caché versionado `laikona-v1` / `laikona-static-v1`: network-first con fallback offline para `/cita/*`, `/mis-citas`, `/links` y `/aviso-de-privacidad`; stale-while-revalidate para assets estáticos y manifest; **jamás** cachea `/admin*`, `/api/*` ni peticiones POST/PATCH.
   - Al desconectar red (`offline`), `PwaOfflineBootstrap` muestra el aviso accesible `"Sin conexión · Mostrando datos guardados"`.
 - **Flujo de verificación:**
   1. `GET /api/client-portal/bookings` sin cookie -> `401`.
-  2. Abrir `/mis-citas` -> `Usar teléfono demo (Sofía)` -> `Enviar código de verificación` -> `Rellenar código demo` -> `Verificar y entrar` -> confirmar pestañas `Próximas` (`NL-1042`), `Historial` y `Sellos y paquetes` (`6 / 8` sellos + `Paquete 4 sesiones Rubber`).
+  2. Abrir `/mis-citas` -> `Usar teléfono demo (Sofía)` -> `Enviar código de verificación` -> `Rellenar código demo` -> `Verificar y entrar` -> confirmar pestañas `Próximas` (`NL-1042`), `Historial`, `Sellos y paquetes` (`6 / 8` sellos + `Paquete 4 sesiones Rubber`) y `Mis datos` (editar y guardar vía `PATCH /api/client-portal/profile`, recargar y confirmar persistencia).
   3. Verificar `0px` de scroll horizontal en `390px` móvil y `0` errores de consola.
   4. Clic en `Cerrar sesión` -> vuelve al paso de WhatsApp y `GET /api/client-portal/bookings` vuelve a devolver `401`.
 
 ---
 
 ## 6. Acceso Admin (`/admin/login`), Shell Minimalista Retraíble y RBAC Multi-Rol
-- **Precondiciones:** En modo demo inicia autenticado como `owner` (o vía botones rápidos de `/admin/login`). En producción sin Supabase, `POST /api/admin/session` falla cerrado con `503`. La etiqueta discreta **`Modo demo`** aparece junto a la fecha del dashboard con `Tooltip` explicativo, y el selector de rol demo vive en el pie de la barra lateral (y del cajón móvil).
+- **Precondiciones:** En modo demo inicia autenticado como `owner` (o vía botones rápidos de `/admin/login`). En producción sin Supabase, `POST /api/admin/session` falla cerrado con `503`. Si `GET /api/admin/session` falla con `5xx` o error de red, `/admin/login` muestra un aviso recuperable con botón **`Reintentar`** en lugar de quedarse bloqueado. La etiqueta discreta **`Modo demo`** aparece junto a la fecha del dashboard con `Tooltip` explicativo, y el selector de rol demo vive en el pie de la barra lateral (y del cajón móvil).
 - **Shell del panel (`AdminShell` + `src/components/admin/shell/*`, estilos `ad-*` en `src/app/admin/admin.css`, compatible con modo claro y oscuro, `robots: noindex, nofollow` vía `src/app/admin/layout.tsx`):**
   - **Contenedor principal flotante (estilo minimalista tipo Cal.com con identidad LAIKONA):** la barra lateral se apoya directo sobre el lienzo exterior (`.ad-shell`) y el contenido de cada pantalla vive dentro de un contenedor blanco/superficie redondeado con borde fino (`.ad-sheet`).
   - **Barra lateral retraíble en escritorio (`>= 47.5rem`):** botón `Retraer barra lateral` / `Expandir barra lateral` y atajo **`Ctrl+B`** (estado persistido en `localStorage` vía `useSidebarCollapsed`). En modo retraído (`4.25rem`) muestra iconos centrados con `Tooltip` y punto indicador cuando hay badges.
@@ -290,7 +292,8 @@ Mapa determinista de rutas, precondiciones, selectores accesibles y flujos crít
   - `GET /api/media/proofs/...` o `/api/media/inspo/...` rechaza traversal (`400`) y peticiones anónimas (`401`).
   - Permite acceso únicamente con: (a) sesión admin válida (`owner`/`admin` todo; `specialist` solo archivos de sus citas, `403` en ajenas), (b) URL firmada HMAC-SHA256 de 1 h (`?exp=...&sig=...`), (c) `?token=<manageToken>` de la cita propietaria (usado automáticamente en `/cita/[token]`), o (d) cookie válida `nails_client_portal` cuyo `phoneE164` coincide con la propietaria (`403` si pertenece a otra clienta).
   - Responde con `Cache-Control: private, ...`, `X-Content-Type-Options: nosniff` y `Content-Disposition: inline`.
-- **Retención automática de 12 meses y Cron Triggers (`worker.ts` + `wrangler.jsonc`):**
+- **Retención automática de 12 meses, Cron Triggers y cero `getSnapshot()` (`worker.ts` + `wrangler.jsonc` + `ADR-0001`):**
+  - Todas las rutas públicas, del portal, de gestión de cita, crons y webhooks (`/`, `/api/public/bootstrap`, `/api/client-portal/*`, `/api/bookings/manage/*`, `/api/cron/retention`, `/api/cron/reminders`, `/api/webhooks/whatsapp`) usan consultas puntuales sin `getSnapshot()` para mantenerse dentro del presupuesto de subrequests de Cloudflare Workers.
   - `POST /api/cron/retention` (disparado diariamente a las `09:00 UTC` / `03:00 AM` Puebla, protegido con `Authorization: Bearer <CRON_SECRET>`, `503` sin secreto / `401` inválido): envía aviso contable por correo Resend a los **335 días** (11 meses) y **358 días** (7 días antes), purga objetos R2 >= **365 días** limpiando URLs de archivo sin borrar el historial de citas ni cobros, y registra `media_retention_warned` / `media_retention_purged` en `audit_logs`.
   - `POST /api/cron/reminders` (disparado cada 15 min `*/15 * * * *`, mismo gate `CRON_SECRET`): despacha recordatorios 24h/2h/post-cita y ejecuta `cleanupExpiredSlotHolds()` (mantiene activo Supabase Free).
 - **Cuota mensual de WhatsApp (`500/mes`) y Coexistence (`/api/webhooks/whatsapp`):**

@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { VStack } from '@astryxdesign/core/VStack';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Button } from '@astryxdesign/core/Button';
+import { Banner } from '@astryxdesign/core/Banner';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { Link2 } from 'lucide-react';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui/FilterPillBar';
@@ -23,12 +24,16 @@ const MODE_OPTIONS: Array<FilterPillOption<ProofUploadMode>> = [
 interface CitaDepositProofUploadProps {
   submitLabel: string;
   isUploading: boolean;
+  uploadError?: string | null;
+  onClearUploadError?: () => void;
   onUploadProof: (proofValue: string) => Promise<boolean>;
 }
 
 export function CitaDepositProofUpload({
   submitLabel,
   isUploading,
+  uploadError = null,
+  onClearUploadError,
   onUploadProof,
 }: CitaDepositProofUploadProps) {
   const submitLockRef = useRef(false);
@@ -46,12 +51,14 @@ export function CitaDepositProofUpload({
     setProofFile(null);
     setProofDataUrl(null);
     setFileError(null);
+    onClearUploadError?.();
   };
 
   const submitProofValue = async (value: string): Promise<boolean> => {
     if (submitLockRef.current) return false;
     submitLockRef.current = true;
     setFileError(null);
+    onClearUploadError?.();
     try {
       const ok = await onUploadProof(value);
       if (ok) {
@@ -67,6 +74,7 @@ export function CitaDepositProofUpload({
 
   const handleSelectProofFile = async (selected: File | null) => {
     setFileError(null);
+    onClearUploadError?.();
     if (!selected) {
       setProofFile(null);
       setProofDataUrl(null);
@@ -122,6 +130,10 @@ export function CitaDepositProofUpload({
     await submitProofValue(trimmed);
   };
 
+  const canRetryCurrentPayload =
+    (mode === 'image' && Boolean(proofDataUrl)) ||
+    (mode === 'link' && Boolean(proofLink.trim()));
+
   return (
     <VStack
       gap={3}
@@ -139,9 +151,43 @@ export function CitaDepositProofUpload({
           onChange={(next) => {
             setMode(next);
             setFileError(null);
+            onClearUploadError?.();
           }}
         />
       </HStack>
+
+      {uploadError ? (
+        <Banner
+          collapsible={false}
+          status="error"
+          role="alert"
+          title="No pudimos guardar tu comprobante"
+          description={uploadError}
+          isDismissable={Boolean(onClearUploadError)}
+          dismissLabel="Cerrar aviso"
+          onDismiss={onClearUploadError}
+        >
+          {canRetryCurrentPayload ? (
+            <HStack justify="start" paddingBlockStart={2}>
+              <Button
+                type="button"
+                label="Reintentar envío"
+                variant="primary"
+                size="md"
+                className="fx-press"
+                isDisabled={isBusyUpload}
+                onClick={() => {
+                  if (mode === 'image') {
+                    void handleRetryImageUpload();
+                  } else {
+                    void handleSubmitLink();
+                  }
+                }}
+              />
+            </HStack>
+          ) : null}
+        </Banner>
+      ) : null}
 
       {mode === 'image' ? (
         <>
@@ -188,6 +234,7 @@ export function CitaDepositProofUpload({
             onChange={(val) => {
               setProofLink(val);
               if (fileError) setFileError(null);
+              if (uploadError) onClearUploadError?.();
             }}
             status={fileError ? { type: 'error', message: fileError } : undefined}
             isDisabled={isBusyUpload}

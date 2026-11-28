@@ -14,6 +14,8 @@ import {
 } from '@/lib/repositories/db';
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 
+const PRIVATE_NO_STORE = 'private, no-store';
+
 export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
     bucket: 'public:slot-holds',
@@ -30,12 +32,19 @@ export async function POST(request: NextRequest) {
       {
         status: 429,
         headers: {
+          'Cache-Control': PRIVATE_NO_STORE,
           'Retry-After': String(rate.retryAfterSeconds),
           'X-RateLimit-Remaining': '0',
         },
       },
     );
   }
+
+  const baseHeaders = {
+    'Cache-Control': PRIVATE_NO_STORE,
+    Vary: 'Cookie',
+    'X-RateLimit-Remaining': String(rate.remaining),
+  };
 
   try {
     const body = CreateSlotHoldSchema.parse(await request.json());
@@ -61,7 +70,7 @@ export async function POST(request: NextRequest) {
     };
     const response = NextResponse.json(
       { hold: publicHold, holdId: hold.holdId },
-      { headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { headers: baseHeaders },
     );
     if (clientSession.setCookieHeader) {
       response.headers.append('Set-Cookie', clientSession.setCookieHeader);
@@ -75,25 +84,25 @@ export async function POST(request: NextRequest) {
           error: err.message,
           suggestedSlots: err.suggestedSlots,
         },
-        { status: 409, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 409, headers: baseHeaders },
       );
     }
     if (err instanceof PolicyError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
-        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 400, headers: baseHeaders },
       );
     }
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { code: 'INVALID_INPUT', error: 'Datos inválidos para apartar horario' },
-        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 400, headers: baseHeaders },
       );
     }
     logError('slot_hold_create_failed', { error: err });
     return NextResponse.json(
       { error: 'No se pudo apartar el horario' },
-      { status: 500, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 500, headers: baseHeaders },
     );
   }
 }
@@ -103,5 +112,8 @@ export async function DELETE(request: NextRequest) {
   if (sessionToken) {
     await getRepository().releaseSlotHold(sessionToken);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(
+    { ok: true },
+    { headers: { 'Cache-Control': PRIVATE_NO_STORE, Vary: 'Cookie' } },
+  );
 }

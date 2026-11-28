@@ -28,6 +28,8 @@ interface CitaDepositSectionProps {
   settings: PublicSettingsDTO;
   isUploading: boolean;
   justUploadedMessage?: string | null;
+  uploadError?: string | null;
+  onClearUploadError?: () => void;
   onUploadProof: (dataUrl: string) => Promise<boolean>;
 }
 
@@ -36,6 +38,8 @@ export function CitaDepositSection({
   settings,
   isUploading,
   justUploadedMessage = null,
+  uploadError = null,
+  onClearUploadError,
   onUploadProof,
 }: CitaDepositSectionProps) {
   const isPendingDeposit =
@@ -71,7 +75,7 @@ export function CitaDepositSection({
   const effectiveDepositCents =
     booking.depositAmountCents > 0
       ? booking.depositAmountCents
-      : settings.depositAmountCents ?? 20000;
+      : Math.max(0, settings.depositAmountCents ?? 0);
   const displayAmount = formatCurrency(effectiveDepositCents, settings.currency);
   const beneficiary = settings.depositBeneficiary || settings.depositAccountHolder;
   const hasExistingProof = Boolean(booking.paymentProofUrl?.trim());
@@ -166,6 +170,8 @@ export function CitaDepositSection({
               <CitaDepositProofUpload
                 submitLabel="Reemplazar comprobante"
                 isUploading={isUploading}
+                uploadError={uploadError}
+                onClearUploadError={onClearUploadError}
                 onUploadProof={onUploadProof}
               />
             </VStack>
@@ -241,6 +247,8 @@ export function CitaDepositSection({
             <CitaDepositProofUpload
               submitLabel="Subir comprobante"
               isUploading={isUploading}
+              uploadError={uploadError}
+              onClearUploadError={onClearUploadError}
               onUploadProof={onUploadProof}
             />
           </>

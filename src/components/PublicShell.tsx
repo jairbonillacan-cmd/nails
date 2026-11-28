@@ -46,6 +46,9 @@ export function PublicShell({ hero, children }: PublicShellProps) {
             <NextLink className="ck-footer-link" href="/reservar">
               Agendar cita
             </NextLink>
+            <NextLink className="ck-footer-link" href="/mis-citas">
+              Mis citas
+            </NextLink>
             <NextLink className="ck-footer-link" href="/links">
               Accesos rápidos
             </NextLink>

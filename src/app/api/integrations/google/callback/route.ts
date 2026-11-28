@@ -19,7 +19,11 @@ import {
 import { getRepository, updateCalendarConnection } from '@/lib/repositories/db';
 import type { CalendarConnection } from '@/lib/types';
 
+const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store', Vary: 'Cookie' };
+
 function clearOAuthCookie(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('Vary', 'Cookie');
   response.cookies.set(GOOGLE_OAUTH_STATE_COOKIE, '', {
     ...getGoogleOAuthCookieOptions(),
     maxAge: 0,
@@ -30,7 +34,10 @@ function clearOAuthCookie(response: NextResponse): NextResponse {
 export async function GET(request: NextRequest) {
   const session = await requireAdmin(undefined, request);
   if (!session) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401, headers: PRIVATE_HEADERS },
+    );
   }
 
   const { searchParams } = new URL(request.url);
@@ -96,8 +103,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const snapshot = await getRepository().getSnapshot();
-  const staffExists = snapshot.staff.some((s) => s.id === statePayload.staffId);
+  const staffExists = await getRepository().staffMemberExists(statePayload.staffId);
   if (!staffExists) {
     return clearOAuthCookie(
       NextResponse.json({ error: 'Profesional no encontrada.' }, { status: 400 }),

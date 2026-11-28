@@ -2,15 +2,21 @@
 
 import { useState } from 'react';
 import { ClientPortalProfileResponseSchema, type ClientPortalProfile } from '@/lib/contracts';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 
 const PROFILE_ENDPOINT = '/api/client-portal/profile';
 const SESSION_ENDPOINT = '/api/client-portal/otp';
 
 async function fetchClientProfile(): Promise<ClientPortalProfile | null> {
-  const res = await fetch(PROFILE_ENDPOINT, { cache: 'no-store', credentials: 'same-origin' });
-  if (res.status === 401) return null;
-  if (!res.ok) throw new Error('profile_unavailable');
-  const parsed = ClientPortalProfileResponseSchema.safeParse(await res.json());
+  const res = await fetchJsonWithTimeout<unknown>(PROFILE_ENDPOINT, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    if (res.status === 401) return null;
+    throw new Error('profile_unavailable');
+  }
+  const parsed = ClientPortalProfileResponseSchema.safeParse(res.data);
   if (!parsed.success) throw new Error('profile_invalid');
   return parsed.data.authenticated ? parsed.data.profile : null;
 }
@@ -33,16 +39,19 @@ export function useClientAccount(initialProfile: ClientPortalProfile | null) {
     const previous = profile;
     setIsSigningOut(true);
     try {
-      await fetch(SESSION_ENDPOINT, { method: 'DELETE', credentials: 'same-origin' });
-    } catch {
+      const res = await fetchJsonWithTimeout<unknown>(SESSION_ENDPOINT, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (!res.ok) {
+        return null;
+      }
+      setProfile(null);
+      return previous;
+    } finally {
       setIsSigningOut(false);
-      return null;
     }
-    setProfile(null);
-    setIsSigningOut(false);
-    return previous;
   };
 
   return { profile, isSigningOut, refreshProfile, signOut };
 }
-

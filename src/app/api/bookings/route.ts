@@ -18,6 +18,8 @@ import {
 import { checkRateLimit, getRequestIp } from '@/lib/security/rate-limit';
 import { MediaValidationError } from '@/lib/storage/media';
 
+const PRIVATE_NO_STORE = 'private, no-store';
+
 export async function POST(request: NextRequest) {
   const rate = checkRateLimit({
     bucket: 'public:bookings',
@@ -34,12 +36,18 @@ export async function POST(request: NextRequest) {
       {
         status: 429,
         headers: {
+          'Cache-Control': PRIVATE_NO_STORE,
           'Retry-After': String(rate.retryAfterSeconds),
           'X-RateLimit-Remaining': '0',
         },
       },
     );
   }
+
+  const baseHeaders = {
+    'Cache-Control': PRIVATE_NO_STORE,
+    'X-RateLimit-Remaining': String(rate.remaining),
+  };
 
   try {
     const parsed = PublicCreateBookingSchema.parse(await request.json());
@@ -49,7 +57,7 @@ export async function POST(request: NextRequest) {
           code: 'PRIVACY_CONSENT_REQUIRED',
           error: 'Debes aceptar el aviso de privacidad para completar tu reserva.',
         },
-        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 400, headers: baseHeaders },
       );
     }
 
@@ -117,7 +125,7 @@ export async function POST(request: NextRequest) {
       },
       {
         status: 201,
-        headers: { 'X-RateLimit-Remaining': String(rate.remaining) },
+        headers: baseHeaders,
       },
     );
   } catch (err) {
@@ -128,13 +136,13 @@ export async function POST(request: NextRequest) {
           error: err.message,
           suggestedSlots: err.suggestedSlots,
         },
-        { status: 409, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 409, headers: baseHeaders },
       );
     }
     if (err instanceof MediaValidationError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
-        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 400, headers: baseHeaders },
       );
     }
     if (err instanceof MaxActiveBookingsError) {
@@ -144,14 +152,14 @@ export async function POST(request: NextRequest) {
           code: err.code,
           activeBookings: err.activeBookings,
         },
-        { status: 409, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 409, headers: baseHeaders },
       );
     }
     if (err instanceof PolicyError) {
       const status = err.code === 'MAX_ACTIVE_BOOKINGS' ? 409 : 400;
       return NextResponse.json(
         { error: err.message, code: err.code },
-        { status, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status, headers: baseHeaders },
       );
     }
     if (err instanceof z.ZodError) {
@@ -164,18 +172,18 @@ export async function POST(request: NextRequest) {
             code: 'PRIVACY_CONSENT_REQUIRED',
             error: 'Debes aceptar el aviso de privacidad para completar tu reserva.',
           },
-          { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+          { status: 400, headers: baseHeaders },
         );
       }
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos ingresados' },
-        { status: 400, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+        { status: 400, headers: baseHeaders },
       );
     }
     logError('public_booking_create_failed', { error: err });
     return NextResponse.json(
       { error: 'No se pudo completar la cita' },
-      { status: 500, headers: { 'X-RateLimit-Remaining': String(rate.remaining) } },
+      { status: 500, headers: baseHeaders },
     );
   }
 }

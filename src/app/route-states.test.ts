@@ -240,17 +240,38 @@ describe('route loading, error, 404, theme, and performance invariants', () => {
     expect(citaPageSource).toContain('cache(');
 
     const publicNoSnapshotFiles = [
+      'src/app/page.tsx',
+      'src/app/mis-citas/page.tsx',
       'src/app/reservar/page.tsx',
       'src/app/reservar/[slug]/page.tsx',
       'src/app/reservar/[slug]/opengraph-image.tsx',
       'src/app/links/page.tsx',
       'src/app/sitemap.ts',
+      'src/app/api/availability/route.ts',
+      'src/app/api/bookings/manage/[token]/route.ts',
+      'src/app/api/bookings/manage/[token]/ics/route.ts',
+      'src/app/api/client-portal/otp/route.ts',
+      'src/app/api/client-portal/profile/route.ts',
+      'src/app/api/client-portal/bookings/route.ts',
+      'src/app/api/cron/reminders/route.ts',
+      'src/app/api/cron/retention/route.ts',
+      'src/app/api/webhooks/mercadopago/route.ts',
+      'src/app/api/webhooks/whatsapp/route.ts',
+      'src/app/api/webhooks/google-calendar/route.ts',
+      'src/app/api/integrations/google/route.ts',
+      'src/app/api/integrations/google/callback/route.ts',
       'src/lib/auth/client-portal-profile.ts',
+      'src/lib/integrations/whatsapp-processor.ts',
+      'src/lib/integrations/whatsapp-booking.ts',
     ];
     for (const rel of publicNoSnapshotFiles) {
       const source = readText(rel);
       expect(source, `${rel} must not call getSnapshot()`).not.toContain('getSnapshot(');
     }
+
+    const homePageSource = readText('src/app/page.tsx');
+    expect(homePageSource).toContain('getCachedPublicBootstrap(');
+    expect(homePageSource).toContain('getPublicReviewsForService(null)');
 
     const cachedBootstrapHelper = readText('src/lib/public/bootstrap.ts');
     const reservarSlugPage = readText('src/app/reservar/[slug]/page.tsx');

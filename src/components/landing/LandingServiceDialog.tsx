@@ -14,6 +14,7 @@ import { formatServicePrice } from '../booking/bookingHelpers';
 import { landingPhoto, servicePhoto } from './landingContent';
 
 interface LandingServiceDialogProps {
+  salonName?: string;
   service: PublicServiceDTO;
   categoryName: string | null;
   currency: PublicSettingsDTO['currency'];
@@ -22,6 +23,7 @@ interface LandingServiceDialogProps {
 }
 
 export function LandingServiceDialog({
+  salonName = 'LAIKONA NAILS',
   service,
   categoryName,
   currency,
@@ -76,7 +78,7 @@ export function LandingServiceDialog({
           <VStack className="lk-service-dialog-media">
             <img
               {...landingPhoto(photoSrc)}
-              alt={`Ejemplo de ${service.name} en LAIKONA NAILS Puebla`}
+              alt={`Ejemplo de ${service.name} en ${salonName}`}
               width={640}
               height={480}
               loading="eager"

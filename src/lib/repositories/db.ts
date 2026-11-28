@@ -143,14 +143,17 @@ import {
   fetchSupabaseBookingById,
   fetchSupabaseBookingPaymentSplits,
   fetchSupabaseBookingStaffId,
+  fetchSupabaseClientIdsByPhone,
   fetchSupabaseClientLoyaltyStamps,
   fetchSupabaseClientLoyaltySummary,
   fetchSupabaseDateOverrideStaffId,
   fetchSupabaseHasOverlappingBooking,
+  fetchSupabaseOverdueWaitlistContext,
   fetchSupabaseRecurringBlockStaffId,
   fetchSupabaseServicesByIds,
   fetchSupabaseStaffCalendarConnection,
   fetchSupabaseStaffMemberById,
+  fetchSupabaseTouchUpContext,
   runPostCommitSideEffects,
 } from './supabase-repo';
 import {
@@ -174,6 +177,7 @@ import {
   type PublicBootstrapData,
   type PublicServiceReviewsData,
   type QueryAvailabilityInput,
+  type QuickSearchAvailabilityInput,
   type RecordWhatsAppMessageInput,
   type RegisterMediaAssetInput,
   type ResolveRetriedWhatsAppMessageInput,
@@ -183,6 +187,8 @@ import {
   type UpdateClientNotesInput,
   type UpdateScheduledNotificationStatusInput,
   type UpdateWhatsAppMessageStatusInput,
+  type UpsertClientPortalProfileInput,
+  type WhatsAppContactContextData,
   type WhatsAppThreadDetailData,
 } from './port';
 
@@ -1399,19 +1405,10 @@ export function quickSearchAvailability(params: {
   return computeQuickSearchAvailability(getSnapshot(), params);
 }
 
-export async function quickSearchAvailabilityAsync(params: {
-  serviceId: string;
-  extraServiceIds?: string[];
-  addonIds: string[];
-  staffId?: string | null;
-  startDate: string;
-  days: number;
-  limit?: number;
-  sessionToken?: string | null;
-  waitlistOfferToken?: string | null;
-}) {
-  const db = await getRepository().getSnapshot();
-  return computeQuickSearchAvailability(db, params);
+export async function quickSearchAvailabilityAsync(
+  params: QuickSearchAvailabilityInput,
+) {
+  return getRepository().quickSearchAvailability(params);
 }
 
 export async function queryAvailabilityWithExtras(
@@ -2707,13 +2704,31 @@ export async function confirmBookingDepositFromWebhook(params: {
       };
     }
 
-    const snapshot = await repo.getSnapshot();
-    const booking = snapshot.bookings.find(
-      (b) => b.bookingCode.toUpperCase() === normalizedRef || b.id === trimmedRef,
-    );
-    if (!booking) {
+    const byCodeRes = await supabase
+      .from('bookings')
+      .select('id, booking_code, status, staff_id, deposit_amount_cents')
+      .eq('booking_code', normalizedRef)
+      .maybeSingle();
+    let bookingRow = byCodeRes.data;
+    if (!bookingRow && /^[0-9a-f-]{36}$/i.test(trimmedRef)) {
+      const byIdRes = await supabase
+        .from('bookings')
+        .select('id, booking_code, status, staff_id, deposit_amount_cents')
+        .eq('id', trimmedRef)
+        .maybeSingle();
+      bookingRow = byIdRes.data;
+    }
+    if (!bookingRow) {
       return { status: 'not_found' };
     }
+    const booking = {
+      id: bookingRow.id,
+      bookingCode: bookingRow.booking_code,
+      status: bookingRow.status,
+      staffId: bookingRow.staff_id,
+      depositAmountCents: bookingRow.deposit_amount_cents,
+      checkoutUrl: null as string | null,
+    };
 
     const nowIso = new Date().toISOString();
     const effectiveAmountCents =
@@ -4596,7 +4611,7 @@ function computeClientPortalSnapshotByPhone(
 ): ClientPortalSnapshotDTO {
   const normalized = normalizePhoneE164(phoneE164);
   const client = normalized
-    ? db.clients.find((c) => c.phoneE164 === normalized)
+    ? db.clients.find((c) => phonesMatchE164(c.phoneE164, normalized))
     : undefined;
 
   if (!client) {
@@ -4690,8 +4705,7 @@ export function getClientPortalSnapshotByPhone(
 export async function getClientPortalSnapshotByPhoneAsync(
   phoneE164: string,
 ): Promise<ClientPortalSnapshotDTO> {
-  const db = await getRepository().getSnapshot();
-  return computeClientPortalSnapshotByPhone(db, phoneE164);
+  return getRepository().getClientPortalSnapshotByPhone(phoneE164);
 }
 
 export function listServicePackages(): ServicePackage[] {
@@ -8206,6 +8220,132 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
       }
       return { client: { ...client }, latestBooking };
     },
+    async getClientPortalSnapshotByPhone(phoneE164: string) {
+      return computeClientPortalSnapshotByPhone(getSnapshot(), phoneE164);
+    },
+    async upsertClientPortalProfileByPhone(
+      params: UpsertClientPortalProfileInput,
+    ): Promise<ClientPortalRecordData> {
+      const normalized = normalizePhoneE164(params.phoneE164);
+      if (!normalized) {
+        throw new PolicyError('INVALID_PHONE', 'Escribe un WhatsApp válido de 10 dígitos.');
+      }
+      const trimmedName = params.fullName.trim();
+      if (trimmedName.length < 2) {
+        throw new PolicyError('INVALID_CLIENT_NAME', 'Escribe tu nombre completo.');
+      }
+      const cleanEmail =
+        params.email === undefined ? undefined : params.email?.trim() || null;
+      const cleanInstagram =
+        params.instagramHandle === undefined
+          ? undefined
+          : normalizeInstagramHandle(params.instagramHandle);
+      const cleanBirthday =
+        params.birthday === undefined ? undefined : params.birthday?.trim() || null;
+
+      return withWriteLock((db) => {
+        const nowIso = clock.now().toISOString();
+        const existing = db.clients.find((entry) =>
+          phonesMatchE164(entry.phoneE164, normalized),
+        );
+        let savedClient: ClientProfile;
+        if (existing) {
+          existing.fullName = trimmedName;
+          if (cleanEmail !== undefined) existing.email = cleanEmail;
+          if (cleanInstagram !== undefined) {
+            existing.instagramHandle = cleanInstagram ?? undefined;
+          }
+          if (cleanBirthday !== undefined) existing.birthday = cleanBirthday;
+          existing.updatedAt = nowIso;
+          savedClient = existing;
+        } else {
+          savedClient = {
+            id: generateId('cli', clock),
+            fullName: trimmedName,
+            phoneE164: normalized,
+            email: cleanEmail ?? null,
+            instagramHandle: cleanInstagram ?? undefined,
+            birthday: cleanBirthday ?? null,
+            notes: '',
+            noShowCount: 0,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
+          db.clients.push(savedClient);
+        }
+
+        let latestBooking: ClientPortalRecordData['latestBooking'] = null;
+        let latestStartMs = -Infinity;
+        for (const booking of db.bookings) {
+          if (booking.clientId !== savedClient.id) continue;
+          if (booking.status === 'canceled') continue;
+          const startMs = Date.parse(booking.startAt);
+          const score = Number.isFinite(startMs) ? startMs : 0;
+          if (!latestBooking || score > latestStartMs) {
+            latestBooking = {
+              clientId: booking.clientId,
+              serviceId: booking.serviceId,
+              staffId: booking.staffId,
+              status: booking.status,
+              startAt: booking.startAt,
+            };
+            latestStartMs = score;
+          }
+        }
+        return { client: { ...savedClient }, latestBooking };
+      });
+    },
+    async getNotificationWorkflows() {
+      return [...getSnapshot().workflows];
+    },
+    async findApprovedBookingPayment(provider, providerPaymentId) {
+      const trimmed = providerPaymentId.trim();
+      if (!trimmed) return null;
+      const found = (getSnapshot().bookingPayments ?? []).find(
+        (entry) =>
+          entry.provider === provider &&
+          entry.providerPaymentId === trimmed &&
+          entry.status === 'approved',
+      );
+      return found ? { bookingId: found.bookingId } : null;
+    },
+    async getCalendarConnectionByWatchChannelId(channelId) {
+      const trimmed = channelId.trim();
+      if (!trimmed) return null;
+      return (
+        getSnapshot().calendarConnections.find(
+          (c) => c.watchChannelId === trimmed && c.isConnected,
+        ) ?? null
+      );
+    },
+    async staffMemberExists(staffId) {
+      const trimmed = staffId.trim();
+      if (!trimmed) return false;
+      return getSnapshot().staff.some((s) => s.id === trimmed);
+    },
+    async getWhatsAppContactContextByPhones(
+      phones: string[],
+    ): Promise<WhatsAppContactContextData> {
+      const normalizedPhones = Array.from(
+        new Set(phones.map((p) => normalizePhoneE164(p)).filter(Boolean)),
+      );
+      if (normalizedPhones.length === 0) {
+        return { clients: [], bookings: [] };
+      }
+      const db = getSnapshot();
+      const clients = db.clients.filter((client) =>
+        normalizedPhones.some((phone) => phonesMatchE164(client.phoneE164, phone)),
+      );
+      if (clients.length === 0) {
+        return { clients: [], bookings: [] };
+      }
+      const clientIds = new Set(clients.map((c) => c.id));
+      const bookings = db.bookings.filter(
+        (booking) =>
+          clientIds.has(booking.clientId) && isActiveBookingStatus(booking.status),
+      );
+      return { clients, bookings };
+    },
     async getBookingsWithRelations(filter) {
       return getBookingsWithRelations(filter);
     },
@@ -8220,6 +8360,9 @@ function createDemoRepository(clock: Clock = systemClock): SalonRepository {
     },
     async queryAvailability(params) {
       return queryAvailability(params);
+    },
+    async quickSearchAvailability(params) {
+      return computeQuickSearchAvailability(getSnapshot(), params);
     },
     async getNextQuickSlots(serviceId, staffId) {
       return getNextQuickSlots(serviceId, staffId);
@@ -8438,30 +8581,51 @@ export async function confirmBookingAttendanceFromWebhook(params: {
   if (isSupabaseEnabled()) {
     const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
-    const snapshot = await repo.getSnapshot();
-    const matchesSender = (clientId: string) => {
-      if (!normalizedPhone) return false;
-      const client = snapshot.clients.find((c) => c.id === clientId);
-      return Boolean(client && phonesMatchE164(client.phoneE164, normalizedPhone));
-    };
-    const target = params.bookingId
-      ? snapshot.bookings.find(
-          (b) =>
-            b.id === params.bookingId &&
-            isActiveBookingStatus(b.status) &&
-            (normalizedPhone ? matchesSender(b.clientId) : true),
-        )
-      : snapshot.bookings
-          .filter((b) => {
-            if (!isActiveBookingStatus(b.status)) return false;
-            if (new Date(b.endAt).getTime() < nowMs) return false;
-            return matchesSender(b.clientId);
-          })
-          .toSorted(
-            (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
-          )[0];
+    let targetBookingId: string | null = null;
 
-    if (!target) return null;
+    if (params.bookingId) {
+      const bookingRes = await supabase
+        .from('bookings')
+        .select('id, client_id, status')
+        .eq('id', params.bookingId)
+        .maybeSingle();
+      const row = bookingRes.data;
+      if (row && isActiveBookingStatus(row.status)) {
+        if (!normalizedPhone) {
+          targetBookingId = row.id;
+        } else {
+          const clientRes = await supabase
+            .from('clients')
+            .select('phone_e164')
+            .eq('id', row.client_id)
+            .maybeSingle();
+          if (
+            clientRes.data &&
+            phonesMatchE164(clientRes.data.phone_e164, normalizedPhone)
+          ) {
+            targetBookingId = row.id;
+          }
+        }
+      }
+    } else if (normalizedPhone) {
+      const matchedClientIds = await fetchSupabaseClientIdsByPhone(
+        normalizedPhone,
+        supabase,
+      );
+      if (matchedClientIds.length > 0) {
+        const upcomingRes = await supabase
+          .from('bookings')
+          .select('id, status, start_at, end_at')
+          .in('client_id', matchedClientIds)
+          .in('status', ['pending_payment', 'pending_confirmation', 'confirmed'])
+          .gte('end_at', nowIso)
+          .order('start_at', { ascending: true })
+          .limit(1);
+        targetBookingId = upcomingRes.data?.[0]?.id ?? null;
+      }
+    }
+
+    if (!targetBookingId) return null;
     await supabase
       .from('bookings')
       .update({
@@ -8470,18 +8634,17 @@ export async function confirmBookingAttendanceFromWebhook(params: {
         confirmed_via: params.via,
         updated_at: nowIso,
       })
-      .eq('id', target.id);
-    const updatedSnapshot = await repo.getSnapshot();
-    const updated = updatedSnapshot.bookings.find((b) => b.id === target.id);
-    if (!updated) return null;
+      .eq('id', targetBookingId);
+    const [settings, hydrated] = await Promise.all([
+      repo.getSalonSettings(),
+      fetchSupabaseBookingById(targetBookingId, supabase),
+    ]);
+    if (!hydrated) return null;
     publishRealtimeEvent('booking_updated', {
-      staffId: updated.staffId,
-      date: getDateKeyInTimezone(
-        new Date(updated.startAt),
-        updatedSnapshot.settings.timezone,
-      ),
+      staffId: hydrated.staffId,
+      date: getDateKeyInTimezone(new Date(hydrated.startAt), settings.timezone),
     });
-    return hydrateBooking(updatedSnapshot, updated);
+    return hydrated;
   }
 
   const result = await withWriteLock((db) => {
@@ -8712,17 +8875,17 @@ export async function processExpiredWaitlistOffers(
   let expiredCount = 0;
 
   if (isSupabaseEnabled()) {
-    const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
-    const snapshot = await repo.getSnapshot();
-    const overdue = snapshot.waitlist.filter((entry) => {
-      if (entry.status !== 'notified' || !entry.priorityOfferExpiresAt) return false;
-      const expMs = new Date(entry.priorityOfferExpiresAt).getTime();
-      return Number.isFinite(expMs) && expMs <= nowMs;
-    });
+    const context = await fetchSupabaseOverdueWaitlistContext(nowIso, supabase);
+    if (!context) {
+      return { expiredCount: 0, rolledOverCount: 0 };
+    }
 
-    const mutableWaitlist = snapshot.waitlist.map((w) => ({ ...w }));
-    for (const entry of overdue) {
+    const mutableWaitlist = [
+      ...context.overdue.map((w) => ({ ...w })),
+      ...context.waiting.map((w) => ({ ...w })),
+    ];
+    for (const entry of context.overdue) {
       await supabase
         .from('waitlist_entries')
         .update({ status: 'expired' })
@@ -8734,12 +8897,12 @@ export async function processExpiredWaitlistOffers(
 
       const slotStartAt = entry.priorityOfferSlotStartAt;
       if (!slotStartAt || new Date(slotStartAt).getTime() <= nowMs) continue;
-      const service = snapshot.services.find((s) => s.id === entry.serviceId);
+      const service = context.services.find((s) => s.id === entry.serviceId);
       if (!service) continue;
       const staffId = entry.priorityOfferStaffId ?? entry.preferredStaffId ?? null;
       const slotStartMs = new Date(slotStartAt).getTime();
       const slotEndMs = slotStartMs + service.durationMinutes * 60_000;
-      const slotOccupied = snapshot.bookings.some(
+      const slotOccupied = context.activeBookings.some(
         (b) =>
           isActiveBookingStatus(b.status) &&
           (!staffId || b.staffId === staffId) &&
@@ -8748,7 +8911,7 @@ export async function processExpiredWaitlistOffers(
       );
       if (slotOccupied) continue;
 
-      const tz = snapshot.settings.timezone || 'America/Mexico_City';
+      const tz = context.settings.timezone || 'America/Mexico_City';
       const dateKey = getDateKeyInTimezone(new Date(slotStartAt), tz);
       const nextCandidate = selectNextWaitlistCandidate(mutableWaitlist, {
         serviceId: entry.serviceId,
@@ -8765,7 +8928,7 @@ export async function processExpiredWaitlistOffers(
       const resolvedStaffId =
         staffId ??
         nextCandidate.preferredStaffId ??
-        snapshot.staff.find((s) => s.isActive)?.id ??
+        context.staff.find((s) => s.isActive)?.id ??
         '';
       await supabase
         .from('waitlist_entries')
@@ -8787,9 +8950,9 @@ export async function processExpiredWaitlistOffers(
       nextCandidate.priorityOfferSlotStartAt = slotStartAt;
       nextCandidate.priorityOfferStaffId = resolvedStaffId || null;
 
-      const staff = snapshot.staff.find((s) => s.id === resolvedStaffId);
-      const matchedClient = snapshot.clients.find(
-        (c) => c.phoneE164 === nextCandidate.clientPhoneE164,
+      const staff = context.staff.find((s) => s.id === resolvedStaffId);
+      const matchedClient = context.clients.find((c) =>
+        phonesMatchE164(c.phoneE164, nextCandidate.clientPhoneE164),
       );
       dispatches.push({
         entryId: nextCandidate.id,
@@ -8805,7 +8968,7 @@ export async function processExpiredWaitlistOffers(
         dateKey,
         offerToken,
         offerExpiresAt,
-        settings: { ...snapshot.settings },
+        settings: { ...context.settings },
       });
     }
 
@@ -8941,12 +9104,49 @@ export async function processProactiveTouchUpInvites(
   };
 
   if (isSupabaseEnabled()) {
-    const repo = createSupabaseRepository();
     const supabase = createSupabaseAdminClient();
-    const snapshot = await repo.getSnapshot();
-    const targets = collectEligible(snapshot);
-    let sentCount = 0;
+    const minEndIso = new Date(nowMs - MAX_AGE_MS).toISOString();
+    const maxEndIso = new Date(nowMs - MIN_AGE_MS).toISOString();
+    const context = await fetchSupabaseTouchUpContext(minEndIso, maxEndIso, supabase);
+    if (!context) {
+      return { eligibleCount: 0, sentCount: 0 };
+    }
 
+    const tz = context.settings.timezone || 'America/Mexico_City';
+    const seenClientIds = new Set<string>();
+    const targets: TouchUpTarget[] = [];
+    for (const hydrated of context.candidates) {
+      if (seenClientIds.has(hydrated.clientId)) continue;
+      const bookingEndMs = new Date(hydrated.endAt).getTime();
+      const hasNewerBooking = context.newerBookings.some(
+        (other) =>
+          other.id !== hydrated.id &&
+          other.clientId === hydrated.clientId &&
+          other.status !== 'canceled' &&
+          other.status !== 'no_show' &&
+          new Date(other.startAt).getTime() > bookingEndMs,
+      );
+      if (hasNewerBooking) continue;
+
+      seenClientIds.add(hydrated.clientId);
+      const suggestedDateKey = computeSuggestedTouchUpDateKey({
+        startAt: hydrated.endAt,
+        daysAhead: 21,
+        timezone: tz,
+      });
+      const touchUpUrl = buildTouchUpBookingUrl({
+        serviceSlug: hydrated.service.slug,
+        staffSlug: hydrated.staff.bookingSlug,
+        suggestedDateKey,
+      });
+      targets.push({
+        hydrated,
+        touchUpUrl,
+        settings: { ...context.settings },
+      });
+    }
+
+    let sentCount = 0;
     for (const target of targets) {
       const dispatch = await dispatchTouchUpInviteNotification({
         booking: target.hydrated,
@@ -8957,9 +9157,6 @@ export async function processProactiveTouchUpInvites(
       const delivered =
         dispatch.whatsapp.status === 'sent' || dispatch.email?.status === 'sent';
       if (delivered) {
-        const touchUpWorkflow = snapshot.workflows.find(
-          (w) => w.triggerEvent === 'after_booking' && w.offsetMinutes >= 1440,
-        );
         const bodyText = `Link sugerido: ${target.touchUpUrl}`;
         await supabase
           .from('bookings')
@@ -8969,7 +9166,7 @@ export async function processProactiveTouchUpInvites(
         await supabase.from('scheduled_notifications').insert({
           booking_id: target.hydrated.id,
           client_id: target.hydrated.clientId,
-          workflow_id: touchUpWorkflow?.id ?? null,
+          workflow_id: context.workflowId,
           trigger_key: 'touchup_invite',
           channel: 'whatsapp',
           recipient: target.hydrated.client.phoneE164,

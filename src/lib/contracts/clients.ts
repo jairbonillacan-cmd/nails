@@ -85,6 +85,13 @@ export const ClientPortalProfileResponseSchema = z.discriminatedUnion('authentic
   }),
 ]);
 
+export const PatchClientPortalProfileSchema = z.object({
+  fullName: z.string().trim().min(2, 'Escribe tu nombre completo').max(120),
+  email: OptionalEmailSchema,
+  instagramHandle: InstagramHandleSchema,
+  birthday: z.string().trim().max(20).optional().nullable(),
+});
+
 export const DispatchCampaignSchema = z.object({
   kind: CampaignKindSchema,
   clientId: NonEmptyIdSchema,

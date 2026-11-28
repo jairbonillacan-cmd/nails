@@ -14,7 +14,10 @@ import { LogOut, WifiOff } from 'lucide-react';
 import { FilterPillBar, type FilterPillOption } from '@/components/ui/FilterPillBar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { formatPhoneDisplay } from '@/lib/format';
+import { useClientPortalProfile } from '@/lib/hooks/useClientPortalProfile';
 import { useServiceWorker } from '@/lib/hooks/useServiceWorker';
+import { fetchJsonWithTimeout } from '@/lib/http/client-fetch';
 import type {
   ClientPortalBookingDTO,
   ClientPortalSnapshotDTO,
@@ -24,10 +27,10 @@ import { BookingHeader } from '../booking/BookingChrome';
 import { LANDING_ASSETS } from '../landing/landingContent';
 import { PortalBookingsTab } from './PortalBookingsTab';
 import { PortalOtpGate } from './PortalOtpGate';
+import { PortalProfileTab } from './PortalProfileTab';
 import { PortalRewardsTab } from './PortalRewardsTab';
-import { formatPhoneDisplay } from '@/lib/format';
 
-type PortalTab = 'upcoming' | 'history' | 'rewards';
+type PortalTab = 'upcoming' | 'history' | 'rewards' | 'profile';
 
 interface ClientPortalViewProps {
   settings: PublicSettingsDTO;
@@ -54,6 +57,7 @@ export function ClientPortalView({
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const timezone = settings.timezone || 'America/Mexico_City';
+  const profileState = useClientPortalProfile(Boolean(snapshot) && activeTab === 'profile');
 
   const upcomingBookings = useMemo(() => {
     if (!snapshot) return [];
@@ -83,33 +87,47 @@ export function ClientPortalView({
         label: 'Sellos y paquetes',
         count: activePackagesCount > 0 ? activePackagesCount : undefined,
       },
+      { value: 'profile', label: 'Mis datos' },
     ],
     [activePackagesCount, historyBookings.length, upcomingBookings.length],
   );
 
   const fetchBookingsSnapshot = async (): Promise<boolean> => {
-    const res = await fetch('/api/client-portal/bookings', { cache: 'no-store' });
-    if (!res.ok) return false;
-    const data = (await res.json()) as ClientPortalSnapshotDTO & { authenticated?: boolean };
+    const res = await fetchJsonWithTimeout<ClientPortalSnapshotDTO & { authenticated?: boolean }>(
+      '/api/client-portal/bookings',
+      { cache: 'no-store', credentials: 'same-origin' },
+    );
+    if (!res.ok || !res.data.phoneE164) return false;
     setSnapshot({
-      phoneE164: data.phoneE164,
-      clientId: data.clientId,
-      clientName: data.clientName,
-      bookings: data.bookings,
-      loyaltySummary: data.loyaltySummary,
-      packages: data.packages,
+      phoneE164: res.data.phoneE164,
+      clientId: res.data.clientId,
+      clientName: res.data.clientName,
+      bookings: res.data.bookings,
+      loyaltySummary: res.data.loyaltySummary,
+      packages: res.data.packages,
     });
+    setErrorMessage(null);
     setActiveTab('upcoming');
     return true;
   };
 
   const handleLogout = async () => {
+    if (busy) return;
     setBusy(true);
+    setErrorMessage(null);
     try {
-      await fetch('/api/client-portal/otp', { method: 'DELETE' });
-    } finally {
+      const res = await fetchJsonWithTimeout<{ ok?: boolean }>('/api/client-portal/otp', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (!res.ok) {
+        setErrorMessage(res.error || 'No pudimos cerrar tu sesión. Intenta de nuevo.');
+        return;
+      }
+      profileState.reset();
       setSnapshot(null);
       setInfoMessage('Cerraste tu sesión correctamente.');
+    } finally {
       setBusy(false);
     }
   };
@@ -162,6 +180,7 @@ export function ClientPortalView({
 
         {!snapshot ? (
           <PortalOtpGate
+            salonName={settings.name}
             showDemoHint={showDemoHint}
             infoMessage={infoMessage}
             onDismissInfo={() => setInfoMessage(null)}
@@ -191,6 +210,7 @@ export function ClientPortalView({
                         variant="ghost"
                         size="md"
                         className="fx-press"
+                        isLoading={busy}
                         isDisabled={busy}
                         icon={<LogOut size={15} aria-hidden="true" />}
                         onClick={() => void handleLogout()}
@@ -218,6 +238,7 @@ export function ClientPortalView({
                 title="Aviso"
                 description={errorMessage}
                 isDismissable
+                dismissLabel="Cerrar aviso"
                 onDismiss={() => setErrorMessage(null)}
               />
             ) : null}
@@ -246,6 +267,33 @@ export function ClientPortalView({
                 timezone={timezone}
                 loyaltySummary={snapshot.loyaltySummary}
                 packages={snapshot.packages}
+              />
+            ) : null}
+
+            {activeTab === 'profile' ? (
+              <PortalProfileTab
+                phoneE164={snapshot.phoneE164}
+                fallbackClientName={snapshot.clientName ?? ''}
+                timezone={timezone}
+                profile={profileState.profile}
+                isLoading={profileState.isLoading}
+                loadError={profileState.loadError}
+                isSaving={profileState.isSaving}
+                saveError={profileState.saveError}
+                saveSuccess={profileState.saveSuccess}
+                onRetryLoad={profileState.retryLoad}
+                onSave={async (input) => {
+                  const updated = await profileState.saveProfile(input);
+                  if (updated) {
+                    setSnapshot((prev) =>
+                      prev
+                        ? { ...prev, clientName: updated.fullName.trim() || prev.clientName }
+                        : prev,
+                    );
+                  }
+                  return updated;
+                }}
+                onDismissFeedback={profileState.dismissFeedback}
               />
             ) : null}
           </VStack>

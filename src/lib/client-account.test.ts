@@ -5,7 +5,10 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 import fc from 'fast-check';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GET as getClientPortalProfile } from '@/app/api/client-portal/profile/route';
+import {
+  GET as getClientPortalProfile,
+  PATCH as patchClientPortalProfile,
+} from '@/app/api/client-portal/profile/route';
 import { POST as postPublicBooking } from '@/app/api/bookings/route';
 import {
   isPhoneMatchingSession,
@@ -453,5 +456,98 @@ describe('GET /api/client-portal/profile route security and client persistence',
     expect(lastHeaders?.get('cache-control')).toBe('private, no-store');
     expect(lastHeaders?.get('vary')).toBe('Cookie');
     expect(lastHeaders?.get('retry-after')).toBeTruthy();
+  });
+
+  it('PATCH /api/client-portal/profile enforces auth, validates input, and persists updates for existing and newly verified phones', async () => {
+    vi.stubEnv('CLIENT_PORTAL_SECRET', 'test-profile-secret-patch');
+
+    const unauthPatch = await patchClientPortalProfile(
+      new NextRequest('http://localhost:3000/api/client-portal/profile', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fullName: 'Intrusa' }),
+      }),
+    );
+    expect(unauthPatch.status).toBe(401);
+    expect(unauthPatch.headers.get('cache-control')).toBe('private, no-store');
+    expect(unauthPatch.headers.get('vary')).toBe('Cookie');
+
+    const sofiaToken = createClientPortalSessionToken('+522224123987');
+    const badPatch = await patchClientPortalProfile(
+      new NextRequest('http://localhost:3000/api/client-portal/profile', {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `${CLIENT_PORTAL_COOKIE}=${sofiaToken ?? ''}`,
+        },
+        body: JSON.stringify({ fullName: 'A', email: 'correo-invalido' }),
+      }),
+    );
+    expect(badPatch.status).toBe(400);
+    expect(badPatch.headers.get('cache-control')).toBe('private, no-store');
+
+    const updateRes = await patchClientPortalProfile(
+      new NextRequest('http://localhost:3000/api/client-portal/profile', {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `${CLIENT_PORTAL_COOKIE}=${sofiaToken ?? ''}`,
+        },
+        body: JSON.stringify({
+          fullName: 'Sofía Ramírez Vega',
+          email: 'sofia.nueva@ejemplo.mx',
+          instagramHandle: 'sofia.nails.pue',
+          birthday: '1997-11-30',
+        }),
+      }),
+    );
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.headers.get('cache-control')).toBe('private, no-store');
+    expect(updateRes.headers.get('vary')).toBe('Cookie');
+    const updatedBody = ClientPortalProfileResponseSchema.parse(await updateRes.json());
+    expect(updatedBody.authenticated).toBe(true);
+    if (!updatedBody.authenticated) return;
+    expect(updatedBody.profile.fullName).toBe('Sofía Ramírez Vega');
+    expect(updatedBody.profile.email).toBe('sofia.nueva@ejemplo.mx');
+    expect(updatedBody.profile.instagramHandle).toBe('@sofia.nails.pue');
+    expect(updatedBody.profile.birthday).toBe('1997-11-30');
+    expect(updatedBody.profile.isRegistered).toBe(true);
+
+    const reloadRes = await getClientPortalProfile(
+      new NextRequest('http://localhost:3000/api/client-portal/profile', {
+        headers: { cookie: `${CLIENT_PORTAL_COOKIE}=${sofiaToken ?? ''}` },
+      }),
+    );
+    expect(reloadRes.status).toBe(200);
+    const reloadBody = ClientPortalProfileResponseSchema.parse(await reloadRes.json());
+    expect(reloadBody.authenticated).toBe(true);
+    if (!reloadBody.authenticated) return;
+    expect(reloadBody.profile.fullName).toBe('Sofía Ramírez Vega');
+    expect(reloadBody.profile.instagramHandle).toBe('@sofia.nails.pue');
+
+    const brandNewPhone = '+522229994411';
+    const newToken = createClientPortalSessionToken(brandNewPhone);
+    const createRes = await patchClientPortalProfile(
+      new NextRequest('http://localhost:3000/api/client-portal/profile', {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `${CLIENT_PORTAL_COOKIE}=${newToken ?? ''}`,
+        },
+        body: JSON.stringify({
+          fullName: 'Camila Nueva',
+          email: 'camila.nueva@correo.mx',
+          instagramHandle: '@camila.pue',
+          birthday: '1999-05-14',
+        }),
+      }),
+    );
+    expect(createRes.status).toBe(200);
+    const createdBody = ClientPortalProfileResponseSchema.parse(await createRes.json());
+    expect(createdBody.authenticated).toBe(true);
+    if (!createdBody.authenticated) return;
+    expect(createdBody.profile.isRegistered).toBe(true);
+    expect(createdBody.profile.fullName).toBe('Camila Nueva');
+    expect(createdBody.profile.phoneE164).toBe(brandNewPhone);
   });
 });

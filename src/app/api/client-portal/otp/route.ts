@@ -27,6 +27,8 @@ const OTP_REQUEST_PER_PHONE_LIMIT = 4;
 const OTP_VERIFY_LIMIT = 25;
 const OTP_RATE_WINDOW_MS = 10 * 60 * 1000;
 
+const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store' };
+
 function rateLimitedResponse(retryAfterSeconds: number) {
   return NextResponse.json(
     {
@@ -36,6 +38,7 @@ function rateLimitedResponse(retryAfterSeconds: number) {
     {
       status: 429,
       headers: {
+        ...PRIVATE_HEADERS,
         'Retry-After': String(retryAfterSeconds),
         'X-RateLimit-Remaining': '0',
       },
@@ -62,43 +65,52 @@ export async function POST(request: NextRequest) {
       }
 
       const requestedPhone = normalizePhoneE164(parsed.phone);
-      if (requestedPhone) {
-        const phoneRate = checkRateLimit({
-          bucket: 'client-portal-otp-request-phone',
-          key: requestedPhone,
-          limit: OTP_REQUEST_PER_PHONE_LIMIT,
-          windowMs: OTP_RATE_WINDOW_MS,
-        });
-        if (!phoneRate.allowed) {
-          logWarn('client_portal.otp_request_phone_rate_limited', { phone: requestedPhone });
-          return rateLimitedResponse(phoneRate.retryAfterSeconds);
-        }
-      }
-
-      const challenge = createClientPortalOtpChallenge(parsed.phone);
-      if (!challenge) {
+      const requestedDigits = requestedPhone.replace(/\D/g, '');
+      if (!requestedPhone || requestedDigits.length < 10) {
         return NextResponse.json(
           { error: 'Escribe un número de WhatsApp válido de 10 dígitos.' },
-          { status: 400 },
+          { status: 400, headers: PRIVATE_HEADERS },
         );
       }
 
-      const canSign = Boolean(createClientPortalSessionToken(challenge.phoneE164));
+      const phoneRate = checkRateLimit({
+        bucket: 'client-portal-otp-request-phone',
+        key: requestedPhone,
+        limit: OTP_REQUEST_PER_PHONE_LIMIT,
+        windowMs: OTP_RATE_WINDOW_MS,
+      });
+      if (!phoneRate.allowed) {
+        logWarn('client_portal.otp_request_phone_rate_limited', { phone: requestedPhone });
+        return rateLimitedResponse(phoneRate.retryAfterSeconds);
+      }
+
+      const canSign = Boolean(createClientPortalSessionToken(requestedPhone));
       if (!canSign) {
-        logWarn('client_portal.unconfigured_secret', { phone: challenge.phoneE164 });
+        logWarn('client_portal.unconfigured_secret', { phone: requestedPhone });
         return NextResponse.json(
           {
             code: 'PORTAL_UNCONFIGURED',
             error: 'El portal de clientas no está configurado en este entorno.',
           },
-          { status: 503 },
+          { status: 503, headers: PRIVATE_HEADERS },
         );
       }
 
-      const db = await getRepository().getSnapshot();
-      const { settings } = db;
+      const challenge = createClientPortalOtpChallenge(requestedPhone);
+      if (!challenge) {
+        return NextResponse.json(
+          { error: 'Escribe un número de WhatsApp válido de 10 dígitos.' },
+          { status: 400, headers: PRIVATE_HEADERS },
+        );
+      }
+
+      const repo = getRepository();
+      const [settings, portalRecord] = await Promise.all([
+        repo.getSalonSettings(),
+        repo.getClientPortalRecordByPhone(challenge.phoneE164),
+      ]);
       const env = getRuntimeIntegrationStatus();
-      const matchedClient = db.clients.find((c) => c.phoneE164 === challenge.phoneE164);
+      const matchedClient = portalRecord.client;
       const fallbackEmail =
         matchedClient?.email && env.resendConfigured
           ? {
@@ -241,7 +253,7 @@ export async function POST(request: NextRequest) {
             code: 'PORTAL_UNCONFIGURED',
             error: 'El portal de clientas no está configurado en este entorno.',
           },
-          { status: 503 },
+          { status: 503, headers: PRIVATE_HEADERS },
         );
       }
       if (verified.reason === 'max_attempts') {
@@ -250,7 +262,7 @@ export async function POST(request: NextRequest) {
             code: 'OTP_MAX_ATTEMPTS',
             error: 'Excediste el límite de intentos. Solicita un nuevo código.',
           },
-          { status: 429 },
+          { status: 429, headers: PRIVATE_HEADERS },
         );
         res.cookies.set(
           CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
@@ -265,7 +277,7 @@ export async function POST(request: NextRequest) {
             code: 'OTP_EXPIRED',
             error: 'Tu código venció. Solicita uno nuevo para continuar.',
           },
-          { status: 400 },
+          { status: 400, headers: PRIVATE_HEADERS },
         );
         res.cookies.set(
           CLIENT_PORTAL_OTP_CHALLENGE_COOKIE,
@@ -277,7 +289,7 @@ export async function POST(request: NextRequest) {
       if (verified.reason === 'invalid_phone') {
         return NextResponse.json(
           { error: 'Escribe un número de WhatsApp válido de 10 dígitos.' },
-          { status: 400 },
+          { status: 400, headers: PRIVATE_HEADERS },
         );
       }
       return NextResponse.json(
@@ -286,7 +298,7 @@ export async function POST(request: NextRequest) {
           error: 'Código incorrecto. Revisa los 6 dígitos e intenta de nuevo.',
           attemptsRemaining: verified.attemptsRemaining,
         },
-        { status: 401 },
+        { status: 401, headers: PRIVATE_HEADERS },
       );
     }
 
@@ -299,9 +311,7 @@ export async function POST(request: NextRequest) {
       },
       {
         status: 200,
-        headers: {
-          'Cache-Control': 'private, no-store',
-        },
+        headers: PRIVATE_HEADERS,
       },
     );
     response.cookies.set(
@@ -319,12 +329,12 @@ export async function POST(request: NextRequest) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: err.issues[0]?.message || 'Revisa los datos ingresados.' },
-        { status: 400 },
+        { status: 400, headers: PRIVATE_HEADERS },
       );
     }
     return NextResponse.json(
       { error: 'No se pudo procesar tu solicitud.' },
-      { status: 500 },
+      { status: 500, headers: PRIVATE_HEADERS },
     );
   }
 }
@@ -334,9 +344,7 @@ export async function DELETE() {
     { ok: true, authenticated: false },
     {
       status: 200,
-      headers: {
-        'Cache-Control': 'no-store',
-      },
+      headers: PRIVATE_HEADERS,
     },
   );
   response.cookies.set(CLIENT_PORTAL_COOKIE, '', {

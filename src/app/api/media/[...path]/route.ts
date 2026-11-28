@@ -14,6 +14,8 @@ import type { MediaAccessOwner } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
+const PRIVATE_ERROR_HEADERS = { 'Cache-Control': 'private, no-store' };
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -30,6 +32,7 @@ export async function GET(
       {
         status: 429,
         headers: {
+          ...PRIVATE_ERROR_HEADERS,
           'Retry-After': String(rate.retryAfterSeconds),
           'X-RateLimit-Remaining': '0',
         },
@@ -45,19 +48,28 @@ export async function GET(
     rawPathname.toLowerCase().includes('%5c') ||
     rawPathname.includes('\0')
   ) {
-    return NextResponse.json({ error: 'Ruta de archivo inválida.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Ruta de archivo inválida.' },
+      { status: 400, headers: PRIVATE_ERROR_HEADERS },
+    );
   }
 
   const { path: segments } = await context.params;
   if (!Array.isArray(segments) || segments.length !== 2) {
-    return NextResponse.json({ error: 'Ruta de archivo inválida.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Ruta de archivo inválida.' },
+      { status: 400, headers: PRIVATE_ERROR_HEADERS },
+    );
   }
 
   const folder = segments[0] ?? '';
   const fileName = segments[1] ?? '';
   const parsed = parseSafeMediaPath(`${folder}/${fileName}`);
   if (!parsed) {
-    return NextResponse.json({ error: 'Archivo no permitido.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Archivo no permitido.' },
+      { status: 400, headers: PRIVATE_ERROR_HEADERS },
+    );
   }
 
   const storagePath = parsed.storagePath;
@@ -137,9 +149,15 @@ export async function GET(
 
   if (!authorized) {
     if (forbiddenAttempt) {
-      return NextResponse.json({ error: 'Acceso denegado.' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Acceso denegado.' },
+        { status: 403, headers: PRIVATE_ERROR_HEADERS },
+      );
     }
-    return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'No autorizado.' },
+      { status: 401, headers: PRIVATE_ERROR_HEADERS },
+    );
   }
 
   try {
@@ -151,7 +169,10 @@ export async function GET(
           : readResult.status === 403
             ? 'Acceso denegado.'
             : 'Contenido de imagen inválido.';
-      return NextResponse.json({ error: errorMessage }, { status: readResult.status });
+      return NextResponse.json(
+        { error: errorMessage },
+        { status: readResult.status, headers: PRIVATE_ERROR_HEADERS },
+      );
     }
 
     return new NextResponse(new Uint8Array(readResult.bytes), {
@@ -163,7 +184,7 @@ export async function GET(
         'Content-Disposition': `inline; filename="${parsed.fileName}"`,
         'Cache-Control': isPublicGalleryMedia
           ? 'public, max-age=31536000, immutable'
-          : 'private, max-age=300, no-store',
+          : 'private, no-store',
         ...(isPublicGalleryMedia ? {} : { Vary: 'Cookie' }),
       },
     });
@@ -171,7 +192,7 @@ export async function GET(
     logError('media_route_read_failed', { storagePath, error: err });
     return NextResponse.json(
       { error: 'Error al obtener la imagen.' },
-      { status: 500 },
+      { status: 500, headers: PRIVATE_ERROR_HEADERS },
     );
   }
 }
